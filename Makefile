@@ -126,8 +126,6 @@ publish: ## Builds the project and publish the package to Pypi
 	uv publish dist/*
 	# uv publish --publish-url https://test.pypi.org/legacy/ --username DUMMY --password DUMMY dist/*
 
-
-
 pre-commit-one: ## Run pre-commit with specific files
 	uv lock --locked
 	uv run pre-commit run --files ${PRECOMMIT_FILE_PATHS}
@@ -154,8 +152,6 @@ format: ## Run ruff for all package files. CHANGES CODE
 	uv run --module ruff format ${PACKAGE}
 	uv run --module ruff check ${PACKAGE} --fix --show-fixes
 
-
-
 # profile: ## Profile the file with scalene and shows the report in the terminal
 # 	uv lock --locked
 # 	uv run --module scalene --cli --reduced-profile ${PROFILE_FILE_PATH}
@@ -170,3 +166,6 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 
 docker-build: ## Build docker image
 	docker build --tag ${DOCKER_IMAGE} --file docker/Dockerfile --target ${DOCKER_TARGET} .
+
+run-server-dev: # ## Run the server in development mode
+	uv run --module langgraph_openai_serve.app
