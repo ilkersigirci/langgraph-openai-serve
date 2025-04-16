@@ -1,0 +1,31 @@
+#{% raw %}
+name: Docs via GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  doc:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up python environment
+        uses: ./.github/actions/setup-python
+      # - name: Set up cache
+      #   uses: actions/cache@v2
+      #   with:
+      #     key: ${{ github.ref }}
+      #     path: .cache
+      - name: Docs Dependency Installation
+        run: |
+          make -s install-doc
+      - name: Deploy the documentation to GitHub Pages
+        run: |
+          make -s doc-github
+#{% endraw %}

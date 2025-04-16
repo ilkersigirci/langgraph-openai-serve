@@ -1,0 +1,22 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  doc-deploy:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+      - name: Deploy the documentation to GitHub Pages
+        run: |
+          make doc-deploy-github

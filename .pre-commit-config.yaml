@@ -1,0 +1,28 @@
+# NOTE: exclude
+#  Single file/folder -> exclude: examples/.*ipynb
+#  Multiple file/folder -> exclude: (^.*<folder_name>/|examples/.*ipynb)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      #  - id: check-symlinks
+      #  - id: check-json
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        description: Forces to replace line ending by the UNIX 'lf' character.
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.2
+    hooks:
+      # Update the uv lockfile
+      - id: uv-lock

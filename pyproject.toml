@@ -1,0 +1,11 @@
+[project]
+name = "python-template"
+version = "0.1.0"
+description = "A cookiecutter template for Python projects"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "cookiecutter>=2.6.0",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.46",
+]
