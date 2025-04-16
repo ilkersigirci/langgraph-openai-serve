@@ -1,0 +1,51 @@
+name: langgraph-openai-serve
+
+networks:
+  langgraph-openai-serve-network:
+    name: langgraph-openai-serve-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.10.0/24
+
+services:
+  langgraph-openai-serve-dev:
+    image: langgraph-openai-serve-dev:latest
+    container_name: langgraph-openai-serve-dev
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: development
+    networks:
+      - langgraph-openai-serve-network
+    # ports:
+    #   - 8080:8080
+    command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
+    restart: "no"
+    develop:
+      watch:
+        # Sync the working directory with the `/app` directory in the container
+        - action: sync
+          path: .
+          target: /app
+          # Exclude the project virtual environment
+          ignore:
+            - .venv/
+
+        # Rebuild the image on changes to the `pyproject.toml`
+        - action: rebuild
+          path: ./pyproject.toml
+
+  langgraph-openai-serve-prod:
+    image: langgraph-openai-serve-prod:latest
+    container_name: langgraph-openai-serve-prod
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    networks:
+      - langgraph-openai-serve-network
+    # ports:
+    #   - 8080:8080
+    command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
+    restart: "no"

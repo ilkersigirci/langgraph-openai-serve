@@ -1,0 +1,27 @@
+#
+name: Lint the module
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # needs: NOTHING
+  lint:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up python environment
+        uses: ./.github/actions/setup-python
+      - name: Lint Dependency Installation
+        run: |
+          make -s install-lint
+      - name: Lint the Project
+        run: |
+          make -s lint
+#
