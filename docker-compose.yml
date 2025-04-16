@@ -6,7 +6,7 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 192.168.10.0/24
+        - subnet: 192.168.31.0/24
 
 services:
   langgraph-openai-serve-dev:
@@ -36,16 +36,20 @@ services:
         - action: rebuild
           path: ./pyproject.toml
 
-  langgraph-openai-serve-prod:
-    image: langgraph-openai-serve-prod:latest
-    container_name: langgraph-openai-serve-prod
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: production
+  open-webui:
+    container_name: open-webui
+    image: ghcr.io/open-webui/open-webui:latest
+    restart: "no"
     networks:
       - langgraph-openai-serve-network
-    # ports:
-    #   - 8080:8080
-    command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
-    restart: "no"
+    ports:
+      - 8080:8080
+    volumes:
+      - ./docker/volumes/open-webui:/app/backend/data
+    environment:
+      - ENABLE_OLLAMA_API=false
+      - USE_OLLAMA_DOCKER=false
+      - ENABLE_IMAGE_GENERATION=false
+      #### OPENAI API ####
+      - OPENAI_API_BASE_URL=http://192.168.2.12:8000/v1
+      - OPENAI_API_KEY=DUMMY

@@ -78,7 +78,6 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
-# uv run --module langgraph_openai_serve.app
 if __name__ == "__main__":
     import uvicorn
 
