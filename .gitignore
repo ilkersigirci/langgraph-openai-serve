@@ -270,3 +270,4 @@ public
 
 # Scalene related
 profile.*
+docker/volumes
