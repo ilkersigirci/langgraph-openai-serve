@@ -1,0 +1,33 @@
+{
+  "author": "İlker SIĞIRCI",
+  "email": "sigirci.ilker@gmail.com",
+  "author_github_handle": "ilkersigirci",
+  "project_name": "python-template",
+  "project_slug": "{{cookiecutter.project_name|lower|replace('-', '_')}}",
+  "project_description": "This is a template repository for Python projects",
+  "python_version": "3.11",
+  "git_remote_location": [
+    "github",
+    "gitlab"
+  ],
+  "devcontainer": [
+    "y",
+    "n"
+  ],
+  "docs": [
+    "y",
+    "n"
+  ],
+  "mypy": [
+    "y",
+    "n"
+  ],
+  "open_source_license": [
+    "MIT license",
+    "BSD license",
+    "ISC license",
+    "Apache Software License 2.0",
+    "GNU General Public License v3",
+    "Not open source"
+  ]
+}

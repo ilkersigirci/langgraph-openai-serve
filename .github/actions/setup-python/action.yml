@@ -1,0 +1,25 @@
+name: "Setup Python Environment"
+description: "Set up Python environment for the given Python version"
+
+runs:
+  using: "composite"
+  steps:
+    # - uses: actions/setup-python@v5
+    #   with:
+    #     python-version-file: ".python-version"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+        enable-cache: "true"
+        cache-suffix: "UV_PYTHON"
+
+    - name: Install Python
+      run: uv python install
+      shell: bash
+
+    - name: Create virtual environment
+      run: |
+        uv venv
+      shell: bash

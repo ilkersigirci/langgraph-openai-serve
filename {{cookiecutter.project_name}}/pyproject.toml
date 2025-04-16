@@ -1,0 +1,221 @@
+[project]
+name = "{{cookiecutter.project_slug}}"
+version = "0.0.1"
+description = "{{cookiecutter.project_description}}"
+readme = "README.md"
+requires-python = ">={{cookiecutter.python_version}}"
+
+authors = [
+    {name = "{{cookiecutter.author}}", email = "{{cookiecutter.email}}"},
+]
+maintainers = [
+    {name = "{{cookiecutter.author}}", email = "{{cookiecutter.email}}"},
+]
+
+keywords = [
+    "{{cookiecutter.project_slug}}"
+]
+
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Topic :: Software Development",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "pre-commit>=4.0.1",
+    "ruff>=0.9.2",
+    # "scalene~=1.5.21.2",
+{% if cookiecutter.mypy == 'y' -%}
+    "mypy>=1.13.0",
+{% endif %}
+]
+{% if cookiecutter.docs == 'y' -%}
+doc = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.42",
+    "mkdocstrings[python]>=0.26.2",
+    # "mdx-include",
+    # "mkdocs-markdownextradata-plugin",
+]
+{% endif %}
+test = [
+    "pytest-cov>=5.0.0",
+    "pytest-rerunfailures>=14.0",
+    "pytest-xdist>=3.6.1",
+    "pytest>=8.3.3",
+    # "pytest-timeout",
+]
+
+[tool.uv]
+{% if cookiecutter.docs == 'y' -%}
+default-groups = ["dev", "doc", "test"]
+{% else -%}
+default-groups = ["dev", "test"]
+{% endif %}
+
+[tool.pytest.ini_options]
+minversion = "7.0.0"
+addopts = [
+    "--import-mode=importlib",
+    "--color=yes",
+    "--verbose",
+#    "--durations=0",
+#    "--strict-markers",
+#    "--doctest-modules",
+    # NOTE: cov is not working with pycharm debugger. Enable it later!
+#    "--cov {{cookiecutter.project_slug}}",
+#    "--cov-report=xml",
+#    "--cov-report html",
+]
+
+testpaths = ["tests"]
+
+# TODO: Make them inherit from yaml file
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(filename)s:%(lineno)d - (%(funcName)s) :: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src"]
+respect-gitignore = true
+
+# extend-include = []
+
+extend-exclude = [
+    "docs",
+    "tests",
+]
+
+# Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+# "*.ipynb" = ["E501"]  # disable line-too-long in notebooks
+
+# "path/to/file.py" = ["E402"]
+# '{{cookiecutter.project_slug}}/__init__.py' = ['F405', 'F403']
+
+# [tool.ruff.flake8-quotes]
+# inline-quotes = "single"
+# multiline-quotes = "double"
+# docstring-quotes = "double"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = false
+# indent-style = "space"
+# preview = true
+
+[tool.ruff.lint]
+
+select = [
+    "B",  # flake8-bugbear
+    "C",  # flake8-comprehensions
+    "C9",  # mccabe
+{% if cookiecutter.docs == 'y' -%}
+    "D",  # flake8-docstrings
+{% endif %}
+    "E",  # pycodestyle errors (default)
+    "F",  # pyflakes (default)
+    "I",  # isort
+    "PD", # pandas-vet
+    "PIE", # pie
+    "PL",  # pylint
+    "PTH", # pathlib
+    "Q",  # flake8-quotes
+    "RET", # return
+    "RUF", # Enable all ruff-specific checks
+    "SIM", # simplify
+    "S307", # eval
+    "T20",  # (disallow print statements) keep debugging statements out of the codebase
+    "W",  # pycodestyle warnings
+    "ASYNC" # async
+]
+
+ignore = [
+    "E501",  # Line too long, handled by ruff formatter
+    "D107", # "Missing docstring in __init__",
+]
+
+unfixable = [
+    "F401" # Unused imports.
+]
+
+#extend-select = []
+
+# [tool.ruff.lint.flake8-import-conventions.extend-aliases]
+# some_alias = ""
+
+{% if cookiecutter.docs == 'y' -%}
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+{% endif %}
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+# force-wrap-aliases = true
+# known-first-party = ["SomeLibrary"]
+# known-third-party = ["SomeLibrary"]
+
+{% if cookiecutter.mypy == 'y' -%}
+# Read more here: https://mypy.readthedocs.io/en/stable/config_file.html#using-a-pyproject-toml-file
+[tool.mypy]
+# python_version = "3.8"
+files = ["src/{{cookiecutter.project_slug}}"]
+# exclude = ['^tests/']
+strict = true
+show_error_codes = true
+# ignore_missing_imports = true
+
+# TODO: Check whether this is working
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_missing_imports = true
+check_untyped_defs = true
+{% endif %}
+
+[tool.coverage.run]
+source = ['src/{{cookiecutter.project_slug}}']
+branch = true
+context = '${CONTEXT}'
+
+[tool.coverage.report]
+precision = 2
+exclude_lines = [
+    'pragma: no cover',
+    'raise NotImplementedError',
+    'if TYPE_CHECKING:',
+    '@overload',
+]
+# show_missing = True
+
+# [tool.coverage.paths]
+# source = [
+#     'src/{{cookiecutter.project_slug}}/',
+# ]
+
+# [build-system]
+# requires = ["uv>=0.5.24,<1.0.0"]
+# build-backend = "uv._build_backend" # FIXME: Only builds source distribution, not wheel
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

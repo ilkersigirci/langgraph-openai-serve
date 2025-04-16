@@ -1,0 +1,21 @@
+{
+  "name": "{{cookiecutter.project_slug}}",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
+  "userEnvProbe": "loginInteractiveShell",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "bungcip.better-toml",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

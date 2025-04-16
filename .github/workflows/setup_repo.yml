@@ -1,0 +1,25 @@
+# Ref: https://github.com/actions/toolkit/issues/1054#issuecomment-1566409614
+# The workflow runs upon branch/tag creation as well, but it gets canceled because of the conditional expression
+
+name: Setup repository
+
+on:
+  create
+
+jobs:
+  create_issue:
+    if: github.event.ref == github.event.master_branch
+    # if: >-
+    #   ${{ !github.event.repository.is_template }}
+    name: Create issue
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+
+    steps:
+
+      - uses: imjohnbo/issue-bot@v3
+        with:
+          title: "Test issue"
