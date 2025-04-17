@@ -17,20 +17,20 @@ DEFAULT_LOGGER_CONFIG = {
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
         "colored": {
-            "()": "langgraph_openai_serve.loggers.formatters.ColoredFormatter",
+            "()": "demo.loggers.formatters.ColoredFormatter",
             "format": "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(pathname)s:%(lineno)d :: %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
     },
     "filters": {
         "info": {
-            "()": "langgraph_openai_serve.loggers.filters.InfoFilter",
+            "()": "demo.loggers.filters.InfoFilter",
         },
         "cwd": {
-            "()": "langgraph_openai_serve.loggers.filters.CwdFilter",
+            "()": "demo.loggers.filters.CwdFilter",
         },
         # "path_shortener": {
-        #     "()": "langgraph_openai_serve.loggers.filters.PathShortenerFilter",
+        #     "()": "demo.loggers.filters.PathShortenerFilter",
         # }
     },
     "handlers": {
@@ -44,7 +44,7 @@ DEFAULT_LOGGER_CONFIG = {
         "file_handler": {
             "class": "logging.FileHandler",
             "level": "INFO",
-            "filename": "langgraph_openai_serve.log",
+            "filename": "demo.log",
             "formatter": "base",
             "filters": ["cwd"],
         },

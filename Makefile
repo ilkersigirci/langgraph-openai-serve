@@ -167,5 +167,5 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 docker-build: ## Build docker image
 	docker build --tag ${DOCKER_IMAGE} --file docker/Dockerfile --target ${DOCKER_TARGET} .
 
-run-server-dev: # ## Run the server in development mode
-	uv run --module langgraph_openai_serve.app
+run-demo-server-dev: # ## Run the demo server in development mode
+	uv run --module demo.app

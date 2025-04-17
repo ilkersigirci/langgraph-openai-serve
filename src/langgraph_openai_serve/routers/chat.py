@@ -4,7 +4,6 @@ This module provides the FastAPI router for the chat completion endpoint,
 implementing an OpenAI-compatible interface.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -32,7 +31,7 @@ from langgraph_openai_serve.services.graph_runner import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["openai"])
+router = APIRouter(tags=["openai"])
 
 
 @router.post("/chat/completions")
@@ -50,6 +49,7 @@ async def create_chat_completion(
     Returns:
         A chat completion response, either as a complete response or as a stream.
     """
+
     logger.info(f"Received chat completion request for model: {chat_request.model}")
 
     # Use streaming response if stream is enabled
@@ -115,6 +115,7 @@ async def stream_chat_completion(
     Yields:
         Chunks of the chat completion response.
     """
+
     start_time = time.time()
     response_id = f"chatcmpl-{uuid.uuid4()}"
     created = int(time.time())
@@ -163,9 +164,6 @@ async def stream_chat_completion(
                     ],
                 )
             )
-
-            # Small delay to simulate streaming
-            await asyncio.sleep(0.01)
 
         # Send the final response with finish_reason
         yield format_stream_chunk(

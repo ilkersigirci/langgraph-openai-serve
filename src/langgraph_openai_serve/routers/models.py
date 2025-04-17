@@ -6,11 +6,12 @@ from langgraph_openai_serve.models.openai_models import (
     ModelList,
     ModelPermission,
 )
+from langgraph_openai_serve.services.graph_runner import GRAPH_REGISTRY
 
-router = APIRouter(prefix="/v1", tags=["openai"])
+router = APIRouter(prefix="/models", tags=["openai"])
 
 
-@router.get("/models")
+@router.get("/")
 async def get_models():
     """Return a list of available models in OpenAI compatible format"""
     permission = ModelPermission(
@@ -27,15 +28,18 @@ async def get_models():
         is_blocking=False,
     )
 
-    model = Model(
-        id="test-model",
-        created=1743771509,
-        owned_by="databoss",
-        root="test-model-root-path",
-        parent=None,
-        max_model_len=16000,
-        permission=[permission],
-    )
+    models = [
+        Model(
+            id=graph_name,
+            created=1743771509,
+            owned_by="langgraph-openai-serve",
+            root=f"{graph_name}-root",
+            parent=None,
+            max_model_len=16000,
+            permission=[permission],
+        )
+        for graph_name in GRAPH_REGISTRY
+    ]
 
-    model_list = ModelList(data=[model])
+    model_list = ModelList(data=models)
     return JSONResponse(content=model_list.model_dump())
