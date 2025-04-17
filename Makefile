@@ -161,5 +161,14 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 docker-build: ## Build docker image
 	docker build --tag ${DOCKER_IMAGE} --file docker/Dockerfile --target ${DOCKER_TARGET} .
 
+doc-build: ## Test whether documentation can be built
+	uv run mkdocs build -s
+
+doc-serve: ## Build and serve the documentation
+	uv run mkdocs serve
+
+doc-deploy: ## Build documentation with mkdocs and deploy to github pages
+	uv run mkdocs gh-deploy --force
+
 run-demo-server-dev: # ## Run the demo server in development mode
 	uv run --module demo.app

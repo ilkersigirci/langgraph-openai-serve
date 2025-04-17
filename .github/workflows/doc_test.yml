@@ -1,0 +1,25 @@
+name: Docs Test Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  doc-check:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the Project with Test Dependencies
+        run: |
+          uv sync --frozen --only-group doc
+
+      - name: Test the doc build
+        run: |
+          make doc-build

@@ -1,9 +1,11 @@
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from langgraph_openai_serve.schemas.openai_schema import ChatCompletionRequestMessage
 
 
-def convert_to_lc_messages(messages: list[ChatCompletionRequestMessage]):
+def convert_to_lc_messages(
+    messages: list[ChatCompletionRequestMessage],
+) -> list[BaseMessage]:
     """Convert OpenAI messages to LangChain messages.
 
     This function converts a list of OpenAI-compatible message objects to their

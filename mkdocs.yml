@@ -1,0 +1,101 @@
+site_name: Langgraph OpenAI Serve
+site_dir: public
+site_url: https://github.com/ilkersigirci/langgraph-openai-serve
+site_description: Openai Compatible Langgraph Server
+site_author: İlker SIĞIRCI
+edit_uri: edit/main/docs/
+repo_url: https://ilkersigirci.github.io/langgraph-openai-serve/
+repo_name: ilkersigirci/langgraph-openai-serve
+copyright: Maintained by <a href="https://blog.ilkerflix.com">İlker SIĞIRCI</a>.
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            # Headings options
+            show_root_heading: false
+            # Members options
+            show_submodules: true
+            # Docstrings options
+            docstring_style: google
+            # docstring_options
+            docstring_section_style: table
+            line_length: 88
+            merge_init_into_class: true
+            # Signatures/annotations options
+            show_signature: true
+            show_signature_annotations: false
+            separate_signature: true
+            # Additional options
+            show_bases: true
+            show_source: true
+
+nav:
+  - Home: index.md
+  - Tutorials:
+    - Overview: tutorials/index.md
+    - Getting Started: tutorials/getting-started.md
+    - Creating Custom Graphs: tutorials/custom-graphs.md
+    - Connecting with OpenAI Clients: tutorials/openai-clients.md
+    - Makefile: tutorials/makefile.md
+  - How-To Guides:
+    - Overview: how-to-guides/index.md
+    - Docker Deployment: how-to-guides/docker.md
+    - Authentication: how-to-guides/authentication.md
+  - Explanation:
+    - Overview: explanation/index.md
+    - Architecture Overview: explanation/architecture.md
+    - LangGraph Integration: explanation/langgraph-integration.md
+    - OpenAI API Compatibility: explanation/openai-compatibility.md
+  - Reference: reference.md
+
+theme:
+  name: material
+  feature:
+    tabs: true
+  palette:
+    # Note: Using the system theme works with the insiders version
+    # https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/#automatic-light-dark-mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: astral-light
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: astral-dark
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/custom.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ilkersigirci/python-template
+    # - icon: fontawesome/brands/python
+    #   link: https://pypi.org/project/python-template/
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - tables
+  - def_list

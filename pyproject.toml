@@ -44,7 +44,13 @@ dev = [
     "ruff>=0.11.6",
     # "scalene~=1.5.21.2",
 ]
-
+doc = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.5.42",
+    "mkdocstrings[python]>=0.26.2",
+    # "mdx-include",
+    # "mkdocs-markdownextradata-plugin",
+]
 test = [
     "pytest-cov>=5.0.0",
     "pytest-rerunfailures>=14.0",
@@ -54,7 +60,7 @@ test = [
 ]
 
 [tool.uv]
-default-groups = ["dev", "test"]
+default-groups = ["dev", "doc", "test"]
 
 
 [tool.pytest.ini_options]
