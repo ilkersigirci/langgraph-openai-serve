@@ -149,4 +149,4 @@ async def run_langgraph_stream(
             ai_message_chunk: AIMessageChunk = event["data"]["chunk"]
             ai_message_content = ai_message_chunk.content
             if ai_message_content:
-                yield f"{ai_message_content} ", {"tokens": 1}
+                yield f"{ai_message_content}", {"tokens": 1}
