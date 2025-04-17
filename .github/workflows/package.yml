@@ -34,4 +34,6 @@ jobs:
         run: uv build --wheel --out-dir dist
 
       - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.UV_PUBLISH_TOKEN }}
         run: uv publish dist/*
