@@ -69,7 +69,7 @@ async def generate(state: AgentState):
     else:
         raise NotImplementedError("History is not implemented yet")
 
-    model = ChatOpenAI(streaming=True, temperature=0.05)
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
     chain = prompt | model | StrOutputParser()
 
     response = await chain.ainvoke({"question": question})

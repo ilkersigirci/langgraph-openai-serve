@@ -41,7 +41,7 @@ dependencies = [
 dev = [
     "ipykernel>=6.29.5",
     "pre-commit>=4.0.1",
-    "ruff>=0.11.5",
+    "ruff>=0.11.6",
     # "scalene~=1.5.21.2",
 ]
 

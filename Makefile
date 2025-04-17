@@ -49,14 +49,8 @@ install-no-cache: ## Installs the development version of the package without cac
 	uv sync --frozen --no-cache
 	$(MAKE) install-precommit
 
-install-test: ## Install only test version of the package
-	uv sync --frozen --only-group test
-
 install-precommit: ## Install pre-commit hooks
 	uv run pre-commit install
-
-install-lint:
-	uv pip install ruff==0.11.5
 
 update-dependencies: ## Updates the lockfiles and installs dependencies. Dependencies are updated if necessary
 	uv sync

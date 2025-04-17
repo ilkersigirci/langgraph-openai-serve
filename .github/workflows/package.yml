@@ -1,0 +1,22 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+
+      - name: Publish to PyPI
+        run: uv publish dist/*
