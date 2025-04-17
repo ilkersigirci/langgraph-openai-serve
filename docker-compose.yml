@@ -36,6 +36,7 @@ services:
         - action: rebuild
           path: ./pyproject.toml
 
+  # NOTE: Disable Title Generation: Admin Panel -> Interface -> Title Generation -> Disable
   open-webui:
     container_name: open-webui
     image: ghcr.io/open-webui/open-webui:latest
@@ -50,6 +51,7 @@ services:
       - ENABLE_OLLAMA_API=false
       - USE_OLLAMA_DOCKER=false
       - ENABLE_IMAGE_GENERATION=false
+      - ENABLE_TAGS_GENERATION=false
       #### OPENAI API ####
       - OPENAI_API_BASE_URL=http://192.168.2.12:8000/v1
       - OPENAI_API_KEY=DUMMY
