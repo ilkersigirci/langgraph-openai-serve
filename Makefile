@@ -56,7 +56,7 @@ install-precommit: ## Install pre-commit hooks
 	uv run pre-commit install
 
 install-lint:
-	uv pip install ruff==0.9.2
+	uv pip install ruff==0.11.5
 
 update-dependencies: ## Updates the lockfiles and installs dependencies. Dependencies are updated if necessary
 	uv sync
