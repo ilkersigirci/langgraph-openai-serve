@@ -4,7 +4,7 @@ import logging
 import threading
 from pathlib import Path
 
-from langgraph_openai_serve.utils.general import is_module_installed
+from demo.utils import is_module_installed
 
 PATHNAME_FIELD = "pathname"
 PATHNAME_MAX_LENGTH = 30

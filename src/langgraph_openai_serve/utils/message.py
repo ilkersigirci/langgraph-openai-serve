@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from langgraph_openai_serve.models.openai_models import ChatCompletionRequestMessage
+from langgraph_openai_serve.schemas.openai_schema import ChatCompletionRequestMessage
 
 
 def convert_to_lc_messages(messages: list[ChatCompletionRequestMessage]):

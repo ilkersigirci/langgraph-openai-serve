@@ -3,7 +3,7 @@
 import logging
 import logging.config
 
-from langgraph_openai_serve.loggers.configs.default import DEFAULT_LOGGER_CONFIG
+from demo.loggers.configs.default import DEFAULT_LOGGER_CONFIG
 
 logger = logging.getLogger(__name__)
 

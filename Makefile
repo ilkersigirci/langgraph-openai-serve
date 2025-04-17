@@ -49,14 +49,8 @@ install-no-cache: ## Installs the development version of the package without cac
 	uv sync --frozen --no-cache
 	$(MAKE) install-precommit
 
-install-test: ## Install only test version of the package
-	uv sync --frozen --only-group test
-
 install-precommit: ## Install pre-commit hooks
 	uv run pre-commit install
-
-install-lint:
-	uv pip install ruff==0.9.2
 
 update-dependencies: ## Updates the lockfiles and installs dependencies. Dependencies are updated if necessary
 	uv sync
@@ -167,5 +161,5 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 docker-build: ## Build docker image
 	docker build --tag ${DOCKER_IMAGE} --file docker/Dockerfile --target ${DOCKER_TARGET} .
 
-run-server-dev: # ## Run the server in development mode
-	uv run --module langgraph_openai_serve.app
+run-demo-server-dev: # ## Run the demo server in development mode
+	uv run --module demo.app

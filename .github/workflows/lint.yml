@@ -1,4 +1,3 @@
-#
 name: Lint the module
 
 on:
@@ -10,18 +9,14 @@ on:
       - main
 
 jobs:
-  # needs: NOTHING
   lint:
     runs-on: ubuntu-22.04
-
     steps:
       - uses: actions/checkout@v4
-      - name: Set up python environment
-        uses: ./.github/actions/setup-python
+
       - name: Lint Dependency Installation
-        run: |
-          make -s install-lint
-      - name: Lint the Project
-        run: |
-          make -s lint
-#
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: ./src/langgraph_openai_serve
+      - run: ruff format --check --diff
+      - run: ruff check
