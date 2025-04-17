@@ -1,0 +1,27 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  doc-deploy:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the Project with Test Dependencies
+        run: |
+          uv sync --frozen --only-group doc
+
+      - name: Deploy the documentation to GitHub Pages
+        run: |
+          make doc-deploy

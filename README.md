@@ -12,6 +12,10 @@ A package that provides an OpenAI-compatible API for LangGraph instances.
 ## Installation
 
 ```bash
+# Using uv
+uv add langgraph-openai-serve
+
+# Using pip
 pip install langgraph-openai-serve
 ```
 
@@ -20,11 +24,35 @@ pip install langgraph-openai-serve
 Here's a simple example of how to use LangGraph OpenAI Serve:
 
 ```python
+from langgraph_openai_serve import LangchainOpenaiApiServe
+
+# Import your LangGraph instances
+from your_graphs import simple_graph, advanced_graph
+
+graph_serve = LangchainOpenaiApiServe(
+    graphs={
+        "simple_graph": simple_graph,
+        "advanced_graph": advanced_graph
+    },
+)
+
+# Bind the OpenAI-compatible endpoints
+graph_serve.bind_openai_chat_completion(prefix="/v1")
+
+# Run the app with uvicorn
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(graph_serve.app, host="0.0.0.0", port=8000)
+```
+
+Usage with your own FastAPI app is also supported:
+
+```python
 from fastapi import FastAPI
 from langgraph_openai_serve import LangchainOpenaiApiServe
 
 # Import your LangGraph instances
-from your_graphs import simple_graph_1, advanced_graph
+from your_graphs import simple_graph, advanced_graph
 
 # Create a FastAPI app
 app = FastAPI(
@@ -36,10 +64,9 @@ app = FastAPI(
 graph_serve = LangchainOpenaiApiServe(
     app=app,
     graphs={
-        "simple_graph_1": simple_graph_1,
+        "simple_graph": simple_graph,
         "advanced_graph": advanced_graph
     },
-    default_graph="simple_graph_1"  # Optional: specify which graph to use by default
 )
 
 # Bind the OpenAI-compatible endpoints
