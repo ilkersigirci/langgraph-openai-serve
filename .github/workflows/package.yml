@@ -1,9 +1,9 @@
 name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+  release:
+    types:
+      - created
 
 jobs:
   build-and-publish:
@@ -16,7 +16,19 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Update version in pyproject.toml
-        run: sed -i "s/version = \"[^\"]*\"/version = \"${{ github.ref_name }}\"/" pyproject.toml
+        run: |
+          TAG_NAME=${{ github.event.release.tag_name }}
+
+          if [[ ! $TAG_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "The tag $TAG_NAME is not in the expected format 'v<MAJOR>.<MINOR>.<PATCH>'"
+            exit 1
+          fi
+
+          VERSION=${TAG_NAME#v}
+          echo "Extracted version: $VERSION"
+
+          # Update pyproject.toml with the version
+          sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
 
       - name: Build wheel
         run: uv build --wheel --out-dir dist
