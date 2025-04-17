@@ -9,13 +9,13 @@ Examples:
     >>> print(result["messages"][-1].content)
 
 The module contains the following components:
-- `AgentState` - TypedDict defining the state schema for the graph.
+- `AgentState` - Pydantic BaseModel defining the state schema for the graph.
 - `generate(state)` - Function that processes messages and generates responses.
 - `workflow` - The StateGraph instance defining the workflow.
 - `app` - The compiled workflow application ready for invocation.
 """
 
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -23,12 +23,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel
+
+# from langgraph.prebuilt import create_react_agent
 
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     """Type definition for the agent state.
 
-    This TypedDict defines the structure of the state that flows through the graph.
+    This BaseModel defines the structure of the state that flows through the graph.
     It uses the add_messages annotation to properly handle message accumulation.
 
     Attributes:
@@ -36,6 +39,7 @@ class AgentState(TypedDict):
     """
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    use_history: bool = False
 
 
 async def generate(state: AgentState):
@@ -50,17 +54,20 @@ async def generate(state: AgentState):
     Returns:
         A dict with a messages key containing the AI's response.
     """
-    question = state["messages"][-1].content
+    if state.use_history is False:
+        question = state.messages[-1].content
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "You are a helpful assistant called api-template. Chat with the user with friendly tone",
-            ),
-            ("human", "{question}"),
-        ]
-    )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are a helpful assistant called api-template. Chat with the user with friendly tone",
+                ),
+                ("human", "{question}"),
+            ]
+        )
+    else:
+        raise NotImplementedError("History is not implemented yet")
 
     model = ChatOpenAI(streaming=True, temperature=0.05)
     chain = prompt | model | StrOutputParser()

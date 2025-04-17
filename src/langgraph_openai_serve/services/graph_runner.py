@@ -12,7 +12,7 @@ Examples:
     ...     print(chunk)
 
 The module contains the following functions:
-- `_convert_to_lc_messages(messages)` - Converts OpenAI messages to LangChain messages.
+- `convert_to_lc_messages(messages)` - Converts OpenAI messages to LangChain messages.
 - `run_langgraph(model, messages, temperature, max_tokens, tools)` - Runs a LangGraph model with the given messages.
 - `run_langgraph_stream(model, messages, temperature, max_tokens, tools)` - Runs a LangGraph model in streaming mode.
 """
@@ -26,34 +26,10 @@ from langgraph_openai_serve.models.openai_models import (
     ChatCompletionRequestMessage,
     Tool,
 )
-from langgraph_openai_serve.utils.simple_graph import app as langgraph_app
+from langgraph_openai_serve.services.graphs.simple import app as langgraph_app
+from langgraph_openai_serve.utils.graph import convert_to_lc_messages
 
 logger = logging.getLogger(__name__)
-
-
-def _convert_to_lc_messages(messages: list[ChatCompletionRequestMessage]):
-    """Convert OpenAI messages to LangChain messages.
-
-    This function converts a list of OpenAI-compatible message objects to their
-    LangChain equivalents for use with LangGraph.
-
-    Args:
-        messages: A list of OpenAI chat completion request messages to convert.
-
-    Returns:
-        A list of LangChain message objects.
-    """
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-    lc_messages = []
-    for m in messages:
-        if m.role == "system":
-            lc_messages.append(SystemMessage(content=m.content or ""))
-        elif m.role == "user":
-            lc_messages.append(HumanMessage(content=m.content or ""))
-        elif m.role == "assistant":
-            lc_messages.append(AIMessage(content=m.content or ""))
-    return lc_messages
 
 
 async def run_langgraph(
@@ -88,7 +64,7 @@ async def run_langgraph(
     )
     start_time = time.time()
 
-    lc_messages = _convert_to_lc_messages(messages)
+    lc_messages = convert_to_lc_messages(messages)
 
     result = await langgraph_app.ainvoke({"messages": lc_messages})
     response = result["messages"][-1].content if result["messages"] else ""
@@ -133,7 +109,7 @@ async def run_langgraph_stream(
     logger.info(
         f"Running LangGraph model {model} in streaming mode with {len(messages)} messages (simple_graph)"
     )
-    lc_messages = _convert_to_lc_messages(messages)
+    lc_messages = convert_to_lc_messages(messages)
 
     streamable_node_names = ["generate"]
     inputs = {"messages": lc_messages}
