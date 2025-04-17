@@ -3,7 +3,7 @@ name = "langgraph_openai_serve"
 version = "0.0.1"
 description = "Openai Compatible Langgraph Server"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11,<3.13"
 
 authors = [
     {name = "İlker SIĞIRCI", email = "sigirci.ilker@gmail.com"},
@@ -32,7 +32,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "aiohttp>=3.11.16",
     "fastapi[standard]>=0.115.12",
     "langchain-openai>=0.3.13",
     "langgraph>=0.3.30",
