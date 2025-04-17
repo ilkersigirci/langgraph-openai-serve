@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from demo.loggers.setup import setup_logging
-from langgraph_openai_serve.graph_serve import LangchainOpenaiApiServe
-from langgraph_openai_serve.services.graphs.simple import app as simple_graph
+from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
 logger = logging.getLogger(__name__)
 

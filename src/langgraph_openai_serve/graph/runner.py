@@ -24,7 +24,7 @@ from typing import Any, Dict
 
 from langchain_core.messages import AIMessageChunk
 
-from langgraph_openai_serve.models.openai_models import (
+from langgraph_openai_serve.schemas.openai_schema import (
     ChatCompletionRequestMessage,
     Tool,
 )

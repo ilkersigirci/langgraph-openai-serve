@@ -24,9 +24,11 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from langgraph_openai_serve.routers import chat, health, models
-from langgraph_openai_serve.services.graph_runner import register_graphs
-from langgraph_openai_serve.services.graphs.simple import app as simple_graph
+from langgraph_openai_serve.api.chat import views as chat_views
+from langgraph_openai_serve.api.health import views as health_views
+from langgraph_openai_serve.api.models import views as models_views
+from langgraph_openai_serve.graph.runner import register_graphs
+from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +93,9 @@ class LangchainOpenaiApiServe:
             prefix: Optional; The URL prefix for the OpenAI-compatible endpoints. Defaults to "/v1".
         """
         # Include routers with the specified prefix
-        self.app.include_router(chat.router, prefix=prefix)
-        self.app.include_router(models.router, prefix=prefix)
-        self.app.include_router(health.router, prefix=prefix)
+        self.app.include_router(chat_views.router, prefix=prefix)
+        self.app.include_router(health_views.router, prefix=prefix)
+        self.app.include_router(models_views.router, prefix=prefix)
 
         logger.info(f"Bound OpenAI chat completion endpoints with prefix: {prefix}")
 
