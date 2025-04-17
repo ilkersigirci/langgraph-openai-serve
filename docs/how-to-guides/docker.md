@@ -209,5 +209,3 @@ services:
 After deploying your API with Docker, you might want to:
 
 - [Implement authentication](authentication.md) for your API
-- Learn about [performance optimization](performance.md)
-- Set up [custom logging](logging.md)

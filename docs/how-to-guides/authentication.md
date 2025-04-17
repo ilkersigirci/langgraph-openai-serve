@@ -271,6 +271,4 @@ app.add_middleware(APIKeyMiddleware)
 
 ## Next Steps
 
-- Learn about [performance optimization](performance.md) for your API
-- Set up [custom logging](logging.md) to track usage and errors
 - See [API reference](../reference.md) for detailed endpoint documentation

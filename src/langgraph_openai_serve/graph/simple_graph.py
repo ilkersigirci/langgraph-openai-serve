@@ -42,7 +42,7 @@ class AgentState(BaseModel):
     use_history: bool = False
 
 
-async def generate(state: AgentState):
+async def generate(state: AgentState) -> dict:
     """Generate a response to the latest message in the state.
 
     This function extracts the latest message, creates a prompt with it,

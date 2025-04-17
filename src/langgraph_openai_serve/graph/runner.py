@@ -20,7 +20,7 @@ The module contains the following functions:
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, AsyncGenerator, Dict
 
 from langchain_core.messages import AIMessageChunk
 
@@ -143,7 +143,7 @@ async def run_langgraph_stream(
     temperature: float = 0.7,
     max_tokens: int | None = None,
     tools: list[Tool] | None = None,
-):
+) -> AsyncGenerator[tuple[str, dict[str, int]], None]:
     """Run a LangGraph model in streaming mode using the compiled workflow.
 
     This function processes input messages through a LangGraph workflow and yields
