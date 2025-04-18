@@ -6,17 +6,14 @@ on:
       - created
 
 jobs:
-  build-sdist:
-    name: Build source distribution
+  extract-version:
+    name: Extract version from release tag
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Update version in pyproject.toml
+      - name: Extract version from tag
+        id: get-version
         run: |
           TAG_NAME=${{ github.event.release.tag_name }}
 
@@ -26,7 +23,24 @@ jobs:
           fi
 
           VERSION=${TAG_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
+
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    needs: [extract-version]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Update version in pyproject.toml
+        run: |
+          VERSION=${{ needs.extract-version.outputs.version }}
+          echo "Using version: $VERSION"
 
           # Update pyproject.toml with the version
           sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
@@ -44,6 +58,7 @@ jobs:
   build-wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    needs: [extract-version]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -61,6 +76,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Update version in pyproject.toml
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          echo "Using version: $VERSION"
+
+          # Update pyproject.toml with the version
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # For Windows
+            (Get-Content pyproject.toml) -replace 'version = "[^"]*"', "version = `"$VERSION`"" | Set-Content pyproject.toml
+          else
+            # For macOS and Linux
+            sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
+          fi
+
       - name: Build wheel
         run: uv build --wheel --out-dir dist
 
@@ -73,7 +102,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build-sdist, build-wheels]
+    needs: [extract-version, build-sdist, build-wheels]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
