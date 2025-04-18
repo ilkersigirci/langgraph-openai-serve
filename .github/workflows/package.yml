@@ -55,53 +55,9 @@ jobs:
           path: dist/*.tar.gz
           retention-days: 1
 
-  build-wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    needs: [extract-version]
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.11', '3.12']
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Update version in pyproject.toml
-        run: |
-          VERSION="${{ needs.extract-version.outputs.version }}"
-          echo "Using version: $VERSION"
-
-          # Update pyproject.toml with the version
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            (Get-Content pyproject.toml) -replace 'version = "[^"]*"', "version = `"$VERSION`"" | Set-Content pyproject.toml
-          else
-            # For macOS and Linux
-            sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
-          fi
-
-      - name: Build wheel
-        run: uv build --wheel --out-dir dist
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/*.whl
-          retention-days: 1
-
   publish:
     name: Publish to PyPI
-    needs: [extract-version, build-sdist, build-wheels]
+    needs: [extract-version, build-sdist]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
