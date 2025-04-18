@@ -24,4 +24,4 @@ jobs:
 
       - name: Deploy the documentation to GitHub Pages
         run: |
-          make doc-deploy
+          uv run mkdocs gh-deploy --force
