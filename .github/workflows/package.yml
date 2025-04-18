@@ -6,7 +6,8 @@ on:
       - created
 
 jobs:
-  build-and-publish:
+  build-sdist:
+    name: Build source distribution
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -30,8 +31,59 @@ jobs:
           # Update pyproject.toml with the version
           sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
 
+      - name: Build source distribution
+        run: uv build --sdist --out-dir dist
+
+      - name: Upload source distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  build-wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
       - name: Build wheel
         run: uv build --wheel --out-dir dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+          retention-days: 1
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-sdist, build-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Publish to PyPI
         env:

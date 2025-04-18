@@ -107,7 +107,7 @@ clean-test: ## Clean test related files left after test
 
 clean: clean-build clean-test ## Cleans build and test related files
 
-build: ## Make Python source distribution
+build-sdist: ## Make Python source distribution
 	$(MAKE) clean-build
 	uv build --sdist --out-dir dist
 
@@ -116,7 +116,7 @@ build-wheel: ## Make Python wheel distribution
 	uv build --wheel --out-dir dist
 
 publish: ## Builds the project and publish the package to Pypi
-	# $(MAKE) build
+	# $(MAKE) build-sdist
 	uv publish dist/*
 	# uv publish --publish-url https://test.pypi.org/legacy/ --username DUMMY --password DUMMY dist/*
 
