@@ -6,16 +6,16 @@ and provides both streaming and non-streaming interfaces for running LangGraph w
 
 Examples:
     >>> from langgraph_openai_serve.services.graph_runner import run_langgraph
-    >>> response, usage = await run_langgraph("my-model", messages)
+    >>> response, usage = await run_langgraph("my-model", messages, registry)
     >>> from langgraph_openai_serve.services.graph_runner import run_langgraph_stream
-    >>> async for chunk, metrics in run_langgraph_stream("my-model", messages):
+    >>> async for chunk, metrics in run_langgraph_stream("my-model", messages, registry):
     ...     print(chunk)
 
 The module contains the following functions:
 - `convert_to_lc_messages(messages)` - Converts OpenAI messages to LangChain messages.
-- `get_graph_registry()` - Gets the graph registry.
-- `run_langgraph(model, messages, temperature, max_tokens, tools)` - Runs a LangGraph model with the given messages.
-- `run_langgraph_stream(model, messages, temperature, max_tokens, tools)` - Runs a LangGraph model in streaming mode.
+- `register_graphs(graphs)` - Validates and returns the provided graph dictionary.
+- `run_langgraph(model, messages, graph_registry)` - Runs a LangGraph model with the given messages.
+- `run_langgraph_stream(model, messages, graph_registry)` - Runs a LangGraph model in streaming mode.
 """
 
 import logging
@@ -25,81 +25,38 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
 
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequestMessage
 from langgraph_openai_serve.core.settings import settings
-from langgraph_openai_serve.schemas.openai_schema import (
-    ChatCompletionRequestMessage,
-    Tool,
-)
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
+
+logger = logging.getLogger(__name__)
 
 if settings.ENABLE_LANGFUSE is True:
     from langfuse import Langfuse
 
     langfuse = Langfuse()
 
-logger = logging.getLogger(__name__)
 
-# Global registry for storing graphs
-GRAPH_REGISTRY = {}
-
-
-def get_graph_registry() -> Dict[str, Any]:
-    """Get the graph registry.
-
-    Returns:
-        The graph registry dictionary.
-    """
-    return GRAPH_REGISTRY
-
-
-def register_graphs(graphs: Dict[str, Any]) -> None:
-    """Register LangGraph instances in the global registry.
+def register_graphs(graphs: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and return the provided graph dictionary.
 
     Args:
         graphs: A dictionary mapping graph names to LangGraph instances.
-    """
-    GRAPH_REGISTRY.update(graphs)
-
-    logger.info(f"Registered {len(graphs)} graphs: {', '.join(graphs.keys())}")
-
-
-def get_graph_for_model(model_name: str) -> CompiledStateGraph:
-    """Get the graph for a given model name from the registry.
-
-    The model name must exactly match a registered graph name.
-
-    Args:
-        model_name: The name of the model to get the graph for.
 
     Returns:
-        The appropriate LangGraph instance.
-
-    Raises:
-        ValueError: If no graphs are registered or if the model name does not match any registered graph.
+        The validated graph dictionary.
     """
-    if not GRAPH_REGISTRY:
-        raise ValueError("No graphs registered. Please register graphs before running.")
-
-    # Check if the model name matches a registered graph name
-    if model_name in GRAPH_REGISTRY:
-        logger.info(f"Using graph '{model_name}' for model '{model_name}'")
-        return GRAPH_REGISTRY[model_name]
-
-    # If we get here, the model name doesn't match any registered graph
-    available_models = ", ".join(GRAPH_REGISTRY.keys())
-    raise ValueError(
-        f"Model '{model_name}' not found in registry. Available models: {available_models}"
-    )
+    # Potential future validation can go here
+    logger.info(f"Registered {len(graphs)} graphs: {', '.join(graphs.keys())}")
+    return graphs
 
 
 async def run_langgraph(
     model: str,
     messages: list[ChatCompletionRequestMessage],
-    temperature: float = 0.7,
-    max_tokens: int | None = None,
-    tools: list[Tool] | None = None,
+    graph_registry: GraphRegistry,
 ) -> tuple[str, dict[str, int]]:
     """Run a LangGraph model with the given messages using the compiled workflow.
 
@@ -107,16 +64,14 @@ async def run_langgraph(
     the generated response along with token usage information.
 
     Examples:
-        >>> response, usage = await run_langgraph("my-model", messages)
+        >>> response, usage = await run_langgraph("my-model", messages, registry)
         >>> print(response)
         >>> print(usage)
 
     Args:
         model: The name of the model to use, which also determines which graph to use.
         messages: A list of messages to process through the LangGraph.
-        temperature: Optional; The temperature to use for generation. Defaults to 0.7.
-        max_tokens: Optional; The maximum number of tokens to generate. Defaults to None.
-        tools: Optional; A list of tools available to the model. Defaults to None.
+        graph_registry: The GraphRegistry instance containing registered graphs.
 
     Returns:
         A tuple containing the generated response string and a dictionary of token usage information.
@@ -124,7 +79,14 @@ async def run_langgraph(
     logger.info(f"Running LangGraph model {model} with {len(messages)} messages")
     start_time = time.time()
 
-    graph = get_graph_for_model(model)
+    # Use graph_registry.get_graph to get the graph config and then the graph
+    try:
+        graph_config = graph_registry.get_graph(model)
+        graph = graph_config.graph
+    except ValueError as e:
+        logger.error(f"Error getting graph for model '{model}': {e}")
+        # Re-raise or handle appropriately, e.g., return an error response
+        raise e
 
     # Convert OpenAI messages to LangChain messages
     lc_messages = convert_to_lc_messages(messages)
@@ -149,41 +111,34 @@ async def run_langgraph(
 async def run_langgraph_stream(
     model: str,
     messages: list[ChatCompletionRequestMessage],
-    temperature: float = 0.7,
-    max_tokens: int | None = None,
-    tools: list[Tool] | None = None,
+    graph_registry: GraphRegistry,
 ) -> AsyncGenerator[tuple[str, dict[str, int]], None]:
-    """Run a LangGraph model in streaming mode using the compiled workflow.
-
-    This function processes input messages through a LangGraph workflow and yields
-    response chunks as they become available.
-
-    Examples:
-        >>> async for chunk, metrics in run_langgraph_stream("my-model", messages):
-        ...     print(chunk)
+    """Run a LangGraph model in streaming mode.
 
     Args:
-        model: The name of the model to use, which also determines which graph to use.
-        messages: A list of messages to process through the LangGraph.
-        temperature: Optional; The temperature to use for generation. Defaults to 0.7.
-        max_tokens: Optional; The maximum number of tokens to generate. Defaults to None.
-        tools: Optional; A list of tools available to the model. Defaults to None.
+        model: The name of the model (graph) to run.
+        messages: A list of OpenAI-compatible messages.
+        graph_registry: The registry containing the graph configurations.
 
     Yields:
-        Tuples containing text chunks and metrics as they are generated.
+        A tuple containing the content chunk and token usage metrics.
     """
-    logger.info(
-        f"Running LangGraph model {model} in streaming mode with {len(messages)} messages"
-    )
+    logger.info(f"Starting streaming LangGraph completion for model '{model}'")
 
-    graph = get_graph_for_model(model)
+    try:
+        graph_config = graph_registry.get_graph(model)
+        graph = graph_config.graph
+        # Use streamable_node_names from GraphConfig
+        streamable_node_names = graph_config.streamable_node_names
+    except ValueError as e:
+        logger.error(f"Error getting graph for model '{model}': {e}")
+        # Re-raise or handle appropriately, e.g., yield an error message
+        yield f"Error: {e}", {}
+        return
 
     # Convert OpenAI messages to LangChain messages
     lc_messages = convert_to_lc_messages(messages)
 
-    # Assume all nodes in the graph that might stream are called "generate"
-    # This could be made configurable in the future
-    streamable_node_names = ["generate"]
     inputs = {"messages": lc_messages}
     runnable_config = None
 

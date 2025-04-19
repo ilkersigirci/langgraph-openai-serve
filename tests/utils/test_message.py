@@ -1,5 +1,5 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph_openai_serve.schemas.openai_schema import ChatCompletionRequestMessage, Role
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequestMessage, Role
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 

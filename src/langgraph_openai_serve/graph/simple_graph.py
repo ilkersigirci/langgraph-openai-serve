@@ -39,10 +39,15 @@ class AgentState(BaseModel):
     """
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
+
+
+class SimpleConfigSchema(BaseModel):
+    """Configurable fields that are taken from the user"""
+
     use_history: bool = False
 
 
-async def generate(state: AgentState) -> dict:
+async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
     """Generate a response to the latest message in the state.
 
     This function extracts the latest message, creates a prompt with it,
@@ -54,7 +59,7 @@ async def generate(state: AgentState) -> dict:
     Returns:
         A dict with a messages key containing the AI's response.
     """
-    if state.use_history is False:
+    if config["configurable"]["use_history"] is False:
         question = state.messages[-1].content
 
         prompt = ChatPromptTemplate.from_messages(
@@ -80,7 +85,7 @@ async def generate(state: AgentState) -> dict:
 
 
 # Define the workflow graph
-workflow = StateGraph(AgentState)
+workflow = StateGraph(AgentState, config_schema=SimpleConfigSchema)
 workflow.add_node("generate", generate)
 workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")

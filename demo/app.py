@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from demo.loggers.setup import setup_logging
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
 logger = logging.getLogger(__name__)
@@ -83,12 +83,27 @@ def create_custom_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    simple_graph_no_history = simple_graph.with_config(
+        configurable={"use_history": False},
+    )
+    simple_graph_with_history = simple_graph.with_config(
+        configurable={"use_history": True},
+    )
+
+    graph_registry = GraphRegistry(
+        registry={
+            "simple-graph-no-history": GraphConfig(
+                graph=simple_graph_no_history, streamable_node_names=["generate"]
+            ),
+            "simple-graph-with-history": GraphConfig(
+                graph=simple_graph_with_history, streamable_node_names=["generate"]
+            ),
+        }
+    )
+
     graph_serve = LangchainOpenaiApiServe(
         app=app,
-        graphs={
-            "simple-graph-1": simple_graph,
-            "simple-graph-2": simple_graph,
-        },
+        graphs=graph_registry,
     )
 
     # Bind the OpenAI-compatible endpoints

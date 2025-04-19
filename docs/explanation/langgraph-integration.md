@@ -74,8 +74,8 @@ response = result["messages"][-1].content if result["messages"] else ""
 For streaming requests, the graph is executed using `.astream_events()`:
 
 ```python
-# Assume all nodes in the graph that might stream are called "generate"
-streamable_node_names = ["generate"]
+# Get streamable node names from the graph configuration
+streamable_node_names = graph_config.streamable_node_names
 inputs = {"messages": lc_messages}
 
 async for event in graph.astream_events(inputs, version="v2"):
@@ -198,7 +198,22 @@ advanced_graph = workflow.compile()
 
 ### 2. Streaming from Specific Nodes
 
-By default, LangGraph OpenAI Serve assumes that nodes named "generate" can stream content, but this can be customized.
+LangGraph OpenAI Serve allows streaming content from specific nodes within your graph. This is configured using the `streamable_node_names` attribute in the `GraphConfig` when registering your graph. Only events originating from nodes listed in `streamable_node_names` will be streamed back to the client.
+
+```python
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+
+# Assume 'my_streaming_node_graph' has a node named 'streamer'
+graph_config = GraphConfig(
+    graph=my_streaming_node_graph,
+    streamable_node_names=["streamer"] # Specify which node(s) can stream
+)
+
+registry = GraphRegistry(registry={"streaming_model": graph_config})
+
+graph_serve = LangchainOpenaiApiServe(graphs=registry)
+# ... rest of the server setup
+```
 
 ### 3. Tool/Function Calling
 
