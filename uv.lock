@@ -730,9 +730,13 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "langchain-openai" },
-    { name = "langfuse" },
     { name = "langgraph" },
     { name = "pydantic-settings" },
+]
+
+[package.optional-dependencies]
+tracing = [
+    { name = "langfuse" },
 ]
 
 [package.dev-dependencies]
@@ -757,10 +761,11 @@ test = [
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.12" },
     { name = "langchain-openai", specifier = ">=0.3.13" },
-    { name = "langfuse", specifier = ">=2.60.3" },
+    { name = "langfuse", marker = "extra == 'tracing'", specifier = ">=2.60.3" },
     { name = "langgraph", specifier = ">=0.3.30" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
 ]
+provides-extras = ["tracing"]
 
 [package.metadata.requires-dev]
 dev = [

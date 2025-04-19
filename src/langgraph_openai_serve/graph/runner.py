@@ -25,7 +25,6 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import RunnableConfig
-from langfuse import Langfuse
 from langgraph.graph.state import CompiledStateGraph
 
 from langgraph_openai_serve.core.settings import settings
@@ -35,8 +34,12 @@ from langgraph_openai_serve.schemas.openai_schema import (
 )
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
+if settings.ENABLE_LANGFUSE is True:
+    from langfuse import Langfuse
+
+    langfuse = Langfuse()
+
 logger = logging.getLogger(__name__)
-langfuse = Langfuse()
 
 # Global registry for storing graphs
 GRAPH_REGISTRY = {}
