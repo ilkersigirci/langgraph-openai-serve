@@ -21,14 +21,23 @@ The module contains the following functions:
 import logging
 import time
 from typing import Any, AsyncGenerator, Dict
+from uuid import uuid4
 
 from langchain_core.messages import AIMessageChunk
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
 
+from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.schemas.openai_schema import (
     ChatCompletionRequestMessage,
     Tool,
 )
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
+
+if settings.ENABLE_LANGFUSE is True:
+    from langfuse import Langfuse
+
+    langfuse = Langfuse()
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +65,7 @@ def register_graphs(graphs: Dict[str, Any]) -> None:
     logger.info(f"Registered {len(graphs)} graphs: {', '.join(graphs.keys())}")
 
 
-def get_graph_for_model(model_name: str) -> Any:
+def get_graph_for_model(model_name: str) -> CompiledStateGraph:
     """Get the graph for a given model name from the registry.
 
     The model name must exactly match a registered graph name.
@@ -176,8 +185,17 @@ async def run_langgraph_stream(
     # This could be made configurable in the future
     streamable_node_names = ["generate"]
     inputs = {"messages": lc_messages}
+    runnable_config = None
 
-    async for event in graph.astream_events(inputs, version="v2"):
+    if settings.ENABLE_LANGFUSE is True:
+        trace = langfuse.trace(user_id="isbank_user", session_id=str(uuid4()))
+        handler = trace.get_langchain_handler(update_parent=True)
+
+        runnable_config = RunnableConfig(callbacks=[handler])
+
+    async for event in graph.astream_events(
+        inputs, config=runnable_config, version="v2"
+    ):
         event_kind = event["event"]
         langgraph_node = event["metadata"].get("langgraph_node", None)
 
