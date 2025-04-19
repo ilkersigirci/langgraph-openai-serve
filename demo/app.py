@@ -83,20 +83,21 @@ def create_custom_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    simple_graph_no_history = simple_graph.with_config(
-        configurable={"use_history": False},
-    )
     simple_graph_with_history = simple_graph.with_config(
         configurable={"use_history": True},
     )
 
+    simple_graph_no_history = simple_graph.with_config(
+        configurable={"use_history": False},
+    )
+
     graph_registry = GraphRegistry(
         registry={
-            "simple-graph-no-history": GraphConfig(
-                graph=simple_graph_no_history, streamable_node_names=["generate"]
-            ),
             "simple-graph-with-history": GraphConfig(
                 graph=simple_graph_with_history, streamable_node_names=["generate"]
+            ),
+            "simple-graph-no-history": GraphConfig(
+                graph=simple_graph_no_history, streamable_node_names=["generate"]
             ),
         }
     )
