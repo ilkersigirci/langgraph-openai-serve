@@ -85,7 +85,6 @@ async def run_langgraph(
         graph = graph_config.graph
     except ValueError as e:
         logger.error(f"Error getting graph for model '{model}': {e}")
-        # Re-raise or handle appropriately, e.g., return an error response
         raise e
 
     # Convert OpenAI messages to LangChain messages
@@ -128,13 +127,10 @@ async def run_langgraph_stream(
     try:
         graph_config = graph_registry.get_graph(model)
         graph = graph_config.graph
-        # Use streamable_node_names from GraphConfig
         streamable_node_names = graph_config.streamable_node_names
     except ValueError as e:
         logger.error(f"Error getting graph for model '{model}': {e}")
-        # Re-raise or handle appropriately, e.g., yield an error message
-        yield f"Error: {e}", {}
-        return
+        raise e
 
     # Convert OpenAI messages to LangChain messages
     lc_messages = convert_to_lc_messages(messages)

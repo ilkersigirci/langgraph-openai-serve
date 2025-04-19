@@ -59,25 +59,27 @@ async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
     Returns:
         A dict with a messages key containing the AI's response.
     """
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
+
+    system_message = (
+        "system",
+        "You are a helpful assistant called Langgraph Openai Serve. Chat with the user with friendly tone",
+    )
+
     if config["configurable"]["use_history"] is False:
         question = state.messages[-1].content
 
         prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful assistant called api-template. Chat with the user with friendly tone",
-                ),
-                ("human", "{question}"),
-            ]
+            [system_message, ("human", "{question}")]
         )
+
+        chain = prompt | model | StrOutputParser()
+        response = await chain.ainvoke({"question": question})
     else:
-        raise NotImplementedError("History is not implemented yet")
-
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
-    chain = prompt | model | StrOutputParser()
-
-    response = await chain.ainvoke({"question": question})
+        messages = state.messages
+        prompt = ChatPromptTemplate.from_messages([system_message, *messages])
+        chain = prompt | model | StrOutputParser()
+        response = await chain.ainvoke({})
 
     return {
         "messages": [AIMessage(content=response)],
