@@ -31,17 +31,22 @@ Here's a simple example to help you get started. In this example, we'll create a
 Create a new file called `server.py` with the following content:
 
 ```python
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 
 # Import your LangGraph instances or use the default simple graph
 # that comes with the package
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "simple_graph": GraphConfig(graph=simple_graph),
+    }
+)
+
 # Create a server instance with your graph(s)
 graph_serve = LangchainOpenaiApiServe(
-    graphs={
-        "simple_graph": simple_graph,
-    },
+    graphs=graph_registry,
     configure_cors=True,  # Enable CORS for browser clients
 )
 
@@ -107,7 +112,7 @@ If you already have a FastAPI application, you can integrate LangGraph OpenAI Se
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
 # Create a FastAPI app
@@ -117,12 +122,17 @@ app = FastAPI(
     description="API that includes LangGraph capabilities",
 )
 
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "simple_graph": GraphConfig(graph=simple_graph),
+    }
+)
+
 # Create the LangchainOpenaiApiServe instance
 graph_serve = LangchainOpenaiApiServe(
     app=app,  # Pass in your existing FastAPI app
-    graphs={
-        "simple_graph": simple_graph,
-    },
+    graphs=graph_registry,
 )
 
 # Bind the OpenAI-compatible endpoints

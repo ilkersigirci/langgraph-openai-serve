@@ -58,13 +58,21 @@ custom_graph = workflow.compile()
 After creating your custom graph, you can expose it through the OpenAI-compatible API:
 
 ```python
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
+
+# Assume custom_graph is your compiled LangGraph instance
+# from my_custom_graph_module import custom_graph
+
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "my-custom-graph": GraphConfig(graph=custom_graph),
+    }
+)
 
 # Create a server instance with your custom graph
 graph_serve = LangchainOpenaiApiServe(
-    graphs={
-        "my-custom-graph": custom_graph,
-    },
+    graphs=graph_registry,
 )
 
 # Bind the OpenAI-compatible endpoints

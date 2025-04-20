@@ -21,15 +21,23 @@ LangGraph OpenAI Serve acts as a bridge between the OpenAI API interface and you
 LangGraph workflows are registered with a unique name that will be used as the "model" name in the OpenAI API:
 
 ```python
-graph_serve = LangchainOpenaiApiServe(
-    graphs={
-        "simple_graph": simple_graph,  # A compiled LangGraph workflow
-        "advanced_graph": advanced_graph  # Another compiled LangGraph workflow
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
+
+# Assume simple_graph and advanced_graph are compiled LangGraph workflows
+# from your_graphs import simple_graph, advanced_graph
+
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "simple_graph": GraphConfig(graph=simple_graph),  # A compiled LangGraph workflow
+        "advanced_graph": GraphConfig(graph=advanced_graph)  # Another compiled LangGraph workflow
     }
 )
-```
 
-These graph instances are stored in a registry that maps model names to the corresponding graph.
+graph_serve = LangchainOpenaiApiServe(
+    graphs=graph_registry
+)
+```
 
 ### 2. Message Conversion
 
