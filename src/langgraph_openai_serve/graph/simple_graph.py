@@ -39,10 +39,15 @@ class AgentState(BaseModel):
     """
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
+
+
+class SimpleConfigSchema(BaseModel):
+    """Configurable fields that are taken from the user"""
+
     use_history: bool = False
 
 
-async def generate(state: AgentState) -> dict:
+async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
     """Generate a response to the latest message in the state.
 
     This function extracts the latest message, creates a prompt with it,
@@ -54,25 +59,27 @@ async def generate(state: AgentState) -> dict:
     Returns:
         A dict with a messages key containing the AI's response.
     """
-    if state.use_history is False:
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
+
+    system_message = (
+        "system",
+        "You are a helpful assistant called Langgraph Openai Serve. Chat with the user with friendly tone",
+    )
+
+    if config["configurable"]["use_history"] is False:
         question = state.messages[-1].content
 
         prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful assistant called api-template. Chat with the user with friendly tone",
-                ),
-                ("human", "{question}"),
-            ]
+            [system_message, ("human", "{question}")]
         )
+
+        chain = prompt | model | StrOutputParser()
+        response = await chain.ainvoke({"question": question})
     else:
-        raise NotImplementedError("History is not implemented yet")
-
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
-    chain = prompt | model | StrOutputParser()
-
-    response = await chain.ainvoke({"question": question})
+        messages = state.messages
+        prompt = ChatPromptTemplate.from_messages([system_message, *messages])
+        chain = prompt | model | StrOutputParser()
+        response = await chain.ainvoke({})
 
     return {
         "messages": [AIMessage(content=response)],
@@ -80,7 +87,7 @@ async def generate(state: AgentState) -> dict:
 
 
 # Define the workflow graph
-workflow = StateGraph(AgentState)
+workflow = StateGraph(AgentState, config_schema=SimpleConfigSchema)
 workflow.add_node("generate", generate)
 workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")

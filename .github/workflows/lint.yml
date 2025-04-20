@@ -3,10 +3,12 @@ name: Lint the module
 on:
   push:
     branches:
-      - main
+      # - main
+      - DUMMY-handled-by-precommit-ci
   pull_request:
     branches:
-      - main
+      # - main
+      - DUMMY-handled-by-precommit-ci
 
 jobs:
   lint:

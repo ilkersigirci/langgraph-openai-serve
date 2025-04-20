@@ -24,16 +24,21 @@ pip install langgraph-openai-serve
 Here's a simple example of how to use LangGraph OpenAI Serve:
 
 ```python
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 
 # Import your LangGraph instances
 from your_graphs import simple_graph, advanced_graph
 
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "simple_graph": GraphConfig(graph=simple_graph),
+        "advanced_graph": GraphConfig(graph=advanced_graph)
+    }
+)
+
 graph_serve = LangchainOpenaiApiServe(
-    graphs={
-        "simple_graph": simple_graph,
-        "advanced_graph": advanced_graph
-    },
+    graphs=graph_registry,
 )
 
 # Bind the OpenAI-compatible endpoints
@@ -49,7 +54,7 @@ Usage with your own FastAPI app is also supported:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 
 # Import your LangGraph instances
 from your_graphs import simple_graph, advanced_graph
@@ -61,12 +66,17 @@ app = FastAPI(
     description="OpenAI API exposing LangGraph agents",
 )
 
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "simple_graph": GraphConfig(graph=simple_graph),
+        "advanced_graph": GraphConfig(graph=advanced_graph)
+    }
+)
+
 graph_serve = LangchainOpenaiApiServe(
     app=app,
-    graphs={
-        "simple_graph": simple_graph,
-        "advanced_graph": advanced_graph
-    },
+    graphs=graph_registry,
 )
 
 # Bind the OpenAI-compatible endpoints

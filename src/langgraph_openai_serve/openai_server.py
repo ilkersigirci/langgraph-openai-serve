@@ -20,14 +20,14 @@ Examples:
 """
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 
+# Reorder imports
 from langgraph_openai_serve.api.chat import views as chat_views
 from langgraph_openai_serve.api.health import views as health_views
 from langgraph_openai_serve.api.models import views as models_views
-from langgraph_openai_serve.graph.runner import register_graphs
+from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
 logger = logging.getLogger(__name__)
@@ -41,24 +41,24 @@ class LangchainOpenaiApiServe:
 
     Attributes:
         app: The FastAPI application to attach routers to.
-        graphs: A dictionary mapping graph names to LangGraph instances.
+        graphs: A GraphRegistry instance containing the graphs to serve.
     """
 
     def __init__(
         self,
         app: FastAPI | None = None,
-        graphs: dict[str, Any] | None = None,
+        graphs: GraphRegistry | None = None,
         configure_cors: bool = False,
     ):
-        """Initialize the server with a FastAPI app (optional) and LangGraph instances.(optional)
+        """Initialize the server with a FastAPI app (optional) and a GraphRegistry instance (optional).
 
         Args:
             app: The FastAPI application to attach routers to. If None, a new FastAPI app will be created.
-            graphs: A dictionary mapping graph names to LangGraph instances. If None, a default simple graph will be used.
+            graphs: A GraphRegistry instance containing the graphs to serve.
+                    If None, a default simple graph will be used.
             configure_cors: Optional; Whether to configure CORS for the FastAPI application.
         """
         self.app = app
-        self.graphs = graphs
 
         if app is None:
             app = FastAPI(
@@ -66,25 +66,35 @@ class LangchainOpenaiApiServe:
                 description="An OpenAI-compatible API for LangGraph",
                 version="0.0.1",
             )
+        self.app = app
 
         if graphs is None:
             logger.info("Graphs not provided, using default simple graph")
-            graphs = {
-                "simple-graph": simple_graph,
-            }
+            default_graph_config = GraphConfig(graph=simple_graph)
+            self.graph_registry = GraphRegistry(
+                registry={"simple-graph": default_graph_config}
+            )
+        elif isinstance(graphs, GraphRegistry):
+            logger.info("Using provided GraphRegistry instance")
+            self.graph_registry = graphs
+        else:
+            raise TypeError(
+                "Invalid type for graphs parameter. Expected GraphRegistry or None."
+            )
 
-        self.app = app
-        self.graphs = graphs
+        # Attach the registry to the app's state for dependency injection
+        self.app.state.graph_registry = self.graph_registry
 
         # Configure CORS if requested
         if configure_cors:
             self._configure_cors()
 
-        # Register the graphs with the graph runner (now uses global variable)
-        register_graphs(self.graphs)
-
-        logger.info(f"Initialized LangchainOpenaiApiServe with {len(graphs)} graphs")
-        logger.info(f"Available graphs: {', '.join(graphs.keys())}")
+        logger.info(
+            f"Initialized LangchainOpenaiApiServe with {len(self.graph_registry.registry)} graphs"
+        )
+        logger.info(
+            f"Available graphs: {', '.join(self.graph_registry.get_graph_names())}"
+        )
 
     def bind_openai_chat_completion(self, prefix: str = "/v1"):
         """Bind OpenAI-compatible chat completion endpoints to the FastAPI app.
@@ -92,7 +102,6 @@ class LangchainOpenaiApiServe:
         Args:
             prefix: Optional; The URL prefix for the OpenAI-compatible endpoints. Defaults to "/v1".
         """
-        # Include routers with the specified prefix
         self.app.include_router(chat_views.router, prefix=prefix)
         self.app.include_router(health_views.router, prefix=prefix)
         self.app.include_router(models_views.router, prefix=prefix)

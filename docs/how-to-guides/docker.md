@@ -86,7 +86,7 @@ Create an `app.py` file with your custom LangGraph OpenAI Serve configuration:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 
 # Import your custom graphs
 from my_graphs import graph1, graph2
@@ -97,13 +97,18 @@ app = FastAPI(
     description="Custom LangGraph API with OpenAI compatibility",
 )
 
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "graph1": GraphConfig(graph=graph1),
+        "graph2": GraphConfig(graph=graph2),
+    }
+)
+
 # Initialize the LangGraph OpenAI Serve
 graph_serve = LangchainOpenaiApiServe(
     app=app,
-    graphs={
-        "graph1": graph1,
-        "graph2": graph2,
-    },
+    graphs=graph_registry,
     configure_cors=True,
 )
 

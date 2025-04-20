@@ -5,12 +5,12 @@ This module provides a service for handling OpenAI model information.
 
 import logging
 
-from langgraph_openai_serve.graph.runner import get_graph_registry
-from langgraph_openai_serve.schemas.openai_schema import (
+from langgraph_openai_serve.api.models.schemas import (
     Model,
     ModelList,
     ModelPermission,
 )
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 class ModelService:
     """Service for handling model operations."""
 
-    def get_models(self) -> ModelList:
+    def get_models(self, graph_registry: GraphRegistry) -> ModelList:
         """Get a list of available models.
+
+        Args:
+            graph_registry: The GraphRegistry containing registered graphs.
 
         Returns:
             A list of models in OpenAI compatible format.
@@ -38,19 +41,17 @@ class ModelService:
             is_blocking=False,
         )
 
-        graph_registry = get_graph_registry()
-
         models = [
             Model(
-                id=graph_name,
+                id=name,
                 created=1743771509,
                 owned_by="langgraph-openai-serve",
-                root=f"{graph_name}-root",
+                root=f"{name}-root",
                 parent=None,
                 max_model_len=16000,
                 permission=[permission],
             )
-            for graph_name in graph_registry
+            for name in graph_registry.registry
         ]
 
         logger.info(f"Retrieved {len(models)} available models")

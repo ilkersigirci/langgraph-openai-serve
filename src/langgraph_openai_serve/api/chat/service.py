@@ -10,11 +10,7 @@ import time
 import uuid
 from typing import AsyncIterator
 
-from langgraph_openai_serve.graph.runner import (
-    run_langgraph,
-    run_langgraph_stream,
-)
-from langgraph_openai_serve.schemas.openai_schema import (
+from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
@@ -25,6 +21,11 @@ from langgraph_openai_serve.schemas.openai_schema import (
     Role,
     UsageInfo,
 )
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.runner import (
+    run_langgraph,
+    run_langgraph_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,13 @@ class ChatCompletionService:
     """Service for handling chat completions."""
 
     async def generate_completion(
-        self, chat_request: ChatCompletionRequest
+        self, chat_request: ChatCompletionRequest, graph_registry: GraphRegistry
     ) -> ChatCompletionResponse:
         """Generate a chat completion.
 
         Args:
             chat_request: The chat completion request.
+            graph_registry: The GraphRegistry object containing registered graphs.
 
         Returns:
             A chat completion response.
@@ -52,9 +54,7 @@ class ChatCompletionService:
         completion, tokens_used = await run_langgraph(
             model=chat_request.model,
             messages=chat_request.messages,
-            temperature=chat_request.temperature,
-            max_tokens=chat_request.max_tokens,
-            tools=chat_request.tools,
+            graph_registry=graph_registry,
         )
 
         # Build the response
@@ -87,12 +87,13 @@ class ChatCompletionService:
         return response
 
     async def stream_completion(
-        self, chat_request: ChatCompletionRequest
+        self, chat_request: ChatCompletionRequest, graph_registry: GraphRegistry
     ) -> AsyncIterator[str]:
         """Stream a chat completion response.
 
         Args:
             chat_request: The chat completion request.
+            graph_registry: The GraphRegistry object containing registered graphs.
 
         Yields:
             Chunks of the chat completion response.
@@ -124,9 +125,7 @@ class ChatCompletionService:
             async for chunk, _ in run_langgraph_stream(
                 model=chat_request.model,
                 messages=chat_request.messages,
-                temperature=chat_request.temperature,
-                max_tokens=chat_request.max_tokens,
-                tools=chat_request.tools,
+                graph_registry=graph_registry,
             ):
                 # Send the content chunk
                 yield self._format_stream_chunk(

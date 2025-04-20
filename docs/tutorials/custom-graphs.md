@@ -58,13 +58,21 @@ custom_graph = workflow.compile()
 After creating your custom graph, you can expose it through the OpenAI-compatible API:
 
 ```python
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
+
+# Assume custom_graph is your compiled LangGraph instance
+# from my_custom_graph_module import custom_graph
+
+# Create a GraphRegistry
+graph_registry = GraphRegistry(
+    registry={
+        "my-custom-graph": GraphConfig(graph=custom_graph),
+    }
+)
 
 # Create a server instance with your custom graph
 graph_serve = LangchainOpenaiApiServe(
-    graphs={
-        "my-custom-graph": custom_graph,
-    },
+    graphs=graph_registry,
 )
 
 # Bind the OpenAI-compatible endpoints
@@ -166,7 +174,7 @@ When creating graphs for use with LangGraph OpenAI Serve, consider the following
 1. **State Management**: Design your state schema carefully to include all necessary information.
 2. **Error Handling**: Add error handling to your node functions to prevent crashes.
 3. **Naming Conventions**: Use clear, descriptive names for graphs and nodes.
-4. **Streaming Support**: For better user experience, design your graph to support streaming responses when possible.
+4. **Streaming Support**: For better user experience, design your graph to support streaming responses when possible. Configure which nodes should stream by setting the `streamable_node_names` list in the `GraphConfig` when registering your graph.
 5. **Documentation**: Document what each graph does to make it easier for API users to choose the right model.
 
 ## Next Steps
