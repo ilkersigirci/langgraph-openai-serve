@@ -28,7 +28,7 @@ async def create_chat_completion(
     chat_request: ChatCompletionRequest,
     service: Annotated[ChatCompletionService, Depends(ChatCompletionService)],
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
-):
+) -> StreamingResponse | ChatCompletionResponse:
     """Create a chat completion.
 
     This endpoint is compatible with OpenAI's chat completion API.
