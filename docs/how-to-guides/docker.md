@@ -100,8 +100,8 @@ app = FastAPI(
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "graph1": GraphConfig(graph=graph1),
-        "graph2": GraphConfig(graph=graph2),
+        "graph1": GraphConfig(graph=graph1, streamable_node_names=["generate"]),
+        "graph2": GraphConfig(graph=graph2, streamable_node_names=["generate"]),
     }
 )
 

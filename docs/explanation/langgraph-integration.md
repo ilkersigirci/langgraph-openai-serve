@@ -29,8 +29,8 @@ from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, Graph
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph),  # A compiled LangGraph workflow
-        "advanced_graph": GraphConfig(graph=advanced_graph)  # Another compiled LangGraph workflow
+        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),  # A compiled LangGraph workflow
+        "advanced_graph": GraphConfig(graph=advanced_graph, streamable_node_names=["generate"]  # Another compiled LangGraph workflow
     }
 )
 

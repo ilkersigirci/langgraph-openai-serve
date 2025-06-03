@@ -29,11 +29,24 @@ from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, Graph
 # Import your LangGraph instances
 from your_graphs import simple_graph, advanced_graph
 
+# You can configure your graphs with your desired configurations.
+simple_graph_with_history = simple_graph.with_config(
+    configurable={"use_history": True},
+)
+simple_graph_no_history = simple_graph.with_config(
+    configurable={"use_history": False},
+)
+
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph),
-        "advanced_graph": GraphConfig(graph=advanced_graph)
+        "simple-graph-with-history": GraphConfig(
+            graph=simple_graph_with_history, streamable_node_names=["generate"]
+        ),
+        "simple-graph-no-history": GraphConfig(
+            graph=simple_graph_no_history, streamable_node_names=["generate"]
+            ),
+        "advanced_graph": GraphConfig(graph=advanced_graph, streamable_node_names=["generate"])
     }
 )
 
@@ -69,8 +82,8 @@ app = FastAPI(
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph),
-        "advanced_graph": GraphConfig(graph=advanced_graph)
+        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
+        "advanced_graph": GraphConfig(graph=advanced_graph, streamable_node_names=["generate"])
     }
 )
 

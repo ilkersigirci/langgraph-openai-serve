@@ -40,7 +40,7 @@ from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph),
+        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
     }
 )
 
@@ -125,7 +125,7 @@ app = FastAPI(
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph),
+        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
     }
 )
 

@@ -66,7 +66,7 @@ from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, Graph
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "my-custom-graph": GraphConfig(graph=custom_graph),
+        "my-custom-graph": GraphConfig(graph=custom_graph, streamable_node_names=["generate"]),
     }
 )
 
