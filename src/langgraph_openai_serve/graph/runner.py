@@ -82,7 +82,7 @@ async def run_langgraph(
     # Use graph_registry.get_graph to get the graph config and then the graph
     try:
         graph_config = graph_registry.get_graph(model)
-        graph = graph_config.graph
+        graph = await graph_config.resolve_graph()
     except ValueError as e:
         logger.error(f"Error getting graph for model '{model}': {e}")
         raise e
@@ -126,7 +126,7 @@ async def run_langgraph_stream(
 
     try:
         graph_config = graph_registry.get_graph(model)
-        graph = graph_config.graph
+        graph = await graph_config.resolve_graph()
         streamable_node_names = graph_config.streamable_node_names
     except ValueError as e:
         logger.error(f"Error getting graph for model '{model}': {e}")

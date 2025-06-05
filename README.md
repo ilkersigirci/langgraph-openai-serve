@@ -27,7 +27,15 @@ Here's a simple example of how to use LangGraph OpenAI Serve:
 from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
 
 # Import your LangGraph instances
-from your_graphs import simple_graph, advanced_graph
+from your_graphs import simple_graph
+
+async def advanced_graph():
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+    from langgraph.prebuilt import create_react_agent
+
+    tools = await MultiServerMCPClient().get_tools()
+    graph = create_react_agent(model="openai:gpt-4.1", tools=tools)
+    return graph
 
 # You can configure your graphs with your desired configurations.
 simple_graph_with_history = simple_graph.with_config(

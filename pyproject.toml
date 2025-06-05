@@ -3,7 +3,7 @@ name = "langgraph_openai_serve"
 version = "0.0.1"
 description = "Openai Compatible Langgraph Server"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 
 authors = [
     {name = "İlker SIĞIRCI", email = "sigirci.ilker@gmail.com"},
