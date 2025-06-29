@@ -86,7 +86,7 @@ class RemoveColorFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         """Filter function."""
         is_module_installed(module_name="click", throw_error=True)
-        import click
+        import click  # noqa: PLC0415
 
         if record and record.msg and isinstance(record.msg, str):
             record.msg = click.unstyle(record.msg)
