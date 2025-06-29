@@ -2,16 +2,16 @@ import inspect
 from typing import Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
-from langgraph.graph.graph import CompiledGraph
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
 
 class GraphConfig(BaseModel):
-    graph: CompiledGraph | Callable[[], Awaitable[CompiledGraph]]
+    graph: CompiledStateGraph | Callable[[], Awaitable[CompiledStateGraph]]
     streamable_node_names: list[str]
     runtime_callbacks: list[Callbacks] | None = None
 
-    async def resolve_graph(self) -> CompiledGraph:
+    async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, handling both direct instances and async callables."""
         if inspect.iscoroutinefunction(self.graph):
             return await self.graph()
