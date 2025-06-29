@@ -48,7 +48,7 @@ tracing = [
 dev = [
     "ipykernel>=6.29.5",
     "pre-commit>=4.0.1",
-    "ruff>=0.11.6",
+    "ruff>=0.12.1",
     # "scalene~=1.5.21.2",
 ]
 doc = [

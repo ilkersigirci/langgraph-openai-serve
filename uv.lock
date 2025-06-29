@@ -910,7 +910,7 @@ provides-extras = ["tracing"]
 dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "pre-commit", specifier = ">=4.0.1" },
-    { name = "ruff", specifier = ">=0.11.6" },
+    { name = "ruff", specifier = ">=0.12.1" },
 ]
 doc = [
     { name = "mkdocs", specifier = ">=1.6.1" },
