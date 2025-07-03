@@ -139,7 +139,7 @@ async def run_langgraph_stream(
     runnable_config = None
 
     if settings.ENABLE_LANGFUSE is True:
-        trace = langfuse.trace(user_id="isbank_user", session_id=str(uuid4()))
+        trace = langfuse.trace(user_id="lgos_user", session_id=str(uuid4()))
         handler = trace.get_langchain_handler(update_parent=True)
 
         runnable_config = RunnableConfig(callbacks=[handler])
