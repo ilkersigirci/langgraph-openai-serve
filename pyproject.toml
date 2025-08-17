@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tracing = [
-    "langfuse>=2.60.3,<3.0.0",
+    "langfuse>=3.0.0",
 ]
 
 [dependency-groups]
