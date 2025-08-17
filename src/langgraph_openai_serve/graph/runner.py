@@ -21,7 +21,6 @@ The module contains the following functions:
 import logging
 import time
 from typing import Any, AsyncGenerator, Dict
-from uuid import uuid4
 
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import RunnableConfig
@@ -34,9 +33,9 @@ from langgraph_openai_serve.utils.message import convert_to_lc_messages
 logger = logging.getLogger(__name__)
 
 if settings.ENABLE_LANGFUSE is True:
-    from langfuse import Langfuse
+    from langfuse.langchain import CallbackHandler
 
-    langfuse = Langfuse()
+    langfuse_handler = CallbackHandler()
 
 
 def register_graphs(graphs: Dict[str, Any]) -> Dict[str, Any]:
@@ -132,17 +131,19 @@ async def run_langgraph_stream(
         logger.error(f"Error getting graph for model '{model}': {e}")
         raise e
 
-    # Convert OpenAI messages to LangChain messages
     lc_messages = convert_to_lc_messages(messages)
 
     inputs = {"messages": lc_messages}
-    runnable_config = None
+
+    callbacks = graph_config.runtime_callbacks
 
     if settings.ENABLE_LANGFUSE is True:
-        trace = langfuse.trace(user_id="lgos_user", session_id=str(uuid4()))
-        handler = trace.get_langchain_handler(update_parent=True)
+        if callbacks is None:
+            callbacks = []
 
-        runnable_config = RunnableConfig(callbacks=[handler])
+        callbacks.append(langfuse_handler)
+
+    runnable_config = RunnableConfig(callbacks=[callbacks]) if callbacks else None
 
     async for event in graph.astream_events(
         inputs, config=runnable_config, version="v2"
