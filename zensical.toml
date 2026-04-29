@@ -1,11 +1,11 @@
 [project]
 site_name = "Langgraph OpenAI Serve"
 site_dir = "public"
-site_url = "https://github.com/ilkersigirci/langgraph-openai-serve"
+site_url = "https://ilkersigirci.github.io/langgraph-openai-serve/"
 site_description = "Openai Compatible Langgraph Server"
 site_author = "İlker SIĞIRCI"
 edit_uri = "edit/main/docs/"
-repo_url = "https://ilkersigirci.github.io/langgraph-openai-serve/"
+repo_url = "https://github.com/ilkersigirci/langgraph-openai-serve"
 repo_name = "ilkersigirci/langgraph-openai-serve"
 copyright = "Maintained by <a href=\"https://blog.ilkerflix.com\">İlker SIĞIRCI</a>."
 docs_dir = "docs"
