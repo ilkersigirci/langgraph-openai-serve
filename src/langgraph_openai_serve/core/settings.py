@@ -39,6 +39,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    OPENAI_BASE_URL: CustomHttpUrlStr = "https://api.openai.com/v1"
+    OPENAI_API_KEY: str = "DUMMY"
+    OPENAI_MODEL: str = "gpt-5.4-mini"
+
     ENABLE_LANGFUSE: bool = False
 
     @field_validator("ENABLE_LANGFUSE")
