@@ -15,7 +15,7 @@ AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
 
 CustomHttpUrlStr = Annotated[
     str,
-    PlainValidator(lambda x: AnyHttpUrlAdapter.validate_strings(x)),
+    PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda x: str(x).rstrip("/")),
 ]
 
