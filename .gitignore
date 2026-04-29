@@ -266,6 +266,8 @@ cython_debug/
 # Custom ignores
 
 /.ruff_cache/
+
+# zensical related
 public
 
 # Scalene related

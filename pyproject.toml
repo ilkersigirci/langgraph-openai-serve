@@ -52,11 +52,8 @@ dev = [
     # "scalene~=1.5.21.2",
 ]
 doc = [
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.5.42",
-    "mkdocstrings[python]>=0.26.2",
-    # "mdx-include",
-    # "mkdocs-markdownextradata-plugin",
+    "zensical>=0.0.11",
+    "mkdocstrings-python>=2.0.0",
 ]
 test = [
     "pytest-cov>=5.0.0",
