@@ -12,8 +12,8 @@ jobs:
   test_matrix:
     strategy:
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
-    runs-on: ubuntu-22.04
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +35,7 @@ jobs:
           make test-all-parallel
 
   # test-single:
-  #   runs-on: ubuntu-22.04
+  #   runs-on: ubuntu-26.04
   #   steps:
   #     - uses: actions/checkout@v4
 
