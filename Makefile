@@ -50,7 +50,7 @@ install-no-cache: ## Installs the development version of the package without cac
 	$(MAKE) install-precommit
 
 install-precommit: ## Install pre-commit hooks
-	uv run pre-commit install
+	uv run prek install
 
 update-dependencies: ## Updates the lockfiles and installs dependencies. Dependencies are updated if necessary
 	uv sync
@@ -128,14 +128,14 @@ doc-serve: ## Build and serve the documentation
 
 pre-commit-one: ## Run pre-commit with specific files
 	uv lock --locked
-	uv run pre-commit run --files ${PRECOMMIT_FILE_PATHS}
+	uv run prek run --files ${PRECOMMIT_FILE_PATHS}
 
 pre-commit: ## Run pre-commit for all package files
 	uv lock --locked
-	uv run pre-commit run --all-files
+	uv run prek run --all-files
 
 pre-commit-clean: ## Clean pre-commit cache
-	uv run pre-commit clean
+	uv run prek clean
 
 lint: ## Lint code with ruff
 	uv lock --locked
