@@ -13,7 +13,7 @@
       },
     ],
   },
-  "python.languageServer": "Pylance",
+  "python.languageServer": "None",
   // "python.analysis.autoImportCompletions": true,
   "ruff.nativeServer": "on",
   "autoDocstring.generateDocstringOnEnter": true,
