@@ -6,22 +6,24 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
-  doc-deploy:
-    runs-on: ubuntu-22.04
-
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install the Project with Test Dependencies
-        run: |
-          uv sync --frozen --only-group doc
-
-      - name: Deploy the documentation to GitHub Pages
-        run: |
-          uv run mkdocs gh-deploy --force
+      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen --only-group doc
+      - run: uv run zensical build --clean
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+      - uses: actions/deploy-pages@v4
+        id: deployment

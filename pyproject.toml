@@ -3,7 +3,9 @@ name = "langgraph_openai_serve"
 version = "0.0.1"
 description = "Openai Compatible Langgraph Server"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
+license = "MIT"
+license-files = ["LICENSE"]
 
 authors = [
     {name = "İlker SIĞIRCI", email = "sigirci.ilker@gmail.com"},
@@ -19,7 +21,6 @@ keywords = [
 classifiers = [
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: BSD License",
     "Programming Language :: Python",
     "Topic :: Software Development",
     "Topic :: Scientific/Engineering",
@@ -30,40 +31,36 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
-    "fastapi[standard]>=0.115.12",
-    "langchain-openai>=0.3.13",
-    "langgraph>=0.4.0,<0.6.0",
+    "fastapi[standard]>=0.136.1",
+    "langchain-openai>=1.2.1",
+    "langgraph>=1.1.10,<2.0.0",
     "pydantic-settings>=2.9.0",
 ]
 
 [project.optional-dependencies]
 tracing = [
-    "langfuse>=3.0.0",
+    "langfuse>=4.0.0,<5.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
-    "pre-commit>=4.0.1",
-    "ruff>=0.12.1",
-    # "scalene~=1.5.21.2",
+    "prek>=0.3.11",
+    "ruff>=0.15.12",
 ]
 doc = [
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.5.42",
-    "mkdocstrings[python]>=0.26.2",
-    # "mdx-include",
-    # "mkdocs-markdownextradata-plugin",
+    "zensical>=0.0.11",
+    "mkdocstrings-python>=2.0.0",
 ]
 test = [
     "pytest-cov>=5.0.0",
     "pytest-rerunfailures>=14.0",
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
-    # "pytest-timeout",
 ]
 
 [tool.uv]
@@ -195,10 +192,6 @@ exclude_lines = [
 #     'src/langgraph_openai/',
 # ]
 
-# [build-system]
-# requires = ["uv>=0.5.24,<1.0.0"]
-# build-backend = "uv._build_backend" # FIXME: Only builds source distribution, not wheel
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+build-backend = "uv_build"
+requires = ["uv_build>=0.11,<0.20"]

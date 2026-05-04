@@ -1,0 +1,91 @@
+[project]
+site_name = "Langgraph OpenAI Serve"
+site_dir = "public"
+site_url = "https://ilkersigirci.github.io/langgraph-openai-serve/"
+site_description = "Openai Compatible Langgraph Server"
+site_author = "İlker SIĞIRCI"
+edit_uri = "edit/main/docs/"
+repo_url = "https://github.com/ilkersigirci/langgraph-openai-serve"
+repo_name = "ilkersigirci/langgraph-openai-serve"
+copyright = "Maintained by <a href=\"https://blog.ilkerflix.com\">İlker SIĞIRCI</a>."
+docs_dir = "docs"
+nav = [
+  { Home = "index.md" },
+  { Tutorials = [
+    { Overview = "tutorials/index.md" },
+    { "Getting Started" = "tutorials/getting-started.md" },
+    { "Creating Custom Graphs" = "tutorials/custom-graphs.md" },
+    { "Connecting with OpenAI Clients" = "tutorials/openai-clients.md" },
+    { Makefile = "tutorials/makefile.md" },
+  ]},
+  { "How-To Guides" = [
+    { Overview = "how-to-guides/index.md" },
+    { "Docker Deployment" = "how-to-guides/docker.md" },
+    { Authentication = "how-to-guides/authentication.md" },
+  ]},
+  { Explanation = [
+    { Overview = "explanation/index.md" },
+    { "Architecture Overview" = "explanation/architecture.md" },
+    { "LangGraph Integration" = "explanation/langgraph-integration.md" },
+    { "OpenAI API Compatibility" = "explanation/openai-compatibility.md" },
+  ]},
+  { Reference = "reference.md" },
+]
+
+[project.theme]
+variant = "modern"
+features = ["navigation.tabs"]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+show_root_heading = false
+show_submodules = true
+docstring_style = "google"
+docstring_section_style = "table"
+line_length = 88
+merge_init_into_class = true
+show_signature = true
+show_signature_annotations = false
+separate_signature = true
+show_bases = true
+show_source = true
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/ilkersigirci/python-template"
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx.arithmatex]
+generic = true
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+
+[project.markdown_extensions.pymdownx.snippets]
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.tables]
+
+[project.markdown_extensions.def_list]

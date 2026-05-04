@@ -15,7 +15,7 @@ AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
 
 CustomHttpUrlStr = Annotated[
     str,
-    PlainValidator(lambda x: AnyHttpUrlAdapter.validate_strings(x)),
+    PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda x: str(x).rstrip("/")),
 ]
 
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    OPENAI_BASE_URL: CustomHttpUrlStr = "https://api.openai.com/v1"
+    OPENAI_API_KEY: str = "DUMMY"
+    OPENAI_MODEL: str = "gpt-5.4-mini"
 
     ENABLE_LANGFUSE: bool = False
 

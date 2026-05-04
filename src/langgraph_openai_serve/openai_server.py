@@ -70,7 +70,10 @@ class LangchainOpenaiApiServe:
 
         if graphs is None:
             logger.info("Graphs not provided, using default simple graph")
-            default_graph_config = GraphConfig(graph=simple_graph)
+            default_graph_config = GraphConfig(
+                graph=simple_graph,
+                streamable_node_names=["generate"],
+            )
             self.graph_registry = GraphRegistry(
                 registry={"simple-graph": default_graph_config}
             )

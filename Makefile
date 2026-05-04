@@ -50,7 +50,7 @@ install-no-cache: ## Installs the development version of the package without cac
 	$(MAKE) install-precommit
 
 install-precommit: ## Install pre-commit hooks
-	uv run pre-commit install
+	uv run prek install
 
 update-dependencies: ## Updates the lockfiles and installs dependencies. Dependencies are updated if necessary
 	uv sync
@@ -121,21 +121,21 @@ publish: ## Builds the project and publish the package to Pypi
 	# uv publish --publish-url https://test.pypi.org/legacy/ --username DUMMY --password DUMMY dist/*
 
 doc-build: ## Test whether documentation can be built
-	uv run mkdocs build -s
+	uv run zensical build --clean
 
 doc-serve: ## Build and serve the documentation
-	uv run mkdocs serve
+	uv run zensical serve
 
 pre-commit-one: ## Run pre-commit with specific files
 	uv lock --locked
-	uv run pre-commit run --files ${PRECOMMIT_FILE_PATHS}
+	uv run prek run --files ${PRECOMMIT_FILE_PATHS}
 
 pre-commit: ## Run pre-commit for all package files
 	uv lock --locked
-	uv run pre-commit run --all-files
+	uv run prek run --all-files
 
 pre-commit-clean: ## Clean pre-commit cache
-	uv run pre-commit clean
+	uv run prek clean
 
 lint: ## Lint code with ruff
 	uv lock --locked
@@ -151,6 +151,11 @@ format: ## Run ruff for all package files. CHANGES CODE
 	uv lock --locked
 	uv run --module ruff format ${PACKAGE}
 	uv run --module ruff check ${PACKAGE} --fix --show-fixes
+
+format-unsafe: ## Run ruff for all package files. CHANGES CODE
+	uv lock --locked
+	uv run --module ruff format ${PACKAGE}
+	uv run --module ruff check ${PACKAGE} --fix --show-fixes --unsafe-fixes
 
 # profile: ## Profile the file with scalene and shows the report in the terminal
 # 	uv lock --locked

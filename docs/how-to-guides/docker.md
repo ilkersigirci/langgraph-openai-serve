@@ -45,7 +45,7 @@ If you need to create a custom Docker deployment for your specific LangGraph Ope
 Create a `Dockerfile` with the following content:
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 

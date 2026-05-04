@@ -3,12 +3,12 @@ from typing import Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class GraphConfig(BaseModel):
     graph: CompiledStateGraph | Callable[[], Awaitable[CompiledStateGraph]]
-    streamable_node_names: list[str]
+    streamable_node_names: list[str] = Field(default_factory=list)
     runtime_callbacks: list[Callbacks] | None = None
 
     async def resolve_graph(self) -> CompiledStateGraph:
@@ -17,8 +17,7 @@ class GraphConfig(BaseModel):
             return await self.graph()
         return self.graph
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class GraphRegistry(BaseModel):

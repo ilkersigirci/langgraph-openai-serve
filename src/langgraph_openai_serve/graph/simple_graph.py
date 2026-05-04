@@ -20,10 +20,13 @@ from typing import Annotated, Sequence
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
+
+from langgraph_openai_serve.core.settings import settings
 
 # from langgraph.prebuilt import create_react_agent
 
@@ -47,7 +50,7 @@ class SimpleConfigSchema(BaseModel):
     use_history: bool = False
 
 
-async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
+async def generate(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Generate a response to the latest message in the state.
 
     This function extracts the latest message, creates a prompt with it,
@@ -59,14 +62,24 @@ async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
     Returns:
         A dict with a messages key containing the AI's response.
     """
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, streaming=True)
+    model = ChatOpenAI(
+        model_name=settings.OPENAI_MODEL,
+        openai_api_base=settings.OPENAI_BASE_URL,
+        openai_api_key=SecretStr(settings.OPENAI_API_KEY),
+        temperature=0.7,
+        streaming=True,
+    )
 
     system_message = (
         "system",
         "You are a helpful assistant called Langgraph Openai Serve. Chat with the user with friendly tone",
     )
 
-    if config["configurable"]["use_history"] is False:
+    configurable = SimpleConfigSchema.model_validate(
+        (config or {}).get("configurable", {})
+    )
+
+    if configurable.use_history is False:
         question = state.messages[-1].content
 
         prompt = ChatPromptTemplate.from_messages(
@@ -87,7 +100,7 @@ async def generate(state: AgentState, config: SimpleConfigSchema) -> dict:
 
 
 # Define the workflow graph
-workflow = StateGraph(AgentState, config_schema=SimpleConfigSchema)
+workflow = StateGraph(AgentState, context_schema=SimpleConfigSchema)
 workflow.add_node("generate", generate)
 workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")
