@@ -145,15 +145,3 @@ for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
 ```
-
-## Docker Usage
-
-To run with Docker:
-
-```bash
-# Start the server
-docker compose up -d langgraph-openai-serve-dev
-
-# For a complete example with open-webui
-docker compose up -d open-webui
-```
