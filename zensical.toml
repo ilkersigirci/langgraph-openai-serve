@@ -67,7 +67,7 @@ show_source = true
 
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/ilkersigirci/python-template"
+link = "https://github.com/ilkersigirci"
 
 [project.markdown_extensions.toc]
 permalink = true
