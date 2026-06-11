@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi[standard]>=0.136.1",
+    "fastapi[standard]>=0.116.1",
     "langchain-openai>=1.2.1",
     "langgraph>=1.1.10,<2.0.0",
     "pydantic-settings>=2.9.0",
