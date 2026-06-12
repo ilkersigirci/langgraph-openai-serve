@@ -109,6 +109,77 @@ if __name__ == "__main__":
     uvicorn.run(graph_serve.app, host="0.0.0.0", port=8000)
 ```
 
+## Custom Input, Output, and Context
+
+`GraphConfig` adapters let a compiled graph use its native LangGraph 1.x input,
+output, and context schemas. Each adapter can be synchronous or asynchronous and
+receives the complete chat completion request where applicable.
+
+```python
+from dataclasses import dataclass
+from typing import TypedDict
+
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+
+from langgraph_openai_serve import GraphConfig
+
+
+@dataclass
+class AppContext:
+    user_id: str
+
+
+class Input(TypedDict):
+    question: str
+
+
+class Output(TypedDict):
+    answer: str
+
+
+class State(TypedDict, total=False):
+    question: str
+    answer: str
+
+
+async def generate(state: State, runtime: Runtime[AppContext]) -> Output:
+    return {
+        "answer": f"Answer for {runtime.context.user_id}: {state['question']}",
+    }
+
+
+graph = (
+    StateGraph(
+        State,
+        input_schema=Input,
+        output_schema=Output,
+        context_schema=AppContext,
+    )
+    .add_node("generate", generate)
+    .set_entry_point("generate")
+    .set_finish_point("generate")
+    .compile()
+)
+
+graph_config = GraphConfig(
+    graph=graph,
+    request_to_input=lambda request, messages: {
+        "question": messages[-1].content,
+    },
+    context_factory=lambda request: AppContext(
+        user_id=request.user or "anonymous",
+    ),
+    output_to_text=lambda output: output["answer"],
+    streamable_node_names=["generate"],
+)
+```
+
+Without adapters, behavior is unchanged: the graph receives
+`{"messages": messages}`, no runtime context is supplied, and the response text
+is read from `result["messages"][-1].content`. Input and output validation and
+filtering are performed by LangGraph using the graph's declared schemas.
+
 ## Using with the OpenAI Client
 
 Once your API is running, you can use any OpenAI-compatible client to interact with it:

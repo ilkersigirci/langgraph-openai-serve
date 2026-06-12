@@ -1,23 +1,72 @@
 import inspect
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
+from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+
+GraphResolver = (
+    CompiledStateGraph
+    | Callable[[], CompiledStateGraph | Awaitable[CompiledStateGraph]]
+)
+RequestToInput = Callable[
+    [ChatCompletionRequest, list[BaseMessage]], Any | Awaitable[Any]
+]
+ContextFactory = Callable[[ChatCompletionRequest], Any | Awaitable[Any]]
+OutputToText = Callable[[Any], str | Awaitable[str]]
+
 
 class GraphConfig(BaseModel):
-    graph: CompiledStateGraph | Callable[[], Awaitable[CompiledStateGraph]]
+    graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
-    runtime_callbacks: list[Callbacks] | None = None
+    runtime_callbacks: Callbacks = None
+    request_to_input: RequestToInput | None = None
+    context_factory: ContextFactory | None = None
+    output_to_text: OutputToText | None = None
 
     async def resolve_graph(self) -> CompiledStateGraph:
-        """Get the graph instance, handling both direct instances and async callables."""
-        if inspect.iscoroutinefunction(self.graph):
-            return await self.graph()
-        return self.graph
+        """Get the graph instance, resolving callable graph factories."""
+        if isinstance(self.graph, CompiledStateGraph):
+            return self.graph
+
+        graph = self.graph()
+        if inspect.isawaitable(graph):
+            return await graph
+        return graph
+
+    async def build_input(
+        self,
+        request: ChatCompletionRequest,
+        messages: list[BaseMessage],
+    ) -> Any:
+        """Build the native graph input for a chat completion request."""
+        if self.request_to_input is None:
+            return {"messages": messages}
+        return await _resolve_adapter(self.request_to_input(request, messages))
+
+    async def build_context(self, request: ChatCompletionRequest) -> Any:
+        """Build the LangGraph runtime context for a chat completion request."""
+        if self.context_factory is None:
+            return None
+        return await _resolve_adapter(self.context_factory(request))
+
+    async def render_output(self, output: Any) -> str:
+        """Convert native graph output into assistant response text."""
+        if self.output_to_text is None:
+            messages = output["messages"]
+            return messages[-1].content if messages else ""
+        return await _resolve_adapter(self.output_to_text(output))
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+async def _resolve_adapter(value: Any | Awaitable[Any]) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class GraphRegistry(BaseModel):
