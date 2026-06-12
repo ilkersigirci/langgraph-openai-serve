@@ -55,6 +55,7 @@ class ChatCompletionService:
             model=chat_request.model,
             messages=chat_request.messages,
             graph_registry=graph_registry,
+            request=chat_request,
         )
 
         # Build the response
@@ -126,6 +127,7 @@ class ChatCompletionService:
                 model=chat_request.model,
                 messages=chat_request.messages,
                 graph_registry=graph_registry,
+                request=chat_request,
             ):
                 # Send the content chunk
                 yield self._format_stream_chunk(
