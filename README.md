@@ -216,3 +216,33 @@ for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
 ```
+
+## Chainlit HITL Demo
+
+The demo graph pauses with LangGraph `interrupt()`. The API exposes the pause as
+an OpenAI `langgraph_interrupt` tool call, and Chainlit sends the human responses
+back as a standard tool-result message using only `AsyncOpenAI`. Chainlit streams
+assistant text normally, while HITL prompts arrive as OpenAI tool calls.
+
+Start the API server:
+
+```bash
+make run-demo-server-dev
+```
+
+In another terminal, start Chainlit on port 8001:
+
+```bash
+make run-hitl-chainlit
+```
+
+Open `http://<machine-ip>:8001` and ask for a calculation or a weather forecast,
+for example `What is 18 * 42?` or `What is the weather in Paris?`. The graph
+proposes one demo tool call, pauses for Chainlit approval, and then runs, edits,
+skips, or replaces the tool result based on the human response.
+
+The graph uses the model configured by `LGOS_OPENAI_MODEL`,
+`LGOS_OPENAI_BASE_URL`, and `LGOS_OPENAI_API_KEY`. Both services bind to
+`0.0.0.0`. This proof of concept uses in-memory checkpoints and interrupt tokens,
+so keep the API in one process and expect pending reviews to be lost when it
+restarts. HITL supports streaming and non-streaming Chat Completions requests.

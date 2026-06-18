@@ -58,6 +58,7 @@ class ChatCompletionRequestMessage(BaseModel):
     name: str | None = None
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 class FunctionDefinition(BaseModel):
@@ -138,14 +139,13 @@ class ChatCompletionResponse(BaseModel):
     usage: UsageInfo | None = None
 
 
-# Stream models
 class ChatCompletionStreamResponseDelta(BaseModel):
     """Model for a chat completion stream response delta."""
 
     role: Role | None = None
     content: str | None = None
     function_call: FunctionCall | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class ChatCompletionStreamResponseChoice(BaseModel):

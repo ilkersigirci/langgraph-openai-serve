@@ -174,3 +174,6 @@ docker-build: ## Build docker image
 
 run-demo-server-dev: # ## Run the demo server in development mode
 	uv run --module demo.app
+
+run-hitl-chainlit: ## Run the Chainlit HITL demo on port 8001
+	uv run --with 'chainlit>=2.8,<3' chainlit run demo/chainlit_hitl.py --host 0.0.0.0 --port 8001 -w

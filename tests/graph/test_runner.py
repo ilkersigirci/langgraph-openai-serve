@@ -1,14 +1,17 @@
 import asyncio
+import json
 from dataclasses import dataclass
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.constants import TAG_HIDDEN
-from langgraph.graph import StateGraph
+from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
+from langgraph.types import interrupt
 from pydantic import BaseModel
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
@@ -32,6 +35,13 @@ class Input(TypedDict):
 
 class Output(TypedDict):
     answer: str
+
+
+class MultipleInterruptState(TypedDict, total=False):
+    messages: list
+    plan: str
+    approved: bool
+    reviewed_plan: str
 
 
 @dataclass
@@ -74,13 +84,13 @@ def registry(name: str, config: GraphConfig) -> GraphRegistry:
 
 async def stream_text(name: str, graph_registry: GraphRegistry) -> str:
     chat_request = request(name)
-    chunks = run_langgraph_stream(
+    events = run_langgraph_stream(
         name,
         chat_request.messages,
         graph_registry,
         chat_request,
     )
-    return "".join([chunk async for chunk, _ in chunks])
+    return "".join([event async for event in events if isinstance(event, str)])
 
 
 def test_message_defaults_and_callback_list(message_graph) -> None:
@@ -91,7 +101,7 @@ def test_message_defaults_and_callback_list(message_graph) -> None:
     )
     chat_request = request("messages")
 
-    response, _ = asyncio.run(
+    result = asyncio.run(
         run_langgraph(
             "messages",
             chat_request.messages,
@@ -100,7 +110,7 @@ def test_message_defaults_and_callback_list(message_graph) -> None:
         )
     )
 
-    assert response == "hello"
+    assert result.content == "hello"
     assert callback.starts == 1
 
 
@@ -147,7 +157,7 @@ def test_typed_dict_schemas_and_native_context() -> None:
     )
     chat_request = request("typed", user="alice")
 
-    response, _ = asyncio.run(
+    result = asyncio.run(
         run_langgraph(
             "typed",
             chat_request.messages,
@@ -156,7 +166,7 @@ def test_typed_dict_schemas_and_native_context() -> None:
         )
     )
 
-    assert response == "alice:answer"
+    assert result.content == "alice:answer"
     assert output_keys == [{"answer"}]
 
 
@@ -196,7 +206,7 @@ def test_pydantic_schemas_and_async_adapters() -> None:
     )
     chat_request = request("pydantic")
 
-    response, _ = asyncio.run(
+    result = asyncio.run(
         run_langgraph(
             "pydantic",
             chat_request.messages,
@@ -205,7 +215,7 @@ def test_pydantic_schemas_and_async_adapters() -> None:
         )
     )
 
-    assert response == "question"
+    assert result.content == "question"
 
 
 def test_nested_subgraph_streaming() -> None:
@@ -278,3 +288,94 @@ def test_stream_filters_nodes_hidden_tags_and_non_ai_messages() -> None:
     )
 
     assert asyncio.run(stream_text("filtered", graph_registry)) == "visible"
+
+
+def test_streaming_multiple_interrupts_resume_together() -> None:
+    def create_plan(state_):
+        return {"plan": "original plan"}
+
+    def authorize(state_):
+        decision = interrupt({"kind": "approval", "prompt": "Authorize?"})
+        return {"approved": decision["approved"]}
+
+    def review(state_):
+        decision = interrupt(
+            {"kind": "edit", "prompt": "Review", "content": state_["plan"]}
+        )
+        return {"reviewed_plan": decision["content"]}
+
+    def execute(state_):
+        return {
+            "messages": [
+                AIMessage(
+                    content=f"approved={state_['approved']}; plan={state_['reviewed_plan']}"
+                )
+            ]
+        }
+
+    builder = StateGraph(MultipleInterruptState)
+    builder.add_node("create_plan", create_plan)
+    builder.add_node("authorize", authorize)
+    builder.add_node("review", review)
+    builder.add_node("execute", execute)
+    builder.set_entry_point("create_plan")
+    builder.add_edge("create_plan", "authorize")
+    builder.add_edge("create_plan", "review")
+    builder.add_edge(["authorize", "review"], "execute")
+    builder.add_edge("execute", END)
+    graph_registry = registry(
+        "multi-hitl",
+        GraphConfig(graph=builder.compile(checkpointer=InMemorySaver())),
+    )
+    chat_request = request("multi-hitl")
+
+    interrupted_events = asyncio.run(
+        _collect_stream_events("multi-hitl", chat_request, graph_registry)
+    )
+    tool_call = interrupted_events[0]
+    arguments = json.loads(tool_call.arguments)
+    assert {item["value"]["kind"] for item in arguments["interrupts"]} == {
+        "approval",
+        "edit",
+    }
+
+    responses = {}
+    for item in arguments["interrupts"]:
+        if item["value"]["kind"] == "approval":
+            responses[item["id"]] = {"approved": True}
+        else:
+            responses[item["id"]] = {"content": "human-edited plan"}
+
+    resumed_request = ChatCompletionRequest(
+        model="multi-hitl",
+        messages=[
+            {"role": Role.USER, "content": "question"},
+            {
+                "role": Role.TOOL,
+                "tool_call_id": tool_call.id,
+                "content": json.dumps(responses),
+            },
+        ],
+    )
+
+    resumed_events = asyncio.run(
+        _collect_stream_events("multi-hitl", resumed_request, graph_registry)
+    )
+
+    assert resumed_events == ["approved=True; plan=human-edited plan"]
+
+
+async def _collect_stream_events(
+    name: str,
+    chat_request: ChatCompletionRequest,
+    graph_registry: GraphRegistry,
+) -> list[Any]:
+    return [
+        event
+        async for event in run_langgraph_stream(
+            name,
+            chat_request.messages,
+            graph_registry,
+            chat_request,
+        )
+    ]

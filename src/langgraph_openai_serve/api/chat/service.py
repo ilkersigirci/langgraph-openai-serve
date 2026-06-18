@@ -26,6 +26,11 @@ from langgraph_openai_serve.graph.runner import (
     run_langgraph,
     run_langgraph_stream,
 )
+from langgraph_openai_serve.hitl.openai import (
+    HitlToolCall,
+    tool_call_delta_payload,
+    tool_call_message_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +56,34 @@ class ChatCompletionService:
         start_time = time.time()
 
         # Get the completion from the LangGraph model
-        completion, tokens_used = await run_langgraph(
+        result = await run_langgraph(
             model=chat_request.model,
             messages=chat_request.messages,
             graph_registry=graph_registry,
             request=chat_request,
         )
+
+        if result.tool_call is not None:
+            return ChatCompletionResponse(
+                id=f"chatcmpl-{uuid.uuid4()}",
+                created=int(time.time()),
+                model=chat_request.model,
+                choices=[
+                    ChatCompletionResponseChoice(
+                        index=0,
+                        message=ChatCompletionResponseMessage(
+                            role=Role.ASSISTANT,
+                            content=None,
+                            tool_calls=[tool_call_message_payload(result.tool_call)],
+                        ),
+                        finish_reason="tool_calls",
+                    )
+                ],
+                usage=UsageInfo(**result.token_usage),
+            )
+
+        completion = result.content
+        tokens_used = result.token_usage
 
         # Build the response
         response = ChatCompletionResponse(
@@ -105,62 +132,50 @@ class ChatCompletionService:
 
         try:
             # Send the initial response with the role
-            yield self._format_stream_chunk(
-                ChatCompletionStreamResponse(
-                    id=response_id,
-                    created=created,
-                    model=chat_request.model,
-                    choices=[
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(
-                                role=Role.ASSISTANT,
-                            ),
-                            finish_reason=None,
-                        )
-                    ],
-                )
+            yield self._stream_chunk(
+                response_id,
+                created,
+                chat_request.model,
+                ChatCompletionStreamResponseDelta(role=Role.ASSISTANT),
             )
 
-            # Stream the completion from the LangGraph model
-            async for chunk, _ in run_langgraph_stream(
+            finish_reason = "stop"
+
+            # Stream text until the graph completes or pauses for human input.
+            async for event in run_langgraph_stream(
                 model=chat_request.model,
                 messages=chat_request.messages,
                 graph_registry=graph_registry,
                 request=chat_request,
             ):
-                # Send the content chunk
-                yield self._format_stream_chunk(
-                    ChatCompletionStreamResponse(
-                        id=response_id,
-                        created=created,
-                        model=chat_request.model,
-                        choices=[
-                            ChatCompletionStreamResponseChoice(
-                                index=0,
-                                delta=ChatCompletionStreamResponseDelta(
-                                    content=chunk,
-                                ),
-                                finish_reason=None,
-                            )
-                        ],
+                if isinstance(event, HitlToolCall):
+                    finish_reason = "tool_calls"
+                    yield self._stream_chunk(
+                        response_id,
+                        created,
+                        chat_request.model,
+                        ChatCompletionStreamResponseDelta(
+                            tool_calls=[tool_call_delta_payload(event)]
+                        ),
                     )
+                    break
+
+                if not event:
+                    continue
+                yield self._stream_chunk(
+                    response_id,
+                    created,
+                    chat_request.model,
+                    ChatCompletionStreamResponseDelta(content=event),
                 )
 
             # Send the final response with finish_reason
-            yield self._format_stream_chunk(
-                ChatCompletionStreamResponse(
-                    id=response_id,
-                    created=created,
-                    model=chat_request.model,
-                    choices=[
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(),
-                            finish_reason="stop",
-                        )
-                    ],
-                )
+            yield self._stream_chunk(
+                response_id,
+                created,
+                chat_request.model,
+                ChatCompletionStreamResponseDelta(),
+                finish_reason,
             )
 
             # Send the [DONE] message
@@ -187,3 +202,25 @@ class ChatCompletionService:
             The formatted server-sent event.
         """
         return f"data: {json.dumps(response.model_dump())}\n\n"
+
+    def _stream_chunk(
+        self,
+        response_id: str,
+        created: int,
+        model: str,
+        delta: ChatCompletionStreamResponseDelta,
+        finish_reason: str | None = None,
+    ) -> str:
+        response = ChatCompletionStreamResponse(
+            id=response_id,
+            created=created,
+            model=model,
+            choices=[
+                ChatCompletionStreamResponseChoice(
+                    index=0,
+                    delta=delta,
+                    finish_reason=finish_reason,
+                )
+            ],
+        )
+        return self._format_stream_chunk(response)

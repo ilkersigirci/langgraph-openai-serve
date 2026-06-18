@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from demo.hitl_graph import hitl_graph
 from demo.loggers.setup import setup_logging
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
@@ -93,6 +94,10 @@ def create_custom_app() -> FastAPI:
 
     graph_registry = GraphRegistry(
         registry={
+            "hitl-demo": GraphConfig(
+                graph=hitl_graph,
+                streamable_node_names=["run_tool"],
+            ),
             "simple-graph-with-history": GraphConfig(
                 graph=simple_graph_with_history, streamable_node_names=["generate"]
             ),
