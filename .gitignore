@@ -273,3 +273,7 @@ public
 # Scalene related
 profile.*
 docker/volumes
+
+demo/ui/chainlit_ui/.chainlit
+
+.agents

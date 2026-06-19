@@ -172,5 +172,8 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 docker-build: ## Build docker image
 	docker build --tag ${DOCKER_IMAGE} --file docker/Dockerfile --target ${DOCKER_TARGET} .
 
-run-demo-server-dev: # ## Run the demo server in development mode
-	uv run --module demo.app
+run-demo-api: # ## Run the demo api in development mode
+	uv run --module demo.api.app
+
+run-demo-ui-chainlit: ## Run the demo Chainlit UI
+	CHAINLIT_APP_ROOT=./demo/ui/chainlit_ui uv run --with 'chainlit>=2.8,<3' chainlit run demo/ui/chainlit_ui/main.py --host 0.0.0.0 --port 8001 -w

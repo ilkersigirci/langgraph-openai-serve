@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from demo.loggers.setup import setup_logging
+from demo.api.loggers.setup import setup_logging
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "demo.app:app",
+        "demo.api.app:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
