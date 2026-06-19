@@ -8,7 +8,7 @@ LangGraph OpenAI Serve implements a subset of the OpenAI API, focusing on the mo
 
 - `/v1/models` - For listing available models (LangGraph instances)
 - `/v1/chat/completions` - For chat interactions
-- `/health` - For health checks
+- `/v1/health` - For health checks when routers are bound with `prefix="/v1"`
 
 The API is designed to be compatible with OpenAI client libraries in different languages while providing access to your custom LangGraph workflows.
 
@@ -94,76 +94,42 @@ def create_chat_completion(
 
 ## Streaming Support
 
-OpenAI's API supports streaming responses, which is particularly important for real-time interactions. LangGraph OpenAI Serve implements compatible streaming using Server-Sent Events (SSE):
+OpenAI's API supports streaming responses, which is particularly important for real-time interactions. LangGraph OpenAI Serve returns compatible Server-Sent Events (SSE) chunks and delegates content generation to `run_langgraph_stream`:
 
 ```python
-async def create_chat_completion_stream(
-    request: Request,
-    body: ChatCompletionRequest,
-) -> StreamingResponse:
-    """Stream chat completion responses."""
-    async def stream_generator():
-        unique_id = f"chatcmpl-{uuid.uuid4().hex}"
-        created = int(time.time())
-        model = body.model
+async for content_chunk, metrics in run_langgraph_stream(
+    body.model,
+    body.messages,
+    graph_registry,
+    body,
+):
+    yield {
+        "object": "chat.completion.chunk",
+        "model": body.model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": content_chunk},
+                "finish_reason": None,
+            }
+        ],
+    }
+```
 
-        # Initial response with role
-        yield f"data: {json.dumps({
-            'id': unique_id,
-            'object': 'chat.completion.chunk',
-            'created': created,
-            'model': model,
-            'choices': [{
-                'index': 0,
-                'delta': {
-                    'role': 'assistant'
-                },
-                'finish_reason': None
-            }]
-        })}\n\n"
+Inside the runner, streaming uses LangGraph message streaming and filters chunks
+to configured node names:
 
-        # Generate content stream
-        async for content_chunk, metrics in run_langgraph_stream(
-            body.model,
-            body.messages,
-            body.temperature,
-            body.max_tokens,
-            body.tools if hasattr(body, 'tools') else None,
-        ):
-            yield f"data: {json.dumps({
-                'id': unique_id,
-                'object': 'chat.completion.chunk',
-                'created': created,
-                'model': model,
-                'choices': [{
-                    'index': 0,
-                    'delta': {
-                        'content': content_chunk
-                    },
-                    'finish_reason': None
-                }]
-            })}\n\n"
-
-        # Final message
-        yield f"data: {json.dumps({
-            'id': unique_id,
-            'object': 'chat.completion.chunk',
-            'created': created,
-            'model': model,
-            'choices': [{
-                'index': 0,
-                'delta': {},
-                'finish_reason': 'stop'
-            }]
-        })}\n\n"
-
-        # End of stream
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        stream_generator(),
-        media_type="text/event-stream"
-    )
+```python
+async for event in graph.astream(
+    inputs,
+    context=context,
+    stream_mode=["messages"],
+    subgraphs=True,
+    version="v2",
+):
+    message, metadata = event["data"]
+    if metadata.get("langgraph_node") in streamable_node_names:
+        yield message.text, {"tokens": 1}
 ```
 
 ## Function/Tool Calling Support
@@ -185,7 +151,11 @@ class Tool(BaseModel):
     function: FunctionDefinition
 ```
 
-When tools are provided in the request, they are passed to the LangGraph workflow, which can use them to generate function calls in the response.
+Tool definitions are accepted in the request schema for compatibility. Graphs
+that need request-level tool information can read the full request in
+`request_to_input` or use their own tool loading strategy. The demo
+`advanced-mcp-tools` graph shows async MCP-style tool loading at graph
+construction time.
 
 ## Differences from OpenAI API
 
@@ -221,11 +191,11 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="my_custom_graph",  # The name of your registered LangGraph workflow
+    model="custom-input-output-context",
     messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What is the capital of France?"}
-    ]
+        {"role": "user", "content": "Show me the custom adapter."},
+    ],
+    user="demo-user",
 )
 
 print(response.choices[0].message.content)

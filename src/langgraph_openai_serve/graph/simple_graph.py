@@ -28,8 +28,6 @@ from pydantic import BaseModel, SecretStr
 
 from langgraph_openai_serve.core.settings import settings
 
-# from langgraph.prebuilt import create_react_agent
-
 
 class AgentState(BaseModel):
     """Type definition for the agent state.

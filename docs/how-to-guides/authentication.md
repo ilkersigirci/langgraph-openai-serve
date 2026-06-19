@@ -235,7 +235,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Exclude certain paths from authentication (like health checks)
-        if request.url.path == "/health":
+        if request.url.path in {"/health", "/v1/health"}:
             return await call_next(request)
 
         # Check for API key in header

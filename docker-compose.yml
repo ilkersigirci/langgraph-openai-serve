@@ -1,26 +1,27 @@
-name: langgraph-openai-serve
+name: lgos
 
 networks:
-  langgraph-openai-serve-network:
-    name: langgraph-openai-serve-network
+  lgos-network:
+    name: lgos-network
     driver: bridge
     ipam:
       config:
         - subnet: 192.168.31.0/24
 
 services:
-  langgraph-openai-serve-dev:
-    image: langgraph-openai-serve-dev:latest
-    container_name: langgraph-openai-serve-dev
+  lgos-demo-api:
+    image: lgos-demo-api:latest
+    container_name: lgos-demo-api
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: development
     networks:
-      - langgraph-openai-serve-network
-    # ports:
-    #   - 8080:8080
-    command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
+      - lgos-network
+    ports:
+      - 8000:8000
+    # command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
+    command: ["uv", "run", "--module", "demo.api.app"]
     restart: "no"
     develop:
       watch:
@@ -39,19 +40,34 @@ services:
   # NOTE: Disable Title Generation: Admin Panel -> Interface -> Title Generation -> Disable
   open-webui:
     container_name: open-webui
-    image: ghcr.io/open-webui/open-webui:latest
+    image: ghcr.io/open-webui/open-webui:v0.9.6@sha256:90eae5b419e40b4c3dd684582b2c83440b36f9ae2f6532c09639b2ba4ee65158
     restart: "no"
     networks:
-      - langgraph-openai-serve-network
+      - lgos-network
     ports:
       - 8080:8080
     volumes:
       - ./docker/volumes/open-webui:/app/backend/data
     environment:
-      - ENABLE_OLLAMA_API=false
-      - USE_OLLAMA_DOCKER=false
-      - ENABLE_IMAGE_GENERATION=false
-      - ENABLE_TAGS_GENERATION=false
-      #### OPENAI API ####
-      - OPENAI_API_BASE_URL=http://192.168.2.12:8000/v1
-      - OPENAI_API_KEY=DUMMY
+      ENABLE_PERSISTENT_CONFIG: false
+      ############# WEBUI #############
+      WEBUI_NAME: LGOS-OpenwebUI
+      ENABLE_OLLAMA_API: false
+      ENABLE_FOLLOW_UP_GENERATION: false
+      ENABLE_TAGS_GENERATION: false
+      ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS: false
+      OFFLINE_MODE: true
+      HF_HUB_OFFLINE: 1
+      ############# AUTH #############
+      WEBUI_ADMIN_EMAIL: lgos@example.com
+      WEBUI_ADMIN_PASSWORD: lgos
+      WEBUI_ADMIN_NAME: LGOS
+      ############# OPENAI API #############
+      ENABLE_OPENAI_API: true
+      OPENAI_API_BASE_URL: http://lgos-demo-api:8000/v1
+      OPENAI_API_KEY: DUMMY
+      # OPENAI_API_BASE_URLS: http://lgos-demo-api:8000/v1;http://lgos-demo-api:8001/v1
+      # OPENAI_API_KEYS: DUMMY1;DUMMY2
+      ENABLE_IMAGE_GENERATION: false
+      ############# RAG #############
+      RAG_EMBEDDING_ENGINE: openai

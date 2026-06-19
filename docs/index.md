@@ -9,9 +9,11 @@ LangGraph OpenAI Serve allows you to expose your [LangGraph](https://github.com/
 ## Features
 
 - Expose your LangGraph instances through an OpenAI-compatible API
-- Register multiple graphs and map them to different model names
+- Register multiple graphs as OpenAI model names
 - Use with any FastAPI application
-- Support for both streaming and non-streaming completions
+- Support streaming and non-streaming completions
+- Support custom input, output, and runtime context adapters
+- Support async graph factories, including MCP-style tool loading
 - Docker support for easy deployment
 
 ## Table Of Contents

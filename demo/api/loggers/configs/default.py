@@ -17,20 +17,20 @@ DEFAULT_LOGGER_CONFIG = {
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
         "colored": {
-            "()": "demo.loggers.formatters.ColoredFormatter",
+            "()": "demo.api.loggers.formatters.ColoredFormatter",
             "format": "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(pathname)s:%(lineno)d :: %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
     },
     "filters": {
         "info": {
-            "()": "demo.loggers.filters.InfoFilter",
+            "()": "demo.api.loggers.filters.InfoFilter",
         },
         "cwd": {
-            "()": "demo.loggers.filters.CwdFilter",
+            "()": "demo.api.loggers.filters.CwdFilter",
         },
         # "path_shortener": {
-        #     "()": "demo.loggers.filters.PathShortenerFilter",
+        #     "()": "demo.api.loggers.filters.PathShortenerFilter",
         # }
     },
     "handlers": {

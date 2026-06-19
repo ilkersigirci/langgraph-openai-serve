@@ -4,7 +4,7 @@ import logging
 import threading
 from pathlib import Path
 
-from demo.utils import is_module_installed
+from demo.api.utils import is_module_installed
 
 PATHNAME_FIELD = "pathname"
 PATHNAME_MAX_LENGTH = 30
