@@ -1,158 +1,106 @@
-# Getting Started with LangGraph OpenAI Serve
+# Getting Started
 
-This tutorial will guide you through the process of setting up and running your first LangGraph OpenAI compatible server.
+This tutorial uses the runnable demo app in this repository. It exposes several
+LangGraph workflows through an OpenAI-compatible API, so you can inspect the code
+and call the API immediately.
 
 ## Prerequisites
 
-Before you begin, make sure you have:
+- Python 3.11 or newer
+- `uv`
+- An OpenAI-compatible backend configured for the simple LLM graph, if you call
+  `simple-graph-with-history` or `simple-graph-no-history`
 
-- Python 3.11 or higher installed
-- Basic familiarity with [LangGraph](https://github.com/langchain-ai/langgraph)
-- Basic understanding of FastAPI (optional)
+The adapter and mock MCP demo graphs do not need real API keys.
 
-## Installation
+## Run The Demo API
 
-First, install the `langgraph-openai-serve` package:
-
-```bash
-# Using uv (recommended)
-uv add langgraph-openai-serve
-
-# Using pip
-pip install langgraph-openai-serve
-```
-
-## Basic Usage
-
-Here's a simple example to help you get started. In this example, we'll create a basic server that exposes a simple LangGraph workflow through an OpenAI-compatible API.
-
-### 1. Create a Python file for your server
-
-Create a new file called `server.py` with the following content:
-
-```python
-from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
-
-# Import your LangGraph instances or use the default simple graph
-# that comes with the package
-from langgraph_openai_serve.graph.simple_graph import app as simple_graph
-
-# Create a GraphRegistry
-graph_registry = GraphRegistry(
-    registry={
-        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
-    }
-)
-
-# Create a server instance with your graph(s)
-graph_serve = LangchainOpenaiApiServe(
-    graphs=graph_registry,
-    configure_cors=True,  # Enable CORS for browser clients
-)
-
-# Bind the OpenAI-compatible endpoints
-graph_serve.bind_openai_chat_completion(prefix="/v1")
-
-# Run the app with uvicorn
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(graph_serve.app, host="0.0.0.0", port=8000)
-```
-
-### 2. Run the server
-
-Start the server by running:
+From the repository root:
 
 ```bash
-python server.py
+make run-demo-api
 ```
 
-Your server should now be running at http://localhost:8000
+The API is available at `http://localhost:8000/v1`.
 
-### 3. Test the API
-
-You can test the API using curl:
+List the registered graphs:
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "simple_graph",
-    "messages": [
-      {"role": "user", "content": "Hello, how can you help me today?"}
-    ]
-  }'
+curl http://localhost:8000/v1/models
 ```
 
-Alternatively, you can use the OpenAI Python client:
+The demo app registers these model names:
+
+- `simple-graph-with-history`
+- `simple-graph-no-history`
+- `custom-input-output-context`
+- `advanced-mcp-tools`
+
+## Call It With The OpenAI Client
 
 ```python
 from openai import OpenAI
 
-# Create a client pointing to your API
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="any-value"  # API key is not verified
+    api_key="DUMMY",
 )
 
-# Use the graph by specifying its name as the model
 response = client.chat.completions.create(
-    model="simple_graph",  # This maps to the graph name in your registry
-    messages=[
-        {"role": "user", "content": "Hello, how can you help me today?"}
-    ]
+    model="custom-input-output-context",
+    messages=[{"role": "user", "content": "Show me the custom adapter."}],
+    user="demo-user",
 )
 
 print(response.choices[0].message.content)
 ```
 
-## Using with your own FastAPI application
+Try the async mock MCP graph:
 
-If you already have a FastAPI application, you can integrate LangGraph OpenAI Serve with it:
+```python
+response = client.chat.completions.create(
+    model="advanced-mcp-tools",
+    messages=[{"role": "user", "content": "What is the weather in Istanbul?"}],
+)
+
+print(response.choices[0].message.content)
+```
+
+## Where To Look
+
+- `demo/api/app.py` registers graph names as OpenAI model names.
+- `demo/api/graphs/simple.py` exposes the default message-based graph.
+- `demo/api/graphs/custom_io.py` shows `request_to_input`,
+  `context_factory`, and `output_to_text`.
+- `demo/api/graphs/advanced_mcp.py` shows an async graph factory that loads
+  mock MCP-style tools before creating a ReAct graph.
+
+## Existing FastAPI Apps
+
+Mount the OpenAI-compatible routes on your own FastAPI app:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
-from langgraph_openai_serve.graph.simple_graph import app as simple_graph
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from your_graphs import my_graph
 
-# Create a FastAPI app
-app = FastAPI(
-    title="My API with LangGraph",
-    version="1.0",
-    description="API that includes LangGraph capabilities",
-)
+app = FastAPI(title="My LangGraph API")
 
-# Create a GraphRegistry
-graph_registry = GraphRegistry(
+graphs = GraphRegistry(
     registry={
-        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
+        "my-graph": GraphConfig(
+            graph=my_graph,
+            streamable_node_names=["generate"],
+        )
     }
 )
 
-# Create the LangchainOpenaiApiServe instance
-graph_serve = LangchainOpenaiApiServe(
-    app=app,  # Pass in your existing FastAPI app
-    graphs=graph_registry,
-)
-
-# Bind the OpenAI-compatible endpoints
-graph_serve.bind_openai_chat_completion(prefix="/v1")
-
-# Add your other routes as needed
-@app.get("/")
-async def root():
-    return {"message": "Welcome to my API with LangGraph integration!"}
-
-# Run the app with uvicorn
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+server = LangchainOpenaiApiServe(app=app, graphs=graphs)
+server.bind_openai_chat_completion(prefix="/v1")
 ```
 
 ## Next Steps
 
-Now that you have a basic understanding of how to use LangGraph OpenAI Serve, you might want to:
-
-1. [Create custom graphs](custom-graphs.md) to expose through your API
-2. Learn more about [connecting with OpenAI clients](openai-clients.md)
-3. Explore [Docker deployment](../how-to-guides/docker.md) for production use
+- [Create custom graphs](custom-graphs.md)
+- [Connect OpenAI clients](openai-clients.md)
+- [Run with Docker](../how-to-guides/docker.md)

@@ -17,11 +17,11 @@ client = OpenAI(
 
 # Making a standard chat completion request
 response = client.chat.completions.create(
-    model="my-custom-graph",  # Use the name of your registered graph
+    model="custom-input-output-context",
     messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What's the capital of France?"}
-    ]
+        {"role": "user", "content": "Show me the custom adapter."},
+    ],
+    user="demo-user",
 )
 
 # Accessing the response
@@ -42,10 +42,9 @@ client = OpenAI(
 
 # Create a streaming completion
 stream = client.chat.completions.create(
-    model="my-custom-graph",
+    model="simple-graph-with-history",
     messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Write a short poem about AI."}
+        {"role": "user", "content": "Write a short poem about graphs."}
     ],
     stream=True  # Enable streaming
 )
@@ -71,11 +70,11 @@ const openai = new OpenAI({
 
 async function getChatCompletion() {
   const completion = await openai.chat.completions.create({
-    model: 'my-custom-graph',
+    model: 'custom-input-output-context',
     messages: [
-      { role: 'system', content: 'You are a helpful assistant.' },
-      { role: 'user', content: 'What\'s the capital of France?' }
+      { role: 'user', content: 'Show me the custom adapter.' }
     ],
+    user: 'demo-user',
   });
 
   console.log(completion.choices[0].message.content);
@@ -97,10 +96,9 @@ const openai = new OpenAI({
 
 async function streamChatCompletion() {
   const stream = await openai.chat.completions.create({
-    model: 'my-custom-graph',
+    model: 'simple-graph-with-history',
     messages: [
-      { role: 'system', content: 'You are a helpful assistant.' },
-      { role: 'user', content: 'Write a short poem about AI.' }
+      { role: 'user', content: 'Write a short poem about graphs.' }
     ],
     stream: true,
   });
@@ -124,11 +122,11 @@ You can also use curl to interact with your API directly:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "my-custom-graph",
+    "model": "custom-input-output-context",
     "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "What is the capital of France?"}
-    ]
+      {"role": "user", "content": "Show me the custom adapter."}
+    ],
+    "user": "demo-user"
   }'
 ```
 
@@ -146,7 +144,7 @@ The following endpoints are available in your LangGraph OpenAI Serve API:
 
 - `GET /v1/models` - List available models (your registered graphs)
 - `POST /v1/chat/completions` - Create a chat completion
-- `GET /health` - Check the health status of the API
+- `GET /v1/health` - Check the health status of the API when routers are bound with `prefix="/v1"`
 
 ## Best Practices
 

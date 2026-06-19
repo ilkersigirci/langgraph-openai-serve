@@ -14,6 +14,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from demo.api.graphs.advanced_mcp import advanced_mcp_graph
+from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
@@ -99,6 +101,8 @@ def create_custom_app() -> FastAPI:
             "simple-graph-no-history": GraphConfig(
                 graph=simple_graph_no_history, streamable_node_names=["generate"]
             ),
+            "custom-input-output-context": custom_io_graph_config,
+            "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
         }
     )
 

@@ -2,12 +2,13 @@
 
 A package that provides an OpenAI-compatible API for LangGraph instances.
 
-## Features
+## What It Does
 
 - Expose your LangGraph instances through an OpenAI-compatible API
-- Register multiple graphs and map them to different model names
-- Use with any FastAPI application
-- Support for both streaming and non-streaming completions
+- Register multiple graphs as OpenAI model names
+- Mount the API on an existing FastAPI app
+- Use standard OpenAI clients, Open WebUI, Chainlit, or any compatible client
+- Support streaming graph nodes when the underlying graph emits streamed messages
 
 ## Installation
 
@@ -19,200 +20,109 @@ uv add langgraph-openai-serve
 pip install langgraph-openai-serve
 ```
 
-## Quick Start
+## Run The Demo
 
-Here's a simple example of how to use LangGraph OpenAI Serve:
+The `demo` folder shows the package in action with a FastAPI backend and optional UIs.
 
-```python
-from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
-
-# Import your LangGraph instances
-from your_graphs import simple_graph
-
-async def advanced_graph():
-    from langchain_mcp_adapters.client import MultiServerMCPClient
-    from langgraph.prebuilt import create_react_agent
-
-    tools = await MultiServerMCPClient().get_tools()
-    graph = create_react_agent(model="openai:gpt-4.1", tools=tools)
-    return graph
-
-# You can configure your graphs with your desired configurations.
-simple_graph_with_history = simple_graph.with_config(
-    configurable={"use_history": True},
-)
-simple_graph_no_history = simple_graph.with_config(
-    configurable={"use_history": False},
-)
-
-# Create a GraphRegistry
-graph_registry = GraphRegistry(
-    registry={
-        "simple-graph-with-history": GraphConfig(
-            graph=simple_graph_with_history, streamable_node_names=["generate"]
-        ),
-        "simple-graph-no-history": GraphConfig(
-            graph=simple_graph_no_history, streamable_node_names=["generate"]
-            ),
-        "advanced_graph": GraphConfig(graph=advanced_graph, streamable_node_names=["generate"])
-    }
-)
-
-graph_serve = LangchainOpenaiApiServe(
-    graphs=graph_registry,
-)
-
-# Bind the OpenAI-compatible endpoints
-graph_serve.bind_openai_chat_completion(prefix="/v1")
-
-# Run the app with uvicorn
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(graph_serve.app, host="0.0.0.0", port=8000)
+```bash
+make run-demo-api
 ```
 
-Usage with your own FastAPI app is also supported:
+The API runs at `http://localhost:8000/v1`.
 
-```python
-from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
+List the registered graphs:
 
-# Import your LangGraph instances
-from your_graphs import simple_graph, advanced_graph
-
-# Create a FastAPI app
-app = FastAPI(
-    title="LangGraph OpenAI API",
-    version="1.0",
-    description="OpenAI API exposing LangGraph agents",
-)
-
-# Create a GraphRegistry
-graph_registry = GraphRegistry(
-    registry={
-        "simple_graph": GraphConfig(graph=simple_graph, streamable_node_names=["generate"]),
-        "advanced_graph": GraphConfig(graph=advanced_graph, streamable_node_names=["generate"])
-    }
-)
-
-graph_serve = LangchainOpenaiApiServe(
-    app=app,
-    graphs=graph_registry,
-)
-
-# Bind the OpenAI-compatible endpoints
-graph_serve.bind_openai_chat_completion(prefix="/v1")
-
-# Run the app with uvicorn
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(graph_serve.app, host="0.0.0.0", port=8000)
+```bash
+curl http://localhost:8000/v1/models
 ```
 
-## Custom Input, Output, and Context
-
-`GraphConfig` adapters let a compiled graph use its native LangGraph 1.x input,
-output, and context schemas. Each adapter can be synchronous or asynchronous and
-receives the complete chat completion request where applicable.
-
-```python
-from dataclasses import dataclass
-from typing import TypedDict
-
-from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
-
-from langgraph_openai_serve import GraphConfig
-
-
-@dataclass
-class AppContext:
-    user_id: str
-
-
-class Input(TypedDict):
-    question: str
-
-
-class Output(TypedDict):
-    answer: str
-
-
-class State(TypedDict, total=False):
-    question: str
-    answer: str
-
-
-async def generate(state: State, runtime: Runtime[AppContext]) -> Output:
-    return {
-        "answer": f"Answer for {runtime.context.user_id}: {state['question']}",
-    }
-
-
-graph = (
-    StateGraph(
-        State,
-        input_schema=Input,
-        output_schema=Output,
-        context_schema=AppContext,
-    )
-    .add_node("generate", generate)
-    .set_entry_point("generate")
-    .set_finish_point("generate")
-    .compile()
-)
-
-graph_config = GraphConfig(
-    graph=graph,
-    request_to_input=lambda request, messages: {
-        "question": messages[-1].content,
-    },
-    context_factory=lambda request: AppContext(
-        user_id=request.user or "anonymous",
-    ),
-    output_to_text=lambda output: output["answer"],
-    streamable_node_names=["generate"],
-)
-```
-
-Without adapters, behavior is unchanged: the graph receives
-`{"messages": messages}`, no runtime context is supplied, and the response text
-is read from `result["messages"][-1].content`. Input and output validation and
-filtering are performed by LangGraph using the graph's declared schemas.
-
-## Using with the OpenAI Client
-
-Once your API is running, you can use any OpenAI-compatible client to interact with it:
+Call a graph with the OpenAI Python client:
 
 ```python
 from openai import OpenAI
 
-# Create a client pointing to your API
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="any-value"  # API key is not verified
+    api_key="DUMMY",
 )
 
-# Use a specific graph by specifying its name as the model
 response = client.chat.completions.create(
-    model="simple_graph_1",  # This maps to the graph name in your registry
-    messages=[
-        {"role": "user", "content": "Hello, how can you help me today?"}
-    ]
+    model="simple-graph-no-history",
+    messages=[{"role": "user", "content": "Hello!"}],
 )
 
 print(response.choices[0].message.content)
+```
 
-# You can also use streaming
+Streaming works the same way for graphs that stream from configured nodes:
+
+```python
 stream = client.chat.completions.create(
-    model="advanced_graph",
-    messages=[
-        {"role": "user", "content": "Write a short poem about AI."}
-    ],
-    stream=True
+    model="simple-graph-with-history",
+    messages=[{"role": "user", "content": "Write a short poem about graphs."}],
+    stream=True,
 )
 
 for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="")
+    content = chunk.choices[0].delta.content
+    if content:
+        print(content, end="")
 ```
+
+## Demo Graphs
+
+- `demo/api/graphs/simple.py` shows the default `{"messages": messages}` graph shape.
+- `demo/api/graphs/custom_io.py` shows custom input, output, and runtime context adapters.
+- `demo/api/graphs/advanced_mcp.py` shows an async graph factory that loads mock MCP tools before building a ReAct graph.
+- `demo/api/app.py` shows how graph names are registered as OpenAI model names.
+
+The demo registers:
+
+- `simple-graph-with-history`
+- `simple-graph-no-history`
+- `custom-input-output-context`
+- `advanced-mcp-tools`
+
+Try the custom adapter graph with a normal, non-streaming request:
+
+```python
+response = client.chat.completions.create(
+    model="custom-input-output-context",
+    messages=[{"role": "user", "content": "Show me custom schemas."}],
+    user="demo-user",
+)
+
+print(response.choices[0].message.content)
+```
+
+## Use Your Own FastAPI App
+
+```python
+from fastapi import FastAPI
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from your_graphs import my_graph
+
+app = FastAPI(title="LangGraph OpenAI API")
+
+graphs = GraphRegistry(
+    registry={
+        "my-graph": GraphConfig(
+            graph=my_graph,
+            streamable_node_names=["generate"],
+        )
+    }
+)
+
+server = LangchainOpenaiApiServe(app=app, graphs=graphs)
+server.bind_openai_chat_completion(prefix="/v1")
+```
+
+`GraphConfig` also accepts `request_to_input`, `context_factory`, and
+`output_to_text` adapters when your graph uses custom LangGraph schemas. See
+`demo/api/graphs/custom_io.py` for the complete example.
+
+## More
+
+- Docker and Open WebUI demo: `docker-compose.yml`
+- Chainlit demo: `make run-demo-ui-chainlit`
+- Full docs: `docs/`

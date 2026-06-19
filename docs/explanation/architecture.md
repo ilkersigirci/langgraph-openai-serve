@@ -80,7 +80,7 @@ LangGraph OpenAI Serve provides several FastAPI routers:
 
 1. **Models Router**: Handles `/v1/models` endpoint to list available LangGraph workflows
 2. **Chat Completions Router**: Handles `/v1/chat/completions` endpoint for chat interactions
-3. **Health Router**: Provides a health check endpoint at `/health`
+3. **Health Router**: Provides a health check endpoint at `/v1/health` when mounted with `prefix="/v1"`
 
 ### Schema Models
 
@@ -120,7 +120,7 @@ Graph Selection (get_graph_for_model)
 Message Conversion (convert_to_lc_messages)
     │
     ▼
-Graph Execution (graph.ainvoke or graph.astream_events)
+Graph Execution (graph.ainvoke or graph.astream)
     │
     ▼
 Response Formatting
@@ -154,7 +154,7 @@ LangGraph OpenAI Serve integrates with LangGraph by:
 
 1. Accepting compiled LangGraph workflows (`graph.compile()`)
 2. Converting between OpenAI message formats and LangChain message formats
-3. Executing workflows with appropriate parameters (temperature, max_tokens, etc.)
+3. Adapting requests into native graph input, output, and runtime context schemas when configured
 4. Handling both streaming and non-streaming execution modes
 
 ## Next Steps

@@ -19,14 +19,14 @@ You can use Docker Compose to build and run the container:
 
 ```bash
 # Start the server
-docker compose up -d langgraph-openai-serve-dev
+docker compose up -d lgos-demo-api
 ```
 
 If you want to use the project with open-webui, a compatible UI for interacting with OpenAI-compatible APIs:
 
 ```bash
 # For a complete example with open-webui
-docker compose up -d open-webui
+docker compose up -d lgos-demo-api open-webui
 ```
 
 ### Accessing the API
@@ -34,7 +34,7 @@ docker compose up -d open-webui
 Once the container is running, you can access the API at:
 
 - API: http://localhost:8000/v1
-- OpenWebUI (if using): http://localhost:3000
+- Open WebUI (if using): http://localhost:8080
 
 ## Creating a Custom Docker Deployment
 
@@ -86,10 +86,9 @@ Create an `app.py` file with your custom LangGraph OpenAI Serve configuration:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import LangchainOpenaiApiServe, GraphRegistry, GraphConfig
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 
-# Import your custom graphs
-from my_graphs import graph1, graph2
+from my_graphs import chat_graph, advanced_graph
 
 # Create a FastAPI app
 app = FastAPI(
@@ -100,8 +99,8 @@ app = FastAPI(
 # Create a GraphRegistry
 graph_registry = GraphRegistry(
     registry={
-        "graph1": GraphConfig(graph=graph1, streamable_node_names=["generate"]),
-        "graph2": GraphConfig(graph=graph2, streamable_node_names=["generate"]),
+        "chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"]),
+        "advanced": GraphConfig(graph=advanced_graph),
     }
 )
 
@@ -191,7 +190,7 @@ services:
           memory: 1G
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
