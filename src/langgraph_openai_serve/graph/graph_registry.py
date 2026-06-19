@@ -32,10 +32,7 @@ class GraphConfig(BaseModel):
         if isinstance(self.graph, CompiledStateGraph):
             return self.graph
 
-        graph = self.graph()
-        if inspect.isawaitable(graph):
-            return await graph
-        return graph
+        return await _maybe_await(self.graph())
 
     async def build_input(
         self,
@@ -45,25 +42,25 @@ class GraphConfig(BaseModel):
         """Build the native graph input for a chat completion request."""
         if self.request_to_input is None:
             return {"messages": messages}
-        return await _resolve_adapter(self.request_to_input(request, messages))
+        return await _maybe_await(self.request_to_input(request, messages))
 
     async def build_context(self, request: ChatCompletionRequest) -> Any:
         """Build the LangGraph runtime context for a chat completion request."""
         if self.context_factory is None:
             return None
-        return await _resolve_adapter(self.context_factory(request))
+        return await _maybe_await(self.context_factory(request))
 
     async def render_output(self, output: Any) -> str:
         """Convert native graph output into assistant response text."""
         if self.output_to_text is None:
             messages = output["messages"]
             return messages[-1].content if messages else ""
-        return await _resolve_adapter(self.output_to_text(output))
+        return await _maybe_await(self.output_to_text(output))
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-async def _resolve_adapter(value: Any | Awaitable[Any]) -> Any:
+async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
