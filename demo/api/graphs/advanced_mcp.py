@@ -2,10 +2,10 @@
 
 from typing import Any
 
+from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool, tool
-from langgraph.prebuilt import create_react_agent
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
@@ -51,4 +51,4 @@ async def advanced_mcp_graph():
             ),
         ]
     )
-    return create_react_agent(model=model, tools=tools)
+    return create_agent(model=model, tools=tools)

@@ -63,7 +63,7 @@ loading tools from MCP or another async source:
 ```python
 async def advanced_graph():
     tools = await mcp_client.get_tools()
-    return create_react_agent(model=model, tools=tools)
+    return create_agent(model=model, tools=tools)
 
 GraphConfig(graph=advanced_graph)
 ```
