@@ -7,7 +7,7 @@ implementing an OpenAI-compatible interface.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from langgraph_openai_serve.api.chat.schemas import (
@@ -46,6 +46,22 @@ async def create_chat_completion(
         f"Received chat completion request for model: {chat_request.model}, "
         f"stream: {chat_request.stream}"
     )
+
+    try:
+        graph_config = graph_registry.get_graph(chat_request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    ui_event_options = chat_request.ui_event_options()
+    if (
+        ui_event_options.enabled
+        and graph_config.capabilities.hitl
+        and not ui_event_options.thread_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="UI-event HITL graphs require x_langgraph_openai_serve.thread_id",
+        )
 
     if chat_request.stream:
         logger.info("Streaming chat completion response")

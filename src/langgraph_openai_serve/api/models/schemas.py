@@ -29,6 +29,7 @@ class Model(BaseModel):
     parent: str | None = None
     max_model_len: int | None = None
     permission: list[ModelPermission]
+    x_langgraph_openai_serve: dict | None = None
 
 
 class ModelList(BaseModel):

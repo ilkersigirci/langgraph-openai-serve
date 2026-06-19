@@ -50,8 +50,16 @@ class ModelService:
                 parent=None,
                 max_model_len=16000,
                 permission=[permission],
+                x_langgraph_openai_serve={
+                    "ui_event_protocol": {
+                        "name": "ag-ui",
+                        "version": "v1",
+                        "transport": "openai-chat-completions-content",
+                    },
+                    "capabilities": config.capabilities.model_dump(),
+                },
             )
-            for name in graph_registry.registry
+            for name, config in graph_registry.registry.items()
         ]
 
         logger.info(f"Retrieved {len(models)} available models")

@@ -14,7 +14,7 @@ DOCKER_IMAGE=langgraph-openai-serve
 DOCKER_TARGET=development
 
 
-.PHONY: help install test clean build publish pre-commit format lint profile
+.PHONY: help install test clean build publish pre-commit format lint profile run-ui-chainlit
 .DEFAULT_GOAL=help
 
 help:
@@ -174,3 +174,6 @@ docker-build: ## Build docker image
 
 run-demo-server-dev: # ## Run the demo server in development mode
 	uv run --module demo.app
+
+run-ui-chainlit: ## Run the Chainlit UI request demo on port 8001
+	uv run --with 'chainlit>=2.8,<3' chainlit run demo/chainlit.py --host 0.0.0.0 --port 8001 -w

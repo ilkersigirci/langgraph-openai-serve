@@ -26,6 +26,7 @@ from langchain_core.callbacks.base import BaseCallbackManager, Callbacks
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import RunnableConfig
 from langgraph.constants import TAG_HIDDEN
+from langgraph.types import Command
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -33,6 +34,11 @@ from langgraph_openai_serve.api.chat.schemas import (
 )
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.ui_events.hitl import (
+    UIEventInterrupt,
+    extract_interrupt,
+    parse_ui_event_tool_response,
+)
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = logging.getLogger(__name__)
@@ -94,18 +100,36 @@ async def run_langgraph(
         raise e
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
+    ui_event_options = request.ui_event_options()
+    if (
+        ui_event_options.enabled
+        and graph_config.capabilities.hitl
+        and not ui_event_options.thread_id
+    ):
+        raise ValueError(
+            "UI-event HITL graphs require x_langgraph_openai_serve.thread_id"
+        )
 
-    # Convert OpenAI messages and adapt the request to the graph's native schemas.
-    lc_messages = convert_to_lc_messages(messages)
-    inputs = await graph_config.build_input(request, lc_messages)
+    runnable_config = _build_runnable_config(
+        graph_config.runtime_callbacks,
+        thread_id=ui_event_options.thread_id,
+    )
     context = await graph_config.build_context(request)
-    runnable_config = _build_runnable_config(graph_config.runtime_callbacks)
+    if _is_ui_event_tool_resume(request):
+        inputs = Command(resume=parse_ui_event_tool_response(messages[-1]))
+    else:
+        # Convert OpenAI messages and adapt the request to the graph's native schemas.
+        lc_messages = convert_to_lc_messages(messages)
+        inputs = await graph_config.build_input(request, lc_messages)
 
     result = await graph.ainvoke(
         inputs,
         config=runnable_config,
         context=context,
     )
+    interrupt = extract_interrupt(result)
+    if ui_event_options.enabled and interrupt is not None:
+        raise UIEventInterrupt(interrupt)
     response = await graph_config.render_output(result)
 
     # Calculate token usage (approximate)
@@ -149,10 +173,25 @@ async def run_langgraph_stream(
         raise e
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
-    lc_messages = convert_to_lc_messages(messages)
-    inputs = await graph_config.build_input(request, lc_messages)
+    ui_event_options = request.ui_event_options()
+    if (
+        ui_event_options.enabled
+        and graph_config.capabilities.hitl
+        and not ui_event_options.thread_id
+    ):
+        raise ValueError(
+            "UI-event HITL graphs require x_langgraph_openai_serve.thread_id"
+        )
+    runnable_config = _build_runnable_config(
+        graph_config.runtime_callbacks,
+        thread_id=ui_event_options.thread_id,
+    )
     context = await graph_config.build_context(request)
-    runnable_config = _build_runnable_config(graph_config.runtime_callbacks)
+    if _is_ui_event_tool_resume(request):
+        inputs = Command(resume=parse_ui_event_tool_response(messages[-1]))
+    else:
+        lc_messages = convert_to_lc_messages(messages)
+        inputs = await graph_config.build_input(request, lc_messages)
 
     async for event in graph.astream(
         inputs,
@@ -178,7 +217,11 @@ async def run_langgraph_stream(
             yield content, {"tokens": 1}
 
 
-def _build_runnable_config(callbacks: Callbacks) -> RunnableConfig | None:
+def _build_runnable_config(
+    callbacks: Callbacks,
+    *,
+    thread_id: str | None = None,
+) -> RunnableConfig | None:
     if settings.ENABLE_LANGFUSE is True:
         if callbacks is None:
             callbacks = [langfuse_handler]
@@ -189,4 +232,15 @@ def _build_runnable_config(callbacks: Callbacks) -> RunnableConfig | None:
             callback_manager.add_handler(langfuse_handler)
             callbacks = callback_manager
 
-    return RunnableConfig(callbacks=callbacks) if callbacks else None
+    runnable_config: RunnableConfig = {}
+    if callbacks:
+        runnable_config["callbacks"] = callbacks
+    if thread_id:
+        runnable_config["configurable"] = {"thread_id": thread_id}
+    return runnable_config or None
+
+
+def _is_ui_event_tool_resume(request: ChatCompletionRequest) -> bool:
+    if not request.ui_event_options().enabled or not request.messages:
+        return False
+    return request.messages[-1].role == "tool"

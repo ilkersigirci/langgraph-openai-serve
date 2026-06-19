@@ -166,6 +166,67 @@ async def create_chat_completion_stream(
     )
 ```
 
+## UI Event Mode
+
+Clients that can render richer agent events can opt in per request with the
+`x_langgraph_openai_serve` extension. The endpoint remains
+`/v1/chat/completions`; without this extension, responses stay as ordinary
+assistant text.
+
+```json
+{
+  "model": "my_custom_graph",
+  "messages": [{"role": "user", "content": "Summarize this"}],
+  "stream": true,
+  "x_langgraph_openai_serve": {
+    "ui_events": {
+      "enabled": true,
+      "thread_id": "ui-chat-123"
+    }
+  }
+}
+```
+
+In UI event mode, `message.content` for non-streaming responses and
+`delta.content` for streaming responses contain newline-delimited AG-UI event
+objects. Text is also represented as events, so clients parse one ordered event
+log:
+
+```jsonl
+{"type":"RUN_STARTED","threadId":"ui-chat-123","runId":"run-..."}
+{"type":"TEXT_MESSAGE_START","messageId":"msg-...","role":"assistant"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-...","delta":"Hello"}
+{"type":"TEXT_MESSAGE_END","messageId":"msg-..."}
+{"type":"RUN_FINISHED","threadId":"ui-chat-123","runId":"run-...","result":{"finishReason":"stop"}}
+```
+
+The event payload uses AG-UI field names such as `threadId`, `runId`,
+`messageId`, and `delta`. The request `thread_id` is passed to LangGraph as the
+configurable `thread_id`. Streaming chunks only contain complete JSON lines; a
+chunk may contain one or more complete lines, but never a partial JSON object.
+
+Prior assistant messages are normalized defensively before graph input. If an
+assistant message starts with an AG-UI `RUN_STARTED` event, only
+`TEXT_MESSAGE_CONTENT.delta` content is reconstructed into model-visible text.
+Render-only events such as citations, state, and custom UI data are dropped from
+prompt context by default.
+
+Citation helper events use `CUSTOM` events named `citation`. The backend
+normalizes source IDs to run-local IDs such as `cite-1` and preserves original
+IDs and provenance under `value.metadata`.
+
+Response-required UI interactions such as human approvals use standard OpenAI
+tool calls with the reserved function name `ui_event` and
+`finish_reason="tool_calls"`. The compatibility layer validates basic JSON and
+correlation fields for tool responses; domain-specific approval validation
+belongs in graph code. Interruptible graphs should declare `hitl=True` in their
+capabilities and require a UI-owned `thread_id`.
+
+The server does not provide durable chat or interrupt persistence. The UI owns
+conversation history and stable chat IDs. LangGraph thread state may be
+ephemeral, so exact resume can fail after a backend restart unless your graph
+uses durable checkpointing.
+
 ## Function/Tool Calling Support
 
 OpenAI's API supports tool calling, and LangGraph OpenAI Serve provides compatibility for this feature:
@@ -207,6 +268,28 @@ The API is compatible with:
 - OpenAI Node.js SDK
 - Most other OpenAI-compatible clients
 - Direct HTTP requests (e.g., with curl)
+
+Models also expose ignored-by-default capability metadata under
+`x_langgraph_openai_serve` in `/v1/models`:
+
+```json
+{
+  "id": "my_custom_graph",
+  "x_langgraph_openai_serve": {
+    "ui_event_protocol": {
+      "name": "ag-ui",
+      "version": "v1",
+      "transport": "openai-chat-completions-content"
+    },
+    "capabilities": {
+      "ui_events": true,
+      "hitl": false,
+      "citations": false,
+      "state": false
+    }
+  }
+}
+```
 
 ## Using with OpenAI Client Libraries
 

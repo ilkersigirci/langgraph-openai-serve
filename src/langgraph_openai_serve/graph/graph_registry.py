@@ -19,6 +19,15 @@ ContextFactory = Callable[[ChatCompletionRequest], Any | Awaitable[Any]]
 OutputToText = Callable[[Any], str | Awaitable[str]]
 
 
+class GraphCapabilities(BaseModel):
+    """Explicit, conservative capabilities advertised for a graph."""
+
+    ui_events: bool = True
+    hitl: bool = False
+    citations: bool = False
+    state: bool = False
+
+
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
@@ -26,6 +35,7 @@ class GraphConfig(BaseModel):
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
+    capabilities: GraphCapabilities = Field(default_factory=GraphCapabilities)
 
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""

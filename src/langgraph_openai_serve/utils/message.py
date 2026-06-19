@@ -1,6 +1,7 @@
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequestMessage
+from langgraph_openai_serve.ui_events.transcript import normalize_ui_event_messages
 
 
 def convert_to_lc_messages(
@@ -19,7 +20,7 @@ def convert_to_lc_messages(
     """
 
     lc_messages = []
-    for m in messages:
+    for m in normalize_ui_event_messages(messages):
         if m.role == "system":
             lc_messages.append(SystemMessage(content=m.content or ""))
         elif m.role == "user":

@@ -6,7 +6,7 @@ This module defines Pydantic models that match the OpenAI API request and respon
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Role(str, Enum):
@@ -50,6 +50,32 @@ class ToolCall(BaseModel):
     function: ToolCallFunction
 
 
+class UIEventRequestOptions(BaseModel):
+    """Namespaced request options for OpenAI-compatible UI events."""
+
+    enabled: bool = False
+    version: Literal["v1"] = "v1"
+    thread_id: str | None = None
+
+
+class LangGraphOpenAIServeOptions(BaseModel):
+    """Ignored-by-default extension fields for this compatibility server."""
+
+    ui_events: bool | UIEventRequestOptions = False
+    thread_id: str | None = None
+
+    def ui_event_options(self) -> UIEventRequestOptions:
+        """Return normalized UI-event options."""
+        if isinstance(self.ui_events, bool):
+            return UIEventRequestOptions(
+                enabled=self.ui_events,
+                thread_id=self.thread_id,
+            )
+        if self.ui_events.thread_id is None and self.thread_id is not None:
+            return self.ui_events.model_copy(update={"thread_id": self.thread_id})
+        return self.ui_events
+
+
 class ChatCompletionRequestMessage(BaseModel):
     """Model for a chat completion request message."""
 
@@ -58,6 +84,7 @@ class ChatCompletionRequestMessage(BaseModel):
     name: str | None = None
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 class FunctionDefinition(BaseModel):
@@ -100,6 +127,16 @@ class ChatCompletionRequest(BaseModel):
     function_call: str | FunctionCall | None = None
     tools: list[Tool] | None = None
     tool_choice: Any | None = None
+    langgraph_openai_serve: LangGraphOpenAIServeOptions | None = Field(
+        default=None,
+        alias="x_langgraph_openai_serve",
+    )
+
+    def ui_event_options(self) -> UIEventRequestOptions:
+        """Return normalized UI-event options for this request."""
+        if self.langgraph_openai_serve is None:
+            return UIEventRequestOptions()
+        return self.langgraph_openai_serve.ui_event_options()
 
 
 class ChatCompletionResponseMessage(BaseModel):
