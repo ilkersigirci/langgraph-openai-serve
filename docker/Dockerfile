@@ -1,5 +1,5 @@
-ARG DEV_IMAGE=ghcr.io/astral-sh/uv:bookworm-slim
-ARG PROD_IMAGE=ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+ARG DEV_IMAGE=ghcr.io/astral-sh/uv:trixie-slim
+ARG PROD_IMAGE=ghcr.io/astral-sh/uv:python3.13-trixie-slim
 ARG UID=1000
 ARG GID=1000
 
@@ -73,7 +73,7 @@ RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
 #
 # FROM staging AS production
 ARG PROD_IMAGE
-FROM ${PROD_IMAGE} as production
+FROM ${PROD_IMAGE} AS production
 
 ARG UID
 ARG GID
