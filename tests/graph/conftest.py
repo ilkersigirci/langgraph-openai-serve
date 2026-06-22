@@ -1,8 +1,10 @@
 from collections.abc import Callable
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import BaseMessage
+from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 
@@ -55,3 +57,22 @@ def make_request() -> Callable[..., ChatCompletionRequest]:
         )
 
     return _make_request
+
+
+@pytest.fixture
+def make_message_graph() -> Callable[..., Any]:
+    def _make_message_graph(response: str = "hello", *, node_name: str = "generate"):
+        model = FakeListChatModel(responses=[response])
+
+        async def generate(state: MessageState):
+            return {"messages": [await model.ainvoke(state["messages"])]}
+
+        return (
+            StateGraph(MessageState)
+            .add_node(node_name, generate)
+            .set_entry_point(node_name)
+            .set_finish_point(node_name)
+            .compile()
+        )
+
+    return _make_message_graph

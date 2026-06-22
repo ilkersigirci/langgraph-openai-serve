@@ -1,11 +1,8 @@
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langgraph.graph import StateGraph
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph
-from tests.graph.conftest import MessageState
 
 
 class RecordingCallback(BaseCallbackHandler):
@@ -17,26 +14,15 @@ class RecordingCallback(BaseCallbackHandler):
 
 
 @pytest.mark.anyio
-async def test_message_defaults_callback_list_and_usage(
+async def test_default_message_input_callbacks_and_usage(
     make_request,
+    make_message_graph,
 ) -> None:
-    model = FakeListChatModel(responses=["hello"])
-
-    async def generate(state: MessageState):
-        return {"messages": [await model.ainvoke(state["messages"])]}
-
-    graph = (
-        StateGraph(MessageState)
-        .add_node("generate", generate)
-        .set_entry_point("generate")
-        .set_finish_point("generate")
-        .compile()
-    )
     recording_callback = RecordingCallback()
     graph_registry = GraphRegistry(
         registry={
             "messages": GraphConfig(
-                graph=graph,
+                graph=make_message_graph("hello"),
                 runtime_callbacks=[recording_callback],
             )
         },
@@ -51,16 +37,14 @@ async def test_message_defaults_callback_list_and_usage(
     )
 
     assert response == "hello"
-    assert usage == {
-        "prompt_tokens": 1,
-        "completion_tokens": 1,
-        "total_tokens": 2,
-    }
+    assert usage["prompt_tokens"] == 1
+    assert usage["completion_tokens"] == 1
+    assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
     assert recording_callback.starts == 1
 
 
 @pytest.mark.anyio
-async def test_unknown_graph_raises_value_error(make_request) -> None:
+async def test_unknown_model_raises_value_error(make_request) -> None:
     chat_request = make_request("missing")
 
     with pytest.raises(ValueError, match="Graph 'missing' not found"):

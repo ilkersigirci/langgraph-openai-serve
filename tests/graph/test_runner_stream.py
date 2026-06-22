@@ -43,7 +43,9 @@ async def test_nested_subgraph_streaming(
         .compile()
     )
     graph = (
-        StateGraph(QuestionState, input_schema=QuestionInput, output_schema=AnswerOutput)
+        StateGraph(
+            QuestionState, input_schema=QuestionInput, output_schema=AnswerOutput
+        )
         .add_node("subgraph", subgraph)
         .set_entry_point("subgraph")
         .set_finish_point("subgraph")
