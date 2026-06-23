@@ -156,6 +156,13 @@ LangGraph OpenAI Serve integrates with LangGraph by:
 2. Converting between OpenAI message formats and LangChain message formats
 3. Adapting requests into native graph input, output, and runtime context schemas when configured
 4. Handling both streaming and non-streaming execution modes
+5. Passing `metadata.langgraph_thread_id` into LangGraph runnable config for
+   graphs registered with `interrupts_enabled=True`
+
+Interrupt-enabled graphs must be compiled with a checkpointer. This package
+validates that requirement when the graph is resolved. Demo and test graphs may
+use LangGraph's `InMemorySaver`, but production graphs should use a durable
+checkpointer so pending interrupts survive restarts and work across workers.
 
 ## Next Steps
 

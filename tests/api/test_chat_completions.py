@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from httpx import AsyncClient
 from openai import OpenAI
@@ -42,17 +44,32 @@ def test_stream_chat_completion(openai_client: OpenAI) -> None:
 
 @pytest.mark.anyio
 async def test_stream_chat_completion_sse_wire_format(client: AsyncClient) -> None:
-    response = await client.post(
+    async with client.stream(
+        "POST",
         "/v1/chat/completions",
         json={
             "model": "test",
             "messages": [{"role": "user", "content": "Hi"}],
             "stream": True,
         },
-    )
+    ) as response:
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"].startswith("text/event-stream")
 
-    assert response.status_code == status.HTTP_200_OK
-    assert response.headers["content-type"].startswith("text/event-stream")
-    events = [event for event in response.text.split("\n\n") if event]
+        events = []
+        async for line in response.aiter_lines():
+            if line:
+                events.append(line)
+
     assert all(event.startswith("data: ") for event in events)
+    payloads = [
+        json.loads(event.removeprefix("data: "))
+        for event in events
+        if event != "data: [DONE]"
+    ]
+    assert payloads[0]["choices"][0]["delta"]["role"] == "assistant"
+    assert "".join(
+        payload["choices"][0]["delta"].get("content") or "" for payload in payloads
+    ) == "hello"
+    assert payloads[-1]["choices"][0]["finish_reason"] == "stop"
     assert events[-1] == "data: [DONE]"

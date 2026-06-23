@@ -7,7 +7,7 @@ implementing an OpenAI-compatible interface.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from langgraph_openai_serve.api.chat.schemas import (
@@ -15,12 +15,23 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionResponse,
 )
 from langgraph_openai_serve.api.chat.service import ChatCompletionService
+from langgraph_openai_serve.api.chat.utils.interrupts import (
+    InvalidResumeRequestError,
+)
 from langgraph_openai_serve.api.models.views import get_graph_registry_dependency
-from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import (
+    GraphConfigurationError,
+    GraphRegistry,
+)
+from langgraph_openai_serve.graph.utils import (
+    MissingThreadIDError,
+    prepare_run,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["openai"])
+CLIENT_ERROR_TYPES = (MissingThreadIDError, InvalidResumeRequestError)
 
 
 @router.post("/chat/completions", response_model=ChatCompletionResponse)
@@ -47,14 +58,32 @@ async def create_chat_completion(
         f"stream: {chat_request.stream}"
     )
 
-    if chat_request.stream:
-        logger.info("Streaming chat completion response")
-        return StreamingResponse(
-            service.stream_completion(chat_request, graph_registry),
-            media_type="text/event-stream",
+    try:
+        run = await prepare_run(
+            chat_request.model,
+            chat_request.messages,
+            graph_registry,
+            chat_request,
         )
 
-    logger.info("Generating non-streaming chat completion response")
-    response = await service.generate_completion(chat_request, graph_registry)
+        if chat_request.stream:
+            logger.info("Streaming chat completion response")
+            return StreamingResponse(
+                service.stream_completion(chat_request, run),
+                media_type="text/event-stream",
+            )
+
+        logger.info("Generating non-streaming chat completion response")
+        response = await service.generate_completion(chat_request, run)
+    except CLIENT_ERROR_TYPES as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except GraphConfigurationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
     logger.info("Returning non-streaming chat completion response")
     return response

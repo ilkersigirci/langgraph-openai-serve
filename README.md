@@ -74,6 +74,7 @@ for chunk in stream:
 - `demo/api/graphs/simple.py` shows the default `{"messages": messages}` graph shape.
 - `demo/api/graphs/custom_io.py` shows custom input, output, and runtime context adapters.
 - `demo/api/graphs/advanced_mcp.py` shows an async graph factory that loads mock MCP tools before building a ReAct graph.
+- `demo/api/graphs/interruptible.py` shows a checkpointed graph with one human-in-the-loop approval.
 - `demo/api/app.py` shows how graph names are registered as OpenAI model names.
 
 The demo registers:
@@ -82,6 +83,7 @@ The demo registers:
 - `simple-graph-no-history`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
+- `interruptible-approval`
 
 Try the custom adapter graph with a normal, non-streaming request:
 
@@ -120,6 +122,13 @@ server.bind_openai_chat_completion(prefix="/v1")
 `GraphConfig` also accepts `request_to_input`, `context_factory`, and
 `output_to_text` adapters when your graph uses custom LangGraph schemas. See
 `demo/api/graphs/custom_io.py` for the complete example.
+
+For interruptible graphs, set `interrupts_enabled=True` and compile the graph
+with a LangGraph checkpointer. Requests must include
+`metadata={"langgraph_thread_id": "<client-chat-id>"}` so resume requests return
+to the same LangGraph thread. The demo uses `InMemorySaver` for local use only;
+production deployments should use a durable checkpointer because in-memory
+checkpoints are lost on restart and are not shared across workers.
 
 ## More
 

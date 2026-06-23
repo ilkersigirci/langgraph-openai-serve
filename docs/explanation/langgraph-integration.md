@@ -78,14 +78,15 @@ response_text = await graph_config.render_output(result)
 
 ## Streaming Execution
 
-For streaming requests, the runner uses LangGraph message streaming:
+For streaming requests, the runner uses LangGraph message streaming for text and
+update streaming for interrupts:
 
 ```python
 async for event in graph.astream(
     inputs,
     config=runnable_config,
     context=context,
-    stream_mode=["messages"],
+    stream_mode=["messages", "updates"],
     subgraphs=True,
     version="v2",
 ):
@@ -93,7 +94,8 @@ async for event in graph.astream(
 ```
 
 Only `AIMessageChunk` values from configured `streamable_node_names` are sent to
-the client. Hidden-tagged chunks are ignored.
+the client as text. Hidden-tagged chunks are ignored. Interrupt updates are
+converted into OpenAI-compatible tool-call chunks.
 
 This means streaming is opt-in at registration time and depends on the graph
 actually emitting streamed message chunks. The custom input/output/context demo

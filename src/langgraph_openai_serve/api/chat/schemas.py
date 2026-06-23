@@ -58,6 +58,7 @@ class ChatCompletionRequestMessage(BaseModel):
     name: str | None = None
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 class FunctionDefinition(BaseModel):
@@ -100,6 +101,7 @@ class ChatCompletionRequest(BaseModel):
     function_call: str | FunctionCall | None = None
     tools: list[Tool] | None = None
     tool_choice: Any | None = None
+    metadata: dict[str, str] | None = None
 
 
 class ChatCompletionResponseMessage(BaseModel):
@@ -139,13 +141,29 @@ class ChatCompletionResponse(BaseModel):
 
 
 # Stream models
+class ChatCompletionStreamToolCallFunction(BaseModel):
+    """Model for a streaming tool call function delta."""
+
+    name: str | None = None
+    arguments: str | None = None
+
+
+class ChatCompletionStreamToolCall(BaseModel):
+    """Model for a streaming tool call delta."""
+
+    index: int
+    id: str | None = None
+    type: Literal["function"] | None = None
+    function: ChatCompletionStreamToolCallFunction | None = None
+
+
 class ChatCompletionStreamResponseDelta(BaseModel):
     """Model for a chat completion stream response delta."""
 
     role: Role | None = None
     content: str | None = None
     function_call: FunctionCall | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list[ChatCompletionStreamToolCall] | None = None
 
 
 class ChatCompletionStreamResponseChoice(BaseModel):

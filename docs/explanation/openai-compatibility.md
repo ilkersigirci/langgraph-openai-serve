@@ -97,39 +97,47 @@ def create_chat_completion(
 OpenAI's API supports streaming responses, which is particularly important for real-time interactions. LangGraph OpenAI Serve returns compatible Server-Sent Events (SSE) chunks and delegates content generation to `run_langgraph_stream`:
 
 ```python
-async for content_chunk, metrics in run_langgraph_stream(
+async for event in run_langgraph_stream(
     body.model,
     body.messages,
     graph_registry,
     body,
 ):
+    if isinstance(event, LangGraphInterrupt):
+        yield interrupt_tool_call_chunk(event)
+        continue
+
     yield {
         "object": "chat.completion.chunk",
         "model": body.model,
         "choices": [
             {
                 "index": 0,
-                "delta": {"content": content_chunk},
+                "delta": {"content": event},
                 "finish_reason": None,
             }
         ],
     }
 ```
 
-Inside the runner, streaming uses LangGraph message streaming and filters chunks
-to configured node names:
+Inside the runner, streaming uses LangGraph message streaming for text chunks and
+LangGraph update streaming for interrupts:
 
 ```python
 async for event in graph.astream(
     inputs,
     context=context,
-    stream_mode=["messages"],
+    stream_mode=["messages", "updates"],
     subgraphs=True,
     version="v2",
 ):
+    if event["type"] == "updates" and "__interrupt__" in event["data"]:
+        yield extract_interrupt(event["data"])
+        continue
+
     message, metadata = event["data"]
     if metadata.get("langgraph_node") in streamable_node_names:
-        yield message.text, {"tokens": 1}
+        yield message.text
 ```
 
 ## Function/Tool Calling Support
@@ -156,6 +164,23 @@ that need request-level tool information can read the full request in
 `request_to_input` or use their own tool loading strategy. The demo
 `advanced-mcp-tools` graph shows async MCP-style tool loading at graph
 construction time.
+
+Interrupt-enabled graphs also use normal OpenAI tool calls for human-in-the-loop
+pauses. The reserved `langgraph_interrupt` tool carries a versioned argument
+envelope:
+
+```json
+{
+  "version": 1,
+  "kind": "hitl.interrupt",
+  "thread_id": "client-chat-id",
+  "interrupt_id": "langgraph-interrupt-id",
+  "payload": {}
+}
+```
+
+Clients resume the graph by sending a follow-up `tool` role message with the
+matching `tool_call_id` and JSON content like `{"resume": "approved"}`.
 
 ## Differences from OpenAI API
 

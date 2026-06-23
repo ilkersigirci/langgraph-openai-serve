@@ -8,7 +8,7 @@ from langgraph.runtime import Runtime
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph
-from tests.graph.conftest import (
+from tests.graph.support.schemas import (
     AnswerOutput,
     PydanticAnswerOutput,
     PydanticQuestionInput,

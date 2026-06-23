@@ -1,31 +1,24 @@
-"""Chat completion service.
+"""Chat completion service."""
 
-This module provides a service for handling chat completions, implementing
-business logic that was previously in the router.
-"""
-
-import json
 import logging
 import time
-import uuid
 from typing import AsyncIterator
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatCompletionResponseChoice,
-    ChatCompletionResponseMessage,
-    ChatCompletionStreamResponse,
-    ChatCompletionStreamResponseChoice,
-    ChatCompletionStreamResponseDelta,
-    Role,
-    UsageInfo,
 )
-from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.api.chat.utils.responses import (
+    ChatCompletionStreamResponseBuilder,
+    chat_completion_response,
+)
 from langgraph_openai_serve.graph.runner import (
-    run_langgraph,
-    run_langgraph_stream,
+    LangGraphInterrupt,
+    invoke_run,
+    stream_run,
+    usage_for,
 )
+from langgraph_openai_serve.graph.utils import GraphRun
 
 logger = logging.getLogger(__name__)
 
@@ -34,50 +27,18 @@ class ChatCompletionService:
     """Service for handling chat completions."""
 
     async def generate_completion(
-        self, chat_request: ChatCompletionRequest, graph_registry: GraphRegistry
+        self, chat_request: ChatCompletionRequest, run: GraphRun
     ) -> ChatCompletionResponse:
-        """Generate a chat completion.
-
-        Args:
-            chat_request: The chat completion request.
-            graph_registry: The GraphRegistry object containing registered graphs.
-
-        Returns:
-            A chat completion response.
-
-        Raises:
-            Exception: If there is an error generating the completion.
-        """
+        """Generate a chat completion."""
         start_time = time.time()
 
-        # Get the completion from the LangGraph model
-        completion, tokens_used = await run_langgraph(
-            model=chat_request.model,
-            messages=chat_request.messages,
-            graph_registry=graph_registry,
-            request=chat_request,
-        )
+        completion = await invoke_run(run)
+        tokens_used = usage_for(completion, chat_request.messages)
 
-        # Build the response
-        response = ChatCompletionResponse(
-            id=f"chatcmpl-{uuid.uuid4()}",
-            created=int(time.time()),
+        response = chat_completion_response(
             model=chat_request.model,
-            choices=[
-                ChatCompletionResponseChoice(
-                    index=0,
-                    message=ChatCompletionResponseMessage(
-                        role=Role.ASSISTANT,
-                        content=completion,
-                    ),
-                    finish_reason="stop",
-                )
-            ],
-            usage=UsageInfo(
-                prompt_tokens=tokens_used["prompt_tokens"],
-                completion_tokens=tokens_used["completion_tokens"],
-                total_tokens=tokens_used["total_tokens"],
-            ),
+            completion=completion,
+            usage=tokens_used,
         )
 
         logger.info(
@@ -88,83 +49,26 @@ class ChatCompletionService:
         return response
 
     async def stream_completion(
-        self, chat_request: ChatCompletionRequest, graph_registry: GraphRegistry
+        self, chat_request: ChatCompletionRequest, run: GraphRun
     ) -> AsyncIterator[str]:
-        """Stream a chat completion response.
-
-        Args:
-            chat_request: The chat completion request.
-            graph_registry: The GraphRegistry object containing registered graphs.
-
-        Yields:
-            Chunks of the chat completion response.
-        """
+        """Stream a chat completion response."""
         start_time = time.time()
-        response_id = f"chatcmpl-{uuid.uuid4()}"
-        created = int(time.time())
+        response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
 
         try:
-            # Send the initial response with the role
-            yield self._format_stream_chunk(
-                ChatCompletionStreamResponse(
-                    id=response_id,
-                    created=created,
-                    model=chat_request.model,
-                    choices=[
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(
-                                role=Role.ASSISTANT,
-                            ),
-                            finish_reason=None,
-                        )
-                    ],
-                )
-            )
+            yield response_builder.role()
 
-            # Stream the completion from the LangGraph model
-            async for chunk, _ in run_langgraph_stream(
-                model=chat_request.model,
-                messages=chat_request.messages,
-                graph_registry=graph_registry,
-                request=chat_request,
-            ):
-                # Send the content chunk
-                yield self._format_stream_chunk(
-                    ChatCompletionStreamResponse(
-                        id=response_id,
-                        created=created,
-                        model=chat_request.model,
-                        choices=[
-                            ChatCompletionStreamResponseChoice(
-                                index=0,
-                                delta=ChatCompletionStreamResponseDelta(
-                                    content=chunk,
-                                ),
-                                finish_reason=None,
-                            )
-                        ],
-                    )
-                )
+            async for event in stream_run(run):
+                if isinstance(event, LangGraphInterrupt):
+                    yield response_builder.interrupt(event)
+                    yield response_builder.finish("tool_calls")
+                    yield response_builder.done()
+                    return
 
-            # Send the final response with finish_reason
-            yield self._format_stream_chunk(
-                ChatCompletionStreamResponse(
-                    id=response_id,
-                    created=created,
-                    model=chat_request.model,
-                    choices=[
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(),
-                            finish_reason="stop",
-                        )
-                    ],
-                )
-            )
+                yield response_builder.text(event)
 
-            # Send the [DONE] message
-            yield "data: [DONE]\n\n"
+            yield response_builder.finish("stop")
+            yield response_builder.done()
 
             logger.info(
                 f"Streamed chat completion finished in {time.time() - start_time:.2f}s"
@@ -172,18 +76,5 @@ class ChatCompletionService:
 
         except Exception as e:
             logger.exception("Error streaming chat completion")
-            # In case of an error, send an error message
-            error_response = {"error": {"message": str(e), "type": "server_error"}}
-            yield f"data: {json.dumps(error_response)}\n\n"
-            yield "data: [DONE]\n\n"
-
-    def _format_stream_chunk(self, response: ChatCompletionStreamResponse) -> str:
-        """Format a stream chunk as a server-sent event.
-
-        Args:
-            response: The response to format.
-
-        Returns:
-            The formatted server-sent event.
-        """
-        return f"data: {json.dumps(response.model_dump())}\n\n"
+            yield response_builder.error(str(e))
+            yield response_builder.done()

@@ -2,7 +2,8 @@
 
 import logging
 import time
-from typing import AsyncGenerator
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator
 
 from langchain_core.messages import AIMessageChunk
 from langgraph.constants import TAG_HIDDEN
@@ -12,9 +13,23 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
-from langgraph_openai_serve.graph.utils import prepare_run
+from langgraph_openai_serve.graph.utils import (
+    GraphRun,
+    prepare_run,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LangGraphInterrupt:
+    thread_id: str
+    interrupt_id: str
+    payload: Any
+
+
+LangGraphOutput = str | LangGraphInterrupt
+LangGraphStreamEvent = str | LangGraphInterrupt
 
 
 async def run_langgraph(
@@ -22,7 +37,7 @@ async def run_langgraph(
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
-) -> tuple[str, dict[str, int]]:
+) -> tuple[LangGraphOutput, dict[str, int]]:
     """Run a LangGraph model with the given messages using the compiled workflow.
 
     This function processes input messages through a LangGraph workflow and returns
@@ -47,24 +62,27 @@ async def run_langgraph(
 
     run = await prepare_run(model, messages, graph_registry, request)
 
+    response = await invoke_run(run)
+
+    token_usage = usage_for(response, messages)
+
+    logger.info(f"LangGraph completion generated in {time.time() - start_time:.2f}s")
+    return response, token_usage
+
+
+async def invoke_run(run: GraphRun) -> LangGraphOutput:
+    """Run an already prepared LangGraph invocation."""
     result = await run.graph.ainvoke(
         run.inputs,
         config=run.runnable_config,
         context=run.context,
     )
-    response = await run.config.render_output(result)
+    if run.config.interrupts_enabled:
+        interrupt = extract_interrupt(result, run.thread_id)
+        if interrupt is not None:
+            return interrupt
 
-    # Calculate token usage (approximate)
-    prompt_tokens = sum(len((m.content or "").split()) for m in messages)
-    completion_tokens = len((response or "").split())
-    token_usage = {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens + completion_tokens,
-    }
-
-    logger.info(f"LangGraph completion generated in {time.time() - start_time:.2f}s")
-    return response, token_usage
+    return await run.config.render_output(result)
 
 
 async def run_langgraph_stream(
@@ -72,7 +90,7 @@ async def run_langgraph_stream(
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
-) -> AsyncGenerator[tuple[str, dict[str, int]], None]:
+) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """Run a LangGraph model in streaming mode.
 
     Args:
@@ -82,20 +100,37 @@ async def run_langgraph_stream(
         request: The complete chat completion request passed to graph adapters.
 
     Yields:
-        A tuple containing the content chunk and token usage metrics.
+        Assistant text chunks or LangGraph interrupts.
     """
     logger.info(f"Starting streaming LangGraph completion for model '{model}'")
 
     run = await prepare_run(model, messages, graph_registry, request)
+    async for event in stream_run(run):
+        yield event
+
+
+async def stream_run(
+    run: GraphRun,
+) -> AsyncGenerator[LangGraphStreamEvent, None]:
+    """Stream an already prepared LangGraph invocation."""
+    stream_mode = ["messages"]
+    if run.config.interrupts_enabled:
+        stream_mode.append("updates")
 
     async for event in run.graph.astream(
         run.inputs,
         config=run.runnable_config,
         context=run.context,
-        stream_mode=["messages"],
+        stream_mode=stream_mode,
         subgraphs=True,
         version="v2",
     ):
+        if event.get("type") == "updates":
+            interrupt = extract_interrupt(event.get("data"), run.thread_id)
+            if interrupt is not None:
+                yield interrupt
+            continue
+
         if event.get("type") != "messages":
             continue
 
@@ -109,4 +144,39 @@ async def run_langgraph_stream(
 
         content = str(message.text)
         if content:
-            yield content, {"tokens": 1}
+            yield content
+
+
+def usage_for(
+    output: LangGraphOutput,
+    messages: list[ChatCompletionRequestMessage],
+) -> dict[str, int]:
+    prompt_tokens = sum(len((message.content or "").split()) for message in messages)
+    completion_tokens = len(output.split()) if isinstance(output, str) else 0
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+
+
+def extract_interrupt(output: Any, thread_id: str | None) -> LangGraphInterrupt | None:
+    if not isinstance(output, dict) or "__interrupt__" not in output:
+        return None
+
+    interrupts = output["__interrupt__"]
+    if not interrupts:
+        return None
+
+    interrupt = interrupts[0]
+    interrupt_id = getattr(interrupt, "id", None)
+    payload = getattr(interrupt, "value", interrupt)
+
+    if not interrupt_id:
+        return None
+
+    return LangGraphInterrupt(
+        thread_id=thread_id or "",
+        interrupt_id=interrupt_id,
+        payload=payload,
+    )
