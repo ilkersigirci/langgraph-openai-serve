@@ -15,7 +15,7 @@ PROFILE_FILE_PATH=./langgraph_openai_serve/__init__.py
 .DEFAULT_GOAL=help
 
 help:
-	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) |\
+	@grep -hE '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) |\
 		 awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m\
 		 %s\n", $$1, $$2}'
 
@@ -162,4 +162,4 @@ run-demo-api: # ## Run the demo api in development mode
 	uv run --module demo.api.app
 
 run-demo-ui-chainlit: ## Run the demo Chainlit UI
-	CHAINLIT_APP_ROOT=./demo/ui/chainlit_ui uv run --with 'chainlit>=2.8,<3' chainlit run demo/ui/chainlit_ui/main.py --host 0.0.0.0 --port 8001 -w
+	uv run chainlit run demo/ui/chainlit_ui/main.py --host 0.0.0.0 --port 8001 -w

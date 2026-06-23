@@ -63,9 +63,12 @@ test = [
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
 ]
+ui = [
+    "chainlit>=2.8,<3",
+]
 
 [tool.uv]
-default-groups = ["dev", "doc", "test"]
+default-groups = ["dev", "doc", "test", "ui"]
 
 
 [tool.pytest.ini_options]
