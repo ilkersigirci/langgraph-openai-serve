@@ -87,6 +87,7 @@ addopts = [
 ]
 
 testpaths = ["tests"]
+pythonpath = ["."]
 
 # TODO: Make them inherit from yaml file
 log_cli = true

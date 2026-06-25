@@ -8,16 +8,33 @@ Run the API container:
 docker compose up -d lgos-demo-api
 ```
 
-Run the API plus Open WebUI:
+Run the full demo stack:
 
 ```bash
-docker compose up -d lgos-demo-api open-webui
+docker compose up -d open-webui
 ```
 
 Use:
 
 - OpenAI base URL: `http://localhost:8000/v1`
 - Open WebUI: `http://localhost:8080`
+
+Compose starts `lgos-demo-api` and `open-webui`.
+
+Import `demo/ui/openwebui/hitl_function.py` in
+`Workspace -> Functions`, enable it, then select
+`LangGraph HITL Approval Modal`. Send a request; the confirmation dialog resumes
+the LangGraph interrupt with approve or reject.
+
+Ownership:
+
+- `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
+  interrupt/resume behavior.
+- The Open WebUI Function owns only the UI bridge: detect the
+  `langgraph_interrupt` tool call, show the confirmation modal, and send the
+  resume tool message.
+- Keep graph logic, HTTP routes, and custom response shapes out of the Open
+  WebUI Function.
 
 ## Custom App Image
 

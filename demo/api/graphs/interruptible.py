@@ -13,15 +13,16 @@ class ApprovalState(TypedDict, total=False):
 def request_approval(state: ApprovalState) -> dict[str, str]:
     decision = interrupt(
         {
-            "question": "Approve this request?",
+            "question": "Approve this agent action?",
             "request": state["request"],
+            "choices": ["approve", "reject"],
         }
     )
 
     if str(decision).strip().lower() in {"approve", "approved", "yes", "y"}:
-        response = f"Approved: {state['request']}"
+        response = f"Approved agent action: {state['request']}"
     else:
-        response = f"Not approved: {state['request']}. Resume value: {decision}"
+        response = f"Rejected agent action: {state['request']}"
 
     return {"response": response}
 

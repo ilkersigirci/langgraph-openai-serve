@@ -52,7 +52,6 @@ Use a durable checkpointer in production.
 - `simple-graph-no-history`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
-- `hitl-middleware-refund`
 - `interruptible-approval`
 
 ## Local Commands

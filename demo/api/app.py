@@ -36,8 +36,8 @@ def create_default_app() -> FastAPI:
 
     graph_serve = LangchainOpenaiApiServe()
 
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
+    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+    graph_serve.bind_openai_chat_completion()
 
     return graph_serve.app
 
@@ -120,8 +120,8 @@ def create_custom_app() -> FastAPI:
         graphs=graph_registry,
     )
 
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
+    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+    graph_serve.bind_openai_chat_completion()
 
     return graph_serve.app
 

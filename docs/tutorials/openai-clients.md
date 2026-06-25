@@ -70,6 +70,13 @@ for await (const chunk of stream) {
 }
 ```
 
+## Interrupt Resume
+
+Interrupt-enabled graphs use OpenAI tool calls. Pass
+`metadata.langgraph_thread_id`, then resume `langgraph_interrupt` with a matching
+`tool` message. See
+[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
+
 ## Diagnostics
 
 Use direct HTTP only to inspect behavior while debugging:
