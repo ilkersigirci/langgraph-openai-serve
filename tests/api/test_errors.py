@@ -28,6 +28,23 @@ def test_validation_error_returns_openai_error(openai_client: OpenAI) -> None:
     }
 
 
+def test_empty_messages_returns_openai_error(openai_client: OpenAI) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        openai_client.post(
+            "/chat/completions",
+            cast_to=object,
+            body={"model": "test", "messages": []},
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"] == "messages"
+    assert error["code"] is None
+    assert error["message"].startswith("messages: ")
+
+
 def test_http_error_returns_openai_error(openai_client: OpenAI) -> None:
     with pytest.raises(NotFoundError) as exc_info:
         openai_client.models.retrieve("missing")
