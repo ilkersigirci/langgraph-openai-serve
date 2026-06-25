@@ -1,75 +1,38 @@
-Guidance for coding agents working in this repository. Keep this file short; use
-human docs for explanations and examples.
+Guidance for coding agents in this repository. Keep this file operational;
+use `docs/` for product explanations, examples, and detailed references.
 
 ## Start Here
 
-- Read `README.md` for the project purpose and the shortest runnable example.
-- Read `docs/index.md` to navigate the full documentation.
-- Use `docs/explanation/architecture.md` for request flow, graph execution,
-  routing, or schema changes.
+- Read `README.md` for project purpose and the shortest example.
+- Read `docs/index.md` only when you need the full docs map.
+- Use `docs/tutorials/getting-started.md` for demo runs and demo graph files.
+- Use `docs/reference.md` for API surface, settings, demo models, and commands.
+- Use `docs/explanation/openai-compatibility.md` before changing API behavior.
 
-## Compatibility Contract
+## Do
 
-- Preserve OpenAI client compatibility as the only supported ingestion
-  contract for LangGraph graphs.
-- Do not add project-specific chat request envelopes, response shapes, headers,
-  routes, or streaming events unless they can be reached through the
-  OpenAI-compatible `/v1` interface.
-- Treat direct HTTP examples such as `curl` as diagnostics only. They must not
-  become a separate product contract that diverges from OpenAI client behavior.
-- See `docs/explanation/openai-compatibility.md` for the detailed contract.
+- Preserve OpenAI client compatibility as the only ingestion contract.
+- Keep changes scoped to the affected package, demo, tests, or docs area.
+- Add or update focused tests for behavior changes.
+- For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
+  `openai.types.shared.ErrorObject`.
+- Check demo graph adapters before changing public graph APIs.
 
-## Repository Map
+## Do Not
 
-- `src/langgraph_openai_serve/` contains the package.
-- `src/langgraph_openai_serve/openai_server.py` wires FastAPI routers to a graph
-  registry.
-- `src/langgraph_openai_serve/api/` contains OpenAI-compatible HTTP endpoints,
-  schemas, and services.
-- `src/langgraph_openai_serve/graph/` contains graph registration, input/context
-  adaptation, and LangGraph execution helpers.
-- `src/langgraph_openai_serve/utils/` contains shared conversion utilities.
-- `demo/` contains runnable API and UI examples.
-- `tests/` mirrors package behavior with pytest coverage.
+- Do not add project-specific chat envelopes, response shapes, headers, routes,
+  or streaming events unless they remain reachable through `/v1`.
+- Do not treat `curl` examples as a separate product contract; they are
+  diagnostics only.
+- Do not raise bare `HTTPException` from OpenAI route code when error metadata is
+  known.
+- Do not update dependencies, regenerate `uv.lock`, or touch `.env` unless the
+  task requires it.
 
-## Local Setup
+## Repo Map
 
-This project uses Python 3.11+ and `uv`.
-
-```bash
-uv sync --frozen
-```
-
-Use the Makefile wrappers when possible because they match the documented
-workflow:
-
-```bash
-make help
-make run-demo-api
-make -s test
-make -s lint
-```
-
-The demo API serves OpenAI-compatible routes at `http://localhost:8000/v1`.
-
-## Common Tasks
-
-- Run all tests: `make -s test`
-- Run one test file: `uv run --module pytest tests/path/to/test_file.py`
-- Run one test by node id: `uv run --module pytest tests/path/to/test_file.py::test_name`
-- Lint without modifying files: `make -s lint`
-- Format package code: `make -s format`
-
-## Working Rules
-
-- Keep changes scoped to the package, demo, tests, or docs area affected by the
-  request.
-- Do not update dependencies or regenerate `uv.lock` unless the task requires it.
-- Do not commit secrets. Treat `.env` as local state and use `.env.example` for
-  documented variables.
-- Prefer adding or updating focused tests for behavior changes.
-- For API behavior, check route/service code and the graph runner path.
-- For OpenAI-compatible HTTP errors, raise `OpenAIHTTPException` with
-  `openai.types.shared.ErrorObject`; do not raise bare `HTTPException` from
-  OpenAI route code when the error type, param, or code is known.
-- For graph adapters, check the demo before changing public APIs.
+- `src/langgraph_openai_serve/api/`: OpenAI-compatible routes and schemas.
+- `src/langgraph_openai_serve/graph/`: graph registration, adapters, execution.
+- `src/langgraph_openai_serve/openai_server.py`: FastAPI binding.
+- `demo/`: runnable API and UI examples.
+- `tests/`: pytest coverage.

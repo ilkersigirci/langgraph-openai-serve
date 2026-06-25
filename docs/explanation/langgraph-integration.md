@@ -1,119 +1,43 @@
 # LangGraph Integration
 
-LangGraph OpenAI Serve bridges OpenAI-compatible chat requests to LangGraph
-workflows. A registered graph name becomes the `model` value clients use in
+A registered graph name becomes the OpenAI `model` value clients pass to
 `/v1/chat/completions`.
 
 ## Registration
 
-Graphs are registered with `GraphRegistry`:
+`GraphRegistry` stores model names and `GraphConfig` values:
 
 ```python
-from langgraph_openai_serve import GraphConfig, GraphRegistry
-
-graphs = GraphRegistry(
+GraphRegistry(
     registry={
-        "chat": GraphConfig(
-            graph=chat_graph,
-            streamable_node_names=["generate"],
-        ),
+        "chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"]),
         "advanced-mcp-tools": GraphConfig(graph=advanced_graph),
     }
 )
 ```
 
-`GraphConfig.graph` can be either:
+`GraphConfig.graph` can be a compiled graph, sync factory, or async factory.
+Async factories support setup such as MCP-style tool loading before creating a
+ReAct graph.
 
-- a compiled LangGraph graph
-- a sync factory that returns a compiled graph
-- an async factory that returns a compiled graph
+## Adaptation
 
-The async factory form is useful when graph construction needs async setup, such
-as loading tools from MCP. See `demo/api/graphs/advanced_mcp.py`.
+The default graph contract is:
 
-## Request Adaptation
+- input: `{"messages": langchain_messages}`
+- output text: `result["messages"][-1].content`
 
-Incoming OpenAI messages are converted to LangChain messages before execution.
-By default, the graph input is:
+Use `request_to_input`, `context_factory`, and `output_to_text` when the graph
+has custom input, output, or context schemas. Those adapters keep the public HTTP
+surface OpenAI-compatible while letting the graph stay idiomatic LangGraph.
 
-```python
-{"messages": langchain_messages}
-```
+## Runner Behavior
 
-By default, response text is read from:
+For non-streaming requests, the runner resolves the graph, builds input and
+context, then calls `ainvoke`.
 
-```python
-result["messages"][-1].content
-```
+For streaming requests, the runner calls `astream` with message and update
+stream modes. It emits text from configured streamable nodes and converts
+interrupt updates into OpenAI tool-call chunks.
 
-Graphs with custom LangGraph schemas can override this with `GraphConfig`
-adapters:
-
-```python
-GraphConfig(
-    graph=graph,
-    request_to_input=request_to_input,
-    context_factory=context_factory,
-    output_to_text=output_to_text,
-)
-```
-
-Those adapters let a graph use native `input_schema`, `output_schema`, and
-`context_schema` while still serving OpenAI-compatible requests. See
-`demo/api/graphs/custom_io.py`.
-
-## Non-Streaming Execution
-
-For normal requests, the runner resolves the graph, builds input and context,
-then calls LangGraph with `ainvoke`:
-
-```python
-graph = await graph_config.resolve_graph()
-inputs = await graph_config.build_input(request, langchain_messages)
-context = await graph_config.build_context(request)
-
-result = await graph.ainvoke(inputs, config=runnable_config, context=context)
-response_text = await graph_config.render_output(result)
-```
-
-## Streaming Execution
-
-For streaming requests, the runner uses LangGraph message streaming for text and
-update streaming for interrupts:
-
-```python
-async for event in graph.astream(
-    inputs,
-    config=runnable_config,
-    context=context,
-    stream_mode=["messages", "updates"],
-    subgraphs=True,
-    version="v2",
-):
-    ...
-```
-
-Only `AIMessageChunk` values from configured `streamable_node_names` are sent to
-the client as text. Hidden-tagged chunks are ignored. Interrupt updates are
-converted into OpenAI-compatible tool-call chunks.
-
-This means streaming is opt-in at registration time and depends on the graph
-actually emitting streamed message chunks. The custom input/output/context demo
-returns a final deterministic value, so it is intended for non-streaming calls.
-
-## Demo Coverage
-
-The demo app covers the important integration paths:
-
-- `simple-graph-with-history` and `simple-graph-no-history` use the default
-  message graph contract.
-- `custom-input-output-context` uses custom input, output, and runtime context
-  adapters.
-- `advanced-mcp-tools` uses an async graph factory that loads mock MCP-style
-  tools before building a ReAct graph.
-
-## Next Steps
-
-- [Custom graphs tutorial](../tutorials/custom-graphs.md)
-- [OpenAI compatibility](openai-compatibility.md)
-- [API reference](../reference.md)
+See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.

@@ -16,7 +16,6 @@ nav = [
     { "Getting Started" = "tutorials/getting-started.md" },
     { "Creating Custom Graphs" = "tutorials/custom-graphs.md" },
     { "Connecting with OpenAI Clients" = "tutorials/openai-clients.md" },
-    { Makefile = "tutorials/makefile.md" },
   ]},
   { "How-To Guides" = [
     { Overview = "how-to-guides/index.md" },
