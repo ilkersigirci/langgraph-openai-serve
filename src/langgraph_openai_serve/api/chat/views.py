@@ -19,8 +19,8 @@ from langgraph_openai_serve.api.chat.service import ChatCompletionService
 from langgraph_openai_serve.api.chat.utils.interrupts import (
     InvalidResumeRequestError,
 )
-from langgraph_openai_serve.api.errors import OpenAIHTTPException
 from langgraph_openai_serve.api.models.views import get_graph_registry_dependency
+from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfigurationError,
     GraphNotFoundError,

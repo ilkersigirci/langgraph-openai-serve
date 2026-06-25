@@ -25,7 +25,7 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
     interrupt_arguments,
     interrupt_tool_call_id,
 )
-from langgraph_openai_serve.api.errors import openai_error_payload
+from langgraph_openai_serve.core.errors import openai_error_payload
 from langgraph_openai_serve.graph.runner import LangGraphInterrupt, LangGraphOutput
 
 

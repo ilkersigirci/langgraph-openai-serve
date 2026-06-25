@@ -25,10 +25,11 @@ import logging
 from fastapi import FastAPI
 
 from langgraph_openai_serve.api.chat import views as chat_views
-from langgraph_openai_serve.api.errors import configure_openai_error_handlers
 from langgraph_openai_serve.api.health import views as health_views
 from langgraph_openai_serve.api.models import views as models_views
+from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
+from langgraph_openai_serve.core.version import get_version
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.simple_graph import app as simple_graph
 
@@ -68,7 +69,7 @@ class LangchainOpenaiApiServe:
             app = FastAPI(
                 title="LangGraph OpenAI Compatible API",
                 description="An OpenAI-compatible API for LangGraph",
-                version="0.0.1",
+                version=get_version(),
             )
         self.app = app
 
@@ -122,7 +123,7 @@ class LangchainOpenaiApiServe:
         openai_app = FastAPI(
             title="LangGraph OpenAI Compatible API",
             description="An OpenAI-compatible API for LangGraph",
-            version="0.0.1",
+            version=get_version(),
             docs_url=docs_url,
             redoc_url=redoc_url,
             openapi_url=openapi_url,
