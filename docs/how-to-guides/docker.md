@@ -1,6 +1,6 @@
 # Docker Deployment
 
-This guide explains how to deploy your LangGraph OpenAI Serve API using Docker for production environments.
+This guide explains how to deploy LangGraph OpenAI Serve with Docker.
 
 ## Prerequisites
 
@@ -22,18 +22,19 @@ You can use Docker Compose to build and run the container:
 docker compose up -d lgos-demo-api
 ```
 
-If you want to use the project with open-webui, a compatible UI for interacting with OpenAI-compatible APIs:
+If you want to use the project with Open WebUI, a UI that connects to
+OpenAI-compatible APIs:
 
 ```bash
-# For a complete example with open-webui
+# For a complete example with Open WebUI
 docker compose up -d lgos-demo-api open-webui
 ```
 
-### Accessing the API
+### Accessing the OpenAI-Compatible API
 
-Once the container is running, you can access the API at:
+Once the container is running, configure OpenAI-compatible clients with:
 
-- API: http://localhost:8000/v1
+- OpenAI base URL: http://localhost:8000/v1
 - Open WebUI (if using): http://localhost:8080
 
 ## Creating a Custom Docker Deployment
@@ -92,8 +93,8 @@ from my_graphs import chat_graph, advanced_graph
 
 # Create a FastAPI app
 app = FastAPI(
-    title="My LangGraph API",
-    description="Custom LangGraph API with OpenAI compatibility",
+    title="My LangGraph OpenAI-Compatible API",
+    description="Custom LangGraph server for OpenAI-compatible clients",
 )
 
 # Create a GraphRegistry
@@ -111,8 +112,9 @@ graph_serve = LangchainOpenaiApiServe(
     configure_cors=True,
 )
 
-# Bind the OpenAI-compatible endpoints
-graph_serve.bind_openai_chat_completion(prefix="/v1")
+# Bind the OpenAI-compatible endpoints.
+# Defaults to /v1; set LGOS_OPENAI_API_PREFIX to change it for deployments.
+graph_serve.bind_openai_chat_completion()
 ```
 
 ### 4. Create a Docker Compose File
@@ -160,7 +162,7 @@ When deploying to production, consider the following best practices:
 
 1. **Use a Production ASGI Server**: While Uvicorn is good for development, consider using Gunicorn with Uvicorn workers for production.
 
-2. **Implement Authentication**: Add proper authentication to protect your API.
+2. **Implement Authentication**: Add bearer-token authentication.
 
 3. **Set Up HTTPS**: Use a reverse proxy like Nginx to handle HTTPS.
 
@@ -210,6 +212,6 @@ services:
 
 ## Next Steps
 
-After deploying your API with Docker, you might want to:
+After deploying the OpenAI-compatible API with Docker, you might want to:
 
-- [Implement authentication](authentication.md) for your API
+- [Implement authentication](authentication.md) for OpenAI-compatible clients

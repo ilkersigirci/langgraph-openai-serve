@@ -1,6 +1,8 @@
 # Connecting with OpenAI Clients
 
-Once you have your LangGraph OpenAI Serve API running, you can connect to it using any OpenAI-compatible client. This tutorial shows how to interact with your API using various clients and libraries.
+Once you have your LangGraph OpenAI Serve API running, connect to it using an
+OpenAI-compatible client. This guide covers the official SDKs and other clients
+that support a custom OpenAI base URL.
 
 ## Python OpenAI Client
 
@@ -114,9 +116,10 @@ async function streamChatCompletion() {
 streamChatCompletion();
 ```
 
-## Using with curl
+## Diagnostics with curl
 
-You can also use curl to interact with your API directly:
+You can also use `curl` to inspect the OpenAI-compatible endpoints while
+debugging.
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -144,7 +147,10 @@ The following endpoints are available in your LangGraph OpenAI Serve API:
 
 - `GET /v1/models` - List available models (your registered graphs)
 - `POST /v1/chat/completions` - Create a chat completion
-- `GET /v1/health` - Check the health status of the API when routers are bound with `prefix="/v1"`
+- `GET /v1/health` - Check the health status of the API
+
+These paths use the default `/v1` prefix. If the server is mounted with another
+prefix, use that prefix in the OpenAI client `base_url`.
 
 ## Best Practices
 

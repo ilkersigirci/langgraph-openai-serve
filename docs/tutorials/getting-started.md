@@ -1,8 +1,8 @@
 # Getting Started
 
 This tutorial uses the runnable demo app in this repository. It exposes several
-LangGraph workflows through an OpenAI-compatible API, so you can inspect the code
-and call the API immediately.
+LangGraph workflows through the OpenAI-compatible `/v1` interface, so you can
+inspect the code and call the graphs through an OpenAI client immediately.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ From the repository root:
 make run-demo-api
 ```
 
-The API is available at `http://localhost:8000/v1`.
+The OpenAI-compatible API is available at `http://localhost:8000/v1`.
 
 List the registered graphs:
 
@@ -96,8 +96,13 @@ graphs = GraphRegistry(
 )
 
 server = LangchainOpenaiApiServe(app=app, graphs=graphs)
-server.bind_openai_chat_completion(prefix="/v1")
+server.bind_openai_chat_completion()
 ```
+
+Routes are mounted at `/v1` by default. Set `LGOS_OPENAI_API_PREFIX` to change
+that default, or pass `prefix="/custom/path"` when binding one server instance.
+FastAPI docs for the mounted OpenAI API are disabled by default; set
+`LGOS_OPENAI_API_DOCS_ENABLED=true` to inspect `/v1/docs` locally.
 
 ## Next Steps
 

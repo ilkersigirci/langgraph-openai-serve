@@ -2,7 +2,7 @@ import json
 
 import pytest
 from httpx import AsyncClient
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 from starlette import status
 
 
@@ -73,3 +73,26 @@ async def test_stream_chat_completion_sse_wire_format(client: AsyncClient) -> No
     ) == "hello"
     assert payloads[-1]["choices"][0]["finish_reason"] == "stop"
     assert events[-1] == "data: [DONE]"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_unknown_model_raises_openai_bad_request(
+    openai_client: OpenAI,
+    stream: bool,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        openai_client.chat.completions.create(
+            model="missing",
+            messages=[{"role": "user", "content": "Hi"}],
+            stream=stream,
+        )
+
+    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc_info.value.response.json() == {
+        "error": {
+            "message": "Graph 'missing' not found in registry.",
+            "type": "invalid_request_error",
+            "param": "model",
+            "code": None,
+        }
+    }

@@ -1,16 +1,33 @@
 # OpenAI API Compatibility
 
-This document explains how LangGraph OpenAI Serve achieves compatibility with the OpenAI API format, allowing clients to interact with your LangGraph workflows using standard OpenAI client libraries.
+This document explains how LangGraph OpenAI Serve achieves compatibility with
+the OpenAI API format, allowing clients to interact with your LangGraph
+workflows using standard OpenAI client libraries and OpenAI-compatible tools
+such as Chainlit and Open WebUI.
+
+## Compatibility Contract
+
+LangGraph OpenAI Serve is an OpenAI-client compatibility layer, not a separate
+LangGraph-specific HTTP API. Public chat and model behavior must remain
+reachable through the configured OpenAI-compatible base URL used by official
+OpenAI SDKs, Chainlit, Open WebUI, and similar clients. The default mount prefix
+is `/v1`.
+
+When adding graph features, adapt them into OpenAI-compatible request fields,
+response objects, tool calls, streaming chunks, metadata, or error envelopes.
+Do not require custom client-only payloads, headers, routes, or SSE event shapes
+for core graph behavior unless those additions preserve the OpenAI client path.
 
 ## API Compatibility Layer
 
-LangGraph OpenAI Serve implements a subset of the OpenAI API, focusing on the most commonly used endpoints:
+LangGraph OpenAI Serve implements a subset of the OpenAI API. With the default `LGOS_OPENAI_API_PREFIX=/v1`, those endpoints are:
 
 - `/v1/models` - For listing available models (LangGraph instances)
 - `/v1/chat/completions` - For chat interactions
-- `/v1/health` - For health checks when routers are bound with `prefix="/v1"`
+- `/v1/health` - For health checks
 
-The API is designed to be compatible with OpenAI client libraries in different languages while providing access to your custom LangGraph workflows.
+The API is designed to be compatible with OpenAI client libraries in different
+languages while providing access to your custom LangGraph workflows.
 
 ## Schema Compatibility
 
@@ -140,6 +157,28 @@ async for event in graph.astream(
         yield message.text
 ```
 
+## Error Responses
+
+OpenAI-compatible routes return errors in the OpenAI envelope:
+
+```json
+{
+  "error": {
+    "message": "Graph 'missing' not found in registry.",
+    "type": "invalid_request_error",
+    "param": "model",
+    "code": null
+  }
+}
+```
+
+Route code that knows the OpenAI error metadata should raise
+`OpenAIHTTPException` with `openai.types.shared.ErrorObject`. This keeps native
+OpenAI clients on their normal error path, such as `BadRequestError` for HTTP
+400 responses, with `type`, `param`, and `code` available on the SDK exception.
+Generic FastAPI validation and HTTP errors are translated by the shared error
+handlers registered when the OpenAI routers are bound.
+
 ## Function/Tool Calling Support
 
 OpenAI's API supports tool calling, and LangGraph OpenAI Serve provides compatibility for this feature:
@@ -196,12 +235,17 @@ While LangGraph OpenAI Serve aims for high compatibility, there are some differe
 
 ## Client Compatibility
 
-The API is compatible with:
+The API is compatible with OpenAI-client ingestion through:
 
 - OpenAI Python SDK
 - OpenAI Node.js SDK
+- Chainlit configured with an OpenAI base URL
+- Open WebUI configured with an OpenAI-compatible connection
 - Most other OpenAI-compatible clients
-- Direct HTTP requests (e.g., with curl)
+
+Direct HTTP requests, such as `curl`, may be used to inspect endpoints during
+development, but compatibility decisions should be validated through OpenAI
+client behavior.
 
 ## Using with OpenAI Client Libraries
 

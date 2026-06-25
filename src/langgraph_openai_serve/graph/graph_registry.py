@@ -23,6 +23,10 @@ class GraphConfigurationError(RuntimeError):
     """Raised when a registered graph cannot satisfy its declared config."""
 
 
+class GraphNotFoundError(ValueError):
+    """Raised when a requested graph is not registered."""
+
+
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
@@ -95,8 +99,8 @@ class GraphRegistry(BaseModel):
             The graph configuration associated with the given name.
 
         Raises:
-            ValueError: If the graph name is not found in the registry.
+            GraphNotFoundError: If the graph name is not found in the registry.
         """
         if name not in self.registry:
-            raise ValueError(f"Graph '{name}' not found in registry.")
+            raise GraphNotFoundError(f"Graph '{name}' not found in registry.")
         return self.registry[name]

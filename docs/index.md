@@ -1,16 +1,25 @@
 # LangGraph OpenAI Serve
 
-Welcome to the documentation for `langgraph-openai-serve` - a package that provides an OpenAI-compatible API for LangGraph instances.
+Welcome to the documentation for `langgraph-openai-serve` - a package that
+serves LangGraph instances through an OpenAI-compatible API for OpenAI clients.
 
 ## Overview
 
-LangGraph OpenAI Serve allows you to expose your [LangGraph](https://github.com/langchain-ai/langgraph) workflows and agents through an OpenAI-compatible API interface. This enables seamless integration with any client library or tool that works with the OpenAI API, providing a standardized way to interact with your custom LangGraph solutions.
+LangGraph OpenAI Serve allows you to expose your
+[LangGraph](https://github.com/langchain-ai/langgraph) workflows and agents
+through an OpenAI-compatible API interface. The compatibility target is OpenAI
+client ingestion: official OpenAI SDKs, Chainlit, Open WebUI, and tools that
+talk to OpenAI-style `/v1` chat and model endpoints.
+
+For the compatibility contract, see
+[OpenAI API Compatibility](explanation/openai-compatibility.md).
 
 ## Features
 
 - Expose your LangGraph instances through an OpenAI-compatible API
 - Register multiple graphs as OpenAI model names
 - Use with any FastAPI application
+- Connect with OpenAI-compatible clients such as Chainlit and Open WebUI
 - Support streaming and non-streaming completions
 - Support custom input, output, and runtime context adapters
 - Support async graph factories, including MCP-style tool loading

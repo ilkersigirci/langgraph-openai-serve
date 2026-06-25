@@ -7,8 +7,9 @@ implementing an OpenAI-compatible interface.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
+from openai.types.shared import ErrorObject
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -18,12 +19,15 @@ from langgraph_openai_serve.api.chat.service import ChatCompletionService
 from langgraph_openai_serve.api.chat.utils.interrupts import (
     InvalidResumeRequestError,
 )
+from langgraph_openai_serve.api.errors import OpenAIHTTPException
 from langgraph_openai_serve.api.models.views import get_graph_registry_dependency
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfigurationError,
+    GraphNotFoundError,
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.utils import (
+    THREAD_METADATA_KEY,
     MissingThreadIDError,
     prepare_run,
 )
@@ -31,7 +35,11 @@ from langgraph_openai_serve.graph.utils import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["openai"])
-CLIENT_ERROR_TYPES = (MissingThreadIDError, InvalidResumeRequestError)
+CLIENT_ERROR_TYPES = (
+    MissingThreadIDError,
+    InvalidResumeRequestError,
+    GraphNotFoundError,
+)
 
 
 @router.post("/chat/completions", response_model=ChatCompletionResponse)
@@ -76,14 +84,31 @@ async def create_chat_completion(
         logger.info("Generating non-streaming chat completion response")
         response = await service.generate_completion(chat_request, run)
     except CLIENT_ERROR_TYPES as e:
-        raise HTTPException(
+        raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            error=ErrorObject(
+                message=str(e),
+                type="invalid_request_error",
+                param=client_error_param(e),
+            ),
         ) from e
     except GraphConfigurationError as e:
-        raise HTTPException(
+        raise OpenAIHTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            error=ErrorObject(
+                message=str(e),
+                type="server_error",
+            ),
         ) from e
     logger.info("Returning non-streaming chat completion response")
     return response
+
+
+def client_error_param(error: Exception) -> str | None:
+    if isinstance(error, GraphNotFoundError):
+        return "model"
+    if isinstance(error, MissingThreadIDError):
+        return f"metadata.{THREAD_METADATA_KEY}"
+    if isinstance(error, InvalidResumeRequestError):
+        return "messages"
+    return None

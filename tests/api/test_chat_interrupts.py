@@ -17,7 +17,7 @@ def create_completion(openai_client: OpenAI, *, stream: bool = False):
         model=MODEL,
         messages=[{"role": "user", "content": "Hi"}],
         stream=stream,
-        extra_body={"metadata": {"langgraph_thread_id": THREAD_ID}},
+        metadata={"langgraph_thread_id": THREAD_ID},
     )
 
 
@@ -51,7 +51,7 @@ def resume_interrupt(openai_client: OpenAI, response, resume_value: str):
                 "content": json.dumps({"resume": resume_value}),
             }
         ],
-        extra_body={"metadata": {"langgraph_thread_id": THREAD_ID}},
+        metadata={"langgraph_thread_id": THREAD_ID},
     )
 
 
@@ -91,7 +91,17 @@ def test_streaming_interrupt_missing_thread_id_returns_400_before_sse(
     response = exc_info.value.response
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert not response.headers["content-type"].startswith("text/event-stream")
-    assert "metadata.langgraph_thread_id" in response.json()["detail"]
+    assert response.json() == {
+        "error": {
+            "message": (
+                "metadata.langgraph_thread_id is required for "
+                "interrupt-enabled graphs."
+            ),
+            "type": "invalid_request_error",
+            "param": "metadata.langgraph_thread_id",
+            "code": None,
+        }
+    }
 
 
 def test_streaming_interrupt_chunks_parse_with_openai_client(

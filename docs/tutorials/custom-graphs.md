@@ -90,8 +90,13 @@ graphs = GraphRegistry(
 )
 
 server = LangchainOpenaiApiServe(graphs=graphs)
-server.bind_openai_chat_completion(prefix="/v1")
+server.bind_openai_chat_completion()
 ```
+
+The default OpenAI-compatible prefix is `/v1`. Set `LGOS_OPENAI_API_PREFIX` or
+pass `prefix=` to mount the API elsewhere.
+FastAPI docs for the mounted OpenAI API are disabled by default; set
+`LGOS_OPENAI_API_DOCS_ENABLED=true` to inspect `/v1/docs` locally.
 
 The demo registration lives in `demo/api/app.py`.
 

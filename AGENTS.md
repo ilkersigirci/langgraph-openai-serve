@@ -8,6 +8,17 @@ human docs for explanations and examples.
 - Use `docs/explanation/architecture.md` for request flow, graph execution,
   routing, or schema changes.
 
+## Compatibility Contract
+
+- Preserve OpenAI client compatibility as the only supported ingestion
+  contract for LangGraph graphs.
+- Do not add project-specific chat request envelopes, response shapes, headers,
+  routes, or streaming events unless they can be reached through the
+  OpenAI-compatible `/v1` interface.
+- Treat direct HTTP examples such as `curl` as diagnostics only. They must not
+  become a separate product contract that diverges from OpenAI client behavior.
+- See `docs/explanation/openai-compatibility.md` for the detailed contract.
+
 ## Repository Map
 
 - `src/langgraph_openai_serve/` contains the package.
@@ -58,4 +69,7 @@ The demo API serves OpenAI-compatible routes at `http://localhost:8000/v1`.
   documented variables.
 - Prefer adding or updating focused tests for behavior changes.
 - For API behavior, check route/service code and the graph runner path.
+- For OpenAI-compatible HTTP errors, raise `OpenAIHTTPException` with
+  `openai.types.shared.ErrorObject`; do not raise bare `HTTPException` from
+  OpenAI route code when the error type, param, or code is known.
 - For graph adapters, check the demo before changing public APIs.

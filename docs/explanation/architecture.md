@@ -1,36 +1,34 @@
 # Architecture Overview
 
-This document provides a high-level overview of the LangGraph OpenAI Serve architecture, explaining how the different components work together to provide an OpenAI-compatible API for LangGraph workflows.
+This document provides a high-level overview of the LangGraph OpenAI Serve
+architecture. For the public client contract, see
+[OpenAI API Compatibility](openai-compatibility.md).
 
 ## System Architecture
 
 LangGraph OpenAI Serve consists of several key components:
 
-1. **FastAPI Application**: The web server that handles HTTP requests
+1. **FastAPI Host Application**: The web server that handles HTTP requests
 2. **LangchainOpenaiApiServe**: The core class that bridges LangGraph and the API
 3. **Graph Registry**: A registry that manages LangGraph instances
-4. **API Routers**: FastAPI routers for different API endpoints
+4. **OpenAI Sub-Application**: A mounted FastAPI app containing the OpenAI-compatible routes
 5. **Schema Models**: Pydantic models for data validation and serialization
 
 ### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                HTTP Clients                             │
-│    (OpenAI Python SDK, JavaScript SDK, curl, etc.)      │
+│          OpenAI-Compatible Clients                      │
+│    (OpenAI SDKs, Chainlit, Open WebUI, etc.)            │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  FastAPI Application                    │
+│                FastAPI Host Application                 │
 │                                                         │
-│  ┌─────────────────┐       ┌─────────────────────────┐  │
-│  │  Models Router  │       │  Chat Completions Router│  │
-│  │   /v1/models    │       │  /v1/chat/completions   │  │
-│  └────────┬────────┘       └──────────┬──────────────┘  │
-│           │                           │                 │
-│  ┌────────▼───────────────────────────▼──────────────┐  │
-│  │             LangchainOpenaiApiServe               │  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │          Mounted OpenAI FastAPI App               │  │
+│  │    {prefix}/models, {prefix}/chat/completions     │  │
 │  │                                                   │  │
 │  │  ┌─────────────────────────────────────────────┐  │  │
 │  │  │              Graph Registry                 │  │  │
@@ -50,7 +48,7 @@ LangGraph OpenAI Serve consists of several key components:
 
 ## Component Details
 
-### FastAPI Application
+### FastAPI Host Application
 
 The FastAPI application serves as the web server that handles HTTP requests. It can be:
 
@@ -61,9 +59,9 @@ The FastAPI application serves as the web server that handles HTTP requests. It 
 
 This is the core class that connects LangGraph workflows with the OpenAI-compatible API. Its responsibilities include:
 
-- Managing the FastAPI application
+- Managing the host FastAPI application
 - Registering and managing LangGraph instances
-- Providing routers for different API endpoints
+- Mounting an OpenAI-compatible FastAPI sub-application at the configured prefix
 - Handling CORS configuration when needed
 
 ### Graph Registry
@@ -74,13 +72,22 @@ The Graph Registry maintains a mapping between model names and LangGraph instanc
 - Retrieving graphs by name
 - Listing available graphs
 
-### API Routers
+### OpenAI Sub-Application
 
-LangGraph OpenAI Serve provides several FastAPI routers:
+LangGraph OpenAI Serve mounts an OpenAI-compatible FastAPI sub-application on
+the host app. The sub-application installs OpenAI-shaped error handlers and
+contains several FastAPI routers:
 
-1. **Models Router**: Handles `/v1/models` endpoint to list available LangGraph workflows
-2. **Chat Completions Router**: Handles `/v1/chat/completions` endpoint for chat interactions
-3. **Health Router**: Provides a health check endpoint at `/v1/health` when mounted with `prefix="/v1"`
+1. **Models Router**: Handles `{prefix}/models` endpoint to list available LangGraph workflows
+2. **Chat Completions Router**: Handles `{prefix}/chat/completions` endpoint for chat interactions
+3. **Health Router**: Provides a health check endpoint at `{prefix}/health`
+
+The default OpenAI-compatible prefix is `/v1`. Set `LGOS_OPENAI_API_PREFIX` or
+pass `prefix=` to `bind_openai_chat_completion()` to mount the sub-application
+elsewhere.
+FastAPI docs for the mounted sub-application are disabled by default; set
+`LGOS_OPENAI_API_DOCS_ENABLED=true` to expose `{prefix}/docs`,
+`{prefix}/redoc`, and `{prefix}/openapi.json`.
 
 ### Schema Models
 
@@ -92,20 +99,23 @@ Pydantic models are used for data validation and serialization. These include:
 
 ## Request Flow
 
-When a client makes a request to the API, the following sequence of events occurs:
+When an OpenAI-compatible client makes a request to the API, the following
+sequence of events occurs:
 
-1. **Client Request**: A client (like the OpenAI Python SDK) sends a request to the API
-2. **FastAPI Router**: The appropriate router handles the request based on the endpoint
-3. **Request Validation**: Pydantic models validate the request data
-4. **Graph Selection**: The system looks up the requested LangGraph workflow in the registry
-5. **Graph Execution**: The LangGraph workflow is executed with the provided messages
-6. **Response Formatting**: The result is formatted according to the OpenAI API schema
-7. **Client Response**: The response is sent back to the client
+1. **Client Request**: A client such as the OpenAI Python SDK, Chainlit, or
+   Open WebUI sends an OpenAI-compatible request to the API
+2. **Mounted OpenAI App**: The mounted sub-application receives requests under the configured prefix
+3. **FastAPI Router**: The appropriate router handles the request based on the endpoint
+4. **Request Validation**: Pydantic models validate the request data
+5. **Graph Selection**: The system looks up the requested LangGraph workflow in the registry
+6. **Graph Execution**: The LangGraph workflow is executed with the provided messages
+7. **Response Formatting**: The result is formatted according to the OpenAI API schema
+8. **Client Response**: The response is sent back to the client
 
 ### Example Flow for Chat Completion
 
 ```
-Client Request (POST /v1/chat/completions)
+Client Request (POST {prefix}/chat/completions)
     │
     ▼
 FastAPI Chat Router

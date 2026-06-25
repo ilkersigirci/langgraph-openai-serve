@@ -4,6 +4,8 @@ import json
 import time
 import uuid
 
+from openai.types.shared import ErrorObject
+
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionResponse,
     ChatCompletionResponseChoice,
@@ -23,6 +25,7 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
     interrupt_arguments,
     interrupt_tool_call_id,
 )
+from langgraph_openai_serve.api.errors import openai_error_payload
 from langgraph_openai_serve.graph.runner import LangGraphInterrupt, LangGraphOutput
 
 
@@ -132,8 +135,9 @@ class ChatCompletionStreamResponseBuilder:
         )
 
     def error(self, message: str) -> str:
-        error_response = {"error": {"message": message, "type": "server_error"}}
-        return self._format_data(error_response)
+        return self._format_data(
+            openai_error_payload(ErrorObject(message=message, type="server_error"))
+        )
 
     def done(self) -> str:
         return "data: [DONE]\n\n"

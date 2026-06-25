@@ -1,17 +1,25 @@
 # Adding Authentication
 
-This guide explains how to add authentication to your LangGraph OpenAI Serve API to enhance security.
+This guide explains how to add authentication to the LangGraph OpenAI Serve
+OpenAI-compatible API while preserving compatibility with OpenAI clients. The
+default API prefix is `/v1`; set `LGOS_OPENAI_API_PREFIX` or pass `prefix=` to
+`bind_openai_chat_completion()` to mount it elsewhere.
 
 ## Why Add Authentication?
 
 By default, LangGraph OpenAI Serve doesn't enforce authentication. This is fine for local development or internal use, but for production environments, you should implement authentication to:
 
-- Prevent unauthorized access to your API
-- Track usage by different clients
+- Prevent unauthorized access to your OpenAI-compatible API
+- Track usage by different OpenAI-compatible clients
 - Apply rate limits or quotas to specific users
 - Control access to different graph models
 
 ## Simple API Key Authentication
+
+Use the standard `Authorization: Bearer <api-key>` header for API keys. The
+official OpenAI SDKs, Chainlit, Open WebUI, and most OpenAI-compatible clients
+send the configured API key this way, so this preserves the OpenAI client
+contract.
 
 Here's how to implement a simple API key authentication system using FastAPI dependencies:
 
@@ -20,12 +28,12 @@ Here's how to implement a simple API key authentication system using FastAPI dep
 Create a file named `auth.py` with the following content:
 
 ```python
-from fastapi import Depends, HTTPException, Security
-from fastapi.security import APIKeyHeader
-from starlette.status import HTTP_403_FORBIDDEN
+from fastapi import HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.status import HTTP_401_UNAUTHORIZED
 
-# Define API key header
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+# OpenAI clients send api_key as Authorization: Bearer <key>.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 # In a real application, store API keys in a database or environment variables
 API_KEYS = {
@@ -33,12 +41,17 @@ API_KEYS = {
     "valid_user_2": "sk-valid-key-2",
 }
 
-async def get_api_key(api_key: str = Security(api_key_header)):
-    if not api_key:
+async def get_api_key(
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+):
+    if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="API key is missing"
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="API key is missing",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+
+    api_key = credentials.credentials
 
     # Check if API key is valid
     for user, key in API_KEYS.items():
@@ -47,8 +60,9 @@ async def get_api_key(api_key: str = Security(api_key_header)):
             return {"user": user, "key": api_key}
 
     raise HTTPException(
-        status_code=HTTP_403_FORBIDDEN,
-        detail="Invalid API key"
+        status_code=HTTP_401_UNAUTHORIZED,
+        detail="Invalid API key",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 ```
 
@@ -57,15 +71,41 @@ async def get_api_key(api_key: str = Security(api_key_header)):
 Now update your application to use this authentication:
 
 ```python
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+from starlette.status import HTTP_401_UNAUTHORIZED
+
 from langgraph_openai_serve import LangchainOpenaiApiServe
-from auth import get_api_key
+from langgraph_openai_serve.core.settings import settings
+from auth import API_KEYS
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        api_prefix = settings.OPENAI_API_PREFIX
+        public_paths = {"/health", f"{api_prefix}/health"}
+        if request.url.path in public_paths or not request.url.path.startswith(
+            api_prefix
+        ):
+            return await call_next(request)
+
+        authorization = request.headers.get("Authorization", "")
+        scheme, _, api_key = authorization.partition(" ")
+        if scheme.lower() != "bearer" or api_key not in API_KEYS.values():
+            return JSONResponse(
+                status_code=HTTP_401_UNAUTHORIZED,
+                headers={"WWW-Authenticate": "Bearer"},
+                content={"detail": "Invalid or missing API key"},
+            )
+
+        return await call_next(request)
 
 # Create a FastAPI app
 app = FastAPI(
     title="Secure LangGraph API",
     description="LangGraph API with API key authentication",
 )
+app.add_middleware(APIKeyMiddleware)
 
 # Initialize the LangGraph OpenAI Serve
 graph_serve = LangchainOpenaiApiServe(
@@ -75,24 +115,11 @@ graph_serve = LangchainOpenaiApiServe(
     },
 )
 
-# Bind the OpenAI-compatible endpoints with authentication
-chat_router = graph_serve.get_chat_router()
-
-# Add authentication dependency to the chat router
-for route in chat_router.routes:
-    route.dependencies.append(Depends(get_api_key))
-
-# Include the router with authentication
-app.include_router(chat_router, prefix="/v1", tags=["openai"])
-
-# Add similar authentication to models router
-models_router = graph_serve.get_models_router()
-for route in models_router.routes:
-    route.dependencies.append(Depends(get_api_key))
-app.include_router(models_router, prefix="/v1", tags=["openai"])
+# Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+graph_serve.bind_openai_chat_completion()
 ```
 
-### 3. Using the API with Authentication
+### 3. Using the OpenAI-Compatible API with Authentication
 
 Once authentication is enabled, clients need to provide the API key:
 
@@ -225,25 +252,36 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 ### Using Authentication Middleware
 
-For a more global approach, you can use middleware:
+For a more global approach, you can use middleware. Keep the middleware on the
+same bearer-token contract so OpenAI-compatible clients continue to work
+without custom headers:
 
 ```python
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.base import BaseHTTPMiddleware
-from starlette.status import HTTP_403_FORBIDDEN
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+from starlette.status import HTTP_401_UNAUTHORIZED
+
+from langgraph_openai_serve.core.settings import settings
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Exclude certain paths from authentication (like health checks)
-        if request.url.path in {"/health", "/v1/health"}:
+        api_prefix = settings.OPENAI_API_PREFIX
+        if request.url.path in {"/health", f"{api_prefix}/health"}:
             return await call_next(request)
 
-        # Check for API key in header
-        api_key = request.headers.get("X-API-Key")
-        if not api_key or api_key not in ["sk-valid-key-1", "sk-valid-key-2"]:
-            return HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail="Invalid or missing API key",
+        # OpenAI clients send api_key as Authorization: Bearer <key>.
+        authorization = request.headers.get("Authorization", "")
+        scheme, _, api_key = authorization.partition(" ")
+        if (
+            scheme.lower() != "bearer"
+            or api_key not in ["sk-valid-key-1", "sk-valid-key-2"]
+        ):
+            return JSONResponse(
+                status_code=HTTP_401_UNAUTHORIZED,
+                headers={"WWW-Authenticate": "Bearer"},
+                content={"detail": "Invalid or missing API key"},
             )
 
         # Continue processing the request
@@ -271,4 +309,5 @@ app.add_middleware(APIKeyMiddleware)
 
 ## Next Steps
 
-- See [API reference](../reference.md) for detailed endpoint documentation
+- See [API reference](../reference.md) for detailed OpenAI-compatible endpoint
+  documentation
