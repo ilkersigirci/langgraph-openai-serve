@@ -58,8 +58,30 @@ response = client.chat.completions.create(
 - `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
 - `demo/api/graphs/custom_io.py`: input, output, and context adapters.
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
-- `demo/api/graphs/hitl_middleware.py`: LangChain human-in-the-loop middleware.
 - `demo/api/graphs/interruptible.py`: checkpointed interrupt and resume graph.
+- `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
+- `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function approval modal
+  demo.
+
+## Human In The Loop Demo
+
+The `interruptible-approval` model showcases LangGraph `interrupt()` and resume.
+
+Chainlit:
+
+```bash
+make run-demo-ui-chainlit-hitl
+```
+
+Open WebUI:
+
+```bash
+docker compose up -d open-webui
+```
+
+See [Docker](../how-to-guides/docker.md) for the Open WebUI Function import and
+[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
+for the interrupt tool-call protocol.
 
 ## Existing FastAPI Apps
 

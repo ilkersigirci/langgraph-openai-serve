@@ -163,3 +163,6 @@ run-demo-api: # ## Run the demo api in development mode
 
 run-demo-ui-chainlit: ## Run the demo Chainlit UI
 	uv run chainlit run demo/ui/chainlit_ui/main.py --host 0.0.0.0 --port 8001 -w
+
+run-demo-ui-chainlit-hitl: ## Run the Chainlit human-in-the-loop demo UI
+	uv run chainlit run demo/ui/chainlit_ui/hitl.py --host 0.0.0.0 --port 8001 -w

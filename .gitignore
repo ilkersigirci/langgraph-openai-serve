@@ -270,5 +270,6 @@ cython_debug/
 public
 profile.*
 demo/ui/chainlit_ui/.chainlit
+demo/ui/chainlit_ui/.files
 docker/volumes/*
 !docker/volumes/.gitkeep
