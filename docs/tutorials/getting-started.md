@@ -1,50 +1,38 @@
 # Getting Started
 
-This tutorial uses the runnable demo app in this repository. It exposes several
-LangGraph workflows through an OpenAI-compatible API, so you can inspect the code
-and call the API immediately.
+This tutorial uses the repository demo app. It serves several LangGraph graphs
+through the OpenAI-compatible `/v1` interface.
 
 ## Prerequisites
 
 - Python 3.11 or newer
 - `uv`
-- An OpenAI-compatible backend configured for the simple LLM graph, if you call
-  `simple-graph-with-history` or `simple-graph-no-history`
+- An OpenAI-compatible upstream model only if you call the simple LLM graphs
 
-The adapter and mock MCP demo graphs do not need real API keys.
+The custom adapter and mock MCP demo graphs do not require real API keys.
 
 ## Run The Demo API
-
-From the repository root:
 
 ```bash
 make run-demo-api
 ```
 
-The API is available at `http://localhost:8000/v1`.
+The base URL is `http://localhost:8000/v1`.
 
-List the registered graphs:
+Inspect registered graphs:
 
 ```bash
 curl http://localhost:8000/v1/models
 ```
 
-The demo app registers these model names:
+The demo model names are listed in [Reference](../reference.md#demo-models).
 
-- `simple-graph-with-history`
-- `simple-graph-no-history`
-- `custom-input-output-context`
-- `advanced-mcp-tools`
-
-## Call It With The OpenAI Client
+## Call A Graph
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="DUMMY",
-)
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
 response = client.chat.completions.create(
     model="custom-input-output-context",
@@ -62,30 +50,25 @@ response = client.chat.completions.create(
     model="advanced-mcp-tools",
     messages=[{"role": "user", "content": "What is the weather in Istanbul?"}],
 )
-
-print(response.choices[0].message.content)
 ```
 
-## Where To Look
+## Demo Files
 
-- `demo/api/app.py` registers graph names as OpenAI model names.
-- `demo/api/graphs/simple.py` exposes the default message-based graph.
-- `demo/api/graphs/custom_io.py` shows `request_to_input`,
-  `context_factory`, and `output_to_text`.
-- `demo/api/graphs/advanced_mcp.py` shows an async graph factory that loads
-  mock MCP-style tools before creating a ReAct graph.
+- `demo/api/app.py`: registers graph names as OpenAI model names.
+- `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
+- `demo/api/graphs/custom_io.py`: input, output, and context adapters.
+- `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
+- `demo/api/graphs/hitl_middleware.py`: LangChain human-in-the-loop middleware.
+- `demo/api/graphs/interruptible.py`: checkpointed interrupt and resume graph.
 
 ## Existing FastAPI Apps
-
-Mount the OpenAI-compatible routes on your own FastAPI app:
 
 ```python
 from fastapi import FastAPI
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 from your_graphs import my_graph
 
-app = FastAPI(title="My LangGraph API")
-
+app = FastAPI()
 graphs = GraphRegistry(
     registry={
         "my-graph": GraphConfig(
@@ -95,9 +78,11 @@ graphs = GraphRegistry(
     }
 )
 
-server = LangchainOpenaiApiServe(app=app, graphs=graphs)
-server.bind_openai_chat_completion(prefix="/v1")
+LangchainOpenaiApiServe(app=app, graphs=graphs).bind_openai_chat_completion()
 ```
+
+See [Reference](../reference.md) for prefixes, docs URLs, settings, and public
+classes.
 
 ## Next Steps
 

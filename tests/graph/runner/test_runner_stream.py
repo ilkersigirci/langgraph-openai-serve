@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
-from tests.graph.conftest import (
+from tests.graph.support.schemas import (
     AnswerOutput,
     MessageState,
     QuestionInput,
@@ -22,7 +22,9 @@ async def stream_text(name: str, graph_registry: GraphRegistry, make_request) ->
         graph_registry,
         chat_request,
     )
-    return "".join([chunk async for chunk, _ in chunks])
+    events = [event async for event in chunks]
+    assert all(isinstance(event, str) for event in events)
+    return "".join(events)
 
 
 @pytest.mark.anyio
@@ -43,7 +45,9 @@ async def test_nested_subgraph_streaming(
         .compile()
     )
     graph = (
-        StateGraph(QuestionState, input_schema=QuestionInput, output_schema=AnswerOutput)
+        StateGraph(
+            QuestionState, input_schema=QuestionInput, output_schema=AnswerOutput
+        )
         .add_node("subgraph", subgraph)
         .set_entry_point("subgraph")
         .set_finish_point("subgraph")

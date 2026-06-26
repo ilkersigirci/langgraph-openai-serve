@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
 from demo.api.graphs.custom_io import custom_io_graph_config
+from demo.api.graphs.interruptible import interruptible_graph
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
@@ -103,6 +104,14 @@ def create_custom_app() -> FastAPI:
             ),
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
+            "interruptible-approval": GraphConfig(
+                graph=interruptible_graph,
+                request_to_input=lambda request, messages: {
+                    "request": messages[-1].content or ""
+                },
+                output_to_text=lambda output: output["response"],
+                interrupts_enabled=True,
+            ),
         }
     )
 

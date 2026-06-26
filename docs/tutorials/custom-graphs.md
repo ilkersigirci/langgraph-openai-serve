@@ -1,38 +1,19 @@
 # Custom Graphs
 
-LangGraph OpenAI Serve maps OpenAI `model` names to LangGraph configurations.
-The easiest way to learn the supported graph shapes is to inspect the demo
-graphs in `demo/api/graphs`.
+Each `GraphRegistry` key becomes an OpenAI `model` name.
 
 ## Default Message Graph
 
-Most chat graphs can use the default shape:
-
 ```python
-GraphConfig(
-    graph=my_graph,
-    streamable_node_names=["generate"],
-)
+GraphConfig(graph=my_graph, streamable_node_names=["generate"])
 ```
 
-With no adapters, the runner sends this input to the graph:
+Without adapters, graph input is `{"messages": langchain_messages}` and output
+text is read from `result["messages"][-1].content`.
 
-```python
-{"messages": langchain_messages}
-```
+## Custom Schemas
 
-The response text is read from:
-
-```python
-result["messages"][-1].content
-```
-
-See `demo/api/graphs/simple.py` and the underlying package graph for a complete
-message-based example.
-
-## Custom Input, Output, And Context
-
-Use adapters when your graph declares native LangGraph input, output, or context
+Use adapters when your graph has native LangGraph input, output, or context
 schemas:
 
 ```python
@@ -44,21 +25,15 @@ GraphConfig(
 )
 ```
 
-The adapter hooks are:
+- `request_to_input(request, messages)` builds graph input.
+- `context_factory(request)` builds runtime context.
+- `output_to_text(output)` renders assistant text.
 
-- `request_to_input(request, messages)` converts the OpenAI request into the
-  graph input schema.
-- `context_factory(request)` builds the LangGraph runtime context.
-- `output_to_text(output)` converts the graph output schema into the assistant
-  message text.
+See `demo/api/graphs/custom_io.py` for the runnable version.
 
-See `demo/api/graphs/custom_io.py` for the complete runnable example.
+## Async Factories
 
-## Async Graph Factories And MCP-Style Tools
-
-`GraphConfig.graph` can be a compiled graph or a callable that returns one. If
-the callable is async, the server awaits it before execution. That is useful for
-loading tools from MCP or another async source:
+`GraphConfig.graph` may be a compiled graph, sync factory, or async factory:
 
 ```python
 async def advanced_graph():
@@ -68,41 +43,38 @@ async def advanced_graph():
 GraphConfig(graph=advanced_graph)
 ```
 
-See `demo/api/graphs/advanced_mcp.py` for a mock MCP client that loads tools
-asynchronously and builds a ReAct graph without requiring real MCP servers or API
-keys.
+See `demo/api/graphs/advanced_mcp.py` for a mock MCP-style example.
 
-## Register A Graph
-
-Register graphs in a `GraphRegistry`; each key becomes an OpenAI model name:
+## Register And Bind
 
 ```python
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
 
 graphs = GraphRegistry(
     registry={
-        "my-graph": GraphConfig(
-            graph=my_graph,
-            streamable_node_names=["generate"],
-        ),
+        "my-graph": GraphConfig(graph=my_graph, streamable_node_names=["generate"]),
         "advanced-mcp-tools": GraphConfig(graph=advanced_graph),
     }
 )
 
-server = LangchainOpenaiApiServe(graphs=graphs)
-server.bind_openai_chat_completion(prefix="/v1")
+LangchainOpenaiApiServe(graphs=graphs).bind_openai_chat_completion()
 ```
-
-The demo registration lives in `demo/api/app.py`.
 
 ## Streaming
 
-Streaming only emits chunks from nodes listed in `streamable_node_names`, and
-the graph must actually produce streamed `AIMessageChunk` values. A deterministic
-graph that returns one final dictionary should be called without `stream=True`.
+Streaming only forwards streamed `AIMessageChunk` values from
+`streamable_node_names`. Deterministic graphs that return a final dictionary
+should be called without `stream=True`.
+
+## Interrupts
+
+Set `interrupts_enabled=True` for checkpointed human-in-the-loop graphs. Clients
+must pass `metadata.langgraph_thread_id` so follow-up tool messages resume the
+same LangGraph thread. The interrupt is represented as an OpenAI tool call named
+`langgraph_interrupt`.
 
 ## Next Steps
 
-- [Connect OpenAI clients](openai-clients.md)
-- [Run with Docker](../how-to-guides/docker.md)
-- [LangGraph integration details](../explanation/langgraph-integration.md)
+- [OpenAI clients](openai-clients.md)
+- [LangGraph integration](../explanation/langgraph-integration.md)
+- [Reference](../reference.md)

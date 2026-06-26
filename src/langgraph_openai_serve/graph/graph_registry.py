@@ -19,6 +19,14 @@ ContextFactory = Callable[[ChatCompletionRequest], Any | Awaitable[Any]]
 OutputToText = Callable[[Any], str | Awaitable[str]]
 
 
+class GraphConfigurationError(RuntimeError):
+    """Raised when a registered graph cannot satisfy its declared config."""
+
+
+class GraphNotFoundError(ValueError):
+    """Raised when a requested graph is not registered."""
+
+
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
@@ -26,13 +34,21 @@ class GraphConfig(BaseModel):
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
+    interrupts_enabled: bool = False
 
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""
         if isinstance(self.graph, CompiledStateGraph):
-            return self.graph
+            graph = self.graph
+        else:
+            graph = await _maybe_await(self.graph())
 
-        return await _maybe_await(self.graph())
+        if self.interrupts_enabled and graph.checkpointer is None:
+            raise GraphConfigurationError(
+                "Interrupt-enabled graphs must be compiled with a checkpointer."
+            )
+
+        return graph
 
     async def build_input(
         self,
@@ -83,8 +99,8 @@ class GraphRegistry(BaseModel):
             The graph configuration associated with the given name.
 
         Raises:
-            ValueError: If the graph name is not found in the registry.
+            GraphNotFoundError: If the graph name is not found in the registry.
         """
         if name not in self.registry:
-            raise ValueError(f"Graph '{name}' not found in registry.")
+            raise GraphNotFoundError(f"Graph '{name}' not found in registry.")
         return self.registry[name]

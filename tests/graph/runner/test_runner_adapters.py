@@ -8,7 +8,7 @@ from langgraph.runtime import Runtime
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph
-from tests.graph.conftest import (
+from tests.graph.support.schemas import (
     AnswerOutput,
     PydanticAnswerOutput,
     PydanticQuestionInput,
@@ -82,7 +82,7 @@ async def test_typed_dict_schemas_and_native_context(
 
 
 @pytest.mark.anyio
-async def test_pydantic_schemas_and_async_adapters(
+async def test_async_graph_factory_and_async_adapters(
     make_request,
 ) -> None:
     async def generate(state: PydanticQuestionState):

@@ -20,6 +20,18 @@ CustomHttpUrlStr = Annotated[
 ]
 
 
+def normalize_openai_api_prefix(v: str) -> str:
+    """Normalize and validate the OpenAI-compatible API mount prefix."""
+    if not v.startswith("/"):
+        raise ValueError("OPENAI_API_PREFIX must start with '/'.")
+    if len(v) > 1:
+        normalized = v.rstrip("/")
+        if not normalized:
+            raise ValueError("OPENAI_API_PREFIX must not contain only slashes.")
+        return normalized
+    return v
+
+
 class Settings(BaseSettings):
     """This class is used to load environment variables either from environment or
     from a .env file and store them as class attributes.
@@ -42,10 +54,19 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: CustomHttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
+    OPENAI_API_PREFIX: str = "/v1"
+    OPENAI_API_DOCS_ENABLED: bool = False
 
     ENABLE_LANGFUSE: bool = False
 
+    @field_validator("OPENAI_API_PREFIX")
+    @classmethod
+    def validate_openai_api_prefix(cls, v: str) -> str:
+        """Validate the mount prefix for OpenAI-compatible endpoints."""
+        return normalize_openai_api_prefix(v)
+
     @field_validator("ENABLE_LANGFUSE")
+    @classmethod
     def check_langfuse_settings(cls, v: bool) -> bool:
         """Validate Langfuse settings if enabled."""
         if v is False:
