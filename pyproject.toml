@@ -76,7 +76,7 @@ minversion = "7.0.0"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",
-    "--verbose",
+#    "--verbose",
 #    "--durations=0",
 #    "--strict-markers",
 #    "--doctest-modules",
@@ -96,7 +96,7 @@ log_cli_format = "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(filename)
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 88
 src = ["src"]
 respect-gitignore = true
