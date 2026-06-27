@@ -120,13 +120,9 @@ def assistant_tool_call_message(
 def tool_call_param(
     tool_call: ChatCompletionMessageToolCall,
 ) -> ChatCompletionMessageToolCallParam:
-    return ChatCompletionMessageToolCallParam(
-        id=tool_call.id,
-        type=tool_call.type,
-        function={
-            "name": tool_call.function.name,
-            "arguments": tool_call.function.arguments,
-        },
+    return cast(
+        ChatCompletionMessageToolCallParam,
+        tool_call.model_dump(mode="json"),
     )
 
 

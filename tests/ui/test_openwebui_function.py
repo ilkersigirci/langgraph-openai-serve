@@ -1,27 +1,37 @@
 import json
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from demo.ui.openwebui.hitl_function import INTERRUPT_TOOL_NAME, Pipe
+from demo.ui.openwebui.hitl_function import Pipe
+from openai.types.chat import ChatCompletion
+
+from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
 
 
-def _completion(content: str = "", tool_calls: list[Any] | None = None) -> Any:
-    return SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(content=content, tool_calls=tool_calls)
-            )
-        ]
+def _completion(
+    content: str = "",
+    tool_calls: list[dict[str, Any]] | None = None,
+) -> ChatCompletion:
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if tool_calls is not None:
+        message["tool_calls"] = tool_calls
+
+    return ChatCompletion(
+        id="chatcmpl-test",
+        object="chat.completion",
+        created=0,
+        model="interruptible-approval",
+        choices=[{"index": 0, "finish_reason": "stop", "message": message}],
     )
 
 
-def _interrupt_response() -> Any:
-    tool_call = SimpleNamespace(
-        id="call-1",
-        function=SimpleNamespace(
-            name=INTERRUPT_TOOL_NAME,
-            arguments=json.dumps(
+def _interrupt_response() -> ChatCompletion:
+    tool_call = {
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": INTERRUPT_TOOL_NAME,
+            "arguments": json.dumps(
                 {
                     "payload": {
                         "question": "Approve?",
@@ -29,8 +39,20 @@ def _interrupt_response() -> Any:
                     }
                 }
             ),
-        ),
-    )
+        },
+    }
+    return _completion(tool_calls=[tool_call])
+
+
+def _malformed_interrupt_response() -> ChatCompletion:
+    tool_call = {
+        "id": "call-1",
+        "type": "function",
+        "function": {
+            "name": INTERRUPT_TOOL_NAME,
+            "arguments": json.dumps([]),
+        },
+    }
     return _completion(tool_calls=[tool_call])
 
 
@@ -69,8 +91,13 @@ async def test_openwebui_function_asks_for_confirmation_and_approves() -> None:
         }
     ]
     resume_messages, thread_id = chat_calls[1]
-    assert resume_messages[0]["tool_call_id"] == "call-1"
-    assert json.loads(resume_messages[0]["content"]) == {
+    assert resume_messages[0] == {
+        "role": "user",
+        "content": "Refund order ORDER-123",
+    }
+    assert resume_messages[1]["tool_calls"][0]["id"] == "call-1"
+    assert resume_messages[2]["tool_call_id"] == "call-1"
+    assert json.loads(resume_messages[2]["content"]) == {
         "resume": "approve"
     }
     assert thread_id == "openwebui:function:chat-1"
@@ -100,9 +127,44 @@ async def test_openwebui_function_rejects_when_confirmation_declines() -> None:
     )
 
     assert response == "Rejected agent action: Refund order ORDER-123"
-    assert json.loads(chat_calls[1][0]["content"]) == {
+    assert json.loads(chat_calls[1][-1]["content"]) == {
         "resume": "reject"
     }
+
+
+@pytest.mark.anyio
+async def test_openwebui_function_handles_malformed_interrupt_arguments() -> None:
+    pipe = Pipe()
+    events = []
+
+    async def chat(messages, thread_id):
+        del messages, thread_id
+        if not events:
+            return _malformed_interrupt_response()
+        return _completion("Approved agent action.")
+
+    async def event_call(event):
+        events.append(event)
+        return True
+
+    pipe._chat = chat  # type: ignore[method-assign]
+
+    response = await pipe.pipe(
+        body={"messages": [{"role": "user", "content": "Refund order ORDER-123"}]},
+        __event_call__=event_call,
+        __metadata__={"chat_id": "chat-1"},
+    )
+
+    assert response == "Approved agent action."
+    assert events == [
+        {
+            "type": "confirmation",
+            "data": {
+                "title": "Approve this agent action?",
+                "message": "{}",
+            },
+        }
+    ]
 
 
 @pytest.mark.anyio
