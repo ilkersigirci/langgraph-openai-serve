@@ -58,7 +58,8 @@ response = client.chat.completions.create(
 - `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
 - `demo/api/graphs/custom_io.py`: input, output, and context adapters.
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
-- `demo/api/graphs/interruptible.py`: checkpointed interrupt and resume graph.
+- `demo/api/graphs/interruptible.py`: interrupt and resume graph persisted in
+  `checkpoints.sqlite` by the demo application.
 - `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
 - `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function approval modal
   demo.

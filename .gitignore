@@ -273,3 +273,4 @@ demo/ui/chainlit_ui/.chainlit
 demo/ui/chainlit_ui/.files
 docker/volumes/*
 !docker/volumes/.gitkeep
+/checkpoints.sqlite*

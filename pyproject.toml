@@ -62,13 +62,14 @@ test = [
     "pytest-rerunfailures>=14.0",
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
+    "langgraph-checkpoint-sqlite>=3.1.0",
 ]
-ui = [
+demo = [
     "chainlit>=2.8,<3",
 ]
 
 [tool.uv]
-default-groups = ["dev", "doc", "test", "ui"]
+default-groups = ["dev", "doc", "test", "demo"]
 
 
 [tool.pytest.ini_options]

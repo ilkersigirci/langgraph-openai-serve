@@ -1,7 +1,8 @@
 from typing import TypedDict
 
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
 
@@ -27,10 +28,13 @@ def request_approval(state: ApprovalState) -> dict[str, str]:
     return {"response": response}
 
 
-interruptible_graph = (
-    StateGraph(ApprovalState)
-    .add_node("request_approval", request_approval)
-    .set_entry_point("request_approval")
-    .set_finish_point("request_approval")
-    .compile(checkpointer=InMemorySaver())
-)
+def create_interruptible_graph(
+    checkpointer: BaseCheckpointSaver,
+) -> CompiledStateGraph:
+    return (
+        StateGraph(ApprovalState)
+        .add_node("request_approval", request_approval)
+        .set_entry_point("request_approval")
+        .set_finish_point("request_approval")
+        .compile(checkpointer=checkpointer)
+    )
