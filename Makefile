@@ -149,6 +149,9 @@ format: ## Run ruff for all package files. CHANGES CODE
 	uv run --module ruff format ${PACKAGE}
 	uv run --module ruff check ${PACKAGE} --fix --show-fixes
 
+type-check: ## Run ty for type checking
+	uv run ty check
+
 format-unsafe: ## Run ruff for all package files. CHANGES CODE
 	uv lock --locked
 	uv run --module ruff format ${PACKAGE}

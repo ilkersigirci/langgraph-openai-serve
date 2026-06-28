@@ -2,6 +2,7 @@
 
 import logging
 import time
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -117,34 +118,36 @@ async def stream_run(
     if run.config.interrupts_enabled:
         stream_mode.append("updates")
 
-    async for event in run.graph.astream(
+    graph_stream = run.graph.astream(
         run.inputs,
         config=run.runnable_config,
         context=run.context,
         stream_mode=stream_mode,
         subgraphs=True,
         version="v2",
-    ):
-        if event.get("type") == "updates":
-            interrupt = extract_interrupt(event.get("data"), run.thread_id)
-            if interrupt is not None:
-                yield interrupt
-            continue
+    )
+    async with aclosing(graph_stream):
+        async for event in graph_stream:
+            if event.get("type") == "updates":
+                interrupt = extract_interrupt(event.get("data"), run.thread_id)
+                if interrupt is not None:
+                    yield interrupt
+                continue
 
-        if event.get("type") != "messages":
-            continue
+            if event.get("type") != "messages":
+                continue
 
-        message, metadata = event["data"]
-        if not isinstance(message, AIMessageChunk):
-            continue
-        if TAG_HIDDEN in (metadata.get("tags") or []):
-            continue
-        if metadata.get("langgraph_node") not in run.config.streamable_node_names:
-            continue
+            message, metadata = event["data"]
+            if not isinstance(message, AIMessageChunk):
+                continue
+            if TAG_HIDDEN in (metadata.get("tags") or []):
+                continue
+            if metadata.get("langgraph_node") not in run.config.streamable_node_names:
+                continue
 
-        content = str(message.text)
-        if content:
-            yield content
+            content = str(message.text)
+            if content:
+                yield content
 
 
 def usage_for(
