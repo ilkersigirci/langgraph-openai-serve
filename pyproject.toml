@@ -52,6 +52,7 @@ dev = [
     "ipykernel>=6.29.5",
     "prek>=0.3.11",
     "ruff>=0.15.12",
+    "ty>=0.0.55",
 ]
 doc = [
     "zensical>=0.0.11",
@@ -62,13 +63,14 @@ test = [
     "pytest-rerunfailures>=14.0",
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
+    "langgraph-checkpoint-sqlite>=3.1.0",
 ]
-ui = [
+demo = [
     "chainlit>=2.8,<3",
 ]
 
 [tool.uv]
-default-groups = ["dev", "doc", "test", "ui"]
+default-groups = ["dev", "doc", "test", "demo"]
 
 
 [tool.pytest.ini_options]
@@ -76,7 +78,7 @@ minversion = "7.0.0"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",
-    "--verbose",
+#    "--verbose",
 #    "--durations=0",
 #    "--strict-markers",
 #    "--doctest-modules",
@@ -87,6 +89,7 @@ addopts = [
 ]
 
 testpaths = ["tests"]
+pythonpath = ["."]
 
 # TODO: Make them inherit from yaml file
 log_cli = true
@@ -95,7 +98,7 @@ log_cli_format = "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(filename)
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"
 line-length = 88
 src = ["src"]
 respect-gitignore = true

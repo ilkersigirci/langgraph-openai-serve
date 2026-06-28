@@ -13,10 +13,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
 from demo.api.graphs.custom_io import custom_io_graph_config
-from demo.api.graphs.interruptible import interruptible_graph
+from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
@@ -36,8 +37,8 @@ def create_default_app() -> FastAPI:
 
     graph_serve = LangchainOpenaiApiServe()
 
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
+    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+    graph_serve.bind_openai_chat_completion()
 
     return graph_serve.app
 
@@ -51,15 +52,13 @@ async def lifespan(app: FastAPI):
     Args:
         app: The FastAPI application.
     """
-    # Startup
     logger.info("Starting DEMO LangGraph OpenAI compatible server")
-    # Additional startup logic here (e.g., loading models)
 
-    yield
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as checkpointer:
+        app.state.interruptible_graph = create_interruptible_graph(checkpointer)
+        yield
 
-    # Shutdown
     logger.info("Shutting down DEMO LangGraph OpenAI compatible server")
-    # Additional cleanup logic here
 
 
 def create_custom_app() -> FastAPI:
@@ -105,7 +104,7 @@ def create_custom_app() -> FastAPI:
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
             "interruptible-approval": GraphConfig(
-                graph=interruptible_graph,
+                graph=lambda: app.state.interruptible_graph,
                 request_to_input=lambda request, messages: {
                     "request": messages[-1].content or ""
                 },
@@ -120,8 +119,8 @@ def create_custom_app() -> FastAPI:
         graphs=graph_registry,
     )
 
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
+    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+    graph_serve.bind_openai_chat_completion()
 
     return graph_serve.app
 

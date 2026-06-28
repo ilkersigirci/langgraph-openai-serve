@@ -42,6 +42,8 @@ services:
     container_name: open-webui
     image: ghcr.io/open-webui/open-webui:v0.9.6@sha256:90eae5b419e40b4c3dd684582b2c83440b36f9ae2f6532c09639b2ba4ee65158
     restart: "no"
+    depends_on:
+      - lgos-demo-api
     networks:
       - lgos-network
     ports:
@@ -63,11 +65,9 @@ services:
       WEBUI_ADMIN_PASSWORD: lgos
       WEBUI_ADMIN_NAME: LGOS
       ############# OPENAI API #############
-      ENABLE_OPENAI_API: true
-      OPENAI_API_BASE_URL: http://lgos-demo-api:8000/v1
-      OPENAI_API_KEY: DUMMY
-      # OPENAI_API_BASE_URLS: http://lgos-demo-api:8000/v1;http://lgos-demo-api:8001/v1
-      # OPENAI_API_KEYS: DUMMY1;DUMMY2
+      ENABLE_OPENAI_API: false
+      LGOS_OPENWEBUI_OPENAI_BASE_URL: http://lgos-demo-api:8000/v1
+      LGOS_OPENAI_API_KEY: DUMMY
       ENABLE_IMAGE_GENERATION: false
       ############# RAG #############
       RAG_EMBEDDING_ENGINE: openai

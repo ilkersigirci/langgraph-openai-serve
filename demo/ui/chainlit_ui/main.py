@@ -1,5 +1,7 @@
 """Simple Chainlit UI for the demo OpenAI-compatible LangGraph server."""
 
+import asyncio
+import contextlib
 import os
 from typing import Any
 
@@ -50,23 +52,36 @@ async def on_chat_start() -> None:
 async def on_message(message: cl.Message) -> None:
     model = cl.user_session.get("chat_profile")
 
-    messages: list[dict[str, Any]] = cl.user_session.get("messages") or []
-    messages.append({"role": "user", "content": message.content})
-
-    assistant_message = cl.Message(content="")
-
-    stream = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        stream=True,
-    )
-
-    async for chunk in stream:
-        token = chunk.choices[0].delta.content or ""
-        if token:
-            await assistant_message.stream_token(token)
-
-    messages.append({"role": "assistant", "content": assistant_message.content})
+    messages: list[dict[str, Any]] = [
+        *(cl.user_session.get("messages") or []),
+        {"role": "user", "content": message.content},
+    ]
     cl.user_session.set("messages", messages)
 
-    await assistant_message.update()
+    assistant_message = cl.Message(content="")
+    stream = None
+
+    try:
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+        )
+
+        async for chunk in stream:
+            token = chunk.choices[0].delta.content or ""
+            if token:
+                await assistant_message.stream_token(token)
+
+        messages.append({"role": "assistant", "content": assistant_message.content})
+        cl.user_session.set("messages", messages)
+
+        await assistant_message.update()
+    except asyncio.CancelledError:
+        if assistant_message.content:
+            await assistant_message.update()
+        raise
+    finally:
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                await stream.close()

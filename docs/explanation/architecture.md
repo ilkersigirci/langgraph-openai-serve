@@ -59,5 +59,6 @@ OpenAI-compatible tool calls.
 
 Interrupt-enabled graphs pass `metadata.langgraph_thread_id` into LangGraph
 runnable config. They must have a checkpointer so pending interrupts can resume.
-Demo and tests may use `InMemorySaver`; production deployments should use a
-durable checkpointer shared across workers.
+The demo keeps an `AsyncSqliteSaver` backed by `checkpoints.sqlite` open for the
+application lifespan, so checkpoints survive requests and process restarts.
+Production deployments should use a durable checkpointer shared across workers.

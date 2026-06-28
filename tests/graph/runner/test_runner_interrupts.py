@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 
 from langgraph_openai_serve.graph.graph_registry import (
@@ -25,7 +25,10 @@ from tests.graph.support.schemas import MessageState
 
 
 @pytest.mark.anyio
-async def test_thread_id_reaches_runnable_config(make_request) -> None:
+async def test_thread_id_reaches_runnable_config(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
     seen_thread_ids = []
 
     async def generate(state: MessageState, config: RunnableConfig):
@@ -37,7 +40,7 @@ async def test_thread_id_reaches_runnable_config(make_request) -> None:
         .add_node("generate", generate)
         .set_entry_point("generate")
         .set_finish_point("generate")
-        .compile(checkpointer=InMemorySaver())
+        .compile(checkpointer=sqlite_checkpointer)
     )
     registry = GraphRegistry(
         registry={"threaded": GraphConfig(graph=graph, interrupts_enabled=True)}
@@ -54,14 +57,17 @@ async def test_thread_id_reaches_runnable_config(make_request) -> None:
 
 
 @pytest.mark.anyio
-async def test_interrupt_result_is_returned_before_output_rendering(make_request) -> None:
+async def test_interrupt_result_is_returned_before_output_rendering(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
     async def output_to_text(output):
         raise AssertionError("interrupt output should not be rendered")
 
     registry = GraphRegistry(
         registry={
             "interruptible": GraphConfig(
-                graph=make_interrupt_graph(),
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 output_to_text=output_to_text,
                 interrupts_enabled=True,
             )
@@ -86,7 +92,9 @@ async def test_interrupt_result_is_returned_before_output_rendering(make_request
 
 
 @pytest.mark.anyio
-async def test_interrupt_shape_is_ignored_when_interrupts_disabled() -> None:
+async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
     class Graph:
         async def ainvoke(self, inputs, *, config, context):
             return {"__interrupt__": ["not-enabled"]}
@@ -95,7 +103,7 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled() -> None:
         return output["__interrupt__"][0]
 
     graph_config = GraphConfig(
-        graph=make_interrupt_graph(),
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
         output_to_text=output_to_text,
     )
     run = GraphRun(
@@ -113,11 +121,14 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled() -> None:
 
 
 @pytest.mark.anyio
-async def test_streaming_interrupt_detected_from_updates(make_request) -> None:
+async def test_streaming_interrupt_detected_from_updates(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
     registry = GraphRegistry(
         registry={
             "interruptible": GraphConfig(
-                graph=make_interrupt_graph(),
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 interrupts_enabled=True,
             )
         }
@@ -143,11 +154,14 @@ async def test_streaming_interrupt_detected_from_updates(make_request) -> None:
 
 
 @pytest.mark.anyio
-async def test_interrupt_enabled_graph_requires_thread_id(make_request) -> None:
+async def test_interrupt_enabled_graph_requires_thread_id(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
     registry = GraphRegistry(
         registry={
             "interruptible": GraphConfig(
-                graph=make_interrupt_graph(),
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 interrupts_enabled=True,
             )
         }
