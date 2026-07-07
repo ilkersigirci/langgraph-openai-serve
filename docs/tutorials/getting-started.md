@@ -52,12 +52,31 @@ response = client.chat.completions.create(
 )
 ```
 
+Try the deterministic nested subgraph graph:
+
+```python
+response = client.chat.completions.create(
+    model="complex-subgraphs",
+    messages=[
+        {
+            "role": "user",
+            "content": "Show OpenAI adapter streaming with nested subgraphs.",
+        }
+    ],
+    user="demo-user",
+)
+
+print(response.choices[0].message.content)
+```
+
 ## Demo Files
 
 - `demo/api/app.py`: registers graph names as OpenAI model names.
 - `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
 - `demo/api/graphs/custom_io.py`: input, output, and context adapters.
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
+- `demo/api/graphs/complex_subgraphs.py` and `demo/api/graphs/subgraphs/`:
+  router-selected subgraphs with streamed fake chat model output.
 - `demo/api/graphs/interruptible.py`: interrupt and resume graph persisted in
   `checkpoints.sqlite` by the demo application.
 - `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.

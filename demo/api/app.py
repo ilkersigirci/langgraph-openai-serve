@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
+from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.simple import simple_graph
@@ -103,6 +104,7 @@ def create_custom_app() -> FastAPI:
             ),
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
+            "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "interruptible-approval": GraphConfig(
                 graph=lambda: app.state.interruptible_graph,
                 request_to_input=lambda request, messages: {

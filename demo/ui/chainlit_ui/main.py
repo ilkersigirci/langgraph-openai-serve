@@ -81,6 +81,13 @@ async def on_message(message: cl.Message) -> None:
         if assistant_message.content:
             await assistant_message.update()
         raise
+    except Exception as exc:
+        error = f"Chat completion failed: {exc}"
+        if assistant_message.content:
+            assistant_message.content = f"{assistant_message.content}\n\n{error}"
+            await assistant_message.update()
+        else:
+            await cl.Message(content=error).send()
     finally:
         if stream is not None:
             with contextlib.suppress(Exception):
