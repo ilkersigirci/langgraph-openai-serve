@@ -2,16 +2,16 @@
 
 import asyncio
 import contextlib
-import os
 from typing import Any
 
 import chainlit as cl
+from demo.api.settings import settings
 from openai import AsyncOpenAI
 
-OPENAI_BASE_URL = os.getenv("LGOS_CHAINLIT_OPENAI_BASE_URL", "http://localhost:8000/v1")
-OPENAI_API_KEY = os.getenv("LGOS_OPENAI_API_KEY", "DUMMY")
-
-client = AsyncOpenAI(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(
+    base_url=settings.CHAINLIT_OPENAI_BASE_URL,
+    api_key="DUMMY",
+)
 
 
 @cl.set_chat_profiles

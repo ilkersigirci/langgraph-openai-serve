@@ -5,7 +5,6 @@ version: 0.1
 """
 
 import json
-import os
 from typing import Any, cast
 
 from openai import AsyncOpenAI, OpenAIError
@@ -27,14 +26,11 @@ NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
 class Pipe:
     class Valves(BaseModel):
         OPENAI_API_BASE_URL: str = Field(
-            default=os.getenv(
-                "LGOS_OPENWEBUI_OPENAI_BASE_URL",
-                "http://lgos-demo-api:8000/v1",
-            ),
+            default="http://lgos-demo-api:8000/v1",
             description="Base URL for the LangGraph OpenAI-compatible API.",
         )
         OPENAI_API_KEY: str = Field(
-            default=os.getenv("LGOS_OPENAI_API_KEY", "DUMMY"),
+            default="DUMMY",
             description="Bearer token sent to the LangGraph API.",
         )
         MODEL: str = Field(

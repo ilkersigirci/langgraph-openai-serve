@@ -21,3 +21,5 @@ venv
 docs
 tests
 docker/volumes
+
+.env

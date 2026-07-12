@@ -19,7 +19,10 @@ Use:
 - OpenAI base URL: `http://localhost:8000/v1`
 - Open WebUI: `http://localhost:8080`
 
-Compose starts `lgos-demo-api` and `open-webui`.
+Compose starts PostgreSQL, `lgos-demo-api`, and `open-webui`. PostgreSQL stores
+the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
+Before starting the API, its Compose `pre_start` lifecycle hook initializes or
+migrates the checkpoint schema.
 
 Import `demo/ui/openwebui/hitl_function.py` in
 `Workspace -> Functions`, enable it, then select
@@ -97,5 +100,8 @@ services:
 - Terminate HTTPS at a reverse proxy or platform load balancer.
 - Use a production ASGI setup appropriate for your platform.
 - Set memory and CPU limits.
-- Use durable LangGraph checkpointers for interruptible graphs.
+- Use durable LangGraph checkpointers for interruptible graphs. The demo uses
+  `AsyncPostgresSaver`; set `DEMO_POSTGRES_URI` when running the API outside Compose.
+- Run `uv run --module demo.api.setup_checkpointer` once as a deployment task
+  before starting or replacing API workers.
 - Configure logging and monitoring.

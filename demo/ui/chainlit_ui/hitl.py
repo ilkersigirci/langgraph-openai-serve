@@ -1,10 +1,10 @@
 """Chainlit UI for the LangGraph interrupt demo graph."""
 
 import json
-import os
 from typing import cast
 
 import chainlit as cl
+from demo.api.settings import settings
 from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletion,
@@ -19,11 +19,10 @@ from openai.types.chat import (
 
 from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
 
-OPENAI_BASE_URL = os.getenv("LGOS_CHAINLIT_OPENAI_BASE_URL", "http://localhost:8000/v1")
-OPENAI_API_KEY = os.getenv("LGOS_OPENAI_API_KEY", "DUMMY")
-HITL_MODEL = os.getenv("LGOS_CHAINLIT_HITL_MODEL", "interruptible-approval")
-
-client = AsyncOpenAI(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(
+    base_url=settings.CHAINLIT_OPENAI_BASE_URL,
+    api_key="DUMMY",
+)
 
 
 @cl.set_chat_profiles
@@ -35,7 +34,7 @@ async def set_chat_profiles() -> list[cl.ChatProfile]:
             markdown_description="Approve or reject a LangGraph interrupt.",
         )
         for model in models.data
-        if model.id == HITL_MODEL
+        if model.id == settings.CHAINLIT_HITL_MODEL
     ]
 
 
@@ -100,7 +99,7 @@ async def create_completion(
     messages: list[ChatCompletionMessageParam],
 ) -> ChatCompletion:
     return await client.chat.completions.create(
-        model=cl.user_session.get("chat_profile") or HITL_MODEL,
+        model=cl.user_session.get("chat_profile") or settings.CHAINLIT_HITL_MODEL,
         messages=messages,
         metadata={"langgraph_thread_id": cl.context.session.thread_id},
     )

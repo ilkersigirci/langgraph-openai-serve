@@ -5,17 +5,20 @@ OpenAI-compatible API. It allows users to register their LangGraph instances
 and expose them through a mounted FastAPI sub-application.
 
 Examples:
-    >>> from langgraph_openai_serve import LanggraphOpenaiServe
+    >>> from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
     >>> from fastapi import FastAPI
     >>> from your_graphs import simple_graph_1, simple_graph_2
     >>>
     >>> app = FastAPI(title="LangGraph OpenAI API")
+    >>> graphs = GraphRegistry(
+    ...     registry={
+    ...         "simple_graph_1": GraphConfig(graph=simple_graph_1),
+    ...         "simple_graph_2": GraphConfig(graph=simple_graph_2),
+    ...     }
+    ... )
     >>> graph_serve = LanggraphOpenaiServe(
     ...     app=app,
-    ...     graphs={
-    ...         "simple_graph_1": simple_graph_1,
-    ...         "simple_graph_2": simple_graph_2
-    ...     }
+    ...     graphs=graphs,
     ... )
     >>> graph_serve.bind_openai_api()
 """
@@ -30,8 +33,10 @@ from langgraph_openai_serve.api.models import views as models_views
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
 from langgraph_openai_serve.core.version import get_version
-from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
-from langgraph_openai_serve.graph.simple_graph import app as simple_graph
+from langgraph_openai_serve.graph.graph_registry import (
+    GraphRegistry,
+    GraphRegistryError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ class LanggraphOpenaiServe:
 
     Attributes:
         app: The host FastAPI application to mount the OpenAI API on.
-        graphs: A GraphRegistry instance containing the graphs to serve.
+        graph_registry: The populated GraphRegistry containing the graphs to serve.
     """
 
     def __init__(
@@ -53,14 +58,24 @@ class LanggraphOpenaiServe:
         app: FastAPI | None = None,
         graphs: GraphRegistry | None = None,
     ):
-        """Initialize the server with a FastAPI app (optional) and a GraphRegistry instance (optional).
+        """Initialize the server with a FastAPI app and a populated graph registry.
 
         Args:
             app: The host FastAPI application to mount the OpenAI API on. If None,
                 a new FastAPI app will be created.
             graphs: A GraphRegistry instance containing the graphs to serve.
-                    If None, a default simple graph will be used.
+
+        Raises:
+            GraphRegistryError: If no graph registry is provided.
+            TypeError: If graphs is not a GraphRegistry instance.
         """
+        if graphs is None:
+            raise GraphRegistryError("Graph registry must contain at least one graph.")
+        if not isinstance(graphs, GraphRegistry):
+            raise TypeError(
+                "Invalid type for graphs parameter. Expected GraphRegistry."
+            )
+
         self.app = app
 
         if app is None:
@@ -71,22 +86,8 @@ class LanggraphOpenaiServe:
             )
         self.app = app
 
-        if graphs is None:
-            logger.info("Graphs not provided, using default simple graph")
-            default_graph_config = GraphConfig(
-                graph=simple_graph,
-                streamable_node_names=["generate"],
-            )
-            self.graph_registry = GraphRegistry(
-                registry={"simple-graph": default_graph_config}
-            )
-        elif isinstance(graphs, GraphRegistry):
-            logger.info("Using provided GraphRegistry instance")
-            self.graph_registry = graphs
-        else:
-            raise TypeError(
-                "Invalid type for graphs parameter. Expected GraphRegistry or None."
-            )
+        logger.info("Using provided GraphRegistry instance")
+        self.graph_registry = graphs
 
         # Attach the registry to the host app for callers that inspect app state.
         self.app.state.graph_registry = self.graph_registry

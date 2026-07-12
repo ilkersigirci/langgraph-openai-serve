@@ -44,13 +44,18 @@ async def test_default_message_input_callbacks_and_usage(
 
 
 @pytest.mark.anyio
-async def test_unknown_model_raises_value_error(make_request) -> None:
+async def test_unknown_model_raises_value_error(make_request, make_message_graph) -> None:
     chat_request = make_request("missing")
+    graph_registry = GraphRegistry(
+        registry={
+            "known": GraphConfig(graph=make_message_graph("hello")),
+        }
+    )
 
     with pytest.raises(ValueError, match="Graph 'missing' not found"):
         await run_langgraph(
             "missing",
             chat_request.messages,
-            GraphRegistry(registry={}),
+            graph_registry,
             chat_request,
         )

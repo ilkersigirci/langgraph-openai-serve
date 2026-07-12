@@ -17,18 +17,30 @@ and `{prefix}/openapi.json`.
 
 ## Settings
 
+Package settings:
+
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
-| `LGOS_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
-| `LGOS_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs and Chainlit demos. |
-| `LGOS_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+
+Demo-only settings (read by `demo/api/settings.py`):
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
+| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs. |
+| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+| `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
+| `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
+| `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
 
 ## Public API
 
 Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
+The registry must contain at least one graph. A missing or empty registry raises
+`GraphRegistryError` during application configuration.
 
 `GraphConfig` accepts:
 

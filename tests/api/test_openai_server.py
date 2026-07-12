@@ -6,6 +6,7 @@ from starlette import status
 
 from langgraph_openai_serve import (
     GraphRegistry,
+    GraphRegistryError,
     LanggraphOpenaiServe,
     openai_server,
 )
@@ -20,6 +21,16 @@ def _bind_test_app(
     return LanggraphOpenaiServe(
         graphs=graph_registry,
     ).bind_openai_api(prefix=prefix).app
+
+
+def test_server_without_graphs_raises_registry_error() -> None:
+    with pytest.raises(GraphRegistryError, match="at least one graph"):
+        LanggraphOpenaiServe()
+
+
+def test_empty_graph_registry_raises_registry_error() -> None:
+    with pytest.raises(GraphRegistryError, match="at least one graph"):
+        GraphRegistry(registry={})
 
 
 def test_bind_openai_api_uses_settings_prefix_by_default(

@@ -7,6 +7,7 @@ through the OpenAI-compatible `/v1` interface.
 
 - Python 3.11 or newer
 - `uv`
+- PostgreSQL (the included Compose service requires Docker)
 - An OpenAI-compatible upstream model only if you call the simple LLM graphs
 
 The custom adapter and mock MCP demo graphs do not require real API keys.
@@ -14,8 +15,16 @@ The custom adapter and mock MCP demo graphs do not require real API keys.
 ## Run The Demo API
 
 ```bash
+docker compose up -d postgres
 make run-demo-api
 ```
+
+The demo reads `DEMO_POSTGRES_URI` and defaults to
+`postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose service.
+The simple LLM graphs additionally read `DEMO_OPENAI_BASE_URL`,
+`DEMO_OPENAI_API_KEY`, and `DEMO_OPENAI_MODEL`. These settings and their
+LangChain agent dependencies belong to the demo and are not installed as part
+of the library's runtime dependencies.
 
 The base URL is `http://localhost:8000/v1`.
 
@@ -78,7 +87,7 @@ print(response.choices[0].message.content)
 - `demo/api/graphs/complex_subgraphs.py` and `demo/api/graphs/subgraphs/`:
   router-selected subgraphs with streamed fake chat model output.
 - `demo/api/graphs/interruptible.py`: interrupt and resume graph persisted in
-  `checkpoints.sqlite` by the demo application.
+  PostgreSQL by the demo application.
 - `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
 - `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function approval modal
   demo.

@@ -161,7 +161,10 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 	uv lock --locked
 	uv run --module cProfile -s tottime ${PROFILE_FILE_PATH}
 
-run-demo-api: # ## Run the demo api in development mode
+setup-demo-checkpointer: ## Initialize or migrate the demo checkpoint schema
+	uv run --module demo.api.setup_checkpointer
+
+run-demo-api: setup-demo-checkpointer # ## Run the demo api in development mode
 	uv run --module demo.api.app
 
 run-demo-ui-chainlit: ## Run the demo Chainlit UI

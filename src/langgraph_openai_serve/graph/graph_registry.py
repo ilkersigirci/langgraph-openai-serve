@@ -27,6 +27,10 @@ class GraphNotFoundError(ValueError):
     """Raised when a requested graph is not registered."""
 
 
+class GraphRegistryError(RuntimeError):
+    """Raised when a graph registry is missing or empty."""
+
+
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
@@ -84,6 +88,10 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
 
 class GraphRegistry(BaseModel):
     registry: dict[str, GraphConfig]
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.registry:
+            raise GraphRegistryError("Graph registry must contain at least one graph.")
 
     def get_graph_names(self) -> list[str]:
         """Get the names of all registered graphs."""

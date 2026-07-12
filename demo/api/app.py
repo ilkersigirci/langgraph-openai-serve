@@ -1,11 +1,7 @@
 """FastAPI application for LangGraph with OpenAI compatible API.
 
-This module provides a default FastAPI application that implements an OpenAI-compatible
-API for LangGraph, allowing clients to interact with LangGraph models using
-the same interface as OpenAI's API.
-
-For more flexibility and control, users can create their own applications
-using the LanggraphOpenaiServe class directly.
+This module provides a demo FastAPI application that exposes example LangGraph
+graphs through the OpenAI-compatible API.
 """
 
 import logging
@@ -13,35 +9,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from demo.api.checkpointer import postgres_checkpointer
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
 from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
+from demo.api.settings import settings
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 
 logger = logging.getLogger(__name__)
-
-
-def create_default_app() -> FastAPI:
-    """Create FastAPI application.
-
-    Returns:
-        A default FastAPI application.
-    """
-
-    # Set up logging
-    setup_logging()
-
-    graph_serve = LanggraphOpenaiServe()
-
-    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
-    graph_serve.bind_openai_api()
-
-    return graph_serve.app
 
 
 @asynccontextmanager
@@ -55,7 +34,7 @@ async def lifespan(app: FastAPI):
     """
     logger.info("Starting DEMO LangGraph OpenAI compatible server")
 
-    async with AsyncSqliteSaver.from_conn_string("checkpoints.sqlite") as checkpointer:
+    async with postgres_checkpointer(settings.POSTGRES_URI) as checkpointer:
         app.state.interruptible_graph = create_interruptible_graph(checkpointer)
         yield
 
@@ -127,7 +106,6 @@ def create_custom_app() -> FastAPI:
     return graph_serve.app
 
 
-# app = create_default_app()
 app = create_custom_app()
 
 if __name__ == "__main__":
