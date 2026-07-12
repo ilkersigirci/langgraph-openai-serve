@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import BadRequestError, OpenAI
 
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from tests.graph.support.interrupt import make_interrupt_graph
 
 MODEL = "interruptible"
@@ -79,11 +79,11 @@ def fastapi_app() -> FastAPI:
         }
     )
     return (
-        LangchainOpenaiApiServe(
+        LanggraphOpenaiServe(
             app=app,
             graphs=graph_registry,
         )
-        .bind_openai_chat_completion()
+        .bind_openai_api()
         .app
     )
 

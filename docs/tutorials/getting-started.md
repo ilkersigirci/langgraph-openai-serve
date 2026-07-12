@@ -107,7 +107,7 @@ for the interrupt tool-call protocol.
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from your_graphs import my_graph
 
 app = FastAPI()
@@ -120,7 +120,7 @@ graphs = GraphRegistry(
     }
 )
 
-LangchainOpenaiApiServe(app=app, graphs=graphs).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 See [Reference](../reference.md) for prefixes, docs URLs, settings, and public

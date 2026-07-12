@@ -3,7 +3,7 @@
 ## OpenAI-Compatible API
 
 Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
-`bind_openai_chat_completion(prefix=...)`.
+`bind_openai_api(prefix=...)`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ and `{prefix}/openapi.json`.
 
 ## Public API
 
-Use `LangchainOpenaiApiServe` to bind OpenAI-compatible routes to a FastAPI app.
+Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
 
 `GraphConfig` accepts:

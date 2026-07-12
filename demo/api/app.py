@@ -5,7 +5,7 @@ API for LangGraph, allowing clients to interact with LangGraph models using
 the same interface as OpenAI's API.
 
 For more flexibility and control, users can create their own applications
-using the LangchainOpenaiApiServe class directly.
+using the LanggraphOpenaiServe class directly.
 """
 
 import logging
@@ -21,7 +21,7 @@ from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,10 @@ def create_default_app() -> FastAPI:
     # Set up logging
     setup_logging()
 
-    graph_serve = LangchainOpenaiApiServe()
+    graph_serve = LanggraphOpenaiServe()
 
     # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
-    graph_serve.bind_openai_chat_completion()
+    graph_serve.bind_openai_api()
 
     return graph_serve.app
 
@@ -116,13 +116,13 @@ def create_custom_app() -> FastAPI:
         }
     )
 
-    graph_serve = LangchainOpenaiApiServe(
+    graph_serve = LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
     )
 
     # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
-    graph_serve.bind_openai_chat_completion()
+    graph_serve.bind_openai_api()
 
     return graph_serve.app
 

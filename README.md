@@ -43,7 +43,7 @@ registered demo graph names.
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry,
 from your_graphs import my_graph
 
 app = FastAPI()
@@ -56,7 +56,7 @@ graphs = GraphRegistry(
     }
 )
 
-LangchainOpenaiApiServe(app=app, graphs=graphs).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 The default base URL is `{host}/v1`. Register graph names become OpenAI `model`

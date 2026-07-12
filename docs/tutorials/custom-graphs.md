@@ -48,7 +48,7 @@ See `demo/api/graphs/advanced_mcp.py` for a mock MCP-style example.
 ## Register And Bind
 
 ```python
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 
 graphs = GraphRegistry(
     registry={
@@ -57,7 +57,7 @@ graphs = GraphRegistry(
     }
 )
 
-LangchainOpenaiApiServe(graphs=graphs).bind_openai_chat_completion()
+LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 ```
 
 ## Streaming

@@ -17,7 +17,7 @@ OpenAI client
 
 ## Components
 
-`LangchainOpenaiApiServe` is the boundary between your FastAPI app and the
+`LanggraphOpenaiServe` is the boundary between your FastAPI app and the
 OpenAI-compatible sub-application. It mounts the sub-application at the
 configured prefix and can add CORS middleware when requested.
 

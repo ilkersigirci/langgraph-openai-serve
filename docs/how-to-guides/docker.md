@@ -65,14 +65,14 @@ Minimal app:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from my_graphs import chat_graph
 
 app = FastAPI()
 graphs = GraphRegistry(
     registry={"chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"])}
 )
-LangchainOpenaiApiServe(app=app, graphs=graphs, configure_cors=True).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 Minimal compose:
