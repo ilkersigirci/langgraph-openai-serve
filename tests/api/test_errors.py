@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from openai import BadRequestError, NotFoundError, OpenAI
 from starlette import status
 
-from langgraph_openai_serve import GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 
 
 def test_validation_error_returns_openai_error(openai_client: OpenAI) -> None:
@@ -80,10 +80,10 @@ def test_openai_error_handlers_do_not_replace_host_app_handlers(
     def outside() -> None:
         raise HTTPException(status_code=status.HTTP_418_IM_A_TEAPOT)
 
-    LangchainOpenaiApiServe(
+    LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
-    ).bind_openai_chat_completion(prefix="/v1")
+    ).bind_openai_api(prefix="/v1")
 
     with TestClient(app) as client:
         outside_response = client.get("/outside")

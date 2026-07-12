@@ -1,7 +1,7 @@
 from typing import Any
 
 from langchain_core.messages import AIMessage
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import StateGraph
 from langgraph.types import interrupt
 
@@ -13,6 +13,7 @@ DEFAULT_INTERRUPT_PAYLOAD = {"question": "Approve?"}
 def make_interrupt_graph(
     payload: dict[str, Any] | None = None,
     *,
+    checkpointer: BaseCheckpointSaver,
     response_prefix: str = "resumed",
 ) -> Any:
     interrupt_payload = DEFAULT_INTERRUPT_PAYLOAD if payload is None else payload
@@ -26,5 +27,5 @@ def make_interrupt_graph(
         .add_node("ask", ask)
         .set_entry_point("ask")
         .set_finish_point("ask")
-        .compile(checkpointer=InMemorySaver())
+        .compile(checkpointer=checkpointer)
     )

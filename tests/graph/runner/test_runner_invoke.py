@@ -1,8 +1,13 @@
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
+from langgraph.types import CustomStreamPart
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
-from langgraph_openai_serve.graph.runner import run_langgraph
+from langgraph_openai_serve.graph.runner import (
+    invoke_run,
+    run_langgraph,
+)
+from langgraph_openai_serve.graph.utils import GraphRun
 
 
 class RecordingCallback(BaseCallbackHandler):
@@ -14,7 +19,7 @@ class RecordingCallback(BaseCallbackHandler):
 
 
 @pytest.mark.anyio
-async def test_default_message_input_callbacks_and_usage(
+async def test_default_message_input_callbacks(
     make_request,
     make_message_graph,
 ) -> None:
@@ -29,28 +34,69 @@ async def test_default_message_input_callbacks_and_usage(
     )
     chat_request = make_request("messages")
 
-    response, usage = await run_langgraph(
+    invocation = await run_langgraph(
         "messages",
         chat_request.messages,
         graph_registry,
         chat_request,
     )
 
-    assert response == "hello"
-    assert usage["prompt_tokens"] == 1
-    assert usage["completion_tokens"] == 1
-    assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
+    assert invocation.output == "hello"
+    assert invocation.custom_events == ()
     assert recording_callback.starts == 1
 
 
 @pytest.mark.anyio
-async def test_unknown_model_raises_value_error(make_request) -> None:
+async def test_unknown_model_raises_value_error(
+    make_request, make_message_graph
+) -> None:
     chat_request = make_request("missing")
+    graph_registry = GraphRegistry(
+        registry={
+            "known": GraphConfig(graph=make_message_graph("hello")),
+        }
+    )
 
     with pytest.raises(ValueError, match="Graph 'missing' not found"):
         await run_langgraph(
             "missing",
             chat_request.messages,
-            GraphRegistry(registry={}),
+            graph_registry,
             chat_request,
         )
+
+
+@pytest.mark.anyio
+async def test_invoke_run_collects_generic_custom_events() -> None:
+    payload = {"type": "status", "data": {"message": "Searching"}}
+
+    async def graph_events():
+        yield {"type": "values", "ns": (), "data": {"answer": ""}}
+        yield {"type": "custom", "ns": (), "data": payload}
+        yield {"type": "values", "ns": (), "data": {"answer": "done"}}
+
+    class Graph:
+        output_channels = ("answer",)
+
+        def astream(self, *args, **kwargs):
+            return graph_events()
+
+    graph = Graph()
+    run = GraphRun(
+        config=GraphConfig(
+            graph=lambda: graph,
+            output_to_text=lambda output: output["answer"],
+        ),
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config=None,
+        thread_id=None,
+    )
+
+    invocation = await invoke_run(run)
+
+    assert invocation.output == "done"
+    assert invocation.custom_events == (
+        CustomStreamPart(type="custom", ns=(), data=payload),
+    )

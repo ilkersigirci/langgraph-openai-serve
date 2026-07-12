@@ -1,10 +1,17 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
 from tests.graph.support.message import make_message_graph as build_message_graph
+
+
+@pytest.fixture
+async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
+    async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
+        yield checkpointer
 
 
 @pytest.fixture

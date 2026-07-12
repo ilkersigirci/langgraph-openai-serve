@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
 
-from langgraph_openai_serve import LangchainOpenaiApiServe
+from langgraph_openai_serve import LanggraphOpenaiServe
 from langgraph_openai_serve.core.settings import settings
 
 API_KEYS = {"sk-valid-key-1", "sk-valid-key-2"}
@@ -40,7 +40,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI()
 app.add_middleware(APIKeyMiddleware)
-LangchainOpenaiApiServe(app=app, graphs=graphs).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 Clients then pass the key through normal OpenAI SDK configuration:

@@ -8,16 +8,40 @@ Run the API container:
 docker compose up -d lgos-demo-api
 ```
 
-Run the API plus Open WebUI:
+Run the full demo stack:
 
 ```bash
-docker compose up -d lgos-demo-api open-webui
+docker compose up -d open-webui
 ```
 
 Use:
 
 - OpenAI base URL: `http://localhost:8000/v1`
 - Open WebUI: `http://localhost:8080`
+
+Compose starts PostgreSQL, `lgos-demo-api`, and `open-webui`. PostgreSQL stores
+the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
+Before starting the API, its Compose `pre_start` lifecycle hook initializes or
+migrates the checkpoint schema.
+
+Import `demo/ui/openwebui/hitl_function.py` in
+`Workspace -> Functions`, enable it, then select
+`LangGraph OpenAI Pipe`. Send a request; the confirmation dialog resumes
+the LangGraph interrupt with approve or reject.
+
+The Pipe also converts OpenAI `url_citation` annotations to Open WebUI's native
+`source` events. To try it, set the Function's `MODEL` valve to
+`citation-events`; cited sources then appear in Open WebUI's source UI.
+
+Ownership:
+
+- `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
+  interrupt/resume behavior.
+- The Open WebUI Function owns only the UI bridge: translate OpenAI citation
+  annotations to native Open WebUI sources, detect the `langgraph_interrupt`
+  tool call, show the confirmation modal, and send the resume tool message.
+- Keep graph logic, HTTP routes, and custom response shapes out of the Open
+  WebUI Function.
 
 ## Custom App Image
 
@@ -48,14 +72,14 @@ Minimal app:
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from my_graphs import chat_graph
 
 app = FastAPI()
 graphs = GraphRegistry(
     registry={"chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"])}
 )
-LangchainOpenaiApiServe(app=app, graphs=graphs, configure_cors=True).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 Minimal compose:
@@ -80,5 +104,8 @@ services:
 - Terminate HTTPS at a reverse proxy or platform load balancer.
 - Use a production ASGI setup appropriate for your platform.
 - Set memory and CPU limits.
-- Use durable LangGraph checkpointers for interruptible graphs.
+- Use durable LangGraph checkpointers for interruptible graphs. The demo uses
+  `AsyncPostgresSaver`; set `DEMO_POSTGRES_URI` when running the API outside Compose.
+- Run `uv run --module demo.api.setup_checkpointer` once as a deployment task
+  before starting or replacing API workers.
 - Configure logging and monitoring.

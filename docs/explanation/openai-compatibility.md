@@ -33,6 +33,13 @@ runner consumes LangGraph `astream` events with message streaming for text and
 update streaming for interrupts. Only chunks from configured
 `streamable_node_names` are emitted to clients.
 
+Citation custom events use `message.annotations` for non-streaming responses.
+Streaming keeps the standard `chat.completion.chunk` SSE shape and adds
+annotations to the final `delta`, following the search-model wire convention.
+The published Chat Completions delta schema does not currently type that field,
+so clients must tolerate response extensions; the OpenAI Python SDK preserves
+it as extra model data.
+
 ## Errors
 
 OpenAI-compatible routes return errors in the OpenAI envelope:

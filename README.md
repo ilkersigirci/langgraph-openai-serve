@@ -12,11 +12,16 @@ uv add langgraph-openai-serve
 pip install langgraph-openai-serve
 ```
 
+The package contains the OpenAI-compatible server integration, not a built-in
+LLM graph. Applications register their own graphs; repository demo graph
+dependencies are kept in the `demo` dependency group.
+
 ## Quick Demo
 
 From this repository:
 
 ```bash
+docker compose up -d postgres
 make run-demo-api
 ```
 
@@ -43,7 +48,7 @@ registered demo graph names.
 
 ```python
 from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from your_graphs import my_graph
 
 app = FastAPI()
@@ -56,7 +61,7 @@ graphs = GraphRegistry(
     }
 )
 
-LangchainOpenaiApiServe(app=app, graphs=graphs).bind_openai_chat_completion()
+LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
 The default base URL is `{host}/v1`. Register graph names become OpenAI `model`

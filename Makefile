@@ -149,6 +149,9 @@ format: ## Run ruff for all package files. CHANGES CODE
 	uv run --module ruff format ${PACKAGE}
 	uv run --module ruff check ${PACKAGE} --fix --show-fixes
 
+type-check: ## Run ty for type checking
+	uv run ty check
+
 format-unsafe: ## Run ruff for all package files. CHANGES CODE
 	uv lock --locked
 	uv run --module ruff format ${PACKAGE}
@@ -158,8 +161,15 @@ profile-builtin: ## Profile the file with cProfile and shows the report in the t
 	uv lock --locked
 	uv run --module cProfile -s tottime ${PROFILE_FILE_PATH}
 
-run-demo-api: # ## Run the demo api in development mode
+setup-demo-checkpointer: ## Initialize or migrate the demo checkpoint schema
+	uv run --module demo.api.setup_checkpointer
+
+run-demo-api: setup-demo-checkpointer # ## Run the demo api in development mode
 	uv run --module demo.api.app
 
 run-demo-ui-chainlit: ## Run the demo Chainlit UI
-	uv run chainlit run demo/ui/chainlit_ui/main.py --host 0.0.0.0 --port 8001 -w
+	# uv run --module chainlit run demo.ui.chainlit_ui.main --host 0.0.0.0 --port 8001 -w
+	uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 8001 --no-access-log
+
+run-demo-ui-chainlit-hitl: ## Run the Chainlit human-in-the-loop demo UI
+	uv run chainlit run demo/ui/chainlit_ui/hitl.py --host 0.0.0.0 --port 8001 -w

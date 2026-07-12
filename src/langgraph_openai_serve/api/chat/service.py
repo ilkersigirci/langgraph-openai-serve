@@ -4,10 +4,13 @@ import logging
 import time
 from typing import AsyncIterator
 
+from langgraph.types import CustomStreamPart
+
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
 )
+from langgraph_openai_serve.api.chat.utils.events import annotation_from_custom_event
 from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
     chat_completion_response,
@@ -32,12 +35,24 @@ class ChatCompletionService:
         """Generate a chat completion."""
         start_time = time.time()
 
-        completion = await invoke_run(run)
+        invocation = await invoke_run(run)
+        completion = invocation.output
         tokens_used = usage_for(completion, chat_request.messages)
+        annotations = (
+            [
+                annotation
+                for event in invocation.custom_events
+                if (annotation := annotation_from_custom_event(event, completion))
+                is not None
+            ]
+            if isinstance(completion, str)
+            else []
+        )
 
         response = chat_completion_response(
             model=chat_request.model,
             completion=completion,
+            annotations=annotations,
             usage=tokens_used,
         )
 
@@ -54,6 +69,8 @@ class ChatCompletionService:
         """Stream a chat completion response."""
         start_time = time.time()
         response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
+        custom_events: list[CustomStreamPart] = []
+        content_parts: list[str] = []
 
         try:
             yield response_builder.role()
@@ -65,9 +82,21 @@ class ChatCompletionService:
                     yield response_builder.done()
                     return
 
+                if not isinstance(event, str):
+                    custom_events.append(event)
+                    continue
+
+                content_parts.append(event)
                 yield response_builder.text(event)
 
-            yield response_builder.finish("stop")
+            content = "".join(content_parts)
+            annotations = [
+                annotation
+                for event in custom_events
+                if (annotation := annotation_from_custom_event(event, content))
+                is not None
+            ]
+            yield response_builder.finish("stop", annotations=annotations)
             yield response_builder.done()
 
             logger.info(

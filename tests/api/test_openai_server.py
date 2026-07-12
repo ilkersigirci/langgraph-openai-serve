@@ -6,7 +6,8 @@ from starlette import status
 
 from langgraph_openai_serve import (
     GraphRegistry,
-    LangchainOpenaiApiServe,
+    GraphRegistryError,
+    LanggraphOpenaiServe,
     openai_server,
 )
 from langgraph_openai_serve.core.settings import Settings
@@ -17,12 +18,22 @@ def _bind_test_app(
     *,
     prefix: str | None = None,
 ) -> FastAPI:
-    return LangchainOpenaiApiServe(
+    return LanggraphOpenaiServe(
         graphs=graph_registry,
-    ).bind_openai_chat_completion(prefix=prefix).app
+    ).bind_openai_api(prefix=prefix).app
 
 
-def test_bind_openai_chat_completion_uses_settings_prefix_by_default(
+def test_server_without_graphs_raises_registry_error() -> None:
+    with pytest.raises(GraphRegistryError, match="at least one graph"):
+        LanggraphOpenaiServe()
+
+
+def test_empty_graph_registry_raises_registry_error() -> None:
+    with pytest.raises(GraphRegistryError, match="at least one graph"):
+        GraphRegistry(registry={})
+
+
+def test_bind_openai_api_uses_settings_prefix_by_default(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -36,7 +47,7 @@ def test_bind_openai_chat_completion_uses_settings_prefix_by_default(
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_bind_openai_chat_completion_explicit_prefix_overrides_settings(
+def test_bind_openai_api_explicit_prefix_overrides_settings(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -52,7 +63,7 @@ def test_bind_openai_chat_completion_explicit_prefix_overrides_settings(
     assert settings_response.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_bind_openai_chat_completion_normalizes_explicit_prefix(
+def test_bind_openai_api_normalizes_explicit_prefix(
     graph_registry: GraphRegistry,
 ) -> None:
     app = _bind_test_app(graph_registry, prefix="/openai/v1/")
@@ -63,13 +74,13 @@ def test_bind_openai_chat_completion_normalizes_explicit_prefix(
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_bind_openai_chat_completion_rejects_invalid_explicit_prefix(
+def test_bind_openai_api_rejects_invalid_explicit_prefix(
     graph_registry: GraphRegistry,
 ) -> None:
-    server = LangchainOpenaiApiServe(graphs=graph_registry)
+    server = LanggraphOpenaiServe(graphs=graph_registry)
 
     with pytest.raises(ValueError):
-        server.bind_openai_chat_completion(prefix="openai/v1")
+        server.bind_openai_api(prefix="openai/v1")
 
 
 def test_openai_api_docs_follow_settings(

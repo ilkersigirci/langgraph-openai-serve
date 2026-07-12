@@ -1,11 +1,7 @@
 """FastAPI application for LangGraph with OpenAI compatible API.
 
-This module provides a default FastAPI application that implements an OpenAI-compatible
-API for LangGraph, allowing clients to interact with LangGraph models using
-the same interface as OpenAI's API.
-
-For more flexibility and control, users can create their own applications
-using the LangchainOpenaiApiServe class directly.
+This module provides a demo FastAPI application that exposes example LangGraph
+graphs through the OpenAI-compatible API.
 """
 
 import logging
@@ -14,32 +10,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from demo.api.checkpointer import postgres_checkpointer
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
+from demo.api.graphs.citations import citation_graph
+from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
-from demo.api.graphs.interruptible import interruptible_graph
+from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LangchainOpenaiApiServe
+from demo.api.settings import settings
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 
 logger = logging.getLogger(__name__)
-
-
-def create_default_app() -> FastAPI:
-    """Create FastAPI application.
-
-    Returns:
-        A default FastAPI application.
-    """
-
-    # Set up logging
-    setup_logging()
-
-    graph_serve = LangchainOpenaiApiServe()
-
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
-
-    return graph_serve.app
 
 
 @asynccontextmanager
@@ -51,15 +33,13 @@ async def lifespan(app: FastAPI):
     Args:
         app: The FastAPI application.
     """
-    # Startup
     logger.info("Starting DEMO LangGraph OpenAI compatible server")
-    # Additional startup logic here (e.g., loading models)
 
-    yield
+    async with postgres_checkpointer(settings.POSTGRES_URI) as checkpointer:
+        app.state.interruptible_graph = create_interruptible_graph(checkpointer)
+        yield
 
-    # Shutdown
     logger.info("Shutting down DEMO LangGraph OpenAI compatible server")
-    # Additional cleanup logic here
 
 
 def create_custom_app() -> FastAPI:
@@ -96,6 +76,10 @@ def create_custom_app() -> FastAPI:
 
     graph_registry = GraphRegistry(
         registry={
+            "citation-events": GraphConfig(
+                graph=citation_graph,
+                streamable_node_names=["answer_with_citation"],
+            ),
             "simple-graph-with-history": GraphConfig(
                 graph=simple_graph_with_history, streamable_node_names=["generate"]
             ),
@@ -104,8 +88,9 @@ def create_custom_app() -> FastAPI:
             ),
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
+            "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "interruptible-approval": GraphConfig(
-                graph=interruptible_graph,
+                graph=lambda: app.state.interruptible_graph,
                 request_to_input=lambda request, messages: {
                     "request": messages[-1].content or ""
                 },
@@ -115,18 +100,17 @@ def create_custom_app() -> FastAPI:
         }
     )
 
-    graph_serve = LangchainOpenaiApiServe(
+    graph_serve = LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
     )
 
-    # Bind the OpenAI-compatible endpoints
-    graph_serve.bind_openai_chat_completion(prefix="/v1")
+    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
+    graph_serve.bind_openai_api()
 
     return graph_serve.app
 
 
-# app = create_default_app()
 app = create_custom_app()
 
 if __name__ == "__main__":

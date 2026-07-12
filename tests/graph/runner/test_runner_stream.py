@@ -1,11 +1,18 @@
+import asyncio
+
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage
 from langgraph.constants import TAG_HIDDEN
 from langgraph.graph import StateGraph
+from langgraph.types import CustomStreamPart
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
-from langgraph_openai_serve.graph.runner import run_langgraph_stream
+from langgraph_openai_serve.graph.runner import (
+    run_langgraph_stream,
+    stream_run,
+)
+from langgraph_openai_serve.graph.utils import GraphRun
 from tests.graph.support.schemas import (
     AnswerOutput,
     MessageState,
@@ -108,3 +115,76 @@ async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
     )
 
     assert await stream_text("filtered", graph_registry, make_request) == "visible"
+
+
+@pytest.mark.anyio
+async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
+    closed = asyncio.Event()
+
+    async def graph_events():
+        try:
+            yield {
+                "type": "messages",
+                "data": (
+                    AIMessageChunk(content="token"),
+                    {"langgraph_node": "generate"},
+                ),
+            }
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    class Graph:
+        def astream(self, *args, **kwargs):
+            return graph_events()
+
+    graph = Graph()
+    run = GraphRun(
+        config=GraphConfig(graph=lambda: graph, streamable_node_names=["generate"]),
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config=None,
+        thread_id=None,
+    )
+
+    chunks = stream_run(run)
+    assert await anext(chunks) == "token"
+
+    await chunks.aclose()
+
+    assert closed.is_set()
+
+
+@pytest.mark.anyio
+async def test_stream_run_preserves_generic_custom_events() -> None:
+    payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
+
+    async def graph_events():
+        yield {
+            "type": "custom",
+            "ns": ("research:task-id",),
+            "data": payload,
+        }
+
+    class Graph:
+        def astream(self, *args, **kwargs):
+            return graph_events()
+
+    graph = Graph()
+    run = GraphRun(
+        config=GraphConfig(graph=lambda: graph),
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config=None,
+        thread_id=None,
+    )
+
+    assert [event async for event in stream_run(run)] == [
+        CustomStreamPart(
+            type="custom",
+            ns=("research:task-id",),
+            data=payload,
+        )
+    ]

@@ -2,11 +2,14 @@
 
 import logging
 import time
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator
+from contextlib import aclosing
+from dataclasses import dataclass, fields, is_dataclass
+from typing import Any, AsyncGenerator, cast
 
 from langchain_core.messages import AIMessageChunk
 from langgraph.constants import TAG_HIDDEN
+from langgraph.types import CustomStreamPart, StreamMode
+from pydantic import BaseModel
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -28,8 +31,18 @@ class LangGraphInterrupt:
     payload: Any
 
 
+@dataclass(frozen=True)
+class LangGraphInvocation:
+    """A graph result together with custom events emitted during its run."""
+
+    output: "LangGraphOutput"
+    custom_events: tuple[CustomStreamPart, ...]
+
+
 LangGraphOutput = str | LangGraphInterrupt
-LangGraphStreamEvent = str | LangGraphInterrupt
+LangGraphStreamEvent = str | LangGraphInterrupt | CustomStreamPart
+
+_MISSING = object()
 
 
 async def run_langgraph(
@@ -37,16 +50,16 @@ async def run_langgraph(
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
-) -> tuple[LangGraphOutput, dict[str, int]]:
+) -> LangGraphInvocation:
     """Run a LangGraph model with the given messages using the compiled workflow.
 
     This function processes input messages through a LangGraph workflow and returns
-    the generated response along with token usage information.
+    its output together with any custom events emitted during the run.
 
     Examples:
-        >>> response, usage = await run_langgraph("my-model", messages, registry)
-        >>> print(response)
-        >>> print(usage)
+        >>> invocation = await run_langgraph("my-model", messages, registry)
+        >>> print(invocation.output)
+        >>> print(invocation.custom_events)
 
     Args:
         model: The name of the model to use, which also determines which graph to use.
@@ -55,34 +68,60 @@ async def run_langgraph(
         request: The complete chat completion request passed to graph adapters.
 
     Returns:
-        A tuple containing the generated response string and a dictionary of token usage information.
+        The graph output and custom events emitted during the invocation.
     """
     logger.info(f"Running LangGraph model {model} with {len(messages)} messages")
     start_time = time.time()
 
     run = await prepare_run(model, messages, graph_registry, request)
 
-    response = await invoke_run(run)
-
-    token_usage = usage_for(response, messages)
+    invocation = await invoke_run(run)
 
     logger.info(f"LangGraph completion generated in {time.time() - start_time:.2f}s")
-    return response, token_usage
+    return invocation
 
 
-async def invoke_run(run: GraphRun) -> LangGraphOutput:
-    """Run an already prepared LangGraph invocation."""
-    result = await run.graph.ainvoke(
-        run.inputs,
-        config=run.runnable_config,
-        context=run.context,
+async def invoke_run(run: GraphRun) -> LangGraphInvocation:
+    """Invoke a graph and collect its custom events."""
+    stream_mode: list[StreamMode] = ["values", "custom"]
+
+    final_output: Any = _MISSING
+    custom_events: list[CustomStreamPart] = []
+    graph_stream = cast(
+        AsyncGenerator[dict[str, Any], None],
+        run.graph.astream(
+            run.inputs,
+            config=run.runnable_config,
+            context=run.context,
+            stream_mode=stream_mode,
+            output_keys=run.graph.output_channels,
+            subgraphs=True,
+            version="v2",
+        ),
     )
-    if run.config.interrupts_enabled:
-        interrupt = extract_interrupt(result, run.thread_id)
-        if interrupt is not None:
-            return interrupt
+    async with aclosing(graph_stream):
+        async for event in graph_stream:
+            if event.get("type") == "custom":
+                custom_events.append(cast(CustomStreamPart, event))
+                continue
 
-    return await run.config.render_output(result)
+            if event.get("type") == "values" and not event.get("ns"):
+                if run.config.interrupts_enabled:
+                    interrupt = extract_stream_interrupt(event, run.thread_id)
+                    if interrupt is not None:
+                        return LangGraphInvocation(
+                            output=interrupt,
+                            custom_events=tuple(custom_events),
+                        )
+                final_output = event.get("data")
+
+    if final_output is _MISSING:
+        raise RuntimeError("LangGraph invocation completed without a final value.")
+
+    return LangGraphInvocation(
+        output=await run.config.render_output(legacy_output(final_output)),
+        custom_events=tuple(custom_events),
+    )
 
 
 async def run_langgraph_stream(
@@ -100,7 +139,7 @@ async def run_langgraph_stream(
         request: The complete chat completion request passed to graph adapters.
 
     Yields:
-        Assistant text chunks or LangGraph interrupts.
+        Assistant text chunks, custom events, or LangGraph interrupts.
     """
     logger.info(f"Starting streaming LangGraph completion for model '{model}'")
 
@@ -113,38 +152,62 @@ async def stream_run(
     run: GraphRun,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """Stream an already prepared LangGraph invocation."""
-    stream_mode = ["messages"]
+    stream_mode: list[StreamMode] = ["messages", "custom"]
     if run.config.interrupts_enabled:
         stream_mode.append("updates")
 
-    async for event in run.graph.astream(
-        run.inputs,
-        config=run.runnable_config,
-        context=run.context,
-        stream_mode=stream_mode,
-        subgraphs=True,
-        version="v2",
-    ):
-        if event.get("type") == "updates":
-            interrupt = extract_interrupt(event.get("data"), run.thread_id)
-            if interrupt is not None:
-                yield interrupt
-            continue
+    graph_stream = cast(
+        AsyncGenerator[dict[str, Any], None],
+        run.graph.astream(
+            run.inputs,
+            config=run.runnable_config,
+            context=run.context,
+            stream_mode=stream_mode,
+            subgraphs=True,
+            version="v2",
+        ),
+    )
+    async with aclosing(graph_stream):
+        async for event in graph_stream:
+            if event.get("type") == "custom":
+                yield cast(CustomStreamPart, event)
+                continue
 
-        if event.get("type") != "messages":
-            continue
+            if event.get("type") == "updates":
+                interrupt = extract_interrupt(event.get("data"), run.thread_id)
+                if interrupt is not None:
+                    yield interrupt
+                continue
 
-        message, metadata = event["data"]
-        if not isinstance(message, AIMessageChunk):
-            continue
-        if TAG_HIDDEN in (metadata.get("tags") or []):
-            continue
-        if metadata.get("langgraph_node") not in run.config.streamable_node_names:
-            continue
+            if event.get("type") != "messages":
+                continue
 
-        content = str(message.text)
-        if content:
-            yield content
+            content = text_from_message_event(event, run)
+            if content:
+                yield content
+
+
+def text_from_message_event(event: dict, run: GraphRun) -> str | None:
+    """Extract visible text from a streamable LangGraph message event."""
+    message, metadata = event["data"]
+    if not isinstance(message, AIMessageChunk):
+        return None
+    if TAG_HIDDEN in (metadata.get("tags") or []):
+        return None
+    if metadata.get("langgraph_node") not in run.config.streamable_node_names:
+        return None
+
+    content = str(message.text)
+    return content or None
+
+
+def legacy_output(output: Any) -> Any:
+    """Match the plain output shape adapters received from LangGraph v1."""
+    if isinstance(output, BaseModel):
+        return dict(output)
+    if is_dataclass(output) and not isinstance(output, type):
+        return {field.name: getattr(output, field.name) for field in fields(output)}
+    return output
 
 
 def usage_for(
@@ -168,7 +231,24 @@ def extract_interrupt(output: Any, thread_id: str | None) -> LangGraphInterrupt 
     if not interrupts:
         return None
 
-    interrupt = interrupts[0]
+    return interrupt_from_value(interrupts[0], thread_id)
+
+
+def extract_stream_interrupt(
+    event: dict,
+    thread_id: str | None,
+) -> LangGraphInterrupt | None:
+    """Extract interrupt metadata from a LangGraph v2 values stream part."""
+    interrupts = event.get("interrupts") or ()
+    if not interrupts:
+        return None
+    return interrupt_from_value(interrupts[0], thread_id)
+
+
+def interrupt_from_value(
+    interrupt: Any,
+    thread_id: str | None,
+) -> LangGraphInterrupt | None:
     interrupt_id = getattr(interrupt, "id", None)
     payload = getattr(interrupt, "value", interrupt)
 

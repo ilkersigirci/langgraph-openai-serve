@@ -3,7 +3,7 @@
 ## OpenAI-Compatible API
 
 Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
-`bind_openai_chat_completion(prefix=...)`.
+`bind_openai_api(prefix=...)`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -17,18 +17,30 @@ and `{prefix}/openapi.json`.
 
 ## Settings
 
+Package settings:
+
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
-| `LGOS_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
-| `LGOS_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs and Chainlit demos. |
-| `LGOS_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+
+Demo-only settings (read by `demo/api/settings.py`):
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
+| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs. |
+| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+| `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
+| `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
+| `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
 
 ## Public API
 
-Use `LangchainOpenaiApiServe` to bind OpenAI-compatible routes to a FastAPI app.
+Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
+The registry must contain at least one graph. A missing or empty registry raises
+`GraphRegistryError` during application configuration.
 
 `GraphConfig` accepts:
 
@@ -44,15 +56,49 @@ Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
 Use a durable checkpointer in production.
 
+## Citation Events
+
+Inside a graph node or tool, emit a citation with LangGraph's stream writer:
+
+```python
+from langgraph.config import get_stream_writer
+from langgraph_openai_serve import citation_event
+
+get_stream_writer()(
+    citation_event(
+        url="https://example.com/source",
+        title="Example source",
+        start_index=10,
+        end_index=13,
+    )
+)
+```
+
+The indices identify the cited span in the complete assistant text. The end
+index is exclusive, so `text[start_index:end_index]` returns that span. Citation
+events must refer to the final rendered assistant text.
+
+Non-streaming chat completions expose citations through OpenAI's native
+`message.annotations` field. Streaming chat completions put annotations on the
+final `delta`, matching the search-model wire convention consumed by Chainlit
+and Open WebUI. This streaming field is a compatibility extension because the
+published Chat Completions delta schema does not currently declare annotations.
+
+The graph runner preserves LangGraph's native `CustomStreamPart` values,
+including their subgraph namespace. Citation events use the OpenAI
+`url_citation` annotation shape directly; other event types remain available to
+direct runner consumers through `langgraph_openai_serve.graph.runner`.
+
 ## Demo Models
 
 `make run-demo-api` registers:
 
 - `simple-graph-with-history`
+- `citation-events`
 - `simple-graph-no-history`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
-- `hitl-middleware-refund`
+- `complex-subgraphs`
 - `interruptible-approval`
 
 ## Local Commands

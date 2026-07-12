@@ -1,10 +1,13 @@
 import json
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 
 import pytest
+from fastapi import FastAPI
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import BadRequestError, OpenAI
 
-from langgraph_openai_serve import GraphConfig, GraphRegistry
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from tests.graph.support.interrupt import make_interrupt_graph
 
 MODEL = "interruptible"
@@ -56,14 +59,32 @@ def resume_interrupt(openai_client: OpenAI, response, resume_value: str):
 
 
 @pytest.fixture
-def graph_registry() -> GraphRegistry:
-    return GraphRegistry(
+def fastapi_app() -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
+            app.state.interruptible_graph = make_interrupt_graph(
+                INTERRUPT_PAYLOAD,
+                checkpointer=checkpointer,
+            )
+            yield
+
+    app = FastAPI(lifespan=lifespan)
+    graph_registry = GraphRegistry(
         registry={
             MODEL: GraphConfig(
-                graph=make_interrupt_graph(INTERRUPT_PAYLOAD),
+                graph=lambda: app.state.interruptible_graph,
                 interrupts_enabled=True,
             ),
         }
+    )
+    return (
+        LanggraphOpenaiServe(
+            app=app,
+            graphs=graph_registry,
+        )
+        .bind_openai_api()
+        .app
     )
 
 
@@ -94,8 +115,7 @@ def test_streaming_interrupt_missing_thread_id_returns_400_before_sse(
     assert response.json() == {
         "error": {
             "message": (
-                "metadata.langgraph_thread_id is required for "
-                "interrupt-enabled graphs."
+                "metadata.langgraph_thread_id is required for interrupt-enabled graphs."
             ),
             "type": "invalid_request_error",
             "param": "metadata.langgraph_thread_id",
@@ -110,9 +130,7 @@ def test_streaming_interrupt_chunks_parse_with_openai_client(
     chunks = list(create_completion(openai_client, stream=True))
 
     tool_call_chunks = [
-        chunk
-        for chunk in chunks
-        if chunk.choices[0].delta.tool_calls is not None
+        chunk for chunk in chunks if chunk.choices[0].delta.tool_calls is not None
     ]
     assert len(tool_call_chunks) == 1
     tool_call = tool_call_chunks[0].choices[0].delta.tool_calls[0]
@@ -122,7 +140,7 @@ def test_streaming_interrupt_chunks_parse_with_openai_client(
     assert chunks[-1].choices[0].finish_reason == "tool_calls"
 
 
-def test_in_memory_saver_interrupt_resume_works_in_one_process(
+def test_async_sqlite_interrupt_resume_works_in_one_process(
     openai_client: OpenAI,
 ) -> None:
     first_response = create_completion(openai_client)

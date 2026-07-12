@@ -2,26 +2,8 @@
 
 import importlib
 import logging
-import os
 
 logger = logging.getLogger(__name__)
-
-
-def check_env_vars(env_vars: list[str] | None = None) -> None:
-    """Checks if the required environment variables are set.
-
-    Args:
-        env_vars: List of environment variables to check. Defaults to None.
-
-    Raises:
-        ValueError: If any of the environment variables are not set.
-    """
-    if env_vars is None:
-        return
-
-    for env_var in env_vars:
-        if os.getenv(env_var) is None:
-            raise ValueError(f"Please set {env_var} env var.")
 
 
 def is_module_installed(module_name: str, throw_error: bool = False) -> bool:

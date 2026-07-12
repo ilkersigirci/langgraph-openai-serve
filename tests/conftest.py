@@ -9,7 +9,7 @@ from openai import OpenAI
 from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
-    LangchainOpenaiApiServe,
+    LanggraphOpenaiServe,
 )
 from tests.graph.support.message import make_message_graph as build_message_graph
 
@@ -41,9 +41,9 @@ def graph_registry(message_graph) -> GraphRegistry:
 
 @pytest.fixture
 def fastapi_app(graph_registry: GraphRegistry) -> Generator[FastAPI, None, None]:
-    application = LangchainOpenaiApiServe(
+    application = LanggraphOpenaiServe(
         graphs=graph_registry,
-    ).bind_openai_chat_completion().app
+    ).bind_openai_api().app
     yield application
 
 

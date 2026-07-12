@@ -17,7 +17,7 @@ OpenAI client
 
 ## Components
 
-`LangchainOpenaiApiServe` is the boundary between your FastAPI app and the
+`LanggraphOpenaiServe` is the boundary between your FastAPI app and the
 OpenAI-compatible sub-application. It mounts the sub-application at the
 configured prefix and can add CORS middleware when requested.
 
@@ -59,5 +59,9 @@ OpenAI-compatible tool calls.
 
 Interrupt-enabled graphs pass `metadata.langgraph_thread_id` into LangGraph
 runnable config. They must have a checkpointer so pending interrupts can resume.
-Demo and tests may use `InMemorySaver`; production deployments should use a
-durable checkpointer shared across workers.
+The demo keeps an `AsyncPostgresSaver` and its connection pool open for the
+application lifespan and stores checkpoints in the PostgreSQL service configured
+by `DEMO_POSTGRES_URI`, so checkpoints survive requests and process restarts.
+Schema initialization runs before API workers start—as a Compose `pre_start`
+lifecycle hook in the demo—so multiple workers can safely use the durable
+checkpointer without racing on startup migrations.

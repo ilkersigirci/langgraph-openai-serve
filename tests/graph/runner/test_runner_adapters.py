@@ -70,14 +70,14 @@ async def test_typed_dict_schemas_and_native_context(
     )
     chat_request = make_request("typed", user="alice")
 
-    response, _ = await run_langgraph(
+    invocation = await run_langgraph(
         "typed",
         chat_request.messages,
         graph_registry,
         chat_request,
     )
 
-    assert response == "alice:answer"
+    assert invocation.output == "alice:answer"
     assert output_keys == [{"answer"}]
 
 
@@ -121,11 +121,11 @@ async def test_async_graph_factory_and_async_adapters(
     )
     chat_request = make_request("pydantic")
 
-    response, _ = await run_langgraph(
+    invocation = await run_langgraph(
         "pydantic",
         chat_request.messages,
         graph_registry,
         chat_request,
     )
 
-    assert response == "question"
+    assert invocation.output == "question"

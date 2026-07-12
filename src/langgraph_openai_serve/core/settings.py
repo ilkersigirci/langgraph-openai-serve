@@ -1,23 +1,8 @@
 import importlib.util
 import os
-from typing import Annotated
 
-from pydantic import (
-    AfterValidator,
-    AnyHttpUrl,
-    PlainValidator,
-    TypeAdapter,
-    field_validator,
-)
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
-
-CustomHttpUrlStr = Annotated[
-    str,
-    PlainValidator(AnyHttpUrlAdapter.validate_strings),
-    AfterValidator(lambda x: str(x).rstrip("/")),
-]
 
 
 def normalize_openai_api_prefix(v: str) -> str:
@@ -51,9 +36,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    OPENAI_BASE_URL: CustomHttpUrlStr = "https://api.openai.com/v1"
-    OPENAI_API_KEY: str = "DUMMY"
-    OPENAI_MODEL: str = "gpt-5.4-mini"
     OPENAI_API_PREFIX: str = "/v1"
     OPENAI_API_DOCS_ENABLED: bool = False
 
