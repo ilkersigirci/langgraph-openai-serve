@@ -50,9 +50,9 @@ async def test_thread_id_reaches_runnable_config(
         metadata={"langgraph_thread_id": "thread-1"},
     )
 
-    response, _ = await run_langgraph("threaded", request.messages, registry, request)
+    invocation = await run_langgraph("threaded", request.messages, registry, request)
 
-    assert response == "ok"
+    assert invocation.output == "ok"
     assert seen_thread_ids == ["thread-1"]
 
 
@@ -78,17 +78,17 @@ async def test_interrupt_result_is_returned_before_output_rendering(
         metadata={"langgraph_thread_id": "thread-1"},
     )
 
-    response, usage = await run_langgraph(
+    invocation = await run_langgraph(
         "interruptible",
         request.messages,
         registry,
         request,
     )
 
-    assert isinstance(response, LangGraphInterrupt)
-    assert response.thread_id == "thread-1"
-    assert response.payload == DEFAULT_INTERRUPT_PAYLOAD
-    assert usage["completion_tokens"] == 0
+    assert isinstance(invocation.output, LangGraphInterrupt)
+    assert invocation.output.thread_id == "thread-1"
+    assert invocation.output.payload == DEFAULT_INTERRUPT_PAYLOAD
+    assert invocation.custom_events == ()
 
 
 @pytest.mark.anyio
@@ -96,8 +96,14 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     class Graph:
-        async def ainvoke(self, inputs, *, config, context):
-            return {"__interrupt__": ["not-enabled"]}
+        output_channels = ("__interrupt__",)
+
+        async def astream(self, *args, **kwargs):
+            yield {
+                "type": "values",
+                "ns": (),
+                "data": {"__interrupt__": ["not-enabled"]},
+            }
 
     async def output_to_text(output):
         return output["__interrupt__"][0]
@@ -115,9 +121,10 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
         thread_id=None,
     )
 
-    response = await invoke_run(run)
+    invocation = await invoke_run(run)
 
-    assert response == "not-enabled"
+    assert invocation.output == "not-enabled"
+    assert invocation.custom_events == ()
 
 
 @pytest.mark.anyio

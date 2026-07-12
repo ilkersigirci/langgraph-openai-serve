@@ -1,7 +1,7 @@
 """
-title: LangGraph HITL Approval Modal
+title: LangGraph OpenAI Pipe
 author: langgraph-openai-serve
-version: 0.1
+version: 0.2
 """
 
 import json
@@ -35,7 +35,7 @@ class Pipe:
         )
         MODEL: str = Field(
             default="interruptible-approval",
-            description="Interrupt-enabled demo model to call.",
+            description="Registered LangGraph model to call.",
         )
 
     def __init__(self) -> None:
@@ -45,6 +45,7 @@ class Pipe:
         self,
         body: dict[str, Any],
         __event_call__: Any = None,
+        __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
     ) -> str:
         thread_id = self._thread_id(__metadata__ or {})
@@ -55,6 +56,7 @@ class Pipe:
             if not response.choices:
                 return NO_CHOICES_MESSAGE
             assistant_message = response.choices[0].message
+            await self._emit_citations(assistant_message, __event_emitter__)
 
             tool_call = self._interrupt_tool_call(assistant_message)
             if tool_call is None:
@@ -92,11 +94,43 @@ class Pipe:
         except OpenAIError as exc:
             return f"Error calling LangGraph API: {exc}"
 
-        return (
-            NO_CHOICES_MESSAGE
-            if not response.choices
-            else str(response.choices[0].message.content or "")
-        )
+        if not response.choices:
+            result = NO_CHOICES_MESSAGE
+        else:
+            message = response.choices[0].message
+            await self._emit_citations(message, __event_emitter__)
+            result = str(message.content or "")
+        return result
+
+    async def _emit_citations(
+        self,
+        message: ChatCompletionMessage,
+        event_emitter: Any,
+    ) -> None:
+        """Translate OpenAI URL annotations to native Open WebUI sources."""
+        if event_emitter is None:
+            return
+
+        for annotation in message.annotations or []:
+            citation = annotation.url_citation
+            await event_emitter(
+                {
+                    "type": "source",
+                    "data": {
+                        "source": {
+                            "name": citation.title,
+                            "url": citation.url,
+                        },
+                        "document": [citation.title],
+                        "metadata": [
+                            {
+                                "source": citation.url,
+                                "name": citation.title,
+                            }
+                        ],
+                    },
+                }
+            )
 
     async def _chat(
         self,

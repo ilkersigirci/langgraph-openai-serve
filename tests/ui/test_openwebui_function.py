@@ -11,10 +11,13 @@ from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
 def _completion(
     content: str = "",
     tool_calls: list[dict[str, Any]] | None = None,
+    annotations: list[dict[str, Any]] | None = None,
 ) -> ChatCompletion:
     message: dict[str, Any] = {"role": "assistant", "content": content}
     if tool_calls is not None:
         message["tool_calls"] = tool_calls
+    if annotations is not None:
+        message["annotations"] = annotations
 
     return ChatCompletion(
         id="chatcmpl-test",
@@ -42,6 +45,23 @@ def _interrupt_response() -> ChatCompletion:
         },
     }
     return _completion(tool_calls=[tool_call])
+
+
+def _citation_response() -> ChatCompletion:
+    return _completion(
+        "Cited answer [1]",
+        annotations=[
+            {
+                "type": "url_citation",
+                "url_citation": {
+                    "start_index": 13,
+                    "end_index": 16,
+                    "title": "Example source",
+                    "url": "https://example.com/source",
+                },
+            }
+        ],
+    )
 
 
 def _malformed_interrupt_response() -> ChatCompletion:
@@ -97,9 +117,7 @@ async def test_openwebui_function_asks_for_confirmation_and_approves() -> None:
     }
     assert resume_messages[1]["tool_calls"][0]["id"] == "call-1"
     assert resume_messages[2]["tool_call_id"] == "call-1"
-    assert json.loads(resume_messages[2]["content"]) == {
-        "resume": "approve"
-    }
+    assert json.loads(resume_messages[2]["content"]) == {"resume": "approve"}
     assert thread_id == "openwebui:function:chat-1"
 
 
@@ -127,9 +145,7 @@ async def test_openwebui_function_rejects_when_confirmation_declines() -> None:
     )
 
     assert response == "Rejected agent action: Refund order ORDER-123"
-    assert json.loads(chat_calls[1][-1]["content"]) == {
-        "resume": "reject"
-    }
+    assert json.loads(chat_calls[1][-1]["content"]) == {"resume": "reject"}
 
 
 @pytest.mark.anyio
@@ -197,7 +213,46 @@ async def test_openwebui_function_sends_thread_id_as_openai_metadata(
     )
 
     assert response == completion
-    assert captured["metadata"] == {
-        "langgraph_thread_id": "openwebui:function:chat-1"
-    }
+    assert captured["metadata"] == {"langgraph_thread_id": "openwebui:function:chat-1"}
     assert "extra_body" not in captured
+
+
+@pytest.mark.anyio
+async def test_openwebui_function_emits_native_citation_sources() -> None:
+    pipe = Pipe()
+    events = []
+
+    async def chat(messages, thread_id):
+        del messages, thread_id
+        return _citation_response()
+
+    async def event_emitter(event):
+        events.append(event)
+
+    pipe._chat = chat  # type: ignore[method-assign]
+
+    response = await pipe.pipe(
+        body={"messages": [{"role": "user", "content": "Cite this"}]},
+        __event_emitter__=event_emitter,
+        __metadata__={"chat_id": "chat-1"},
+    )
+
+    assert response == "Cited answer [1]"
+    assert events == [
+        {
+            "type": "source",
+            "data": {
+                "source": {
+                    "name": "Example source",
+                    "url": "https://example.com/source",
+                },
+                "document": ["Example source"],
+                "metadata": [
+                    {
+                        "source": "https://example.com/source",
+                        "name": "Example source",
+                    }
+                ],
+            },
+        }
+    ]

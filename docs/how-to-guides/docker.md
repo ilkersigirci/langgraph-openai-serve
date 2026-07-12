@@ -26,16 +26,20 @@ migrates the checkpoint schema.
 
 Import `demo/ui/openwebui/hitl_function.py` in
 `Workspace -> Functions`, enable it, then select
-`LangGraph HITL Approval Modal`. Send a request; the confirmation dialog resumes
+`LangGraph OpenAI Pipe`. Send a request; the confirmation dialog resumes
 the LangGraph interrupt with approve or reject.
+
+The Pipe also converts OpenAI `url_citation` annotations to Open WebUI's native
+`source` events. To try it, set the Function's `MODEL` valve to
+`citation-events`; cited sources then appear in Open WebUI's source UI.
 
 Ownership:
 
 - `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
   interrupt/resume behavior.
-- The Open WebUI Function owns only the UI bridge: detect the
-  `langgraph_interrupt` tool call, show the confirmation modal, and send the
-  resume tool message.
+- The Open WebUI Function owns only the UI bridge: translate OpenAI citation
+  annotations to native Open WebUI sources, detect the `langgraph_interrupt`
+  tool call, show the confirmation modal, and send the resume tool message.
 - Keep graph logic, HTTP routes, and custom response shapes out of the Open
   WebUI Function.
 

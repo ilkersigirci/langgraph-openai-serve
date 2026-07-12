@@ -56,11 +56,45 @@ Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
 Use a durable checkpointer in production.
 
+## Citation Events
+
+Inside a graph node or tool, emit a citation with LangGraph's stream writer:
+
+```python
+from langgraph.config import get_stream_writer
+from langgraph_openai_serve import citation_event
+
+get_stream_writer()(
+    citation_event(
+        url="https://example.com/source",
+        title="Example source",
+        start_index=10,
+        end_index=13,
+    )
+)
+```
+
+The indices identify the cited span in the complete assistant text. The end
+index is exclusive, so `text[start_index:end_index]` returns that span. Citation
+events must refer to the final rendered assistant text.
+
+Non-streaming chat completions expose citations through OpenAI's native
+`message.annotations` field. Streaming chat completions put annotations on the
+final `delta`, matching the search-model wire convention consumed by Chainlit
+and Open WebUI. This streaming field is a compatibility extension because the
+published Chat Completions delta schema does not currently declare annotations.
+
+The graph runner preserves LangGraph's native `CustomStreamPart` values,
+including their subgraph namespace. Citation events use the OpenAI
+`url_citation` annotation shape directly; other event types remain available to
+direct runner consumers through `langgraph_openai_serve.graph.runner`.
+
 ## Demo Models
 
 `make run-demo-api` registers:
 
 - `simple-graph-with-history`
+- `citation-events`
 - `simple-graph-no-history`
 - `custom-input-output-context`
 - `advanced-mcp-tools`

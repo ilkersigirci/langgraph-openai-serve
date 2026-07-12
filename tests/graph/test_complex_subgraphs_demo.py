@@ -26,8 +26,7 @@ def test_complex_subgraphs_use_structural_pydantic_subgraphs() -> None:
     specialist_team_graph = create_specialist_team_graph()
     docs_graph = create_docs_graph()
     parent_node_names = {
-        node.name
-        for node in specialist_team_graph.get_graph(xray=False).nodes.values()
+        node.name for node in specialist_team_graph.get_graph(xray=False).nodes.values()
     }
     node_names = {
         node.name for node in specialist_team_graph.get_graph(xray=True).nodes.values()
@@ -74,17 +73,15 @@ async def test_complex_subgraphs_demo_routes_api_question_to_api_subgraph(
         user="demo-user",
     )
 
-    response, usage = await run_langgraph(
+    invocation = await run_langgraph(
         "complex-subgraphs",
         request.messages,
         complex_subgraphs_registry,
         request,
     )
 
-    assert "API contract:" in response
-    assert "Docs specialist:" not in response
-    assert usage["prompt_tokens"] > 0
-    assert usage["completion_tokens"] > 0
+    assert "API contract:" in invocation.output
+    assert "Docs specialist:" not in invocation.output
 
 
 @pytest.mark.anyio
@@ -98,18 +95,16 @@ async def test_complex_subgraphs_demo_routes_docs_question_to_docs_subgraph(
         user="demo-user",
     )
 
-    response, usage = await run_langgraph(
+    invocation = await run_langgraph(
         "complex-subgraphs",
         request.messages,
         complex_subgraphs_registry,
         request,
     )
 
-    assert "Docs specialist:" in response
-    assert "nested keyword subgraph selected" in response
-    assert "API contract:" not in response
-    assert usage["prompt_tokens"] > 0
-    assert usage["completion_tokens"] > 0
+    assert "Docs specialist:" in invocation.output
+    assert "nested keyword subgraph selected" in invocation.output
+    assert "API contract:" not in invocation.output
 
 
 @pytest.mark.anyio

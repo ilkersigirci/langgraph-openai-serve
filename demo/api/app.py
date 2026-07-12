@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from demo.api.checkpointer import postgres_checkpointer
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
+from demo.api.graphs.citations import citation_graph
 from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
@@ -75,6 +76,10 @@ def create_custom_app() -> FastAPI:
 
     graph_registry = GraphRegistry(
         registry={
+            "citation-events": GraphConfig(
+                graph=citation_graph,
+                streamable_node_names=["answer_with_citation"],
+            ),
             "simple-graph-with-history": GraphConfig(
                 graph=simple_graph_with_history, streamable_node_names=["generate"]
             ),

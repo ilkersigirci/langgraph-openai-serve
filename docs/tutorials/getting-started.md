@@ -52,6 +52,23 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+Try the citation custom-event graph:
+
+```python
+response = client.chat.completions.create(
+    model="citation-events",
+    messages=[{"role": "user", "content": "Show me a cited answer."}],
+)
+
+print(response.choices[0].message.content)
+print(response.choices[0].message.annotations)
+```
+
+The graph emits an OpenAI `url_citation` annotation with LangGraph's stream
+writer. The server validates and forwards it. The standard
+Chainlit demo renders them as side sources. The Open WebUI Pipe translates the
+annotations to Open WebUI's native source events.
+
 Try the async mock MCP graph:
 
 ```python
@@ -88,9 +105,11 @@ print(response.choices[0].message.content)
   router-selected subgraphs with streamed fake chat model output.
 - `demo/api/graphs/interruptible.py`: interrupt and resume graph persisted in
   PostgreSQL by the demo application.
-- `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
-- `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function approval modal
+- `demo/api/graphs/citations.py`: custom citation event and OpenAI annotation
   demo.
+- `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
+- `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function for native
+  citations and interrupt approval.
 
 ## Human In The Loop Demo
 

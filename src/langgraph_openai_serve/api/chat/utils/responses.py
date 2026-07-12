@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 
+from openai.types.chat.chat_completion_message import Annotation
 from openai.types.shared import ErrorObject
 
 from langgraph_openai_serve.api.chat.schemas import (
@@ -33,10 +34,11 @@ def chat_completion_response(
     *,
     model: str,
     completion: LangGraphOutput,
+    annotations: list[Annotation] | None = None,
     usage: dict[str, int],
 ) -> ChatCompletionResponse:
     """Build a non-streaming OpenAI-compatible chat completion response."""
-    message, finish_reason = response_message(completion)
+    message, finish_reason = response_message(completion, annotations)
     return ChatCompletionResponse(
         id=f"chatcmpl-{uuid.uuid4()}",
         created=int(time.time()),
@@ -58,6 +60,7 @@ def chat_completion_response(
 
 def response_message(
     completion: LangGraphOutput,
+    annotations: list[Annotation] | None = None,
 ) -> tuple[ChatCompletionResponseMessage, str]:
     if isinstance(completion, LangGraphInterrupt):
         return (
@@ -73,6 +76,7 @@ def response_message(
         ChatCompletionResponseMessage(
             role=Role.ASSISTANT,
             content=completion,
+            annotations=annotations or None,
         ),
         "stop",
     )
@@ -128,10 +132,27 @@ class ChatCompletionStreamResponseBuilder:
             ),
         )
 
-    def finish(self, finish_reason: str) -> str:
+    def finish(
+        self,
+        finish_reason: str,
+        *,
+        annotations: list[Annotation] | None = None,
+    ) -> str:
+        # OpenAI search-model streams place annotations on the final delta, although
+        # current generated SDK types do not declare that response field.
+        delta_extra: dict[str, object] | None = (
+            {
+                "annotations": [
+                    annotation.model_dump(mode="json") for annotation in annotations
+                ]
+            }
+            if annotations
+            else None
+        )
         return self._chunk(
             ChatCompletionStreamResponseDelta(),
             finish_reason=finish_reason,
+            delta_extra=delta_extra,
         )
 
     def error(self, message: str) -> str:
@@ -146,6 +167,7 @@ class ChatCompletionStreamResponseBuilder:
         self,
         delta: ChatCompletionStreamResponseDelta,
         finish_reason: str | None = None,
+        delta_extra: dict[str, object] | None = None,
     ) -> str:
         response = ChatCompletionStreamResponse(
             id=self.response_id,
@@ -159,7 +181,10 @@ class ChatCompletionStreamResponseBuilder:
                 )
             ],
         )
-        return self._format_data(response.model_dump())
+        data = response.model_dump(mode="json")
+        if delta_extra:
+            data["choices"][0]["delta"].update(delta_extra)
+        return self._format_data(data)
 
     def _format_data(self, data: dict) -> str:
         return f"data: {json.dumps(data)}\n\n"

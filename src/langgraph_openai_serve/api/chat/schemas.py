@@ -6,6 +6,7 @@ This module defines Pydantic models that match the OpenAI API request and respon
 from enum import Enum
 from typing import Any, Literal
 
+from openai.types.chat.chat_completion_message import Annotation
 from pydantic import BaseModel, Field
 
 
@@ -109,6 +110,7 @@ class ChatCompletionResponseMessage(BaseModel):
 
     role: Role
     content: str | None = None
+    annotations: list[Annotation] | None = None
     function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
 

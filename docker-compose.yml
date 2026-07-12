@@ -9,7 +9,7 @@ networks:
         - subnet: 192.168.31.0/24
 
 services:
-  postgres:
+  lgos-postgres:
     image: postgres:18.4-alpine3.23
     container_name: lgos-postgres
     restart: "no"
@@ -39,7 +39,7 @@ services:
     networks:
       - lgos-network
     depends_on:
-      postgres:
+      lgos-postgres:
         condition: service_healthy
     pre_start:
       - command: ["uv", "run", "--module", "demo.api.setup_checkpointer"]
@@ -49,7 +49,7 @@ services:
     command: ["uv", "run", "--module", "demo.api.app"]
     restart: "no"
     environment:
-      DEMO_POSTGRES_URI: postgresql://lgos:lgos@postgres:5432/lgos
+      DEMO_POSTGRES_URI: postgresql://lgos:lgos@lgos-postgres:5432/lgos
       DEMO_OPENAI_BASE_URL: ${DEMO_OPENAI_BASE_URL:-https://api.openai.com/v1}
       DEMO_OPENAI_API_KEY: ${DEMO_OPENAI_API_KEY:-DUMMY}
       DEMO_OPENAI_MODEL: ${DEMO_OPENAI_MODEL:-gpt-5.4-mini}

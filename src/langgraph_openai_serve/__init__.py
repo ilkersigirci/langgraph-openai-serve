@@ -2,6 +2,7 @@
 
 from importlib.metadata import version
 
+from langgraph_openai_serve.graph.events import citation_event
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphRegistry,
@@ -17,4 +18,5 @@ __all__ = [
     "GraphRegistry",
     "GraphRegistryError",
     "LanggraphOpenaiServe",
+    "citation_event",
 ]
