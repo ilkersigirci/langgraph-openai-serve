@@ -28,9 +28,10 @@ Demo-only settings (read by `demo/api/settings.py`):
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
-| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs. |
-| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible base URL for LLM-backed demo graphs. |
+| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for LLM-backed demo graphs. |
+| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model for LLM-backed demo graphs. |
+| `DEMO_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by the `lgos-rag` demo graph. |
 | `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
 | `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
@@ -96,6 +97,7 @@ direct runner consumers through `langgraph_openai_serve.graph.runner`.
 - `simple-graph-with-history`
 - `citation-events`
 - `simple-graph-no-history`
+- `lgos-rag`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
 - `complex-subgraphs`

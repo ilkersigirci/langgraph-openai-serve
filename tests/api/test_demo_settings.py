@@ -10,6 +10,7 @@ def test_demo_settings_use_demo_environment_prefix(
         "OPENAI_BASE_URL": "https://example.com/v1",
         "OPENAI_API_KEY": "demo-key",
         "OPENAI_MODEL": "demo-model",
+        "OPENAI_EMBEDDING_MODEL": "demo-embedding-model",
         "CHAINLIT_OPENAI_BASE_URL": "https://chainlit.example.com/v1",
         "CHAINLIT_HITL_MODEL": "approval-model",
     }

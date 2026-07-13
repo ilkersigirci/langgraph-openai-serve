@@ -168,8 +168,8 @@ run-demo-api: setup-demo-checkpointer # ## Run the demo api in development mode
 	uv run --module demo.api.app
 
 run-demo-ui-chainlit: ## Run the demo Chainlit UI
-	# uv run --module chainlit run demo.ui.chainlit_ui.main --host 0.0.0.0 --port 8001 -w
+	@# uv run --module chainlit run demo.ui.chainlit_ui.main --host 0.0.0.0 --port 8001 -w
 	uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 8001 --no-access-log
 
 run-demo-ui-chainlit-hitl: ## Run the Chainlit human-in-the-loop demo UI
-	uv run chainlit run demo/ui/chainlit_ui/hitl.py --host 0.0.0.0 --port 8001 -w
+	DEMO_CHAINLIT_UI_FILE=hitl uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 8001 --no-access-log

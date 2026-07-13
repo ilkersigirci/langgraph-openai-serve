@@ -16,6 +16,7 @@ from demo.api.graphs.citations import citation_graph
 from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
+from demo.api.graphs.lgos_rag import lgos_rag
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
 from demo.api.settings import settings
@@ -85,6 +86,14 @@ def create_custom_app() -> FastAPI:
             ),
             "simple-graph-no-history": GraphConfig(
                 graph=simple_graph_no_history, streamable_node_names=["generate"]
+            ),
+            "lgos-rag": GraphConfig(
+                graph=lgos_rag,
+                streamable_node_names=[
+                    "generate_query_or_respond",
+                    "generate_answer",
+                    "answer_no_results",
+                ],
             ),
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),

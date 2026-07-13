@@ -24,22 +24,28 @@ the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
 Before starting the API, its Compose `pre_start` lifecycle hook initializes or
 migrates the checkpoint schema.
 
-Import `demo/ui/openwebui/hitl_function.py` in
-`Workspace -> Functions`, enable it, then select
-`LangGraph OpenAI Pipe`. Send a request; the confirmation dialog resumes
-the LangGraph interrupt with approve or reject.
+Import `demo/ui/openwebui/openwebui_pipe.py` in `Admin Panel -> Functions` and
+enable it. Open WebUI's native
+[manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
+hook fetches `/v1/models` and adds every registered graph to the model selector.
+Configure the API base URL and key with the Function valves; there is no
+per-model valve.
 
-The Pipe also converts OpenAI `url_citation` annotations to Open WebUI's native
-`source` events. To try it, set the Function's `MODEL` valve to
-`citation-events`; cited sources then appear in Open WebUI's source UI.
+The Pipe yields OpenAI content deltas through Open WebUI's native generator
+streaming contract. It also converts OpenAI `url_citation` annotations to native
+`source` events. Select `interruptible-approval` to try confirmation and
+`lgos-rag` to stream a documentation answer with cited sources.
+After changing the local Function file, update or re-import it in Open WebUI;
+Open WebUI stores its own copy of imported Function code.
 
 Ownership:
 
 - `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
   interrupt/resume behavior.
 - The Open WebUI Function owns only the UI bridge: translate OpenAI citation
-  annotations to native Open WebUI sources, detect the `langgraph_interrupt`
-  tool call, show the confirmation modal, and send the resume tool message.
+  annotations to native Open WebUI sources, yield streamed text, detect the
+  `langgraph_interrupt` tool call, show the confirmation modal, and send the
+  resume tool message.
 - Keep graph logic, HTTP routes, and custom response shapes out of the Open
   WebUI Function.
 

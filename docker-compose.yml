@@ -48,11 +48,12 @@ services:
     # command: ["tail", "-f", "/dev/null"] # NOTE: For testing the container
     command: ["uv", "run", "--module", "demo.api.app"]
     restart: "no"
+    volumes:
+      - ./docs:/app/docs # NOTE: For RAG graph
+    env_file:
+      - .env
     environment:
       DEMO_POSTGRES_URI: postgresql://lgos:lgos@lgos-postgres:5432/lgos
-      DEMO_OPENAI_BASE_URL: ${DEMO_OPENAI_BASE_URL:-https://api.openai.com/v1}
-      DEMO_OPENAI_API_KEY: ${DEMO_OPENAI_API_KEY:-DUMMY}
-      DEMO_OPENAI_MODEL: ${DEMO_OPENAI_MODEL:-gpt-5.4-mini}
     develop:
       watch:
         # Sync the working directory with the `/app` directory in the container

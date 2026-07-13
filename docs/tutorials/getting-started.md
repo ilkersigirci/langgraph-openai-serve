@@ -8,7 +8,7 @@ through the OpenAI-compatible `/v1` interface.
 - Python 3.11 or newer
 - `uv`
 - PostgreSQL (the included Compose service requires Docker)
-- An OpenAI-compatible upstream model only if you call the simple LLM graphs
+- An OpenAI-compatible upstream model only if you call the LLM-backed graphs
 
 The custom adapter and mock MCP demo graphs do not require real API keys.
 
@@ -21,10 +21,11 @@ make run-demo-api
 
 The demo reads `DEMO_POSTGRES_URI` and defaults to
 `postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose service.
-The simple LLM graphs additionally read `DEMO_OPENAI_BASE_URL`,
-`DEMO_OPENAI_API_KEY`, and `DEMO_OPENAI_MODEL`. These settings and their
-LangChain agent dependencies belong to the demo and are not installed as part
-of the library's runtime dependencies.
+The LLM-backed graphs additionally read `DEMO_OPENAI_BASE_URL`,
+`DEMO_OPENAI_API_KEY`, and `DEMO_OPENAI_MODEL`. The `lgos-rag` graph also reads
+`DEMO_OPENAI_EMBEDDING_MODEL`. These settings and their LangChain agent
+dependencies belong to the demo and are not installed as part of the library's
+runtime dependencies.
 
 The base URL is `http://localhost:8000/v1`.
 
@@ -69,6 +70,25 @@ writer. The server validates and forwards it. The standard
 Chainlit demo renders them as side sources. The Open WebUI Pipe translates the
 annotations to Open WebUI's native source events.
 
+Ask the RAG graph about this project's Markdown documentation with real-time
+token streaming and source annotations:
+
+```python
+stream = client.chat.completions.create(
+    model="lgos-rag",
+    messages=[{"role": "user", "content": "How does LGOS streaming work?"}],
+    stream=True,
+)
+
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+`lgos-rag` follows an agentic RAG loop: it decides when retrieval is needed,
+searches chunked documentation through a tool, grades relevance, and rewrites
+once when retrieval misses. Social and conversation-history turns skip
+retrieval; only grounded documentation answers emit citations.
+
 Try the async mock MCP graph:
 
 ```python
@@ -99,6 +119,9 @@ print(response.choices[0].message.content)
 
 - `demo/api/app.py`: registers graph names as OpenAI model names.
 - `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
+- `demo/api/graphs/lgos_rag.py`: agentic RAG over every Markdown file in
+  `docs/`, with relevance grading, bounded query rewriting, streamed generation,
+  and citation events.
 - `demo/api/graphs/custom_io.py`: input, output, and context adapters.
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
 - `demo/api/graphs/complex_subgraphs.py` and `demo/api/graphs/subgraphs/`:
@@ -108,8 +131,8 @@ print(response.choices[0].message.content)
 - `demo/api/graphs/citations.py`: custom citation event and OpenAI annotation
   demo.
 - `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
-- `demo/ui/openwebui/hitl_function.py`: Open WebUI Pipe Function for native
-  citations and interrupt approval.
+- `demo/ui/openwebui/openwebui_pipe.py`: Open WebUI manifold Pipe that discovers
+  registered graph models and bridges native citations and interrupt approval.
 
 ## Human In The Loop Demo
 
@@ -127,7 +150,8 @@ Open WebUI:
 docker compose up -d open-webui
 ```
 
-See [Docker](../how-to-guides/docker.md) for the Open WebUI Function import and
+Import the generic Pipe, then select `interruptible-approval`. See
+[Docker](../how-to-guides/docker.md) for the Open WebUI Function setup and
 [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the interrupt tool-call protocol.
 

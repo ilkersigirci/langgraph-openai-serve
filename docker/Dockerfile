@@ -43,14 +43,14 @@ RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     # --mount=type=bind,source=README.md,target=README.md \
     # --mount=type=bind,source=src,target=src \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project
+    uv sync --no-install-project --extra tracing
 
 COPY . .
 
 # Install the project.
 RUN \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync
+    uv sync --extra tracing
 
 RUN chmod +x /app/docker/entrypoint.sh
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
