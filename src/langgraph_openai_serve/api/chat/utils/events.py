@@ -3,6 +3,8 @@
 from langgraph.types import CustomStreamPart
 from openai.types.chat.chat_completion_message import Annotation
 
+from langgraph_openai_serve.graph.events import citation_slice
+
 
 def annotation_from_custom_event(
     event: CustomStreamPart,
@@ -14,12 +16,5 @@ def annotation_from_custom_event(
         return None
 
     annotation = Annotation.model_validate(payload)
-    citation = annotation.url_citation
-    if (
-        citation.start_index < 0
-        or citation.end_index < citation.start_index
-        or citation.end_index > len(content)
-    ):
-        raise ValueError("citation indices must refer to the final assistant text")
-
+    citation_slice(annotation, content)
     return annotation

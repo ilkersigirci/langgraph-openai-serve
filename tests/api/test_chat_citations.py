@@ -11,20 +11,22 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
     citation_event,
+    citation_slice,
 )
 from langgraph_openai_serve.api.chat.utils.events import annotation_from_custom_event
 from tests.graph.support.schemas import MessageState
 
-ANSWER = "Cited answer [1]"
-SOURCE_START_INDEX = 13
-SOURCE_END_INDEX = 16
+ANSWER = "Cited answer with source"
+CITATION_TEXT = "source"
+SOURCE_START = ANSWER.index(CITATION_TEXT)
+SOURCE_SPAN = (SOURCE_START, SOURCE_START + len(CITATION_TEXT))
 SOURCE_TITLE = "Example source"
 SOURCE_URL = "https://example.com/source"
 ANNOTATION = {
     "type": "url_citation",
     "url_citation": {
-        "start_index": SOURCE_START_INDEX,
-        "end_index": SOURCE_END_INDEX,
+        "start_index": SOURCE_SPAN[0],
+        "end_index": SOURCE_SPAN[1] - 1,
         "title": SOURCE_TITLE,
         "url": SOURCE_URL,
     },
@@ -40,8 +42,7 @@ def citation_app() -> FastAPI:
             citation_event(
                 url=SOURCE_URL,
                 title=SOURCE_TITLE,
-                start_index=SOURCE_START_INDEX,
-                end_index=SOURCE_END_INDEX,
+                span=SOURCE_SPAN,
             )
         )
         return {"messages": [await model.ainvoke(state["messages"])]}
@@ -69,7 +70,7 @@ def fastapi_app() -> FastAPI:
     return citation_app()
 
 
-def test_non_streaming_completion_includes_annotations(
+def test_non_streaming_completion_uses_openai_inclusive_end_index(
     openai_client: OpenAI,
 ) -> None:
     response = openai_client.chat.completions.create(
@@ -83,7 +84,15 @@ def test_non_streaming_completion_includes_annotations(
     assert [annotation.model_dump() for annotation in message.annotations] == [
         ANNOTATION
     ]
-    assert ANSWER[SOURCE_START_INDEX:SOURCE_END_INDEX] == "[1]"
+    assert ANSWER[citation_slice(message.annotations[0], ANSWER)] == CITATION_TEXT
+
+
+@pytest.mark.parametrize("span", [(-1, 1), (0, 0), (2, 1)])
+def test_citation_event_rejects_invalid_half_open_spans(
+    span: tuple[int, int],
+) -> None:
+    with pytest.raises(ValueError, match="valid non-empty"):
+        citation_event(url=SOURCE_URL, title=SOURCE_TITLE, span=span)
 
 
 def test_streaming_completion_emits_annotations_on_final_delta(
@@ -118,8 +127,7 @@ def test_citation_must_refer_to_final_assistant_text() -> None:
         data=citation_event(
             url=SOURCE_URL,
             title=SOURCE_TITLE,
-            start_index=0,
-            end_index=len(ANSWER) + 1,
+            span=(0, len(ANSWER) + 1),
         ),
     )
 

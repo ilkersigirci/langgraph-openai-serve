@@ -11,6 +11,12 @@ from openai.types.chat import ChatCompletion
 
 from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
 
+MARKDOWN_RESPONSE = (
+    "Read the [source](https://example.com/source), view "
+    "![diagram](https://example.com/diagram.png), and follow the "
+    "[audio link](https://example.com/overview.mp3)."
+)
+
 
 class FakeStream:
     def __init__(
@@ -45,10 +51,13 @@ async def _collect_response(
 def _body(
     content: str,
     model: str = "openwebui_pipe.interruptible-approval",
+    *,
+    stream: bool = True,
 ) -> dict[str, Any]:
     return {
         "model": model,
         "messages": [{"role": "user", "content": content}],
+        "stream": stream,
     }
 
 
@@ -62,7 +71,6 @@ def _completion(
         message["tool_calls"] = tool_calls
     if annotations is not None:
         message["annotations"] = annotations
-
     return ChatCompletion.model_validate(
         {
             "id": "chatcmpl-test",
@@ -71,6 +79,25 @@ def _completion(
             "model": "interruptible-approval",
             "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
         }
+    )
+
+
+def _citation_response() -> ChatCompletion:
+    citation_text = "source"
+    start = MARKDOWN_RESPONSE.index(citation_text)
+    return _completion(
+        MARKDOWN_RESPONSE,
+        annotations=[
+            {
+                "type": "url_citation",
+                "url_citation": {
+                    "start_index": start,
+                    "end_index": start + len(citation_text) - 1,
+                    "title": "Example source",
+                    "url": "https://example.com/source",
+                },
+            }
+        ],
     )
 
 
@@ -91,23 +118,6 @@ def _interrupt_response() -> ChatCompletion:
         },
     }
     return _completion(tool_calls=[tool_call])
-
-
-def _citation_response() -> ChatCompletion:
-    return _completion(
-        "Cited answer [1]",
-        annotations=[
-            {
-                "type": "url_citation",
-                "url_citation": {
-                    "start_index": 13,
-                    "end_index": 16,
-                    "title": "Example source",
-                    "url": "https://example.com/source",
-                },
-            }
-        ],
-    )
 
 
 def _malformed_interrupt_response() -> ChatCompletion:
@@ -371,7 +381,7 @@ async def test_openwebui_pipe_sends_selected_model_and_thread_id(
 
 
 @pytest.mark.anyio
-async def test_openwebui_pipe_forwards_openai_citation_annotations(
+async def test_openwebui_pipe_streams_markdown_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()
@@ -380,8 +390,12 @@ async def test_openwebui_pipe_forwards_openai_citation_annotations(
     async def chat(messages, thread_id, model_id):
         del messages, thread_id, model_id
         yield FakeStream(
-            ["Cited ", "answer ", "[1]"],
-            _citation_response(),
+            [
+                "Read the [source](https://example.com/source), ",
+                "view ![diagram](https://example.com/diagram.png), ",
+                "and follow the [audio link](https://example.com/overview.mp3).",
+            ],
+            _completion(MARKDOWN_RESPONSE),
         )
 
     monkeypatch.setattr(pipe, "_chat", chat)
@@ -394,28 +408,71 @@ async def test_openwebui_pipe_forwards_openai_citation_annotations(
     )
 
     assert chunks == [
-        "Cited ",
-        "answer ",
-        "[1]",
+        "Read the [source](https://example.com/source), ",
+        "view ![diagram](https://example.com/diagram.png), ",
+        "and follow the [audio link](https://example.com/overview.mp3).",
+    ]
+
+
+@pytest.mark.anyio
+async def test_openwebui_pipe_forwards_annotations_for_streaming_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+
+    @asynccontextmanager
+    async def chat(messages, thread_id, model_id):
+        del messages, thread_id, model_id
+        yield FakeStream([MARKDOWN_RESPONSE], _citation_response())
+
+    monkeypatch.setattr(pipe, "_chat", chat)
+
+    chunks = await _collect_response(
+        pipe.pipe(
+            body=_body("Cite this", model="openwebui_pipe.citation-events"),
+            __metadata__={"chat_id": "chat-1"},
+        )
+    )
+
+    annotation = _citation_response().choices[0].message.annotations[0]
+    assert chunks == [
+        MARKDOWN_RESPONSE,
         {
             "choices": [
                 {
                     "index": 0,
                     "delta": {
-                        "annotations": [
-                            {
-                                "type": "url_citation",
-                                "url_citation": {
-                                    "start_index": 13,
-                                    "end_index": 16,
-                                    "title": "Example source",
-                                    "url": "https://example.com/source",
-                                },
-                            }
-                        ]
+                        "annotations": [annotation.model_dump(mode="json")],
                     },
                     "finish_reason": None,
-                },
+                }
             ]
         },
     ]
+
+
+@pytest.mark.anyio
+async def test_openwebui_pipe_omits_annotation_chunks_for_non_streaming_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+
+    @asynccontextmanager
+    async def chat(messages, thread_id, model_id):
+        del messages, thread_id, model_id
+        yield FakeStream([MARKDOWN_RESPONSE], _citation_response())
+
+    monkeypatch.setattr(pipe, "_chat", chat)
+
+    chunks = await _collect_response(
+        pipe.pipe(
+            body=_body(
+                "Cite this",
+                model="openwebui_pipe.citation-events",
+                stream=False,
+            ),
+            __metadata__={"chat_id": "chat-1"},
+        )
+    )
+
+    assert chunks == [MARKDOWN_RESPONSE]

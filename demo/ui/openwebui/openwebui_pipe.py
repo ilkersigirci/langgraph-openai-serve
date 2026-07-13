@@ -56,6 +56,7 @@ class Pipe:
     ) -> AsyncIterator[PipeChunk]:
         thread_id = self._thread_id(__metadata__ or {})
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
+        forward_annotations = body.get("stream") is True
 
         try:
             model_id = self._model_id(body)
@@ -74,9 +75,11 @@ class Pipe:
                 return
 
             assistant_message = response.choices[0].message
-            annotation_delta = self._annotation_delta(assistant_message)
-            if annotation_delta is not None:
-                yield annotation_delta
+            for chunk in self._completion_chunks(
+                response,
+                forward_annotations=forward_annotations,
+            ):
+                yield chunk
 
             tool_call = self._interrupt_tool_call(assistant_message)
             if tool_call is None:
@@ -113,42 +116,44 @@ class Pipe:
                 async for delta in self._content_deltas(stream):
                     yield delta
                 response = await stream.get_final_completion()
+
+            for chunk in self._completion_chunks(
+                response,
+                forward_annotations=forward_annotations,
+            ):
+                yield chunk
         except OpenAIError as exc:
             yield f"Error calling LangGraph API: {exc}"
-            return
 
-        for chunk in self._completion_metadata(response):
-            yield chunk
-
-    def _annotation_delta(
+    def _completion_chunks(
         self,
-        message: ChatCompletionMessage,
-    ) -> dict[str, Any] | None:
-        """Preserve OpenAI annotations in Open WebUI's compatible chunk shape."""
-        if not message.annotations:
-            return None
-
-        return {
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {
-                        "annotations": [
-                            annotation.model_dump(mode="json")
-                            for annotation in message.annotations
-                        ]
-                    },
-                    "finish_reason": None,
-                }
-            ]
-        }
-
-    def _completion_metadata(self, response: ChatCompletion) -> list[PipeChunk]:
+        response: ChatCompletion,
+        *,
+        forward_annotations: bool,
+    ) -> list[PipeChunk]:
+        """Return completion-level chunks that follow streamed text."""
         if not response.choices:
             return [NO_CHOICES_MESSAGE]
+        annotations = response.choices[0].message.annotations
+        if not forward_annotations or not annotations:
+            return []
 
-        annotation_delta = self._annotation_delta(response.choices[0].message)
-        return [annotation_delta] if annotation_delta is not None else []
+        return [
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "annotations": [
+                                annotation.model_dump(mode="json")
+                                for annotation in annotations
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ]
+            }
+        ]
 
     async def _approval_decision(
         self,

@@ -32,8 +32,11 @@ Configure the API base URL and key with the Function valves; there is no
 per-model valve.
 
 The Pipe yields OpenAI content deltas through Open WebUI's native generator
-streaming contract. Select `interruptible-approval` to try confirmation and
-`lgos-rag` to stream a documentation answer.
+streaming contract and leaves Markdown rendering to the UI. For streaming
+requests, it also forwards OpenAI citation annotations unchanged when LGOS
+returns them; it does not create or translate citations. Select
+`interruptible-approval` to try confirmation and `lgos-rag` to stream a linked
+documentation answer.
 After changing the local Function file, update or re-import it in Open WebUI;
 Open WebUI stores its own copy of imported Function code.
 
@@ -41,9 +44,9 @@ Ownership:
 
 - `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
   interrupt/resume behavior.
-- The Open WebUI Function owns only the UI bridge: yield streamed text, detect
-  the `langgraph_interrupt` tool call, show the confirmation modal, and send the
-  resume tool message.
+- The Open WebUI Function owns only the UI bridge: yield streamed text and
+  annotation chunks, detect the `langgraph_interrupt` tool call, show the
+  confirmation modal, and send the resume tool message.
 - Keep graph logic, HTTP routes, and custom response shapes out of the Open
   WebUI Function.
 

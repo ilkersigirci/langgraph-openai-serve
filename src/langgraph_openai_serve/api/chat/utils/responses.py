@@ -138,21 +138,10 @@ class ChatCompletionStreamResponseBuilder:
         *,
         annotations: list[Annotation] | None = None,
     ) -> str:
-        # OpenAI search-model streams place annotations on the final delta, although
-        # current generated SDK types do not declare that response field.
-        delta_extra: dict[str, object] | None = (
-            {
-                "annotations": [
-                    annotation.model_dump(mode="json") for annotation in annotations
-                ]
-            }
-            if annotations
-            else None
-        )
         return self._chunk(
             ChatCompletionStreamResponseDelta(),
             finish_reason=finish_reason,
-            delta_extra=delta_extra,
+            annotations=annotations,
         )
 
     def error(self, message: str) -> str:
@@ -167,7 +156,7 @@ class ChatCompletionStreamResponseBuilder:
         self,
         delta: ChatCompletionStreamResponseDelta,
         finish_reason: str | None = None,
-        delta_extra: dict[str, object] | None = None,
+        annotations: list[Annotation] | None = None,
     ) -> str:
         response = ChatCompletionStreamResponse(
             id=self.response_id,
@@ -182,8 +171,12 @@ class ChatCompletionStreamResponseBuilder:
             ],
         )
         data = response.model_dump(mode="json")
-        if delta_extra:
-            data["choices"][0]["delta"].update(delta_extra)
+        if annotations:
+            # Compatibility extension: Chat Completions delta types do not
+            # currently declare annotations.
+            data["choices"][0]["delta"]["annotations"] = [
+                annotation.model_dump(mode="json") for annotation in annotations
+            ]
         return self._format_data(data)
 
     def _format_data(self, data: dict) -> str:

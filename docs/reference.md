@@ -69,15 +69,18 @@ get_stream_writer()(
     citation_event(
         url="https://example.com/source",
         title="Example source",
-        start_index=10,
-        end_index=13,
+        span=(10, 14),
     )
 )
 ```
 
-The indices identify the cited span in the complete assistant text. The end
-index is exclusive, so `text[start_index:end_index]` returns that span. Citation
-events must refer to the final rendered assistant text.
+`span` uses Python's half-open convention, so `text[10:14]` returns the cited
+text. LGOS converts it to OpenAI's inclusive `end_index` at the event boundary.
+Use `citation_slice(annotation, text)` to validate received indices and convert
+them back to a Python slice. Citation events must refer to the final rendered
+assistant text. Portable Markdown links and images belong in that assistant
+text; keep audio and video as ordinary links. Do not add presentation fields to
+the OpenAI `url_citation` object.
 
 See [Citation ownership and UI rendering](explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
 for transport and client behavior.
@@ -91,7 +94,7 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 `make run-demo-api` registers:
 
 - `simple-graph-with-history`
-- `citation-events`
+- `citation-events` (structured URL citations alongside portable Markdown)
 - `simple-graph-no-history`
 - `lgos-rag`
 - `custom-input-output-context`

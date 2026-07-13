@@ -65,6 +65,11 @@ print(response.choices[0].message.content)
 print(response.choices[0].message.annotations)
 ```
 
+The deterministic answer demonstrates a normal Markdown link, an inline
+Markdown image, and an audio resource kept as an ordinary link. Each resource
+has its own standard `url_citation` anchored to existing Markdown link text; no
+numeric markers or presentation fields are added.
+
 See [Citation Events](../reference.md#citation-events) for the graph helper and
 [Citation ownership and UI rendering](../explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
 for transport and client behavior.
@@ -86,7 +91,9 @@ for chunk in stream:
 `lgos-rag` follows an agentic RAG loop: it decides when retrieval is needed,
 searches chunked documentation through a tool, grades relevance, and rewrites
 once when retrieval misses. Social and conversation-history turns skip
-retrieval.
+retrieval. Grounded answers use exact source-backed Markdown links rather than
+citation annotations; source-provided image Markdown is preserved, while audio
+and video remain ordinary links.
 
 Try the async mock MCP graph:
 

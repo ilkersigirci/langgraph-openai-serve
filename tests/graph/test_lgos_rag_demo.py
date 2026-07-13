@@ -7,8 +7,6 @@ from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.runnables import RunnableLambda
-from langgraph.types import CustomStreamPart
-from openai.types.chat.chat_completion_message import Annotation
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import (
@@ -16,7 +14,11 @@ from langgraph_openai_serve.graph.runner import (
     run_langgraph_stream,
 )
 
-ANSWER = "Use the registered model through the OpenAI client. [2]"
+ANSWER = (
+    "Use the [registered model](https://example.com/second) through the OpenAI "
+    "client. View the ![architecture diagram](https://example.com/diagram.png) "
+    "or follow the [audio link](https://example.com/overview.mp3)."
+)
 DECISION_PREAMBLE = "I will check the documentation. "
 HISTORY_ANSWER = 'You asked: "Who are you?"'
 REWRITTEN_QUESTION = "How do I call LGOS using an OpenAI client?"
@@ -98,6 +100,19 @@ def source_document(content: str, name: str) -> Document:
     )
 
 
+def test_lgos_rag_context_exposes_source_urls_and_preserves_markdown() -> None:
+    markdown = (
+        "Read the [guide](https://example.com/guide) and view "
+        "![Diagram](https://example.com/diagram.png)."
+    )
+
+    context = lgos_rag_module._format_context([source_document(markdown, "Reference")])
+
+    assert context == (
+        f"Title: Reference\nSource URL: https://example.com/reference\n{markdown}"
+    )
+
+
 def test_lgos_rag_loads_and_splits_every_markdown_document() -> None:
     documents = lgos_rag_module.load_documents()
     expected_sources = {
@@ -122,13 +137,18 @@ def test_lgos_rag_loads_and_splits_every_markdown_document() -> None:
 
 
 @pytest.mark.anyio
-async def test_lgos_rag_retrieves_grades_streams_and_cites(
+async def test_lgos_rag_retrieves_grades_streams_and_links_sources(
     make_request,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     documents = [
         source_document("First source", "First"),
-        source_document("Second source", "Second"),
+        source_document(
+            "Second source\n\n"
+            "![Architecture diagram](https://example.com/diagram.png)\n\n"
+            "[Audio overview](https://example.com/overview.mp3)",
+            "Second",
+        ),
     ]
     queries: list[str] = []
 
@@ -167,18 +187,14 @@ async def test_lgos_rag_retrieves_grades_streams_and_cites(
     streamed_answer = "".join(event for event in events if isinstance(event, str))
     assert streamed_answer == ANSWER
     assert DECISION_PREAMBLE not in streamed_answer
-    custom_events: list[CustomStreamPart] = [
+    custom_events = [
         event for event in events if not isinstance(event, (str, LangGraphInterrupt))
     ]
-    assert len(custom_events) == 1
-    citation = Annotation.model_validate(custom_events[0]["data"]).url_citation
-    assert citation.title == "Second"
-    assert citation.url == "https://example.com/second"
-    assert streamed_answer[citation.start_index : citation.end_index] == "[2]"
+    assert custom_events == []
 
 
 @pytest.mark.anyio
-async def test_lgos_rag_answers_conversation_without_retrieval_or_citations(
+async def test_lgos_rag_answers_conversation_without_retrieval(
     make_request,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

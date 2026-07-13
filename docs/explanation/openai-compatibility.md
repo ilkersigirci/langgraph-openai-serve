@@ -36,27 +36,38 @@ update streaming for interrupts. Only chunks from configured
 ## Citation Ownership And UI Rendering
 
 OpenAI `url_citation` annotations are the canonical citation contract. Their
-URL, title, and text span associate a source with the answer. A printed marker
-such as `[2]` is answer text; it is not an index into the annotation array.
+URL, title, and text span associate a source with the answer. `end_index` is
+inclusive, matching OpenAI's last-character convention.
 
 | Layer | Citation behavior |
 | --- | --- |
 | LGOS API | Returns `message.annotations` for non-streaming responses and `delta.annotations` on the final streaming chunk. It has no Chainlit or Open WebUI source schema. |
-| Chainlit demo | Uses each annotated answer span as the name of a `side` source element, so Chainlit renders the existing marker as a small reference link without renumbering it. Chainlit auto-opens newly attached side elements, so the demo closes that initial view; clicking a reference opens its source in the sidebar. |
-| Open WebUI | Its native OpenAI middleware renders annotations as sources. The generic Pipe preserves the same `delta.annotations` shape; it does not translate citations itself. |
+| Chainlit demo | Streams assistant content unchanged and relies on Chainlit's Markdown renderer for links and images. It does not consume citation annotations. |
+| Open WebUI demo | Streams assistant content unchanged and relies on Open WebUI's Markdown renderer for links and images. For streaming requests, its generic Pipe transparently forwards annotations in an OpenAI-compatible chunk without translating them. |
+
+Portable resource presentation belongs in the assistant text, not in the
+annotation object. Graphs may return ordinary Markdown links and images in
+`message.content`; Chainlit and Open WebUI receive that content unchanged. When
+a graph also emits structured attribution, its `url_citation` remains limited
+to its standard URL, title, and text span. Audio and video resources should use
+ordinary Markdown links rather than UI-specific players. RAG graphs must
+preserve only resource URLs supplied by their retrieved context and must not
+invent or rewrite them.
+
+Structured citations remain available to OpenAI clients that need
+machine-readable provenance. The `citation-events` demo showcases that optional
+contract; the default Chainlit, Open WebUI, and `lgos-rag` paths prefer direct
+Markdown and avoid UI-specific citation handling.
 
 The streaming field is a compatibility extension because the published Chat
 Completions delta schema does not currently declare annotations. The OpenAI
-Python SDK preserves it as extra model data.
-
-Open WebUI separately interprets a printed `[n]` as the nth source in its own
-ordered source list. That UI convention can disagree with a graph marker based
-on retrieval rank when only cited annotations are returned. Keep LGOS's OpenAI
-annotation contract unchanged; any numeric-marker normalization belongs in the
-client adapter, and uncited sources must not be fabricated as annotations.
+Python SDK preserves it as extra model data. The Open WebUI Pipe forwards this
+extension only when `body["stream"]` is `true`; non-streaming generator results
+remain plain text because Open WebUI stringifies yielded dictionaries on that
+path.
 
 See the official [OpenAI citation contract](https://developers.openai.com/api/docs/guides/tools-web-search#output-and-citations),
-[Chainlit element display options](https://docs.chainlit.io/concepts/element#side), and
+[Chainlit messages](https://docs.chainlit.io/concepts/message), and
 [Open WebUI Pipe streaming format](https://docs.openwebui.com/features/extensibility/pipelines/pipes/#streaming-response-format).
 
 ## Errors
