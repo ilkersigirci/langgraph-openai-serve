@@ -36,7 +36,9 @@ class FakeStream:
         return self.completion
 
 
-async def _collect_response(pipe_response: AsyncIterator[str]) -> list[str]:
+async def _collect_response(
+    pipe_response: AsyncIterator[str | dict[str, Any]],
+) -> list[str | dict[str, Any]]:
     return [chunk async for chunk in pipe_response]
 
 
@@ -369,11 +371,10 @@ async def test_openwebui_pipe_sends_selected_model_and_thread_id(
 
 
 @pytest.mark.anyio
-async def test_openwebui_pipe_emits_native_citation_sources(
+async def test_openwebui_pipe_forwards_openai_citation_annotations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()
-    events = []
 
     @asynccontextmanager
     async def chat(messages, thread_id, model_id):
@@ -383,35 +384,38 @@ async def test_openwebui_pipe_emits_native_citation_sources(
             _citation_response(),
         )
 
-    async def event_emitter(event):
-        events.append(event)
-
     monkeypatch.setattr(pipe, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
             body=_body("Cite this", model="openwebui_pipe.lgos-rag"),
-            __event_emitter__=event_emitter,
             __metadata__={"chat_id": "chat-1"},
         )
     )
 
-    assert chunks == ["Cited ", "answer ", "[1]"]
-    assert events == [
+    assert chunks == [
+        "Cited ",
+        "answer ",
+        "[1]",
         {
-            "type": "source",
-            "data": {
-                "source": {
-                    "name": "Example source",
-                    "url": "https://example.com/source",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "url_citation": {
+                                    "start_index": 13,
+                                    "end_index": 16,
+                                    "title": "Example source",
+                                    "url": "https://example.com/source",
+                                },
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
                 },
-                "document": ["Example source"],
-                "metadata": [
-                    {
-                        "source": "https://example.com/source",
-                        "name": "Example source",
-                    }
-                ],
-            },
-        }
+            ]
+        },
     ]

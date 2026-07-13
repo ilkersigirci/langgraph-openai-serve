@@ -1,7 +1,7 @@
 """
 title: LangGraph OpenAI Pipe
 author: langgraph-openai-serve
-version: 0.4
+version: 0.5
 """
 
 import json
@@ -12,6 +12,7 @@ from typing import Any, cast
 from openai import AsyncOpenAI, OpenAIError
 from openai.lib.streaming.chat import AsyncChatCompletionStream, ContentDeltaEvent
 from openai.types.chat import (
+    ChatCompletion,
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessage,
     ChatCompletionMessageParam,
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field
 
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
+PipeChunk = str | dict[str, Any]
 
 
 class Pipe:
@@ -50,9 +52,8 @@ class Pipe:
         self,
         body: dict[str, Any],
         __event_call__: Any = None,
-        __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[PipeChunk]:
         thread_id = self._thread_id(__metadata__ or {})
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
 
@@ -73,22 +74,23 @@ class Pipe:
                 return
 
             assistant_message = response.choices[0].message
-            await self._emit_citations(assistant_message, __event_emitter__)
+            annotation_delta = self._annotation_delta(assistant_message)
+            if annotation_delta is not None:
+                yield annotation_delta
 
             tool_call = self._interrupt_tool_call(assistant_message)
             if tool_call is None:
                 return
 
-            if __event_call__ is None:
-                yield "Open WebUI approval modal is unavailable for this request."
+            decision, approval_error = await self._approval_decision(
+                tool_call,
+                __event_call__,
+            )
+            if approval_error is not None:
+                yield approval_error
                 return
 
-            approval = await __event_call__(self._approval_event(tool_call))
-            if isinstance(approval, dict) and approval.get("error"):
-                yield f"Open WebUI approval failed: {approval['error']}"
-                return
-
-            decision = "approve" if approval is True else "reject"
+            assert decision is not None
             resume_messages = [
                 *messages,
                 ChatCompletionAssistantMessageParam(
@@ -115,43 +117,52 @@ class Pipe:
             yield f"Error calling LangGraph API: {exc}"
             return
 
-        if not response.choices:
-            yield NO_CHOICES_MESSAGE
-        else:
-            await self._emit_citations(
-                response.choices[0].message,
-                __event_emitter__,
-            )
+        for chunk in self._completion_metadata(response):
+            yield chunk
 
-    async def _emit_citations(
+    def _annotation_delta(
         self,
         message: ChatCompletionMessage,
-        event_emitter: Any,
-    ) -> None:
-        """Translate OpenAI URL annotations to native Open WebUI sources."""
-        if event_emitter is None:
-            return
+    ) -> dict[str, Any] | None:
+        """Preserve OpenAI annotations in Open WebUI's compatible chunk shape."""
+        if not message.annotations:
+            return None
 
-        for annotation in message.annotations or []:
-            citation = annotation.url_citation
-            await event_emitter(
+        return {
+            "choices": [
                 {
-                    "type": "source",
-                    "data": {
-                        "source": {
-                            "name": citation.title,
-                            "url": citation.url,
-                        },
-                        "document": [citation.title],
-                        "metadata": [
-                            {
-                                "source": citation.url,
-                                "name": citation.title,
-                            }
-                        ],
+                    "index": 0,
+                    "delta": {
+                        "annotations": [
+                            annotation.model_dump(mode="json")
+                            for annotation in message.annotations
+                        ]
                     },
+                    "finish_reason": None,
                 }
-            )
+            ]
+        }
+
+    def _completion_metadata(self, response: ChatCompletion) -> list[PipeChunk]:
+        if not response.choices:
+            return [NO_CHOICES_MESSAGE]
+
+        annotation_delta = self._annotation_delta(response.choices[0].message)
+        return [annotation_delta] if annotation_delta is not None else []
+
+    async def _approval_decision(
+        self,
+        tool_call: ChatCompletionMessageToolCall,
+        event_call: Any,
+    ) -> tuple[str | None, str | None]:
+        if event_call is None:
+            return None, "Open WebUI approval modal is unavailable for this request."
+
+        approval = await event_call(self._approval_event(tool_call))
+        if isinstance(approval, dict) and approval.get("error"):
+            return None, f"Open WebUI approval failed: {approval['error']}"
+
+        return ("approve" if approval is True else "reject"), None
 
     async def _content_deltas(
         self,

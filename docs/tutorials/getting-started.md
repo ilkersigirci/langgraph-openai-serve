@@ -65,13 +65,12 @@ print(response.choices[0].message.content)
 print(response.choices[0].message.annotations)
 ```
 
-The graph emits an OpenAI `url_citation` annotation with LangGraph's stream
-writer. The server validates and forwards it. The standard
-Chainlit demo renders them as side sources. The Open WebUI Pipe translates the
-annotations to Open WebUI's native source events.
+See [Citation Events](../reference.md#citation-events) for the graph helper and
+[Citation ownership and UI rendering](../explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+for transport and client behavior.
 
 Ask the RAG graph about this project's Markdown documentation with real-time
-token streaming and source annotations:
+token streaming:
 
 ```python
 stream = client.chat.completions.create(
@@ -87,7 +86,7 @@ for chunk in stream:
 `lgos-rag` follows an agentic RAG loop: it decides when retrieval is needed,
 searches chunked documentation through a tool, grades relevance, and rewrites
 once when retrieval misses. Social and conversation-history turns skip
-retrieval; only grounded documentation answers emit citations.
+retrieval.
 
 Try the async mock MCP graph:
 
@@ -121,7 +120,7 @@ print(response.choices[0].message.content)
 - `demo/api/graphs/simple.py`: default `{"messages": messages}` graph shape.
 - `demo/api/graphs/lgos_rag.py`: agentic RAG over every Markdown file in
   `docs/`, with relevance grading, bounded query rewriting, streamed generation,
-  and citation events.
+  and grounded answers.
 - `demo/api/graphs/custom_io.py`: input, output, and context adapters.
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
 - `demo/api/graphs/complex_subgraphs.py` and `demo/api/graphs/subgraphs/`:
@@ -132,7 +131,7 @@ print(response.choices[0].message.content)
   demo.
 - `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
 - `demo/ui/openwebui/openwebui_pipe.py`: Open WebUI manifold Pipe that discovers
-  registered graph models and bridges native citations and interrupt approval.
+  registered graph models and bridges interrupt approval.
 
 ## Human In The Loop Demo
 

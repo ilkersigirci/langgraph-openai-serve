@@ -33,12 +33,31 @@ runner consumes LangGraph `astream` events with message streaming for text and
 update streaming for interrupts. Only chunks from configured
 `streamable_node_names` are emitted to clients.
 
-Citation custom events use `message.annotations` for non-streaming responses.
-Streaming keeps the standard `chat.completion.chunk` SSE shape and adds
-annotations to the final `delta`, following the search-model wire convention.
-The published Chat Completions delta schema does not currently type that field,
-so clients must tolerate response extensions; the OpenAI Python SDK preserves
-it as extra model data.
+## Citation Ownership And UI Rendering
+
+OpenAI `url_citation` annotations are the canonical citation contract. Their
+URL, title, and text span associate a source with the answer. A printed marker
+such as `[2]` is answer text; it is not an index into the annotation array.
+
+| Layer | Citation behavior |
+| --- | --- |
+| LGOS API | Returns `message.annotations` for non-streaming responses and `delta.annotations` on the final streaming chunk. It has no Chainlit or Open WebUI source schema. |
+| Chainlit demo | Uses each annotated answer span as the name of a `side` source element, so Chainlit renders the existing marker as a small reference link without renumbering it. Chainlit auto-opens newly attached side elements, so the demo closes that initial view; clicking a reference opens its source in the sidebar. |
+| Open WebUI | Its native OpenAI middleware renders annotations as sources. The generic Pipe preserves the same `delta.annotations` shape; it does not translate citations itself. |
+
+The streaming field is a compatibility extension because the published Chat
+Completions delta schema does not currently declare annotations. The OpenAI
+Python SDK preserves it as extra model data.
+
+Open WebUI separately interprets a printed `[n]` as the nth source in its own
+ordered source list. That UI convention can disagree with a graph marker based
+on retrieval rank when only cited annotations are returned. Keep LGOS's OpenAI
+annotation contract unchanged; any numeric-marker normalization belongs in the
+client adapter, and uncited sources must not be fabricated as annotations.
+
+See the official [OpenAI citation contract](https://developers.openai.com/api/docs/guides/tools-web-search#output-and-citations),
+[Chainlit element display options](https://docs.chainlit.io/concepts/element#side), and
+[Open WebUI Pipe streaming format](https://docs.openwebui.com/features/extensibility/pipelines/pipes/#streaming-response-format).
 
 ## Errors
 

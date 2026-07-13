@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
 from typing import Any, cast
 
 import chainlit as cl
@@ -17,19 +16,6 @@ client = AsyncOpenAI(
 )
 
 
-@dataclass(frozen=True)
-class CitationSource:
-    """A uniquely named Chainlit source element."""
-
-    name: str
-    title: str
-    url: str
-
-    @property
-    def content(self) -> str:
-        return f"[{self.title}]({self.url})"
-
-
 def chunk_annotations(chunk: ChatCompletionChunk) -> list[Annotation]:
     """Read annotation deltas, including fields preserved as SDK extras."""
     if not chunk.choices:
@@ -38,23 +24,37 @@ def chunk_annotations(chunk: ChatCompletionChunk) -> list[Annotation]:
     return [Annotation.model_validate(annotation) for annotation in raw_annotations]
 
 
-def citation_sources(annotations: list[Annotation]) -> list[CitationSource]:
-    """Return URL-deduplicated sources with unique element names."""
-    sources: list[CitationSource] = []
-    seen_urls: set[str] = set()
+def citation_elements(
+    answer: str,
+    annotations: list[Annotation],
+    thread_id: str,
+) -> list[cl.Text]:
+    """Bind annotated answer spans to native Chainlit source references."""
+    elements: list[cl.Text] = []
     for annotation in annotations:
         citation = annotation.url_citation
-        if citation.url in seen_urls:
-            continue
-        seen_urls.add(citation.url)
-        sources.append(
-            CitationSource(
-                name=f"Source {len(sources) + 1}",
-                title=citation.title,
-                url=citation.url,
+        elements.append(
+            cl.Text(
+                thread_id=thread_id,
+                name=answer[citation.start_index : citation.end_index],
+                content=f"[{citation.title}]({citation.url})",
+                display="side",
             )
         )
-    return sources
+    return elements
+
+
+async def attach_citations(
+    message: cl.Message,
+    annotations: list[Annotation],
+) -> None:
+    """Attach clickable sources without leaving Chainlit's sidebar open."""
+    elements = citation_elements(message.content, annotations, message.thread_id)
+    message.elements = cast(Any, elements)
+    await message.update()
+
+    if elements:
+        await cl.ElementSidebar.set_elements([])
 
 
 @cl.set_chat_profiles
@@ -121,25 +121,7 @@ async def on_message(message: cl.Message) -> None:
         messages.append({"role": "assistant", "content": assistant_message.content})
         cl.user_session.set("messages", messages)
 
-        sources = citation_sources(annotations)
-        if sources:
-            assistant_message.content += "\n\nSources: " + ", ".join(
-                source.name for source in sources
-            )
-            # Current Chainlit stubs do not accept concrete Text elements here.
-            assistant_message.elements = cast(
-                Any,
-                [
-                    cl.Text(
-                        name=source.name,
-                        content=source.content,
-                        display="side",
-                    )
-                    for source in sources
-                ],
-            )
-
-        await assistant_message.update()
+        await attach_citations(assistant_message, annotations)
     except asyncio.CancelledError:
         if assistant_message.content:
             await assistant_message.update()
