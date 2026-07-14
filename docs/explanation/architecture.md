@@ -78,6 +78,6 @@ runnable config. They must have a checkpointer so pending interrupts can resume.
 The demo keeps an `AsyncPostgresSaver` and its connection pool open for the
 application lifespan and stores checkpoints in the PostgreSQL service configured
 by `DEMO_POSTGRES_URI`, so checkpoints survive requests and process restarts.
-Schema initialization runs before API workers start—as a Compose `pre_start`
-lifecycle hook in the demo—so multiple workers can safely use the durable
+Schema initialization runs before API workers start as a Compose `pre_start`
+lifecycle hook in the demo so multiple workers can safely use the durable
 checkpointer without racing on startup migrations.
