@@ -25,8 +25,10 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     CHAINLIT_OPENAI_BASE_URL: HttpUrlStr = "http://localhost:8000/v1"
     CHAINLIT_HITL_MODEL: str = "interruptible-approval"
+    CHAINLIT_UI_FILE: str = "simple"
 
 
 settings = Settings()

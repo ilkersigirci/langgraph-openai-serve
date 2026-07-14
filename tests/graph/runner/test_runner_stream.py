@@ -20,6 +20,8 @@ from tests.graph.support.schemas import (
     QuestionState,
 )
 
+pytestmark = pytest.mark.anyio
+
 
 async def stream_text(name: str, graph_registry: GraphRegistry, make_request) -> str:
     chat_request = make_request(name)
@@ -34,7 +36,6 @@ async def stream_text(name: str, graph_registry: GraphRegistry, make_request) ->
     return "".join(events)
 
 
-@pytest.mark.anyio
 async def test_nested_subgraph_streaming(
     make_request,
 ) -> None:
@@ -76,7 +77,6 @@ async def test_nested_subgraph_streaming(
     assert await stream_text("nested", graph_registry, make_request) == "nested"
 
 
-@pytest.mark.anyio
 async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
     make_request,
 ) -> None:
@@ -117,7 +117,6 @@ async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
     assert await stream_text("filtered", graph_registry, make_request) == "visible"
 
 
-@pytest.mark.anyio
 async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
     closed = asyncio.Event()
 
@@ -156,7 +155,6 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
     assert closed.is_set()
 
 
-@pytest.mark.anyio
 async def test_stream_run_preserves_generic_custom_events() -> None:
     payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
 

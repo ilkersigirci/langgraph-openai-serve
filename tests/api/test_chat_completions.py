@@ -2,12 +2,16 @@ import json
 
 import pytest
 from httpx import AsyncClient
-from openai import BadRequestError, OpenAI
+from openai import AsyncOpenAI, BadRequestError
 from starlette import status
 
+pytestmark = pytest.mark.anyio
 
-def test_create_chat_completion(openai_client: OpenAI) -> None:
-    response = openai_client.chat.completions.create(
+
+async def test_non_streaming_completion_matches_openai_contract(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
         model="test",
         messages=[{"role": "user", "content": "Hi"}],
     )
@@ -26,14 +30,16 @@ def test_create_chat_completion(openai_client: OpenAI) -> None:
     assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
 
 
-def test_stream_chat_completion(openai_client: OpenAI) -> None:
-    stream = openai_client.chat.completions.create(
+async def test_streaming_completion_matches_openai_contract(
+    openai_client: AsyncOpenAI,
+) -> None:
+    stream = await openai_client.chat.completions.create(
         model="test",
         messages=[{"role": "user", "content": "Hi"}],
         stream=True,
     )
 
-    chunks = list(stream)
+    chunks = [chunk async for chunk in stream]
 
     assert chunks[0].object == "chat.completion.chunk"
     assert chunks[0].model == "test"
@@ -42,8 +48,9 @@ def test_stream_chat_completion(openai_client: OpenAI) -> None:
     assert chunks[-1].choices[0].finish_reason == "stop"
 
 
-@pytest.mark.anyio
-async def test_stream_chat_completion_sse_wire_format(client: AsyncClient) -> None:
+async def test_streaming_completion_uses_sse_wire_format(
+    client: AsyncClient,
+) -> None:
     async with client.stream(
         "POST",
         "/v1/chat/completions",
@@ -61,27 +68,26 @@ async def test_stream_chat_completion_sse_wire_format(client: AsyncClient) -> No
             if line:
                 events.append(line)
 
+    assert events
     assert all(event.startswith("data: ") for event in events)
-    payloads = [
-        json.loads(event.removeprefix("data: "))
-        for event in events
-        if event != "data: [DONE]"
-    ]
-    assert payloads[0]["choices"][0]["delta"]["role"] == "assistant"
-    assert "".join(
-        payload["choices"][0]["delta"].get("content") or "" for payload in payloads
-    ) == "hello"
-    assert payloads[-1]["choices"][0]["finish_reason"] == "stop"
     assert events[-1] == "data: [DONE]"
+    for event in events[:-1]:
+        assert isinstance(json.loads(event.removeprefix("data: ")), dict)
 
 
-@pytest.mark.parametrize("stream", [False, True])
-def test_unknown_model_raises_openai_bad_request(
-    openai_client: OpenAI,
+@pytest.mark.parametrize(
+    "stream",
+    [
+        pytest.param(False, id="non-streaming"),
+        pytest.param(True, id="streaming"),
+    ],
+)
+async def test_unknown_model_raises_openai_bad_request(
+    openai_client: AsyncOpenAI,
     stream: bool,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
-        openai_client.chat.completions.create(
+        await openai_client.chat.completions.create(
             model="missing",
             messages=[{"role": "user", "content": "Hi"}],
             stream=stream,

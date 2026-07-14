@@ -28,9 +28,10 @@ Demo-only settings (read by `demo/api/settings.py`):
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible model base URL for simple demo graphs. |
-| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for simple demo graphs. |
-| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream model name for simple demo graphs. |
+| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible base URL for LLM-backed demo graphs. |
+| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for LLM-backed demo graphs. |
+| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model for LLM-backed demo graphs. |
+| `DEMO_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by the `lgos-rag` demo graph. |
 | `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
 | `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
@@ -68,34 +69,34 @@ get_stream_writer()(
     citation_event(
         url="https://example.com/source",
         title="Example source",
-        start_index=10,
-        end_index=13,
+        span=(10, 14),
     )
 )
 ```
 
-The indices identify the cited span in the complete assistant text. The end
-index is exclusive, so `text[start_index:end_index]` returns that span. Citation
-events must refer to the final rendered assistant text.
+`span` uses Python's half-open convention, so `text[10:14]` returns the cited
+text. LGOS converts it to OpenAI's inclusive `end_index` at the event boundary.
+Use `citation_slice(annotation, text)` to validate received indices and convert
+them back to a Python slice. Citation events must refer to the final rendered
+assistant text. Portable Markdown links and images belong in that assistant
+text; keep audio and video as ordinary links. Do not add presentation fields to
+the OpenAI `url_citation` object.
 
-Non-streaming chat completions expose citations through OpenAI's native
-`message.annotations` field. Streaming chat completions put annotations on the
-final `delta`, matching the search-model wire convention consumed by Chainlit
-and Open WebUI. This streaming field is a compatibility extension because the
-published Chat Completions delta schema does not currently declare annotations.
+See [Citation ownership and UI rendering](explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+for transport and client behavior.
 
 The graph runner preserves LangGraph's native `CustomStreamPart` values,
-including their subgraph namespace. Citation events use the OpenAI
-`url_citation` annotation shape directly; other event types remain available to
-direct runner consumers through `langgraph_openai_serve.graph.runner`.
+including their subgraph namespace. Other event types remain available to direct
+runner consumers through `langgraph_openai_serve.graph.runner`.
 
 ## Demo Models
 
 `make run-demo-api` registers:
 
 - `simple-graph-with-history`
-- `citation-events`
+- `citation-events` (structured URL citations alongside portable Markdown)
 - `simple-graph-no-history`
+- `lgos-rag`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
 - `complex-subgraphs`

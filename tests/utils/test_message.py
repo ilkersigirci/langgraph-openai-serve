@@ -15,6 +15,14 @@ from langgraph_openai_serve.utils.message import convert_to_lc_messages
         (Role.USER, None, HumanMessage, ""),
         (Role.ASSISTANT, None, AIMessage, ""),
     ],
+    ids=(
+        "system-text",
+        "user-text",
+        "assistant-text",
+        "system-null",
+        "user-null",
+        "assistant-null",
+    ),
 )
 def test_supported_message_conversion(role, content, message_type, expected_content):
     result = convert_to_lc_messages(
@@ -26,7 +34,7 @@ def test_supported_message_conversion(role, content, message_type, expected_cont
     assert result[0].content == expected_content
 
 
-def test_mixed_messages_preserve_supported_order():
+def test_unsupported_messages_are_removed_without_reordering():
     messages = [
         ChatCompletionRequestMessage(role=Role.SYSTEM, content="System message"),
         ChatCompletionRequestMessage(role=Role.FUNCTION, content="Function content"),
@@ -44,5 +52,5 @@ def test_mixed_messages_preserve_supported_order():
     ]
 
 
-def test_empty_messages_list():
+def test_empty_messages_produce_an_empty_list():
     assert convert_to_lc_messages([]) == []

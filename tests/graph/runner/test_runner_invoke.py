@@ -2,12 +2,19 @@ import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.types import CustomStreamPart
 
-from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import (
+    GraphConfig,
+    GraphNotFoundError,
+    GraphRegistry,
+)
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
     run_langgraph,
 )
 from langgraph_openai_serve.graph.utils import GraphRun
+from tests.graph.support.message import make_message_graph
+
+pytestmark = pytest.mark.anyio
 
 
 class RecordingCallback(BaseCallbackHandler):
@@ -18,10 +25,8 @@ class RecordingCallback(BaseCallbackHandler):
         self.starts += 1
 
 
-@pytest.mark.anyio
-async def test_default_message_input_callbacks(
+async def test_runtime_callbacks_reach_default_message_graph(
     make_request,
-    make_message_graph,
 ) -> None:
     recording_callback = RecordingCallback()
     graph_registry = GraphRegistry(
@@ -42,14 +47,10 @@ async def test_default_message_input_callbacks(
     )
 
     assert invocation.output == "hello"
-    assert invocation.custom_events == ()
     assert recording_callback.starts == 1
 
 
-@pytest.mark.anyio
-async def test_unknown_model_raises_value_error(
-    make_request, make_message_graph
-) -> None:
+async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
     chat_request = make_request("missing")
     graph_registry = GraphRegistry(
         registry={
@@ -57,7 +58,7 @@ async def test_unknown_model_raises_value_error(
         }
     )
 
-    with pytest.raises(ValueError, match="Graph 'missing' not found"):
+    with pytest.raises(GraphNotFoundError, match="Graph 'missing' not found"):
         await run_langgraph(
             "missing",
             chat_request.messages,
@@ -66,7 +67,6 @@ async def test_unknown_model_raises_value_error(
         )
 
 
-@pytest.mark.anyio
 async def test_invoke_run_collects_generic_custom_events() -> None:
     payload = {"type": "status", "data": {"message": "Searching"}}
 

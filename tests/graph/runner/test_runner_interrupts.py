@@ -23,8 +23,9 @@ from tests.graph.support.interrupt import (
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.schemas import MessageState
 
+pytestmark = pytest.mark.anyio
 
-@pytest.mark.anyio
+
 async def test_thread_id_reaches_runnable_config(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,
@@ -56,7 +57,6 @@ async def test_thread_id_reaches_runnable_config(
     assert seen_thread_ids == ["thread-1"]
 
 
-@pytest.mark.anyio
 async def test_interrupt_result_is_returned_before_output_rendering(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,
@@ -91,7 +91,6 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     assert invocation.custom_events == ()
 
 
-@pytest.mark.anyio
 async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
@@ -127,7 +126,6 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     assert invocation.custom_events == ()
 
 
-@pytest.mark.anyio
 async def test_streaming_interrupt_detected_from_updates(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,
@@ -160,7 +158,6 @@ async def test_streaming_interrupt_detected_from_updates(
     assert events[0].payload == DEFAULT_INTERRUPT_PAYLOAD
 
 
-@pytest.mark.anyio
 async def test_interrupt_enabled_graph_requires_thread_id(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,
@@ -179,7 +176,6 @@ async def test_interrupt_enabled_graph_requires_thread_id(
         await run_langgraph("interruptible", request.messages, registry, request)
 
 
-@pytest.mark.anyio
 async def test_interrupt_enabled_graph_requires_checkpointer(make_request) -> None:
     registry = GraphRegistry(
         registry={

@@ -7,7 +7,9 @@ use `docs/` for product explanations, examples, and detailed references.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/tutorials/getting-started.md` for demo runs and demo graph files.
 - Use `docs/reference.md` for API surface, settings, demo models, and commands.
-- Use `docs/explanation/openai-compatibility.md` before changing API behavior.
+- Use `docs/explanation/openai-compatibility.md` before changing API behavior;
+  its citation ownership section defines the LGOS, Chainlit, and Open WebUI
+  boundaries.
 
 ## Do
 

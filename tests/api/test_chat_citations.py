@@ -4,27 +4,29 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
 from langgraph.types import CustomStreamPart
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
     LanggraphOpenaiServe,
     citation_event,
+    citation_slice,
 )
 from langgraph_openai_serve.api.chat.utils.events import annotation_from_custom_event
 from tests.graph.support.schemas import MessageState
 
-ANSWER = "Cited answer [1]"
-SOURCE_START_INDEX = 13
-SOURCE_END_INDEX = 16
+ANSWER = "Cited answer with source"
+CITATION_TEXT = "source"
+SOURCE_START = ANSWER.index(CITATION_TEXT)
+SOURCE_SPAN = (SOURCE_START, SOURCE_START + len(CITATION_TEXT))
 SOURCE_TITLE = "Example source"
 SOURCE_URL = "https://example.com/source"
 ANNOTATION = {
     "type": "url_citation",
     "url_citation": {
-        "start_index": SOURCE_START_INDEX,
-        "end_index": SOURCE_END_INDEX,
+        "start_index": SOURCE_SPAN[0],
+        "end_index": SOURCE_SPAN[1] - 1,
         "title": SOURCE_TITLE,
         "url": SOURCE_URL,
     },
@@ -40,8 +42,7 @@ def citation_app() -> FastAPI:
             citation_event(
                 url=SOURCE_URL,
                 title=SOURCE_TITLE,
-                start_index=SOURCE_START_INDEX,
-                end_index=SOURCE_END_INDEX,
+                span=SOURCE_SPAN,
             )
         )
         return {"messages": [await model.ainvoke(state["messages"])]}
@@ -69,10 +70,11 @@ def fastapi_app() -> FastAPI:
     return citation_app()
 
 
-def test_non_streaming_completion_includes_annotations(
-    openai_client: OpenAI,
+@pytest.mark.anyio
+async def test_non_streaming_completion_uses_openai_inclusive_end_index(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    response = openai_client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model="citations",
         messages=[{"role": "user", "content": "Cite this"}],
     )
@@ -83,19 +85,34 @@ def test_non_streaming_completion_includes_annotations(
     assert [annotation.model_dump() for annotation in message.annotations] == [
         ANNOTATION
     ]
-    assert ANSWER[SOURCE_START_INDEX:SOURCE_END_INDEX] == "[1]"
+    assert ANSWER[citation_slice(message.annotations[0], ANSWER)] == CITATION_TEXT
 
 
-def test_streaming_completion_emits_annotations_on_final_delta(
-    openai_client: OpenAI,
+@pytest.mark.parametrize(
+    "span",
+    [
+        pytest.param((-1, 1), id="negative-start"),
+        pytest.param((0, 0), id="empty"),
+        pytest.param((2, 1), id="reversed"),
+    ],
+)
+def test_citation_event_rejects_invalid_half_open_spans(
+    span: tuple[int, int],
 ) -> None:
-    chunks = list(
-        openai_client.chat.completions.create(
-            model="citations",
-            messages=[{"role": "user", "content": "Cite this"}],
-            stream=True,
-        )
+    with pytest.raises(ValueError, match="valid non-empty"):
+        citation_event(url=SOURCE_URL, title=SOURCE_TITLE, span=span)
+
+
+@pytest.mark.anyio
+async def test_streaming_completion_emits_annotations_on_final_delta(
+    openai_client: AsyncOpenAI,
+) -> None:
+    stream = await openai_client.chat.completions.create(
+        model="citations",
+        messages=[{"role": "user", "content": "Cite this"}],
+        stream=True,
     )
+    chunks = [chunk async for chunk in stream]
 
     annotated_chunks = [
         chunk
@@ -118,8 +135,7 @@ def test_citation_must_refer_to_final_assistant_text() -> None:
         data=citation_event(
             url=SOURCE_URL,
             title=SOURCE_TITLE,
-            start_index=0,
-            end_index=len(ANSWER) + 1,
+            span=(0, len(ANSWER) + 1),
         ),
     )
 

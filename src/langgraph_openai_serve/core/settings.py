@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
         # Check for required environment variables
         required_env_vars = [
-            "LANGFUSE_HOST",
+            "LANGFUSE_BASE_URL",
             "LANGFUSE_PUBLIC_KEY",
             "LANGFUSE_SECRET_KEY",
         ]
