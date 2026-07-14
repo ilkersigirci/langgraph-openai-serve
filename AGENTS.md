@@ -20,6 +20,20 @@ use `docs/` for product explanations, examples, and detailed references.
   `openai.types.shared.ErrorObject`.
 - Check demo graph adapters before changing public graph APIs.
 
+## Documentation Style
+
+- Prefer native Zensical Markdown features enabled in `zensical.toml`; avoid
+  custom HTML, CSS, or JavaScript when a native component fits.
+- Use content tabs (`===`) for equivalent languages, clients, or modes;
+  admonitions (`!!!`) for important notes; and collapsible details (`???`) for
+  optional configuration or diagnostics.
+- Use Mermaid for architecture and multi-step flows, keep diagrams compact, and
+  verify them in the browser because the strict build does not parse Mermaid.
+- Add language identifiers to code fences and use code annotations or tooltips
+  only when they clarify details that do not belong in the main flow.
+- Preview documentation with `make doc-serve`, then run `make doc-build` before
+  finishing a docs change.
+
 ## Do Not
 
 - Do not add project-specific chat envelopes, response shapes, headers, routes,

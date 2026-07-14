@@ -4,7 +4,26 @@ Configure clients with the server base URL, usually `http://localhost:8000/v1`.
 The `api_key` value is sent as `Authorization: Bearer <key>`; the default demo
 does not verify it.
 
+## Install A Client
+
+=== "Python"
+
+    ```bash
+    pip install openai
+    ```
+
+=== "JavaScript"
+
+    ```bash
+    npm install openai
+    ```
+
 ## Chat Completions
+
+!!! warning "Do not expose real API keys in a browser"
+
+    The JavaScript examples enable `dangerouslyAllowBrowser` because the local
+    demo uses a dummy key. Keep production credentials in server-side code.
 
 === "Python"
 
@@ -93,17 +112,19 @@ Interrupt-enabled graphs use OpenAI tool calls. Pass
 
 ## Diagnostics
 
-Use direct HTTP only to inspect behavior while debugging:
+??? example "Direct HTTP diagnostic"
 
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "custom-input-output-context",
-    "messages": [{"role": "user", "content": "Show me the custom adapter."}],
-    "user": "demo-user"
-  }'
-```
+    Use direct HTTP only to inspect behavior while debugging:
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "custom-input-output-context",
+        "messages": [{"role": "user", "content": "Show me the custom adapter."}],
+        "user": "demo-user"
+      }'
+    ```
 
 ## Notes
 

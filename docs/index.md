@@ -1,27 +1,61 @@
-# LangGraph OpenAI Serve Docs
+---
+hide:
+  - path
+  - toc
+---
 
-`langgraph-openai-serve` maps registered LangGraph graphs to OpenAI `model`
-names and serves them through OpenAI-compatible chat, model, and health
-endpoints.
+# LangGraph OpenAI Serve
 
-## Start Here
+Serve registered LangGraph graphs as OpenAI `model` values through a standard
+OpenAI-compatible `/v1` API.
 
-- [Getting Started](tutorials/getting-started.md): run the demo API and inspect
-  the included graph examples.
-- [OpenAI Clients](tutorials/openai-clients.md): Python, JavaScript, streaming,
-  and diagnostic `curl` calls.
-- [Custom Graphs](tutorials/custom-graphs.md): default graph shape, adapters,
-  async factories, streaming, and interrupts.
-- [Reference](reference.md): endpoints, settings, public classes, commands, and
-  demo graph names.
+[Get started :octicons-arrow-right-24:](tutorials/getting-started.md){ .md-button .md-button--primary }
+[API reference](reference.md){ .md-button }
 
-## Concepts And Operations
+<div class="grid cards" markdown>
 
-- [OpenAI Compatibility](explanation/openai-compatibility.md): public contract
-  and compatibility boundaries.
-- [Architecture](explanation/architecture.md): request flow and major modules.
-- [LangGraph Integration](explanation/langgraph-integration.md): how requests
-  become graph input and responses.
-- [Authentication](how-to-guides/authentication.md): bearer-token auth that works
-  with OpenAI-compatible clients.
-- [Docker](how-to-guides/docker.md): compose demo and custom deployment notes.
+-   :material-rocket-launch-outline:{ .lg .middle } __Run the demo__
+
+    ---
+
+    Start PostgreSQL and call a runnable graph with the OpenAI Python client.
+
+    [:octicons-arrow-right-24: Getting started](tutorials/getting-started.md)
+
+-   :material-code-braces:{ .lg .middle } __Use your SDK__
+
+    ---
+
+    Connect from Python or JavaScript, with regular or streaming responses.
+
+    [:octicons-arrow-right-24: OpenAI clients](tutorials/openai-clients.md)
+
+-   :material-graph-outline:{ .lg .middle } __Register a graph__
+
+    ---
+
+    Adapt custom graph schemas, factories, streaming nodes, and interrupts.
+
+    [:octicons-arrow-right-24: Custom graphs](tutorials/custom-graphs.md)
+
+-   :material-source-branch:{ .lg .middle } __Understand the contract__
+
+    ---
+
+    See how OpenAI requests flow through FastAPI into LangGraph and back.
+
+    [:octicons-arrow-right-24: Architecture](explanation/architecture.md)
+
+</div>
+
+!!! info "OpenAI compatibility is the public contract"
+
+    LGOS keeps client ingestion on the OpenAI SDK path. Graph-specific behavior
+    is adapted behind `/v1`, so clients do not need a project-specific protocol.
+
+## Operate And Deploy
+
+Use the [authentication guide](how-to-guides/authentication.md) to add bearer
+tokens, the [Docker guide](how-to-guides/docker.md) to run a stack, and the
+[reference](reference.md) for endpoints, settings, demo models, and public
+classes.

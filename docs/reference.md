@@ -104,18 +104,39 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
 ## Local Commands
 
-```bash
-uv sync --frozen
-make help
-make run-demo-api
-make run-demo-ui-chainlit
-make run-demo-ui-chainlit-hitl
-make -s test
-uv run --module pytest tests/path/to/test_file.py
-uv run --module pytest tests/path/to/test_file.py::test_name
-make -s lint
-make -s format
-make doc-build
-```
+=== "Setup"
+
+    ```bash
+    uv sync --frozen
+    make help
+    ```
+
+=== "Run demos"
+
+    ```bash
+    make run-demo-api
+    make run-demo-ui-chainlit
+    make run-demo-ui-chainlit-hitl
+    ```
+
+=== "Test and lint"
+
+    ```bash
+    make -s test
+    uv run --module pytest tests/path/to/test_file.py
+    uv run --module pytest tests/path/to/test_file.py::test_name
+    make -s lint
+    make -s format
+    ```
+
+=== "Documentation"
+
+    ```bash
+    make doc-build
+    make doc-serve
+    ```
+
+    `make doc-serve` serves the live preview on `http://localhost:7999` and
+    watches for documentation changes.
 
 ::: langgraph_openai_serve

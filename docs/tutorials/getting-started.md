@@ -10,22 +10,29 @@ through the OpenAI-compatible `/v1` interface.
 - PostgreSQL (the included Compose service requires Docker)
 - An OpenAI-compatible upstream model only if you call the LLM-backed graphs
 
-The custom adapter and mock MCP demo graphs do not require real API keys.
+!!! tip "Start without an upstream model"
+
+    The custom adapter, citation, nested subgraph, and mock MCP demo graphs do
+    not require real API keys.
 
 ## Run The Demo API
 
-```bash
+```bash title="Start PostgreSQL and the API"
 docker compose up -d postgres
 make run-demo-api
 ```
 
-The demo reads `DEMO_POSTGRES_URI` and defaults to
-`postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose service.
-The LLM-backed graphs additionally read `DEMO_OPENAI_BASE_URL`,
-`DEMO_OPENAI_API_KEY`, and `DEMO_OPENAI_MODEL`. The `lgos-rag` graph also reads
-`DEMO_OPENAI_EMBEDDING_MODEL`. These settings and their LangChain agent
-dependencies belong to the demo and are not installed as part of the library's
-runtime dependencies.
+??? info "Demo environment settings"
+
+    The demo reads `DEMO_POSTGRES_URI` and defaults to
+    `postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose
+    service.
+
+    LLM-backed graphs additionally read `DEMO_OPENAI_BASE_URL`,
+    `DEMO_OPENAI_API_KEY`, and `DEMO_OPENAI_MODEL`. The `lgos-rag` graph also
+    reads `DEMO_OPENAI_EMBEDDING_MODEL`. These settings and their LangChain
+    agent dependencies belong to the demo and are not installed as part of the
+    library's runtime dependencies.
 
 The base URL is `http://localhost:8000/v1`.
 
@@ -39,7 +46,7 @@ The demo model names are listed in [Reference](../reference.md#demo-models).
 
 ## Call A Graph
 
-```python
+```python title="Call a registered graph"
 from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
@@ -144,26 +151,29 @@ print(response.choices[0].message.content)
 
 The `interruptible-approval` model showcases LangGraph `interrupt()` and resume.
 
-Chainlit:
+=== "Chainlit"
 
-```bash
-make run-demo-ui-chainlit-hitl
-```
+    ```bash
+    make run-demo-ui-chainlit-hitl
+    ```
 
-Open WebUI:
+    The Chainlit UI opens the interrupt approval flow directly.
 
-```bash
-docker compose up -d open-webui
-```
+=== "Open WebUI"
 
-Import the generic Pipe, then select `interruptible-approval`. See
-[Docker](../how-to-guides/docker.md) for the Open WebUI Function setup and
+    ```bash
+    docker compose up -d open-webui
+    ```
+
+    Import the generic Pipe, then select `interruptible-approval`.
+
+See [Docker](../how-to-guides/docker.md) for the Open WebUI Function setup and
 [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the interrupt tool-call protocol.
 
 ## Existing FastAPI Apps
 
-```python
+```python title="Bind LGOS to FastAPI"
 from fastapi import FastAPI
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from your_graphs import my_graph

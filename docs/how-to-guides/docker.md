@@ -2,25 +2,25 @@
 
 ## Demo Compose
 
-Run the API container:
+=== "API only"
 
-```bash
-docker compose up -d lgos-demo-api
-```
+    ```bash
+    docker compose up -d lgos-demo-api
+    ```
 
-Run the full demo stack:
+    OpenAI base URL: `http://localhost:8000/v1`
 
-```bash
-docker compose up -d open-webui
-```
+=== "Full stack"
 
-Use:
+    ```bash
+    docker compose up -d open-webui
+    ```
 
-- OpenAI base URL: `http://localhost:8000/v1`
-- Open WebUI: `http://localhost:8080`
+    - OpenAI base URL: `http://localhost:8000/v1`
+    - Open WebUI: `http://localhost:8080`
 
-Compose starts PostgreSQL, `lgos-demo-api`, and `open-webui`. PostgreSQL stores
-the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
+The full stack starts PostgreSQL, `lgos-demo-api`, and `open-webui`. PostgreSQL
+stores the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
 Before starting the API, its Compose `pre_start` lifecycle hook initializes or
 migrates the checkpoint schema.
 
@@ -54,7 +54,7 @@ Ownership:
 
 Minimal Dockerfile:
 
-```dockerfile
+```dockerfile title="Dockerfile"
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -68,7 +68,7 @@ CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 Minimal `requirements.txt`:
 
-```text
+```text title="requirements.txt"
 langgraph-openai-serve
 uvicorn
 ```
@@ -77,7 +77,7 @@ Add any packages required by your graphs.
 
 Minimal app:
 
-```python
+```python title="app.py"
 from fastapi import FastAPI
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from my_graphs import chat_graph
@@ -91,7 +91,7 @@ LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 
 Minimal compose:
 
-```yaml
+```yaml title="compose.yaml"
 services:
   langgraph-api:
     build: .
@@ -106,6 +106,11 @@ services:
 ```
 
 ## Production Notes
+
+!!! warning "The example is a starting point"
+
+    Add authentication, HTTPS termination, resource limits, durable state, and
+    operational monitoring before exposing the service.
 
 - Add bearer-token authentication before exposing the API.
 - Terminate HTTPS at a reverse proxy or platform load balancer.
