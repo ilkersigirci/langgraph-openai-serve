@@ -4,71 +4,85 @@ Configure clients with the server base URL, usually `http://localhost:8000/v1`.
 The `api_key` value is sent as `Authorization: Bearer <key>`; the default demo
 does not verify it.
 
-## Python
+## Chat Completions
 
-```python
-from openai import OpenAI
+=== "Python"
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+    ```python
+    from openai import OpenAI
 
-response = client.chat.completions.create(
-    model="custom-input-output-context",
-    messages=[{"role": "user", "content": "Show me the custom adapter."}],
-    user="demo-user",
-)
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
-print(response.choices[0].message.content)
-```
+    response = client.chat.completions.create(
+        model="custom-input-output-context",
+        messages=[{"role": "user", "content": "Show me the custom adapter."}],
+        user="demo-user",
+    )
 
-## Python Streaming
+    print(response.choices[0].message.content)
+    ```
 
-```python
-stream = client.chat.completions.create(
-    model="simple-graph-with-history",
-    messages=[{"role": "user", "content": "Write a short poem about graphs."}],
-    stream=True,
-)
+=== "Python Streaming"
 
-for chunk in stream:
-    content = chunk.choices[0].delta.content
-    if content:
-        print(content, end="")
-```
+    ```python
+    from openai import OpenAI
 
-## JavaScript
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
-```javascript
-import OpenAI from "openai";
+    stream = client.chat.completions.create(
+        model="simple-graph-with-history",
+        messages=[{"role": "user", "content": "Write a short poem about graphs."}],
+        stream=True,
+    )
 
-const openai = new OpenAI({
-  baseURL: "http://localhost:8000/v1",
-  apiKey: "DUMMY",
-  dangerouslyAllowBrowser: true,
-});
+    for chunk in stream:
+        content = chunk.choices[0].delta.content
+        if content:
+            print(content, end="")
+    ```
 
-const completion = await openai.chat.completions.create({
-  model: "custom-input-output-context",
-  messages: [{ role: "user", content: "Show me the custom adapter." }],
-  user: "demo-user",
-});
+=== "JavaScript"
 
-console.log(completion.choices[0].message.content);
-```
+    ```javascript
+    import OpenAI from "openai";
 
-## JavaScript Streaming
+    const openai = new OpenAI({
+      baseURL: "http://localhost:8000/v1",
+      apiKey: "DUMMY",
+      dangerouslyAllowBrowser: true,
+    });
 
-```javascript
-const stream = await openai.chat.completions.create({
-  model: "simple-graph-with-history",
-  messages: [{ role: "user", content: "Write a short poem about graphs." }],
-  stream: true,
-});
+    const completion = await openai.chat.completions.create({
+      model: "custom-input-output-context",
+      messages: [{ role: "user", content: "Show me the custom adapter." }],
+      user: "demo-user",
+    });
 
-for await (const chunk of stream) {
-  const content = chunk.choices[0]?.delta?.content || "";
-  process.stdout.write(content);
-}
-```
+    console.log(completion.choices[0].message.content);
+    ```
+
+=== "JavaScript Streaming"
+
+    ```javascript
+    import OpenAI from "openai";
+
+    const openai = new OpenAI({
+      baseURL: "http://localhost:8000/v1",
+      apiKey: "DUMMY",
+      dangerouslyAllowBrowser: true,
+    });
+
+    const stream = await openai.chat.completions.create({
+      model: "simple-graph-with-history",
+      messages: [{ role: "user", content: "Write a short poem about graphs." }],
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      process.stdout.write(content);
+    }
+    ```
 
 ## Interrupt Resume
 

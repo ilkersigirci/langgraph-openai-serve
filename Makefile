@@ -108,7 +108,7 @@ doc-build: ## Test whether documentation can be built
 	uv run zensical build --clean
 
 doc-serve: ## Build and serve the documentation
-	uv run zensical serve
+	uv run zensical serve --dev-addr 0.0.0.0:7999
 
 pre-commit-one: ## Run pre-commit with specific files
 	uv lock --locked
