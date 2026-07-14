@@ -105,10 +105,10 @@ publish: ## Builds the project and publish the package to Pypi
 	# uv publish --publish-url https://test.pypi.org/legacy/ --username DUMMY --password DUMMY dist/*
 
 doc-build: ## Test whether documentation can be built
-	uv run zensical build --clean
+	uv run zensical build --clean --strict
 
 doc-serve: ## Build and serve the documentation
-	uv run zensical serve
+	uv run zensical serve --dev-addr 0.0.0.0:7999
 
 pre-commit-one: ## Run pre-commit with specific files
 	uv lock --locked

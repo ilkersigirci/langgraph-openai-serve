@@ -3,16 +3,25 @@
 LangGraph OpenAI Serve mounts an OpenAI-compatible FastAPI sub-application on a
 host FastAPI app and routes OpenAI chat requests to registered LangGraph graphs.
 
-```text
-OpenAI client
-  -> FastAPI host app
-  -> mounted OpenAI app at {prefix}
-  -> OpenAI routers, schemas, and error handlers
-  -> GraphRegistry: model name -> GraphConfig
-  -> GraphConfig: graph, adapters, streaming, interrupts
-  -> graph runner: ainvoke or astream
-  -> LangGraph graph
-  -> OpenAI chat completion or streaming chunks
+```mermaid
+flowchart LR
+  subgraph api["OpenAI API boundary"]
+    direction TB
+    A["OpenAI client"] --> B["POST /v1/chat/completions"]
+    B --> C["Validate OpenAI request"]
+    C --> D["GraphRegistry<br/>model to GraphConfig"]
+  end
+
+  subgraph execution["LGOS adapter and execution"]
+    direction TB
+    E["GraphConfig<br/>resolve graph and adapt input"]
+    E --> F["Runner<br/>collect or stream events"]
+    F -->|graph.astream| G["LangGraph graph"]
+    G --> H["LGOS response rendering<br/>OpenAI completion or SSE chunks"]
+  end
+
+  D --> E
+  H -.->|OpenAI-compatible response| A
 ```
 
 ## Components
@@ -30,9 +39,11 @@ then resolves the graph, applies custom input/context/output adapters when
 present, and tells the runner whether streaming or interrupts are enabled.
 
 The runner is the only layer that calls LangGraph. It converts the validated
-OpenAI request into graph input, runs `ainvoke` for normal responses or
-`astream` for streaming responses, then renders the result back into OpenAI
-chat-completion objects or streaming chunks.
+OpenAI request into graph input and consumes `graph.astream` in both response
+modes. For a normal response it collects the final graph value and custom
+events; for a streaming response it forwards message, custom, and interrupt
+events. The configured output adapter and chat service render those results as
+OpenAI chat-completion objects or SSE chunks.
 
 Endpoint paths and settings live in [Reference](../reference.md).
 
@@ -43,17 +54,22 @@ Endpoint paths and settings live in [Reference](../reference.md).
 3. The requested `model` is resolved from `GraphRegistry`.
 4. OpenAI messages are converted to LangChain messages.
 5. `GraphConfig` builds graph input, runnable config, and runtime context.
-6. The runner calls `graph.ainvoke` or `graph.astream`.
-7. Output is rendered as an OpenAI chat completion or streaming chunk sequence.
+6. The runner consumes `graph.astream`, collecting values for a normal response
+   or forwarding message and event streams for a streaming response.
+7. LGOS renders the result as an OpenAI chat completion or SSE chunk sequence.
 
 ## Execution Modes
 
-Non-streaming requests collect the final graph result and return one chat
-completion response.
+=== "Non-streaming"
 
-Streaming requests consume LangGraph message and update streams. Text chunks are
-emitted only from configured streamable nodes; interrupt updates become
-OpenAI-compatible tool calls.
+    Requests collect the final graph result and return one chat completion
+    response.
+
+=== "Streaming"
+
+    Requests consume LangGraph message and update streams. Text chunks are
+    emitted only from configured streamable nodes; interrupt updates become
+    OpenAI-compatible tool calls.
 
 ## Interrupts
 

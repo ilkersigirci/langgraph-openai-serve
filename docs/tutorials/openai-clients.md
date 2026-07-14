@@ -4,71 +4,104 @@ Configure clients with the server base URL, usually `http://localhost:8000/v1`.
 The `api_key` value is sent as `Authorization: Bearer <key>`; the default demo
 does not verify it.
 
-## Python
+## Install A Client
 
-```python
-from openai import OpenAI
+=== "Python"
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+    ```bash
+    pip install openai
+    ```
 
-response = client.chat.completions.create(
-    model="custom-input-output-context",
-    messages=[{"role": "user", "content": "Show me the custom adapter."}],
-    user="demo-user",
-)
+=== "JavaScript"
 
-print(response.choices[0].message.content)
-```
+    ```bash
+    npm install openai
+    ```
 
-## Python Streaming
+## Chat Completions
 
-```python
-stream = client.chat.completions.create(
-    model="simple-graph-with-history",
-    messages=[{"role": "user", "content": "Write a short poem about graphs."}],
-    stream=True,
-)
+!!! warning "Do not expose real API keys in a browser"
 
-for chunk in stream:
-    content = chunk.choices[0].delta.content
-    if content:
-        print(content, end="")
-```
+    The JavaScript examples enable `dangerouslyAllowBrowser` because the local
+    demo uses a dummy key. Keep production credentials in server-side code.
 
-## JavaScript
+=== "Python"
 
-```javascript
-import OpenAI from "openai";
+    ```python
+    from openai import OpenAI
 
-const openai = new OpenAI({
-  baseURL: "http://localhost:8000/v1",
-  apiKey: "DUMMY",
-  dangerouslyAllowBrowser: true,
-});
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
-const completion = await openai.chat.completions.create({
-  model: "custom-input-output-context",
-  messages: [{ role: "user", content: "Show me the custom adapter." }],
-  user: "demo-user",
-});
+    response = client.chat.completions.create(
+        model="custom-input-output-context",
+        messages=[{"role": "user", "content": "Show me the custom adapter."}],
+        user="demo-user",
+    )
 
-console.log(completion.choices[0].message.content);
-```
+    print(response.choices[0].message.content)
+    ```
 
-## JavaScript Streaming
+=== "Python Streaming"
 
-```javascript
-const stream = await openai.chat.completions.create({
-  model: "simple-graph-with-history",
-  messages: [{ role: "user", content: "Write a short poem about graphs." }],
-  stream: true,
-});
+    ```python
+    from openai import OpenAI
 
-for await (const chunk of stream) {
-  const content = chunk.choices[0]?.delta?.content || "";
-  process.stdout.write(content);
-}
-```
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+
+    stream = client.chat.completions.create(
+        model="simple-graph-with-history",
+        messages=[{"role": "user", "content": "Write a short poem about graphs."}],
+        stream=True,
+    )
+
+    for chunk in stream:
+        content = chunk.choices[0].delta.content
+        if content:
+            print(content, end="")
+    ```
+
+=== "JavaScript"
+
+    ```javascript
+    import OpenAI from "openai";
+
+    const openai = new OpenAI({
+      baseURL: "http://localhost:8000/v1",
+      apiKey: "DUMMY",
+      dangerouslyAllowBrowser: true,
+    });
+
+    const completion = await openai.chat.completions.create({
+      model: "custom-input-output-context",
+      messages: [{ role: "user", content: "Show me the custom adapter." }],
+      user: "demo-user",
+    });
+
+    console.log(completion.choices[0].message.content);
+    ```
+
+=== "JavaScript Streaming"
+
+    ```javascript
+    import OpenAI from "openai";
+
+    const openai = new OpenAI({
+      baseURL: "http://localhost:8000/v1",
+      apiKey: "DUMMY",
+      dangerouslyAllowBrowser: true,
+    });
+
+    const stream = await openai.chat.completions.create({
+      model: "simple-graph-with-history",
+      messages: [{ role: "user", content: "Write a short poem about graphs." }],
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      process.stdout.write(content);
+    }
+    ```
 
 ## Interrupt Resume
 
@@ -79,17 +112,19 @@ Interrupt-enabled graphs use OpenAI tool calls. Pass
 
 ## Diagnostics
 
-Use direct HTTP only to inspect behavior while debugging:
+??? example "Direct HTTP diagnostic"
 
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "custom-input-output-context",
-    "messages": [{"role": "user", "content": "Show me the custom adapter."}],
-    "user": "demo-user"
-  }'
-```
+    Use direct HTTP only to inspect behavior while debugging:
+
+    ```bash
+    curl -X POST http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "custom-input-output-context",
+        "messages": [{"role": "user", "content": "Show me the custom adapter."}],
+        "user": "demo-user"
+      }'
+    ```
 
 ## Notes
 
