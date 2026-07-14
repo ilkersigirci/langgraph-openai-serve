@@ -22,4 +22,10 @@ Task-oriented guides for securing and deploying an LGOS application.
 
     [:octicons-arrow-right-24: Use Docker](docker.md)
 
+-   :material-transit-connection-horizontal:{ .lg .middle } __Configure a proxy__
+
+    Preserve graph feature metadata through an OpenAI-compatible gateway.
+
+    [:octicons-arrow-right-24: Configure an OpenAI proxy](openai-proxy.md)
+
 </div>

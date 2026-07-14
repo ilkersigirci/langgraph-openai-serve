@@ -4,6 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphConfigurationError,
@@ -44,7 +45,12 @@ async def test_thread_id_reaches_runnable_config(
         .compile(checkpointer=sqlite_checkpointer)
     )
     registry = GraphRegistry(
-        registry={"threaded": GraphConfig(graph=graph, interrupts_enabled=True)}
+        registry={
+            "threaded": GraphConfig(
+                graph=graph,
+                features={GraphFeature.INTERRUPTS},
+            )
+        }
     )
     request = make_request(
         "threaded",
@@ -69,7 +75,7 @@ async def test_interrupt_result_is_returned_before_output_rendering(
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 output_to_text=output_to_text,
-                interrupts_enabled=True,
+                features={GraphFeature.INTERRUPTS},
             )
         }
     )
@@ -134,7 +140,7 @@ async def test_streaming_interrupt_detected_from_updates(
         registry={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-                interrupts_enabled=True,
+                features={GraphFeature.INTERRUPTS},
             )
         }
     )
@@ -166,7 +172,7 @@ async def test_interrupt_enabled_graph_requires_thread_id(
         registry={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-                interrupts_enabled=True,
+                features={GraphFeature.INTERRUPTS},
             )
         }
     )
@@ -181,7 +187,7 @@ async def test_interrupt_enabled_graph_requires_checkpointer(make_request) -> No
         registry={
             "broken": GraphConfig(
                 graph=make_message_graph("ok"),
-                interrupts_enabled=True,
+                features={GraphFeature.INTERRUPTS},
             )
         }
     )

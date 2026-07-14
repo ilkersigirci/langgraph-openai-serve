@@ -6,6 +6,7 @@ This module provides a service for handling OpenAI model information.
 import logging
 
 from langgraph_openai_serve.api.models.schemas import (
+    LangGraphModelExtension,
     Model,
     ModelList,
     ModelPermission,
@@ -50,8 +51,11 @@ class ModelService:
                 parent=None,
                 max_model_len=16000,
                 permission=[permission],
+                langgraph_openai_serve=LangGraphModelExtension(
+                    features=sorted(config.features, key=lambda feature: feature.value)
+                ),
             )
-            for name in graph_registry.registry
+            for name, config in graph_registry.registry.items()
         ]
 
         logger.info(f"Retrieved {len(models)} available models")

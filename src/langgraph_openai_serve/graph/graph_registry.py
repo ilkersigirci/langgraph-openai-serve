@@ -7,6 +7,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.graph.features import GraphFeature
 
 GraphResolver = (
     CompiledStateGraph
@@ -34,11 +35,15 @@ class GraphRegistryError(RuntimeError):
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
+    features: set[GraphFeature] = Field(default_factory=set)
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
-    interrupts_enabled: bool = False
+
+    def supports(self, feature: GraphFeature) -> bool:
+        """Return whether this graph supports a feature."""
+        return feature in self.features
 
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""
@@ -47,7 +52,7 @@ class GraphConfig(BaseModel):
         else:
             graph = await _maybe_await(self.graph())
 
-        if self.interrupts_enabled and graph.checkpointer is None:
+        if self.supports(GraphFeature.INTERRUPTS) and graph.checkpointer is None:
             raise GraphConfigurationError(
                 "Interrupt-enabled graphs must be compiled with a checkpointer."
             )

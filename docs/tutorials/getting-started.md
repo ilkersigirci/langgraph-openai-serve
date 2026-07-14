@@ -72,12 +72,9 @@ print(response.choices[0].message.content)
 print(response.choices[0].message.annotations)
 ```
 
-The deterministic answer demonstrates a normal Markdown link, an inline
-Markdown image, and an audio resource kept as an ordinary link. Each resource
-has its own standard `url_citation` anchored to existing Markdown link text; no
-numeric markers or presentation fields are added.
-
-See [Citation Events](../reference.md#citation-events) for the graph helper and
+The deterministic answer combines portable Markdown resources with structured
+citations. See [Citation Events](../reference.md#citation-events) for the graph
+helper and
 [Citation ownership and UI rendering](../explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
 for transport and client behavior.
 
@@ -171,31 +168,8 @@ See [Docker](../how-to-guides/docker.md) for the Open WebUI Function setup and
 [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the interrupt tool-call protocol.
 
-## Existing FastAPI Apps
-
-```python title="Bind LGOS to FastAPI"
-from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
-from your_graphs import my_graph
-
-app = FastAPI()
-graphs = GraphRegistry(
-    registry={
-        "my-graph": GraphConfig(
-            graph=my_graph,
-            streamable_node_names=["generate"],
-        )
-    }
-)
-
-LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
-```
-
-See [Reference](../reference.md) for prefixes, docs URLs, settings, and public
-classes.
-
 ## Next Steps
 
-- [Create custom graphs](custom-graphs.md)
+- [Register custom graphs in a FastAPI app](custom-graphs.md#register-and-bind)
 - [Connect OpenAI clients](openai-clients.md)
 - [Run with Docker](../how-to-guides/docker.md)

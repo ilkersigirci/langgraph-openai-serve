@@ -21,6 +21,7 @@ nav = [
     "how-to-guides/index.md",
     { "Docker Deployment" = "how-to-guides/docker.md" },
     { Authentication = "how-to-guides/authentication.md" },
+    { "OpenAI Proxy" = "how-to-guides/openai-proxy.md" },
   ]},
   { Explanation = [
     "explanation/index.md",

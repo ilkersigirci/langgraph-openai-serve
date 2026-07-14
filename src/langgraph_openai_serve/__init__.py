@@ -3,6 +3,7 @@
 from importlib.metadata import version
 
 from langgraph_openai_serve.graph.events import citation_event, citation_slice
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphRegistry,
@@ -15,6 +16,7 @@ __version__ = version("langgraph_openai_serve")
 
 __all__ = [
     "GraphConfig",
+    "GraphFeature",
     "GraphRegistry",
     "GraphRegistryError",
     "LanggraphOpenaiServe",

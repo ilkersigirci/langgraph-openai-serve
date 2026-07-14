@@ -31,26 +31,21 @@ hook fetches `/v1/models` and adds every registered graph to the model selector.
 Configure the API base URL and key with the Function valves; there is no
 per-model valve.
 
-The Pipe yields OpenAI content deltas through Open WebUI's native generator
-streaming contract and leaves Markdown rendering to the UI. For streaming
-requests, it also forwards OpenAI citation annotations unchanged when LGOS
-returns them; it does not create or translate citations. Select
-`interruptible-approval` to try confirmation and `lgos-rag` to stream a linked
-documentation answer.
+The Pipe bridges streaming text, streaming citation annotations, and interrupt
+approval; it does not own graph or transport behavior. See
+[Citation ownership](../explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+and the [interrupt protocol](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
+for those boundaries. Select `interruptible-approval` to try confirmation and
+`lgos-rag` to stream a linked documentation answer.
+
 After changing the local Function file, update or re-import it in Open WebUI;
 Open WebUI stores its own copy of imported Function code.
 
-Ownership:
-
-- `langgraph-openai-serve` owns OpenAI-compatible transport and LangGraph
-  interrupt/resume behavior.
-- The Open WebUI Function owns only the UI bridge: yield streamed text and
-  annotation chunks, detect the `langgraph_interrupt` tool call, show the
-  confirmation modal, and send the resume tool message.
-- Keep graph logic, HTTP routes, and custom response shapes out of the Open
-  WebUI Function.
-
 ## Custom App Image
+
+Start with the FastAPI application from
+[Custom Graphs](../tutorials/custom-graphs.md#register-and-bind). The files below
+containerize that application as `app:app`.
 
 Minimal Dockerfile:
 
@@ -75,20 +70,6 @@ uvicorn
 
 Add any packages required by your graphs.
 
-Minimal app:
-
-```python title="app.py"
-from fastapi import FastAPI
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
-from my_graphs import chat_graph
-
-app = FastAPI()
-graphs = GraphRegistry(
-    registry={"chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"])}
-)
-LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
-```
-
 Minimal compose:
 
 ```yaml title="compose.yaml"
@@ -109,8 +90,7 @@ services:
 
 !!! warning "The example is a starting point"
 
-    Add authentication, HTTPS termination, resource limits, durable state, and
-    operational monitoring before exposing the service.
+    The example omits the production controls listed below.
 
 - Add bearer-token authentication before exposing the API.
 - Terminate HTTPS at a reverse proxy or platform load balancer.

@@ -16,6 +16,7 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
     parse_resume_value,
 )
 from langgraph_openai_serve.core.settings import settings
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
@@ -88,13 +89,15 @@ def validate_interrupt_request(
     request: ChatCompletionRequest,
 ) -> tuple[str | None, Any]:
     thread_id = get_thread_id(request)
-    if graph_config.interrupts_enabled and not thread_id:
+    if graph_config.supports(GraphFeature.INTERRUPTS) and not thread_id:
         raise MissingThreadIDError(
             f"metadata.{THREAD_METADATA_KEY} is required for interrupt-enabled graphs."
         )
 
     resume_value = (
-        parse_resume_value(messages) if graph_config.interrupts_enabled else NO_RESUME
+        parse_resume_value(messages)
+        if graph_config.supports(GraphFeature.INTERRUPTS)
+        else NO_RESUME
     )
 
     return thread_id, resume_value

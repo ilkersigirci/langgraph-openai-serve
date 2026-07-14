@@ -51,6 +51,15 @@ async def test_app_lists_exactly_the_documented_models(
 
     assert response.object == "list"
     assert {model.id for model in response.data} == DOCUMENTED_MODEL_IDS
+    assert {
+        model.id: (model.model_extra or {})["langgraph_openai_serve"]["features"]
+        for model in response.data
+        if (model.model_extra or {})["langgraph_openai_serve"]["features"]
+    } == {"interruptible-approval": ["interrupts"]}
+    assert all(
+        (model.model_extra or {})["langgraph_openai_serve"]["schema_version"] == 1
+        for model in response.data
+    )
 
 
 @pytest.mark.anyio

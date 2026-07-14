@@ -63,9 +63,9 @@ LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 
 ## Streaming
 
-Streaming only forwards streamed `AIMessageChunk` values from
-`streamable_node_names`. Deterministic graphs that return a final dictionary
-should be called without `stream=True`.
+When an OpenAI request sets `stream=True`, LGOS forwards only streamed
+`AIMessageChunk` values from `streamable_node_names`. Deterministic graphs that
+return a final dictionary should be called without `stream=True`.
 
 !!! tip "Choose streamable nodes deliberately"
 
@@ -74,10 +74,20 @@ should be called without `stream=True`.
 
 ## Interrupts
 
-Set `interrupts_enabled=True` for checkpointed human-in-the-loop graphs. Clients
-must pass `metadata.langgraph_thread_id` so follow-up tool messages resume the
-same LangGraph thread. The interrupt is represented as an OpenAI tool call named
-`langgraph_interrupt`.
+Enable the interrupt feature for checkpointed human-in-the-loop graphs:
+
+```python
+from langgraph_openai_serve import GraphConfig, GraphFeature
+
+GraphConfig(
+    graph=interruptible_graph,
+    features={GraphFeature.INTERRUPTS},
+)
+```
+
+Clients must pass `metadata.langgraph_thread_id` so follow-up tool messages
+resume the same LangGraph thread. The interrupt is represented as an OpenAI tool
+call named `langgraph_interrupt`.
 
 !!! warning "A checkpointer is required"
 

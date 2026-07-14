@@ -20,7 +20,12 @@ from demo.api.graphs.lgos_rag import lgos_rag
 from demo.api.graphs.simple import simple_graph
 from demo.api.loggers.setup import setup_logging
 from demo.api.settings import settings
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphFeature,
+    GraphRegistry,
+    LanggraphOpenaiServe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +109,7 @@ def create_custom_app() -> FastAPI:
                     "request": messages[-1].content or ""
                 },
                 output_to_text=lambda output: output["response"],
-                interrupts_enabled=True,
+                features={GraphFeature.INTERRUPTS},
             ),
         }
     )
