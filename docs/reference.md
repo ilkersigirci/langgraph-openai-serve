@@ -7,7 +7,7 @@ Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List registered graph model names. |
+| `GET` | `/v1/models` | List registered graph models and feature metadata. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 
@@ -48,10 +48,14 @@ The registry must contain at least one graph. A missing or empty registry raises
 - `graph`: compiled graph, sync factory, or async factory.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded to clients.
+- `features`: `GraphFeature` values that enable optional server behavior.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
 - `context_factory(request)`: custom LangGraph runtime context.
 - `output_to_text(output)`: custom graph output to assistant text.
-- `interrupts_enabled`: enables OpenAI tool-call based LangGraph resume flow.
+
+The same `features` set drives runtime behavior and the
+versioned `langgraph_openai_serve.features` extension returned by `/v1/models`.
+`GraphFeature.INTERRUPTS` enables and advertises the interrupt/resume flow.
 
 Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
@@ -78,9 +82,7 @@ get_stream_writer()(
 text. LGOS converts it to OpenAI's inclusive `end_index` at the event boundary.
 Use `citation_slice(annotation, text)` to validate received indices and convert
 them back to a Python slice. Citation events must refer to the final rendered
-assistant text. Portable Markdown links and images belong in that assistant
-text; keep audio and video as ordinary links. Do not add presentation fields to
-the OpenAI `url_citation` object.
+assistant text.
 
 See [Citation ownership and UI rendering](explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
 for transport and client behavior.

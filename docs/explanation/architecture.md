@@ -36,14 +36,10 @@ OpenAI-shaped error handling.
 
 `GraphRegistry` maps each OpenAI `model` value to a `GraphConfig`. `GraphConfig`
 then resolves the graph, applies custom input/context/output adapters when
-present, and tells the runner whether streaming or interrupts are enabled.
+present, and tells the runner which optional `GraphFeature` values are enabled.
 
-The runner is the only layer that calls LangGraph. It converts the validated
-OpenAI request into graph input and consumes `graph.astream` in both response
-modes. For a normal response it collects the final graph value and custom
-events; for a streaming response it forwards message, custom, and interrupt
-events. The configured output adapter and chat service render those results as
-OpenAI chat-completion objects or SSE chunks.
+The runner is the only layer that calls LangGraph. It executes the prepared run
+and returns graph output or stream events for OpenAI response rendering.
 
 Endpoint paths and settings live in [Reference](../reference.md).
 
@@ -54,30 +50,12 @@ Endpoint paths and settings live in [Reference](../reference.md).
 3. The requested `model` is resolved from `GraphRegistry`.
 4. OpenAI messages are converted to LangChain messages.
 5. `GraphConfig` builds graph input, runnable config, and runtime context.
-6. The runner consumes `graph.astream`, collecting values for a normal response
-   or forwarding message and event streams for a streaming response.
+6. The runner consumes `graph.astream` in both response modes. It either collects
+   root values and custom events before returning a complete response, or passes
+   message, custom, and interrupt events to the SSE response service.
 7. LGOS renders the result as an OpenAI chat completion or SSE chunk sequence.
 
-## Execution Modes
-
-=== "Non-streaming"
-
-    Requests collect the final graph result and return one chat completion
-    response.
-
-=== "Streaming"
-
-    Requests consume LangGraph message and update streams. Text chunks are
-    emitted only from configured streamable nodes; interrupt updates become
-    OpenAI-compatible tool calls.
-
-## Interrupts
-
-Interrupt-enabled graphs pass `metadata.langgraph_thread_id` into LangGraph
-runnable config. They must have a checkpointer so pending interrupts can resume.
-The demo keeps an `AsyncPostgresSaver` and its connection pool open for the
-application lifespan and stores checkpoints in the PostgreSQL service configured
-by `DEMO_POSTGRES_URI`, so checkpoints survive requests and process restarts.
-Schema initialization runs before API workers start as a Compose `pre_start`
-lifecycle hook in the demo so multiple workers can safely use the durable
-checkpointer without racing on startup migrations.
+See [LangGraph Integration](langgraph-integration.md) for adapter and runner
+details, [OpenAI compatibility](openai-compatibility.md#tool-calls-and-interrupts)
+for the interrupt protocol, and [Docker](../how-to-guides/docker.md) for the
+demo's durable checkpointer setup.

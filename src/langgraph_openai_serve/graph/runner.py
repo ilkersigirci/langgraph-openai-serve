@@ -15,6 +15,7 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
 )
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
@@ -51,10 +52,12 @@ async def run_langgraph(
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
 ) -> LangGraphInvocation:
-    """Run a LangGraph model with the given messages using the compiled workflow.
+    """Prepare and invoke a graph for direct runner callers.
 
-    This function processes input messages through a LangGraph workflow and returns
-    its output together with any custom events emitted during the run.
+    This convenience wrapper combines :func:`prepare_run` and :func:`invoke_run`.
+    The HTTP route prepares its run before creating a response so preparation
+    errors can be returned as OpenAI-compatible HTTP errors; its service therefore
+    calls ``invoke_run`` directly with that prepared run.
 
     Examples:
         >>> invocation = await run_langgraph("my-model", messages, registry)
@@ -106,7 +109,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                 continue
 
             if event.get("type") == "values" and not event.get("ns"):
-                if run.config.interrupts_enabled:
+                if run.config.supports(GraphFeature.INTERRUPTS):
                     interrupt = extract_stream_interrupt(event, run.thread_id)
                     if interrupt is not None:
                         return LangGraphInvocation(
@@ -130,7 +133,12 @@ async def run_langgraph_stream(
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
-    """Run a LangGraph model in streaming mode.
+    """Prepare and stream a graph for direct runner callers.
+
+    This convenience wrapper combines :func:`prepare_run` and :func:`stream_run`.
+    The HTTP route prepares its run before starting the streaming response so
+    preparation errors remain normal OpenAI-compatible HTTP errors; its service
+    therefore calls ``stream_run`` directly with that prepared run.
 
     Args:
         model: The name of the model (graph) to run.
@@ -153,7 +161,7 @@ async def stream_run(
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """Stream an already prepared LangGraph invocation."""
     stream_mode: list[StreamMode] = ["messages", "custom"]
-    if run.config.interrupts_enabled:
+    if run.config.supports(GraphFeature.INTERRUPTS):
         stream_mode.append("updates")
 
     graph_stream = cast(

@@ -6,6 +6,7 @@ from typing import cast
 import chainlit as cl
 from demo.api.settings import settings
 from openai import AsyncOpenAI
+from openai.types import Model
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
@@ -17,6 +18,7 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 
+from langgraph_openai_serve import GraphFeature
 from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
 
 client = AsyncOpenAI(
@@ -28,14 +30,20 @@ client = AsyncOpenAI(
 @cl.set_chat_profiles
 async def set_chat_profiles() -> list[cl.ChatProfile]:
     models = await client.models.list()
-    return [
+    profiles = [
         cl.ChatProfile(
             name=model.id,
             markdown_description="Approve or reject a LangGraph interrupt.",
         )
         for model in models.data
-        if model.id == settings.CHAINLIT_HITL_MODEL
+        if model_supports(model, GraphFeature.INTERRUPTS)
     ]
+    if not profiles:
+        raise RuntimeError(
+            "No interrupt-capable model metadata returned by /v1/models. "
+            "Use LGOS directly or a gateway pass-through configured to target LGOS."
+        )
+    return profiles
 
 
 @cl.set_starters
@@ -93,6 +101,17 @@ async def on_message(message: cl.Message) -> None:
 
 def chat_messages() -> list[ChatCompletionMessageParam]:
     return cast(list[ChatCompletionMessageParam], cl.user_session.get("messages") or [])
+
+
+def model_supports(model: Model, feature: GraphFeature) -> bool:
+    """Read an LGOS feature from an OpenAI model response extension."""
+    extension = (model.model_extra or {}).get("langgraph_openai_serve")
+    if not isinstance(extension, dict):
+        return False
+    if extension.get("schema_version") != 1:
+        return False
+    features = extension.get("features")
+    return isinstance(features, list) and feature in features
 
 
 async def create_completion(

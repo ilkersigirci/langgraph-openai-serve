@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+from langgraph_openai_serve.graph.features import GraphFeature
 
 
 class ModelPermission(BaseModel):
@@ -18,6 +22,13 @@ class ModelPermission(BaseModel):
     is_blocking: bool
 
 
+class LangGraphModelExtension(BaseModel):
+    """Versioned LangGraph OpenAI Serve model extension."""
+
+    schema_version: Literal[1] = 1
+    features: list[GraphFeature]
+
+
 class Model(BaseModel):
     """Individual model information."""
 
@@ -29,6 +40,7 @@ class Model(BaseModel):
     parent: str | None = None
     max_model_len: int | None = None
     permission: list[ModelPermission]
+    langgraph_openai_serve: LangGraphModelExtension
 
 
 class ModelList(BaseModel):

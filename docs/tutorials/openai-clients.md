@@ -110,6 +110,30 @@ Interrupt-enabled graphs use OpenAI tool calls. Pass
 `tool` message. See
 [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
+Clients can discover support before sending a request:
+
+=== "Python"
+
+    ```python
+    models = client.models.list()
+    for model in models.data:
+        extension = (model.model_extra or {}).get("langgraph_openai_serve", {})
+        if extension.get("schema_version") == 1:
+            print(model.id, extension.get("features", []))
+    ```
+
+=== "JavaScript"
+
+    ```javascript
+    const models = await openai.models.list();
+    for (const model of models.data) {
+      const extension = model.langgraph_openai_serve || {};
+      if (extension.schema_version === 1) {
+        console.log(model.id, extension.features || []);
+      }
+    }
+    ```
+
 ## Diagnostics
 
 ??? example "Direct HTTP diagnostic"

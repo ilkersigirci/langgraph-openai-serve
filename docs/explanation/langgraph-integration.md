@@ -33,11 +33,29 @@ surface OpenAI-compatible while letting the graph stay idiomatic LangGraph.
 
 ## Runner Behavior
 
-For non-streaming requests, the runner resolves the graph, builds input and
-context, then calls `ainvoke`.
+The OpenAI response mode and the LangGraph execution interface are separate.
+Both paths call `graph.astream(..., version="v2")` so LGOS can process custom
+events and interrupts during execution. Consequently, `stream=false` does not
+mean LGOS calls `graph.ainvoke()`; it means LGOS consumes the internal events
+before returning one HTTP response.
 
-For streaming requests, the runner calls `astream` with message and update
-stream modes. It emits text from configured streamable nodes and converts
-interrupt updates into OpenAI tool-call chunks.
+=== "Complete response"
+
+    When `stream` is omitted or `false`, the route awaits `invoke_run()`. The
+    runner consumes `values` and `custom` events and collects custom events from
+    all namespaces. If interrupt support is enabled and an interrupt appears,
+    it returns that interrupt immediately; otherwise it renders the latest
+    root-namespace value after the graph stream ends. The chat service returns
+    one OpenAI chat completion, so no graph events reach the HTTP client
+    incrementally.
+
+=== "SSE response"
+
+    When `stream=true`, the route returns an SSE response backed by
+    `stream_run()`. The runner consumes `messages` and `custom` events, plus
+    `updates` for interrupt-enabled graphs. Only `AIMessageChunk` values from
+    configured streamable nodes become text chunks. The chat service uses
+    recognized citation events for final annotations and renders interrupts as
+    tool-call chunks.
 
 See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.

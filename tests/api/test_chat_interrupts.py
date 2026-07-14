@@ -7,7 +7,12 @@ from fastapi import FastAPI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI, BadRequestError
 
-from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphFeature,
+    GraphRegistry,
+    LanggraphOpenaiServe,
+)
 from tests.graph.support.interrupt import make_interrupt_graph
 
 pytestmark = pytest.mark.anyio
@@ -70,7 +75,7 @@ async def fastapi_app() -> AsyncIterator[FastAPI]:
                         INTERRUPT_PAYLOAD,
                         checkpointer=checkpointer,
                     ),
-                    interrupts_enabled=True,
+                    features={GraphFeature.INTERRUPTS},
                 ),
             }
         )

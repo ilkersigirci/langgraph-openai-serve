@@ -61,7 +61,7 @@ Keep test setup explicit and assertions focused on observable behavior.
 
 ## Stateful LangGraph Tests
 
-- Interrupt-enabled graphs must use a fresh
+- Graphs with `features={GraphFeature.INTERRUPTS}` must use a fresh
   `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer per test.
 - Persistence tests must use a `tmp_path` SQLite file, close the first
   checkpointer, and recreate the graph with a reopened checkpointer before
