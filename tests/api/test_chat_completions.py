@@ -30,7 +30,7 @@ async def test_non_streaming_completion_matches_openai_contract(
     assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
 
 
-async def test_streaming_completion_matches_openai_contract(
+async def test_streaming_completion_forwards_llm_chunks(
     openai_client: AsyncOpenAI,
 ) -> None:
     stream = await openai_client.chat.completions.create(
@@ -44,7 +44,12 @@ async def test_streaming_completion_matches_openai_contract(
     assert chunks[0].object == "chat.completion.chunk"
     assert chunks[0].model == "test"
     assert chunks[0].choices[0].delta.role == "assistant"
-    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "hello"
+    content_deltas = [
+        chunk.choices[0].delta.content
+        for chunk in chunks
+        if chunk.choices[0].delta.content
+    ]
+    assert content_deltas == list("hello")
     assert chunks[-1].choices[0].finish_reason == "stop"
 
 
