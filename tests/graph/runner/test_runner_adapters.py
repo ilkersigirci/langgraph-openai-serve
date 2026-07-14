@@ -17,13 +17,14 @@ from tests.graph.support.schemas import (
     QuestionState,
 )
 
+pytestmark = pytest.mark.anyio
+
 
 @dataclass
 class UserContext:
     user_id: str
 
 
-@pytest.mark.anyio
 async def test_typed_dict_schemas_and_native_context(
     make_request,
 ) -> None:
@@ -81,7 +82,6 @@ async def test_typed_dict_schemas_and_native_context(
     assert output_keys == [{"answer"}]
 
 
-@pytest.mark.anyio
 async def test_async_graph_factory_and_async_adapters(
     make_request,
 ) -> None:

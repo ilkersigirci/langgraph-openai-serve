@@ -1,16 +1,20 @@
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
-from openai import BadRequestError, NotFoundError, OpenAI
+from httpx import ASGITransport, AsyncClient
+from openai import AsyncOpenAI, BadRequestError, NotFoundError
 from starlette import status
 
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 
+pytestmark = pytest.mark.anyio
 
-def test_validation_error_returns_openai_error(openai_client: OpenAI) -> None:
+
+async def test_validation_error_returns_openai_error(
+    openai_client: AsyncOpenAI,
+) -> None:
     with pytest.raises(BadRequestError) as exc_info:
-        openai_client.post(
+        await openai_client.post(
             "/chat/completions",
             cast_to=object,
             body={"model": "test"},
@@ -28,9 +32,11 @@ def test_validation_error_returns_openai_error(openai_client: OpenAI) -> None:
     }
 
 
-def test_empty_messages_returns_openai_error(openai_client: OpenAI) -> None:
+async def test_empty_messages_returns_openai_error(
+    openai_client: AsyncOpenAI,
+) -> None:
     with pytest.raises(BadRequestError) as exc_info:
-        openai_client.post(
+        await openai_client.post(
             "/chat/completions",
             cast_to=object,
             body={"model": "test", "messages": []},
@@ -45,9 +51,11 @@ def test_empty_messages_returns_openai_error(openai_client: OpenAI) -> None:
     assert error["message"].startswith("messages: ")
 
 
-def test_http_error_returns_openai_error(openai_client: OpenAI) -> None:
+async def test_http_error_returns_openai_error(
+    openai_client: AsyncOpenAI,
+) -> None:
     with pytest.raises(NotFoundError) as exc_info:
-        openai_client.models.retrieve("missing")
+        await openai_client.models.retrieve("missing")
 
     response = exc_info.value.response
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -61,7 +69,7 @@ def test_http_error_returns_openai_error(openai_client: OpenAI) -> None:
     }
 
 
-def test_openai_error_handlers_do_not_replace_host_app_handlers(
+async def test_openai_error_handlers_do_not_replace_host_app_handlers(
     graph_registry: GraphRegistry,
 ) -> None:
     app = FastAPI()
@@ -85,9 +93,10 @@ def test_openai_error_handlers_do_not_replace_host_app_handlers(
         graphs=graph_registry,
     ).bind_openai_api(prefix="/v1")
 
-    with TestClient(app) as client:
-        outside_response = client.get("/outside")
-        openai_response = client.get("/v1/models/missing")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        outside_response = await client.get("/outside")
+        openai_response = await client.get("/v1/models/missing")
 
     assert outside_response.status_code == status.HTTP_418_IM_A_TEAPOT
     assert outside_response.json() == {"detail": "host handler"}

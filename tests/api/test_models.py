@@ -1,8 +1,13 @@
-from openai import OpenAI
+import pytest
+from openai import AsyncOpenAI
+
+pytestmark = pytest.mark.anyio
 
 
-def test_list_models(openai_client: OpenAI) -> None:
-    response = openai_client.models.list()
+async def test_registered_graphs_are_exposed_as_models(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.models.list()
 
     assert response.object == "list"
     assert response.data[0].id == "test"

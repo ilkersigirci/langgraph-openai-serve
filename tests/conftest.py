@@ -1,10 +1,9 @@
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
     GraphConfig,
@@ -19,6 +18,7 @@ _TIMEOUT = 2.0
 
 @pytest.fixture(scope="session")
 def anyio_backend() -> str:
+    """Run the package test suite on its supported async backend."""
     return "asyncio"
 
 
@@ -40,11 +40,14 @@ def graph_registry(message_graph) -> GraphRegistry:
 
 
 @pytest.fixture
-def fastapi_app(graph_registry: GraphRegistry) -> Generator[FastAPI, None, None]:
-    application = LanggraphOpenaiServe(
-        graphs=graph_registry,
-    ).bind_openai_api().app
-    yield application
+def fastapi_app(graph_registry: GraphRegistry) -> FastAPI:
+    return (
+        LanggraphOpenaiServe(
+            graphs=graph_registry,
+        )
+        .bind_openai_api()
+        .app
+    )
 
 
 @pytest.fixture
@@ -59,10 +62,14 @@ async def client(fastapi_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-def openai_client(fastapi_app: FastAPI) -> Generator[OpenAI, None, None]:
-    with TestClient(fastapi_app) as http_client:
-        yield OpenAI(
-            api_key="test",
-            base_url="http://testserver/v1",
-            http_client=http_client,
-        )
+async def openai_client(
+    client: AsyncClient,
+) -> AsyncGenerator[AsyncOpenAI, None]:
+    openai_client = AsyncOpenAI(
+        api_key="test",
+        base_url=f"{_BASE_URL}/v1",
+        http_client=client,
+        max_retries=0,
+    )
+    yield openai_client
+    await openai_client.close()

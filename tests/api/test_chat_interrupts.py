@@ -1,22 +1,24 @@
 import json
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from http import HTTPStatus
 
 import pytest
 from fastapi import FastAPI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from openai import BadRequestError, OpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from tests.graph.support.interrupt import make_interrupt_graph
+
+pytestmark = pytest.mark.anyio
 
 MODEL = "interruptible"
 THREAD_ID = "thread-1"
 INTERRUPT_PAYLOAD = {"question": "Approve?"}
 
 
-def create_completion(openai_client: OpenAI, *, stream: bool = False):
-    return openai_client.chat.completions.create(
+async def _create_completion(openai_client: AsyncOpenAI, *, stream: bool = False):
+    return await openai_client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": "Hi"}],
         stream=stream,
@@ -24,28 +26,28 @@ def create_completion(openai_client: OpenAI, *, stream: bool = False):
     )
 
 
-def assert_interrupt_tool_call(tool_call) -> None:
+def _assert_interrupt_tool_call(tool_call) -> None:
     assert tool_call.function is not None
     assert tool_call.function.name == "langgraph_interrupt"
-    assert_interrupt_arguments(json.loads(tool_call.function.arguments))
-
-
-def assert_interrupt_arguments(arguments: dict) -> None:
-    assert arguments["version"] == 1
-    assert arguments["kind"] == "hitl.interrupt"
-    assert arguments["thread_id"] == THREAD_ID
-    assert arguments["payload"] == INTERRUPT_PAYLOAD
-
-
-def interrupt_payload(response) -> dict:
-    tool_call = response.choices[0].message.tool_calls[0]
+    assert tool_call.id is not None
+    assert tool_call.id.startswith("lg_interrupt_")
     arguments = json.loads(tool_call.function.arguments)
-    return arguments["payload"]
+    assert arguments == {
+        "version": 1,
+        "kind": "hitl.interrupt",
+        "thread_id": THREAD_ID,
+        "interrupt_id": tool_call.id.removeprefix("lg_interrupt_"),
+        "payload": INTERRUPT_PAYLOAD,
+    }
 
 
-def resume_interrupt(openai_client: OpenAI, response, resume_value: str):
+async def _resume_interrupt(
+    openai_client: AsyncOpenAI,
+    response,
+    resume_value: str,
+):
     tool_call = response.choices[0].message.tool_calls[0]
-    return openai_client.chat.completions.create(
+    return await openai_client.chat.completions.create(
         model=MODEL,
         messages=[
             {
@@ -59,51 +61,38 @@ def resume_interrupt(openai_client: OpenAI, response, resume_value: str):
 
 
 @pytest.fixture
-def fastapi_app() -> FastAPI:
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
-            app.state.interruptible_graph = make_interrupt_graph(
-                INTERRUPT_PAYLOAD,
-                checkpointer=checkpointer,
-            )
-            yield
-
-    app = FastAPI(lifespan=lifespan)
-    graph_registry = GraphRegistry(
-        registry={
-            MODEL: GraphConfig(
-                graph=lambda: app.state.interruptible_graph,
-                interrupts_enabled=True,
-            ),
-        }
-    )
-    return (
-        LanggraphOpenaiServe(
-            app=app,
-            graphs=graph_registry,
+async def fastapi_app() -> AsyncIterator[FastAPI]:
+    async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
+        graph_registry = GraphRegistry(
+            registry={
+                MODEL: GraphConfig(
+                    graph=make_interrupt_graph(
+                        INTERRUPT_PAYLOAD,
+                        checkpointer=checkpointer,
+                    ),
+                    interrupts_enabled=True,
+                ),
+            }
         )
-        .bind_openai_api()
-        .app
-    )
+        yield LanggraphOpenaiServe(graphs=graph_registry).bind_openai_api().app
 
 
-def test_non_streaming_interrupt_returns_tool_calls(
-    openai_client: OpenAI,
+async def test_non_streaming_interrupt_matches_openai_tool_call_contract(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    response = create_completion(openai_client)
+    response = await _create_completion(openai_client)
 
     choice = response.choices[0]
     assert choice.finish_reason == "tool_calls"
     assert choice.message.tool_calls is not None
-    assert_interrupt_tool_call(choice.message.tool_calls[0])
+    _assert_interrupt_tool_call(choice.message.tool_calls[0])
 
 
-def test_streaming_interrupt_missing_thread_id_returns_400_before_sse(
-    openai_client: OpenAI,
+async def test_streaming_interrupt_missing_thread_id_returns_400_before_sse(
+    openai_client: AsyncOpenAI,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
-        openai_client.chat.completions.create(
+        await openai_client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": "Hi"}],
             stream=True,
@@ -124,10 +113,11 @@ def test_streaming_interrupt_missing_thread_id_returns_400_before_sse(
     }
 
 
-def test_streaming_interrupt_chunks_parse_with_openai_client(
-    openai_client: OpenAI,
+async def test_streaming_interrupt_matches_openai_tool_call_contract(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    chunks = list(create_completion(openai_client, stream=True))
+    stream = await _create_completion(openai_client, stream=True)
+    chunks = [chunk async for chunk in stream]
 
     tool_call_chunks = [
         chunk for chunk in chunks if chunk.choices[0].delta.tool_calls is not None
@@ -135,20 +125,18 @@ def test_streaming_interrupt_chunks_parse_with_openai_client(
     assert len(tool_call_chunks) == 1
     tool_call = tool_call_chunks[0].choices[0].delta.tool_calls[0]
     assert tool_call.index == 0
-    assert tool_call.id is not None
-    assert_interrupt_tool_call(tool_call)
+    _assert_interrupt_tool_call(tool_call)
     assert chunks[-1].choices[0].finish_reason == "tool_calls"
 
 
-def test_async_sqlite_interrupt_resume_works_in_one_process(
-    openai_client: OpenAI,
+async def test_tool_response_resumes_interrupted_completion(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    first_response = create_completion(openai_client)
-    final_response = resume_interrupt(
+    first_response = await _create_completion(openai_client)
+    final_response = await _resume_interrupt(
         openai_client,
         first_response,
         "approve",
     )
 
-    assert interrupt_payload(first_response) == INTERRUPT_PAYLOAD
     assert final_response.choices[0].message.content == "resumed:approve"

@@ -1,17 +1,11 @@
-# Oneshell means one can run multiple lines in a recipe in the same shell, so one doesn't have to
-# chain commands together with semicolon
-.ONESHELL:
 SHELL=/bin/bash
-ROOT_DIR=langgraph-openai-serve
 PACKAGE=src/langgraph_openai_serve
-DOC_DIR=./docs
-TEST_DIR=./tests
-TEST_MARKER=placeholder
-TEST_OUTPUT_DIR=tests_outputs
-PRECOMMIT_FILE_PATHS=./langgraph_openai_serve/__init__.py
-PROFILE_FILE_PATH=./langgraph_openai_serve/__init__.py
+TEST_DIRS=./tests ./demo/tests
+LINT_TARGETS=$(PACKAGE) $(TEST_DIRS)
+TEST_PATH=tests
+PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
 
-.PHONY: help install test clean build publish pre-commit format lint profile
+.PHONY: help install test clean build-sdist build-wheel publish pre-commit format lint
 .DEFAULT_GOAL=help
 
 help:
@@ -55,13 +49,13 @@ update-dependencies: ## Updates the lockfiles and installs dependencies. Depende
 upgrade-dependencies: ## Updates the lockfiles and installs the latest version of the dependencies
 	uv sync -U
 
-test-one: ## Run specific tests with TEST_MARKER=<test_name>, default marker is `placeholder`
+test-one: ## Run a pytest path/node ID with TEST_PATH=<selector>, default is `tests`
 	uv lock --locked
-	uv run --module pytest -m ${TEST_MARKER}
+	uv run --module pytest ${TEST_PATH}
 
-test-one-parallel: ## Run specific tests with TEST_MARKER=<test_name> in parallel, default marker is `placeholder`
+test-one-parallel: ## Run a pytest path/node ID in parallel with TEST_PATH=<selector>
 	uv lock --locked
-	uv run --module pytest -n auto -m ${TEST_MARKER}
+	uv run --module pytest -n auto ${TEST_PATH}
 
 test-all: ## Run all tests
 	uv lock --locked
@@ -84,22 +78,15 @@ test-parallel: clean-test test-all-parallel ## Cleans and runs all tests with pa
 
 clean-build: ## Clean build dist and egg directories left after install
 	rm -rf ./build ./dist */*.egg-info *.egg-info
-	rm -rf ./pytest_cache
-	rm -rf ./junit
 	find . -type f -iname "*.so" -delete
 	find . -type f -iname '*.pyc' -delete
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} \;
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} \;
 	find . -type d -name '.ruff_cache' -prune -exec rm -rf {} \;
-	find . -type d -name '.mypy_cache' -prune -exec rm -rf {} \;
 
 clean-test: ## Clean test related files left after test
-	# rm -rf ./htmlcov
-	# rm -rf ./coverage.xml
-	find . -type f -regex '\.\/\.*coverage[^rc].*' -delete
-	rm -rf ${TEST_OUTPUT_DIR}
-	find ${TEST_DIR} -type f -regex '\.\/\.*coverage[^rc].*' -delete
-	find ${TEST_DIR} -type d -name 'htmlcov' -exec rm -r {} +
+	rm -rf ./coverage ./htmlcov
+	find . -type f -name '.coverage*' ! -name '.coveragerc' -delete
 	find . -type d -name '.pytest_cache' -prune -exec rm -rf {} \;
 
 clean: clean-build clean-test ## Cleans build and test related files
@@ -136,30 +123,26 @@ pre-commit-clean: ## Clean pre-commit cache
 
 lint: ## Lint code with ruff
 	uv lock --locked
-	uv run --module ruff format ${PACKAGE} --check --diff
-	uv run --module ruff check ${PACKAGE}
+	uv run --module ruff format ${LINT_TARGETS} --check --diff
+	uv run --module ruff check ${LINT_TARGETS}
 
 lint-report: ## Lint report for gitlab
 	uv lock --locked
-	uv run --module ruff format ${PACKAGE} --check --diff
-	uv run --module ruff check ${PACKAGE} --format gitlab > gl-code-quality-report.json
+	uv run --module ruff format ${LINT_TARGETS} --check --diff
+	uv run --module ruff check ${LINT_TARGETS} --output-format gitlab > gl-code-quality-report.json
 
-format: ## Run ruff for all package files. CHANGES CODE
+format: ## Format package and test files. CHANGES CODE
 	uv lock --locked
-	uv run --module ruff format ${PACKAGE}
-	uv run --module ruff check ${PACKAGE} --fix --show-fixes
+	uv run --module ruff format ${LINT_TARGETS}
+	uv run --module ruff check ${LINT_TARGETS} --fix --show-fixes
 
 type-check: ## Run ty for type checking
 	uv run ty check
 
-format-unsafe: ## Run ruff for all package files. CHANGES CODE
+format-unsafe: ## Unsafely format package and test files. CHANGES CODE
 	uv lock --locked
-	uv run --module ruff format ${PACKAGE}
-	uv run --module ruff check ${PACKAGE} --fix --show-fixes --unsafe-fixes
-
-profile-builtin: ## Profile the file with cProfile and shows the report in the terminal
-	uv lock --locked
-	uv run --module cProfile -s tottime ${PROFILE_FILE_PATH}
+	uv run --module ruff format ${LINT_TARGETS}
+	uv run --module ruff check ${LINT_TARGETS} --fix --show-fixes --unsafe-fixes
 
 setup-demo-checkpointer: ## Initialize or migrate the demo checkpoint schema
 	uv run --module demo.api.setup_checkpointer

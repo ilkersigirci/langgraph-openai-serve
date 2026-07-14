@@ -4,7 +4,7 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
 from langgraph.types import CustomStreamPart
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
     GraphConfig,
@@ -70,10 +70,11 @@ def fastapi_app() -> FastAPI:
     return citation_app()
 
 
-def test_non_streaming_completion_uses_openai_inclusive_end_index(
-    openai_client: OpenAI,
+@pytest.mark.anyio
+async def test_non_streaming_completion_uses_openai_inclusive_end_index(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    response = openai_client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model="citations",
         messages=[{"role": "user", "content": "Cite this"}],
     )
@@ -87,7 +88,14 @@ def test_non_streaming_completion_uses_openai_inclusive_end_index(
     assert ANSWER[citation_slice(message.annotations[0], ANSWER)] == CITATION_TEXT
 
 
-@pytest.mark.parametrize("span", [(-1, 1), (0, 0), (2, 1)])
+@pytest.mark.parametrize(
+    "span",
+    [
+        pytest.param((-1, 1), id="negative-start"),
+        pytest.param((0, 0), id="empty"),
+        pytest.param((2, 1), id="reversed"),
+    ],
+)
 def test_citation_event_rejects_invalid_half_open_spans(
     span: tuple[int, int],
 ) -> None:
@@ -95,16 +103,16 @@ def test_citation_event_rejects_invalid_half_open_spans(
         citation_event(url=SOURCE_URL, title=SOURCE_TITLE, span=span)
 
 
-def test_streaming_completion_emits_annotations_on_final_delta(
-    openai_client: OpenAI,
+@pytest.mark.anyio
+async def test_streaming_completion_emits_annotations_on_final_delta(
+    openai_client: AsyncOpenAI,
 ) -> None:
-    chunks = list(
-        openai_client.chat.completions.create(
-            model="citations",
-            messages=[{"role": "user", "content": "Cite this"}],
-            stream=True,
-        )
+    stream = await openai_client.chat.completions.create(
+        model="citations",
+        messages=[{"role": "user", "content": "Cite this"}],
+        stream=True,
     )
+    chunks = [chunk async for chunk in stream]
 
     annotated_chunks = [
         chunk

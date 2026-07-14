@@ -59,7 +59,6 @@ doc = [
 ]
 test = [
     "pytest-cov>=5.0.0",
-    "pytest-rerunfailures>=14.0",
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
     "langgraph-checkpoint-sqlite>=3.1.0",
@@ -78,38 +77,32 @@ demo = [
 [tool.uv]
 default-groups = ["dev", "doc", "test", "demo"]
 
+# environments = [
+#   "(platform_python_implementation == 'CPython' and platform_machine == 'x86_64' and sys_platform == 'linux')",
+#   "(platform_python_implementation == 'CPython' and platform_machine == 'AMD64' and sys_platform == 'win32')",
+#   "(platform_python_implementation == 'CPython' and platform_machine == 'x86_64' and sys_platform == 'darwin')",
+# ]
 
 [tool.pytest.ini_options]
-minversion = "7.0.0"
+minversion = "8.3.3"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",
-#    "--verbose",
-#    "--durations=0",
-#    "--strict-markers",
-#    "--doctest-modules",
-    # NOTE: cov is not working with pycharm debugger. Enable it later!
-#    "--cov langgraph_openai",
-#    "--cov-report=xml",
-#    "--cov-report html",
+    "--strict-config",
+    "--strict-markers",
 ]
 
 env = [
+    "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
     "ENVIRONMENT=test",
     "LGOS_ENABLE_LANGFUSE=False"
 ]
 
-testpaths = ["tests"]
+testpaths = ["tests", "demo/tests"]
 pythonpath = ["."]
 
-# TODO: Make them inherit from yaml file
-log_cli = true
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)-20s :: %(name)-8s :: %(levelname)-8s :: %(filename)s:%(lineno)d - (%(funcName)s) :: %(message)s"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-
 [tool.ruff]
-target-version = "py313"
+target-version = "py311"
 line-length = 88
 src = ["src"]
 respect-gitignore = true
@@ -118,7 +111,6 @@ respect-gitignore = true
 
 extend-exclude = [
     "docs",
-    "tests",
 ]
 
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
@@ -191,7 +183,7 @@ combine-as-imports = true
 
 
 [tool.coverage.run]
-source = ['src/langgraph_openai']
+source = ['src/langgraph_openai_serve']
 branch = true
 context = '${CONTEXT}'
 
