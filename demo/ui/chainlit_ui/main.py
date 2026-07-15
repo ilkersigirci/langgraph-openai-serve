@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from chainlit.utils import mount_chainlit
-from demo.api.settings import settings
+from demo.api.settings import get_chainlit_settings, settings
 from fastapi import FastAPI
+
+get_chainlit_settings()
 
 app = FastAPI()
 

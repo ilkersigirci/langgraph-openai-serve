@@ -65,7 +65,8 @@ test = [
     "pytest-env>=1.6.0",
 ]
 demo = [
-    "chainlit>=2.8,<3",
+    "asyncpg>=0.30.0",
+    "chainlit>=2.11.1",
     "langchain>=1.2.0",
     "langchain-openai>=1.2.1",
     "langchain-text-splitters>=1.1.0",

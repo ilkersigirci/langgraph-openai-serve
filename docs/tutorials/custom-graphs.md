@@ -32,6 +32,87 @@ GraphConfig(
 
 See `demo/api/graphs/custom_io.py` for the runnable version.
 
+## Runtime Context
+
+Use LangGraph runtime context for immutable, per-invocation application values
+that nodes need but that do not belong in graph state. Define a context schema,
+declare it on `StateGraph`, and read it from the injected `Runtime` object:
+
+```python title="Typed runtime context"
+from dataclasses import dataclass
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
+from typing_extensions import TypedDict
+
+
+@dataclass(frozen=True)
+class AppContext:
+    user_id: str
+
+
+class State(TypedDict, total=False):
+    question: str
+    answer: str
+
+
+async def generate(state: State, runtime: Runtime[AppContext]) -> dict[str, str]:
+    return {
+        "answer": f"{runtime.context.user_id} asked: {state['question']}"
+    }
+
+
+custom_graph = (
+    StateGraph(State, context_schema=AppContext)
+    .add_node("generate", generate)
+    .add_edge(START, "generate")
+    .add_edge("generate", END)
+    .compile()
+)
+```
+
+Build that context from the validated OpenAI request at the adapter boundary:
+
+```python title="Request to runtime context"
+from langchain_core.messages import BaseMessage
+
+from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+
+
+def request_to_input(
+    request: ChatCompletionRequest,
+    messages: list[BaseMessage],
+) -> State:
+    return {"question": str(messages[-1].content or "")}
+
+
+def context_factory(request: ChatCompletionRequest) -> AppContext:
+    return AppContext(user_id=request.user or "anonymous")
+
+
+def output_to_text(output: State) -> str:
+    return output["answer"]
+
+
+custom_graph_config = GraphConfig(
+    graph=custom_graph,
+    request_to_input=request_to_input,
+    context_factory=context_factory,
+    output_to_text=output_to_text,
+)
+```
+
+LGOS passes the returned value through LangGraph's `context` argument. Do not
+put application values such as `user_id`, model selection, or prompt options in
+`config["configurable"]`.
+
+!!! note "Keep context and config separate"
+
+    See [Context versus config](../explanation/langgraph-integration.md#context-versus-config)
+    for execution settings, checkpoint identity, and async config propagation.
+    For a checkpointed workflow, continue to [Interrupts](#interrupts).
+
 ## Async Factories
 
 `GraphConfig.graph` may be a compiled graph, sync factory, or async factory:

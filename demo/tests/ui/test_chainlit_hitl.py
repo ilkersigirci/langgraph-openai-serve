@@ -17,7 +17,6 @@ def test_model_support_is_read_from_openai_extension(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    monkeypatch.setenv("CHAINLIT_ENV_FILE", str(tmp_path / "missing.env"))
     hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
     model = Model(
         id="interruptible",
@@ -38,7 +37,6 @@ def test_model_support_rejects_unknown_extension_version(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    monkeypatch.setenv("CHAINLIT_ENV_FILE", str(tmp_path / "missing.env"))
     hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
     model = Model(
         id="interruptible",
@@ -60,7 +58,6 @@ async def test_chat_profiles_fail_when_feature_metadata_is_missing(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    monkeypatch.setenv("CHAINLIT_ENV_FILE", str(tmp_path / "missing.env"))
     hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
     monkeypatch.setattr(
         hitl.client.models,
@@ -69,7 +66,7 @@ async def test_chat_profiles_fail_when_feature_metadata_is_missing(
     )
 
     with pytest.raises(RuntimeError, match="pass-through configured to target LGOS"):
-        await hitl.set_chat_profiles()
+        await hitl.set_chat_profiles(None)
 
 
 def test_helpers_extract_and_preserve_the_interrupt_tool_call(
@@ -77,7 +74,6 @@ def test_helpers_extract_and_preserve_the_interrupt_tool_call(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    monkeypatch.setenv("CHAINLIT_ENV_FILE", str(tmp_path / "missing.env"))
     hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
     payload = {
         "question": "Approve?",

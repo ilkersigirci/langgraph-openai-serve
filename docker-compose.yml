@@ -56,17 +56,87 @@ services:
       DEMO_POSTGRES_URI: postgresql://lgos:lgos@lgos-postgres:5432/lgos
     develop:
       watch:
-        # Sync the working directory with the `/app` directory in the container
+        # Avoid recursively watching Docker-owned PostgreSQL volume data.
         - action: sync
-          path: .
-          target: /app
-          # Exclude the project virtual environment
+          path: ./src
+          target: /app/src
           ignore:
-            - .venv/
-
-        # Rebuild the image on changes to the `pyproject.toml`
+            - "**/__pycache__/"
+        - action: sync
+          path: ./demo
+          target: /app/demo
+          ignore:
+            - "**/__pycache__/"
+            - tests/
         - action: rebuild
           path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+
+  lgos-chainlit:
+    image: lgos-chainlit:latest
+    container_name: lgos-chainlit
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: development
+    networks:
+      - lgos-network
+    depends_on:
+      lgos-postgres:
+        condition: service_healthy
+      lgos-demo-api:
+        condition: service_started
+    pre_start:
+      - command: ["uv", "run", "--module", "demo.ui.chainlit_ui.setup_database"]
+    ports:
+      - 5000:5000
+    command:
+      - uv
+      - run
+      - uvicorn
+      - demo.ui.chainlit_ui.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --no-access-log
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      CHAINLIT_APP_ROOT: /app/demo/ui/chainlit_ui
+      DATABASE_URL: postgresql://lgos:lgos@lgos-postgres:5432/lgos
+      DEMO_CHAINLIT_OPENAI_BASE_URL: http://lgos-demo-api:8000/v1
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://localhost:5000/health', timeout=2)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    develop:
+      watch:
+        # Avoid recursively watching Docker-owned PostgreSQL volume data.
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+          ignore:
+            - "**/__pycache__/"
+        - action: sync+restart
+          path: ./demo
+          target: /app/demo
+          ignore:
+            - "**/__pycache__/"
+            - tests/
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
 
   # NOTE: Disable Title Generation: Admin Panel -> Interface -> Title Generation -> Disable
   open-webui:

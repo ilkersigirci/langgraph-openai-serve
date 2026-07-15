@@ -4,7 +4,10 @@ import json
 from typing import cast
 
 import chainlit as cl
+from chainlit.types import ThreadDict
 from demo.api.settings import settings
+from demo.ui.chainlit_ui.auth import authenticated_user_identifier
+from demo.ui.chainlit_ui.history import restore_chat_messages
 from openai import AsyncOpenAI
 from openai.types import Model
 from openai.types.chat import (
@@ -28,7 +31,9 @@ client = AsyncOpenAI(
 
 
 @cl.set_chat_profiles
-async def set_chat_profiles() -> list[cl.ChatProfile]:
+async def set_chat_profiles(
+    _current_user: cl.User | None = None,
+) -> list[cl.ChatProfile]:
     models = await client.models.list()
     profiles = [
         cl.ChatProfile(
@@ -47,7 +52,7 @@ async def set_chat_profiles() -> list[cl.ChatProfile]:
 
 
 @cl.set_starters
-async def set_starters() -> list[cl.Starter]:
+async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
     return [
         cl.Starter(
             label="Approval",
@@ -59,6 +64,11 @@ async def set_starters() -> list[cl.Starter]:
 @cl.on_chat_start
 async def on_chat_start() -> None:
     cl.user_session.set("messages", [])
+
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict) -> None:
+    restore_chat_messages(thread)
 
 
 @cl.on_message
@@ -121,6 +131,7 @@ async def create_completion(
         model=cl.user_session.get("chat_profile") or settings.CHAINLIT_HITL_MODEL,
         messages=messages,
         metadata={"langgraph_thread_id": cl.context.session.thread_id},
+        user=authenticated_user_identifier(),
     )
 
 

@@ -269,7 +269,8 @@ cython_debug/
 /.ruff_cache/
 public
 profile.*
-demo/ui/chainlit_ui/.chainlit
+demo/ui/chainlit_ui/.chainlit/*
+!demo/ui/chainlit_ui/.chainlit/config.toml
 demo/ui/chainlit_ui/.files
 docker/volumes/*
 !docker/volumes/.gitkeep

@@ -11,7 +11,7 @@ from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 
 
-@dataclass
+@dataclass(frozen=True)
 class AppContext:
     user_id: str
 

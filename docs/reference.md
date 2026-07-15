@@ -35,6 +35,40 @@ Demo-only settings (read by `demo/api/settings.py`):
 | `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
 | `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
+| `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target module; accepts `simple` or `hitl`. |
+| `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login callback; accepts `mock` or `oauth`. |
+
+Native Chainlit settings used by the demo:
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | required | PostgreSQL URL validated by the demo and used by Chainlit's official asyncpg data layer and migration command. |
+| `CHAINLIT_AUTH_SECRET` | required | Secret used by Chainlit to sign login tokens; generate it with `uv run chainlit create-secret`. |
+| `CHAINLIT_APP_ROOT` | `demo/ui/chainlit_ui` in `.env.example` | Directory containing the tracked Chainlit configuration and welcome Markdown. |
+| `CHAINLIT_URL` | request origin | OAuth-only external origin used for callback URLs behind a reverse proxy. |
+| `OAUTH_GENERIC_CLIENT_ID` | required for `oauth` | Client ID for Chainlit's generic OAuth provider. |
+| `OAUTH_GENERIC_CLIENT_SECRET` | required for `oauth` | OAuth client secret; keep it outside source control. |
+| `OAUTH_GENERIC_AUTH_URL` | required for `oauth` | OIDC authorization endpoint. |
+| `OAUTH_GENERIC_TOKEN_URL` | required for `oauth` | OIDC token endpoint. |
+| `OAUTH_GENERIC_USER_INFO_URL` | required for `oauth` | OIDC user-info endpoint. |
+| `OAUTH_GENERIC_SCOPES` | required for `oauth` | Space-separated scopes requested by Chainlit. |
+| `OAUTH_GENERIC_NAME` | `generic` | Optional provider ID shown by Chainlit and used in the callback path; the example uses `PocketID`. |
+| `OAUTH_GENERIC_USER_IDENTIFIER` | `email` | Optional identifier claim; the PocketID example uses its stable `sub` claim. |
+
+The generic variable names map to
+[`GenericOAuthProvider`](https://github.com/Chainlit/chainlit/blob/2.11.1/backend/chainlit/oauth_providers.py)
+in the minimum supported Chainlit release.
+The six settings marked as required for `oauth` match that provider's `env`
+list; its name and user-identifier settings have framework defaults. No OAuth
+setting is required in the default `mock` mode.
+The demo `Settings` model validates the login selection. The separate
+`ChainlitSettings` model validates the PostgreSQL URL, signing secret, and
+mode-dependent generic-provider settings before the UI mounts. Chainlit
+consumes the same native environment values at runtime.
+The demo requires Chainlit 2.11.1 or newer. Because the official PostgreSQL
+schema requires release-specific migrations, review Chainlit's migration
+guidance whenever updating the lockfile and update the tracked `config.toml` and
+SQL migrations when required.
 
 ## Public API
 
@@ -49,9 +83,27 @@ The registry must contain at least one graph. A missing or empty registry raises
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded to clients.
 - `features`: `GraphFeature` values that enable optional server behavior.
+- `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
-- `context_factory(request)`: custom LangGraph runtime context.
+- `context_factory(request)`: build typed LangGraph runtime context passed via
+  the graph's `context` argument.
 - `output_to_text(output)`: custom graph output to assistant text.
+
+Graphs that use `context_factory` should declare a compatible
+`StateGraph(..., context_schema=Context)` and access the value from an injected
+`Runtime[Context]`. Runtime context is separate from `RunnableConfig`:
+
+| Value | LGOS/LangGraph path | Intended use |
+| --- | --- | --- |
+| Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
+| Runtime context | `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
+| Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
+| Checkpoint thread | `metadata.langgraph_thread_id` → `config["configurable"]["thread_id"]` | Load, save, interrupt, and resume checkpoint state. |
+
+LGOS assembles runnable config from `runtime_callbacks` and, when present, the
+checkpoint thread ID. There is intentionally no adapter for placing arbitrary
+OpenAI request fields into `config["configurable"]`; use typed runtime context
+for values consumed by nodes.
 
 The same `features` set drives runtime behavior and the
 versioned `langgraph_openai_serve.features` extension returned by `/v1/models`.
@@ -95,9 +147,11 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
 `make run-demo-api` registers:
 
-- `simple-graph-with-history`
+- `simple-graph-with-history` (runtime context enables conversation history and
+  `metadata.system_prompt` overrides the default system prompt)
 - `citation-events` (structured URL citations alongside portable Markdown)
-- `simple-graph-no-history`
+- `simple-graph-no-history` (runtime context selects only the latest message and
+  supports the same per-request system prompt)
 - `lgos-rag`
 - `custom-input-output-context`
 - `advanced-mcp-tools`

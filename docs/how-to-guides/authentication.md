@@ -57,6 +57,26 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-valid-key-1")
 ```
 
+## Chainlit Demo Login
+
+The repository's Chainlit UI has a separate browser login selected by
+`DEMO_CHAINLIT_LOGIN_TYPE`:
+
+- `mock` is the default demo-only mode. Its password callback accepts any
+  non-empty form values and returns the shared `demo-user` identity.
+- `oauth` registers Chainlit's OAuth callback. With the example generic-provider
+  settings, PocketID's stable `sub` claim becomes the user identifier.
+
+Chainlit signs either browser session with `CHAINLIT_AUTH_SECRET`, and its
+PostgreSQL data layer associates persisted threads with the returned identifier.
+The shared mock identity is convenient locally but provides no access control or
+user isolation; use OAuth or another real authentication callback outside the
+demo.
+
+Follow [Run the Chainlit UI](../tutorials/getting-started.md#run-the-chainlit-ui)
+to configure and start it. This UI login does not replace bearer-token
+protection for `/v1` when the API itself is exposed outside a trusted network.
+
 ## Production Notes
 
 !!! danger "Treat API keys as secrets"
@@ -64,7 +84,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-valid-key-1")
     Load keys from a secret manager or environment configuration. Never commit
     production credentials or send them to browser-side code.
 
-- Store keys and credentials outside source code.
+- Store keys, OAuth client secrets, and signing secrets outside source code.
 - Use HTTPS.
 - Add rate limits, usage logging, key rotation, and revocation.
 - OAuth2/JWT can work if the resulting access token is still supplied as a

@@ -17,7 +17,7 @@ from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_con
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.lgos_rag import lgos_rag
-from demo.api.graphs.simple import simple_graph
+from demo.api.graphs.simple import build_simple_context, simple_graph
 from demo.api.loggers.setup import setup_logging
 from demo.api.settings import settings
 from langgraph_openai_serve import (
@@ -72,14 +72,6 @@ def create_custom_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    simple_graph_with_history = simple_graph.with_config(
-        configurable={"use_history": True},
-    )
-
-    simple_graph_no_history = simple_graph.with_config(
-        configurable={"use_history": False},
-    )
-
     graph_registry = GraphRegistry(
         registry={
             "citation-events": GraphConfig(
@@ -87,10 +79,20 @@ def create_custom_app() -> FastAPI:
                 streamable_node_names=["answer_with_citation"],
             ),
             "simple-graph-with-history": GraphConfig(
-                graph=simple_graph_with_history, streamable_node_names=["generate"]
+                graph=simple_graph,
+                streamable_node_names=["generate"],
+                context_factory=lambda request: build_simple_context(
+                    request,
+                    use_history=True,
+                ),
             ),
             "simple-graph-no-history": GraphConfig(
-                graph=simple_graph_no_history, streamable_node_names=["generate"]
+                graph=simple_graph,
+                streamable_node_names=["generate"],
+                context_factory=lambda request: build_simple_context(
+                    request,
+                    use_history=False,
+                ),
             ),
             "lgos-rag": GraphConfig(
                 graph=lgos_rag,
@@ -122,7 +124,7 @@ def create_custom_app() -> FastAPI:
     # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
     graph_serve.bind_openai_api()
 
-    return graph_serve.app
+    return app
 
 
 app = create_custom_app()

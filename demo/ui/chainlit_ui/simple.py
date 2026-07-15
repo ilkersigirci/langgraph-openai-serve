@@ -2,11 +2,19 @@
 
 import asyncio
 import contextlib
-from typing import Any
+from typing import cast
 
 import chainlit as cl
+from chainlit.types import ThreadDict
 from demo.api.settings import settings
+from demo.ui.chainlit_ui.auth import authenticated_user_identifier
+from demo.ui.chainlit_ui.history import restore_chat_messages
 from openai import AsyncOpenAI
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
 client = AsyncOpenAI(
     base_url=settings.CHAINLIT_OPENAI_BASE_URL,
@@ -15,7 +23,9 @@ client = AsyncOpenAI(
 
 
 @cl.set_chat_profiles
-async def set_chat_profiles() -> list[cl.ChatProfile]:
+async def set_chat_profiles(
+    _current_user: cl.User | None = None,
+) -> list[cl.ChatProfile]:
     models = await client.models.list()
 
     return [
@@ -28,7 +38,7 @@ async def set_chat_profiles() -> list[cl.ChatProfile]:
 
 
 @cl.set_starters
-async def set_starters() -> list[cl.Starter]:
+async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
     return [
         cl.Starter(
             label="About",
@@ -48,13 +58,21 @@ async def on_chat_start() -> None:
     cl.user_session.set("messages", [])
 
 
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict) -> None:
+    restore_chat_messages(thread)
+
+
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    model = cl.user_session.get("chat_profile")
+    model = cast(str, cl.user_session.get("chat_profile"))
 
-    messages: list[dict[str, Any]] = [
-        *(cl.user_session.get("messages") or []),
-        {"role": "user", "content": message.content},
+    messages: list[ChatCompletionMessageParam] = [
+        *cast(
+            list[ChatCompletionMessageParam],
+            cl.user_session.get("messages") or [],
+        ),
+        ChatCompletionUserMessageParam(role="user", content=message.content),
     ]
     cl.user_session.set("messages", messages)
 
@@ -66,6 +84,7 @@ async def on_message(message: cl.Message) -> None:
             model=model,
             messages=messages,
             stream=True,
+            user=authenticated_user_identifier(),
         )
 
         async for chunk in stream:
@@ -73,7 +92,12 @@ async def on_message(message: cl.Message) -> None:
             if token:
                 await assistant_message.stream_token(token)
 
-        messages.append({"role": "assistant", "content": assistant_message.content})
+        messages.append(
+            ChatCompletionAssistantMessageParam(
+                role="assistant",
+                content=assistant_message.content,
+            )
+        )
         cl.user_session.set("messages", messages)
 
         await assistant_message.update()

@@ -31,6 +31,43 @@ Use `request_to_input`, `context_factory`, and `output_to_text` when the graph
 has custom input, output, or context schemas. Those adapters keep the public HTTP
 surface OpenAI-compatible while letting the graph stay idiomatic LangGraph.
 
+### Context Versus Config
+
+LGOS keeps LangGraph's invocation channels separate:
+
+```python
+graph.astream(
+    graph_input,
+    context=runtime_context,
+    config=runnable_config,
+)
+```
+
+- `graph_input` contains mutable workflow state, including converted messages.
+- `runtime_context` is built by `GraphConfig.context_factory`, validated against
+  the graph's `context_schema`, and available to nodes as `runtime.context` on
+  an injected `Runtime[Context]`.
+- `runnable_config` contains callbacks and execution identity. When an OpenAI
+  request supplies `metadata.langgraph_thread_id`, LGOS maps it to
+  `config["configurable"]["thread_id"]` for the LangGraph checkpointer.
+
+Application settings that nodes consume belong in typed runtime context, not in
+the configurable section of `RunnableConfig`. The thread ID is different: the
+checkpointer needs it to restore state before node execution, so it remains
+execution configuration.
+
+Because LGOS supports Python 3.11 and newer, callback/config context propagates
+automatically to nested async runnable calls. Node functions only need an
+injected `RunnableConfig` when they inspect or modify execution configuration;
+they do not need one solely to pass `config` to a nested model's `ainvoke()`.
+
+See [Custom Graphs](../tutorials/custom-graphs.md#runtime-context) for a complete
+typed context example and LangGraph's official
+[runtime](https://reference.langchain.com/python/langgraph/runtime/Runtime),
+[streaming](https://docs.langchain.com/oss/python/langgraph/streaming), and
+[persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+documentation for the underlying conventions.
+
 ## Runner Behavior
 
 The OpenAI response mode and the LangGraph execution interface are separate.
