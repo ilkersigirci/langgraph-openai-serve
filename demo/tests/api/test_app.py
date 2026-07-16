@@ -3,7 +3,7 @@ import logging.config
 from collections.abc import AsyncIterator
 
 import pytest
-from demo.api.graphs.simple import DEFAULT_SYSTEM_PROMPT, SimpleContext
+from demo.api.graphs.simple import SimpleContext
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from openai import AsyncOpenAI
@@ -21,9 +21,9 @@ DOCUMENTED_MODEL_IDS = {
     "custom-input-output-context",
     "interruptible-approval",
     "lgos-rag",
-    "simple-graph-no-history",
-    "simple-graph-with-history",
+    "simple-graph",
 }
+CLIENT_CONFIG_SCHEMA_VERSION = 1
 
 
 @pytest.fixture
@@ -58,42 +58,49 @@ async def test_app_lists_exactly_the_documented_models(
 
     assert response.object == "list"
     assert {model.id for model in response.data} == DOCUMENTED_MODEL_IDS
-    assert {
-        model.id: (model.model_extra or {})["langgraph_openai_serve"]["features"]
-        for model in response.data
-        if (model.model_extra or {})["langgraph_openai_serve"]["features"]
-    } == {"interruptible-approval": ["interrupts"]}
-    assert all(
-        (model.model_extra or {})["langgraph_openai_serve"]["schema_version"] == 1
-        for model in response.data
-    )
+    assert all(not model.model_extra for model in response.data)
+
+    interrupt_model = await openai_client.models.retrieve("interruptible-approval")
+    extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]
+    assert extension == {"schema_version": 1, "features": ["interrupts"]}
+
+
+@pytest.mark.anyio
+async def test_simple_model_retrieval_exposes_client_configuration(
+    openai_client: AsyncOpenAI,
+) -> None:
+    model = await openai_client.models.retrieve("simple-graph")
+
+    extension = (model.model_extra or {})["langgraph_openai_serve"]
+    client_config = extension["client_config"]
+    assert client_config["schema_version"] == CLIENT_CONFIG_SCHEMA_VERSION
+    assert client_config["defaults"] == {"use_history": False}
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("model", "use_history", "system_prompt"),
+    ("metadata", "use_history"),
     [
-        ("simple-graph-with-history", True, None),
-        ("simple-graph-no-history", False, "Respond in Turkish."),
+        (None, False),
+        ({"langgraph_config": '{"use_history":true}'}, True),
     ],
 )
-async def test_simple_models_build_their_runtime_context(
+async def test_simple_model_builds_its_runtime_context(
     demo_app: FastAPI,
-    model: str,
+    metadata: dict[str, str] | None,
     use_history: bool,
-    system_prompt: str | None,
 ) -> None:
     request = ChatCompletionRequest(
-        model=model,
+        model="simple-graph",
         messages=[ChatCompletionRequestMessage(role=Role.USER, content="Question")],
-        metadata={"system_prompt": system_prompt} if system_prompt else None,
+        metadata=metadata,
     )
 
-    graph_config = demo_app.state.graph_registry.get_graph(model)
+    graph_config = demo_app.state.graph_registry.get_graph("simple-graph")
+    graph = await graph_config.resolve_graph()
 
-    assert await graph_config.build_context(request) == SimpleContext(
-        use_history=use_history,
-        system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
+    assert await graph_config.build_context(request, graph) == SimpleContext(
+        use_history=use_history
     )
 
 

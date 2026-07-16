@@ -6,7 +6,6 @@ from starlette import status
 
 from langgraph_openai_serve import (
     GraphRegistry,
-    GraphRegistryError,
     LanggraphOpenaiServe,
     openai_server,
 )
@@ -33,13 +32,8 @@ async def _get(app: FastAPI, path: str) -> Response:
         return await client.get(path)
 
 
-def test_server_without_graphs_raises_registry_error() -> None:
-    with pytest.raises(GraphRegistryError, match="at least one graph"):
-        LanggraphOpenaiServe()
-
-
-def test_empty_graph_registry_raises_registry_error() -> None:
-    with pytest.raises(GraphRegistryError, match="at least one graph"):
+def test_empty_graph_registry_is_rejected_by_pydantic() -> None:
+    with pytest.raises(ValidationError, match="at least 1 item"):
         GraphRegistry(registry={})
 
 
@@ -132,6 +126,7 @@ async def test_openai_api_schema_describes_mounted_api(
     assert openapi_response.status_code == status.HTTP_200_OK
     schema = openapi_response.json()
     assert "/models" in schema["paths"]
+    assert "/models/{model}" in schema["paths"]
     assert schema["servers"] == [{"url": "/v1"}]
 
 

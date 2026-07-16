@@ -1,12 +1,28 @@
 import inspect
-from typing import Any, Awaitable, Callable
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Annotated, Any, Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.graph.client_config import (
+    ClientSettings,
+    validate_client_settings_model,
+)
 from langgraph_openai_serve.graph.features import GraphFeature
 
 GraphResolver = (
@@ -16,8 +32,24 @@ GraphResolver = (
 RequestToInput = Callable[
     [ChatCompletionRequest, list[BaseMessage]], Any | Awaitable[Any]
 ]
-ContextFactory = Callable[[ChatCompletionRequest], Any | Awaitable[Any]]
+ContextFactory = Callable[
+    [ChatCompletionRequest, Any],
+    Any | Awaitable[Any],
+]
 OutputToText = Callable[[Any], str | Awaitable[str]]
+
+
+def _addressable_model_id(value: str) -> str:
+    if value in {".", ".."}:
+        raise ValueError("model id must be addressable")
+    return value
+
+
+ModelId = Annotated[
+    str,
+    StringConstraints(min_length=1, pattern=r"^[^/]+$"),
+    AfterValidator(_addressable_model_id),
+]
 
 
 class GraphConfigurationError(RuntimeError):
@@ -28,18 +60,24 @@ class GraphNotFoundError(ValueError):
     """Raised when a requested graph is not registered."""
 
 
-class GraphRegistryError(RuntimeError):
-    """Raised when a graph registry is missing or empty."""
-
-
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
+    client_config: type[ClientSettings] | None = None
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
+
+    @field_validator("client_config")
+    @classmethod
+    def validate_client_config(
+        cls,
+        value: type[ClientSettings] | None,
+    ) -> type[ClientSettings] | None:
+        """Validate a public settings model when its graph is registered."""
+        return validate_client_settings_model(value) if value is not None else None
 
     def supports(self, feature: GraphFeature) -> bool:
         """Return whether this graph supports a feature."""
@@ -69,11 +107,32 @@ class GraphConfig(BaseModel):
             return {"messages": messages}
         return await _maybe_await(self.request_to_input(request, messages))
 
-    async def build_context(self, request: ChatCompletionRequest) -> Any:
-        """Build the LangGraph runtime context for a chat completion request."""
-        if self.context_factory is None:
-            return None
-        return await _maybe_await(self.context_factory(request))
+    async def build_context(
+        self,
+        request: ChatCompletionRequest,
+        graph: CompiledStateGraph,
+    ) -> Any:
+        """Build and validate the LangGraph runtime context for a request."""
+        settings = (
+            self.client_config.validate_request(request)
+            if self.client_config is not None
+            else None
+        )
+        if self.context_factory is not None:
+            context = await _maybe_await(self.context_factory(request, settings))
+        else:
+            context = settings
+
+        if context is None or graph.context_schema is None:
+            return context
+
+        try:
+            return TypeAdapter(graph.context_schema).validate_python(context)
+        except ValidationError as exc:
+            raise GraphConfigurationError(
+                "The configured context does not match the graph's context schema: "
+                f"{exc.errors()[0]['msg']}"
+            ) from exc
 
     async def render_output(self, output: Any) -> str:
         """Convert native graph output into assistant response text."""
@@ -82,7 +141,10 @@ class GraphConfig(BaseModel):
             return messages[-1].content if messages else ""
         return await _maybe_await(self.output_to_text(output))
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        validate_assignment=True,
+    )
 
 
 async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
@@ -91,12 +153,28 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
     return value
 
 
-class GraphRegistry(BaseModel):
-    registry: dict[str, GraphConfig]
+def _freeze_registry(
+    value: Mapping[ModelId, GraphConfig],
+) -> Mapping[ModelId, GraphConfig]:
+    return MappingProxyType(dict(value))
 
-    def model_post_init(self, __context: Any) -> None:
-        if not self.registry:
-            raise GraphRegistryError("Graph registry must contain at least one graph.")
+
+_RegistryEntries = Annotated[
+    Mapping[ModelId, GraphConfig],
+    Field(min_length=1),
+    AfterValidator(_freeze_registry),
+    PlainSerializer(dict, return_type=dict),
+]
+
+
+class GraphRegistry(BaseModel):
+    registry: _RegistryEntries
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    def register(self, model_id: str, config: GraphConfig) -> None:
+        """Add or replace one graph through the validated registry boundary."""
+        self.registry = {**self.registry, model_id: config}
 
     def get_graph_names(self) -> list[str]:
         """Get the names of all registered graphs."""

@@ -24,7 +24,8 @@ Task-oriented guides for securing and deploying an LGOS application.
 
 -   :material-transit-connection-horizontal:{ .lg .middle } __Configure a proxy__
 
-    Preserve graph feature metadata through an OpenAI-compatible gateway.
+    Preserve graph features and client configuration through an
+    OpenAI-compatible gateway.
 
     [:octicons-arrow-right-24: Configure an OpenAI proxy](openai-proxy.md)
 

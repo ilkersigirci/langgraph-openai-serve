@@ -33,10 +33,7 @@ from langgraph_openai_serve.api.models import views as models_views
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
 from langgraph_openai_serve.core.version import get_version
-from langgraph_openai_serve.graph.graph_registry import (
-    GraphRegistry,
-    GraphRegistryError,
-)
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +52,8 @@ class LanggraphOpenaiServe:
 
     def __init__(
         self,
+        graphs: GraphRegistry,
         app: FastAPI | None = None,
-        graphs: GraphRegistry | None = None,
     ):
         """Initialize the server with a FastAPI app and a populated graph registry.
 
@@ -66,17 +63,12 @@ class LanggraphOpenaiServe:
             graphs: A GraphRegistry instance containing the graphs to serve.
 
         Raises:
-            GraphRegistryError: If no graph registry is provided.
             TypeError: If graphs is not a GraphRegistry instance.
         """
-        if graphs is None:
-            raise GraphRegistryError("Graph registry must contain at least one graph.")
         if not isinstance(graphs, GraphRegistry):
             raise TypeError(
                 "Invalid type for graphs parameter. Expected GraphRegistry."
             )
-
-        self.app = app
 
         if app is None:
             app = FastAPI(
@@ -84,7 +76,7 @@ class LanggraphOpenaiServe:
                 description="An OpenAI-compatible API for LangGraph",
                 version=get_version(),
             )
-        self.app = app
+        self.app: FastAPI = app
 
         logger.info("Using provided GraphRegistry instance")
         self.graph_registry = graphs

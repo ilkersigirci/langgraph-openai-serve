@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import ClientSettings, GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 
 
@@ -57,7 +57,10 @@ def request_to_input(
     return {"question": str(last_message.content or "")}
 
 
-def context_factory(request: ChatCompletionRequest) -> AppContext:
+def context_factory(
+    request: ChatCompletionRequest,
+    _client_settings: ClientSettings | None,
+) -> AppContext:
     return AppContext(user_id=request.user or "anonymous")
 
 

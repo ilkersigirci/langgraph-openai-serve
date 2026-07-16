@@ -10,6 +10,20 @@
 
     OpenAI base URL: `http://localhost:8000/v1`
 
+=== "Bifrost proxy"
+
+    ```bash
+    docker compose up --wait lgos-bifrost
+    ```
+
+    - Bifrost inference base URL: `http://localhost:8081/v1`
+    - Bifrost discovery base URL:
+      `http://localhost:8081/openai_passthrough/v1`
+
+    Run `make test-bifrost` to verify detailed model metadata through the proxy.
+    See [Configure an OpenAI Proxy](openai-proxy.md) for client settings and the
+    Bifrost routing contract.
+
 === "Chainlit UI"
 
     ```bash
@@ -21,7 +35,9 @@
 
     Prepare `.env` and its Chainlit signing secret as described in
     [Getting Started](../tutorials/getting-started.md#run-the-chainlit-ui).
-    The default mock login does not require an OAuth client.
+    The default mock login does not require an OAuth client. The selected simple
+    graph exposes its history control through Chainlit Chat Settings discovered
+    from `GET /v1/models/{model}`.
 
 === "Open WebUI"
 

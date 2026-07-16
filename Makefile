@@ -4,6 +4,8 @@ TEST_DIRS=./tests ./demo/tests
 LINT_TARGETS=$(PACKAGE) $(TEST_DIRS)
 TEST_PATH=tests
 PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
+BIFROST_TEST_BASE_URL?=http://localhost:8081/openai_passthrough/v1
+LGOS_TEST_BASE_URL?=http://localhost:8000/v1
 
 .PHONY: help install test clean build-sdist build-wheel publish pre-commit format lint
 .DEFAULT_GOAL=help
@@ -60,6 +62,12 @@ test-one-parallel: ## Run a pytest path/node ID in parallel with TEST_PATH=<sele
 test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
+
+test-bifrost: ## Run the optional Bifrost proxy integration test
+	uv lock --locked
+	LGOS_TEST_BIFROST_BASE_URL=$(BIFROST_TEST_BASE_URL) \
+		LGOS_TEST_DIRECT_BASE_URL=$(LGOS_TEST_BASE_URL) \
+		uv run --module pytest demo/tests/integration/test_bifrost_proxy.py
 
 test-all-parallel: ## Run all tests with parallelization
 	uv lock --locked

@@ -8,12 +8,12 @@ from langchain_core.runnables import RunnableLambda
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("use_history", "expected_prompt"),
+    ("use_history", "expected_messages"),
     [
         pytest.param(
             True,
             [
-                ("system", "Respond in Turkish."),
+                ("system", simple_module.DEFAULT_SYSTEM_PROMPT),
                 ("human", "First"),
                 ("ai", "Prior answer"),
                 ("human", "Latest"),
@@ -22,7 +22,10 @@ from langchain_core.runnables import RunnableLambda
         ),
         pytest.param(
             False,
-            [("system", "Respond in Turkish."), ("human", "Latest")],
+            [
+                ("system", simple_module.DEFAULT_SYSTEM_PROMPT),
+                ("human", "Latest"),
+            ],
             id="latest-message",
         ),
     ],
@@ -30,12 +33,12 @@ from langchain_core.runnables import RunnableLambda
 async def test_runtime_context_controls_conversation_history(
     monkeypatch: pytest.MonkeyPatch,
     use_history: bool,
-    expected_prompt: list[tuple[str, str]],
+    expected_messages: list[tuple[str, str]],
 ) -> None:
-    prompts: list[Any] = []
+    model_inputs: list[Any] = []
 
-    async def respond(prompt: Any) -> AIMessage:
-        prompts.append(prompt)
+    async def respond(messages: Any) -> AIMessage:
+        model_inputs.append(messages)
         return AIMessage(content="Fake answer")
 
     monkeypatch.setattr(
@@ -52,14 +55,10 @@ async def test_runtime_context_controls_conversation_history(
                 HumanMessage(content="Latest"),
             ],
         ),
-        context=simple_module.SimpleContext(
-            use_history=use_history,
-            system_prompt="Respond in Turkish.",
-        ),
+        context=simple_module.SimpleContext(use_history=use_history),
     )
 
-    prompt_messages = prompts[0].to_messages()
-    assert [(message.type, message.content) for message in prompt_messages] == (
-        expected_prompt
+    assert [(message.type, message.content) for message in model_inputs[0]] == (
+        expected_messages
     )
     assert result["messages"][-1].content == "Fake answer"

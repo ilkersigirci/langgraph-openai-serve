@@ -57,5 +57,6 @@ OpenAI-compatible `/v1` API.
 
 Use the [authentication guide](how-to-guides/authentication.md) to add bearer
 tokens, the [Docker guide](how-to-guides/docker.md) to run a stack, and the
-[reference](reference.md) for endpoints, settings, demo models, and public
-classes.
+[proxy guide](how-to-guides/openai-proxy.md) to route inference and discovery
+through a gateway. See the [reference](reference.md) for endpoints, settings,
+demo models, and public classes.

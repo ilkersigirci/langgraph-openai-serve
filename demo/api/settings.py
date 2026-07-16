@@ -4,6 +4,8 @@ from typing import Annotated, Literal, Self
 from pydantic import (
     AfterValidator,
     AnyHttpUrl,
+    BaseModel,
+    Field,
     PlainValidator,
     PostgresDsn,
     TypeAdapter,
@@ -34,6 +36,13 @@ def _is_unconfigured(value: str | None) -> bool:
     return value is None or not value.strip() or value.strip() == PLACEHOLDER
 
 
+class OpenAIEndpoint(BaseModel):
+    """A complete OpenAI-compatible endpoint and its credential."""
+
+    base_url: HttpUrlStr
+    api_key: str = Field(min_length=1)
+
+
 class Settings(BaseSettings):
     """Configuration owned by the demo API and UI applications."""
 
@@ -41,6 +50,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_prefix="DEMO_",
         env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        nested_model_default_partial_update=True,
         extra="ignore",
     )
 
@@ -49,10 +60,24 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    CHAINLIT_OPENAI_BASE_URL: HttpUrlStr = "http://localhost:8000/v1"
+    CHAINLIT_INFERENCE: OpenAIEndpoint = OpenAIEndpoint(
+        base_url="http://localhost:8000/v1",
+        api_key="DUMMY",
+    )
+    CHAINLIT_INFERENCE_MODEL_PREFIX: str = ""
+    CHAINLIT_DISCOVERY: OpenAIEndpoint | None = None
     CHAINLIT_HITL_MODEL: str = "interruptible-approval"
     CHAINLIT_UI_FILE: Literal["simple", "hitl"] = "simple"
     CHAINLIT_LOGIN_TYPE: ChainlitLoginType = "mock"
+
+    @property
+    def chainlit_discovery_endpoint(self) -> OpenAIEndpoint:
+        """Use a complete discovery endpoint, or the inference endpoint."""
+        return self.CHAINLIT_DISCOVERY or self.CHAINLIT_INFERENCE
+
+    def chainlit_inference_model(self, model: str) -> str:
+        """Apply an optional proxy provider/model namespace."""
+        return f"{self.CHAINLIT_INFERENCE_MODEL_PREFIX}{model}"
 
 
 settings = Settings()

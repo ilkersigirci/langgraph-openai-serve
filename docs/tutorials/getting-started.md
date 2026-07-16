@@ -129,8 +129,9 @@ print(response.choices[0].message.content)
 
 - `demo/api/app.py`: registers graph names as OpenAI model names.
 - `demo/api/graphs/simple.py`: a single-node message graph whose runtime context
-  controls conversation history and a per-request `system_prompt`. OpenAI
-  clients override the prompt with `metadata.system_prompt`.
+  controls conversation history. It publishes that safe field explicitly
+  through model retrieval and prepends a fixed application system prompt that
+  is not part of runtime configuration.
 - `demo/api/graphs/lgos_rag.py`: agentic RAG over every Markdown file in
   `docs/`, with relevance grading, bounded query rewriting, streamed generation,
   and grounded answers.
@@ -211,6 +212,12 @@ apply pending schema migrations before starting. Opening a stored thread
 restores its native Chainlit role/content transcript and continues with the same
 login identity. Structured tool-call state is assembled separately when the
 HITL client sends an interrupt-resume request.
+After a profile is selected, Chainlit retrieves that model, converts the
+advertised JSON Schema into Chat Settings, and merges only saved values that
+remain valid under the current schema. If detailed LGOS metadata is unavailable,
+the chat continues with server defaults. Proxy-specific inference and discovery
+settings are covered in
+[Configure an OpenAI Proxy](../how-to-guides/openai-proxy.md).
 
 !!! warning "Production credentials and origins"
 

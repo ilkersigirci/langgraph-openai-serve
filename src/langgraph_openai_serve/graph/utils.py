@@ -74,7 +74,7 @@ async def prepare_run(
         config=graph_config,
         graph=graph,
         inputs=inputs,
-        context=await graph_config.build_context(request),
+        context=await graph_config.build_context(request, graph),
         runnable_config=build_runnable_config(
             graph_config.runtime_callbacks,
             configurable={"thread_id": thread_id} if thread_id else None,

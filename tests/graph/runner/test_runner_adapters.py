@@ -64,7 +64,7 @@ async def test_typed_dict_schemas_and_native_context(
                     "question": messages[-1].content,
                     "ignored": True,
                 },
-                context_factory=lambda request: {"user_id": request.user},
+                context_factory=lambda request, _settings: {"user_id": request.user},
                 output_to_text=output_to_text,
             )
         },
@@ -106,7 +106,7 @@ async def test_async_graph_factory_and_async_adapters(
     async def request_to_input(request, messages):
         return {"question": messages[-1].content, "ignored": True}
 
-    async def context_factory(request):
+    async def context_factory(request, _settings):
         return None
 
     graph_registry = GraphRegistry(

@@ -8,12 +8,15 @@ import logging
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
     Model,
+    ModelClientConfig,
+    ModelDetails,
     ModelList,
-    ModelPermission,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = logging.getLogger(__name__)
+MODEL_CREATED = 1743771509
+MODEL_OWNER = "langgraph-openai-serve"
 
 
 class ModelService:
@@ -28,35 +31,41 @@ class ModelService:
         Returns:
             A list of models in OpenAI compatible format.
         """
-        permission = ModelPermission(
-            id="modelperm-04cadfeee8ad4eb8ad479a5af3bc261d",
-            created=1743771509,
-            allow_create_engine=False,
-            allow_sampling=True,
-            allow_logprobs=True,
-            allow_search_indices=False,
-            allow_view=True,
-            allow_fine_tuning=False,
-            organization="*",
-            group=None,
-            is_blocking=False,
-        )
-
         models = [
             Model(
                 id=name,
-                created=1743771509,
-                owned_by="langgraph-openai-serve",
-                root=f"{name}-root",
-                parent=None,
-                max_model_len=16000,
-                permission=[permission],
-                langgraph_openai_serve=LangGraphModelExtension(
-                    features=sorted(config.features, key=lambda feature: feature.value)
-                ),
+                created=MODEL_CREATED,
+                owned_by=MODEL_OWNER,
             )
-            for name, config in graph_registry.registry.items()
+            for name in graph_registry.registry
         ]
 
         logger.info(f"Retrieved {len(models)} available models")
         return ModelList(data=models)
+
+    def get_model(self, model: str, graph_registry: GraphRegistry) -> ModelDetails:
+        """Get one registered graph as an OpenAI model with LGOS metadata."""
+        graph_config = graph_registry.get_graph(model)
+        client_config = graph_config.client_config
+        client_config_details = None
+        if client_config is not None:
+            defaults = client_config.defaults()
+            client_config_details = ModelClientConfig(
+                json_schema=client_config.model_json_schema(by_alias=False),
+                defaults=defaults.model_dump(mode="json", by_alias=False),
+            )
+
+        details = ModelDetails(
+            id=model,
+            created=MODEL_CREATED,
+            owned_by=MODEL_OWNER,
+            langgraph_openai_serve=LangGraphModelExtension(
+                features=sorted(
+                    graph_config.features,
+                    key=lambda feature: feature.value,
+                ),
+                client_config=client_config_details,
+            ),
+        )
+        logger.info(f"Retrieved model details for {model}")
+        return details

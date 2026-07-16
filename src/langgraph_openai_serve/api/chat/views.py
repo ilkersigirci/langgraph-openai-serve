@@ -26,6 +26,7 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
 )
 from langgraph_openai_serve.api.models.views import get_graph_registry_dependency
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
+from langgraph_openai_serve.graph.client_config import ClientConfigValidationError
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfigurationError,
     GraphNotFoundError,
@@ -45,6 +46,7 @@ CLIENT_ERROR_TYPES = (
     MissingThreadIDError,
     InvalidResumeRequestError,
     GraphNotFoundError,
+    ClientConfigValidationError,
     InvalidChatMessageError,
 )
 _StreamChunk = str | bytes | memoryview
@@ -204,6 +206,8 @@ def client_error_param(error: Exception) -> str | None:
         return f"metadata.{THREAD_METADATA_KEY}"
     if isinstance(error, InvalidResumeRequestError):
         return "messages"
+    if isinstance(error, ClientConfigValidationError):
+        return error.param
     if isinstance(error, InvalidChatMessageError):
         return "messages"
     return None

@@ -4,15 +4,29 @@ This module defines Pydantic models that match the OpenAI API request and respon
 """
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from openai.types.chat.chat_completion_message import Annotation
 from pydantic import (
     BaseModel,
     Field,
+    StringConstraints,
     ValidationError,
     model_validator,
 )
+
+OPENAI_METADATA_MAX_PAIRS = 16
+OPENAI_METADATA_KEY_MAX_LENGTH = 64
+OPENAI_METADATA_VALUE_MAX_LENGTH = 512
+
+MetadataKey = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=OPENAI_METADATA_KEY_MAX_LENGTH),
+]
+MetadataValue = Annotated[
+    str,
+    StringConstraints(max_length=OPENAI_METADATA_VALUE_MAX_LENGTH),
+]
 
 
 def _reject_legacy_fields(
@@ -125,7 +139,10 @@ class ChatCompletionRequest(BaseModel):
     user: str | None = None
     tools: list[Tool] | None = None
     tool_choice: Any | None = None
-    metadata: dict[str, str] | None = None
+    metadata: dict[MetadataKey, MetadataValue] | None = Field(
+        default=None,
+        max_length=OPENAI_METADATA_MAX_PAIRS,
+    )
 
     @model_validator(mode="before")
     @classmethod

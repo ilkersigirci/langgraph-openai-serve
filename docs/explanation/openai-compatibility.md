@@ -25,43 +25,91 @@ The implemented endpoints are listed in [Reference](../reference.md).
 
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
-feature discovery in a namespaced, versioned extension:
+feature and client-configuration discovery in a namespaced, versioned extension
+on the standard model-retrieval response:
 
 ```json
 {
-  "id": "interruptible-approval",
+  "id": "simple-graph",
   "object": "model",
   "created": 1720000000,
   "owned_by": "langgraph-openai-serve",
   "langgraph_openai_serve": {
     "schema_version": 1,
-    "features": ["interrupts"]
+    "features": [],
+    "client_config": {
+      "schema_version": 1,
+      "json_schema": {
+        "type": "object",
+        "properties": {
+          "use_history": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "defaults": {
+        "use_history": false
+      }
+    }
   }
 }
 ```
 
 `GraphConfig.features` is the single source of truth: the runner uses it to
-enable behavior and `/v1/models` serializes it for discovery. Additive features
-do not require a schema-version change; clients should ignore extension versions
-they do not understand.
+enable behavior and `GET /v1/models/{model}` serializes it for discovery.
+`GraphConfig.client_config` is an explicit, allowlisted public Pydantic model;
+LGOS never publishes a graph's internal LangGraph context schema automatically.
+Additive features do not require an outer schema-version change. The nested
+client configuration has its own version, and clients must ignore versions they
+do not understand.
+
+`GET /v1/models` remains a lightweight list containing only the standard
+`id`, `object`, `created`, and `owned_by` fields. A client lists profiles first
+and retrieves details only for the selected model. This avoids large list
+responses and keeps internal or secret-bearing runtime context out of discovery.
 
 [OpenAI treats added response properties as backward-compatible](https://developers.openai.com/api/reference/overview#backwards-compatibility).
 Direct JavaScript clients can read the property normally, and the
 [OpenAI Python SDK exposes it through `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
-An intermediary may still rebuild `/v1/models` from the standard fields and
-drop extensions. This is true whether the extension is named `metadata` or
-`langgraph_openai_serve`.
+An intermediary may still implement its own model catalog or rebuild a retrieved
+model from the standard fields and drop extensions. This is true whether the
+extension is named `metadata` or `langgraph_openai_serve`.
 
-| Path | Feature extension |
+| Path | Detailed LGOS extension |
 | --- | --- |
-| Direct LGOS `/v1/models` | Preserved |
-| LiteLLM or Bifrost native `/v1/models` | Not guaranteed |
-| Bifrost `/openai_passthrough/v1/models` with `x-model-provider: lgos` | Preserved by the documented pass-through path |
+| Direct LGOS `/v1/models/{model}` | Preserved |
+| LiteLLM or Bifrost native `/v1/models/{model}` | Not guaranteed |
+| Documented raw pass-through configured to target LGOS | Preserved when the response is forwarded unchanged |
 
-When discovery must cross a gateway, use a raw pass-through route that targets
-LGOS. See [Configure an OpenAI Proxy](../how-to-guides/openai-proxy.md) for the
-Bifrost configuration and route tradeoffs. Pin the gateway version and test
-`/models` during upgrades.
+The Chainlit demo accepts separate inference and discovery base URLs. See
+[Configure an OpenAI Proxy](../how-to-guides/openai-proxy.md) for supported
+gateway patterns and upgrade verification.
+
+## Public Client Configuration
+
+The request keeps each concern in its standard OpenAI location:
+
+| Concern | OpenAI request location |
+| --- | --- |
+| System instructions | A `system` message |
+| Small graph-specific values | One `metadata.langgraph_config` JSON object |
+| Graph selection | `model` |
+| Thread/checkpoint identity | Existing `metadata.langgraph_thread_id` convention |
+
+Only small graph-specific values belong to `ClientSettings`. System instructions
+are ordinary graph-input messages, independent of client-configuration discovery
+and validation.
+
+OpenAI metadata permits at most 16 string pairs, with keys up to 64 characters
+and values up to 512 characters. Public settings consume one pair and checkpoint
+identity consumes one more. Clients omit values equal to the advertised defaults;
+LGOS validates the compact JSON object directly through the public Pydantic model
+before graph execution. Native Chat Completions fields keep their standard
+semantics. Graphs that need identity, authorization, database clients, secrets,
+or other server-owned per-request context combine `client_config` with
+`context_factory(request, settings)`.
 
 ## Message And Schema Adaptation
 
@@ -164,7 +212,7 @@ rather than infer it from visible Chainlit messages.
 ## Known Differences From OpenAI
 
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
-- The supported surface focuses on chat completions, model listing, health, and
-  compatible tool-call flows.
+- The supported surface focuses on chat completions, model listing/retrieval,
+  health, and compatible tool-call flows.
 - Authentication is not enforced by default.
 - Token usage is approximate.

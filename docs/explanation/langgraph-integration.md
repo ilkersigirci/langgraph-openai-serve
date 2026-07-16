@@ -44,9 +44,11 @@ graph.astream(
 ```
 
 - `graph_input` contains mutable workflow state, including converted messages.
-- `runtime_context` is built by `GraphConfig.context_factory`, validated against
-  the graph's `context_schema`, and available to nodes as `runtime.context` on
-  an injected `Runtime[Context]`.
+- `runtime_context` starts with optional validated `GraphConfig.client_config`
+  settings and can be composed with server-owned values by
+  `GraphConfig.context_factory(request, settings)`. When the graph declares a
+  `context_schema`, LGOS validates the final value against it. Nodes receive the
+  result as `runtime.context` on an injected `Runtime[Context]`.
 - `runnable_config` contains callbacks and execution identity. When an OpenAI
   request supplies `metadata.langgraph_thread_id`, LGOS maps it to
   `config["configurable"]["thread_id"]` for the LangGraph checkpointer.

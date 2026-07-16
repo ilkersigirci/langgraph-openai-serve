@@ -6,77 +6,92 @@ including LiteLLM and Bifrost, can therefore proxy LGOS inference without a
 project-specific adapter.
 
 Normal proxy routes are sufficient for chat completions. Model discovery needs
-extra care because proxies may rebuild `/v1/models` responses and discard the
-`langgraph_openai_serve` extension.
+extra care because proxies may own or rebuild model list/retrieval responses and
+discard the `langgraph_openai_serve` extension. Use native proxy routes for
+inference and direct LGOS or a documented raw pass-through route for detailed
+model retrieval.
 
 ## Bifrost
 
-Register LGOS as a keyless custom OpenAI provider:
-
-```json
-{
-  "providers": {
-    "lgos": {
-      "keys": [],
-      "network_config": {
-        "base_url": "http://YOUR_IP_ADDRESS:8000",
-        "allow_private_network": true
-      },
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "is_key_less": true,
-        "allowed_requests": {
-          "list_models": true,
-          "chat_completion": true,
-          "chat_completion_stream": true,
-          "passthrough": true,
-          "passthrough_stream": true
-        }
-      }
-    }
-  }
-}
-```
+The Compose stack mounts the repository's
+[Bifrost configuration](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docker/bifrost/config.json).
+It dedicates Bifrost's built-in `openai` provider to LGOS because the documented
+`/openai_passthrough` route selects that provider by default.
 
 Set `allow_private_network` only when the LGOS URL resolves to a private network.
-The base URL must not include `/v1`; Bifrost forwards the path after removing
-`/openai_passthrough`.
+Keep the provider base URL free of `/v1`, and replace the demo's `DUMMY` key when
+LGOS requires authentication. See [Docker](docker.md) for startup and endpoint
+URLs.
 
-Select the `lgos` provider explicitly because Bifrost's OpenAI pass-through
-route defaults to its `openai` provider:
+Use Bifrost's normal OpenAI-compatible route for inference:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://gateway.example/openai_passthrough/v1",
+    base_url="https://gateway.example/v1",
     api_key="BIFROST_API_KEY",
-    default_headers={"x-model-provider": "lgos"},
 )
 
-models = client.models.list()
+response = client.chat.completions.create(
+    model="openai/simple-graph",
+    messages=[{"role": "user", "content": "Hello"}],
+)
 ```
 
-Use `/openai_passthrough/v1/models` for discovery. Use Bifrost's normal
-`/v1/chat/completions` route for inference when you need request parsing,
-routing, caching, or fallbacks; select graphs there as `lgos/<graph-name>`.
+Use Bifrost's documented raw OpenAI pass-through for detailed model discovery:
 
-Pass-through still uses Bifrost's core and plugin pipeline, but skips
-route-level conversion:
+```python
+discovery_client = OpenAI(
+    base_url="https://gateway.example/openai_passthrough/v1",
+    api_key="BIFROST_API_KEY",
+)
 
-| Retained | Reduced or unavailable |
-| --- | --- |
-| Logging, tracing, metrics, authentication, governance, budgets, rate limits, and raw upstream responses | Normalization, semantic caching, routing transformations, model/provider load balancing, configured cross-provider fallbacks, and plugins that require a parsed request |
+model = discovery_client.models.retrieve("simple-graph")
+```
+
+The pass-through returns the upstream body without route-level conversion, so
+the `langgraph_openai_serve` extension is preserved.
+
+The Chainlit demo keeps the two URLs explicit:
+
+```dotenv
+DEMO_CHAINLIT_INFERENCE__BASE_URL=https://gateway.example/v1
+DEMO_CHAINLIT_INFERENCE__API_KEY=BIFROST_API_KEY
+DEMO_CHAINLIT_INFERENCE_MODEL_PREFIX=openai/
+DEMO_CHAINLIT_DISCOVERY__BASE_URL=https://gateway.example/openai_passthrough/v1
+DEMO_CHAINLIT_DISCOVERY__API_KEY=BIFROST_API_KEY
+```
 
 See the [Bifrost pass-through contract](https://docs.getbifrost.ai/integrations/passthrough)
-and [custom-provider configuration](https://docs.getbifrost.ai/providers/custom-providers).
+and [provider configuration](https://docs.getbifrost.ai/quickstart/gateway/provider-configuration).
+
+## LiteLLM
+
+LiteLLM's native model catalog can serve standard model objects but does not
+guarantee forwarding LGOS extensions. Configure a distinct pass-through prefix
+that targets LGOS and includes subpaths:
+
+```yaml
+general_settings:
+  pass_through_endpoints:
+    - path: "/lgos-discovery"
+      target: "http://lgos-api:8000"
+      include_subpath: true
+      methods: ["GET"]
+```
+
+The resulting discovery base URL is
+`https://gateway.example/lgos-discovery/v1`; the normal LiteLLM `/v1` base URL
+remains the inference URL. Configure the complete `DEMO_CHAINLIT_DISCOVERY`
+endpoint when the pass-through route uses LiteLLM authentication. See LiteLLM's
+[custom pass-through endpoint documentation](https://docs.litellm.ai/docs/proxy/pass_through).
 
 ## Other Proxies
 
 Use the proxy's native OpenAI route for chat completions. For graph feature
-discovery, use only a documented raw pass-through route that can target LGOS,
-and verify `/models` after proxy upgrades. LiteLLM documents
-[`/openai_passthrough`](https://docs.litellm.ai/docs/pass_through/openai_passthrough)
-for direct OpenAI access; its native model catalog does not guarantee that LGOS
-extensions survive. Use direct LGOS discovery when no configurable raw route is
-available.
+and client-configuration discovery, use only a documented raw pass-through
+route that can target LGOS. Verify both `models.list()` and
+`models.retrieve(model)` after proxy upgrades. Use direct LGOS discovery when no
+configurable raw route is available, and treat a missing extension as a normal
+fallback to server defaults.

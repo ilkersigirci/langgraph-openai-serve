@@ -1,0 +1,22 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "lgos",
+          "value": "DUMMY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://lgos-demo-api:8000",
+        "allow_private_network": true
+      }
+    }
+  },
+  "config_store": {
+    "enabled": false
+  }
+}

@@ -17,7 +17,7 @@ from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_con
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.lgos_rag import lgos_rag
-from demo.api.graphs.simple import build_simple_context, simple_graph
+from demo.api.graphs.simple import SimpleContext, simple_graph
 from demo.api.loggers.setup import setup_logging
 from demo.api.settings import settings
 from langgraph_openai_serve import (
@@ -78,21 +78,10 @@ def create_custom_app() -> FastAPI:
                 graph=citation_graph,
                 streamable_node_names=["answer_with_citation"],
             ),
-            "simple-graph-with-history": GraphConfig(
+            "simple-graph": GraphConfig(
                 graph=simple_graph,
                 streamable_node_names=["generate"],
-                context_factory=lambda request: build_simple_context(
-                    request,
-                    use_history=True,
-                ),
-            ),
-            "simple-graph-no-history": GraphConfig(
-                graph=simple_graph,
-                streamable_node_names=["generate"],
-                context_factory=lambda request: build_simple_context(
-                    request,
-                    use_history=False,
-                ),
+                client_config=SimpleContext,
             ),
             "lgos-rag": GraphConfig(
                 graph=lgos_rag,

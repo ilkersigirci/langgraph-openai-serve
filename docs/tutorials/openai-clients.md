@@ -49,7 +49,7 @@ does not verify it.
     client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
     stream = client.chat.completions.create(
-        model="simple-graph-with-history",
+        model="simple-graph",
         messages=[{"role": "user", "content": "Write a short poem about graphs."}],
         stream=True,
     )
@@ -92,7 +92,7 @@ does not verify it.
     });
 
     const stream = await openai.chat.completions.create({
-      model: "simple-graph-with-history",
+      model: "simple-graph",
       messages: [{ role: "user", content: "Write a short poem about graphs." }],
       stream: true,
     });
@@ -103,36 +103,70 @@ does not verify it.
     }
     ```
 
-## Interrupt Resume
+## Model Discovery And Configuration
 
-Interrupt-enabled graphs use OpenAI tool calls. Pass
-`metadata.langgraph_thread_id`, then resume `langgraph_interrupt` with a matching
-`tool` message. See
-[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
-
-Clients can discover support before sending a request:
+List standard model summaries, then retrieve detailed LGOS metadata only for
+the selected graph:
 
 === "Python"
 
     ```python
     models = client.models.list()
-    for model in models.data:
-        extension = (model.model_extra or {}).get("langgraph_openai_serve", {})
-        if extension.get("schema_version") == 1:
-            print(model.id, extension.get("features", []))
+    selected = models.data[0].id
+    model = client.models.retrieve(selected)
+
+    extension = (model.model_extra or {}).get("langgraph_openai_serve", {})
+    if extension.get("schema_version") == 1:
+        print(extension.get("features", []))
+        print(extension.get("client_config"))
     ```
 
 === "JavaScript"
 
     ```javascript
     const models = await openai.models.list();
-    for (const model of models.data) {
-      const extension = model.langgraph_openai_serve || {};
-      if (extension.schema_version === 1) {
-        console.log(model.id, extension.features || []);
-      }
+    const model = await openai.models.retrieve(models.data[0].id);
+
+    const extension = model.langgraph_openai_serve || {};
+    if (extension.schema_version === 1) {
+      console.log(extension.features || []);
+      console.log(extension.client_config);
     }
     ```
+
+The simple demo carries changed graph settings in one JSON metadata envelope.
+System instructions remain ordinary OpenAI messages, independent of discovered
+client settings:
+
+```python
+import json
+
+response = client.chat.completions.create(
+    model="simple-graph",
+    messages=[
+        {"role": "system", "content": "Answer concisely."},
+        {"role": "user", "content": "Explain LangGraph."},
+    ],
+    metadata={
+        "langgraph_config": json.dumps({"use_history": True}),
+    },
+)
+```
+
+Use the fixed `metadata.langgraph_config` envelope and omit values equal to the
+advertised defaults. Native Chat Completions fields such as `temperature` keep
+their normal API meaning and are not reused as graph runtime context.
+
+The server validates advertised settings against the retrieved JSON Schema.
+Do not send arbitrary nested or large configuration values through metadata.
+
+## Interrupt Resume
+
+Interrupt-enabled graphs use OpenAI tool calls. Retrieve the selected model and
+check `langgraph_openai_serve.features` for `interrupts` before starting. Pass
+`metadata.langgraph_thread_id`, then resume `langgraph_interrupt` with a matching
+`tool` message. See
+[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
 ## Diagnostics
 

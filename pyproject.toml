@@ -39,6 +39,7 @@ dependencies = [
     "fastapi[standard]>=0.121.0",
     "langgraph>=1.1.10,<2.0.0",
     "openai>=2.0.0,<3.0.0",
+    "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
 ]
 
@@ -67,7 +68,7 @@ test = [
 ]
 demo = [
     "asyncpg>=0.30.0",
-    "chainlit>=2.11.1",
+    "chainlit>=2.11.1,<3",
     "langchain>=1.2.0",
     "langchain-openai>=1.2.1",
     "langchain-text-splitters>=1.1.0",

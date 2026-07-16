@@ -27,7 +27,7 @@ GraphConfig(
 
 1.  Keep the graph's native LangGraph schema.
 2.  Build graph input from the validated OpenAI request and converted messages.
-3.  Build optional LangGraph runtime context from the request.
+3.  Build optional LangGraph runtime context from the request and public settings.
 4.  Render the graph's native output as OpenAI assistant text.
 
 See `demo/api/graphs/custom_io.py` for the runnable version.
@@ -76,7 +76,7 @@ Build that context from the validated OpenAI request at the adapter boundary:
 ```python title="Request to runtime context"
 from langchain_core.messages import BaseMessage
 
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import ClientSettings, GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 
 
@@ -87,7 +87,10 @@ def request_to_input(
     return {"question": str(messages[-1].content or "")}
 
 
-def context_factory(request: ChatCompletionRequest) -> AppContext:
+def context_factory(
+    request: ChatCompletionRequest,
+    _client_settings: ClientSettings | None,
+) -> AppContext:
     return AppContext(user_id=request.user or "anonymous")
 
 
@@ -112,6 +115,56 @@ put application values such as `user_id`, model selection, or prompt options in
     See [Context versus config](../explanation/langgraph-integration.md#context-versus-config)
     for execution settings, checkpoint identity, and async config propagation.
     For a checkpointed workflow, continue to [Interrupts](#interrupts).
+
+## User-Configurable Runtime Context
+
+Expose only a safe, explicit subset of runtime context when an ordinary OpenAI
+client should configure a graph. Define that public subset as a `ClientSettings`
+model. All fields automatically share one JSON metadata envelope:
+
+```python title="Public client configuration"
+from pydantic import Field
+
+from langgraph_openai_serve import ClientSettings, GraphConfig
+
+
+class PublicRuntimeConfig(ClientSettings):
+    use_history: bool = Field(
+        default=True,
+        title="Use conversation history",
+    )
+
+configurable_graph = GraphConfig(
+    graph=my_graph,
+    client_config=PublicRuntimeConfig,
+    streamable_node_names=["generate"],
+)
+```
+
+LGOS validates the request directly from JSON and passes the resulting
+`PublicRuntimeConfig` instance as LangGraph runtime context. `ClientSettings`
+provides strict, immutable, extra-forbid, default-validating model configuration.
+`GET /v1/models` remains a standard lightweight list;
+`GET /v1/models/{model}` returns the generated JSON Schema, validated defaults,
+and schema version for the selected graph.
+
+Small typed options use one compact JSON object, for example
+`metadata={"langgraph_config": "{\"use_history\":false}"}`. Clients omit
+values equal to the advertised defaults. Native Chat Completions fields keep
+their normal API meaning and are not reused as graph context.
+
+System instructions remain ordinary `system` messages in graph input. They are
+independent of `ClientSettings` and do not appear in its discovery descriptor.
+
+!!! warning "Do not publish internal context automatically"
+
+    Keep user IDs, tenant identity, authorization state, database clients,
+    secrets, and resource handles server-derived. Combine `client_config` with
+    `context_factory(request, settings)` when the final runtime context also
+    needs server-owned values; do not expose those values as public configuration.
+
+See the runnable configuration in `demo/api/graphs/simple.py` and the exact
+wire format in [OpenAI compatibility](../explanation/openai-compatibility.md#public-client-configuration).
 
 ## Async Factories
 

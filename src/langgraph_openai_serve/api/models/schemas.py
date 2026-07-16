@@ -1,25 +1,18 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from langgraph_openai_serve.graph.features import GraphFeature
 
 
-class ModelPermission(BaseModel):
-    """Model permission information."""
+class ModelClientConfig(BaseModel):
+    """Versioned public configuration schema for one registered graph."""
 
-    id: str
-    object: str = "model_permission"
-    created: int
-    allow_create_engine: bool
-    allow_sampling: bool
-    allow_logprobs: bool
-    allow_search_indices: bool
-    allow_view: bool
-    allow_fine_tuning: bool
-    organization: str
-    group: str | None = None
-    is_blocking: bool
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    json_schema: dict[str, JsonValue]
+    defaults: dict[str, JsonValue]
 
 
 class LangGraphModelExtension(BaseModel):
@@ -27,6 +20,7 @@ class LangGraphModelExtension(BaseModel):
 
     schema_version: Literal[1] = 1
     features: list[GraphFeature]
+    client_config: ModelClientConfig | None = None
 
 
 class Model(BaseModel):
@@ -36,10 +30,11 @@ class Model(BaseModel):
     object: str = "model"
     created: int
     owned_by: str
-    root: str | None = None
-    parent: str | None = None
-    max_model_len: int | None = None
-    permission: list[ModelPermission]
+
+
+class ModelDetails(Model):
+    """Retrieved model with optional LGOS discovery metadata."""
+
     langgraph_openai_serve: LangGraphModelExtension
 
 
