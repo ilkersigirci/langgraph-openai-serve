@@ -2,7 +2,8 @@
 
 import logging
 import time
-from typing import AsyncIterator
+from contextlib import aclosing
+from typing import AsyncGenerator
 
 from langgraph.types import CustomStreamPart
 
@@ -65,7 +66,7 @@ class ChatCompletionService:
 
     async def stream_completion(
         self, chat_request: ChatCompletionRequest, run: GraphRun
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         """Stream a chat completion response."""
         start_time = time.time()
         response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
@@ -75,19 +76,22 @@ class ChatCompletionService:
         try:
             yield response_builder.role()
 
-            async for event in stream_run(run):
-                if isinstance(event, LangGraphInterrupt):
-                    yield response_builder.interrupt(event)
-                    yield response_builder.finish("tool_calls")
-                    yield response_builder.done()
-                    return
+            run_stream = stream_run(run)
+            # Closing the HTTP response must also close the nested graph stream.
+            async with aclosing(run_stream):
+                async for event in run_stream:
+                    if isinstance(event, LangGraphInterrupt):
+                        yield response_builder.interrupt(event)
+                        yield response_builder.finish("tool_calls")
+                        yield response_builder.done()
+                        return
 
-                if not isinstance(event, str):
-                    custom_events.append(event)
-                    continue
+                    if not isinstance(event, str):
+                        custom_events.append(event)
+                        continue
 
-                content_parts.append(event)
-                yield response_builder.text(event)
+                    content_parts.append(event)
+                    yield response_builder.text(event)
 
             content = "".join(content_parts)
             annotations = [

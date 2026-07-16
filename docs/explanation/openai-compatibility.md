@@ -74,7 +74,9 @@ adapters keep custom LangGraph schemas behind that public boundary. See
 
 Streaming responses use OpenAI-compatible Server-Sent Events. See
 [LangGraph Integration](langgraph-integration.md#runner-behavior) for internal
-event handling.
+event handling and [Request Cancellation](langgraph-integration.md#request-cancellation)
+for request-scoped disconnect cancellation, proxy behavior, and cooperative
+limits.
 
 ## Citation Ownership And UI Rendering
 
