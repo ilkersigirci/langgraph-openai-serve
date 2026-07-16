@@ -1,6 +1,6 @@
 """Simple LLM-backed graph used by the demo API."""
 
-from typing import Annotated, Sequence
+from typing import Annotated, Literal, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -33,6 +33,11 @@ class SimpleContext(ClientSettings):
         title="Use conversation history",
         description="Include prior user and assistant messages in each generation.",
     )
+    audience: Literal["general", "beginner", "expert"] = Field(
+        default="general",
+        title="Audience",
+        description="Adapt terminology and assumed knowledge to the selected audience.",
+    )
 
 
 async def generate(
@@ -50,7 +55,12 @@ async def generate(
     context = runtime.context or SimpleContext()
     messages = state.messages if context.use_history else state.messages[-1:]
     conversation = [
-        SystemMessage(content=DEFAULT_SYSTEM_PROMPT),
+        SystemMessage(
+            content=(
+                f"{DEFAULT_SYSTEM_PROMPT} "
+                f"Adapt explanations for {context.audience} readers."
+            )
+        ),
         *messages,
     ]
 

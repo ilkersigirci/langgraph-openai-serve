@@ -8,12 +8,16 @@ from langchain_core.runnables import RunnableLambda
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("use_history", "expected_messages"),
+    ("context", "expected_messages"),
     [
         pytest.param(
-            True,
+            simple_module.SimpleContext(use_history=True, audience="beginner"),
             [
-                ("system", simple_module.DEFAULT_SYSTEM_PROMPT),
+                (
+                    "system",
+                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                    "Adapt explanations for beginner readers.",
+                ),
                 ("human", "First"),
                 ("ai", "Prior answer"),
                 ("human", "Latest"),
@@ -21,18 +25,22 @@ from langchain_core.runnables import RunnableLambda
             id="history",
         ),
         pytest.param(
-            False,
+            simple_module.SimpleContext(use_history=False, audience="expert"),
             [
-                ("system", simple_module.DEFAULT_SYSTEM_PROMPT),
+                (
+                    "system",
+                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                    "Adapt explanations for expert readers.",
+                ),
                 ("human", "Latest"),
             ],
             id="latest-message",
         ),
     ],
 )
-async def test_runtime_context_controls_conversation_history(
+async def test_runtime_context_controls_model_input(
     monkeypatch: pytest.MonkeyPatch,
-    use_history: bool,
+    context: simple_module.SimpleContext,
     expected_messages: list[tuple[str, str]],
 ) -> None:
     model_inputs: list[Any] = []
@@ -55,7 +63,7 @@ async def test_runtime_context_controls_conversation_history(
                 HumanMessage(content="Latest"),
             ],
         ),
-        context=simple_module.SimpleContext(use_history=use_history),
+        context=context,
     )
 
     assert [(message.type, message.content) for message in model_inputs[0]] == (

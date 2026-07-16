@@ -209,8 +209,8 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
 `make run-demo-api` registers:
 
-- `simple-graph` (Chainlit can change conversation history through the
-  discovered public configuration)
+- `simple-graph` (Chainlit can change conversation history and intended audience
+  through the discovered public configuration)
 - `citation-events` (structured URL citations alongside portable Markdown)
 - `lgos-rag`
 - `custom-input-output-context`

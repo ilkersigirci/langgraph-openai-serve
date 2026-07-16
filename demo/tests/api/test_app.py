@@ -74,21 +74,36 @@ async def test_simple_model_retrieval_exposes_client_configuration(
     extension = (model.model_extra or {})["langgraph_openai_serve"]
     client_config = extension["client_config"]
     assert client_config["schema_version"] == CLIENT_CONFIG_SCHEMA_VERSION
-    assert client_config["defaults"] == {"use_history": False}
+    assert client_config["defaults"] == {
+        "use_history": False,
+        "audience": "general",
+    }
+    assert client_config["json_schema"]["properties"]["audience"]["enum"] == [
+        "general",
+        "beginner",
+        "expert",
+    ]
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("metadata", "use_history"),
+    ("metadata", "expected_context"),
     [
-        (None, False),
-        ({"langgraph_config": '{"use_history":true}'}, True),
+        (None, SimpleContext()),
+        (
+            {"langgraph_config": '{"use_history":true}'},
+            SimpleContext(use_history=True),
+        ),
+        (
+            {"langgraph_config": '{"audience":"expert"}'},
+            SimpleContext(audience="expert"),
+        ),
     ],
 )
 async def test_simple_model_builds_its_runtime_context(
     demo_app: FastAPI,
     metadata: dict[str, str] | None,
-    use_history: bool,
+    expected_context: SimpleContext,
 ) -> None:
     request = ChatCompletionRequest(
         model="simple-graph",
@@ -99,9 +114,7 @@ async def test_simple_model_builds_its_runtime_context(
     graph_config = demo_app.state.graph_registry.get_graph("simple-graph")
     graph = await graph_config.resolve_graph()
 
-    assert await graph_config.build_context(request, graph) == SimpleContext(
-        use_history=use_history
-    )
+    assert await graph_config.build_context(request, graph) == expected_context
 
 
 @pytest.mark.anyio

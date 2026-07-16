@@ -129,9 +129,9 @@ print(response.choices[0].message.content)
 
 - `demo/api/app.py`: registers graph names as OpenAI model names.
 - `demo/api/graphs/simple.py`: a single-node message graph whose runtime context
-  controls conversation history. It publishes that safe field explicitly
-  through model retrieval and prepends a fixed application system prompt that
-  is not part of runtime configuration.
+  controls conversation history and intended audience. It publishes those safe
+  fields explicitly through model retrieval and keeps arbitrary system prompt
+  text out of runtime configuration.
 - `demo/api/graphs/lgos_rag.py`: agentic RAG over every Markdown file in
   `docs/`, with relevance grading, bounded query rewriting, streamed generation,
   and grounded answers.

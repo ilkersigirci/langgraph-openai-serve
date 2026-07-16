@@ -134,9 +134,9 @@ the selected graph:
     }
     ```
 
-The simple demo carries changed graph settings in one JSON metadata envelope.
-System instructions remain ordinary OpenAI messages, independent of discovered
-client settings:
+The simple demo carries controlled graph settings in one JSON metadata envelope.
+Arbitrary system instructions remain ordinary OpenAI messages and cannot be
+supplied through discovered client settings:
 
 ```python
 import json
@@ -148,7 +148,9 @@ response = client.chat.completions.create(
         {"role": "user", "content": "Explain LangGraph."},
     ],
     metadata={
-        "langgraph_config": json.dumps({"use_history": True}),
+        "langgraph_config": json.dumps(
+            {"use_history": True, "audience": "beginner"}
+        ),
     },
 )
 ```

@@ -45,12 +45,18 @@ on the standard model-retrieval response:
           "use_history": {
             "type": "boolean",
             "default": false
+          },
+          "audience": {
+            "type": "string",
+            "enum": ["general", "beginner", "expert"],
+            "default": "general"
           }
         },
         "additionalProperties": false
       },
       "defaults": {
-        "use_history": false
+        "use_history": false,
+        "audience": "general"
       }
     }
   }
@@ -98,9 +104,10 @@ The request keeps each concern in its standard OpenAI location:
 | Graph selection | `model` |
 | Thread/checkpoint identity | Existing `metadata.langgraph_thread_id` convention |
 
-Only small graph-specific values belong to `ClientSettings`. System instructions
-are ordinary graph-input messages, independent of client-configuration discovery
-and validation.
+Only small graph-specific values belong to `ClientSettings`. A graph may expose
+controlled semantic choices such as intended audience, but not arbitrary system
+instruction text. Client-authored system instructions remain ordinary graph-input
+messages.
 
 OpenAI metadata permits at most 16 string pairs, with keys up to 64 characters
 and values up to 512 characters. Public settings consume one pair and checkpoint
