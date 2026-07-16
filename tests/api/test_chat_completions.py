@@ -5,7 +5,24 @@ from httpx import AsyncClient
 from openai import AsyncOpenAI, BadRequestError
 from starlette import status
 
+from langgraph_openai_serve.api.chat.schemas import (
+    ChatCompletionRequest,
+    ChatCompletionRequestMessage,
+    ChatCompletionResponseMessage,
+    ChatCompletionStreamResponseDelta,
+    Role,
+)
+
 pytestmark = pytest.mark.anyio
+
+
+def test_chat_completion_schema_excludes_legacy_function_fields() -> None:
+    assert "functions" not in ChatCompletionRequest.model_fields
+    assert "function_call" not in ChatCompletionRequest.model_fields
+    assert "function_call" not in ChatCompletionRequestMessage.model_fields
+    assert "function_call" not in ChatCompletionResponseMessage.model_fields
+    assert "function_call" not in ChatCompletionStreamResponseDelta.model_fields
+    assert "function" not in {role.value for role in Role}
 
 
 async def test_non_streaming_completion_matches_openai_contract(
@@ -28,6 +45,32 @@ async def test_non_streaming_completion_matches_openai_contract(
     assert usage.prompt_tokens == 1
     assert usage.completion_tokens == 1
     assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
+
+
+async def test_modern_function_tools_remain_supported(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
+        model="test",
+        messages=[{"role": "user", "content": "What is the weather?"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get the weather for a city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                },
+            }
+        ],
+        tool_choice="auto",
+    )
+
+    assert response.choices[0].message.content == "hello"
 
 
 async def test_streaming_completion_forwards_llm_chunks(

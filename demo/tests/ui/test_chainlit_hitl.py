@@ -2,7 +2,7 @@ import importlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from openai.types import Model
@@ -111,3 +111,31 @@ def test_helpers_extract_and_preserve_the_interrupt_tool_call(
         "content": None,
         "tool_calls": [interrupt_call],
     }
+
+
+@pytest.mark.anyio
+async def test_completion_errors_are_excluded_from_model_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+    hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
+    error_message = Mock(metadata=None, send=AsyncMock())
+    mark_model_context_excluded = Mock()
+    monkeypatch.setattr(hitl, "text_only_chat_messages", Mock(return_value=[]))
+    monkeypatch.setattr(
+        hitl,
+        "create_completion",
+        AsyncMock(side_effect=RuntimeError("backend unavailable")),
+    )
+    monkeypatch.setattr(hitl.cl, "Message", Mock(return_value=error_message))
+    monkeypatch.setattr(
+        hitl,
+        "mark_model_context_excluded",
+        mark_model_context_excluded,
+    )
+
+    await hitl.on_message(Mock())
+
+    mark_model_context_excluded.assert_called_once_with(error_message)
+    error_message.send.assert_awaited_once_with()

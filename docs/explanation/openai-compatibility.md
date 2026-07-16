@@ -138,11 +138,26 @@ Tool definitions are accepted for OpenAI compatibility. Graphs can read them
 through the full request in `request_to_input` or load tools independently, as
 the mock MCP demo does.
 
+LGOS supports only the modern Chat Completions tool-calling shape: `tools`,
+`tool_choice`, assistant `tool_calls`, and `tool` messages with a matching
+`tool_call_id`. The deprecated `functions`, singular `function_call`, and
+`function` message role are rejected rather than silently ignored. OpenAI marks
+the older `functions` and top-level `function_call` parameters as deprecated in
+the [Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
+
 Interrupt-enabled graphs represent human-in-the-loop pauses as an OpenAI tool
 call named `langgraph_interrupt` with a versioned JSON argument envelope
 containing the thread id, interrupt id, and payload. Clients resume by sending a
 follow-up `tool` role message with the matching `tool_call_id` and JSON content
 such as `{"resume": "approved"}`.
+
+The Chainlit demo uses Chainlit's native `chat_context.to_openai()` projection
+as a role/content UI transcript. It is not the canonical tool-protocol ledger:
+the HITL client adds the assistant tool call and matching tool result to the
+immediate resume request, while LGOS preserves any modern tool fields it
+receives at the API boundary. A future tool-executing UI that needs completed
+tool pairs across later turns must maintain that protocol state explicitly
+rather than infer it from visible Chainlit messages.
 
 ## Known Differences From OpenAI
 

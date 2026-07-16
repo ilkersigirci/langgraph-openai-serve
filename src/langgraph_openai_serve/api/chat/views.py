@@ -31,6 +31,7 @@ from langgraph_openai_serve.graph.utils import (
     MissingThreadIDError,
     prepare_run,
 )
+from langgraph_openai_serve.utils.message import InvalidChatMessageError
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ CLIENT_ERROR_TYPES = (
     MissingThreadIDError,
     InvalidResumeRequestError,
     GraphNotFoundError,
+    InvalidChatMessageError,
 )
 
 
@@ -110,5 +112,7 @@ def client_error_param(error: Exception) -> str | None:
     if isinstance(error, MissingThreadIDError):
         return f"metadata.{THREAD_METADATA_KEY}"
     if isinstance(error, InvalidResumeRequestError):
+        return "messages"
+    if isinstance(error, InvalidChatMessageError):
         return "messages"
     return None

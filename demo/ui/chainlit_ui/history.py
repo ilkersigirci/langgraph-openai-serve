@@ -1,64 +1,54 @@
-"""OpenAI message history restoration for persisted Chainlit threads."""
+"""Text-only OpenAI messages from Chainlit's native chat context."""
 
-from __future__ import annotations
-
-import json
-from datetime import UTC, datetime
-from typing import Any
+from typing import cast
 
 import chainlit as cl
-from chainlit.step import StepDict
 from chainlit.types import ThreadDict
+from openai.types.chat import ChatCompletionMessageParam
 
-MESSAGE_ROLES = {
-    "assistant_message": "assistant",
-    "system_message": "system",
-    "user_message": "user",
-}
+# Persisted Chainlit metadata flag that keeps UI-only messages out of model context.
+MODEL_CONTEXT_EXCLUDED_KEY = "langgraph_openai_serve.exclude_from_model_context"
 
 
-def _step_order(item: tuple[int, StepDict]) -> tuple[bool, float, int]:
-    index, step = item
-    raw_timestamp = step.get("createdAt") or step.get("start") or step.get("end")
-    timestamp = None
-    if raw_timestamp:
-        try:
-            parsed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=UTC)
-            timestamp = parsed.timestamp()
-        except ValueError:
-            pass
-    return timestamp is None, timestamp or 0.0, index
+def mark_model_context_excluded(
+    message: cl.Message | cl.AskActionMessage,
+) -> None:
+    """Keep a UI-only message out of subsequent model requests."""
+    message.metadata = {
+        **(message.metadata or {}),
+        MODEL_CONTEXT_EXCLUDED_KEY: True,
+    }
 
 
-def _message_content(output: object) -> str:
-    if isinstance(output, str):
-        return output
-    return json.dumps(output, ensure_ascii=False, sort_keys=True)
-
-
-def messages_from_thread(thread: ThreadDict) -> list[dict[str, Any]]:
-    """Rebuild portable OpenAI messages from persisted Chainlit message steps."""
-    messages: list[dict[str, Any]] = []
-    ordered_steps = sorted(enumerate(thread.get("steps", [])), key=_step_order)
-    for _, step in ordered_steps:
-        role = MESSAGE_ROLES.get(step.get("type", ""))
-        output = step.get("output")
-        if role is None or output is None or step.get("isError"):
+def mark_persisted_errors_excluded(thread: ThreadDict) -> None:
+    """Preserve Chainlit's persisted error flag through native context restore."""
+    for step in thread.get("steps", []):
+        if "message" not in step.get("type", "") or not step.get("isError"):
             continue
-        messages.append({"role": role, "content": _message_content(output)})
-    return messages
+        metadata = step.get("metadata")
+        step["metadata"] = {
+            **(metadata if isinstance(metadata, dict) else {}),
+            MODEL_CONTEXT_EXCLUDED_KEY: True,
+        }
 
 
-def restore_chat_messages(thread: ThreadDict) -> list[dict[str, Any]]:
-    """Use Chainlit's restored JSON session, with thread steps as a fallback."""
-    restored = cl.user_session.get("messages")
-    if isinstance(restored, list) and all(
-        isinstance(message, dict) for message in restored
-    ):
-        return restored
+def text_only_chat_messages() -> list[ChatCompletionMessageParam]:
+    """Return Chainlit's role/content projection of the current chat.
 
-    messages = messages_from_thread(thread)
-    cl.user_session.set("messages", messages)
-    return messages
+    This is UI transcript context, not a lossless OpenAI protocol ledger. Chainlit's
+    native projection does not retain fields such as ``tool_calls`` or
+    ``tool_call_id``. Messages explicitly marked as UI-only, including failed or
+    cancelled assistant output, are omitted from model context.
+    """
+    chainlit_messages = cl.chat_context.get()
+    openai_messages = cl.chat_context.to_openai()
+    return [
+        cast(ChatCompletionMessageParam, openai_message)
+        for chainlit_message, openai_message in zip(
+            chainlit_messages,
+            openai_messages,
+            strict=True,
+        )
+        if not chainlit_message.is_error
+        and not (chainlit_message.metadata or {}).get(MODEL_CONTEXT_EXCLUDED_KEY)
+    ]

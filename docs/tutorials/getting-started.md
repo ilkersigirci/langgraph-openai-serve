@@ -208,7 +208,9 @@ data layer and migration command.
 
 Open `http://localhost:5000` and use the selected login. Both UI run targets
 apply pending schema migrations before starting. Opening a stored thread
-restores its OpenAI message history and continues with the same login identity.
+restores its native Chainlit role/content transcript and continues with the same
+login identity. Structured tool-call state is assembled separately when the
+HITL client sends an interrupt-resume request.
 
 !!! warning "Production credentials and origins"
 
