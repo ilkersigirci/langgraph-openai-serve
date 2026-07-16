@@ -17,7 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -284,31 +284,25 @@ def _retrieved_documents(state: LgosRagState) -> list[Document]:
 
 async def generate_query_or_respond(
     state: LgosRagState,
-    config: RunnableConfig | None = None,
 ) -> dict[str, Any]:
     """Choose between a direct response and documentation retrieval."""
     question = state.question or _latest_human_text(state)
     decision = (
         await _retrieval_decider()
         .with_config(tags=[TAG_HIDDEN])
-        .ainvoke(
-            [SystemMessage(content=DECISION_PROMPT), *state.messages],
-            config=config,
-        )
+        .ainvoke([SystemMessage(content=DECISION_PROMPT), *state.messages])
     )
     if decision.tool_calls:
         response = decision
     else:
         response = await _chat_model().ainvoke(
             [SystemMessage(content=DIRECT_RESPONSE_PROMPT), *state.messages],
-            config=config,
         )
     return {"messages": [response], "question": question}
 
 
 async def grade_documents(
     state: LgosRagState,
-    config: RunnableConfig | None = None,
 ) -> Literal["generate_answer", "rewrite_question", "answer_no_results"]:
     """Route relevant context to generation and retry irrelevant retrievals."""
     tool_message = _last_tool_message(state)
@@ -318,7 +312,6 @@ async def grade_documents(
     )
     raw_grade = await _document_grader().ainvoke(
         [HumanMessage(content=prompt)],
-        config=config,
     )
     grade = GradeDocuments.model_validate(raw_grade)
     if grade.binary_score == "yes":
@@ -330,13 +323,11 @@ async def grade_documents(
 
 async def rewrite_question(
     state: LgosRagState,
-    config: RunnableConfig | None = None,
 ) -> dict[str, Any]:
     """Rewrite an unsuccessful retrieval query before trying again."""
     query = _retrieval_query(state)
     response = await _internal_chat_model().ainvoke(
         [HumanMessage(content=REWRITE_PROMPT.format(query=query))],
-        config=config,
     )
     rewritten_query = str(response.text).strip() or query
     return {
@@ -347,7 +338,6 @@ async def rewrite_question(
 
 async def generate_answer(
     state: LgosRagState,
-    config: RunnableConfig | None = None,
 ) -> dict[str, list[AIMessage]]:
     """Generate a grounded answer with direct Markdown source links."""
     documents = _retrieved_documents(state)
@@ -367,14 +357,12 @@ async def generate_answer(
             "query": _retrieval_query(state),
             "context": _format_context(documents),
         },
-        config=config,
     )
     return {"messages": [AIMessage(content=answer)]}
 
 
 async def answer_no_results(
     state: LgosRagState,
-    config: RunnableConfig | None = None,
 ) -> dict[str, list[AIMessage]]:
     """Return a grounded refusal after bounded retrieval retries."""
     prompt = ChatPromptTemplate.from_messages(
@@ -385,7 +373,6 @@ async def answer_no_results(
     )
     answer = await (prompt | _chat_model() | StrOutputParser()).ainvoke(
         {"question": _original_question(state)},
-        config=config,
     )
     return {"messages": [AIMessage(content=answer)]}
 

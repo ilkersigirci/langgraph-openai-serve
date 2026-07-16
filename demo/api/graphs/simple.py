@@ -1,17 +1,24 @@
 """Simple LLM-backed graph used by the demo API."""
 
+from dataclasses import dataclass
 from typing import Annotated, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
 from demo.api.settings import settings
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant called Langgraph Openai Serve. "
+    "Chat with the user with a friendly tone."
+)
 
 
 class AgentState(BaseModel):
@@ -20,15 +27,17 @@ class AgentState(BaseModel):
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
-class SimpleConfigSchema(BaseModel):
-    """Configurable fields accepted by the demo graph."""
+@dataclass(frozen=True)
+class SimpleContext:
+    """Immutable runtime context accepted by the demo graph."""
 
     use_history: bool = False
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT
 
 
 async def generate(
     state: AgentState,
-    config: RunnableConfig | None = None,
+    runtime: Runtime[SimpleContext],
 ) -> dict[str, list[AIMessage]]:
     """Generate a response to the latest message in the graph state."""
     model = ChatOpenAI(
@@ -38,16 +47,10 @@ async def generate(
         temperature=0.7,
         streaming=True,
     )
-    system_message = (
-        "system",
-        "You are a helpful assistant called Langgraph Openai Serve. "
-        "Chat with the user with friendly tone",
-    )
-    configurable = SimpleConfigSchema.model_validate(
-        (config or {}).get("configurable", {})
-    )
+    context = runtime.context or SimpleContext()
+    system_message = ("system", context.system_prompt)
 
-    if configurable.use_history:
+    if context.use_history:
         prompt = ChatPromptTemplate.from_messages([system_message, *state.messages])
         response = await (prompt | model | StrOutputParser()).ainvoke({})
     else:
@@ -61,11 +64,30 @@ async def generate(
     return {"messages": [AIMessage(content=response)]}
 
 
-workflow = StateGraph(AgentState, context_schema=SimpleConfigSchema)
+workflow = StateGraph(AgentState, context_schema=SimpleContext)
 workflow.add_node("generate", generate)
 workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")
 
 simple_graph = workflow.compile()
 
-__all__ = ["simple_graph"]
+
+def build_simple_context(
+    request: ChatCompletionRequest,
+    *,
+    use_history: bool,
+) -> SimpleContext:
+    """Build simple graph context from OpenAI request metadata."""
+    metadata = request.metadata or {}
+    return SimpleContext(
+        use_history=use_history,
+        system_prompt=metadata.get("system_prompt", DEFAULT_SYSTEM_PROMPT),
+    )
+
+
+__all__ = [
+    "DEFAULT_SYSTEM_PROMPT",
+    "SimpleContext",
+    "build_simple_context",
+    "simple_graph",
+]

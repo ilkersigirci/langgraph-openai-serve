@@ -7,7 +7,40 @@ from enum import Enum
 from typing import Any, Literal
 
 from openai.types.chat.chat_completion_message import Annotation
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    model_validator,
+)
+
+
+def _reject_legacy_fields(
+    data: Any,
+    replacements: dict[str, str],
+    *,
+    title: str,
+) -> Any:
+    if not isinstance(data, dict):
+        return data
+
+    for field, replacement in replacements.items():
+        if field in data:
+            error = ValueError(
+                f"'{field}' is not supported; use '{replacement}' instead."
+            )
+            raise ValidationError.from_exception_data(
+                title,
+                [
+                    {
+                        "type": "value_error",
+                        "loc": (field,),
+                        "input": data[field],
+                        "ctx": {"error": error},
+                    }
+                ],
+            )
+    return data
 
 
 class Role(str, Enum):
@@ -16,24 +49,7 @@ class Role(str, Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
-    FUNCTION = "function"
     TOOL = "tool"
-
-
-class FunctionCall(BaseModel):
-    """Model for a function call."""
-
-    name: str
-    arguments: str
-
-
-class ChatMessage(BaseModel):
-    """Model for a chat message."""
-
-    role: Role
-    content: str | None = None
-    name: str | None = None
-    function_call: FunctionCall | None = None
 
 
 class ToolCallFunction(BaseModel):
@@ -57,9 +73,18 @@ class ChatCompletionRequestMessage(BaseModel):
     role: Role
     content: str | None = None
     name: str | None = None
-    function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_fields(cls, data: Any) -> Any:
+        """Reject the deprecated singular Chat Completions function call."""
+        return _reject_legacy_fields(
+            data,
+            {"function_call": "tool_calls"},
+            title=cls.__name__,
+        )
 
 
 class FunctionDefinition(BaseModel):
@@ -98,11 +123,22 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: float | None = 0.0
     logit_bias: dict[str, float] | None = None
     user: str | None = None
-    functions: list[FunctionDefinition] | None = None
-    function_call: str | FunctionCall | None = None
     tools: list[Tool] | None = None
     tool_choice: Any | None = None
     metadata: dict[str, str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_fields(cls, data: Any) -> Any:
+        """Reject deprecated Chat Completions function parameters."""
+        return _reject_legacy_fields(
+            data,
+            {
+                "function_call": "tool_choice",
+                "functions": "tools",
+            },
+            title=cls.__name__,
+        )
 
 
 class ChatCompletionResponseMessage(BaseModel):
@@ -111,7 +147,6 @@ class ChatCompletionResponseMessage(BaseModel):
     role: Role
     content: str | None = None
     annotations: list[Annotation] | None = None
-    function_call: FunctionCall | None = None
     tool_calls: list[ToolCall] | None = None
 
 
@@ -164,7 +199,6 @@ class ChatCompletionStreamResponseDelta(BaseModel):
 
     role: Role | None = None
     content: str | None = None
-    function_call: FunctionCall | None = None
     tool_calls: list[ChatCompletionStreamToolCall] | None = None
 
 

@@ -10,7 +10,20 @@
 
     OpenAI base URL: `http://localhost:8000/v1`
 
-=== "Full stack"
+=== "Chainlit UI"
+
+    ```bash
+    docker compose up -d lgos-chainlit
+    ```
+
+    - OpenAI base URL: `http://localhost:8000/v1`
+    - Chainlit: `http://localhost:5000`
+
+    Prepare `.env` and its Chainlit signing secret as described in
+    [Getting Started](../tutorials/getting-started.md#run-the-chainlit-ui).
+    The default mock login does not require an OAuth client.
+
+=== "Open WebUI"
 
     ```bash
     docker compose up -d open-webui
@@ -19,10 +32,10 @@
     - OpenAI base URL: `http://localhost:8000/v1`
     - Open WebUI: `http://localhost:8080`
 
-The full stack starts PostgreSQL, `lgos-demo-api`, and `open-webui`. PostgreSQL
-stores the interrupt demo's LangGraph checkpoints under `./docker/volumes/lgos-db`.
-Before starting the API, its Compose `pre_start` lifecycle hook initializes or
-migrates the checkpoint schema.
+Both UI choices start PostgreSQL and `lgos-demo-api` as dependencies. PostgreSQL
+stores the interrupt demo's LangGraph checkpoints and Chainlit conversation
+history under `./docker/volumes/lgos-db`. Compose `pre_start` lifecycle hooks
+apply the relevant schema migrations before starting each service.
 
 Import `demo/ui/openwebui/openwebui_pipe.py` in `Admin Panel -> Functions` and
 enable it. Open WebUI's native
@@ -100,4 +113,15 @@ services:
   `AsyncPostgresSaver`; set `DEMO_POSTGRES_URI` when running the API outside Compose.
 - Run `uv run --module demo.api.setup_checkpointer` once as a deployment task
   before starting or replacing API workers.
+- Run `uv run --module demo.ui.chainlit_ui.setup_database` once before starting
+  or replacing Chainlit workers.
+- Generate a unique `CHAINLIT_AUTH_SECRET`, replace the local demo PostgreSQL
+  credentials, and do not deploy with `DEMO_CHAINLIT_LOGIN_TYPE=mock`.
+- For PocketID OAuth, store its client secret outside source control, terminate
+  TLS at the ingress, set `CHAINLIT_URL` to the external HTTPS origin, and
+  register its `/auth/oauth/PocketID/callback` URL in PocketID.
+- Restrict Chainlit `allow_origins` to the deployed HTTPS origin. Chainlit uses
+  WebSockets; configure session affinity when multiple UI workers sit behind a
+  load balancer.
+- Configure supported object storage before enabling Chainlit file uploads.
 - Configure logging and monitoring.

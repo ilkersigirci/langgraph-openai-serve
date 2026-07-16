@@ -21,7 +21,7 @@ dependencies are kept in the `demo` dependency group.
 From this repository:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d lgos-postgres
 make run-demo-api
 ```
 
@@ -43,6 +43,10 @@ print(response.choices[0].message.content)
 
 Use `curl http://localhost:8000/v1/models` only as a diagnostic to inspect the
 registered demo graph names.
+
+The repository also includes a PostgreSQL-persistent Chainlit client. It uses a
+shared mock login by default, with PocketID OAuth available as an opt-in mode.
+See the [runnable demo guide](docs/tutorials/getting-started.md#run-the-chainlit-ui).
 
 ## Use In FastAPI
 

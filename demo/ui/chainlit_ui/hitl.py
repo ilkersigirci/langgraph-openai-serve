@@ -1,10 +1,19 @@
 """Chainlit UI for the LangGraph interrupt demo graph."""
 
+import asyncio
 import json
+import logging
 from typing import cast
 
 import chainlit as cl
+from chainlit.types import ThreadDict
 from demo.api.settings import settings
+from demo.ui.chainlit_ui.auth import authenticated_user_identifier
+from demo.ui.chainlit_ui.history import (
+    mark_model_context_excluded,
+    mark_persisted_errors_excluded,
+    text_only_chat_messages,
+)
 from openai import AsyncOpenAI
 from openai.types import Model
 from openai.types.chat import (
@@ -15,11 +24,12 @@ from openai.types.chat import (
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCallParam,
     ChatCompletionToolMessageParam,
-    ChatCompletionUserMessageParam,
 )
 
 from langgraph_openai_serve import GraphFeature
 from langgraph_openai_serve.api.chat.utils.interrupts import INTERRUPT_TOOL_NAME
+
+logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(
     base_url=settings.CHAINLIT_OPENAI_BASE_URL,
@@ -28,7 +38,9 @@ client = AsyncOpenAI(
 
 
 @cl.set_chat_profiles
-async def set_chat_profiles() -> list[cl.ChatProfile]:
+async def set_chat_profiles(
+    _current_user: cl.User | None = None,
+) -> list[cl.ChatProfile]:
     models = await client.models.list()
     profiles = [
         cl.ChatProfile(
@@ -47,7 +59,7 @@ async def set_chat_profiles() -> list[cl.ChatProfile]:
 
 
 @cl.set_starters
-async def set_starters() -> list[cl.Starter]:
+async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
     return [
         cl.Starter(
             label="Approval",
@@ -56,17 +68,28 @@ async def set_starters() -> list[cl.Starter]:
     ]
 
 
-@cl.on_chat_start
-async def on_chat_start() -> None:
-    cl.user_session.set("messages", [])
+@cl.on_chat_resume
+def on_chat_resume(thread: ThreadDict) -> None:
+    """Keep the hook registered so Chainlit restores the native chat context."""
+    mark_persisted_errors_excluded(thread)
 
 
 @cl.on_message
-async def on_message(message: cl.Message) -> None:
-    messages = chat_messages()
-    messages.append(
-        ChatCompletionUserMessageParam(role="user", content=message.content)
-    )
+async def on_message(_message: cl.Message) -> None:
+    """Reply from chat context; Chainlit adds the user message before this hook."""
+    try:
+        await handle_message()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.exception("Chainlit HITL completion failed")
+        error_message = cl.Message(content=f"Chat completion failed: {exc}")
+        mark_model_context_excluded(error_message)
+        await error_message.send()
+
+
+async def handle_message() -> None:
+    messages = text_only_chat_messages()
 
     response = await create_completion(messages)
     assistant_message = response.choices[0].message
@@ -89,18 +112,7 @@ async def on_message(message: cl.Message) -> None:
         assistant_message = response.choices[0].message
 
     content = assistant_message.content or ""
-    messages.append(
-        ChatCompletionAssistantMessageParam(
-            role=assistant_message.role,
-            content=content,
-        )
-    )
-    cl.user_session.set("messages", messages)
     await cl.Message(content=content).send()
-
-
-def chat_messages() -> list[ChatCompletionMessageParam]:
-    return cast(list[ChatCompletionMessageParam], cl.user_session.get("messages") or [])
 
 
 def model_supports(model: Model, feature: GraphFeature) -> bool:
@@ -121,6 +133,7 @@ async def create_completion(
         model=cl.user_session.get("chat_profile") or settings.CHAINLIT_HITL_MODEL,
         messages=messages,
         metadata={"langgraph_thread_id": cl.context.session.thread_id},
+        user=authenticated_user_identifier(),
     )
 
 
@@ -147,10 +160,12 @@ def tool_call_param(
 async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None:
     payload = interrupt_payload(tool_call)
     if payload is None:
-        await cl.Message(content="Received an unsupported interrupt payload.").send()
+        error_message = cl.Message(content="Received an unsupported interrupt payload.")
+        mark_model_context_excluded(error_message)
+        await error_message.send()
         return None
 
-    response = await cl.AskActionMessage(
+    action_message = cl.AskActionMessage(
         content=interrupt_prompt(payload),
         actions=[
             cl.Action(
@@ -167,10 +182,14 @@ async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None
             ),
         ],
         timeout=300,
-    ).send()
+    )
+    mark_model_context_excluded(action_message)
+    response = await action_message.send()
 
     if not response:
-        await cl.Message(content="Approval timed out.").send()
+        timeout_message = cl.Message(content="Approval timed out.")
+        mark_model_context_excluded(timeout_message)
+        await timeout_message.send()
         return None
 
     payload = response.get("payload") or {}

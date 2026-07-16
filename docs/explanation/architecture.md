@@ -14,7 +14,7 @@ flowchart LR
 
   subgraph execution["LGOS adapter and execution"]
     direction TB
-    E["GraphConfig<br/>resolve graph and adapt input"]
+    E["GraphConfig<br/>resolve graph and adapt input/context"]
     E --> F["Runner<br/>collect or stream events"]
     F -->|graph.astream| G["LangGraph graph"]
     G --> H["LGOS response rendering<br/>OpenAI completion or SSE chunks"]
@@ -49,11 +49,15 @@ Endpoint paths and settings live in [Reference](../reference.md).
 2. FastAPI validates the request schema.
 3. The requested `model` is resolved from `GraphRegistry`.
 4. OpenAI messages are converted to LangChain messages.
-5. `GraphConfig` builds graph input, runnable config, and runtime context.
-6. The runner consumes `graph.astream` in both response modes. It either collects
+5. `GraphConfig` builds graph input and typed runtime context. Run preparation
+   separately builds `RunnableConfig` from callbacks and an optional checkpoint
+   thread ID.
+6. The runner passes input, runtime context, and runnable config as separate
+   LangGraph arguments.
+7. The runner consumes `graph.astream` in both response modes. It either collects
    root values and custom events before returning a complete response, or passes
    message, custom, and interrupt events to the SSE response service.
-7. LGOS renders the result as an OpenAI chat completion or SSE chunk sequence.
+8. LGOS renders the result as an OpenAI chat completion or SSE chunk sequence.
 
 See [LangGraph Integration](langgraph-integration.md) for adapter and runner
 details, [OpenAI compatibility](openai-compatibility.md#tool-calls-and-interrupts)

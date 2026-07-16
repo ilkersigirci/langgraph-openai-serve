@@ -1,0 +1,50 @@
+[project]
+# Keep user-provided secrets out of Chainlit's persisted thread metadata.
+user_env = []
+persist_user_env = false
+
+# Preserve reconnects for one hour and authenticated sessions for 15 days.
+session_timeout = 3600
+user_session_timeout = 1296000
+cache = false
+
+# The demo is served directly on port 5000. Replace these with the deployed
+# HTTPS origin before exposing the UI on another host.
+allow_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
+transports = ["websocket"]
+
+[features]
+unsafe_allow_html = false
+latex = false
+user_message_markdown = true
+user_message_autoscroll = true
+assistant_message_autoscroll = true
+auto_tag_thread = true
+edit_message = false
+allow_thread_sharing = false
+favorites = false
+
+# File contents require an S3, GCS, or Azure storage provider. Keep uploads
+# disabled while this demo persists only relational conversation data.
+[features.spontaneous_file_upload]
+enabled = false
+accept = []
+max_files = 0
+max_size_mb = 0
+
+[features.audio]
+enabled = false
+sample_rate = 24000
+
+[features.mcp]
+enabled = false
+
+[UI]
+name = "LangGraph OpenAI Serve"
+description = "OpenAI-compatible LangGraph demo"
+confirm_new_chat = true
+cot = "hidden"
+alert_style = "classic"
+
+[meta]
+generated_by = "2.11.1"

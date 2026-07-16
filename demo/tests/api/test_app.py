@@ -3,9 +3,16 @@ import logging.config
 from collections.abc import AsyncIterator
 
 import pytest
+from demo.api.graphs.simple import DEFAULT_SYSTEM_PROMPT, SimpleContext
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from openai import AsyncOpenAI
+
+from langgraph_openai_serve.api.chat.schemas import (
+    ChatCompletionRequest,
+    ChatCompletionRequestMessage,
+    Role,
+)
 
 DOCUMENTED_MODEL_IDS = {
     "advanced-mcp-tools",
@@ -59,6 +66,34 @@ async def test_app_lists_exactly_the_documented_models(
     assert all(
         (model.model_extra or {})["langgraph_openai_serve"]["schema_version"] == 1
         for model in response.data
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("model", "use_history", "system_prompt"),
+    [
+        ("simple-graph-with-history", True, None),
+        ("simple-graph-no-history", False, "Respond in Turkish."),
+    ],
+)
+async def test_simple_models_build_their_runtime_context(
+    demo_app: FastAPI,
+    model: str,
+    use_history: bool,
+    system_prompt: str | None,
+) -> None:
+    request = ChatCompletionRequest(
+        model=model,
+        messages=[ChatCompletionRequestMessage(role=Role.USER, content="Question")],
+        metadata={"system_prompt": system_prompt} if system_prompt else None,
+    )
+
+    graph_config = demo_app.state.graph_registry.get_graph(model)
+
+    assert await graph_config.build_context(request) == SimpleContext(
+        use_history=use_history,
+        system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
     )
 
 

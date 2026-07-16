@@ -51,6 +51,103 @@ async def test_empty_messages_returns_openai_error(
     assert error["message"].startswith("messages: ")
 
 
+async def test_missing_tool_call_id_returns_openai_error(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/chat/completions",
+            cast_to=object,
+            body={
+                "model": "test",
+                "messages": [{"role": "tool", "content": "Tool result"}],
+            },
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json() == {
+        "error": {
+            "message": "Tool messages require the 'tool_call_id' field.",
+            "type": "invalid_request_error",
+            "param": "messages",
+            "code": None,
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_param", "expected_message"),
+    [
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "functions": [],
+            },
+            "functions",
+            "'functions' is not supported; use 'tools' instead.",
+            id="functions",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "function_call": "auto",
+            },
+            "function_call",
+            "'function_call' is not supported; use 'tool_choice' instead.",
+            id="request-function-call",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {"name": "lookup", "arguments": "{}"},
+                    }
+                ],
+            },
+            "messages.0.function_call",
+            "'function_call' is not supported; use 'tool_calls' instead.",
+            id="message-function-call",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {"role": "function", "name": "lookup", "content": "result"}
+                ],
+            },
+            "messages.0.role",
+            "Input should be 'system', 'user', 'assistant' or 'tool'",
+            id="function-role",
+        ),
+    ],
+)
+async def test_legacy_function_calling_fields_are_rejected(
+    openai_client: AsyncOpenAI,
+    body: dict[str, object],
+    expected_param: str | None,
+    expected_message: str,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/chat/completions",
+            cast_to=object,
+            body=body,
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"] == expected_param
+    assert expected_message in error["message"]
+
+
 async def test_http_error_returns_openai_error(
     openai_client: AsyncOpenAI,
 ) -> None:

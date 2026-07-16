@@ -12,13 +12,22 @@ from langchain_core.runnables import RunnableLambda
     [
         pytest.param(
             True,
-            [("human", "First"), ("ai", "Prior answer"), ("human", "Latest")],
+            [
+                ("system", "Respond in Turkish."),
+                ("human", "First"),
+                ("ai", "Prior answer"),
+                ("human", "Latest"),
+            ],
             id="history",
         ),
-        pytest.param(False, [("human", "Latest")], id="latest-message"),
+        pytest.param(
+            False,
+            [("system", "Respond in Turkish."), ("human", "Latest")],
+            id="latest-message",
+        ),
     ],
 )
-async def test_config_controls_conversation_history(
+async def test_runtime_context_controls_conversation_history(
     monkeypatch: pytest.MonkeyPatch,
     use_history: bool,
     expected_prompt: list[tuple[str, str]],
@@ -36,17 +45,20 @@ async def test_config_controls_conversation_history(
     )
 
     result = await simple_module.simple_graph.ainvoke(
-        {
-            "messages": [
+        simple_module.AgentState(
+            messages=[
                 HumanMessage(content="First"),
                 AIMessage(content="Prior answer"),
                 HumanMessage(content="Latest"),
-            ]
-        },
-        config={"configurable": {"use_history": use_history}},
+            ],
+        ),
+        context=simple_module.SimpleContext(
+            use_history=use_history,
+            system_prompt="Respond in Turkish.",
+        ),
     )
 
-    prompt_messages = prompts[0].to_messages()[1:]
+    prompt_messages = prompts[0].to_messages()
     assert [(message.type, message.content) for message in prompt_messages] == (
         expected_prompt
     )

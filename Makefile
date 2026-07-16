@@ -147,12 +147,14 @@ format-unsafe: ## Unsafely format package and test files. CHANGES CODE
 setup-demo-checkpointer: ## Initialize or migrate the demo checkpoint schema
 	uv run --module demo.api.setup_checkpointer
 
+setup-demo-chainlit: ## Initialize or migrate the demo Chainlit persistence schema
+	uv run --module demo.ui.chainlit_ui.setup_database
+
 run-demo-api: setup-demo-checkpointer # ## Run the demo api in development mode
 	uv run --module demo.api.app
 
-run-demo-ui-chainlit: ## Run the demo Chainlit UI
-	@# uv run --module chainlit run demo.ui.chainlit_ui.main --host 0.0.0.0 --port 8001 -w
-	uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 8001 --no-access-log
+run-demo-ui-chainlit: setup-demo-chainlit ## Run the persistent Chainlit UI
+	uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 5000 --no-access-log
 
-run-demo-ui-chainlit-hitl: ## Run the Chainlit human-in-the-loop demo UI
-	DEMO_CHAINLIT_UI_FILE=hitl uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 8001 --no-access-log
+run-demo-ui-chainlit-hitl: setup-demo-chainlit ## Run the persistent Chainlit human-in-the-loop UI
+	DEMO_CHAINLIT_UI_FILE=hitl uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 5000 --no-access-log
