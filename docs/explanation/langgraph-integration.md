@@ -44,7 +44,7 @@ graph.astream(
 ```
 
 - `graph_input` contains mutable workflow state, including converted messages.
-- `runtime_context` starts with optional validated `GraphConfig.client_config`
+- `runtime_context` starts with optional validated `GraphConfig.client_settings`
   settings and can be composed with server-owned values by
   `GraphConfig.context_factory(request, settings)`. When the graph declares a
   `context_schema`, LGOS validates the final value against it. Nodes receive the
@@ -63,8 +63,10 @@ automatically to nested async runnable calls. Node functions only need an
 injected `RunnableConfig` when they inspect or modify execution configuration;
 they do not need one solely to pass `config` to a nested model's `ainvoke()`.
 
-See [Custom Graphs](../tutorials/custom-graphs.md#runtime-context) for a complete
-typed context example and LangGraph's official
+See [Custom Graphs](../tutorials/custom-graphs.md#runtime-context) for a typed
+server-owned context example and
+[Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
+for public settings, discovery, and request handling. LangGraph's official
 [runtime](https://reference.langchain.com/python/langgraph/runtime/Runtime),
 [streaming](https://docs.langchain.com/oss/python/langgraph/streaming), and
 [persistence](https://docs.langchain.com/oss/python/langgraph/persistence)

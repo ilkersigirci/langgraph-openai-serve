@@ -5,8 +5,8 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from langgraph_openai_serve.graph.features import GraphFeature
 
 
-class ModelClientConfig(BaseModel):
-    """Versioned public configuration schema for one registered graph."""
+class ModelClientSettings(BaseModel):
+    """Versioned public runtime settings for one registered graph."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -20,7 +20,7 @@ class LangGraphModelExtension(BaseModel):
 
     schema_version: Literal[1] = 1
     features: list[GraphFeature]
-    client_config: ModelClientConfig | None = None
+    client_settings: ModelClientSettings | None = None
 
 
 class Model(BaseModel):

@@ -12,9 +12,9 @@ from pydantic import ValidationError
 from langgraph_openai_serve.api.chat.schemas import OPENAI_METADATA_VALUE_MAX_LENGTH
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
-    ModelClientConfig,
+    ModelClientSettings,
 )
-from langgraph_openai_serve.graph.client_config import CLIENT_CONFIG_METADATA_KEY
+from langgraph_openai_serve.graph.client_settings import RUNTIME_SETTINGS_METADATA_KEY
 from langgraph_openai_serve.graph.features import GraphFeature
 
 logger = logging.getLogger(__name__)
@@ -43,21 +43,21 @@ def model_extension(model: Model) -> LangGraphModelExtension | None:
         except (TypeError, ValueError):
             logger.debug("Ignoring unknown LGOS feature %r", value)
 
-    client_config: ModelClientConfig | None = None
-    raw_client_config = extension.get("client_config")
-    if raw_client_config is not None:
+    client_settings: ModelClientSettings | None = None
+    raw_client_settings = extension.get("client_settings")
+    if raw_client_settings is not None:
         try:
-            client_config = ModelClientConfig.model_validate(raw_client_config)
+            client_settings = ModelClientSettings.model_validate(raw_client_settings)
         except ValidationError:
             logger.warning(
-                "Ignoring unsupported LGOS client configuration for model %s",
+                "Ignoring unsupported LGOS runtime settings for model %s",
                 model.id,
             )
 
     try:
         return LangGraphModelExtension(
             features=features,
-            client_config=client_config,
+            client_settings=client_settings,
         )
     except ValidationError:
         logger.warning("Ignoring unsupported LGOS metadata for model %s", model.id)
@@ -70,56 +70,56 @@ def model_supports(model: Model, feature: GraphFeature) -> bool:
     return extension is not None and feature in extension.features
 
 
-def model_client_config(model: Model) -> ModelClientConfig | None:
-    """Return a supported public configuration descriptor, when available."""
+def model_client_settings(model: Model) -> ModelClientSettings | None:
+    """Return a supported runtime settings descriptor, when available."""
     extension = model_extension(model)
-    return extension.client_config if extension is not None else None
+    return extension.client_settings if extension is not None else None
 
 
 def restore_setting_values(
-    config: ModelClientConfig,
+    settings: ModelClientSettings,
     candidates: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Normalize persisted scalar values for restoring Chainlit widgets."""
     candidates = candidates or {}
     values: dict[str, Any] = {}
-    for name in config.defaults:
-        schema = property_schema(config, name)
+    for name in settings.defaults:
+        schema = property_schema(settings, name)
         if schema is None:
             continue
         candidate = candidates.get(name)
         values[name] = (
             candidate
             if name in candidates and _valid_scalar(candidate, schema)
-            else config.defaults[name]
+            else settings.defaults[name]
         )
     return values
 
 
 def settings_widgets(
-    config: ModelClientConfig,
+    settings: ModelClientSettings,
     candidates: Mapping[str, Any] | None = None,
 ) -> tuple[list[InputWidget], dict[str, Any]]:
     """Build widgets for direct scalar properties with concrete defaults."""
-    values = restore_setting_values(config, candidates)
+    values = restore_setting_values(settings, candidates)
     widgets = [
         _widget_for(name, schema, values[name])
-        for name in config.defaults
-        if (schema := property_schema(config, name)) is not None
+        for name in settings.defaults
+        if (schema := property_schema(settings, name)) is not None
     ]
     return widgets, values
 
 
 def settings_metadata(
-    config: ModelClientConfig | None,
+    settings: ModelClientSettings | None,
     values: Mapping[str, Any] | None,
 ) -> dict[str, str]:
     """Encode changed settings without silently replacing invalid values."""
-    if config is None or values is None:
+    if settings is None or values is None:
         return {}
 
     changed: dict[str, Any] = {}
-    for name, default in config.defaults.items():
+    for name, default in settings.defaults.items():
         if name not in values:
             continue
         value = values[name]
@@ -145,15 +145,15 @@ def settings_metadata(
             "The selected settings exceed the OpenAI metadata value limit."
         )
 
-    return {CLIENT_CONFIG_METADATA_KEY: encoded}
+    return {RUNTIME_SETTINGS_METADATA_KEY: encoded}
 
 
 def property_schema(
-    config: ModelClientConfig,
+    settings: ModelClientSettings,
     name: str,
 ) -> dict[str, Any] | None:
     """Return a directly declared scalar property the demo can render exactly."""
-    properties = config.json_schema.get("properties")
+    properties = settings.json_schema.get("properties")
     if not isinstance(properties, dict):
         return None
     schema = properties.get(name)
@@ -161,9 +161,9 @@ def property_schema(
         keyword in schema for keyword in ("$ref", "allOf", "anyOf", "oneOf")
     ):
         return None
-    if name not in config.defaults:
+    if name not in settings.defaults:
         return None
-    return schema if _supported_schema(schema, config.defaults[name]) else None
+    return schema if _supported_schema(schema, settings.defaults[name]) else None
 
 
 def _supported_schema(schema: Mapping[str, Any], default: Any) -> bool:

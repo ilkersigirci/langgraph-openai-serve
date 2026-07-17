@@ -9,7 +9,7 @@ import chainlit as cl
 from chainlit.types import ThreadDict
 from demo.api.settings import settings
 from demo.ui.chainlit_ui.auth import authenticated_user_identifier
-from demo.ui.chainlit_ui.client_config import model_supports
+from demo.ui.chainlit_ui.client_settings import model_supports
 from demo.ui.chainlit_ui.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,

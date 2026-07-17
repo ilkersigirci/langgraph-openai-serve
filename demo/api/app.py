@@ -81,7 +81,7 @@ def create_custom_app() -> FastAPI:
             "simple-graph": GraphConfig(
                 graph=simple_graph,
                 streamable_node_names=["generate"],
-                client_config=SimpleContext,
+                client_settings=SimpleContext,
             ),
             "lgos-rag": GraphConfig(
                 graph=lgos_rag,

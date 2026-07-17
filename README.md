@@ -77,5 +77,6 @@ values.
 - Runnable demo: [docs/tutorials/getting-started.md](docs/tutorials/getting-started.md)
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
+- LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

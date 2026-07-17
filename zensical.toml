@@ -19,8 +19,9 @@ nav = [
   ]},
   { "How-To Guides" = [
     "how-to-guides/index.md",
-    { "Docker Deployment" = "how-to-guides/docker.md" },
+    { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
+    { "Docker Deployment" = "how-to-guides/docker.md" },
     { "OpenAI Proxy" = "how-to-guides/openai-proxy.md" },
   ]},
   { Explanation = [

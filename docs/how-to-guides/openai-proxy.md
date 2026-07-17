@@ -11,6 +11,13 @@ discard the `langgraph_openai_serve` extension. Use native proxy routes for
 inference and direct LGOS or a documented raw pass-through route for detailed
 model retrieval.
 
+Dynamic runtime settings have two independent requirements: the discovery
+path must preserve the detailed extension, or use a separate direct/pass-through
+endpoint, and the inference path must forward the
+`metadata.langgraph_runtime_settings` string unchanged. A client can still use ordinary
+inference with server defaults when discovery is unavailable. See the
+[client support matrix](../explanation/openai-compatibility.md#client-and-integration-support).
+
 ## Bifrost
 
 The Compose stack mounts the repository's
@@ -90,8 +97,9 @@ endpoint when the pass-through route uses LiteLLM authentication. See LiteLLM's
 ## Other Proxies
 
 Use the proxy's native OpenAI route for chat completions. For graph feature
-and client-configuration discovery, use only a documented raw pass-through
+and runtime-settings discovery, use only a documented raw pass-through
 route that can target LGOS. Verify both `models.list()` and
-`models.retrieve(model)` after proxy upgrades. Use direct LGOS discovery when no
-configurable raw route is available, and treat a missing extension as a normal
-fallback to server defaults.
+`models.retrieve(model)` after proxy upgrades. Also verify that a chat completion
+preserves `metadata.langgraph_runtime_settings` before relying on dynamic settings. Use
+direct LGOS discovery when no configurable raw route is available, and treat a
+missing extension as a normal fallback to server defaults.

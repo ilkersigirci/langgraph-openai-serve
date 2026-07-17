@@ -9,8 +9,8 @@ import chainlit as cl
 from chainlit.types import ThreadDict
 from demo.api.settings import settings
 from demo.ui.chainlit_ui.auth import authenticated_user_identifier
-from demo.ui.chainlit_ui.client_config import (
-    model_client_config,
+from demo.ui.chainlit_ui.client_settings import (
+    model_client_settings,
     settings_metadata,
     settings_widgets,
 )
@@ -22,7 +22,7 @@ from demo.ui.chainlit_ui.history import (
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
-from langgraph_openai_serve.api.models.schemas import ModelClientConfig
+from langgraph_openai_serve.api.models.schemas import ModelClientSettings
 
 client = AsyncOpenAI(
     base_url=settings.CHAINLIT_INFERENCE.base_url,
@@ -88,7 +88,7 @@ async def on_message(_message: cl.Message) -> None:
 
     try:
         metadata = settings_metadata(
-            current_client_config(),
+            current_client_settings(),
             cl.user_session.get("chat_settings"),
         )
         stream = await client.chat.completions.create(
@@ -135,44 +135,44 @@ async def configure_chat_settings(
         model = await discovery_client.models.retrieve(model_id)
     except Exception:
         logger.warning(
-            "Model configuration discovery failed for %s; settings are inactive",
+            "Runtime settings discovery failed for %s; settings are inactive",
             model_id,
             exc_info=True,
         )
         await cl.ChatSettings([]).refresh()
-        _store_client_config(None)
+        _store_client_settings(None)
         committed = cl.user_session.get("chat_settings")
         return committed if isinstance(committed, dict) else {}
 
-    config = model_client_config(model)
-    if config is None:
+    settings = model_client_settings(model)
+    if settings is None:
         await cl.ChatSettings([]).send()
-        _store_client_config(None)
+        _store_client_settings(None)
         return {}
 
-    widgets, values = settings_widgets(config, saved)
+    widgets, values = settings_widgets(settings, saved)
     if widgets:
         values = await cl.ChatSettings(widgets).send()
     else:
         await cl.ChatSettings([]).send()
-    _store_client_config(config)
+    _store_client_settings(settings)
     return values
 
 
-def current_client_config() -> ModelClientConfig | None:
+def current_client_settings() -> ModelClientSettings | None:
     """Parse the JSON-safe descriptor stored in the Chainlit user session."""
-    value = cl.user_session.get("model_client_config")
+    value = cl.user_session.get("model_client_settings")
     if not isinstance(value, dict):
         return None
     try:
-        return ModelClientConfig.model_validate(value)
+        return ModelClientSettings.model_validate(value)
     except ValidationError:
-        logger.warning("Ignoring invalid saved model configuration", exc_info=True)
+        logger.warning("Ignoring invalid saved runtime settings", exc_info=True)
         return None
 
 
-def _store_client_config(config: ModelClientConfig | None) -> None:
+def _store_client_settings(settings: ModelClientSettings | None) -> None:
     cl.user_session.set(
-        "model_client_config",
-        config.model_dump(mode="json") if config is not None else None,
+        "model_client_settings",
+        settings.model_dump(mode="json") if settings is not None else None,
     )

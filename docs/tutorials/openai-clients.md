@@ -103,71 +103,72 @@ does not verify it.
     }
     ```
 
-## Model Discovery And Configuration
+## Model Discovery And Runtime Settings
 
-List standard model summaries, then retrieve detailed LGOS metadata only for
-the selected graph:
+List standard model summaries, then retrieve the selected model to discover its
+settings. Check both the LGOS extension version and the nested runtime-settings
+version. A missing or unsupported descriptor means the client should use server
+defaults.
 
 === "Python"
 
     ```python
     models = client.models.list()
-    selected = models.data[0].id
-    model = client.models.retrieve(selected)
+    model_id = next(model.id for model in models.data if model.id == "simple-graph")
+    model = client.models.retrieve(model_id)
 
-    extension = (model.model_extra or {}).get("langgraph_openai_serve", {})
-    if extension.get("schema_version") == 1:
-        print(extension.get("features", []))
-        print(extension.get("client_config"))
+    extension = (model.model_extra or {}).get("langgraph_openai_serve")
+    settings = (
+        extension.get("client_settings")
+        if isinstance(extension, dict) and extension.get("schema_version") == 1
+        else None
+    )
+
+    if isinstance(settings, dict) and settings.get("schema_version") == 1:
+        print(settings["json_schema"])
+        print(settings["defaults"])
     ```
 
 === "JavaScript"
 
     ```javascript
     const models = await openai.models.list();
-    const model = await openai.models.retrieve(models.data[0].id);
+    const selectedModel = models.data.find((model) => model.id === "simple-graph");
+    if (!selectedModel) throw new Error("simple-graph is not registered");
+    const model = await openai.models.retrieve(selectedModel.id);
 
-    const extension = model.langgraph_openai_serve || {};
-    if (extension.schema_version === 1) {
-      console.log(extension.features || []);
-      console.log(extension.client_config);
+    const extension = model.langgraph_openai_serve;
+    const settings =
+      extension?.schema_version === 1 &&
+      extension.client_settings?.schema_version === 1
+        ? extension.client_settings
+        : undefined;
+
+    if (settings) {
+      console.log(settings.json_schema);
+      console.log(settings.defaults);
     }
     ```
 
-The simple demo carries controlled graph settings in one JSON metadata envelope.
-Arbitrary system instructions remain ordinary OpenAI messages and cannot be
-supplied through discovered client settings:
+`metadata.langgraph_runtime_settings` must be a JSON-encoded string, produced by
+`json.dumps()` or `JSON.stringify()`, rather than a nested metadata object. Send
+only values that differ from the discovered defaults; the encoded value must be
+512 characters or fewer. See
+[Client Request](../how-to-guides/langgraph-runtime-settings.md#client-request)
+for the request shape.
 
-```python
-import json
-
-response = client.chat.completions.create(
-    model="simple-graph",
-    messages=[
-        {"role": "system", "content": "Answer concisely."},
-        {"role": "user", "content": "Explain LangGraph."},
-    ],
-    metadata={
-        "langgraph_config": json.dumps(
-            {"use_history": True, "audience": "beginner"}
-        ),
-    },
-)
-```
-
-Use the fixed `metadata.langgraph_config` envelope and omit values equal to the
-advertised defaults. Native Chat Completions fields such as `temperature` keep
-their normal API meaning and are not reused as graph runtime context.
-
-The server validates advertised settings against the retrieved JSON Schema.
-Do not send arbitrary nested or large configuration values through metadata.
+Settings apply to one request. Resend non-default values whenever they are
+needed, including interrupt-resume requests. Omitting the metadata on a later
+request uses server defaults again.
 
 ## Interrupt Resume
 
 Interrupt-enabled graphs use OpenAI tool calls. Retrieve the selected model and
 check `langgraph_openai_serve.features` for `interrupts` before starting. Pass
 `metadata.langgraph_thread_id`, then resume `langgraph_interrupt` with a matching
-`tool` message. See
+`tool` message. The thread ID restores checkpoint state only; include the same
+non-default `langgraph_runtime_settings` string on the resume request when the resumed run
+needs those settings. See
 [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
 ## Diagnostics

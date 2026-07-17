@@ -8,7 +8,7 @@ import logging
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
     Model,
-    ModelClientConfig,
+    ModelClientSettings,
     ModelDetails,
     ModelList,
 )
@@ -46,12 +46,12 @@ class ModelService:
     def get_model(self, model: str, graph_registry: GraphRegistry) -> ModelDetails:
         """Get one registered graph as an OpenAI model with LGOS metadata."""
         graph_config = graph_registry.get_graph(model)
-        client_config = graph_config.client_config
-        client_config_details = None
-        if client_config is not None:
-            defaults = client_config.defaults()
-            client_config_details = ModelClientConfig(
-                json_schema=client_config.model_json_schema(by_alias=False),
+        client_settings = graph_config.client_settings
+        client_settings_details = None
+        if client_settings is not None:
+            defaults = client_settings.defaults()
+            client_settings_details = ModelClientSettings(
+                json_schema=client_settings.model_json_schema(by_alias=False),
                 defaults=defaults.model_dump(mode="json", by_alias=False),
             )
 
@@ -64,7 +64,7 @@ class ModelService:
                     graph_config.features,
                     key=lambda feature: feature.value,
                 ),
-                client_config=client_config_details,
+                client_settings=client_settings_details,
             ),
         )
         logger.info(f"Retrieved model details for {model}")

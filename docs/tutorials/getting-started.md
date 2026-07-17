@@ -131,7 +131,7 @@ print(response.choices[0].message.content)
 - `demo/api/graphs/simple.py`: a single-node message graph whose runtime context
   controls conversation history and intended audience. It publishes those safe
   fields explicitly through model retrieval and keeps arbitrary system prompt
-  text out of runtime configuration.
+  text out of runtime settings.
 - `demo/api/graphs/lgos_rag.py`: agentic RAG over every Markdown file in
   `docs/`, with relevance grading, bounded query rewriting, streamed generation,
   and grounded answers.

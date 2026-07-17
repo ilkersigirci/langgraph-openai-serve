@@ -23,7 +23,7 @@ DOCUMENTED_MODEL_IDS = {
     "lgos-rag",
     "simple-graph",
 }
-CLIENT_CONFIG_SCHEMA_VERSION = 1
+CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 @pytest.fixture
@@ -66,19 +66,19 @@ async def test_app_lists_exactly_the_documented_models(
 
 
 @pytest.mark.anyio
-async def test_simple_model_retrieval_exposes_client_configuration(
+async def test_simple_model_retrieval_exposes_runtime_settings(
     openai_client: AsyncOpenAI,
 ) -> None:
     model = await openai_client.models.retrieve("simple-graph")
 
     extension = (model.model_extra or {})["langgraph_openai_serve"]
-    client_config = extension["client_config"]
-    assert client_config["schema_version"] == CLIENT_CONFIG_SCHEMA_VERSION
-    assert client_config["defaults"] == {
+    client_settings = extension["client_settings"]
+    assert client_settings["schema_version"] == CLIENT_SETTINGS_SCHEMA_VERSION
+    assert client_settings["defaults"] == {
         "use_history": False,
         "audience": "general",
     }
-    assert client_config["json_schema"]["properties"]["audience"]["enum"] == [
+    assert client_settings["json_schema"]["properties"]["audience"]["enum"] == [
         "general",
         "beginner",
         "expert",
@@ -91,11 +91,11 @@ async def test_simple_model_retrieval_exposes_client_configuration(
     [
         (None, SimpleContext()),
         (
-            {"langgraph_config": '{"use_history":true}'},
+            {"langgraph_runtime_settings": '{"use_history":true}'},
             SimpleContext(use_history=True),
         ),
         (
-            {"langgraph_config": '{"audience":"expert"}'},
+            {"langgraph_runtime_settings": '{"audience":"expert"}'},
             SimpleContext(audience="expert"),
         ),
     ],

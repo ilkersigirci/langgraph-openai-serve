@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationEr
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 
-CLIENT_CONFIG_METADATA_KEY = "langgraph_config"
+RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 
 
 class ClientSettings(BaseModel):
@@ -15,7 +15,7 @@ class ClientSettings(BaseModel):
 
     Subclasses define the complete public contract. Every field must have a
     valid JSON-serializable default so model discovery can advertise a usable
-    configuration without maintaining a second defaults mapping.
+    settings object without maintaining a second defaults mapping.
     """
 
     model_config = ConfigDict(
@@ -39,18 +39,18 @@ class ClientSettings(BaseModel):
     @classmethod
     def validate_request(cls, request: ChatCompletionRequest) -> Self:
         """Read and validate this model's values from an OpenAI request."""
-        parameter = f"metadata.{CLIENT_CONFIG_METADATA_KEY}"
-        encoded = (request.metadata or {}).get(CLIENT_CONFIG_METADATA_KEY, "{}")
+        parameter = f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
+        encoded = (request.metadata or {}).get(RUNTIME_SETTINGS_METADATA_KEY, "{}")
 
         try:
-            changes = _CONFIG_OBJECT_ADAPTER.validate_json(encoded, strict=True)
+            changes = _SETTINGS_OBJECT_ADAPTER.validate_json(encoded, strict=True)
         except ValidationError as exc:
-            raise ClientConfigValidationError(
-                _validation_message(exc, label="client configuration"),
+            raise ClientSettingsValidationError(
+                _validation_message(exc, label="runtime settings"),
                 param=parameter,
             ) from exc
 
-        values = _CONFIG_OBJECT_ADAPTER.validate_json(
+        values = _SETTINGS_OBJECT_ADAPTER.validate_json(
             _validated_defaults_json(cls),
             strict=True,
         )
@@ -58,20 +58,20 @@ class ClientSettings(BaseModel):
 
         try:
             return cls.model_validate_json(
-                _CONFIG_OBJECT_ADAPTER.dump_json(values),
+                _SETTINGS_OBJECT_ADAPTER.dump_json(values),
                 strict=True,
                 by_alias=False,
                 by_name=True,
             )
         except ValidationError as exc:
             field = _first_error_field(exc)
-            raise ClientConfigValidationError(
-                _validation_message(exc, label=field or "client configuration"),
+            raise ClientSettingsValidationError(
+                _validation_message(exc, label=field or "runtime settings"),
                 param=parameter,
             ) from exc
 
 
-class ClientConfigValidationError(ValueError):
+class ClientSettingsValidationError(ValueError):
     """Raised when client-controlled graph settings are invalid."""
 
     def __init__(self, message: str, *, param: str | None = None) -> None:
@@ -79,7 +79,7 @@ class ClientConfigValidationError(ValueError):
         self.param = param
 
 
-_CONFIG_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
+_SETTINGS_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 
 
 @cache
@@ -118,6 +118,6 @@ def _first_error_field(error: ValidationError) -> str | None:
 def _validation_message(error: ValidationError, *, label: str) -> str:
     errors = error.errors()
     message = str(errors[0].get("msg") or "Invalid value") if errors else str(error)
-    if label == "client configuration":
-        return f"Invalid client configuration: {message}"
-    return f"Invalid client configuration for {label}: {message}"
+    if label == "runtime settings":
+        return f"Invalid runtime settings: {message}"
+    return f"Invalid runtime setting for {label}: {message}"

@@ -58,7 +58,10 @@ enable it. Open WebUI's native
 [manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
 hook fetches `/v1/models` and adds every registered graph to the model selector.
 Configure the API base URL and key with the Function valves; there is no
-per-model valve.
+per-model valve. The included Pipe does not retrieve detailed runtime settings
+descriptors or send `metadata.langgraph_runtime_settings`, so those graphs use
+their registered server defaults. See the
+[client support matrix](../explanation/openai-compatibility.md#client-and-integration-support).
 
 The Pipe bridges streaming text, streaming citation annotations, and interrupt
 approval; it does not own graph or transport behavior. See

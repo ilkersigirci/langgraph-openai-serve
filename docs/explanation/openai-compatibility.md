@@ -25,7 +25,7 @@ The implemented endpoints are listed in [Reference](../reference.md).
 
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
-feature and client-configuration discovery in a namespaced, versioned extension
+feature and runtime-settings discovery in a namespaced, versioned extension
 on the standard model-retrieval response:
 
 ```json
@@ -37,7 +37,7 @@ on the standard model-retrieval response:
   "langgraph_openai_serve": {
     "schema_version": 1,
     "features": [],
-    "client_config": {
+    "client_settings": {
       "schema_version": 1,
       "json_schema": {
         "type": "object",
@@ -65,11 +65,11 @@ on the standard model-retrieval response:
 
 `GraphConfig.features` is the single source of truth: the runner uses it to
 enable behavior and `GET /v1/models/{model}` serializes it for discovery.
-`GraphConfig.client_config` is an explicit, allowlisted public Pydantic model;
+`GraphConfig.client_settings` is an explicit, allowlisted public Pydantic model;
 LGOS never publishes a graph's internal LangGraph context schema automatically.
 Additive features do not require an outer schema-version change. The nested
-client configuration has its own version, and clients must ignore versions they
-do not understand.
+runtime settings descriptor has its own version, and clients must ignore
+versions they do not understand.
 
 `GET /v1/models` remains a lightweight list containing only the standard
 `id`, `object`, `created`, and `owned_by` fields. A client lists profiles first
@@ -93,14 +93,14 @@ The Chainlit demo accepts separate inference and discovery base URLs. See
 [Configure an OpenAI Proxy](../how-to-guides/openai-proxy.md) for supported
 gateway patterns and upgrade verification.
 
-## Public Client Configuration
+## Runtime Settings
 
 The request keeps each concern in its standard OpenAI location:
 
 | Concern | OpenAI request location |
 | --- | --- |
 | System instructions | A `system` message |
-| Small graph-specific values | One `metadata.langgraph_config` JSON object |
+| Small graph-specific values | One `metadata.langgraph_runtime_settings` string containing a JSON object |
 | Graph selection | `model` |
 | Thread/checkpoint identity | Existing `metadata.langgraph_thread_id` convention |
 
@@ -111,12 +111,39 @@ messages.
 
 OpenAI metadata permits at most 16 string pairs, with keys up to 64 characters
 and values up to 512 characters. Public settings consume one pair and checkpoint
-identity consumes one more. Clients omit values equal to the advertised defaults;
-LGOS validates the compact JSON object directly through the public Pydantic model
-before graph execution. Native Chat Completions fields keep their standard
-semantics. Graphs that need identity, authorization, database clients, secrets,
-or other server-owned per-request context combine `client_config` with
+identity consumes one more. Clients use `json.dumps()` or `JSON.stringify()` to
+encode the complete metadata string and omit values equal to the advertised
+defaults. The advertised JSON Schema describes the available settings; LGOS
+remains the validation authority. Native Chat Completions fields keep their
+standard semantics. Graphs that need identity, authorization, database clients,
+secrets, or other server-owned per-request context combine `client_settings` with
 `context_factory(request, settings)`.
+
+### Per-Request Resolution
+
+Every chat completion starts from the registered defaults. Values supplied in
+`metadata.langgraph_runtime_settings` replace matching top-level defaults, and LGOS
+validates the complete result. The merge is shallow: a supplied nested object
+replaces that whole default value rather than recursively merging its keys.
+
+Client settings are not persisted between requests. In particular,
+`metadata.langgraph_thread_id` restores checkpoint state but does not restore
+runtime context. Clients must resend non-default settings on every request that
+needs them, including interrupt-resume requests. A later request that omits
+`langgraph_runtime_settings` uses registered defaults again.
+
+### Client And Integration Support
+
+| Client path | Shipped runtime-settings behavior |
+| --- | --- |
+| Direct OpenAI SDK | Supported through model discovery and the encoded metadata string. |
+| Included Chainlit UI | The default UI supports top-level booleans and strings; the HITL demo does not expose settings. |
+| Included Open WebUI Pipe | Does not retrieve the descriptor or send `langgraph_runtime_settings`; registered server defaults are used. |
+| OpenAI-compatible proxy | The inference route must preserve request metadata. Discovery may use a proxy route that preserves the LGOS extension or a separate direct/raw pass-through endpoint. |
+
+Treat a missing or unsupported discovery extension as a normal fallback to server
+defaults. See [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
+for the complete author and client flow.
 
 ## Message And Schema Adaptation
 
@@ -188,6 +215,10 @@ OpenAI-compatible routes return errors in the OpenAI envelope:
 Route code that knows the OpenAI error metadata should raise
 `OpenAIHTTPException` with `openai.types.shared.ErrorObject`. Shared handlers
 translate generic FastAPI validation and HTTP errors into the same envelope.
+
+Invalid runtime settings return HTTP 400 with
+`param: "metadata.langgraph_runtime_settings"`. A missing discovery extension is not an
+error; the client simply uses server defaults.
 
 ## Tool Calls And Interrupts
 

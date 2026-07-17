@@ -6,10 +6,10 @@ import pytest
 from openai.types import Model
 
 from langgraph_openai_serve import GraphFeature
-from langgraph_openai_serve.api.models.schemas import ModelClientConfig
+from langgraph_openai_serve.api.models.schemas import ModelClientSettings
 
 EXPECTED_WIDGET_COUNT = 3
-CLIENT_CONFIG_SCHEMA_VERSION = 1
+CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 @pytest.fixture(autouse=True)
@@ -21,13 +21,13 @@ def chainlit_app_root(
 
 
 def client_module():
-    return importlib.import_module("demo.ui.chainlit_ui.client_config")
+    return importlib.import_module("demo.ui.chainlit_ui.client_settings")
 
 
-def client_config() -> ModelClientConfig:
-    return ModelClientConfig.model_validate(
+def client_settings() -> ModelClientSettings:
+    return ModelClientSettings.model_validate(
         {
-            "schema_version": CLIENT_CONFIG_SCHEMA_VERSION,
+            "schema_version": CLIENT_SETTINGS_SCHEMA_VERSION,
             "json_schema": {
                 "type": "object",
                 "additionalProperties": False,
@@ -69,7 +69,7 @@ def configured_model() -> Model:
         langgraph_openai_serve={
             "schema_version": 1,
             "features": [],
-            "client_config": client_config().model_dump(mode="json"),
+            "client_settings": client_settings().model_dump(mode="json"),
         },
     )
 
@@ -82,7 +82,7 @@ def test_json_schema_is_converted_to_chainlit_widgets() -> None:
     )
 
     widgets, values = client_module().settings_widgets(
-        client_config(),
+        client_settings(),
         {
             "use_history": "invalid",
             "mode": "detailed",
@@ -105,7 +105,7 @@ def test_json_schema_is_converted_to_chainlit_widgets() -> None:
 
 def test_changed_settings_use_one_metadata_envelope() -> None:
     metadata = client_module().settings_metadata(
-        client_config(),
+        client_settings(),
         {
             "use_history": False,
             "mode": "detailed",
@@ -114,7 +114,7 @@ def test_changed_settings_use_one_metadata_envelope() -> None:
     )
 
     assert metadata == {
-        "langgraph_config": (
+        "langgraph_runtime_settings": (
             '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
         )
     }
@@ -122,8 +122,8 @@ def test_changed_settings_use_one_metadata_envelope() -> None:
 
 def test_default_settings_are_omitted_from_the_request() -> None:
     metadata = client_module().settings_metadata(
-        client_config(),
-        client_config().defaults,
+        client_settings(),
+        client_settings().defaults,
     )
 
     assert metadata == {}
@@ -131,20 +131,20 @@ def test_default_settings_are_omitted_from_the_request() -> None:
 
 def test_live_invalid_values_are_sent_unchanged_for_server_validation() -> None:
     metadata = client_module().settings_metadata(
-        client_config(),
+        client_settings(),
         {"mode": "removed-option"},
     )
 
-    assert metadata == {"langgraph_config": '{"mode":"removed-option"}'}
+    assert metadata == {"langgraph_runtime_settings": '{"mode":"removed-option"}'}
 
 
 def test_type_invalid_value_equal_to_a_default_is_not_omitted() -> None:
     metadata = client_module().settings_metadata(
-        client_config(),
+        client_settings(),
         {"use_history": 1},
     )
 
-    assert metadata == {"langgraph_config": '{"use_history":1}'}
+    assert metadata == {"langgraph_runtime_settings": '{"use_history":1}'}
 
 
 def test_oversized_settings_raise_a_local_transport_error() -> None:
@@ -155,7 +155,7 @@ def test_oversized_settings_raise_a_local_transport_error() -> None:
         match="exceed the OpenAI metadata value limit",
     ):
         module.settings_metadata(
-            client_config(),
+            client_settings(),
             {"mode": "x" * 600},
         )
 
@@ -164,12 +164,12 @@ def test_missing_or_stripped_extension_falls_back_without_settings() -> None:
     model = Model(id="simple", object="model", created=1, owned_by="proxy")
     module = client_module()
 
-    assert module.model_client_config(model) is None
+    assert module.model_client_settings(model) is None
     assert module.settings_metadata(None, None) == {}
 
 
 def test_nullable_and_unrenderable_properties_are_not_rendered() -> None:
-    config = ModelClientConfig.model_validate(
+    settings = ModelClientSettings.model_validate(
         {
             "json_schema": {
                 "type": "object",
@@ -190,11 +190,11 @@ def test_nullable_and_unrenderable_properties_are_not_rendered() -> None:
         }
     )
 
-    assert client_module().settings_widgets(config) == ([], {})
+    assert client_module().settings_widgets(settings) == ([], {})
 
 
 def test_string_enum_is_skipped_when_one_option_breaks_its_constraints() -> None:
-    config = ModelClientConfig.model_validate(
+    settings = ModelClientSettings.model_validate(
         {
             "json_schema": {
                 "type": "object",
@@ -211,10 +211,10 @@ def test_string_enum_is_skipped_when_one_option_breaks_its_constraints() -> None
         }
     )
 
-    assert client_module().settings_widgets(config) == ([], {})
+    assert client_module().settings_widgets(settings) == ([], {})
 
 
-def test_unsupported_nested_config_does_not_hide_known_features() -> None:
+def test_unsupported_runtime_settings_do_not_hide_known_features() -> None:
     module = client_module()
     model = Model(
         id="interruptible",
@@ -224,12 +224,12 @@ def test_unsupported_nested_config_does_not_hide_known_features() -> None:
         langgraph_openai_serve={
             "schema_version": 1,
             "features": ["interrupts", "future-feature"],
-            "client_config": {"schema_version": 3},
+            "client_settings": {"schema_version": 3},
         },
     )
 
     assert module.model_supports(model, GraphFeature.INTERRUPTS)
-    assert module.model_client_config(model) is None
+    assert module.model_client_settings(model) is None
 
 
 class Session:
@@ -273,9 +273,9 @@ async def test_selected_model_is_retrieved_before_chat_settings_are_sent(
     retrieve.assert_awaited_once_with("simple")
     assert values["use_history"] is False
     assert values["assistant_name"] == "Configured in Chainlit"
-    stored_config = session.values["model_client_config"]
-    assert isinstance(stored_config, dict)
-    assert stored_config.get("schema_version") == CLIENT_CONFIG_SCHEMA_VERSION
+    stored_settings = session.values["model_client_settings"]
+    assert isinstance(stored_settings, dict)
+    assert stored_settings.get("schema_version") == CLIENT_SETTINGS_SCHEMA_VERSION
     assert session.values["chat_settings"] == values
 
 
@@ -289,7 +289,7 @@ async def test_discovery_failure_refreshes_ui_without_committing_defaults(
         {
             "chat_profile": "simple",
             "chat_settings": committed,
-            "model_client_config": client_config().model_dump(mode="json"),
+            "model_client_settings": client_settings().model_dump(mode="json"),
         }
     )
     refreshed = False
@@ -318,11 +318,11 @@ async def test_discovery_failure_refreshes_ui_without_committing_defaults(
     assert refreshed is True
     assert values is committed
     assert session.values["chat_settings"] is committed
-    assert session.values["model_client_config"] is None
+    assert session.values["model_client_settings"] is None
 
 
 @pytest.mark.anyio
-async def test_definitive_missing_config_clears_committed_settings(
+async def test_definitive_missing_settings_clears_committed_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     simple = importlib.import_module("demo.ui.chainlit_ui.simple")
@@ -330,7 +330,7 @@ async def test_definitive_missing_config_clears_committed_settings(
         {
             "chat_profile": "simple",
             "chat_settings": {"mode": "detailed"},
-            "model_client_config": client_config().model_dump(mode="json"),
+            "model_client_settings": client_settings().model_dump(mode="json"),
         }
     )
     sent = False
@@ -359,7 +359,7 @@ async def test_definitive_missing_config_clears_committed_settings(
     assert sent is True
     assert values == {}
     assert session.values["chat_settings"] == {}
-    assert session.values["model_client_config"] is None
+    assert session.values["model_client_settings"] is None
 
 
 @pytest.mark.anyio
@@ -371,7 +371,7 @@ async def test_local_settings_transport_errors_are_reported_by_the_message_handl
         {
             "chat_profile": "simple",
             "chat_settings": {"mode": "x" * 600},
-            "model_client_config": client_config().model_dump(mode="json"),
+            "model_client_settings": client_settings().model_dump(mode="json"),
         }
     )
 
@@ -403,7 +403,7 @@ async def test_local_settings_transport_errors_are_reported_by_the_message_handl
 
 def test_invalid_saved_values_are_replaced_only_when_restoring_widgets() -> None:
     assert client_module().restore_setting_values(
-        client_config(),
+        client_settings(),
         {"mode": "removed-option"},
     ) == {
         "use_history": True,

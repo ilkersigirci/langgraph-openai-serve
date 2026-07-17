@@ -19,7 +19,7 @@ from pydantic import (
 )
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.graph.client_config import (
+from langgraph_openai_serve.graph.client_settings import (
     ClientSettings,
     validate_client_settings_model,
 )
@@ -64,15 +64,15 @@ class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
-    client_config: type[ClientSettings] | None = None
+    client_settings: type[ClientSettings] | None = None
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
 
-    @field_validator("client_config")
+    @field_validator("client_settings")
     @classmethod
-    def validate_client_config(
+    def validate_client_settings(
         cls,
         value: type[ClientSettings] | None,
     ) -> type[ClientSettings] | None:
@@ -114,8 +114,8 @@ class GraphConfig(BaseModel):
     ) -> Any:
         """Build and validate the LangGraph runtime context for a request."""
         settings = (
-            self.client_config.validate_request(request)
-            if self.client_config is not None
+            self.client_settings.validate_request(request)
+            if self.client_settings is not None
             else None
         )
         if self.context_factory is not None:

@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRegistry
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.graph.client_config import (
-    CLIENT_CONFIG_METADATA_KEY,
-    ClientConfigValidationError,
+from langgraph_openai_serve.graph.client_settings import (
+    RUNTIME_SETTINGS_METADATA_KEY,
+    ClientSettingsValidationError,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from tests.graph.support.schemas import MessageState
@@ -35,19 +35,21 @@ def make_context_graph(context_schema):
 
 def make_request(
     *,
-    config: str | None = None,
+    settings: str | None = None,
 ) -> ChatCompletionRequest:
     return ChatCompletionRequest(
         model="test",
         messages=[{"role": "user", "content": "Hello"}],
-        metadata=({CLIENT_CONFIG_METADATA_KEY: config} if config is not None else None),
+        metadata=(
+            {RUNTIME_SETTINGS_METADATA_KEY: settings} if settings is not None else None
+        ),
     )
 
 
 def test_client_settings_own_the_public_contract_and_defaults(message_graph) -> None:
-    graph_config = GraphConfig(graph=message_graph, client_config=PublicSettings)
+    graph_config = GraphConfig(graph=message_graph, client_settings=PublicSettings)
 
-    assert graph_config.client_config is PublicSettings
+    assert graph_config.client_settings is PublicSettings
     assert PublicSettings.defaults() == PublicSettings()
     assert PublicSettings.model_json_schema()["additionalProperties"] is False
 
@@ -57,7 +59,7 @@ def test_client_settings_require_a_complete_default(message_graph) -> None:
         required: int
 
     with pytest.raises(ValidationError, match="Field required"):
-        GraphConfig(graph=message_graph, client_config=RequiredSettings)
+        GraphConfig(graph=message_graph, client_settings=RequiredSettings)
 
 
 def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
@@ -70,7 +72,7 @@ def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
         nested: NestedValue = invalid
 
     with pytest.raises(ValidationError, match="serialized value"):
-        GraphConfig(graph=message_graph, client_config=InvalidSettings)
+        GraphConfig(graph=message_graph, client_settings=InvalidSettings)
 
 
 def test_default_factory_is_evaluated_once_for_discovery_and_requests(
@@ -86,7 +88,7 @@ def test_default_factory_is_evaluated_once_for_discovery_and_requests(
     class FactorySettings(ClientSettings):
         value: int = Field(default_factory=next_default)
 
-    GraphConfig(graph=message_graph, client_config=FactorySettings)
+    GraphConfig(graph=message_graph, client_settings=FactorySettings)
 
     assert FactorySettings.defaults().value == 1
     assert FactorySettings.validate_request(make_request()).value == 1
@@ -96,7 +98,7 @@ def test_default_factory_is_evaluated_once_for_discovery_and_requests(
 def test_request_validation_uses_strict_json_mode() -> None:
     settings = PublicSettings.validate_request(
         make_request(
-            config='{"enabled":false,"day":"2026-07-18"}',
+            settings='{"enabled":false,"day":"2026-07-18"}',
         )
     )
 
@@ -107,19 +109,19 @@ def test_request_validation_uses_strict_json_mode() -> None:
 
 
 def test_request_validation_does_not_coerce_json_values() -> None:
-    with pytest.raises(ClientConfigValidationError) as exc_info:
-        PublicSettings.validate_request(make_request(config='{"enabled":"false"}'))
+    with pytest.raises(ClientSettingsValidationError) as exc_info:
+        PublicSettings.validate_request(make_request(settings='{"enabled":"false"}'))
 
     assert "Input should be a valid boolean" in str(exc_info.value)
-    assert exc_info.value.param == f"metadata.{CLIENT_CONFIG_METADATA_KEY}"
+    assert exc_info.value.param == f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
 
 
-def test_request_configuration_must_be_a_json_object() -> None:
-    with pytest.raises(ClientConfigValidationError) as exc_info:
-        PublicSettings.validate_request(make_request(config="[]"))
+def test_runtime_settings_must_be_a_json_object() -> None:
+    with pytest.raises(ClientSettingsValidationError) as exc_info:
+        PublicSettings.validate_request(make_request(settings="[]"))
 
     assert "Input should be an object" in str(exc_info.value)
-    assert exc_info.value.param == f"metadata.{CLIENT_CONFIG_METADATA_KEY}"
+    assert exc_info.value.param == f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
 
 
 @dataclass
@@ -139,10 +141,10 @@ async def test_context_factory_composes_public_and_server_context() -> None:
 
     graph_config = GraphConfig(
         graph=graph,
-        client_config=PublicSettings,
+        client_settings=PublicSettings,
         context_factory=context_factory,
     )
-    request = make_request(config='{"enabled":false}')
+    request = make_request(settings='{"enabled":false}')
     request.user = "alice"
 
     context = await graph_config.build_context(request, graph)
@@ -158,7 +160,7 @@ async def test_context_is_validated_against_the_graph_schema() -> None:
     graph = make_context_graph(RuntimeContext)
     graph_config = GraphConfig(
         graph=graph,
-        client_config=PublicSettings,
+        client_settings=PublicSettings,
         context_factory=lambda _request, _settings: {},
     )
 

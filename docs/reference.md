@@ -90,7 +90,7 @@ or replace a graph.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded to clients.
 - `features`: `GraphFeature` values that enable optional server behavior.
-- `client_config`: explicit public `ClientSettings` model class advertised by
+- `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
@@ -122,49 +122,45 @@ The same `features` set drives runtime behavior and the versioned
 `GET /v1/models/{model}`. `GraphFeature.INTERRUPTS` enables and advertises the
 interrupt/resume flow.
 
-### Client Configuration
+### Runtime Settings
 
 Subclass `ClientSettings` to publish only fields deliberately selected by the
 server author. LGOS never inspects or publishes the LangGraph context schema:
 
-```python
+```python title="Public settings model"
 from pydantic import Field
 
-from langgraph_openai_serve import ClientSettings, GraphConfig
+from langgraph_openai_serve import ClientSettings
 
 
-class PublicConfig(ClientSettings):
+class PublicSettings(ClientSettings):
     use_history: bool = Field(default=True, title="Use conversation history")
-
-graph_config = GraphConfig(
-    graph=my_graph,
-    client_config=PublicConfig,
-)
 ```
 
-Every public field must have a default. `ClientSettings` supplies strict,
-immutable, extra-forbid, default-validating Pydantic configuration. All public
-fields travel together as compact JSON in `metadata.langgraph_config`. Clients
-omit values equal to the advertised defaults. System instructions remain
-ordinary OpenAI messages and are independent of `ClientSettings`; native Chat
-Completions fields keep their standard request semantics.
+Pass this model as `GraphConfig.client_settings` and use it as the graph's context
+schema when it is the complete runtime context. Every public field must have a
+default and should keep the inherited `ClientSettings` validation behavior.
 
-LGOS requires Pydantic 2.11 or newer because this wire validation explicitly
-uses `model_validate_json(by_alias=False, by_name=True)`. The direct dependency
-prevents `pydantic-settings` from resolving an older, API-incompatible Pydantic
-2.x release.
+All public fields travel together as compact JSON text in the
+`metadata.langgraph_runtime_settings` string. Clients omit values equal to the advertised
+defaults. System instructions remain ordinary OpenAI messages and are
+independent of `ClientSettings`; native Chat Completions fields keep their
+standard request semantics.
 
-LGOS validates and freezes defaults through a JSON serialization round trip
-during graph registration. Discovery and omitted request fields reuse that same
-baseline. Requests are validated directly from JSON, preserving Pydantic's strict
-JSON semantics. Without `context_factory`, the resulting instance becomes
-`Runtime.context`. A factory can instead compose it with server-derived identity,
-authorization, database clients, and other dependencies.
+LGOS validates defaults when the graph is registered and validates settings on
+every request. Without `context_factory`, the settings become `Runtime.context`.
+A factory can instead combine them with server-derived identity, authorization,
+database clients, and other dependencies.
 
 The serialized descriptor appears only on model retrieval as
-`langgraph_openai_serve.client_config`, with independent `schema_version`,
+`langgraph_openai_serve.client_settings`, with independent `schema_version`,
 `json_schema`, and `defaults` fields. All client settings use the fixed
-`metadata.langgraph_config` envelope.
+`metadata.langgraph_runtime_settings` envelope.
+
+See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
+for the runtime settings flow, and
+[Runtime Settings](explanation/openai-compatibility.md#runtime-settings)
+for the request lifecycle and integration boundaries.
 
 The demo Chainlit adapter deliberately renders only direct top-level scalar
 properties with concrete defaults: booleans become switches, inline string
@@ -210,7 +206,7 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 `make run-demo-api` registers:
 
 - `simple-graph` (Chainlit can change conversation history and intended audience
-  through the discovered public configuration)
+  through the discovered runtime settings)
 - `citation-events` (structured URL citations alongside portable Markdown)
 - `lgos-rag`
 - `custom-input-output-context`
