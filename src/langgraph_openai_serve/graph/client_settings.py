@@ -1,7 +1,7 @@
 """Public graph settings transported through standard OpenAI requests."""
 
 from functools import cache
-from typing import Self
+from typing import NamedTuple, Self, cast
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
@@ -19,6 +19,7 @@ class ClientSettings(BaseModel):
     """
 
     model_config = ConfigDict(
+        allow_inf_nan=False,
         extra="forbid",
         frozen=True,
         strict=True,
@@ -27,13 +28,10 @@ class ClientSettings(BaseModel):
 
     @classmethod
     def defaults(cls) -> Self:
-        """Build and deeply validate the model's JSON defaults."""
-        # by_alias/by_name validation overrides require Pydantic 2.11 or newer.
-        return cls.model_validate_json(
-            _validated_defaults_json(cls),
-            strict=True,
-            by_alias=False,
-            by_name=True,
+        """Return a deep copy of the registration-validated defaults."""
+        return cast(
+            Self,
+            _validated_contract(cls).defaults.model_copy(deep=True),
         )
 
     @classmethod
@@ -43,26 +41,25 @@ class ClientSettings(BaseModel):
         encoded = (request.metadata or {}).get(RUNTIME_SETTINGS_METADATA_KEY, "{}")
 
         try:
-            changes = _SETTINGS_OBJECT_ADAPTER.validate_json(encoded, strict=True)
+            changes = _validate_json_object(encoded)
         except ValidationError as exc:
             raise ClientSettingsValidationError(
                 _validation_message(exc, label="runtime settings"),
                 param=parameter,
             ) from exc
 
-        values = _SETTINGS_OBJECT_ADAPTER.validate_json(
-            _validated_defaults_json(cls),
-            strict=True,
-        )
+        values = client_settings_default_values(cls)
         values.update(changes)
 
         try:
-            return cls.model_validate_json(
+            settings = cls.model_validate_json(
                 _SETTINGS_OBJECT_ADAPTER.dump_json(values),
                 strict=True,
                 by_alias=False,
                 by_name=True,
             )
+            _validated_settings_json(settings)
+            return settings
         except ValidationError as exc:
             field = _first_error_field(exc)
             raise ClientSettingsValidationError(
@@ -79,34 +76,99 @@ class ClientSettingsValidationError(ValueError):
         self.param = param
 
 
-_SETTINGS_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
+class _ValidatedContract(NamedTuple):
+    defaults: ClientSettings
+    defaults_json: bytes
+    json_schema_json: bytes
+
+
+_SETTINGS_OBJECT_ADAPTER = TypeAdapter(
+    dict[str, JsonValue],
+    config=ConfigDict(allow_inf_nan=False),
+)
+
+
+def client_settings_default_values(
+    settings_model: type[ClientSettings],
+) -> dict[str, JsonValue]:
+    """Return a fresh copy of the registration-validated JSON defaults."""
+    return _validate_json_object(_validated_contract(settings_model).defaults_json)
+
+
+def client_settings_json_schema(
+    settings_model: type[ClientSettings],
+) -> dict[str, JsonValue]:
+    """Return a fresh copy of the registration-validated discovery schema."""
+    return _validate_json_object(_validated_contract(settings_model).json_schema_json)
 
 
 @cache
-def _validated_defaults_json(settings_model: type[ClientSettings]) -> str:
-    """Freeze one validated JSON baseline for discovery and omitted values."""
+def _validated_contract(
+    settings_model: type[ClientSettings],
+) -> _ValidatedContract:
+    """Freeze validated defaults and discovery schema at registration."""
+    # by_alias/by_name validation overrides require Pydantic 2.11 or newer.
     default = settings_model.model_validate_json(
         "{}",
         strict=True,
         by_alias=False,
         by_name=True,
     )
-    encoded = default.model_dump_json(by_alias=False, warnings="error")
+    encoded = _validated_settings_json(default)
     validated = settings_model.model_validate_json(
         encoded,
         strict=True,
         by_alias=False,
         by_name=True,
     )
-    return validated.model_dump_json(by_alias=False, warnings="error")
+    defaults_json = _validated_settings_json(validated)
+    schema = _SETTINGS_OBJECT_ADAPTER.validate_python(
+        settings_model.model_json_schema(by_alias=False),
+        strict=True,
+    )
+    return _ValidatedContract(
+        defaults=validated,
+        defaults_json=defaults_json,
+        json_schema_json=_SETTINGS_OBJECT_ADAPTER.dump_json(
+            schema,
+            warnings="error",
+        ),
+    )
 
 
 def validate_client_settings_model(
     settings_model: type[ClientSettings],
 ) -> type[ClientSettings]:
     """Validate the registration-time contract of a settings model."""
-    settings_model.defaults()
+    if any(
+        settings_model.model_config.get(key) != expected
+        for key, expected in ClientSettings.model_config.items()
+    ):
+        raise ValueError(
+            "ClientSettings subclasses must preserve the inherited model config."
+        )
+
+    if any(
+        field.exclude or getattr(field, "exclude_if", None) is not None
+        for field in settings_model.model_fields.values()
+    ):
+        raise ValueError("ClientSettings fields cannot be excluded from defaults.")
+
+    client_settings_json_schema(settings_model)
     return settings_model
+
+
+def _validate_json_object(encoded: str | bytes) -> dict[str, JsonValue]:
+    """Decode a JSON object, then reject non-finite decoded numbers."""
+    value = _SETTINGS_OBJECT_ADAPTER.validate_json(encoded, strict=True)
+    return _SETTINGS_OBJECT_ADAPTER.validate_python(value, strict=True)
+
+
+def _validated_settings_json(settings: ClientSettings) -> bytes:
+    """Serialize settings only after checking their final JSON values."""
+    values = settings.model_dump(mode="json", by_alias=False, warnings="error")
+    validated = _SETTINGS_OBJECT_ADAPTER.validate_python(values, strict=True)
+    return _SETTINGS_OBJECT_ADAPTER.dump_json(validated, warnings="error")
 
 
 def _first_error_field(error: ValidationError) -> str | None:

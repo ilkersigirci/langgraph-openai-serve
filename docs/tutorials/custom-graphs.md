@@ -140,7 +140,8 @@ the graph's `context_schema`. In every case, set
 `client_settings=PublicRuntimeSettings` on the compiled graph's `GraphConfig`. LGOS
 validates the request directly from JSON and, without a `context_factory`, passes
 the resulting `PublicRuntimeSettings` instance as LangGraph runtime context. Graph
-authors should keep the inherited `ClientSettings` validation behavior.
+authors must keep the inherited strict, frozen, extra-forbid, and
+default-validation behavior; LGOS rejects a settings model that changes it.
 
 !!! warning "Do not publish internal context automatically"
 
@@ -148,7 +149,11 @@ authors should keep the inherited `ClientSettings` validation behavior.
     secrets, and resource handles server-derived. Combine `client_settings` with
     `context_factory(request, settings)` when the final runtime context also
     needs server-owned values; declare that final composite type as the graph's
-    `context_schema`. Do not expose server-owned values as runtime settings.
+    `context_schema`. A factory may return `None`, but LGOS rejects any non-null
+    result when the resolved graph has no context schema. LangGraph constructs a
+    mapping through a dataclass or Pydantic context schema; it trusts an existing
+    instance, so the server-owned factory is responsible for constructing valid
+    instances. Do not expose server-owned values as runtime settings.
 
 Follow [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
 for discovery, request transport, and per-request behavior. The runnable

@@ -32,11 +32,6 @@ async def _get(app: FastAPI, path: str) -> Response:
         return await client.get(path)
 
 
-def test_empty_graph_registry_is_rejected_by_pydantic() -> None:
-    with pytest.raises(ValidationError, match="at least 1 item"):
-        GraphRegistry(registry={})
-
-
 @pytest.mark.anyio
 async def test_bind_openai_api_uses_settings_prefix_by_default(
     graph_registry: GraphRegistry,

@@ -106,10 +106,12 @@ and values up to 512 characters. Public settings consume one pair and checkpoint
 identity consumes one more. Clients use `json.dumps()` or `JSON.stringify()` to
 encode the complete metadata string and omit values equal to the advertised
 defaults. The advertised JSON Schema describes the available settings; LGOS
-remains the validation authority. Native Chat Completions fields keep their
-standard semantics. Graphs that need identity, authorization, database clients,
-secrets, or other server-owned per-request context combine `client_settings` with
-`context_factory(request, settings)`.
+remains the validation authority. The descriptor's separate `defaults` object
+is the authoritative validated baseline; JSON Schema `default` keywords are
+annotations and may precede Pydantic field normalization. Native Chat
+Completions fields keep their standard semantics. Graphs that need identity,
+authorization, database clients, secrets, or other server-owned per-request
+context combine `client_settings` with `context_factory(request, settings)`.
 
 ### Per-Request Resolution
 

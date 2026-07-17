@@ -13,8 +13,6 @@ from pydantic import (
     Field,
     PlainSerializer,
     StringConstraints,
-    TypeAdapter,
-    ValidationError,
     field_validator,
 )
 
@@ -90,6 +88,16 @@ class GraphConfig(BaseModel):
         else:
             graph = await _maybe_await(self.graph())
 
+        if (
+            self.client_settings is not None
+            and self.context_factory is None
+            and graph.context_schema is not self.client_settings
+        ):
+            raise GraphConfigurationError(
+                "Graphs using client_settings directly must use that settings model "
+                "as context_schema."
+            )
+
         if self.supports(GraphFeature.INTERRUPTS) and graph.checkpointer is None:
             raise GraphConfigurationError(
                 "Interrupt-enabled graphs must be compiled with a checkpointer."
@@ -112,7 +120,7 @@ class GraphConfig(BaseModel):
         request: ChatCompletionRequest,
         graph: CompiledStateGraph,
     ) -> Any:
-        """Build and validate the LangGraph runtime context for a request."""
+        """Build the LangGraph runtime context for a request."""
         settings = (
             self.client_settings.validate_request(request)
             if self.client_settings is not None
@@ -123,16 +131,15 @@ class GraphConfig(BaseModel):
         else:
             context = settings
 
-        if context is None or graph.context_schema is None:
-            return context
-
-        try:
-            return TypeAdapter(graph.context_schema).validate_python(context)
-        except ValidationError as exc:
+        if context is None:
+            return None
+        if graph.context_schema is None:
             raise GraphConfigurationError(
-                "The configured context does not match the graph's context schema: "
-                f"{exc.errors()[0]['msg']}"
-            ) from exc
+                "A graph that produces runtime context must declare context_schema."
+            )
+
+        # LangGraph owns context_schema coercion when the graph is invoked.
+        return context
 
     async def render_output(self, output: Any) -> str:
         """Convert native graph output into assistant response text."""

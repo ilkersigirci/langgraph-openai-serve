@@ -12,6 +12,10 @@ from langgraph_openai_serve.api.models.schemas import (
     ModelDetails,
     ModelList,
 )
+from langgraph_openai_serve.graph.client_settings import (
+    client_settings_default_values,
+    client_settings_json_schema,
+)
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = logging.getLogger(__name__)
@@ -49,10 +53,9 @@ class ModelService:
         client_settings = graph_config.client_settings
         client_settings_details = None
         if client_settings is not None:
-            defaults = client_settings.defaults()
             client_settings_details = ModelClientSettings(
-                json_schema=client_settings.model_json_schema(by_alias=False),
-                defaults=defaults.model_dump(mode="json", by_alias=False),
+                json_schema=client_settings_json_schema(client_settings),
+                defaults=client_settings_default_values(client_settings),
             )
 
         details = ModelDetails(

@@ -63,10 +63,15 @@ or replace a graph.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
-the runtime context. When the resolved graph declares a `context_schema`, LGOS
-validates every non-null final context against it. Graphs should access context
-from an injected `Runtime[Context]`. Runtime context is separate from
-`RunnableConfig`:
+the runtime context, so the graph must use that settings model as its
+`context_schema`. A factory may return `None`; every non-null result requires a
+graph context schema. LGOS passes server-owned factory results to LangGraph
+without rebuilding them. LangGraph's native
+[runtime-context handling](https://docs.langchain.com/oss/python/langgraph/graph-api#runtime-context)
+constructs mapping values through dataclass and Pydantic context schemas and
+trusts existing instances. The factory owns the validity of instances it
+creates. Graphs should access context from an injected `Runtime[Context]`.
+Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
@@ -102,7 +107,9 @@ class PublicSettings(ClientSettings):
 
 Pass this model as `GraphConfig.client_settings` and use it as the graph's context
 schema when it is the complete runtime context. Every public field must have a
-default and should keep the inherited `ClientSettings` validation behavior.
+default. Registration rejects subclasses that change the inherited strict,
+frozen, extra-forbid, or default-validation behavior, as well as fields excluded
+from Pydantic serialization.
 
 All public fields travel together as compact JSON text in the
 `metadata.langgraph_runtime_settings` string. Clients omit values equal to the advertised
@@ -110,15 +117,18 @@ defaults. System instructions remain ordinary OpenAI messages and are
 independent of `ClientSettings`; native Chat Completions fields keep their
 standard request semantics.
 
-LGOS validates defaults when the graph is registered and validates settings on
-every request. Without `context_factory`, the settings become `Runtime.context`.
-A factory can instead combine them with server-derived identity, authorization,
-database clients, and other dependencies.
+LGOS validates defaults and generates the discovery JSON Schema when the graph
+is registered, then validates settings on every request. Without
+`context_factory`, the settings become `Runtime.context`. A factory can instead
+combine them with server-derived identity, authorization, database clients, and
+other dependencies.
 
 The serialized descriptor appears only on model retrieval as
 `langgraph_openai_serve.client_settings`, with independent `schema_version`,
 `json_schema`, and `defaults` fields. All client settings use the fixed
-`metadata.langgraph_runtime_settings` envelope.
+`metadata.langgraph_runtime_settings` envelope. Clients use the descriptor's
+validated `defaults` object as the baseline; `default` keywords within the
+generated JSON Schema are annotations, not the runtime baseline.
 
 See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
 for the runtime settings flow, and

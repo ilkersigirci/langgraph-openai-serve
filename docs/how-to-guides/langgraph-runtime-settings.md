@@ -60,6 +60,13 @@ contains:
 - `defaults` used when the client sends no changes.
 - `schema_version` for the descriptor format.
 
+The descriptor's `defaults` object is the authoritative validated baseline.
+Pydantic-generated `default` keywords inside `json_schema` are
+[annotations](https://json-schema.org/understanding-json-schema/reference/annotations)
+and may show a declared value before field validators normalize it. Clients
+should use `defaults`, not those annotations, when initializing values or
+computing changes.
+
 If the descriptor is missing or its version is unsupported, the client should
 omit runtime settings and use server defaults.
 
@@ -104,6 +111,13 @@ For every request, LGOS:
 3. Validates the complete settings.
 4. Passes them to `Runtime.context` or to `context_factory`.
 
+LGOS generates the advertised JSON Schema and validates the complete default
+object when `GraphConfig` is registered. When settings become runtime context
+directly, the resolved graph must use the settings model as `context_schema`.
+Factories may return `None`; every non-null result requires a context schema.
+LGOS leaves server-owned factory results intact and relies on LangGraph's native
+context coercion when the graph runs.
+
 Runtime settings are not persisted. Resend non-default values on every request
 that needs them, including interrupt-resume requests. Omitting
 `langgraph_runtime_settings` on a later request uses the registered defaults
@@ -117,4 +131,6 @@ describes the combined value.
 See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-settings)
 for discovery code. The included Chainlit client automates descriptor discovery,
 Chat Settings, and metadata serialization; see the
-[Chainlit integration](../integrations/chainlit.md#runtime-settings).
+[Chainlit integration](../integrations/chainlit.md#runtime-settings). The
+[Open WebUI integration](../integrations/open-webui.md#runtime-settings) uses a
+separate, static `UserValves` Function for the `simple-graph` demo.

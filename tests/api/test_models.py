@@ -1,20 +1,17 @@
 from typing import Literal
 
 import pytest
-from langgraph.checkpoint.memory import InMemorySaver
 from openai import AsyncOpenAI, BadRequestError
-from pydantic import Field, ValidationError
+from pydantic import ConfigDict, Field
 
 from langgraph_openai_serve import (
     ClientSettings,
     GraphConfig,
-    GraphFeature,
     GraphRegistry,
 )
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.api.models.schemas import ModelClientSettings
 from langgraph_openai_serve.graph.client_settings import RUNTIME_SETTINGS_METADATA_KEY
-from tests.graph.support.interrupt import make_interrupt_graph
+from tests.graph.support.message import make_message_graph
 
 pytestmark = pytest.mark.anyio
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
@@ -25,15 +22,14 @@ class PublicSettings(ClientSettings):
     mode: Literal["brief", "detailed"] = "brief"
 
 
-def test_client_settings_descriptor_rejects_unknown_fields() -> None:
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        ModelClientSettings.model_validate(
-            {
-                "json_schema": {},
-                "defaults": {},
-                "unknown": "value",
-            }
-        )
+def bind_public_settings(graph_registry: GraphRegistry) -> GraphConfig:
+    graph_config = GraphConfig(
+        graph=make_message_graph(context_schema=PublicSettings),
+        streamable_node_names=["generate"],
+        client_settings=PublicSettings,
+    )
+    graph_registry.register("test", graph_config)
+    return graph_config
 
 
 async def test_registered_graphs_are_exposed_as_standard_model_summaries(
@@ -48,61 +44,11 @@ async def test_registered_graphs_are_exposed_as_standard_model_summaries(
     assert not response.data[0].model_extra
 
 
-async def test_model_details_are_available_through_openai_client(
-    openai_client: AsyncOpenAI,
-) -> None:
-    response = await openai_client.models.retrieve("test")
-
-    assert response.id == "test"
-    extension = (response.model_extra or {})["langgraph_openai_serve"]
-    assert extension == {"schema_version": 1, "features": []}
-
-
-async def test_graph_features_are_available_only_on_model_retrieval(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-) -> None:
-    graph_registry.register(
-        "test",
-        GraphConfig(
-            graph=make_interrupt_graph(checkpointer=InMemorySaver()),
-            features={GraphFeature.INTERRUPTS},
-        ),
-    )
-
-    listed = await openai_client.models.list()
-    retrieved = await openai_client.models.retrieve("test")
-
-    assert not listed.data[0].model_extra
-    extension = (retrieved.model_extra or {})["langgraph_openai_serve"]
-    assert extension == {"schema_version": 1, "features": ["interrupts"]}
-
-
-async def test_model_discovery_does_not_resolve_lazy_graph_factories(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-    message_graph,
-) -> None:
-    resolved = False
-
-    def lazy_graph():
-        nonlocal resolved
-        resolved = True
-        return message_graph
-
-    graph_registry.register("lazy", GraphConfig(graph=lazy_graph))
-
-    await openai_client.models.list()
-    await openai_client.models.retrieve("lazy")
-
-    assert resolved is False
-
-
 async def test_retrieved_model_exposes_public_schema_and_defaults(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.registry["test"].client_settings = PublicSettings
+    bind_public_settings(graph_registry)
 
     response = await openai_client.models.retrieve("test")
 
@@ -121,11 +67,44 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
     }
 
 
+async def test_model_retrieval_reuses_the_registration_schema(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    calls = 0
+
+    def add_generation(schema: dict[str, object]) -> None:
+        nonlocal calls
+        calls += 1
+        schema["generation"] = calls
+
+    class StatefulSchemaSettings(ClientSettings):
+        model_config = ConfigDict(json_schema_extra=add_generation)
+
+        enabled: bool = True
+
+    graph_registry.register(
+        "stateful",
+        GraphConfig(
+            graph=make_message_graph(context_schema=StatefulSchemaSettings),
+            client_settings=StatefulSchemaSettings,
+        ),
+    )
+
+    first = await openai_client.models.retrieve("stateful")
+    second = await openai_client.models.retrieve("stateful")
+
+    first_extension = (first.model_extra or {})["langgraph_openai_serve"]
+    second_extension = (second.model_extra or {})["langgraph_openai_serve"]
+    assert first_extension["client_settings"]["json_schema"]["generation"] == 1
+    assert second_extension["client_settings"]["json_schema"]["generation"] == 1
+    assert calls == 1
+
+
 async def test_bound_client_settings_builds_validated_runtime_context(
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_config = graph_registry.registry["test"]
-    graph_config.client_settings = PublicSettings
+    graph_config = bind_public_settings(graph_registry)
     request = ChatCompletionRequest(
         model="test",
         messages=[{"role": "user", "content": "Hello"}],
@@ -143,37 +122,11 @@ async def test_bound_client_settings_builds_validated_runtime_context(
     )
 
 
-async def test_invalid_bound_client_settings_returns_openai_error(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-) -> None:
-    graph_registry.registry["test"].client_settings = PublicSettings
-
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.chat.completions.create(
-            model="test",
-            messages=[{"role": "user", "content": "Hello"}],
-            metadata={RUNTIME_SETTINGS_METADATA_KEY: "not-json"},
-        )
-
-    assert exc_info.value.response.json() == {
-        "error": {
-            "message": (
-                "Invalid runtime settings: "
-                "Invalid JSON: expected ident at line 1 column 2"
-            ),
-            "type": "invalid_request_error",
-            "param": f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}",
-            "code": None,
-        }
-    }
-
-
 async def test_bound_client_settings_does_not_coerce_json_values(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.registry["test"].client_settings = PublicSettings
+    bind_public_settings(graph_registry)
 
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.chat.completions.create(

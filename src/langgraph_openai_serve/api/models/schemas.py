@@ -8,7 +8,7 @@ from langgraph_openai_serve.graph.features import GraphFeature
 class ModelClientSettings(BaseModel):
     """Versioned public runtime settings for one registered graph."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     schema_version: Literal[1] = 1
     json_schema: dict[str, JsonValue]

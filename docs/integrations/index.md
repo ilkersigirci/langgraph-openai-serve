@@ -18,8 +18,7 @@ the OpenAI-compatible LGOS contract. They are not part of the core API.
 
 -   :material-chat-outline:{ .lg .middle } __Open WebUI__
 
-    Model discovery, streaming, citations, and interrupt approval through the
-    included manifold Pipe.
+    A general manifold Pipe plus a dedicated `simple-graph` UserValve demo.
 
     [:octicons-arrow-right-24: Use Open WebUI](open-webui.md)
 
@@ -37,7 +36,8 @@ the OpenAI-compatible LGOS contract. They are not part of the core API.
 | Integration | Runtime settings | Interrupts | Discovery requirement |
 | --- | --- | --- | --- |
 | Chainlit | Top-level booleans and strings | Separate HITL UI | Detailed model retrieval |
-| Open WebUI Pipe | Server defaults only | Approval through the Pipe | Standard model list |
+| Open WebUI manifold Pipe | Server defaults only | Approval through the Pipe | Standard model list |
+| Open WebUI `simple-graph` Pipe | Fixed `use_history` and `audience` UserValves | None | None; targets a fixed model |
 | OpenAI-compatible proxy | Preserved when metadata is forwarded | Preserved when tool calls and metadata are forwarded | Detailed extension requires direct LGOS or a raw pass-through route |
 
 Direct OpenAI SDK clients use the core contract without an integration adapter.
