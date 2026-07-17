@@ -44,9 +44,13 @@ graph.astream(
 ```
 
 - `graph_input` contains mutable workflow state, including converted messages.
-- `runtime_context` is built by `GraphConfig.context_factory`, validated against
-  the graph's `context_schema`, and available to nodes as `runtime.context` on
-  an injected `Runtime[Context]`.
+- `runtime_context` starts with optional validated `GraphConfig.client_settings`
+  settings and can be composed with server-owned values by
+  `GraphConfig.context_factory(request, settings)`. Settings used directly must
+  also be the graph's `context_schema`; every non-null factory result requires a
+  context schema. LangGraph applies its native schema coercion when it runs the
+  graph. Nodes receive the result as `runtime.context` on an injected
+  `Runtime[Context]`.
 - `runnable_config` contains callbacks and execution identity. When an OpenAI
   request supplies `metadata.langgraph_thread_id`, LGOS maps it to
   `config["configurable"]["thread_id"]` for the LangGraph checkpointer.
@@ -61,8 +65,10 @@ automatically to nested async runnable calls. Node functions only need an
 injected `RunnableConfig` when they inspect or modify execution configuration;
 they do not need one solely to pass `config` to a nested model's `ainvoke()`.
 
-See [Custom Graphs](../tutorials/custom-graphs.md#runtime-context) for a complete
-typed context example and LangGraph's official
+See [Custom Graphs](../tutorials/custom-graphs.md#runtime-context) for a typed
+server-owned context example and
+[Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
+for public settings, discovery, and request handling. LangGraph's official
 [runtime](https://reference.langchain.com/python/langgraph/runtime/Runtime),
 [streaming](https://docs.langchain.com/oss/python/langgraph/streaming), and
 [persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
@@ -103,11 +109,10 @@ For streaming chat completions (`stream=true`), LGOS ties graph iteration to the
 HTTP response lifetime. The route returns Starlette's ordinary
 `StreamingResponse`, while a request-scoped FastAPI `yield` dependency owns one
 `asyncio` producer task and the AnyIO memory channel feeding that response.
-Closing the client stream—including clicking **Stop** in the Chainlit
-demo—is detected by `StreamingResponse`, which ends the response. Dependency
-teardown then cancels and awaits the producer and closes the nested graph
-iterator. This uses the normal OpenAI streaming connection; it adds no custom
-cancellation route, header, or SSE event.
+Closing the client stream is detected by `StreamingResponse`, which ends the
+response. Dependency teardown then cancels and awaits the producer and closes
+the nested graph iterator. This uses the normal OpenAI streaming connection; it
+adds no custom cancellation route, header, or SSE event.
 
 !!! info "Why cancellation raises the dependency minimums"
 
@@ -136,10 +141,6 @@ cancellation route, header, or SSE event.
     implemented and tested; the upper bound prevents an unreviewed future major
     release from changing cancellation or stream behavior underneath this
     lifecycle. FastAPI continues to select its compatible Starlette version.
-
-The Chainlit demo closes its OpenAI stream when the message handler is cancelled.
-Any partial assistant text remains visible but is excluded from later model
-context because it is an incomplete response.
 
 !!! warning "Cancellation is cooperative"
 

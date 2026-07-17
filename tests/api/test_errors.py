@@ -148,6 +148,24 @@ async def test_legacy_function_calling_fields_are_rejected(
     assert expected_message in error["message"]
 
 
+async def test_metadata_pair_limit_returns_openai_error(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.chat.completions.create(
+            model="test",
+            messages=[{"role": "user", "content": "Hello"}],
+            metadata={f"key-{index}": "value" for index in range(17)},
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"] == "metadata"
+    assert error["message"].startswith("metadata: ")
+
+
 async def test_http_error_returns_openai_error(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -158,10 +176,10 @@ async def test_http_error_returns_openai_error(
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {
         "error": {
-            "message": "Not Found",
+            "message": "Graph 'missing' not found in registry.",
             "type": "invalid_request_error",
-            "param": None,
-            "code": None,
+            "param": "model",
+            "code": "model_not_found",
         }
     }
 
@@ -200,9 +218,9 @@ async def test_openai_error_handlers_do_not_replace_host_app_handlers(
     assert openai_response.status_code == status.HTTP_404_NOT_FOUND
     assert openai_response.json() == {
         "error": {
-            "message": "Not Found",
+            "message": "Graph 'missing' not found in registry.",
             "type": "invalid_request_error",
-            "param": None,
-            "code": None,
+            "param": "model",
+            "code": "model_not_found",
         }
     }

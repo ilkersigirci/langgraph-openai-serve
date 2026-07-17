@@ -43,7 +43,8 @@ async def test_mock_chainlit_login_returns_the_demo_user(
     assert login_response.status_code == HTTP_200_OK
     assert login_response.json() == {"success": True}
     assert user_response.status_code == HTTP_200_OK
-    assert user_response.json() == {
+    user = user_response.json()
+    assert {key: user[key] for key in ("identifier", "metadata", "display_name")} == {
         "identifier": "demo-user",
         "metadata": {"provider": "mock"},
         "display_name": "Demo User",

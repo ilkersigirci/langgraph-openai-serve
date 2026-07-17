@@ -1,19 +1,17 @@
 """Simple LLM-backed graph used by the demo API."""
 
-from dataclasses import dataclass
-from typing import Annotated, Sequence
+from typing import Annotated, Literal, Sequence
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from demo.api.settings import settings
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import ClientSettings
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful assistant called Langgraph Openai Serve. "
@@ -27,12 +25,19 @@ class AgentState(BaseModel):
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
-@dataclass(frozen=True)
-class SimpleContext:
-    """Immutable runtime context accepted by the demo graph."""
+class SimpleContext(ClientSettings):
+    """Allowlisted runtime context configurable by ordinary OpenAI clients."""
 
-    use_history: bool = False
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    use_history: bool = Field(
+        default=False,
+        title="Use conversation history",
+        description="Include prior user and assistant messages in each generation.",
+    )
+    audience: Literal["general", "beginner", "expert"] = Field(
+        default="general",
+        title="Audience",
+        description="Adapt terminology and assumed knowledge to the selected audience.",
+    )
 
 
 async def generate(
@@ -48,18 +53,18 @@ async def generate(
         streaming=True,
     )
     context = runtime.context or SimpleContext()
-    system_message = ("system", context.system_prompt)
+    messages = state.messages if context.use_history else state.messages[-1:]
+    conversation = [
+        SystemMessage(
+            content=(
+                f"{DEFAULT_SYSTEM_PROMPT} "
+                f"Adapt explanations for {context.audience} readers."
+            )
+        ),
+        *messages,
+    ]
 
-    if context.use_history:
-        prompt = ChatPromptTemplate.from_messages([system_message, *state.messages])
-        response = await (prompt | model | StrOutputParser()).ainvoke({})
-    else:
-        prompt = ChatPromptTemplate.from_messages(
-            [system_message, ("human", "{question}")]
-        )
-        response = await (prompt | model | StrOutputParser()).ainvoke(
-            {"question": state.messages[-1].content}
-        )
+    response = await (model | StrOutputParser()).ainvoke(conversation)
 
     return {"messages": [AIMessage(content=response)]}
 
@@ -70,24 +75,3 @@ workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")
 
 simple_graph = workflow.compile()
-
-
-def build_simple_context(
-    request: ChatCompletionRequest,
-    *,
-    use_history: bool,
-) -> SimpleContext:
-    """Build simple graph context from OpenAI request metadata."""
-    metadata = request.metadata or {}
-    return SimpleContext(
-        use_history=use_history,
-        system_prompt=metadata.get("system_prompt", DEFAULT_SYSTEM_PROMPT),
-    )
-
-
-__all__ = [
-    "DEFAULT_SYSTEM_PROMPT",
-    "SimpleContext",
-    "build_simple_context",
-    "simple_graph",
-]

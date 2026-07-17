@@ -34,9 +34,11 @@ OpenAI-compatible `/v1` API.
 
     ---
 
-    Adapt custom graph schemas, factories, streaming nodes, and interrupts.
+    Adapt schemas, publish runtime settings, configure streaming,
+    and enable interrupts.
 
     [:octicons-arrow-right-24: Custom graphs](tutorials/custom-graphs.md)
+    [:octicons-arrow-right-24: Runtime settings](how-to-guides/langgraph-runtime-settings.md)
 
 -   :material-source-branch:{ .lg .middle } __Understand the contract__
 
@@ -46,6 +48,14 @@ OpenAI-compatible `/v1` API.
 
     [:octicons-arrow-right-24: Architecture](explanation/architecture.md)
 
+-   :material-transit-connection-horizontal:{ .lg .middle } __Use an integration__
+
+    ---
+
+    Connect Chainlit, Open WebUI, or an OpenAI-compatible proxy.
+
+    [:octicons-arrow-right-24: Integrations](integrations/index.md)
+
 </div>
 
 !!! info "OpenAI compatibility is the public contract"
@@ -53,9 +63,12 @@ OpenAI-compatible `/v1` API.
     LGOS keeps client ingestion on the OpenAI SDK path. Graph-specific behavior
     is adapted behind `/v1`, so clients do not need a project-specific protocol.
 
-## Operate And Deploy
+## Configure, Operate, And Deploy
 
-Use the [authentication guide](how-to-guides/authentication.md) to add bearer
-tokens, the [Docker guide](how-to-guides/docker.md) to run a stack, and the
+Use the [runtime settings guide](how-to-guides/langgraph-runtime-settings.md)
+to publish safe per-request graph settings, the
+[authentication guide](how-to-guides/authentication.md) to add bearer tokens,
+and the [Docker guide](how-to-guides/docker.md) to run a stack. Optional clients
+and gateways are documented under [Integrations](integrations/index.md). See the
 [reference](reference.md) for endpoints, settings, demo models, and public
 classes.

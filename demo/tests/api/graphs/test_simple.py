@@ -8,12 +8,16 @@ from langchain_core.runnables import RunnableLambda
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("use_history", "expected_prompt"),
+    ("context", "expected_messages"),
     [
         pytest.param(
-            True,
+            simple_module.SimpleContext(use_history=True, audience="beginner"),
             [
-                ("system", "Respond in Turkish."),
+                (
+                    "system",
+                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                    "Adapt explanations for beginner readers.",
+                ),
                 ("human", "First"),
                 ("ai", "Prior answer"),
                 ("human", "Latest"),
@@ -21,21 +25,28 @@ from langchain_core.runnables import RunnableLambda
             id="history",
         ),
         pytest.param(
-            False,
-            [("system", "Respond in Turkish."), ("human", "Latest")],
+            simple_module.SimpleContext(use_history=False, audience="expert"),
+            [
+                (
+                    "system",
+                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                    "Adapt explanations for expert readers.",
+                ),
+                ("human", "Latest"),
+            ],
             id="latest-message",
         ),
     ],
 )
-async def test_runtime_context_controls_conversation_history(
+async def test_runtime_context_controls_model_input(
     monkeypatch: pytest.MonkeyPatch,
-    use_history: bool,
-    expected_prompt: list[tuple[str, str]],
+    context: simple_module.SimpleContext,
+    expected_messages: list[tuple[str, str]],
 ) -> None:
-    prompts: list[Any] = []
+    model_inputs: list[Any] = []
 
-    async def respond(prompt: Any) -> AIMessage:
-        prompts.append(prompt)
+    async def respond(messages: Any) -> AIMessage:
+        model_inputs.append(messages)
         return AIMessage(content="Fake answer")
 
     monkeypatch.setattr(
@@ -52,14 +63,10 @@ async def test_runtime_context_controls_conversation_history(
                 HumanMessage(content="Latest"),
             ],
         ),
-        context=simple_module.SimpleContext(
-            use_history=use_history,
-            system_prompt="Respond in Turkish.",
-        ),
+        context=context,
     )
 
-    prompt_messages = prompts[0].to_messages()
-    assert [(message.type, message.content) for message in prompt_messages] == (
-        expected_prompt
+    assert [(message.type, message.content) for message in model_inputs[0]] == (
+        expected_messages
     )
     assert result["messages"][-1].content == "Fake answer"

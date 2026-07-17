@@ -19,9 +19,15 @@ nav = [
   ]},
   { "How-To Guides" = [
     "how-to-guides/index.md",
-    { "Docker Deployment" = "how-to-guides/docker.md" },
+    { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
-    { "OpenAI Proxy" = "how-to-guides/openai-proxy.md" },
+    { "Docker Deployment" = "how-to-guides/docker.md" },
+  ]},
+  { Integrations = [
+    "integrations/index.md",
+    { Chainlit = "integrations/chainlit.md" },
+    { "Open WebUI" = "integrations/open-webui.md" },
+    { "OpenAI-Compatible Proxies" = "integrations/openai-proxies.md" },
   ]},
   { Explanation = [
     "explanation/index.md",

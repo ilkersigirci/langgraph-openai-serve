@@ -57,25 +57,8 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-valid-key-1")
 ```
 
-## Chainlit Demo Login
-
-The repository's Chainlit UI has a separate browser login selected by
-`DEMO_CHAINLIT_LOGIN_TYPE`:
-
-- `mock` is the default demo-only mode. Its password callback accepts any
-  non-empty form values and returns the shared `demo-user` identity.
-- `oauth` registers Chainlit's OAuth callback. With the example generic-provider
-  settings, PocketID's stable `sub` claim becomes the user identifier.
-
-Chainlit signs either browser session with `CHAINLIT_AUTH_SECRET`, and its
-PostgreSQL data layer associates persisted threads with the returned identifier.
-The shared mock identity is convenient locally but provides no access control or
-user isolation; use OAuth or another real authentication callback outside the
-demo.
-
-Follow [Run the Chainlit UI](../tutorials/getting-started.md#run-the-chainlit-ui)
-to configure and start it. This UI login does not replace bearer-token
-protection for `/v1` when the API itself is exposed outside a trusted network.
+The included Chainlit client's separate browser login is documented in the
+[Chainlit integration](../integrations/chainlit.md#persistence-and-login).
 
 ## Production Notes
 

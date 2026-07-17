@@ -1,7 +1,6 @@
 import importlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -60,12 +59,19 @@ async def test_chat_profiles_fail_when_feature_metadata_is_missing(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     hitl = importlib.import_module("demo.ui.chainlit_ui.hitl")
     monkeypatch.setattr(
-        hitl.client.models,
-        "list",
-        AsyncMock(return_value=SimpleNamespace(data=[])),
+        hitl.discovery_client.models,
+        "retrieve",
+        AsyncMock(
+            return_value=Model(
+                id="interruptible",
+                object="model",
+                created=1,
+                owned_by="test",
+            )
+        ),
     )
 
-    with pytest.raises(RuntimeError, match="pass-through configured to target LGOS"):
+    with pytest.raises(RuntimeError, match="documented pass-through that targets LGOS"):
         await hitl.set_chat_profiles(None)
 
 

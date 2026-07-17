@@ -7,7 +7,8 @@ Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List registered graph models and feature metadata. |
+| `GET` | `/v1/models` | List standard summaries for registered graph models. |
+| `GET` | `/v1/models/{model}` | Retrieve one model with optional LGOS discovery metadata. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 
@@ -24,7 +25,7 @@ Package settings:
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
 
-Demo-only settings (read by `demo/api/settings.py`):
+Demo API and graph settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -33,49 +34,18 @@ Demo-only settings (read by `demo/api/settings.py`):
 | `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model for LLM-backed demo graphs. |
 | `DEMO_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by the `lgos-rag` demo graph. |
 | `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
-| `DEMO_CHAINLIT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible demo API used by Chainlit. |
-| `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
-| `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target module; accepts `simple` or `hitl`. |
-| `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login callback; accepts `mock` or `oauth`. |
 
-Native Chainlit settings used by the demo:
-
-| Setting | Default | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | required | PostgreSQL URL validated by the demo and used by Chainlit's official asyncpg data layer and migration command. |
-| `CHAINLIT_AUTH_SECRET` | required | Secret used by Chainlit to sign login tokens; generate it with `uv run chainlit create-secret`. |
-| `CHAINLIT_APP_ROOT` | `demo/ui/chainlit_ui` in `.env.example` | Directory containing the tracked Chainlit configuration and welcome Markdown. |
-| `CHAINLIT_URL` | request origin | OAuth-only external origin used for callback URLs behind a reverse proxy. |
-| `OAUTH_GENERIC_CLIENT_ID` | required for `oauth` | Client ID for Chainlit's generic OAuth provider. |
-| `OAUTH_GENERIC_CLIENT_SECRET` | required for `oauth` | OAuth client secret; keep it outside source control. |
-| `OAUTH_GENERIC_AUTH_URL` | required for `oauth` | OIDC authorization endpoint. |
-| `OAUTH_GENERIC_TOKEN_URL` | required for `oauth` | OIDC token endpoint. |
-| `OAUTH_GENERIC_USER_INFO_URL` | required for `oauth` | OIDC user-info endpoint. |
-| `OAUTH_GENERIC_SCOPES` | required for `oauth` | Space-separated scopes requested by Chainlit. |
-| `OAUTH_GENERIC_NAME` | `generic` | Optional provider ID shown by Chainlit and used in the callback path; the example uses `PocketID`. |
-| `OAUTH_GENERIC_USER_IDENTIFIER` | `email` | Optional identifier claim; the PocketID example uses its stable `sub` claim. |
-
-The generic variable names map to
-[`GenericOAuthProvider`](https://github.com/Chainlit/chainlit/blob/2.11.1/backend/chainlit/oauth_providers.py)
-in the minimum supported Chainlit release.
-The six settings marked as required for `oauth` match that provider's `env`
-list; its name and user-identifier settings have framework defaults. No OAuth
-setting is required in the default `mock` mode.
-The demo `Settings` model validates the login selection. The separate
-`ChainlitSettings` model validates the PostgreSQL URL, signing secret, and
-mode-dependent generic-provider settings before the UI mounts. Chainlit
-consumes the same native environment values at runtime.
-The demo requires Chainlit 2.11.1 or newer. Because the official PostgreSQL
-schema requires release-specific migrations, review Chainlit's migration
-guidance whenever updating the lockfile and update the tracked `config.toml` and
-SQL migrations when required.
+Settings for optional clients and gateways are documented under
+[Integrations](integrations/index.md).
 
 ## Public API
 
 Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
-The registry must contain at least one graph. A missing or empty registry raises
-`GraphRegistryError` during application configuration.
+The registry must contain at least one graph. Pydantic rejects empty registries
+and model IDs that cannot be addressed as one URL path segment. Registry keys
+are read-only after validation; use `registry.register(model_id, config)` to add
+or replace a graph.
 
 `GraphConfig` accepts:
 
@@ -83,20 +53,30 @@ The registry must contain at least one graph. A missing or empty registry raises
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded to clients.
 - `features`: `GraphFeature` values that enable optional server behavior.
+- `client_settings`: explicit public `ClientSettings` model class advertised by
+  model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
-- `context_factory(request)`: build typed LangGraph runtime context passed via
-  the graph's `context` argument.
+- `context_factory(request, client_settings)`: compose the final typed LangGraph
+  runtime context from server-owned values and optional validated public settings.
 - `output_to_text(output)`: custom graph output to assistant text.
 
-Graphs that use `context_factory` should declare a compatible
-`StateGraph(..., context_schema=Context)` and access the value from an injected
-`Runtime[Context]`. Runtime context is separate from `RunnableConfig`:
+When both are configured, LGOS validates the public settings first and passes
+them to `context_factory`. Without a factory, the validated settings instance is
+the runtime context, so the graph must use that settings model as its
+`context_schema`. A factory may return `None`; every non-null result requires a
+graph context schema. LGOS passes server-owned factory results to LangGraph
+without rebuilding them. LangGraph's native
+[runtime-context handling](https://docs.langchain.com/oss/python/langgraph/graph-api#runtime-context)
+constructs mapping values through dataclass and Pydantic context schemas and
+trusts existing instances. The factory owns the validity of instances it
+creates. Graphs should access context from an injected `Runtime[Context]`.
+Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
 | Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
-| Runtime context | `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
+| Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
 | Checkpoint thread | `metadata.langgraph_thread_id` → `config["configurable"]["thread_id"]` | Load, save, interrupt, and resume checkpoint state. |
 
@@ -105,9 +85,55 @@ checkpoint thread ID. There is intentionally no adapter for placing arbitrary
 OpenAI request fields into `config["configurable"]`; use typed runtime context
 for values consumed by nodes.
 
-The same `features` set drives runtime behavior and the
-versioned `langgraph_openai_serve.features` extension returned by `/v1/models`.
-`GraphFeature.INTERRUPTS` enables and advertises the interrupt/resume flow.
+The same `features` set drives runtime behavior and the versioned
+`langgraph_openai_serve.features` extension returned by
+`GET /v1/models/{model}`. `GraphFeature.INTERRUPTS` enables and advertises the
+interrupt/resume flow.
+
+### Runtime Settings
+
+Subclass `ClientSettings` to publish only fields deliberately selected by the
+server author. LGOS never inspects or publishes the LangGraph context schema:
+
+```python title="Public settings model"
+from pydantic import Field
+
+from langgraph_openai_serve import ClientSettings
+
+
+class PublicSettings(ClientSettings):
+    use_history: bool = Field(default=True, title="Use conversation history")
+```
+
+Pass this model as `GraphConfig.client_settings` and use it as the graph's context
+schema when it is the complete runtime context. Every public field must have a
+default. Registration rejects subclasses that change the inherited strict,
+frozen, extra-forbid, or default-validation behavior, as well as fields excluded
+from Pydantic serialization.
+
+All public fields travel together as compact JSON text in the
+`metadata.langgraph_runtime_settings` string. Clients omit values equal to the advertised
+defaults. System instructions remain ordinary OpenAI messages and are
+independent of `ClientSettings`; native Chat Completions fields keep their
+standard request semantics.
+
+LGOS validates defaults and generates the discovery JSON Schema when the graph
+is registered, then validates settings on every request. Without
+`context_factory`, the settings become `Runtime.context`. A factory can instead
+combine them with server-derived identity, authorization, database clients, and
+other dependencies.
+
+The serialized descriptor appears only on model retrieval as
+`langgraph_openai_serve.client_settings`, with independent `schema_version`,
+`json_schema`, and `defaults` fields. All client settings use the fixed
+`metadata.langgraph_runtime_settings` envelope. Clients use the descriptor's
+validated `defaults` object as the baseline; `default` keywords within the
+generated JSON Schema are annotations, not the runtime baseline.
+
+See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
+for the runtime settings flow, and
+[Runtime Settings](explanation/openai-compatibility.md#runtime-settings) for the
+request lifecycle.
 
 Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
@@ -136,7 +162,7 @@ Use `citation_slice(annotation, text)` to validate received indices and convert
 them back to a Python slice. Citation events must refer to the final rendered
 assistant text.
 
-See [Citation ownership and UI rendering](explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
 The graph runner preserves LangGraph's native `CustomStreamPart` values,
@@ -147,11 +173,8 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
 `make run-demo-api` registers:
 
-- `simple-graph-with-history` (runtime context enables conversation history and
-  `metadata.system_prompt` overrides the default system prompt)
+- `simple-graph` (runtime settings for conversation history and intended audience)
 - `citation-events` (structured URL citations alongside portable Markdown)
-- `simple-graph-no-history` (runtime context selects only the latest message and
-  supports the same per-request system prompt)
 - `lgos-rag`
 - `custom-input-output-context`
 - `advanced-mcp-tools`
@@ -171,14 +194,15 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
     ```bash
     make run-demo-api
-    make run-demo-ui-chainlit
-    make run-demo-ui-chainlit-hitl
     ```
+
+    UI and gateway setup is documented under [Integrations](integrations/index.md).
 
 === "Test and lint"
 
     ```bash
     make -s test
+    make test-bifrost
     uv run --module pytest tests/path/to/test_file.py
     uv run --module pytest tests/path/to/test_file.py::test_name
     make -s lint

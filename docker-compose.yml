@@ -73,6 +73,36 @@ services:
         - action: rebuild
           path: ./uv.lock
 
+  lgos-bifrost:
+    image: maximhq/bifrost:v1.6.3@sha256:95caedb1c368c6d88178c2b98b9238d8a6a62b51d9cb12b6661bf2671ed1aaa4
+    container_name: lgos-bifrost
+    restart: "no"
+    depends_on:
+      lgos-demo-api:
+        condition: service_started
+    networks:
+      - lgos-network
+    ports:
+      - 8081:8080
+    volumes:
+      - ./docker/bifrost/config.json:/app/data/config.json:ro
+    environment:
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      LOG_STYLE: json
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --no-verbose
+        - --tries=1
+        - -O
+        - /dev/null
+        - http://localhost:8080/health
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   lgos-chainlit:
     image: lgos-chainlit:latest
     container_name: lgos-chainlit
@@ -107,7 +137,7 @@ services:
     environment:
       CHAINLIT_APP_ROOT: /app/demo/ui/chainlit_ui
       DATABASE_URL: postgresql://lgos:lgos@lgos-postgres:5432/lgos
-      DEMO_CHAINLIT_OPENAI_BASE_URL: http://lgos-demo-api:8000/v1
+      DEMO_CHAINLIT_INFERENCE__BASE_URL: http://lgos-demo-api:8000/v1
     healthcheck:
       test:
         - CMD

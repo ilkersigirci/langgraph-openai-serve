@@ -1,12 +1,26 @@
 import inspect
-from typing import Any, Awaitable, Callable
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Annotated, Any, Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    field_validator,
+)
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.graph.client_settings import (
+    ClientSettings,
+    validate_client_settings_model,
+)
 from langgraph_openai_serve.graph.features import GraphFeature
 
 GraphResolver = (
@@ -16,8 +30,24 @@ GraphResolver = (
 RequestToInput = Callable[
     [ChatCompletionRequest, list[BaseMessage]], Any | Awaitable[Any]
 ]
-ContextFactory = Callable[[ChatCompletionRequest], Any | Awaitable[Any]]
+ContextFactory = Callable[
+    [ChatCompletionRequest, Any],
+    Any | Awaitable[Any],
+]
 OutputToText = Callable[[Any], str | Awaitable[str]]
+
+
+def _addressable_model_id(value: str) -> str:
+    if value in {".", ".."}:
+        raise ValueError("model id must be addressable")
+    return value
+
+
+ModelId = Annotated[
+    str,
+    StringConstraints(min_length=1, pattern=r"^[^/]+$"),
+    AfterValidator(_addressable_model_id),
+]
 
 
 class GraphConfigurationError(RuntimeError):
@@ -28,18 +58,24 @@ class GraphNotFoundError(ValueError):
     """Raised when a requested graph is not registered."""
 
 
-class GraphRegistryError(RuntimeError):
-    """Raised when a graph registry is missing or empty."""
-
-
 class GraphConfig(BaseModel):
     graph: GraphResolver
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
+    client_settings: type[ClientSettings] | None = None
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
+
+    @field_validator("client_settings")
+    @classmethod
+    def validate_client_settings(
+        cls,
+        value: type[ClientSettings] | None,
+    ) -> type[ClientSettings] | None:
+        """Validate a public settings model when its graph is registered."""
+        return validate_client_settings_model(value) if value is not None else None
 
     def supports(self, feature: GraphFeature) -> bool:
         """Return whether this graph supports a feature."""
@@ -51,6 +87,16 @@ class GraphConfig(BaseModel):
             graph = self.graph
         else:
             graph = await _maybe_await(self.graph())
+
+        if (
+            self.client_settings is not None
+            and self.context_factory is None
+            and graph.context_schema is not self.client_settings
+        ):
+            raise GraphConfigurationError(
+                "Graphs using client_settings directly must use that settings model "
+                "as context_schema."
+            )
 
         if self.supports(GraphFeature.INTERRUPTS) and graph.checkpointer is None:
             raise GraphConfigurationError(
@@ -69,11 +115,31 @@ class GraphConfig(BaseModel):
             return {"messages": messages}
         return await _maybe_await(self.request_to_input(request, messages))
 
-    async def build_context(self, request: ChatCompletionRequest) -> Any:
-        """Build the LangGraph runtime context for a chat completion request."""
-        if self.context_factory is None:
+    async def build_context(
+        self,
+        request: ChatCompletionRequest,
+        graph: CompiledStateGraph,
+    ) -> Any:
+        """Build the LangGraph runtime context for a request."""
+        settings = (
+            self.client_settings.validate_request(request)
+            if self.client_settings is not None
+            else None
+        )
+        if self.context_factory is not None:
+            context = await _maybe_await(self.context_factory(request, settings))
+        else:
+            context = settings
+
+        if context is None:
             return None
-        return await _maybe_await(self.context_factory(request))
+        if graph.context_schema is None:
+            raise GraphConfigurationError(
+                "A graph that produces runtime context must declare context_schema."
+            )
+
+        # LangGraph owns context_schema coercion when the graph is invoked.
+        return context
 
     async def render_output(self, output: Any) -> str:
         """Convert native graph output into assistant response text."""
@@ -82,7 +148,10 @@ class GraphConfig(BaseModel):
             return messages[-1].content if messages else ""
         return await _maybe_await(self.output_to_text(output))
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        validate_assignment=True,
+    )
 
 
 async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
@@ -91,12 +160,28 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
     return value
 
 
-class GraphRegistry(BaseModel):
-    registry: dict[str, GraphConfig]
+def _freeze_registry(
+    value: Mapping[ModelId, GraphConfig],
+) -> Mapping[ModelId, GraphConfig]:
+    return MappingProxyType(dict(value))
 
-    def model_post_init(self, __context: Any) -> None:
-        if not self.registry:
-            raise GraphRegistryError("Graph registry must contain at least one graph.")
+
+_RegistryEntries = Annotated[
+    Mapping[ModelId, GraphConfig],
+    Field(min_length=1),
+    AfterValidator(_freeze_registry),
+    PlainSerializer(dict, return_type=dict),
+]
+
+
+class GraphRegistry(BaseModel):
+    registry: _RegistryEntries
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    def register(self, model_id: str, config: GraphConfig) -> None:
+        """Add or replace one graph through the validated registry boundary."""
+        self.registry = {**self.registry, model_id: config}
 
     def get_graph_names(self) -> list[str]:
         """Get the names of all registered graphs."""

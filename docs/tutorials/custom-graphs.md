@@ -27,7 +27,7 @@ GraphConfig(
 
 1.  Keep the graph's native LangGraph schema.
 2.  Build graph input from the validated OpenAI request and converted messages.
-3.  Build optional LangGraph runtime context from the request.
+3.  Build optional LangGraph runtime context from the request and public settings.
 4.  Render the graph's native output as OpenAI assistant text.
 
 See `demo/api/graphs/custom_io.py` for the runnable version.
@@ -76,7 +76,7 @@ Build that context from the validated OpenAI request at the adapter boundary:
 ```python title="Request to runtime context"
 from langchain_core.messages import BaseMessage
 
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import ClientSettings, GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 
 
@@ -87,7 +87,10 @@ def request_to_input(
     return {"question": str(messages[-1].content or "")}
 
 
-def context_factory(request: ChatCompletionRequest) -> AppContext:
+def context_factory(
+    request: ChatCompletionRequest,
+    _client_settings: ClientSettings | None,
+) -> AppContext:
     return AppContext(user_id=request.user or "anonymous")
 
 
@@ -112,6 +115,49 @@ put application values such as `user_id`, model selection, or prompt options in
     See [Context versus config](../explanation/langgraph-integration.md#context-versus-config)
     for execution settings, checkpoint identity, and async config propagation.
     For a checkpointed workflow, continue to [Interrupts](#interrupts).
+
+## Runtime Settings
+
+Expose only a safe, explicit subset of runtime context when an ordinary OpenAI
+client should configure a graph. Define that public subset as a `ClientSettings`
+model. All fields automatically share one JSON metadata envelope:
+
+```python title="Public runtime settings model"
+from pydantic import Field
+
+from langgraph_openai_serve import ClientSettings
+
+
+class PublicRuntimeSettings(ClientSettings):
+    use_history: bool = Field(
+        default=True,
+        title="Use conversation history",
+    )
+```
+
+When public settings are the complete runtime context, declare the same class as
+the graph's `context_schema`. In every case, set
+`client_settings=PublicRuntimeSettings` on the compiled graph's `GraphConfig`. LGOS
+validates the request directly from JSON and, without a `context_factory`, passes
+the resulting `PublicRuntimeSettings` instance as LangGraph runtime context. Graph
+authors must keep the inherited strict, frozen, extra-forbid, and
+default-validation behavior; LGOS rejects a settings model that changes it.
+
+!!! warning "Do not publish internal context automatically"
+
+    Keep user IDs, tenant identity, authorization state, database clients,
+    secrets, and resource handles server-derived. Combine `client_settings` with
+    `context_factory(request, settings)` when the final runtime context also
+    needs server-owned values; declare that final composite type as the graph's
+    `context_schema`. A factory may return `None`, but LGOS rejects any non-null
+    result when the resolved graph has no context schema. LangGraph constructs a
+    mapping through a dataclass or Pydantic context schema; it trusts an existing
+    instance, so the server-owned factory is responsible for constructing valid
+    instances. Do not expose server-owned values as runtime settings.
+
+Follow [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
+for discovery, request transport, and per-request behavior. The runnable
+repository version is in `demo/api/graphs/simple.py`.
 
 ## Async Factories
 
