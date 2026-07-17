@@ -108,22 +108,34 @@ response = client.chat.completions.create(
 )
 ```
 
-Try the deterministic nested subgraph graph:
+Try the deterministic custom-event showcase:
 
 ```python
-response = client.chat.completions.create(
-    model="complex-subgraphs",
+stream = client.chat.completions.create(
+    model="custom-event-showcase",
     messages=[
         {
             "role": "user",
-            "content": "Show OpenAI adapter streaming with nested subgraphs.",
+            "content": "Build the compatibility report.",
         }
     ],
+    stream=True,
     user="demo-user",
+    metadata={"langgraph_stream_events": "v1"},
 )
 
-print(response.choices[0].message.content)
+for chunk in stream:
+    extension = (chunk.model_extra or {}).get("langgraph_openai_serve")
+    if isinstance(extension, dict):
+        print("Event:", extension["event"])
+
+    if text := chunk.choices[0].delta.content:
+        print(text, end="", flush=True)
 ```
+
+The graph emits `status`, `progress`, and `artifact` events. Progress updates
+are interleaved with assistant text, so clients can update passive UI without
+changing the ordinary text stream.
 
 ## Demo Files
 
@@ -139,6 +151,8 @@ print(response.choices[0].message.content)
 - `demo/api/graphs/advanced_mcp.py`: async factory with mock MCP-style tools.
 - `demo/api/graphs/complex_subgraphs.py` and `demo/api/graphs/subgraphs/`:
   router-selected subgraphs with streamed fake chat model output.
+- `demo/api/graphs/custom_events.py`: deterministic status, progress, and
+  artifact events interleaved with assistant text.
 - `demo/api/graphs/interruptible.py`: interrupt and resume graph persisted in
   PostgreSQL by the demo application.
 - `demo/api/graphs/citations.py`: custom citation event and OpenAI annotation

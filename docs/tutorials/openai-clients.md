@@ -103,6 +103,57 @@ does not verify it.
     }
     ```
 
+## Client Stream Events
+
+Request explicitly public graph events with the standard metadata field. The
+Python SDK keeps the namespaced extension in each chunk's `model_extra`:
+
+```python
+stream = client.chat.completions.create(
+    model="research-graph",
+    messages=[{"role": "user", "content": "Research this topic."}],
+    stream=True,
+    metadata={"langgraph_stream_events": "v1"},
+)
+
+for chunk in stream:
+    extension = (chunk.model_extra or {}).get("langgraph_openai_serve")
+    if isinstance(extension, dict) and extension.get("schema_version") == 1:
+        event = extension.get("event")
+        if isinstance(event, dict):
+            handle_client_event(event)
+
+    for choice in chunk.choices:
+        if choice.delta.content:
+            print(choice.delta.content, end="")
+```
+
+When using the higher-level streaming helper, inspect its raw `ChunkEvent`:
+
+```python
+with client.chat.completions.stream(
+    model="research-graph",
+    messages=[{"role": "user", "content": "Research this topic."}],
+    metadata={"langgraph_stream_events": "v1"},
+) as stream:
+    for item in stream:
+        if item.type != "chunk":
+            continue
+        extension = (item.chunk.model_extra or {}).get(
+            "langgraph_openai_serve"
+        )
+        if isinstance(extension, dict) and extension.get("schema_version") == 1:
+            event = extension.get("event")
+            if isinstance(event, dict):
+                handle_client_event(event)
+```
+
+The helper emits a raw chunk event for every Chat Completions chunk. Consume
+LGOS events during iteration; do not expect `get_final_completion()` to retain
+them. See the OpenAI SDK's
+[Chat Completions event reference](https://github.com/openai/openai-python/blob/main/helpers.md#chat-completions-events)
+and the LGOS [wire contract](../explanation/openai-compatibility.md#client-stream-events).
+
 ## Model Discovery And Runtime Settings
 
 List standard model summaries, then retrieve the selected model to discover its

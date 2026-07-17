@@ -115,6 +115,13 @@ class ChatCompletionStreamResponseBuilder:
     def text(self, content: str) -> str:
         return self._chunk(ChatCompletionStreamResponseDelta(content=content))
 
+    def client_event(self, extension: dict[str, object]) -> str:
+        """Build an empty-delta chunk carrying the opt-in event extension."""
+        return self._chunk(
+            ChatCompletionStreamResponseDelta(),
+            client_event_extension=extension,
+        )
+
     def interrupt(self, interrupt: LangGraphInterrupt) -> str:
         return self._chunk(
             ChatCompletionStreamResponseDelta(
@@ -157,6 +164,7 @@ class ChatCompletionStreamResponseBuilder:
         delta: ChatCompletionStreamResponseDelta,
         finish_reason: str | None = None,
         annotations: list[Annotation] | None = None,
+        client_event_extension: dict[str, object] | None = None,
     ) -> str:
         response = ChatCompletionStreamResponse(
             id=self.response_id,
@@ -177,6 +185,11 @@ class ChatCompletionStreamResponseBuilder:
             data["choices"][0]["delta"]["annotations"] = [
                 annotation.model_dump(mode="json") for annotation in annotations
             ]
+        if client_event_extension is not None:
+            # Keep this a complete chunk while matching the documented empty
+            # Chat Completions delta shape for non-text events.
+            data["choices"][0]["delta"] = {}
+            data["langgraph_openai_serve"] = client_event_extension
         return self._format_data(data)
 
     def _format_data(self, data: dict) -> str:

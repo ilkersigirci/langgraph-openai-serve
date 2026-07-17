@@ -139,6 +139,45 @@ Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
 Use a durable checkpointer in production.
 
+## Client Stream Events
+
+Inside a graph node or tool, mark a passive client notification as explicitly
+public with `client_event()`:
+
+```python
+from langgraph.config import get_stream_writer
+from langgraph_openai_serve import client_event
+
+get_stream_writer()(
+    client_event(
+        "progress",
+        {
+            "stage": "retrieval",
+            "completed": 2,
+            "total": 5,
+            "message": "Searching documents",
+        },
+        namespace=("research",),
+    )
+)
+```
+
+The v1 vocabulary is `status`, `progress`, and `artifact`. Event data must be
+JSON-safe, and every namespace segment must be a string. Keep payloads small and
+represent large artifacts by an ID or URL. The namespace is a stable,
+author-defined path; LGOS does not expose LangGraph's dynamic execution
+namespace.
+
+Events are streaming-only and opt-in. Clients request them with
+`metadata={"langgraph_stream_events": "v1"}` and receive a versioned
+`langgraph_openai_serve` property on an otherwise standard Chat Completions
+chunk. Missing and unsupported versions produce the ordinary strict stream.
+Unknown custom events remain available only to direct runner consumers.
+
+See [Client stream events](explanation/openai-compatibility.md#client-stream-events)
+for the wire contract and [OpenAI clients](tutorials/openai-clients.md#client-stream-events)
+for consumption.
+
 ## Citation Events
 
 Inside a graph node or tool, emit a citation with LangGraph's stream writer:
@@ -166,8 +205,8 @@ See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
 The graph runner preserves LangGraph's native `CustomStreamPart` values,
-including their subgraph namespace. Other event types remain available to direct
-runner consumers through `langgraph_openai_serve.graph.runner`.
+including their execution namespace. Other event types remain available to
+direct runner consumers through `langgraph_openai_serve.graph.runner`.
 
 ## Demo Models
 
@@ -179,6 +218,7 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 - `custom-input-output-context`
 - `advanced-mcp-tools`
 - `complex-subgraphs`
+- `custom-event-showcase` (status, progress, and artifact stream events)
 - `interruptible-approval`
 
 ## Local Commands

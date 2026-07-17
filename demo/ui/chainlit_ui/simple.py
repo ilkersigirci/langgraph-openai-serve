@@ -20,6 +20,7 @@ from demo.ui.chainlit_ui.history import (
     text_only_chat_messages,
 )
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionChunk
 from pydantic import ValidationError
 
 from langgraph_openai_serve.api.models.schemas import ModelClientSettings
@@ -33,6 +34,56 @@ discovery_client = AsyncOpenAI(
     api_key=settings.chainlit_discovery_endpoint.api_key,
 )
 logger = logging.getLogger(__name__)
+
+
+def _client_event(chunk: ChatCompletionChunk) -> dict[str, object] | None:
+    extension = (chunk.model_extra or {}).get("langgraph_openai_serve")
+    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+        return None
+
+    event = extension.get("event")
+    if not isinstance(event, dict):
+        return None
+
+    event_type = event.get("type")
+    namespace = event.get("namespace")
+    if (
+        not isinstance(event_type, str)
+        or not isinstance(namespace, list)
+        or not all(isinstance(part, str) for part in namespace)
+        or "data" not in event
+    ):
+        return None
+
+    return cast(dict[str, object], event)
+
+
+class _ClientEventRenderer:
+    """Render one live-updating custom element for a completion."""
+
+    def __init__(self) -> None:
+        self._events: list[dict[str, object]] = []
+        self._element: cl.CustomElement | None = None
+
+    async def render(self, chunk: ChatCompletionChunk) -> None:
+        event = _client_event(chunk)
+        if event is None:
+            return
+
+        self._events.append(event)
+        props = {"events": [*self._events]}
+        if self._element is None:
+            self._element = cl.CustomElement(
+                name="ClientEventTimeline",
+                props=props,
+            )
+            message = cl.Message(content="", elements=[self._element])
+            mark_model_context_excluded(message)
+            await message.send()
+            return
+
+        self._element.props = props
+        await self._element.update()
 
 
 @cl.set_chat_profiles
@@ -84,6 +135,7 @@ async def on_message(_message: cl.Message) -> None:
     model = cast(str, cl.user_session.get("chat_profile"))
     messages = text_only_chat_messages()
     assistant_message = cl.Message(content="")
+    client_events = _ClientEventRenderer()
     stream = None
 
     try:
@@ -91,15 +143,17 @@ async def on_message(_message: cl.Message) -> None:
             current_client_settings(),
             cl.user_session.get("chat_settings"),
         )
+        metadata["langgraph_stream_events"] = "v1"
         stream = await client.chat.completions.create(
             model=settings.chainlit_inference_model(model),
             messages=messages,
             stream=True,
             user=authenticated_user_identifier(),
-            metadata=metadata or None,
+            metadata=metadata,
         )
 
         async for chunk in stream:
+            await client_events.render(chunk)
             token = chunk.choices[0].delta.content or ""
             if token:
                 await assistant_message.stream_token(token)
