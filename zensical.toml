@@ -22,7 +22,12 @@ nav = [
     { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
     { "Docker Deployment" = "how-to-guides/docker.md" },
-    { "OpenAI Proxy" = "how-to-guides/openai-proxy.md" },
+  ]},
+  { Integrations = [
+    "integrations/index.md",
+    { Chainlit = "integrations/chainlit.md" },
+    { "Open WebUI" = "integrations/open-webui.md" },
+    { "OpenAI-Compatible Proxies" = "integrations/openai-proxies.md" },
   ]},
   { Explanation = [
     "explanation/index.md",

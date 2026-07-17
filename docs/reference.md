@@ -25,7 +25,7 @@ Package settings:
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
 
-Demo-only settings (read by `demo/api/settings.py`):
+Demo API and graph settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -34,46 +34,9 @@ Demo-only settings (read by `demo/api/settings.py`):
 | `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model for LLM-backed demo graphs. |
 | `DEMO_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by the `lgos-rag` demo graph. |
 | `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
-| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible inference API used by Chainlit. |
-| `DEMO_CHAINLIT_INFERENCE__API_KEY` | `DUMMY` | Inference API or gateway key used by Chainlit. |
-| `DEMO_CHAINLIT_INFERENCE_MODEL_PREFIX` | empty | Optional proxy namespace prepended to inference model IDs, such as Bifrost's `openai/`. |
-| `DEMO_CHAINLIT_DISCOVERY__BASE_URL` | unset | Optional direct LGOS or documented pass-through URL used for model listing and retrieval; an omitted discovery endpoint reuses inference. |
-| `DEMO_CHAINLIT_DISCOVERY__API_KEY` | unset | Required whenever an explicit discovery base URL is configured. |
-| `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Interrupt-enabled model selected by the Chainlit HITL demo. |
-| `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target module; accepts `simple` or `hitl`. |
-| `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login callback; accepts `mock` or `oauth`. |
 
-Native Chainlit settings used by the demo:
-
-| Setting | Default | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | required | PostgreSQL URL validated by the demo and used by Chainlit's official asyncpg data layer and migration command. |
-| `CHAINLIT_AUTH_SECRET` | required | Secret used by Chainlit to sign login tokens; generate it with `uv run chainlit create-secret`. |
-| `CHAINLIT_APP_ROOT` | `demo/ui/chainlit_ui` in `.env.example` | Directory containing the tracked Chainlit configuration and welcome Markdown. |
-| `CHAINLIT_URL` | request origin | OAuth-only external origin used for callback URLs behind a reverse proxy. |
-| `OAUTH_GENERIC_CLIENT_ID` | required for `oauth` | Client ID for Chainlit's generic OAuth provider. |
-| `OAUTH_GENERIC_CLIENT_SECRET` | required for `oauth` | OAuth client secret; keep it outside source control. |
-| `OAUTH_GENERIC_AUTH_URL` | required for `oauth` | OIDC authorization endpoint. |
-| `OAUTH_GENERIC_TOKEN_URL` | required for `oauth` | OIDC token endpoint. |
-| `OAUTH_GENERIC_USER_INFO_URL` | required for `oauth` | OIDC user-info endpoint. |
-| `OAUTH_GENERIC_SCOPES` | required for `oauth` | Space-separated scopes requested by Chainlit. |
-| `OAUTH_GENERIC_NAME` | `generic` | Optional provider ID shown by Chainlit and used in the callback path; the example uses `PocketID`. |
-| `OAUTH_GENERIC_USER_IDENTIFIER` | `email` | Optional identifier claim; the PocketID example uses its stable `sub` claim. |
-
-The generic variable names map to
-[`GenericOAuthProvider`](https://github.com/Chainlit/chainlit/blob/2.11.1/backend/chainlit/oauth_providers.py)
-in the minimum supported Chainlit release.
-The six settings marked as required for `oauth` match that provider's `env`
-list; its name and user-identifier settings have framework defaults. No OAuth
-setting is required in the default `mock` mode.
-The demo `Settings` model validates the login selection. The separate
-`ChainlitSettings` model validates the PostgreSQL URL, signing secret, and
-mode-dependent generic-provider settings before the UI mounts. Chainlit
-consumes the same native environment values at runtime.
-The demo requires Chainlit 2.11.1 or newer. Because the official PostgreSQL
-schema requires release-specific migrations, review Chainlit's migration
-guidance whenever updating the lockfile and update the tracked `config.toml` and
-SQL migrations when required.
+Settings for optional clients and gateways are documented under
+[Integrations](integrations/index.md).
 
 ## Public API
 
@@ -159,13 +122,8 @@ The serialized descriptor appears only on model retrieval as
 
 See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
 for the runtime settings flow, and
-[Runtime Settings](explanation/openai-compatibility.md#runtime-settings)
-for the request lifecycle and integration boundaries.
-
-The demo Chainlit adapter deliberately renders only direct top-level scalar
-properties with concrete defaults: booleans become switches, inline string
-enums become selects, and strings become text inputs. The server remains the
-validation authority for constraints that Chainlit widgets cannot express.
+[Runtime Settings](explanation/openai-compatibility.md#runtime-settings) for the
+request lifecycle.
 
 Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
 requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
@@ -194,7 +152,7 @@ Use `citation_slice(annotation, text)` to validate received indices and convert
 them back to a Python slice. Citation events must refer to the final rendered
 assistant text.
 
-See [Citation ownership and UI rendering](explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
 The graph runner preserves LangGraph's native `CustomStreamPart` values,
@@ -205,8 +163,7 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
 `make run-demo-api` registers:
 
-- `simple-graph` (Chainlit can change conversation history and intended audience
-  through the discovered runtime settings)
+- `simple-graph` (runtime settings for conversation history and intended audience)
 - `citation-events` (structured URL citations alongside portable Markdown)
 - `lgos-rag`
 - `custom-input-output-context`
@@ -227,9 +184,9 @@ runner consumers through `langgraph_openai_serve.graph.runner`.
 
     ```bash
     make run-demo-api
-    make run-demo-ui-chainlit
-    make run-demo-ui-chainlit-hitl
     ```
+
+    UI and gateway setup is documented under [Integrations](integrations/index.md).
 
 === "Test and lint"
 

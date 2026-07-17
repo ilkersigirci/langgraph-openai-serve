@@ -30,11 +30,4 @@ application.
 
     [:octicons-arrow-right-24: Use Docker](docker.md)
 
--   :material-transit-connection-horizontal:{ .lg .middle } __Configure a proxy__
-
-    Preserve graph features and runtime settings through an
-    OpenAI-compatible gateway.
-
-    [:octicons-arrow-right-24: Configure an OpenAI proxy](openai-proxy.md)
-
 </div>

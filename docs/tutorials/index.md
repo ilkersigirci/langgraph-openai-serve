@@ -12,7 +12,7 @@ the client or graph workflow you need.
 
 -   :material-rocket-launch-outline:{ .lg .middle } __Getting started__
 
-    Run the repository demo, call its graphs, and try the included UI examples.
+    Run the repository demo API and call its graphs.
 
     [:octicons-arrow-right-24: Run the demo](getting-started.md)
 

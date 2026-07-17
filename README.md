@@ -46,7 +46,7 @@ registered demo graph names.
 
 The repository also includes a PostgreSQL-persistent Chainlit client. It uses a
 shared mock login by default, with PocketID OAuth available as an opt-in mode.
-See the [runnable demo guide](docs/tutorials/getting-started.md#run-the-chainlit-ui).
+See the [Chainlit integration](docs/integrations/chainlit.md).
 
 ## Use In FastAPI
 
@@ -78,5 +78,6 @@ values.
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
+- Integrations: [docs/integrations/index.md](docs/integrations/index.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

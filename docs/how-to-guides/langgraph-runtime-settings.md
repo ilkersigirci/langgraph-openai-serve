@@ -115,6 +115,6 @@ settings with server-owned context; in that case, the graph's context schema
 describes the combined value.
 
 See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-settings)
-for discovery code and
-[OpenAI compatibility](../explanation/openai-compatibility.md#client-and-integration-support)
-for client and proxy support.
+for discovery code. The included Chainlit client automates descriptor discovery,
+Chat Settings, and metadata serialization; see the
+[Chainlit integration](../integrations/chainlit.md#runtime-settings).

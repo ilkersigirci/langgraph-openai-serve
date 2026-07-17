@@ -1,22 +1,10 @@
-# Configure an OpenAI Proxy
+# OpenAI-Compatible Proxies
 
-LGOS exposes registered graphs through the OpenAI-compatible Chat Completions
-API. Any proxy that supports a configurable OpenAI-compatible upstream,
-including LiteLLM and Bifrost, can therefore proxy LGOS inference without a
-project-specific adapter.
-
-Normal proxy routes are sufficient for chat completions. Model discovery needs
-extra care because proxies may own or rebuild model list/retrieval responses and
-discard the `langgraph_openai_serve` extension. Use native proxy routes for
-inference and direct LGOS or a documented raw pass-through route for detailed
-model retrieval.
-
-Dynamic runtime settings have two independent requirements: the discovery
-path must preserve the detailed extension, or use a separate direct/pass-through
-endpoint, and the inference path must forward the
-`metadata.langgraph_runtime_settings` string unchanged. A client can still use ordinary
-inference with server defaults when discovery is unavailable. See the
-[client support matrix](../explanation/openai-compatibility.md#client-and-integration-support).
+Use an OpenAI-compatible proxy for inference without an LGOS-specific adapter.
+The proxy requirements for model discovery, request metadata, and streaming
+disconnects are defined by the
+[OpenAI compatibility contract](../explanation/openai-compatibility.md).
+This page applies that contract to Bifrost and LiteLLM.
 
 ## Bifrost
 
@@ -27,8 +15,8 @@ It dedicates Bifrost's built-in `openai` provider to LGOS because the documented
 
 Set `allow_private_network` only when the LGOS URL resolves to a private network.
 Keep the provider base URL free of `/v1`, and replace the demo's `DUMMY` key when
-LGOS requires authentication. See [Docker](docker.md) for startup and endpoint
-URLs.
+LGOS requires authentication. See [Docker](../how-to-guides/docker.md) for
+startup and endpoint URLs.
 
 Use Bifrost's normal OpenAI-compatible route for inference:
 
@@ -60,7 +48,7 @@ model = discovery_client.models.retrieve("simple-graph")
 The pass-through returns the upstream body without route-level conversion, so
 the `langgraph_openai_serve` extension is preserved.
 
-The Chainlit demo keeps the two URLs explicit:
+The [Chainlit integration](chainlit.md) keeps the two URLs explicit:
 
 ```dotenv
 DEMO_CHAINLIT_INFERENCE__BASE_URL=https://gateway.example/v1
@@ -96,10 +84,10 @@ endpoint when the pass-through route uses LiteLLM authentication. See LiteLLM's
 
 ## Other Proxies
 
-Use the proxy's native OpenAI route for chat completions. For graph feature
-and runtime-settings discovery, use only a documented raw pass-through
-route that can target LGOS. Verify both `models.list()` and
-`models.retrieve(model)` after proxy upgrades. Also verify that a chat completion
-preserves `metadata.langgraph_runtime_settings` before relying on dynamic settings. Use
+Use the proxy's native OpenAI route for chat completions. For graph features and
+runtime settings discovery, use only a documented raw pass-through route that
+can target LGOS. Verify both `models.list()` and `models.retrieve(model)` after
+proxy upgrades. Also verify that a chat completion preserves
+`metadata.langgraph_runtime_settings` before relying on dynamic settings. Use
 direct LGOS discovery when no configurable raw route is available, and treat a
 missing extension as a normal fallback to server defaults.

@@ -75,7 +75,7 @@ print(response.choices[0].message.annotations)
 The deterministic answer combines portable Markdown resources with structured
 citations. See [Citation Events](../reference.md#citation-events) for the graph
 helper and
-[Citation ownership and UI rendering](../explanation/openai-compatibility.md#citation-ownership-and-ui-rendering)
+[Citation ownership](../explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
 Ask the RAG graph about this project's Markdown documentation with real-time
@@ -143,123 +143,13 @@ print(response.choices[0].message.content)
   PostgreSQL by the demo application.
 - `demo/api/graphs/citations.py`: custom citation event and OpenAI annotation
   demo.
-- `demo/api/settings.py`: separate Pydantic settings models for demo application
-  values and native Chainlit persistence/authentication configuration.
-- `demo/ui/chainlit_ui/database.py` and `migrations/`: versioned Chainlit
-  PostgreSQL schema setup.
-- `demo/ui/chainlit_ui/hitl.py`: Chainlit interrupt approval demo.
-- `demo/ui/openwebui/openwebui_pipe.py`: Open WebUI manifold Pipe that discovers
-  registered graph models and bridges interrupt approval.
+- `demo/api/settings.py`: Pydantic settings for the demo application.
 
-## Run The Chainlit UI
+## Try An Integration
 
-Chainlit remains an ordinary OpenAI client of the demo API. Its UI state is
-separate: the official Chainlit data layer stores authenticated users, threads,
-steps, and feedback in PostgreSQL. A shared mock user handles browser login by
-default; PocketID OAuth is optional.
-
-Create the local environment file once:
-
-```bash
-cp .env.example .env
-uv run chainlit create-secret
-```
-
-Put the generated value in `CHAINLIT_AUTH_SECRET`; it is used only to sign
-Chainlit's session tokens. `DATABASE_URL` configures the persistent Chainlit
-data layer and migration command.
-
-=== "Mock login (default)"
-
-    Keep `DEMO_CHAINLIT_LOGIN_TYPE=mock`. No OAuth variables or OAuth client are
-    needed. The login form accepts any non-empty username and password and maps
-    every session to the shared `demo-user` identity.
-
-=== "PocketID OAuth"
-
-    Set `DEMO_CHAINLIT_LOGIN_TYPE=oauth`, uncomment the generic OAuth variables
-    in `.env`, and fill in the client ID, client secret, and PocketID endpoint
-    URLs. `OAUTH_GENERIC_USER_IDENTIFIER=sub` uses PocketID's stable subject as
-    the Chainlit user identifier.
-
-    Configure the PocketID OIDC client callback as
-    `http://localhost:5000/auth/oauth/PocketID/callback` for the local demo. For
-    a deployed UI, use
-    `${CHAINLIT_URL}/auth/oauth/${OAUTH_GENERIC_NAME}/callback` and set
-    `CHAINLIT_URL` to the external HTTPS origin behind a reverse proxy.
-
-=== "Local processes"
-
-    Start PostgreSQL, then run the API and UI in separate terminals:
-
-    ```bash
-    docker compose up -d lgos-postgres
-    make run-demo-api
-    ```
-
-    ```bash
-    make run-demo-ui-chainlit
-    ```
-
-=== "Compose"
-
-    ```bash
-    docker compose up -d lgos-chainlit
-    ```
-
-Open `http://localhost:5000` and use the selected login. Both UI run targets
-apply pending schema migrations before starting. Opening a stored thread
-restores its native Chainlit role/content transcript and continues with the same
-login identity. Structured tool-call state is assembled separately when the
-HITL client sends an interrupt-resume request.
-After a profile is selected, Chainlit retrieves that model, converts the
-advertised JSON Schema into Chat Settings, and merges only saved values that
-remain valid under the current schema. If detailed LGOS metadata is unavailable,
-the chat continues with server defaults. Proxy-specific inference and discovery
-settings are covered in
-[Configure an OpenAI Proxy](../how-to-guides/openai-proxy.md).
-
-!!! warning "Production credentials and origins"
-
-    Mock mode gives every visitor the same identity and is not authentication.
-    Before deployment, select OAuth, replace the demo PostgreSQL credentials,
-    keep the OAuth client secret and Chainlit signing secret outside source
-    control, and update `allow_origins` in the tracked Chainlit `config.toml` to
-    the deployed HTTPS origin. File uploads remain disabled until an S3, GCS, or
-    Azure storage provider is configured.
-
-See Chainlit's current guidance for
-[password callbacks](https://docs.chainlit.io/authentication/password),
-[OAuth](https://docs.chainlit.io/authentication/oauth),
-[PostgreSQL persistence](https://docs.chainlit.io/data-layers/official), and
-[deployment](https://docs.chainlit.io/deploy/overview). PocketID documents the
-same [authorization, token, and user-info endpoints](https://pocket-id.org/docs/client-examples/linkding)
-and [`openid email profile groups` scopes](https://pocket-id.org/docs/client-examples/blinko).
-
-## Human In The Loop Demo
-
-The `interruptible-approval` model showcases LangGraph `interrupt()` and resume.
-
-=== "Chainlit"
-
-    ```bash
-    make run-demo-ui-chainlit-hitl
-    ```
-
-    The Chainlit UI opens the interrupt approval flow and uses the same
-    persistent thread store and selected login mode.
-
-=== "Open WebUI"
-
-    ```bash
-    docker compose up -d open-webui
-    ```
-
-    Import the generic Pipe, then select `interruptible-approval`.
-
-See [Docker](../how-to-guides/docker.md) for the Open WebUI Function setup and
-[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
-for the interrupt tool-call protocol.
+The repository provides optional [Chainlit](../integrations/chainlit.md) and
+[Open WebUI](../integrations/open-webui.md) clients. Gateway-specific setup is
+under [OpenAI-compatible proxies](../integrations/openai-proxies.md).
 
 ## Next Steps
 

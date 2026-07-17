@@ -107,11 +107,10 @@ For streaming chat completions (`stream=true`), LGOS ties graph iteration to the
 HTTP response lifetime. The route returns Starlette's ordinary
 `StreamingResponse`, while a request-scoped FastAPI `yield` dependency owns one
 `asyncio` producer task and the AnyIO memory channel feeding that response.
-Closing the client stream—including clicking **Stop** in the Chainlit
-demo—is detected by `StreamingResponse`, which ends the response. Dependency
-teardown then cancels and awaits the producer and closes the nested graph
-iterator. This uses the normal OpenAI streaming connection; it adds no custom
-cancellation route, header, or SSE event.
+Closing the client stream is detected by `StreamingResponse`, which ends the
+response. Dependency teardown then cancels and awaits the producer and closes
+the nested graph iterator. This uses the normal OpenAI streaming connection; it
+adds no custom cancellation route, header, or SSE event.
 
 !!! info "Why cancellation raises the dependency minimums"
 
@@ -140,10 +139,6 @@ cancellation route, header, or SSE event.
     implemented and tested; the upper bound prevents an unreviewed future major
     release from changing cancellation or stream behavior underneath this
     lifecycle. FastAPI continues to select its compatible Starlette version.
-
-The Chainlit demo closes its OpenAI stream when the message handler is cancelled.
-Any partial assistant text remains visible but is excluded from later model
-context because it is an incomplete response.
 
 !!! warning "Cancellation is cooperative"
 
