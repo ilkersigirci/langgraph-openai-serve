@@ -14,6 +14,7 @@ from demo.api.checkpointer import postgres_checkpointer
 from demo.api.graphs.advanced_mcp import advanced_mcp_graph
 from demo.api.graphs.citations import citation_graph
 from demo.api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
+from demo.api.graphs.custom_events import custom_event_showcase_graph_config
 from demo.api.graphs.custom_io import custom_io_graph_config
 from demo.api.graphs.interruptible import create_interruptible_graph
 from demo.api.graphs.lgos_rag import lgos_rag
@@ -94,6 +95,7 @@ def create_custom_app() -> FastAPI:
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
+            "custom-event-showcase": custom_event_showcase_graph_config,
             "interruptible-approval": GraphConfig(
                 graph=lambda: app.state.interruptible_graph,
                 request_to_input=lambda request, messages: {

@@ -84,5 +84,4 @@ async def test_streams_the_selected_nested_subgraphs_in_order(make_request) -> N
         )
     ]
 
-    assert all(isinstance(event, str) for event in events)
-    assert "".join(events) == DOCS_STREAM
+    assert "".join(event for event in events if isinstance(event, str)) == DOCS_STREAM

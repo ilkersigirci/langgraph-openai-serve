@@ -97,9 +97,11 @@ before returning one HTTP response.
     When `stream=true`, the route returns an SSE response backed by
     `stream_run()`. The runner consumes `messages` and `custom` events, plus
     `updates` for interrupt-enabled graphs. Only `AIMessageChunk` values from
-    configured streamable nodes become text chunks. The chat service uses
-    recognized citation events for final annotations and renders interrupts as
-    tool-call chunks.
+    configured streamable nodes become text chunks. The chat service immediately
+    maps explicitly public `client_event()` values into namespaced chunks when
+    the request opts into v1 events. It continues buffering citation events for
+    final annotations and renders interrupts as tool-call chunks. Unknown custom
+    events stay private.
 
 See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.
 

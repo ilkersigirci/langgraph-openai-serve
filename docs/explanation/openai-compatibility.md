@@ -146,6 +146,92 @@ event handling and [Request Cancellation](langgraph-integration.md#request-cance
 for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
+## Client Stream Events
+
+Passive application notifications are an opt-in, namespaced extension on an
+otherwise complete `chat.completion.chunk`. A client requests v1 events through
+the standard Chat Completions metadata field:
+
+```python
+stream = client.chat.completions.create(
+    model="research-graph",
+    messages=messages,
+    stream=True,
+    metadata={"langgraph_stream_events": "v1"},
+)
+```
+
+An event frame has the following data payload:
+
+```json
+{
+  "id": "chatcmpl-abc",
+  "object": "chat.completion.chunk",
+  "created": 1784280000,
+  "model": "research-graph",
+  "choices": [
+    {
+      "index": 0,
+      "delta": {},
+      "finish_reason": null
+    }
+  ],
+  "langgraph_openai_serve": {
+    "schema_version": 1,
+    "event": {
+      "type": "progress",
+      "namespace": ["research"],
+      "data": {
+        "stage": "retrieval",
+        "completed": 2,
+        "total": 5,
+        "message": "Searching documents"
+      }
+    }
+  }
+}
+```
+
+Event chunks reuse the completion ID, creation timestamp, and model. Choice `0`
+has an empty delta and a null finish reason; the actual final chunk still uses
+`stop` or `tool_calls`, and `[DONE]` is unchanged. Recognized public events are
+emitted immediately among text chunks in LangGraph stream order. The namespace
+is explicitly authored by the graph so dynamic task IDs and internal subgraph
+structure do not become part of the public contract.
+
+!!! note "Proxy compatibility"
+
+    Schema-normalizing proxies may discard extension-only chunks because their
+    delta is empty, while continuing to stream assistant text normally. Use a
+    documented raw pass-through route when client events are required. See
+    [OpenAI-Compatible Proxies](../integrations/openai-proxies.md#client-event-compatibility)
+    for verified Bifrost and LiteLLM behavior.
+
+Without the exact `v1` opt-in, LGOS emits no event extensions. Even with the
+opt-in, only explicitly marked event envelopes in the shape produced by
+`client_event()` and revalidated by the server are exposed. Ordinary LangGraph
+custom data, malformed events, debug data, and non-JSON Python objects stay
+private. The v1 public event types are `status`, `progress`, and `artifact`.
+
+Keep standard response semantics separate:
+
+| Graph result | Chat Completions representation |
+| --- | --- |
+| Assistant text | `delta.content` |
+| Interrupt requiring input | `delta.tool_calls` |
+| Citation | `delta.annotations` |
+| Midstream failure | OpenAI error object |
+| Passive status, progress, or artifact notification | `langgraph_openai_serve.event` |
+
+The published
+[Chat Completions chunk schema](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events#chat.completion.chunk)
+does not define arbitrary delta event fields. OpenAI's
+[compatibility policy](https://developers.openai.com/api/reference/overview#backwards-compatibility)
+treats added JSON response or event properties as backward-compatible, and the
+[Python SDK preserves undocumented response properties in `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
+Consume the events while iterating the stream; an SDK's accumulated final
+completion is not the event log.
+
 ## Citation Ownership
 
 OpenAI `url_citation` annotations are the canonical citation contract. Their

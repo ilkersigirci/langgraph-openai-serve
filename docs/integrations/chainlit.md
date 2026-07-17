@@ -87,13 +87,27 @@ immediate resume request. Chainlit's saved role/content transcript is not a
 canonical tool-protocol ledger, so a future general tool-executing UI must store
 completed tool pairs explicitly.
 
-## Streaming And Citations
+## Streaming, Events, And Citations
 
 Clicking **Stop** closes the OpenAI stream. Partial assistant text remains
 visible but is excluded from later model context because it is incomplete.
 
 The UI renders Markdown links and images from assistant content. It does not
-consume structured OpenAI citation annotations.
+consume structured OpenAI citation annotations. The bundled adapter opts into
+LGOS client stream events and renders them as one live-updating Chainlit
+[custom element](https://docs.chainlit.io/api-reference/elements/custom) per
+completion. The panel shows event type, namespace, progress, and artifact
+details, with a JSON fallback for other payload shapes. Its host message is
+excluded from model context. Unknown extension versions are ignored.
+
+To see the demo, select `custom-event-showcase` and ask **Build the compatibility
+report.** The activity panel advances from status through progress to an
+artifact while the assistant answer streams independently.
+
+Behind an OpenAI-compatible proxy, the activity panel requires a raw
+pass-through inference URL. A schema-normalizing route may still stream the
+answer while silently omitting event-only chunks. See
+[OpenAI-Compatible Proxies](openai-proxies.md#client-event-compatibility).
 
 ## Settings Reference
 

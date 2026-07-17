@@ -18,6 +18,7 @@ DOCUMENTED_MODEL_IDS = {
     "advanced-mcp-tools",
     "citation-events",
     "complex-subgraphs",
+    "custom-event-showcase",
     "custom-input-output-context",
     "interruptible-approval",
     "lgos-rag",

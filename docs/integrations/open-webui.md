@@ -49,7 +49,9 @@ The general manifold Pipe streams assistant content unchanged, so Open WebUI
 renders Markdown links and images normally. For streaming requests it also
 forwards final OpenAI citation annotations without translating them.
 Non-streaming generator results remain plain text. The simple Pipe streams only
-assistant text.
+assistant text. Neither bundled Pipe opts into LGOS client stream events;
+support requires an explicit mapping from LGOS `status`, `progress`, and
+`artifact` data to Open WebUI's UI-specific event shapes.
 
 ## Interrupt Approval
 

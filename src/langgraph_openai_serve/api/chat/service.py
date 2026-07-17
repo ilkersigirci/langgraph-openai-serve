@@ -11,7 +11,11 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
 )
-from langgraph_openai_serve.api.chat.utils.events import annotation_from_custom_event
+from langgraph_openai_serve.api.chat.utils.events import (
+    annotation_from_custom_event,
+    client_event_extension_from_custom_event,
+    stream_events_requested,
+)
 from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
     chat_completion_response,
@@ -72,6 +76,7 @@ class ChatCompletionService:
         response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
         custom_events: list[CustomStreamPart] = []
         content_parts: list[str] = []
+        include_client_events = stream_events_requested(chat_request.metadata)
 
         try:
             yield response_builder.role()
@@ -88,6 +93,10 @@ class ChatCompletionService:
 
                     if not isinstance(event, str):
                         custom_events.append(event)
+                        if include_client_events:
+                            extension = client_event_extension_from_custom_event(event)
+                            if extension is not None:
+                                yield response_builder.client_event(extension)
                         continue
 
                     content_parts.append(event)

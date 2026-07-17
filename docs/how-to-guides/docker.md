@@ -16,9 +16,10 @@
     docker compose up --wait lgos-bifrost
     ```
 
-    - Bifrost inference base URL: `http://localhost:8081/v1`
-    - Bifrost discovery base URL:
-      `http://localhost:8081/openai_passthrough/v1`
+    - Standard inference, without client events:
+      `http://localhost:8081/v1` with `openai/`-prefixed models
+    - Detailed discovery or event-enabled inference:
+      `http://localhost:8081/openai_passthrough/v1` with unprefixed models
 
     Run `make test-bifrost` to verify detailed model metadata through the proxy.
     See [OpenAI-Compatible Proxies](../integrations/openai-proxies.md) for the

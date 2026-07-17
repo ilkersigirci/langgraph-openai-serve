@@ -117,6 +117,9 @@ services:
         condition: service_healthy
       lgos-demo-api:
         condition: service_started
+      # Enable with the Bifrost pass-through settings below.
+      # lgos-bifrost:
+      #   condition: service_healthy
     pre_start:
       - command: ["uv", "run", "--module", "demo.ui.chainlit_ui.setup_database"]
     ports:
@@ -137,7 +140,12 @@ services:
     environment:
       CHAINLIT_APP_ROOT: /app/demo/ui/chainlit_ui
       DATABASE_URL: postgresql://lgos:lgos@lgos-postgres:5432/lgos
+      # Direct LGOS is the default. Comment this line when enabling Bifrost.
       DEMO_CHAINLIT_INFERENCE__BASE_URL: http://lgos-demo-api:8000/v1
+      # Bifrost raw pass-through preserves LGOS client stream events.
+      # DEMO_CHAINLIT_INFERENCE__BASE_URL: http://lgos-bifrost:8080/openai_passthrough/v1
+      # DEMO_CHAINLIT_DISCOVERY__BASE_URL: http://lgos-bifrost:8080/openai_passthrough/v1
+      # DEMO_CHAINLIT_INFERENCE_MODEL_PREFIX: ""
     healthcheck:
       test:
         - CMD
