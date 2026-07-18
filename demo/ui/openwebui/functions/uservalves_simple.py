@@ -1,5 +1,5 @@
 """
-title: LGOS Simple Graph
+title: UserValves-Simple / simple-graph
 author: langgraph-openai-serve
 version: 0.1
 """

@@ -6,7 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from demo.ui.openwebui.openwebui_pipe import Pipe
+from demo.ui.openwebui.functions.generic import Pipe
 from openai.lib.streaming.chat import ContentDeltaEvent
 from openai.types.chat import ChatCompletion
 
@@ -85,7 +85,7 @@ async def _collect_response(
 
 def _body(
     content: str,
-    model: str = f"openwebui_pipe.{MODEL_ID}",
+    model: str = f"generic.{MODEL_ID}",
     *,
     stream: bool = True,
 ) -> dict[str, Any]:
@@ -166,15 +166,18 @@ async def test_pipe_lists_registered_models(
     )
     client_factory = Mock(return_value=client)
     monkeypatch.setattr(
-        "demo.ui.openwebui.openwebui_pipe.AsyncOpenAI",
+        "demo.ui.openwebui.functions.generic.AsyncOpenAI",
         client_factory,
     )
 
     models = await Pipe().pipes()
 
     assert models == [
-        {"id": "interruptible-approval", "name": "interruptible-approval"},
-        {"id": "lgos-rag", "name": "lgos-rag"},
+        {
+            "id": "interruptible-approval",
+            "name": "Generic / interruptible-approval",
+        },
+        {"id": "lgos-rag", "name": "Generic / lgos-rag"},
     ]
     client_factory.assert_called_once_with(
         base_url="http://lgos-demo-api:8000/v1",
@@ -194,7 +197,7 @@ async def test_pipe_preserves_dots_in_selected_model(
 
     chunks = await _collect_response(
         pipe.pipe(
-            body=_body("hello", model="openwebui_pipe.graph.v2"),
+            body=_body("hello", model="generic.graph.v2"),
             __metadata__={"chat_id": "chat-1"},
         )
     )
@@ -363,7 +366,7 @@ async def test_pipe_streams_markdown_unchanged(
 
     chunks = await _collect_response(
         pipe.pipe(
-            body=_body("Cite this", model="openwebui_pipe.lgos-rag"),
+            body=_body("Cite this", model="generic.lgos-rag"),
             __metadata__={"chat_id": "chat-1"},
         )
     )
@@ -392,7 +395,7 @@ async def test_pipe_forwards_annotations_only_when_streaming(
         pipe.pipe(
             body=_body(
                 "Cite this",
-                model="openwebui_pipe.citation-events",
+                model="generic.citation-events",
                 stream=stream,
             ),
             __metadata__={"chat_id": "chat-1"},
