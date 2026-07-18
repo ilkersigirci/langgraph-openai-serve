@@ -7,7 +7,7 @@ PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
 BIFROST_TEST_BASE_URL?=http://localhost:8081/openai_passthrough/v1
 LGOS_TEST_BASE_URL?=http://localhost:8000/v1
 
-.PHONY: help install test clean build-sdist build-wheel publish pre-commit format lint
+.PHONY: help install test clean build-sdist build-wheel publish pre-commit format lint sync-demo-openwebui-functions
 .DEFAULT_GOAL=help
 
 help:
@@ -166,3 +166,6 @@ run-demo-ui-chainlit: setup-demo-chainlit ## Run the persistent Chainlit UI
 
 run-demo-ui-chainlit-hitl: setup-demo-chainlit ## Run the persistent Chainlit human-in-the-loop UI
 	DEMO_CHAINLIT_UI_FILE=hitl uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 5000 --no-access-log
+
+sync-demo-openwebui-functions: ## Sync the bundled Functions to Open WebUI
+	uv run --module demo.ui.openwebui.sync_functions

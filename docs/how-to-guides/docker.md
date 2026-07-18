@@ -46,7 +46,7 @@
     - OpenAI base URL: `http://localhost:8000/v1`
     - Open WebUI: `http://localhost:8080`
 
-    Import and configure the included Pipe as described in the
+    Synchronize and configure the included Pipes as described in the
     [Open WebUI integration](../integrations/open-webui.md).
 
 Both UI choices start PostgreSQL and `lgos-demo-api` as dependencies. PostgreSQL

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from demo.ui.openwebui.simple_graph_pipe import Pipe
+from demo.ui.openwebui.functions.uservalves_simple import Pipe
 
 
 class Stream:
@@ -13,7 +13,7 @@ class Stream:
 
 
 @pytest.mark.anyio
-async def test_simple_graph_pipe_forwards_only_changed_user_valves(
+async def test_uservalves_simple_forwards_only_changed_user_valves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()

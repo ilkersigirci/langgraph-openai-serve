@@ -1,5 +1,5 @@
 """
-title: LangGraph OpenAI Pipe
+title: Generic
 author: langgraph-openai-serve
 version: 0.5
 """
@@ -46,7 +46,9 @@ class Pipe:
         async with self._client() as client:
             models = await client.models.list()
 
-        return [{"id": model.id, "name": model.id} for model in models.data]
+        return [
+            {"id": model.id, "name": f"Generic / {model.id}"} for model in models.data
+        ]
 
     async def pipe(
         self,
