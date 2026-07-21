@@ -29,6 +29,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Docker Compose
+        uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2.3.0
+        with:
+          version: v5.3.0
+
       - name: Copy demo outside the package checkout
         env:
           DESTINATION: ${{ runner.temp }}/lgos-demo

@@ -19,6 +19,11 @@ by `lgos-rag`; neither image nor Compose reads files above `demo/`.
 
 ## Compose Modes
 
+!!! note "Docker Compose 5.3.0 or newer"
+
+    The demo uses `pre_start` init containers to apply the API and Chainlit
+    schema migrations before their services start.
+
 Prepare the demo environment:
 
 ```bash
