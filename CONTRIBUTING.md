@@ -68,7 +68,7 @@ Then, install and activate the environment with:
 uv sync
 ```
 
-4. Install pre-commit to run linters/formatters at commit time:
+4. Install the Git hooks that run linters and formatters at commit time:
 
 ```bash
 uv run prek install
@@ -84,29 +84,29 @@ Now you can make your changes locally.
 
 6. Don't forget to add test cases for your added functionality to the `tests` directory.
 
-7. When you're done making changes, check that your changes pass the formatting tests.
+7. When you're done, run the lint and test suites:
 
 ```bash
-make check
-```
-
-Now, validate that all unit tests are passing:
-
-```bash
+make lint
 make test
 ```
 
-9. Before raising a pull request you should also run tox.
-   This will run the tests across different versions of Python:
+For changes under `demo/`, run its locked standalone checks. If the change also
+touches the LGOS API or graph contract, test the demo API with the current
+checkout overlay:
 
 ```bash
-tox
+make check-demo
+make test-demo-local
 ```
 
-This requires you to have multiple versions of python installed.
-This step is also triggered in the CI/CD pipeline, so you could also choose to skip this step locally.
+For documentation changes, also run the strict documentation build:
 
-10. Commit your changes and push your branch to GitHub:
+```bash
+make doc-build
+```
+
+8. Commit your changes and push your branch to GitHub:
 
 ```bash
 git add .
@@ -114,7 +114,7 @@ git commit -m "Your detailed description of your changes."
 git push origin name-of-your-bugfix-or-feature
 ```
 
-11. Submit a pull request through the GitHub website.
+9. Submit a pull request through the GitHub website.
 
 # Pull Request Guidelines
 

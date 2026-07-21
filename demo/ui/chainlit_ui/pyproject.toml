@@ -1,0 +1,61 @@
+[project]
+name = "lgos-chainlit"
+version = "0.1.0"
+description = "Standalone Chainlit client for an OpenAI-compatible LGOS endpoint"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "asyncpg>=0.30.0",
+    "chainlit>=2.11.1,<3",
+    "fastapi[standard]>=0.121.0",
+    "openai>=2.0.0,<3.0.0",
+    "psycopg[binary]>=3.3.4",
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.9.0",
+]
+
+[project.scripts]
+lgos-chainlit = "lgos_chainlit.main:run"
+lgos-chainlit-setup = "lgos_chainlit.setup_database:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]
+test = [
+    "anyio>=4,<5",
+    "httpx>=0.28.0",
+    "pytest>=8.3.3",
+    "pytest-env>=1.6.0",
+    "pytest-xdist>=3.6.1",
+]
+
+[tool.uv]
+default-groups = ["dev", "test"]
+
+[tool.pytest.ini_options]
+minversion = "8.3.3"
+addopts = [
+    "--import-mode=importlib",
+    "--color=yes",
+    "--strict-config",
+    "--strict-markers",
+]
+env = [
+    "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
+ignore = ["E501"]
+
+[build-system]
+build-backend = "uv_build"
+requires = ["uv_build>=0.11,<0.12"]

@@ -1,0 +1,34 @@
+services:
+  lgos-demo-api:
+    image: lgos-demo-api:development
+    pull_policy: build
+    build:
+      context: ./api
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    develop:
+      watch:
+        - action: rebuild
+          path: ./api/src
+        - action: rebuild
+          path: ./api/pyproject.toml
+        - action: rebuild
+          path: ./api/uv.lock
+
+  lgos-chainlit:
+    image: lgos-chainlit:development
+    pull_policy: build
+    build:
+      context: ./ui/chainlit_ui
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    develop:
+      watch:
+        - action: rebuild
+          path: ./ui/chainlit_ui/src
+        - action: rebuild
+          path: ./ui/chainlit_ui/pyproject.toml
+        - action: rebuild
+          path: ./ui/chainlit_ui/uv.lock

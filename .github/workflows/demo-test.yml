@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# GitHub only discovers root workflows; shared implementation lives under demo/.
+name: Test demo projects
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    name: Validate isolated Compose project
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Compose
+        uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2.3.0
+        with:
+          version: v5.3.0
+
+      - name: Copy demo outside the package checkout
+        env:
+          DESTINATION: ${{ runner.temp }}/lgos-demo
+        run: cp -R demo "$DESTINATION"
+
+      - name: Render published and development models
+        working-directory: ${{ runner.temp }}/lgos-demo
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+
+  standalone:
+    name: Test isolated ${{ matrix.name }} project
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: API
+            directory: api
+          - name: Chainlit
+            directory: ui/chainlit_ui
+          - name: Open WebUI
+            directory: ui/openwebui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Copy demo outside the package checkout
+        env:
+          DESTINATION: ${{ runner.temp }}/lgos-demo
+        run: cp -R demo "$DESTINATION"
+
+      - name: Check project
+        uses: ./demo/.github/actions/check-project
+        with:
+          directory: ${{ runner.temp }}/lgos-demo/${{ matrix.directory }}
+          cache-dependency-glob: demo/${{ matrix.directory }}/uv.lock
+          verify-api-corpus: ${{ matrix.name == 'API' }}
+
+  local-package-compatibility:
+    name: Test demo API against this checkout
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            demo/api/uv.lock
+
+      - name: Run with the local LGOS package overlay
+        run: >-
+          uv run --directory demo/api --locked --with-editable ../..
+          pytest

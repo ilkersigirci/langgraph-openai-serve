@@ -25,18 +25,8 @@ Package settings:
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
 
-Demo API and graph settings:
-
-| Setting | Default | Notes |
-| --- | --- | --- |
-| `DEMO_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible base URL for LLM-backed demo graphs. |
-| `DEMO_OPENAI_API_KEY` | `DUMMY` | Upstream API key for LLM-backed demo graphs. |
-| `DEMO_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model for LLM-backed demo graphs. |
-| `DEMO_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by the `lgos-rag` demo graph. |
-| `DEMO_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database used by the interruptible demo graph. |
-
-Settings for optional clients and gateways are documented under
-[Integrations](integrations/index.md).
+Settings prefixed with `DEMO_` belong to the independent example applications
+and are documented under [Demo Settings and Commands](demo/reference.md).
 
 ## Public API
 
@@ -207,56 +197,5 @@ for transport and client behavior.
 The graph runner preserves LangGraph's native `CustomStreamPart` values,
 including their execution namespace. Other event types remain available to
 direct runner consumers through `langgraph_openai_serve.graph.runner`.
-
-## Demo Models
-
-`make run-demo-api` registers:
-
-- `simple-graph` (runtime settings for conversation history and intended audience)
-- `citation-events` (structured URL citations alongside portable Markdown)
-- `lgos-rag`
-- `custom-input-output-context`
-- `advanced-mcp-tools`
-- `complex-subgraphs`
-- `custom-event-showcase` (status, progress, and artifact stream events)
-- `interruptible-approval`
-
-## Local Commands
-
-=== "Setup"
-
-    ```bash
-    uv sync --frozen
-    make help
-    ```
-
-=== "Run demos"
-
-    ```bash
-    make run-demo-api
-    ```
-
-    UI and gateway setup is documented under [Integrations](integrations/index.md).
-
-=== "Test and lint"
-
-    ```bash
-    make -s test
-    make test-bifrost
-    uv run --module pytest tests/path/to/test_file.py
-    uv run --module pytest tests/path/to/test_file.py::test_name
-    make -s lint
-    make -s format
-    ```
-
-=== "Documentation"
-
-    ```bash
-    make doc-build
-    make doc-serve
-    ```
-
-    `make doc-serve` serves the live preview on `http://localhost:7999` and
-    watches for documentation changes.
 
 ::: langgraph_openai_serve

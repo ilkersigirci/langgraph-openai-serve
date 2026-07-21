@@ -1,0 +1,11 @@
+**/.files
+.git
+.env
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+*.py[cod]
+tests
+src/lgos_chainlit/.chainlit/*
+!src/lgos_chainlit/.chainlit/config.toml

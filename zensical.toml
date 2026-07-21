@@ -11,9 +11,19 @@ copyright = "Maintained by <a href=\"https://blog.ilkerflix.com\">İlker SIĞIRC
 docs_dir = "docs"
 nav = [
   { Home = "index.md" },
+  { "Getting Started" = "getting-started.md" },
+  { "Demo Stack" = [
+    "demo/index.md",
+    { "Run the Demo API" = "demo/api.md" },
+    { "Example Graphs" = "demo/graphs.md" },
+    { "Docker Compose" = "demo/docker.md" },
+    { "Chainlit Client" = "demo/chainlit.md" },
+    { "Open WebUI Functions" = "demo/open-webui.md" },
+    { "Bifrost Gateway" = "demo/bifrost.md" },
+    { "Settings and Commands" = "demo/reference.md" },
+  ]},
   { Tutorials = [
     "tutorials/index.md",
-    { "Getting Started" = "tutorials/getting-started.md" },
     { "Creating Custom Graphs" = "tutorials/custom-graphs.md" },
     { "Connecting with OpenAI Clients" = "tutorials/openai-clients.md" },
   ]},
@@ -21,13 +31,7 @@ nav = [
     "how-to-guides/index.md",
     { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
-    { "Docker Deployment" = "how-to-guides/docker.md" },
-  ]},
-  { Integrations = [
-    "integrations/index.md",
-    { Chainlit = "integrations/chainlit.md" },
-    { "Open WebUI" = "integrations/open-webui.md" },
-    { "OpenAI-Compatible Proxies" = "integrations/openai-proxies.md" },
+    { "OpenAI-Compatible Proxies" = "how-to-guides/openai-proxies.md" },
   ]},
   { Explanation = [
     "explanation/index.md",

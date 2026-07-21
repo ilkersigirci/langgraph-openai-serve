@@ -1,0 +1,15 @@
+.env
+.pytest_cache/
+.ruff_cache/
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/dist/
+docker/volumes/**
+!docker/volumes/
+!docker/volumes/.gitkeep
+!docker/volumes/*/
+!docker/volumes/*/.gitkeep
+ui/chainlit_ui/src/lgos_chainlit/.files/
+ui/chainlit_ui/src/lgos_chainlit/.chainlit/*
+!ui/chainlit_ui/src/lgos_chainlit/.chainlit/config.toml

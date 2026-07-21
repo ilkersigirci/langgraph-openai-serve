@@ -1,0 +1,220 @@
+name: lgos-demo
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.23
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 2G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    ports:
+      - "5432:5432"
+    volumes:
+      - type: bind
+        source: ./docker/volumes/lgos-db
+        target: /var/lib/postgresql
+        bind:
+          create_host_path: false
+    environment:
+      POSTGRES_USER: lgos
+      POSTGRES_PASSWORD: lgos
+      POSTGRES_DB: lgos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lgos -d lgos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  lgos-demo-api:
+    image: ghcr.io/ilkersigirci/lgos-demo-api:${DEMO_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      postgres:
+        condition: service_healthy
+    pre_start:
+      - command: ["lgos-demo-api-setup"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@postgres:5432/lgos
+
+  bifrost:
+    image: maximhq/bifrost:v1.6.3@sha256:95caedb1c368c6d88178c2b98b9238d8a6a62b51d9cb12b6661bf2671ed1aaa4
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      lgos-demo-api:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    volumes:
+      - type: bind
+        source: ./docker/volumes/bifrost
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./docker/bifrost/config.json
+        target: /app/data/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      LOG_STYLE: json
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  lgos-chainlit:
+    image: ghcr.io/ilkersigirci/lgos-chainlit:${DEMO_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /app/src/lgos_chainlit/.files:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
+      - /app/src/lgos_chainlit/.chainlit/translations:rw,noexec,nosuid,nodev,size=16m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      postgres:
+        condition: service_healthy
+      lgos-demo-api:
+        condition: service_started
+    pre_start:
+      - command: ["lgos-chainlit-setup"]
+    ports:
+      - "5000:5000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
+      DATABASE_URL: postgresql://lgos:lgos@postgres:5432/lgos
+      DEMO_CHAINLIT_INFERENCE__BASE_URL: http://lgos-demo-api:8000/v1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.10.2@sha256:9fcea9c6e32ab60b0498f3986c6cdf651ddbe61db48d2213a3d28048ddd673d4
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /app/backend/open_webui/static:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      lgos-demo-api:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    volumes:
+      - type: bind
+        source: ./docker/volumes/open-webui
+        target: /app/backend/data
+        bind:
+          create_host_path: false
+    environment:
+      ENABLE_PERSISTENT_CONFIG: false
+      WEBUI_NAME: LGOS-OpenWebUI
+      WEBUI_SECRET_KEY: ${DEMO_OPENWEBUI_SECRET_KEY:-lgos-demo-only-secret}
+      ENABLE_OLLAMA_API: false
+      ENABLE_FOLLOW_UP_GENERATION: false
+      ENABLE_TAGS_GENERATION: false
+      ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS: false
+      OFFLINE_MODE: true
+      HF_HUB_OFFLINE: 1
+      WEBUI_ADMIN_EMAIL: ${DEMO_OPENWEBUI_ADMIN_EMAIL:-lgos@example.com}
+      WEBUI_ADMIN_PASSWORD: ${DEMO_OPENWEBUI_ADMIN_PASSWORD:-lgos}
+      WEBUI_ADMIN_NAME: LGOS
+      ENABLE_OPENAI_API: false
+      ENABLE_IMAGE_GENERATION: false
+      RAG_EMBEDDING_ENGINE: openai
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12

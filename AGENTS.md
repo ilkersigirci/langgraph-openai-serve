@@ -5,8 +5,10 @@ use `docs/` for product explanations, examples, and detailed references.
 
 - Read `README.md` for project purpose and the shortest example.
 - Read `docs/index.md` only when you need the full docs map.
-- Use `docs/tutorials/getting-started.md` for demo runs and demo graph files.
-- Use `docs/reference.md` for API surface, settings, demo models, and commands.
+- Use `docs/getting-started.md` for the minimal package application.
+- Use `docs/demo/api.md` and `docs/demo/graphs.md` for demo runs and graph files.
+- Use `docs/reference.md` for the package API and settings; use
+  `docs/demo/reference.md` for demo settings and commands.
 - Use `docs/explanation/openai-compatibility.md` before changing API behavior;
   its citation ownership section defines the LGOS, Chainlit, and Open WebUI
   boundaries.

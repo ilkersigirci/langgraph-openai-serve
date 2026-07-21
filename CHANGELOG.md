@@ -1,17 +1,4 @@
 # Changelog
 
-## 1.0.0 - 2023-02-15
-
-### Added
-
--   Initial release
-
-### Changed
-
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
+Versioned release notes are maintained in
+[GitHub Releases](https://github.com/ilkersigirci/langgraph-openai-serve/releases).

@@ -5,9 +5,15 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Test Roots
 
 - `tests/` owns the installed package's API, graph runner, and utility tests.
-- `demo/tests/` owns demo applications, graphs, and UI adapter tests.
-- The two test roots keep separate fixtures, even when small fixtures are
-  intentionally duplicated.
+- Each project under `demo/` owns its tests and lockfile. Run all of them with
+  `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
+  checkout into the demo API test run.
+- Live demo integration tests are excluded from default pytest runs. Start the
+  required services and use the dedicated root target, such as
+  `make test-bifrost`, to select the `integration` marker explicitly.
+- `tests/integration/test_demo_*` guards copied wire declarations and the
+  distribution boundary without making demo runtime code import the parent
+  package checkout.
 - Fixtures stay in the nearest test-root or subdirectory `conftest.py`.
 - Do not import from a `conftest.py`; request fixtures by name.
 
@@ -30,7 +36,6 @@ Keep test setup explicit and assertions focused on observable behavior.
 
 - Use `conftest.py` for pytest fixtures only.
 - `tests/conftest.py` owns app/client fixtures shared by package tests.
-- `demo/tests/conftest.py` owns fixtures used only by demo tests, when needed.
 - Subdirectory `conftest.py` files may add local fixtures. Package graph tests
   import reusable builders from `tests.graph.support` modules.
 - Prefer explicit fixture arguments over autouse fixtures.
@@ -45,8 +50,6 @@ Keep test setup explicit and assertions focused on observable behavior.
   narrowest stable boundary.
 - Enable live logs only while diagnosing with `--log-cli-level=INFO`; normal
   runs rely on pytest's failure-time log capture.
-- Defer Chainlit imports until the test redirects its application root to
-  `tmp_path`, and keep Chainlit pointed away from the repository `.env`.
 
 ## Runner And API Tests
 
