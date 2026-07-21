@@ -61,5 +61,5 @@ Endpoint paths and settings live in [Reference](../reference.md).
 
 See [LangGraph Integration](langgraph-integration.md) for adapter and runner
 details, [OpenAI compatibility](openai-compatibility.md#tool-calls-and-interrupts)
-for the interrupt protocol, and [Docker](../how-to-guides/docker.md) for the
+for the interrupt protocol, and [Docker Compose](../demo/docker.md) for the
 demo's durable checkpointer setup.

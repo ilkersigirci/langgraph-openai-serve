@@ -5,8 +5,9 @@ LangGraph-specific HTTP API. Public chat and model behavior must remain
 reachable through the configured OpenAI-compatible base URL.
 
 The same contract lets LGOS run behind OpenAI-compatible intermediaries without
-a project-specific inference adapter. Concrete client and gateway behavior is
-documented under [Integrations](../integrations/index.md).
+a project-specific inference adapter. Generic gateway requirements are in the
+[proxy guide](../how-to-guides/openai-proxies.md); concrete Chainlit, Open WebUI,
+and Bifrost implementations belong to the [Demo Stack](../demo/index.md).
 
 ## Contract
 
@@ -83,7 +84,7 @@ from the standard fields and drop extensions. Clients that require detailed
 LGOS discovery must use direct model retrieval or a route that forwards the
 response unchanged. Request paths must also preserve OpenAI metadata. Concrete
 gateway configurations are documented under
-[OpenAI-Compatible Proxies](../integrations/openai-proxies.md).
+[OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
 
 ## Runtime Settings
 
@@ -129,7 +130,7 @@ needs them, including interrupt-resume requests. A later request that omits
 Treat a missing or unsupported discovery extension as a normal fallback to server
 defaults. See [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
 for the complete author and client flow. Adapter support is summarized under
-[Integrations](../integrations/index.md#capabilities).
+[demo client capability matrix](../demo/index.md#client-capabilities).
 
 ## Message And Schema Adaptation
 
@@ -204,7 +205,7 @@ structure do not become part of the public contract.
     Schema-normalizing proxies may discard extension-only chunks because their
     delta is empty, while continuing to stream assistant text normally. Use a
     documented raw pass-through route when client events are required. See
-    [OpenAI-Compatible Proxies](../integrations/openai-proxies.md#client-event-compatibility)
+    [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md#client-event-compatibility)
     for verified Bifrost and LiteLLM behavior.
 
 Without the exact `v1` opt-in, LGOS emits no event extensions. Even with the

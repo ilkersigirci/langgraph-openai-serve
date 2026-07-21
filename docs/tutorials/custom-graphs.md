@@ -30,7 +30,7 @@ GraphConfig(
 3.  Build optional LangGraph runtime context from the request and public settings.
 4.  Render the graph's native output as OpenAI assistant text.
 
-See `demo/api/graphs/custom_io.py` for the runnable version.
+See `demo/api/src/lgos_demo_api/graphs/custom_io.py` for the runnable version.
 
 ## Runtime Context
 
@@ -156,8 +156,8 @@ default-validation behavior; LGOS rejects a settings model that changes it.
     instances. Do not expose server-owned values as runtime settings.
 
 Follow [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
-for discovery, request transport, and per-request behavior. The runnable
-repository version is in `demo/api/graphs/simple.py`.
+for discovery, request transport, and per-request behavior. The runnable demo
+version is in `demo/api/src/lgos_demo_api/graphs/simple.py`.
 
 ## Async Factories
 
@@ -171,7 +171,8 @@ async def advanced_graph():
 GraphConfig(graph=advanced_graph)
 ```
 
-See `demo/api/graphs/advanced_mcp.py` for a mock MCP-style example.
+See `demo/api/src/lgos_demo_api/graphs/advanced_mcp.py` for a mock MCP-style
+example.
 
 ## Register And Bind
 

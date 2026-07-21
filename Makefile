@@ -1,13 +1,12 @@
 SHELL=/bin/bash
 PACKAGE=src/langgraph_openai_serve
-TEST_DIRS=./tests ./demo/tests
+TEST_DIRS=./tests
 LINT_TARGETS=$(PACKAGE) $(TEST_DIRS)
 TEST_PATH=tests
 PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
-BIFROST_TEST_BASE_URL?=http://localhost:8081/openai_passthrough/v1
-LGOS_TEST_BASE_URL?=http://localhost:8000/v1
+DEMO_DIR=demo
 
-.PHONY: help install test clean build-sdist build-wheel publish pre-commit format lint sync-demo-openwebui-functions
+.PHONY: help install test test-demo test-demo-local check-demo clean build-sdist build-wheel publish pre-commit format lint
 .DEFAULT_GOAL=help
 
 help:
@@ -63,11 +62,24 @@ test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
 
+test-bifrost: DEMO_TEST_BIFROST_BASE_URL ?= http://localhost:8081/openai_passthrough/v1
+test-bifrost: DEMO_TEST_DIRECT_BASE_URL ?= http://localhost:8000/v1
 test-bifrost: ## Run the optional Bifrost proxy integration test
-	uv lock --locked
-	LGOS_TEST_BIFROST_BASE_URL=$(BIFROST_TEST_BASE_URL) \
-		LGOS_TEST_DIRECT_BASE_URL=$(LGOS_TEST_BASE_URL) \
-		uv run --module pytest demo/tests/integration/test_bifrost_proxy.py
+	DEMO_TEST_BIFROST_BASE_URL=$(DEMO_TEST_BIFROST_BASE_URL) \
+		DEMO_TEST_DIRECT_BASE_URL=$(DEMO_TEST_DIRECT_BASE_URL) \
+		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
+		pytest -m integration tests/integration/test_bifrost_proxy.py
+
+test-demo: ## Test all demo projects against their locked dependencies
+	$(MAKE) -C $(DEMO_DIR) test
+
+test-demo-local: ## Test this checkout through the API plus both standalone UIs
+	uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. pytest
+	uv run --directory $(DEMO_DIR)/ui/chainlit_ui --locked pytest
+	uv run --directory $(DEMO_DIR)/ui/openwebui --locked pytest
+
+check-demo: ## Run every standalone demo validation
+	$(MAKE) -C $(DEMO_DIR) check
 
 test-all-parallel: ## Run all tests with parallelization
 	uv lock --locked
@@ -151,21 +163,3 @@ format-unsafe: ## Unsafely format package and test files. CHANGES CODE
 	uv lock --locked
 	uv run --module ruff format ${LINT_TARGETS}
 	uv run --module ruff check ${LINT_TARGETS} --fix --show-fixes --unsafe-fixes
-
-setup-demo-checkpointer: ## Initialize or migrate the demo checkpoint schema
-	uv run --module demo.api.setup_checkpointer
-
-setup-demo-chainlit: ## Initialize or migrate the demo Chainlit persistence schema
-	uv run --module demo.ui.chainlit_ui.setup_database
-
-run-demo-api: setup-demo-checkpointer # ## Run the demo api in development mode
-	uv run --module demo.api.app
-
-run-demo-ui-chainlit: setup-demo-chainlit ## Run the persistent Chainlit UI
-	uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 5000 --no-access-log
-
-run-demo-ui-chainlit-hitl: setup-demo-chainlit ## Run the persistent Chainlit human-in-the-loop UI
-	DEMO_CHAINLIT_UI_FILE=hitl uv run uvicorn demo.ui.chainlit_ui.main:app --host 0.0.0.0 --port 5000 --no-access-log
-
-sync-demo-openwebui-functions: ## Sync the bundled Functions to Open WebUI
-	uv run --module demo.ui.openwebui.sync_functions

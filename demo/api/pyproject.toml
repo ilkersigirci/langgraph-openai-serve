@@ -1,0 +1,74 @@
+[project]
+name = "lgos-demo-api"
+version = "0.1.0"
+description = "Standalone demo API for langgraph-openai-serve"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "fastapi[standard]>=0.121.0",
+    "langchain>=1.2.0",
+    "langchain-openai>=1.2.1",
+    "langchain-text-splitters>=1.1.0",
+    "langgraph>=1.1.10,<2.0.0",
+    "langgraph-checkpoint-postgres>=3.1.0",
+    "langgraph-openai-serve[tracing]>=0.5.0,<0.6.0",
+    "numpy>=2.4.6",
+    "psycopg[binary,pool]>=3.3.4",
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.9.0",
+]
+
+[project.scripts]
+lgos-demo-api = "lgos_demo_api.app:main"
+lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]
+test = [
+    "anyio>=4,<5",
+    "httpx>=0.28.0",
+    "langgraph-checkpoint-sqlite>=3.1.0",
+    "openai>=2.0.0,<3.0.0",
+    "pytest>=8.3.3",
+    "pytest-cov>=5.0.0",
+    "pytest-env>=1.6.0",
+    "pytest-xdist>=3.6.1",
+]
+
+[tool.uv]
+default-groups = ["dev", "test"]
+
+[tool.pytest.ini_options]
+minversion = "8.3.3"
+addopts = [
+    "--import-mode=importlib",
+    "--color=yes",
+    "--strict-config",
+    "--strict-markers",
+    "-m",
+    "not integration",
+]
+env = [
+    "ENVIRONMENT=test",
+    "LGOS_ENABLE_LANGFUSE=False",
+]
+testpaths = ["tests"]
+markers = [
+    "integration: requires explicitly started external demo services",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
+ignore = ["E501"]
+
+[build-system]
+build-backend = "uv_build"
+requires = ["uv_build>=0.11,<0.12"]

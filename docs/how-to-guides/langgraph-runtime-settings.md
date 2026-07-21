@@ -131,6 +131,6 @@ describes the combined value.
 See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-settings)
 for discovery code. The included Chainlit client automates descriptor discovery,
 Chat Settings, and metadata serialization; see the
-[Chainlit integration](../integrations/chainlit.md#runtime-settings). The
-[Open WebUI integration](../integrations/open-webui.md#runtime-settings) uses a
+[Chainlit demo](../demo/chainlit.md#runtime-settings). The
+[Open WebUI demo](../demo/open-webui.md#runtime-settings) uses a
 separate, static `UserValves` Function for the `simple-graph` demo.

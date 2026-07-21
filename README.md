@@ -6,23 +6,36 @@ project-specific protocol.
 
 ## Install
 
+Use `uv` for project dependency management:
+
 ```bash
 uv add langgraph-openai-serve
-# or
+```
+
+The equivalent `pip` command is:
+
+```bash
 pip install langgraph-openai-serve
 ```
 
 The package contains the OpenAI-compatible server integration, not a built-in
-LLM graph. Applications register their own graphs; repository demo graph
-dependencies are kept in the `demo` dependency group.
+LLM graph. Applications register their own graphs. The `demo/` checkout keeps
+each deployable application in an independent uv project with its own lockfile.
+Its `lgos-rag` example indexes a small corpus packaged with the demo API, so the
+entire directory can be copied and run without files from this repository.
 
 ## Quick Demo
 
-From this repository:
+From this repository, prepare the demo environment and PostgreSQL:
 
 ```bash
-docker compose up -d lgos-postgres
-make run-demo-api
+cd demo
+cp .env.example .env
+docker compose -f compose.yaml up -d postgres
+uv run --directory api --env-file ../.env \
+  --locked --with-editable ../.. lgos-demo-api-setup
+uv run --directory api --env-file ../.env \
+  --locked --with-editable ../.. lgos-demo-api
 ```
 
 Then call the demo with the OpenAI Python client:
@@ -44,9 +57,14 @@ print(response.choices[0].message.content)
 Use `curl http://localhost:8000/v1/models` only as a diagnostic to inspect the
 registered demo graph names.
 
-The repository also includes a PostgreSQL-persistent Chainlit client. It uses a
+The optional editable overlay tests this checkout without changing the
+self-contained demo project or its lockfile. The demo publishes independent API
+and Chainlit images and uses official images for third-party services such as
+Open WebUI. See the [demo Docker Compose guide](docs/demo/docker.md).
+
+The demo also includes a PostgreSQL-persistent Chainlit client. It uses a
 shared mock login by default, with PocketID OAuth available as an opt-in mode.
-See the [Chainlit integration](docs/integrations/chainlit.md).
+See the [Chainlit demo](docs/demo/chainlit.md).
 
 ## Use In FastAPI
 
@@ -68,16 +86,19 @@ graphs = GraphRegistry(
 LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 ```
 
-The default base URL is `{host}/v1`. Register graph names become OpenAI `model`
+The default base URL is `{host}/v1`. Registered graph names become OpenAI `model`
 values.
 
 ## Docs
 
-- Start here: [docs/index.md](docs/index.md)
-- Runnable demo: [docs/tutorials/getting-started.md](docs/tutorials/getting-started.md)
+- Documentation home: [docs/index.md](docs/index.md)
+- Package getting started: [docs/getting-started.md](docs/getting-started.md)
+- Self-contained demo stack: [docs/demo/index.md](docs/demo/index.md)
+- Runnable demo API: [docs/demo/api.md](docs/demo/api.md)
+- Demo graph catalog: [docs/demo/graphs.md](docs/demo/graphs.md)
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
-- Integrations: [docs/integrations/index.md](docs/integrations/index.md)
+- OpenAI-compatible proxies: [docs/how-to-guides/openai-proxies.md](docs/how-to-guides/openai-proxies.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

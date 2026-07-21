@@ -5,16 +5,18 @@ hide:
 
 # Tutorials
 
-Follow these tutorials in order for a complete first run, or jump directly to
-the client or graph workflow you need.
+Start with a minimal package-owned application, then extend its graph registry
+or connect another OpenAI client. The ready-made applications and integrations
+are documented separately under [Demo Stack](../demo/index.md).
 
 <div class="grid cards" markdown>
 
--   :material-rocket-launch-outline:{ .lg .middle } __Getting started__
+-   :material-rocket-launch-outline:{ .lg .middle } __First application__
 
-    Run the repository demo API and call its graphs.
+    Install the package, register a provider-free graph, and call it through
+    Chat Completions.
 
-    [:octicons-arrow-right-24: Run the demo](getting-started.md)
+    [:octicons-arrow-right-24: Get started](../getting-started.md)
 
 -   :material-code-braces:{ .lg .middle } __OpenAI clients__
 

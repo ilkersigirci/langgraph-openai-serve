@@ -1,8 +1,13 @@
 # OpenAI Clients
 
 Configure clients with the server base URL, usually `http://localhost:8000/v1`.
-The `api_key` value is sent as `Authorization: Bearer <key>`; the default demo
-does not verify it.
+The `api_key` value is sent as `Authorization: Bearer <key>`; the application
+from [Get Started](../getting-started.md) does not verify it.
+
+The basic examples below call that application's `echo` model. Examples named
+`my-graph`, `my-settings-graph`, or `research-graph` describe capabilities your
+registered graph must enable. The [demo graph catalog](../demo/graphs.md)
+provides runnable models for those advanced behaviors.
 
 ## Install A Client
 
@@ -23,7 +28,7 @@ does not verify it.
 !!! warning "Do not expose real API keys in a browser"
 
     The JavaScript examples enable `dangerouslyAllowBrowser` because the local
-    demo uses a dummy key. Keep production credentials in server-side code.
+    examples use a dummy key. Keep production credentials in server-side code.
 
 === "Python"
 
@@ -33,9 +38,8 @@ does not verify it.
     client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
     response = client.chat.completions.create(
-        model="custom-input-output-context",
-        messages=[{"role": "user", "content": "Show me the custom adapter."}],
-        user="demo-user",
+        model="echo",
+        messages=[{"role": "user", "content": "Hello from Python"}],
     )
 
     print(response.choices[0].message.content)
@@ -49,7 +53,7 @@ does not verify it.
     client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
     stream = client.chat.completions.create(
-        model="simple-graph",
+        model="my-graph",
         messages=[{"role": "user", "content": "Write a short poem about graphs."}],
         stream=True,
     )
@@ -72,9 +76,8 @@ does not verify it.
     });
 
     const completion = await openai.chat.completions.create({
-      model: "custom-input-output-context",
-      messages: [{ role: "user", content: "Show me the custom adapter." }],
-      user: "demo-user",
+      model: "echo",
+      messages: [{ role: "user", content: "Hello from JavaScript" }],
     });
 
     console.log(completion.choices[0].message.content);
@@ -92,7 +95,7 @@ does not verify it.
     });
 
     const stream = await openai.chat.completions.create({
-      model: "simple-graph",
+      model: "my-graph",
       messages: [{ role: "user", content: "Write a short poem about graphs." }],
       stream: true,
     });
@@ -165,7 +168,9 @@ defaults.
 
     ```python
     models = client.models.list()
-    model_id = next(model.id for model in models.data if model.id == "simple-graph")
+    model_id = next(
+        model.id for model in models.data if model.id == "my-settings-graph"
+    )
     model = client.models.retrieve(model_id)
 
     extension = (model.model_extra or {}).get("langgraph_openai_serve")
@@ -184,8 +189,10 @@ defaults.
 
     ```javascript
     const models = await openai.models.list();
-    const selectedModel = models.data.find((model) => model.id === "simple-graph");
-    if (!selectedModel) throw new Error("simple-graph is not registered");
+    const selectedModel = models.data.find(
+      (model) => model.id === "my-settings-graph",
+    );
+    if (!selectedModel) throw new Error("my-settings-graph is not registered");
     const model = await openai.models.retrieve(selectedModel.id);
 
     const extension = model.langgraph_openai_serve;
@@ -232,9 +239,8 @@ needs those settings. See
     curl -X POST http://localhost:8000/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
-        "model": "custom-input-output-context",
-        "messages": [{"role": "user", "content": "Show me the custom adapter."}],
-        "user": "demo-user"
+        "model": "echo",
+        "messages": [{"role": "user", "content": "Hello from HTTP"}]
       }'
     ```
 

@@ -1,0 +1,65 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Build demo Chainlit image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - ui/chainlit_ui/**
+      - .github/actions/build-image/**
+      - .github/workflows/image-chainlit.yml
+  pull_request:
+    paths:
+      - ui/chainlit_ui/**
+      - .github/actions/build-image/**
+      - .github/workflows/image-chainlit.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    name: Validate Demo Chainlit
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate image
+        uses: ./.github/actions/build-image
+        with:
+          context: ui/chainlit_ui
+          repository: lgos-chainlit
+          platforms: linux/amd64
+
+  publish:
+    if: github.event_name == 'push'
+    name: Publish Demo Chainlit
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Publish image
+        uses: ./.github/actions/build-image
+        with:
+          context: ui/chainlit_ui
+          repository: lgos-chainlit
+          publish: true

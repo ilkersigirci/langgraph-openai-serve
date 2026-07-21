@@ -58,7 +58,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-valid-key-1")
 ```
 
 The included Chainlit client's separate browser login is documented in the
-[Chainlit integration](../integrations/chainlit.md#persistence-and-login).
+[Chainlit demo](../demo/chainlit.md#persistence-and-login).
 
 ## Production Notes
 

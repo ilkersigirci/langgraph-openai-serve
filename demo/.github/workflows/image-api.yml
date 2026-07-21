@@ -1,0 +1,65 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Build demo API image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - api/**
+      - .github/actions/build-image/**
+      - .github/workflows/image-api.yml
+  pull_request:
+    paths:
+      - api/**
+      - .github/actions/build-image/**
+      - .github/workflows/image-api.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    name: Validate Demo API
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate image
+        uses: ./.github/actions/build-image
+        with:
+          context: api
+          repository: lgos-demo-api
+          platforms: linux/amd64
+
+  publish:
+    if: github.event_name == 'push'
+    name: Publish Demo API
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Publish image
+        uses: ./.github/actions/build-image
+        with:
+          context: api
+          repository: lgos-demo-api
+          publish: true

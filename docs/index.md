@@ -9,18 +9,26 @@ hide:
 Serve registered LangGraph graphs as OpenAI `model` values through a standard
 OpenAI-compatible `/v1` API.
 
-[Get started :octicons-arrow-right-24:](tutorials/getting-started.md){ .md-button .md-button--primary }
-[API reference](reference.md){ .md-button }
+[Build your first app :octicons-arrow-right-24:](getting-started.md){ .md-button .md-button--primary }
 
 <div class="grid cards" markdown>
 
--   :material-rocket-launch-outline:{ .lg .middle } __Run the demo__
+-   :material-rocket-launch-outline:{ .lg .middle } __Use the package__
 
     ---
 
-    Start PostgreSQL and call a runnable graph with the OpenAI Python client.
+    Install LGOS, register your graph, and expose it through `/v1`.
 
-    [:octicons-arrow-right-24: Getting started](tutorials/getting-started.md)
+    [:octicons-arrow-right-24: Getting started](getting-started.md)
+
+-   :material-view-dashboard-outline:{ .lg .middle } __Explore the demo stack__
+
+    ---
+
+    Run the independent API, graphs, PostgreSQL, Chainlit, Open WebUI, and
+    Bifrost examples.
+
+    [:octicons-arrow-right-24: Demo capabilities](demo/index.md)
 
 -   :material-code-braces:{ .lg .middle } __Use your SDK__
 
@@ -48,13 +56,14 @@ OpenAI-compatible `/v1` API.
 
     [:octicons-arrow-right-24: Architecture](explanation/architecture.md)
 
--   :material-transit-connection-horizontal:{ .lg .middle } __Use an integration__
+-   :material-transit-connection-horizontal:{ .lg .middle } __Use a gateway__
 
     ---
 
-    Connect Chainlit, Open WebUI, or an OpenAI-compatible proxy.
+    Preserve metadata, discovery, tool calls, and streaming behavior through an
+    OpenAI-compatible proxy.
 
-    [:octicons-arrow-right-24: Integrations](integrations/index.md)
+    [:octicons-arrow-right-24: Proxy guide](how-to-guides/openai-proxies.md)
 
 </div>
 
@@ -63,12 +72,19 @@ OpenAI-compatible `/v1` API.
     LGOS keeps client ingestion on the OpenAI SDK path. Graph-specific behavior
     is adapted behind `/v1`, so clients do not need a project-specific protocol.
 
-## Configure, Operate, And Deploy
+!!! note "Package versus demo"
+
+    The package supplies the server integration and public Python API. The
+    repository's `demo/` directory supplies example graphs, applications,
+    images, UIs, gateway configuration, and database-backed workflows. Demo
+    components are independently locked and are not installed with LGOS.
+
+## Configure And Operate
 
 Use the [runtime settings guide](how-to-guides/langgraph-runtime-settings.md)
 to publish safe per-request graph settings, the
 [authentication guide](how-to-guides/authentication.md) to add bearer tokens,
-and the [Docker guide](how-to-guides/docker.md) to run a stack. Optional clients
-and gateways are documented under [Integrations](integrations/index.md). See the
-[reference](reference.md) for endpoints, settings, demo models, and public
-classes.
+and the [proxy guide](how-to-guides/openai-proxies.md) to preserve the contract
+through a gateway. See the package [reference](reference.md) for endpoints,
+settings, events, and public classes. Demo-owned models, settings, and commands
+have their own [reference](demo/reference.md).

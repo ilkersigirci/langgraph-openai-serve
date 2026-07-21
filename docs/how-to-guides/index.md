@@ -5,7 +5,7 @@ hide:
 
 # How-To Guides
 
-Task-oriented guides for configuring, securing, and deploying an LGOS
+Task-oriented guides for configuring, securing, and connecting an LGOS
 application.
 
 <div class="grid cards" markdown>
@@ -24,10 +24,11 @@ application.
 
     [:octicons-arrow-right-24: Configure authentication](authentication.md)
 
--   :material-docker:{ .lg .middle } __Deploy with Docker__
+-   :material-transit-connection-horizontal:{ .lg .middle } __Use a proxy__
 
-    Run the complete demo stack or package a custom FastAPI application.
+    Preserve metadata, tool calls, discovery extensions, events, and streaming
+    cancellation through an OpenAI-compatible gateway.
 
-    [:octicons-arrow-right-24: Use Docker](docker.md)
+    [:octicons-arrow-right-24: Configure a proxy](openai-proxies.md)
 
 </div>

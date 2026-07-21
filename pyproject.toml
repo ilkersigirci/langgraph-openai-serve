@@ -66,19 +66,8 @@ test = [
     "langgraph-checkpoint-sqlite>=3.1.0",
     "pytest-env>=1.6.0",
 ]
-demo = [
-    "asyncpg>=0.30.0",
-    "chainlit>=2.11.1,<3",
-    "langchain>=1.2.0",
-    "langchain-openai>=1.2.1",
-    "langchain-text-splitters>=1.1.0",
-    "langgraph-checkpoint-postgres>=3.1.0",
-    "numpy>=2.4.6",
-    "psycopg[binary]>=3.3.4",
-]
-
 [tool.uv]
-default-groups = ["dev", "doc", "test", "demo"]
+default-groups = ["dev", "doc", "test"]
 
 # environments = [
 #   "(platform_python_implementation == 'CPython' and platform_machine == 'x86_64' and sys_platform == 'linux')",
@@ -95,13 +84,9 @@ addopts = [
     "--strict-markers",
 ]
 
-env = [
-    "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
-    "ENVIRONMENT=test",
-    "LGOS_ENABLE_LANGFUSE=False"
-]
+env = ["ENVIRONMENT=test", "LGOS_ENABLE_LANGFUSE=False"]
 
-testpaths = ["tests", "demo/tests"]
+testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.ruff]
