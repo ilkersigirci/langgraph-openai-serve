@@ -1,9 +1,12 @@
 Guidance for coding agents in this repository. Keep this file operational;
 use `docs/` for product explanations, examples, and detailed references.
+Extended coding-agent guidance belongs under `.agents/`; use this file as its
+entry point.
 
 ## Start Here
 
 - Read `README.md` for project purpose and the shortest example.
+- Read `.agents/CODE_STYLE.md` before writing or modifying code.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
 - Use `docs/demo/api.md` and `docs/demo/graphs.md` for demo runs and graph files.
@@ -40,7 +43,6 @@ use `docs/` for product explanations, examples, and detailed references.
 
 - Do not add project-specific chat envelopes, response shapes, headers, routes,
   or streaming events unless they remain reachable through `/v1`.
-- Do not treat `curl` examples as a separate product contract; they are
   diagnostics only.
 - Do not raise bare `HTTPException` from OpenAI route code when error metadata is
   known.
