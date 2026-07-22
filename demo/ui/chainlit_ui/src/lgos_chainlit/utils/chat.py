@@ -1,4 +1,4 @@
-"""Text-only OpenAI messages from Chainlit's native chat context."""
+"""Shared Chainlit message and chat-history helpers."""
 
 from typing import cast
 
@@ -18,6 +18,13 @@ def mark_model_context_excluded(
         **(message.metadata or {}),
         MODEL_CONTEXT_EXCLUDED_KEY: True,
     }
+
+
+async def send_ui_message(content: str) -> None:
+    """Send a UI-only message that must not become model context."""
+    message = cl.Message(content=content)
+    mark_model_context_excluded(message)
+    await message.send()
 
 
 def mark_persisted_errors_excluded(thread: ThreadDict) -> None:

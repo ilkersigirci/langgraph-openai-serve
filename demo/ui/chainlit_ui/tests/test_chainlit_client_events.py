@@ -94,7 +94,7 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch.setattr(simple.cl, "CustomElement", custom_element_factory)
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.client.chat.completions, "create", create)
+    monkeypatch.setattr(simple.inference_client.chat.completions, "create", create)
 
     await simple.on_message(Mock(content=messages[0]["content"]))
 

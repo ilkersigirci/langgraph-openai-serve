@@ -17,7 +17,7 @@ dependencies = [
 
 [project.scripts]
 lgos-chainlit = "lgos_chainlit.main:run"
-lgos-chainlit-setup = "lgos_chainlit.setup_database:main"
+lgos-chainlit-setup = "lgos_chainlit.db.setup_database:main"
 
 [dependency-groups]
 dev = [
