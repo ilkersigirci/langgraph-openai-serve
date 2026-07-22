@@ -48,15 +48,17 @@ After a profile is selected, Chainlit:
 1. Retrieves the detailed model and reads
    `langgraph_openai_serve.client_settings`.
 2. Renders supported JSON Schema properties as Chainlit Chat Settings.
-3. Restores only saved values that remain valid under the current descriptor.
+3. Restores saved values that still match the supported widget type or choice.
 4. Compares the selected values with the advertised defaults.
 5. Sends changed values as JSON text in
    `metadata.langgraph_runtime_settings` on every completion.
 
 Booleans become switches, inline string enums become selects, and strings
-become text inputs. Other schema shapes are not rendered. LGOS remains the
-validation authority. If detailed model metadata is unavailable, Chainlit hides
-the controls and uses server defaults.
+become text inputs. Other schema shapes are not rendered. The adapter checks
+only boolean/string types and select membership when restoring the UI; it does
+not interpret general JSON Schema constraints. LGOS remains the validation
+authority. If detailed model metadata is unavailable, Chainlit hides the
+controls and uses server defaults.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every

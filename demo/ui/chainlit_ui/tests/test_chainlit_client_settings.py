@@ -1,92 +1,48 @@
 import importlib
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, call
 
 import pytest
 from openai.types import Model
-from openai.types.chat import ChatCompletionChunk
+from pydantic import ValidationError
 
 from lgos_chainlit.lgos_protocol import GraphFeature, ModelClientSettings
-
-EXPECTED_WIDGET_COUNT = 3
-CLIENT_SETTINGS_SCHEMA_VERSION = 1
-
-
-@pytest.fixture(autouse=True)
-def chainlit_app_root(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
 
 
 def client_module():
     return importlib.import_module("lgos_chainlit.client_settings")
 
 
-def client_settings() -> ModelClientSettings:
+def protocol_module():
+    return importlib.import_module("lgos_chainlit.lgos_protocol")
+
+
+def scalar_settings(schema: object, default: object) -> ModelClientSettings:
     return ModelClientSettings.model_validate(
         {
-            "schema_version": CLIENT_SETTINGS_SCHEMA_VERSION,
+            "schema_version": 1,
             "json_schema": {
                 "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "use_history": {
-                        "type": "boolean",
-                        "title": "Use conversation history",
-                        "default": True,
-                    },
-                    "mode": {
-                        "type": "string",
-                        "title": "Mode",
-                        "enum": ["brief", "detailed"],
-                        "default": "brief",
-                    },
-                    "assistant_name": {
-                        "type": "string",
-                        "title": "Assistant name",
-                        "minLength": 1,
-                        "default": "Helper",
-                    },
-                },
+                "properties": {"value": schema},
             },
-            "defaults": {
-                "use_history": True,
-                "mode": "brief",
-                "assistant_name": "Helper",
-            },
+            "defaults": {"value": default},
         }
     )
 
 
-def configured_model() -> Model:
-    return Model(
-        id="simple",
-        object="model",
-        created=1,
-        owned_by="test",
-        langgraph_openai_serve={
-            "schema_version": 1,
-            "features": [],
-            "client_settings": client_settings().model_dump(mode="json"),
-        },
-    )
-
-
-def test_json_schema_is_converted_to_chainlit_widgets() -> None:
+def test_json_schema_is_converted_to_chainlit_widgets(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     from chainlit.input_widget import (
         Select,
         Switch,
         TextInput,
     )
 
-    widgets, values = client_module().settings_widgets(
-        client_settings(),
+    widgets = client_module().settings_widgets(
+        runtime_client_settings,
         {
-            "use_history": "invalid",
+            "use_history": False,
             "mode": "detailed",
-            "assistant_name": "",
+            "assistant_name": "Guide",
         },
     )
 
@@ -95,17 +51,107 @@ def test_json_schema_is_converted_to_chainlit_widgets() -> None:
         Select,
         TextInput,
     ]
-    assert values == {
-        "use_history": True,
-        "mode": "detailed",
-        "assistant_name": "Helper",
-    }
-    assert isinstance(widgets[-1], TextInput)
+    assert [widget.initial for widget in widgets] == [False, "detailed", "Guide"]
 
 
-def test_changed_settings_use_one_metadata_envelope() -> None:
+def test_invalid_widget_values_fall_back_to_advertised_defaults(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
+    widgets = client_module().settings_widgets(
+        runtime_client_settings,
+        {
+            "use_history": 1,
+            "mode": "removed-option",
+            "assistant_name": False,
+        },
+    )
+
+    assert [widget.initial for widget in widgets] == [True, "brief", "Helper"]
+
+
+def test_server_only_string_constraints_are_not_evaluated() -> None:
+    settings = scalar_settings(
+        {
+            "type": "string",
+            "pattern": "[",
+            "minLength": True,
+            "format": "email",
+        },
+        "Helper",
+    )
+
+    widgets = client_module().settings_widgets(settings, {"value": "not-an-email"})
+
+    assert [widget.initial for widget in widgets] == ["not-an-email"]
+
+
+@pytest.mark.parametrize(
+    ("schema", "default"),
+    [
+        (None, "same"),
+        ({}, "same"),
+        ({"type": "number"}, 1.0),
+        ({"type": ["string", "null"]}, "same"),
+        ({"type": "boolean"}, "not-boolean"),
+        ({"type": "string"}, True),
+        ({"type": "string", "enum": None}, "same"),
+        ({"type": "string", "enum": "same"}, "same"),
+        ({"type": "string", "enum": []}, "same"),
+        ({"type": "string", "enum": ["same", 1]}, "same"),
+        ({"type": "string", "enum": ["same", "same"]}, "same"),
+        ({"type": "string", "enum": ["other"]}, "same"),
+        ({"$ref": "#/$defs/value"}, "same"),
+    ],
+)
+def test_unsupported_widget_shapes_are_skipped_without_raising(
+    schema: object,
+    default: object,
+) -> None:
+    settings = scalar_settings(schema, default)
+
+    assert client_module().settings_widgets(settings) == []
+
+
+def test_unsupported_property_does_not_hide_later_supported_widgets() -> None:
+    settings = ModelClientSettings.model_validate(
+        {
+            "schema_version": 1,
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "temperature": {"type": "number"},
+                    "assistant_name": {"type": "string"},
+                },
+            },
+            "defaults": {"temperature": 0.5, "assistant_name": "Helper"},
+        }
+    )
+
+    widgets = client_module().settings_widgets(settings)
+
+    assert [widget.id for widget in widgets] == ["assistant_name"]
+
+
+def test_empty_property_names_are_skipped() -> None:
+    settings = ModelClientSettings.model_validate(
+        {
+            "schema_version": 1,
+            "json_schema": {
+                "type": "object",
+                "properties": {"": {"type": "string"}},
+            },
+            "defaults": {"": "same"},
+        }
+    )
+
+    assert client_module().settings_widgets(settings) == []
+
+
+def test_changed_settings_use_one_metadata_envelope(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     metadata = client_module().settings_metadata(
-        client_settings(),
+        runtime_client_settings.defaults,
         {
             "use_history": False,
             "mode": "detailed",
@@ -120,34 +166,42 @@ def test_changed_settings_use_one_metadata_envelope() -> None:
     }
 
 
-def test_default_settings_are_omitted_from_the_request() -> None:
+def test_default_settings_are_omitted_from_the_request(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     metadata = client_module().settings_metadata(
-        client_settings(),
-        client_settings().defaults,
+        runtime_client_settings.defaults,
+        runtime_client_settings.defaults,
     )
 
     assert metadata == {}
 
 
-def test_live_invalid_values_are_sent_unchanged_for_server_validation() -> None:
+def test_live_invalid_values_are_sent_unchanged_for_server_validation(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     metadata = client_module().settings_metadata(
-        client_settings(),
+        runtime_client_settings.defaults,
         {"mode": "removed-option"},
     )
 
     assert metadata == {"langgraph_runtime_settings": '{"mode":"removed-option"}'}
 
 
-def test_type_invalid_value_equal_to_a_default_is_not_omitted() -> None:
+def test_type_invalid_value_equal_to_a_default_is_not_omitted(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     metadata = client_module().settings_metadata(
-        client_settings(),
+        runtime_client_settings.defaults,
         {"use_history": 1},
     )
 
     assert metadata == {"langgraph_runtime_settings": '{"use_history":1}'}
 
 
-def test_oversized_settings_raise_a_local_transport_error() -> None:
+def test_oversized_settings_raise_a_local_transport_error(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
     module = client_module()
 
     with pytest.raises(
@@ -155,67 +209,84 @@ def test_oversized_settings_raise_a_local_transport_error() -> None:
         match="exceed the OpenAI metadata value limit",
     ):
         module.settings_metadata(
-            client_settings(),
+            runtime_client_settings.defaults,
             {"mode": "x" * 600},
+        )
+
+
+def test_non_finite_settings_raise_a_local_transport_error() -> None:
+    module = client_module()
+
+    with pytest.raises(
+        module.SettingsTransportError,
+        match="cannot be encoded as JSON",
+    ):
+        module.settings_metadata(
+            {"temperature": 0.0},
+            {"temperature": float("nan")},
         )
 
 
 def test_missing_or_stripped_extension_falls_back_without_settings() -> None:
     model = Model(id="simple", object="model", created=1, owned_by="proxy")
-    module = client_module()
 
-    assert module.model_client_settings(model) is None
-    assert module.settings_metadata(None, None) == {}
+    assert protocol_module().model_client_settings(model) is None
+    assert client_module().settings_metadata(None, None) == {}
 
 
-def test_nullable_and_unrenderable_properties_are_not_rendered() -> None:
-    settings = ModelClientSettings.model_validate(
-        {
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "nullable": {
-                        "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                        "default": None,
-                    },
-                    "number": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 1,
-                        "default": 0.5,
-                    },
-                },
-            },
-            "defaults": {"nullable": None, "number": 0.5},
-        }
+def test_runtime_settings_version_is_required() -> None:
+    with pytest.raises(ValidationError):
+        ModelClientSettings.model_validate(
+            {
+                "json_schema": {"type": "object"},
+                "defaults": {},
+            }
+        )
+
+
+def test_model_extension_version_is_required() -> None:
+    model = Model(
+        id="simple",
+        object="model",
+        created=1,
+        owned_by="test",
+        langgraph_openai_serve={"features": []},
     )
 
-    assert client_module().settings_widgets(settings) == ([], {})
+    assert protocol_module().model_extension(model) is None
 
 
-def test_string_enum_is_skipped_when_one_option_breaks_its_constraints() -> None:
-    settings = ModelClientSettings.model_validate(
-        {
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "mode": {
-                        "type": "string",
-                        "enum": ["x", "valid"],
-                        "minLength": 2,
-                        "default": "valid",
-                    }
-                },
-            },
-            "defaults": {"mode": "valid"},
-        }
+def test_supported_runtime_settings_are_parsed(
+    runtime_client_settings: ModelClientSettings,
+) -> None:
+    model = Model(
+        id="simple",
+        object="model",
+        created=1,
+        owned_by="test",
+        langgraph_openai_serve={
+            "schema_version": 1,
+            "features": [],
+            "client_settings": runtime_client_settings.model_dump(mode="json"),
+        },
     )
 
-    assert client_module().settings_widgets(settings) == ([], {})
+    assert protocol_module().model_client_settings(model) == runtime_client_settings
 
 
-def test_unsupported_runtime_settings_do_not_hide_known_features() -> None:
-    module = client_module()
+@pytest.mark.parametrize(
+    "raw_settings",
+    [
+        {"json_schema": {"type": "object"}, "defaults": {}},
+        {"schema_version": 3, "json_schema": {}, "defaults": {}},
+        "invalid",
+        [],
+    ],
+)
+def test_unsupported_runtime_settings_do_not_hide_known_features(
+    raw_settings: object,
+) -> None:
+    module = protocol_module()
     model = Model(
         id="interruptible",
         object="model",
@@ -224,301 +295,9 @@ def test_unsupported_runtime_settings_do_not_hide_known_features() -> None:
         langgraph_openai_serve={
             "schema_version": 1,
             "features": ["interrupts", "future-feature"],
-            "client_settings": {"schema_version": 3},
+            "client_settings": raw_settings,
         },
     )
 
     assert module.model_supports(model, GraphFeature.INTERRUPTS)
     assert module.model_client_settings(model) is None
-
-
-class Session:
-    def __init__(self, values: dict[str, object] | None = None) -> None:
-        self.values = values or {"chat_profile": "simple"}
-
-    def get(self, key, default=None):
-        return self.values.get(key, default)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-
-@pytest.mark.anyio
-async def test_selected_model_is_retrieved_before_chat_settings_are_sent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session()
-
-    class ChatSettings:
-        def __init__(self, widgets):
-            assert len(widgets) == EXPECTED_WIDGET_COUNT
-
-        async def send(self):
-            values = {
-                "use_history": False,
-                "mode": "brief",
-                "assistant_name": "Configured in Chainlit",
-            }
-            session.set("chat_settings", values)
-            return values
-
-    retrieve = AsyncMock(return_value=configured_model())
-    monkeypatch.setattr(simple.discovery_client.models, "retrieve", retrieve)
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "ChatSettings", ChatSettings)
-
-    values = await simple.configure_chat_settings()
-
-    retrieve.assert_awaited_once_with("simple")
-    assert values["use_history"] is False
-    assert values["assistant_name"] == "Configured in Chainlit"
-    stored_settings = session.values["model_client_settings"]
-    assert isinstance(stored_settings, dict)
-    assert stored_settings.get("schema_version") == CLIENT_SETTINGS_SCHEMA_VERSION
-    assert session.values["chat_settings"] == values
-
-
-@pytest.mark.anyio
-async def test_discovery_failure_refreshes_ui_without_committing_defaults(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
-    committed = {"mode": "detailed"}
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": committed,
-            "model_client_settings": client_settings().model_dump(mode="json"),
-        }
-    )
-    refreshed = False
-
-    class ChatSettings:
-        def __init__(self, widgets):
-            assert widgets == []
-
-        async def refresh(self):
-            nonlocal refreshed
-            refreshed = True
-
-        async def send(self):
-            pytest.fail("a transient discovery failure must not commit settings")
-
-    monkeypatch.setattr(
-        simple.discovery_client.models,
-        "retrieve",
-        AsyncMock(side_effect=RuntimeError("temporarily unavailable")),
-    )
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "ChatSettings", ChatSettings)
-
-    values = await simple.configure_chat_settings()
-
-    assert refreshed is True
-    assert values is committed
-    assert session.values["chat_settings"] is committed
-    assert session.values["model_client_settings"] is None
-
-
-@pytest.mark.anyio
-async def test_definitive_missing_settings_clears_committed_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": {"mode": "detailed"},
-            "model_client_settings": client_settings().model_dump(mode="json"),
-        }
-    )
-    sent = False
-
-    class ChatSettings:
-        def __init__(self, widgets):
-            assert widgets == []
-
-        async def send(self):
-            nonlocal sent
-            sent = True
-            session.set("chat_settings", {})
-            return {}
-
-    model = Model(id="simple", object="model", created=1, owned_by="proxy")
-    monkeypatch.setattr(
-        simple.discovery_client.models,
-        "retrieve",
-        AsyncMock(return_value=model),
-    )
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "ChatSettings", ChatSettings)
-
-    values = await simple.configure_chat_settings()
-
-    assert sent is True
-    assert values == {}
-    assert session.values["chat_settings"] == {}
-    assert session.values["model_client_settings"] is None
-
-
-@pytest.mark.anyio
-async def test_local_settings_transport_errors_are_reported_by_the_message_handler(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": {"mode": "x" * 600},
-            "model_client_settings": client_settings().model_dump(mode="json"),
-        }
-    )
-
-    class FakeMessage:
-        def __init__(self, content: str) -> None:
-            self.content = content
-            self.metadata = None
-
-        async def send(self) -> None:
-            sent_messages.append(self)
-
-    sent_messages: list[FakeMessage] = []
-    create = AsyncMock()
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "Message", FakeMessage)
-    monkeypatch.setattr(
-        simple,
-        "text_only_chat_messages",
-        lambda: [{"role": "user", "content": "Hello"}],
-    )
-    monkeypatch.setattr(simple.client.chat.completions, "create", create)
-
-    await simple.on_message(FakeMessage("Hello"))
-
-    create.assert_not_awaited()
-    assert len(sent_messages) == 1
-    assert "exceed the OpenAI metadata value limit" in sent_messages[0].content
-
-
-@pytest.mark.anyio
-async def test_message_handler_renders_public_client_events(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session({"chat_profile": "custom-event-showcase"})
-    messages = [{"role": "user", "content": "Build the report."}]
-
-    def chunk(
-        *,
-        extension: dict[str, object] | None,
-        content: str | None = None,
-    ) -> ChatCompletionChunk:
-        return ChatCompletionChunk.model_validate(
-            {
-                "id": "chatcmpl-demo",
-                "object": "chat.completion.chunk",
-                "created": 1,
-                "model": "custom-event-showcase",
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": content},
-                        "finish_reason": None,
-                    }
-                ],
-                "langgraph_openai_serve": extension,
-            }
-        )
-
-    public_events: list[dict[str, object]] = [
-        {
-            "schema_version": 1,
-            "event": {
-                "type": "status",
-                "namespace": ["research"],
-                "data": {"message": "Planning compatibility report"},
-            },
-        },
-        {
-            "schema_version": 1,
-            "event": {
-                "type": "progress",
-                "namespace": ["research"],
-                "data": {"completed": 2, "total": 5},
-            },
-        },
-        {
-            "schema_version": 1,
-            "event": {
-                "type": "artifact",
-                "namespace": ["research", "report"],
-                "data": {"id": "report-1"},
-            },
-        },
-    ]
-    chunks = [chunk(extension=event) for event in public_events]
-    chunks.append(chunk(extension=None, content="Docs answer"))
-    stream = MagicMock()
-    stream.__aiter__.return_value = iter(chunks)
-    stream.close = AsyncMock()
-    create = AsyncMock(return_value=stream)
-    assistant_message = Mock(content="")
-    assistant_message.stream_token = AsyncMock()
-    assistant_message.update = AsyncMock()
-    event_message = Mock(metadata=None, send=AsyncMock())
-    message_factory = Mock(side_effect=[assistant_message, event_message])
-    element = Mock(props={})
-    element_updates: list[dict[str, object]] = []
-
-    async def record_element_update() -> None:
-        element_updates.append(element.props)
-
-    element.update = AsyncMock(side_effect=record_element_update)
-    custom_element_factory = Mock(return_value=element)
-
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "Message", message_factory)
-    monkeypatch.setattr(simple.cl, "CustomElement", custom_element_factory)
-    monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.client.chat.completions, "create", create)
-
-    await simple.on_message(Mock(content=messages[0]["content"]))
-
-    create.assert_awaited_once_with(
-        model="custom-event-showcase",
-        messages=messages,
-        stream=True,
-        user="demo-user",
-        metadata={"langgraph_stream_events": "v1"},
-    )
-    assert message_factory.call_args_list == [
-        call(content=""),
-        call(content="", elements=[element]),
-    ]
-    custom_element_factory.assert_called_once_with(
-        name="ClientEventTimeline",
-        props={"events": [public_events[0]["event"]]},
-    )
-    assert event_message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
-    event_message.send.assert_awaited_once_with()
-    assert element_updates == [
-        {"events": [event["event"] for event in public_events[:2]]},
-        {"events": [event["event"] for event in public_events]},
-    ]
-    assert element.update.await_count == len(public_events) - 1
-    assistant_message.stream_token.assert_awaited_once_with("Docs answer")
-    assistant_message.update.assert_awaited_once_with()
-    stream.close.assert_awaited_once_with()
-
-
-def test_invalid_saved_values_are_replaced_only_when_restoring_widgets() -> None:
-    assert client_module().restore_setting_values(
-        client_settings(),
-        {"mode": "removed-option"},
-    ) == {
-        "use_history": True,
-        "mode": "brief",
-        "assistant_name": "Helper",
-    }
