@@ -19,7 +19,6 @@ from openai.types.chat import (
 )
 
 from lgos_chainlit.auth import authenticated_user_identifier
-from lgos_chainlit.client_settings import model_supports
 from lgos_chainlit.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
@@ -29,6 +28,7 @@ from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     THREAD_METADATA_KEY,
     GraphFeature,
+    model_supports,
 )
 from lgos_chainlit.settings import settings
 

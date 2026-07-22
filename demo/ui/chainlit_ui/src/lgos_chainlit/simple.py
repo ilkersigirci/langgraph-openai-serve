@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+from collections.abc import Mapping
 from typing import cast
 
 import chainlit as cl
@@ -12,11 +13,7 @@ from openai.types.chat import ChatCompletionChunk
 from pydantic import ValidationError
 
 from lgos_chainlit.auth import authenticated_user_identifier
-from lgos_chainlit.client_settings import (
-    model_client_settings,
-    settings_metadata,
-    settings_widgets,
-)
+from lgos_chainlit.client_settings import settings_metadata, settings_widgets
 from lgos_chainlit.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
@@ -27,7 +24,7 @@ from lgos_chainlit.lgos_protocol import (
     STREAM_EVENTS_METADATA_KEY,
     STREAM_EVENTS_METADATA_VALUE,
     ClientEventExtension,
-    ModelClientSettings,
+    model_client_settings,
 )
 from lgos_chainlit.settings import settings
 
@@ -40,6 +37,7 @@ discovery_client = AsyncOpenAI(
     api_key=settings.chainlit_discovery_endpoint.api_key,
 )
 logger = logging.getLogger(__name__)
+RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 
 
 def _client_event(chunk: ChatCompletionChunk) -> dict[str, object] | None:
@@ -121,8 +119,7 @@ async def on_chat_start() -> None:
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
     mark_persisted_errors_excluded(thread)
-    saved = cl.user_session.get("chat_settings")
-    await configure_chat_settings(saved if isinstance(saved, dict) else None)
+    await configure_chat_settings()
 
 
 @cl.on_message
@@ -135,9 +132,11 @@ async def on_message(_message: cl.Message) -> None:
     stream = None
 
     try:
+        defaults = cl.user_session.get(RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY)
+        selected = cl.user_session.get("chat_settings")
         metadata = settings_metadata(
-            current_client_settings(),
-            cl.user_session.get("chat_settings"),
+            defaults if isinstance(defaults, dict) else None,
+            selected if isinstance(selected, dict) else None,
         )
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
         stream = await client.chat.completions.create(
@@ -176,11 +175,12 @@ async def on_message(_message: cl.Message) -> None:
                 await stream.close()
 
 
-async def configure_chat_settings(
-    saved: dict[str, object] | None = None,
-) -> dict[str, object]:
+async def configure_chat_settings() -> None:
     """Retrieve the selected model and publish its supported settings."""
     model_id = cast(str, cl.user_session.get("chat_profile"))
+    saved = cl.user_session.get("chat_settings")
+    candidates = dict(saved) if isinstance(saved, dict) else None
+    _store_runtime_settings_defaults(None)
     try:
         model = await discovery_client.models.retrieve(model_id)
     except Exception:
@@ -190,39 +190,23 @@ async def configure_chat_settings(
             exc_info=True,
         )
         await cl.ChatSettings([]).refresh()
-        _store_client_settings(None)
-        committed = cl.user_session.get("chat_settings")
-        return committed if isinstance(committed, dict) else {}
+        return
 
-    settings = model_client_settings(model)
-    if settings is None:
+    client_settings = model_client_settings(model)
+    if client_settings is None:
         await cl.ChatSettings([]).send()
-        _store_client_settings(None)
-        return {}
+        return
 
-    widgets, values = settings_widgets(settings, saved)
-    if widgets:
-        values = await cl.ChatSettings(widgets).send()
-    else:
-        await cl.ChatSettings([]).send()
-    _store_client_settings(settings)
-    return values
+    widgets = settings_widgets(client_settings, candidates)
+    await cl.ChatSettings(widgets).send()
+    _store_runtime_settings_defaults(client_settings.defaults)
 
 
-def current_client_settings() -> ModelClientSettings | None:
-    """Parse the JSON-safe descriptor stored in the Chainlit user session."""
-    value = cl.user_session.get("model_client_settings")
-    if not isinstance(value, dict):
-        return None
-    try:
-        return ModelClientSettings.model_validate(value)
-    except ValidationError:
-        logger.warning("Ignoring invalid saved runtime settings", exc_info=True)
-        return None
-
-
-def _store_client_settings(settings: ModelClientSettings | None) -> None:
+def _store_runtime_settings_defaults(
+    defaults: Mapping[str, object] | None,
+) -> None:
+    """Store the baseline needed to encode settings on later requests."""
     cl.user_session.set(
-        "model_client_settings",
-        settings.model_dump(mode="json") if settings is not None else None,
+        RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY,
+        dict(defaults) if defaults is not None else None,
     )
