@@ -30,6 +30,8 @@ def interrupt_arguments(
     interrupt_id: str,
     payload: Any,
 ) -> str:
+    # Graph-owned payloads may contain application objects; keep the OpenAI tool
+    # call serializable without constraining the graph's internal value types.
     return json.dumps(
         {
             "version": INTERRUPT_ARGUMENT_VERSION,

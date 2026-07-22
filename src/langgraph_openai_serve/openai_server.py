@@ -81,7 +81,8 @@ class LanggraphOpenaiServe:
         logger.info("Using provided GraphRegistry instance")
         self.graph_registry = graphs
 
-        # Attach the registry to the host app for callers that inspect app state.
+        # Host integrations can inspect registered graphs without traversing the
+        # mounted OpenAI sub-application.
         self.app.state.graph_registry = self.graph_registry
 
         logger.info(

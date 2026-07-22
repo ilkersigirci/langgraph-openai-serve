@@ -108,6 +108,8 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                 custom_events.append(cast(CustomStreamPart, event))
                 continue
 
+            # Subgraph values share this stream, but only the root namespace is
+            # the registered graph's final output.
             if event.get("type") == "values" and not event.get("ns"):
                 if run.config.supports(GraphFeature.INTERRUPTS):
                     interrupt = extract_stream_interrupt(event, run.thread_id)

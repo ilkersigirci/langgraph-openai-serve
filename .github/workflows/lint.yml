@@ -1,13 +1,12 @@
 name: Lint the module
 
+# pre-commit.ci owns linting for active branches; this legacy workflow is dormant.
 on:
   push:
     branches:
-      # - main
       - DUMMY-handled-by-precommit-ci
   pull_request:
     branches:
-      # - main
       - DUMMY-handled-by-precommit-ci
 
 jobs:

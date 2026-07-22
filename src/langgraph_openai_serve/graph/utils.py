@@ -112,6 +112,8 @@ def build_runnable_config(
     configurable: dict[str, Any] | None = None,
 ) -> RunnableConfig | None:
     if settings.ENABLE_LANGFUSE is True:
+        # GraphConfig is shared across requests; add tracing without mutating its
+        # callback collection or manager.
         if callbacks is None:
             callbacks = [langfuse_handler]
         elif isinstance(callbacks, list):

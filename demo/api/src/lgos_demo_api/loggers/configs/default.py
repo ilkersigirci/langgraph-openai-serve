@@ -2,7 +2,9 @@
 
 DEFAULT_LOGGER_CONFIG = {
     "version": 1,
-    "disable_existing_loggers": False,  # NOTE: Very important
+    # dictConfig otherwise disables library loggers initialized before the demo
+    # configures logging.
+    "disable_existing_loggers": False,
     "formatters": {
         "simple": {"format": "%(asctime)s :: %(name)s :: %(message)s"},
         "extended": {
@@ -25,9 +27,6 @@ DEFAULT_LOGGER_CONFIG = {
         "cwd": {
             "()": "lgos_demo_api.loggers.filters.CwdFilter",
         },
-        # "path_shortener": {
-        #     "()": "lgos_demo_api.loggers.filters.PathShortenerFilter",
-        # }
     },
     "handlers": {
         "console": {
@@ -39,23 +38,19 @@ DEFAULT_LOGGER_CONFIG = {
         },
     },
     "loggers": {
-        # NOTE: Default root logger parameters. It is not recommended to
-        # modify root logger.
-        "": {  # root logger
-            # "level": "NOTSET",  # logs everything
+        "": {  # An empty logger name configures the root logger.
             "level": "WARNING",
-            # "handlers": ["console"],
             "propagate": True,
         },
-        "__main__": {  # if __name__ == '__main__'
+        "__main__": {
             "level": "DEBUG",
             "handlers": ["console"],
-            "propagate": True,  # Inherit root handlers
+            "propagate": True,
         },
         "langgraph_openai_serve": {
             "level": "DEBUG",
             "handlers": ["console"],
-            "propagate": True,  # Inherit root handlers
+            "propagate": True,
         },
     },
 }

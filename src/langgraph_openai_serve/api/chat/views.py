@@ -74,6 +74,8 @@ class _StreamOwner:
         if self._started:
             raise RuntimeError("A stream owner can only start one producer.")
 
+        # An unbuffered handoff propagates response backpressure into graph
+        # execution.
         send_stream, receive_stream = create_memory_object_stream[_StreamChunk](
             max_buffer_size=0
         )
@@ -104,6 +106,8 @@ class _StreamOwner:
         if not producer.done():
             cancel_requested = producer.cancel()
 
+        # Cleanup may run inside the request's cancelled scope, so shield nested
+        # stream finalizers long enough to finish.
         with CancelScope(shield=True):
             try:
                 async with aclosing(source):

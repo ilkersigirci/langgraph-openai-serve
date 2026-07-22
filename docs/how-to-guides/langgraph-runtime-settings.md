@@ -31,8 +31,8 @@ class ChatSettings(ClientSettings):
 
 
 async def answer(state: MessagesState, runtime: Runtime[ChatSettings]):
+    # Runtime context is request-scoped and remains outside checkpointed state.
     settings = runtime.context
-    # Use settings.use_history and settings.audience in the node.
     return {}
 
 

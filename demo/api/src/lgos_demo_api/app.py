@@ -67,7 +67,9 @@ def create_custom_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, specify allowed origins
+        # Local browser demos may use arbitrary origins; deployments must replace
+        # this wildcard with their trusted origins.
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -112,7 +114,6 @@ def create_custom_app() -> FastAPI:
         graphs=graph_registry,
     )
 
-    # Bind the OpenAI-compatible endpoints at settings.OPENAI_API_PREFIX.
     graph_serve.bind_openai_api()
 
     return app

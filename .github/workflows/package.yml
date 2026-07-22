@@ -42,7 +42,6 @@ jobs:
           VERSION=${{ needs.extract-version.outputs.version }}
           echo "Using version: $VERSION"
 
-          # Update pyproject.toml with the version
           sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
 
       - name: Build source distribution

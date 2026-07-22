@@ -54,14 +54,12 @@ class Settings(BaseSettings):
         if v is False:
             return v
 
-        # Check if langfuse package is installed
         if importlib.util.find_spec("langfuse") is None:
             raise RuntimeError(
                 "Langfuse is enabled but the 'langfuse' package is not installed. "
                 "Please install it, e.g., with `uv add langgraph-openai-serve[tracing]`."
             )
 
-        # Check for required environment variables
         required_env_vars = [
             "LANGFUSE_BASE_URL",
             "LANGFUSE_PUBLIC_KEY",

@@ -85,6 +85,8 @@ async def apply_migrations(
                 )
 
             async with connection.transaction():
+                # Bundled migrations are trusted application assets and may contain
+                # multiple statements, which require simple-query execution.
                 trusted_sql = cast(LiteralString, migration.sql)
                 await connection.execute(trusted_sql, prepare=False)
                 await connection.execute(
@@ -100,6 +102,8 @@ async def apply_migrations(
 
 async def setup_chainlit_schema(database_url: str) -> None:
     """Initialize or migrate the Chainlit schema as a deployment task."""
+    # Autocommit leaves each migration's explicit transaction as its atomic
+    # boundary.
     connection = cast(
         "AsyncConnection[dict[str, Any]]",
         await AsyncConnection.connect(

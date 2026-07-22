@@ -79,7 +79,7 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
                 try:
                     decoded_arguments = json.loads(raw_arguments)
                 except json.JSONDecodeError:
-                    # Let LangChain produce its detailed invalid-call error below.
+                    # Preserve LangChain's richer invalid-tool-call diagnostics.
                     pass
                 else:
                     if not isinstance(decoded_arguments, dict):

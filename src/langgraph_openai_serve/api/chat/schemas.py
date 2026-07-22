@@ -194,7 +194,6 @@ class ChatCompletionResponse(BaseModel):
     usage: UsageInfo | None = None
 
 
-# Stream models
 class ChatCompletionStreamToolCallFunction(BaseModel):
     """Model for a streaming tool call function delta."""
 

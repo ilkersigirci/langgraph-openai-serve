@@ -180,14 +180,14 @@ class ChatCompletionStreamResponseBuilder:
         )
         data = response.model_dump(mode="json")
         if annotations:
-            # Compatibility extension: Chat Completions delta types do not
-            # currently declare annotations.
+            # The Chat Completions delta schema omits annotations, so add the
+            # compatibility extension after validating the standard chunk.
             data["choices"][0]["delta"]["annotations"] = [
                 annotation.model_dump(mode="json") for annotation in annotations
             ]
         if client_event_extension is not None:
-            # Keep this a complete chunk while matching the documented empty
-            # Chat Completions delta shape for non-text events.
+            # Event extensions remain complete Chat Completions chunks; their
+            # empty delta keeps extension data separate from assistant text.
             data["choices"][0]["delta"] = {}
             data["langgraph_openai_serve"] = client_event_extension
         return self._format_data(data)

@@ -8,7 +8,6 @@
     "njpwerner.autodocstring",
     "charliermarsh.ruff",
     "astral-sh.ty",
-    // "ms-python.mypy-type-checker",
   ],
   "unwantedRecommendations": [
     "ms-python.isort",

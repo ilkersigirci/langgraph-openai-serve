@@ -69,12 +69,6 @@ test = [
 [tool.uv]
 default-groups = ["dev", "doc", "test"]
 
-# environments = [
-#   "(platform_python_implementation == 'CPython' and platform_machine == 'x86_64' and sys_platform == 'linux')",
-#   "(platform_python_implementation == 'CPython' and platform_machine == 'AMD64' and sys_platform == 'win32')",
-#   "(platform_python_implementation == 'CPython' and platform_machine == 'x86_64' and sys_platform == 'darwin')",
-# ]
-
 [tool.pytest.ini_options]
 minversion = "8.3.3"
 addopts = [
@@ -95,8 +89,6 @@ line-length = 88
 src = ["src"]
 respect-gitignore = true
 
-# extend-include = []
-
 extend-exclude = [
     "docs",
 ]
@@ -104,20 +96,9 @@ extend-exclude = [
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
-# "*.ipynb" = ["E501"]  # disable line-too-long in notebooks
-
-# "path/to/file.py" = ["E402"]
-# 'langgraph_openai/__init__.py' = ['F405', 'F403']
-
-# [tool.ruff.flake8-quotes]
-# inline-quotes = "single"
-# multiline-quotes = "double"
-# docstring-quotes = "double"
 
 [tool.ruff.format]
 skip-magic-trailing-comma = false
-# indent-style = "space"
-# preview = true
 
 [tool.ruff.lint]
 
@@ -152,23 +133,11 @@ unfixable = [
     "F401" # Unused imports.
 ]
 
-#extend-select = []
-
-# [tool.ruff.lint.flake8-import-conventions.extend-aliases]
-# some_alias = ""
-
-
-
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-# force-wrap-aliases = true
-# known-first-party = ["SomeLibrary"]
-# known-third-party = ["SomeLibrary"]
-
-
 
 [tool.coverage.run]
 source = ['src/langgraph_openai_serve']
@@ -183,12 +152,6 @@ exclude_lines = [
     'if TYPE_CHECKING:',
     '@overload',
 ]
-# show_missing = True
-
-# [tool.coverage.paths]
-# source = [
-#     'src/langgraph_openai/',
-# ]
 
 [build-system]
 build-backend = "uv_build"

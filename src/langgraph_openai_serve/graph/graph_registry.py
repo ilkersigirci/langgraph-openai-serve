@@ -138,7 +138,8 @@ class GraphConfig(BaseModel):
                 "A graph that produces runtime context must declare context_schema."
             )
 
-        # LangGraph owns context_schema coercion when the graph is invoked.
+        # Preserve server-owned context objects; LangGraph applies context_schema
+        # coercion when it invokes the graph.
         return context
 
     async def render_output(self, output: Any) -> str:
