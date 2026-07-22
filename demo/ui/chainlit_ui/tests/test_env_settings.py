@@ -1,3 +1,5 @@
+"""Environment settings coverage for the standalone Chainlit application."""
+
 import pytest
 from pydantic import ValidationError
 
