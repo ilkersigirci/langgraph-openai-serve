@@ -1,4 +1,5 @@
 SHELL := /bin/sh
+LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 
 .PHONY: help sync test lint check compose-config setup-api run-api setup-chainlit run-chainlit sync-openwebui compose compose-dev
 .DEFAULT_GOAL := help
@@ -12,7 +13,7 @@ sync: ## Synchronize all three projects from their lockfiles
 	uv --directory ui/openwebui sync --locked
 
 test: ## Run all standalone project tests from their lockfiles
-	uv run --directory api --locked pytest
+	$(LOCAL_API_RUN) pytest
 	uv run --directory ui/chainlit_ui --locked pytest
 	uv run --directory ui/openwebui --locked pytest
 
@@ -31,10 +32,10 @@ compose-config: ## Validate published and development Compose models
 check: test lint compose-config ## Run every standalone validation
 
 setup-api: ## Initialize or migrate the API checkpoint database
-	uv run --directory api --locked --env-file ../.env lgos-demo-api-setup
+	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-setup
 
 run-api: setup-api ## Run the demo API locally
-	uv run --directory api --locked --env-file ../.env lgos-demo-api
+	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api
 
 setup-chainlit: ## Initialize or migrate the Chainlit database
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env lgos-chainlit-setup

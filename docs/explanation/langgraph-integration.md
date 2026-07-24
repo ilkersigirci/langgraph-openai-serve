@@ -10,7 +10,10 @@ A registered graph name becomes the OpenAI `model` value clients pass to
 ```python
 GraphRegistry(
     registry={
-        "chat": GraphConfig(graph=chat_graph, streamable_node_names=["generate"]),
+        "chat": GraphConfig(
+            graph=chat_graph,
+            streamable_node_names=["generate"],
+        ),
         "advanced-mcp-tools": GraphConfig(graph=advanced_graph),
     }
 )
@@ -98,10 +101,15 @@ before returning one HTTP response.
     `stream_run()`. The runner consumes `messages` and `custom` events, plus
     `updates` for interrupt-enabled graphs. Only `AIMessageChunk` values from
     configured streamable nodes become text chunks. The chat service immediately
-    maps explicitly public `client_event()` values into namespaced chunks when
-    the request opts into v1 events. It continues buffering citation events for
-    final annotations and renders interrupts as tool-call chunks. Unknown custom
-    events stay private.
+    maps explicitly public `client_event()` and `status_event()` values into
+    namespaced chunks when the request opts into v1 events. It continues
+    buffering citation events for final annotations and renders interrupts as
+    tool-call chunks. Unknown custom events stay private.
+
+Status updates use LangGraph's native
+[`custom` stream mode](https://docs.langchain.com/oss/python/langgraph/streaming#stream-custom-data).
+No middleware is needed. Graph code emits a status exactly where it has enough
+application context to describe the long-running work in user-facing language.
 
 See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.
 

@@ -110,6 +110,9 @@ async def on_message(_message: cl.Message) -> None:
         else:
             await send_ui_message(error)
     finally:
-        if stream is not None:
-            with contextlib.suppress(Exception):
-                await stream.close()
+        try:
+            await client_events.close()
+        finally:
+            if stream is not None:
+                with contextlib.suppress(Exception):
+                    await stream.close()

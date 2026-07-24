@@ -75,8 +75,8 @@ pass-through route is required.
 
 | Demo client | Runtime settings | Interrupts | Client events | Citations |
 | --- | --- | --- | --- | --- |
-| Chainlit | Renders supported discovered fields | Dedicated approval UI | Live activity panel | Markdown content |
-| Open WebUI manifold Pipe | Server defaults | Approval through the Pipe | Not requested | Streaming annotations and Markdown |
+| Chainlit | Renders supported discovered fields | Dedicated approval UI | Native status task list and live activity panel | Markdown content |
+| Open WebUI manifold Pipe | Server defaults | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
 | Open WebUI `simple-graph` Pipe | Fixed `use_history` and `audience` UserValves | None | Not requested | Assistant text only |
 
 Direct OpenAI SDK clients need no demo adapter. They can use every core field
