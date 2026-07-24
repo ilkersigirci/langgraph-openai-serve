@@ -14,7 +14,9 @@ client integrations, gateway configuration, and a complete Compose stack.
     The PyPI package provides the OpenAI-compatible server integration. It
     contains no built-in graph, UI, gateway, database, or runnable application.
     Everything described in this section belongs to `demo/` and can be copied
-    or operated independently of the package source checkout.
+    or operated independently of the package source checkout with published
+    images. The development Compose override intentionally uses the parent
+    checkout as an editable API dependency.
 
 <div class="grid cards" markdown>
 
@@ -32,7 +34,8 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-docker:{ .lg .middle } __Run the complete stack__
 
-    Use published images or build the independently locked demo applications.
+    Use published images or build the demo applications with an editable LGOS
+    checkout.
 
     [:octicons-arrow-right-24: Docker Compose](docker.md)
 

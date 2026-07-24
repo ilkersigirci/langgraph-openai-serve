@@ -850,7 +850,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.5.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -860,7 +860,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/6e/d0207f17daf6e3539d67a6a5af1a4ce19b3998731e02b8d327bbf03f1c52/langgraph_openai_serve-0.5.0.tar.gz", hash = "sha256:f3ceca441c441390c48c81a93d8be8396757806e376c77c926914db67b817f15", size = 23835, upload-time = "2026-07-17T21:37:15.039Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/c0/347850d55b9f6771507cbe09719221ff276cb21d41690d19bda80494a17e/langgraph_openai_serve-0.6.0.tar.gz", hash = "sha256:30d3e29c72748ecc5d97a186341fa7429df61902f3842435a6a2bf95c04124af", size = 24121, upload-time = "2026-07-21T20:13:48.068Z" }
 
 [package.optional-dependencies]
 tracing = [
@@ -963,7 +963,7 @@ requires-dist = [
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
     { name = "langgraph", specifier = ">=1.1.10,<2.0.0" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.1.0" },
-    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.5.0,<0.6.0" },
+    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.6.0,<0.7.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.11,<3" },

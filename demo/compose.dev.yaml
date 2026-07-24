@@ -4,13 +4,29 @@ services:
     pull_policy: build
     build:
       context: ./api
+      target: development
+      additional_contexts:
+        lgos: ..
       args:
         PUID: ${PUID:-1000}
         PGID: ${PGID:-1000}
+    volumes:
+      - type: bind
+        source: ../src/langgraph_openai_serve
+        target: /workspace/langgraph-openai-serve/src/langgraph_openai_serve
+        read_only: true
+      - type: bind
+        source: ./api/src/lgos_demo_api
+        target: /app/src/lgos_demo_api
+        read_only: true
     develop:
       watch:
+        - action: restart
+          path: ../src/langgraph_openai_serve
         - action: rebuild
-          path: ./api/src
+          path: ../pyproject.toml
+        - action: restart
+          path: ./api/src/lgos_demo_api
         - action: rebuild
           path: ./api/pyproject.toml
         - action: rebuild
