@@ -5,7 +5,7 @@ import logging
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from lgos_chainlit.database import setup_chainlit_schema
+from lgos_chainlit.db.database import setup_chainlit_schema
 
 logger = logging.getLogger(__name__)
 

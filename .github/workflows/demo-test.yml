@@ -22,7 +22,7 @@ jobs:
   compose:
     name: Validate isolated Compose project
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,6 +44,38 @@ jobs:
         run: |
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+
+      - name: Check API Dockerfile
+        run: docker buildx build --check demo/api
+
+      - name: Build editable API image
+        run: >-
+          docker compose
+          -f demo/compose.yaml
+          -f demo/compose.dev.yaml
+          build lgos-demo-api
+
+      - name: Verify editable API packages
+        run: |
+          docker run --rm -i lgos-demo-api:development python - <<'PY'
+          import importlib.metadata as metadata
+          import json
+          from pathlib import Path
+
+          import langgraph_openai_serve as lgos
+          import lgos_demo_api as demo
+
+          lgos_root = Path("/workspace/langgraph-openai-serve/src")
+          assert metadata.version("langgraph-openai-serve") == "0.0.1"
+          assert Path(lgos.__file__).is_relative_to(lgos_root)
+          assert Path(demo.__file__).is_relative_to(Path("/app/src"))
+
+          for package in ("langgraph-openai-serve", "lgos-demo-api"):
+              direct_url = metadata.distribution(package).read_text(
+                  "direct_url.json"
+              )
+              assert json.loads(direct_url)["dir_info"]["editable"]
+          PY
 
   standalone:
     name: Test isolated ${{ matrix.name }} project

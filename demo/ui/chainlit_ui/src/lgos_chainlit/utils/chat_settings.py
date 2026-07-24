@@ -1,20 +1,64 @@
-"""Translate LGOS model metadata into a small set of Chainlit settings."""
+"""Translate LGOS model metadata into Chainlit chat settings."""
 
 import json
+import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
+import chainlit as cl
 from chainlit.input_widget import InputWidget, Select, Switch, TextInput
 
 from lgos_chainlit.lgos_protocol import (
     OPENAI_METADATA_VALUE_MAX_LENGTH,
     RUNTIME_SETTINGS_METADATA_KEY,
     ModelClientSettings,
+    model_client_settings,
 )
+from lgos_chainlit.utils.clients import discovery_client
+
+logger = logging.getLogger(__name__)
+RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 
 
 class SettingsTransportError(ValueError):
     """A committed UI setting cannot be represented by the OpenAI request."""
+
+
+async def configure_chat_settings() -> None:
+    """Retrieve the selected model and publish its supported settings."""
+    model_id = cast(str, cl.user_session.get("chat_profile"))
+    saved = cl.user_session.get("chat_settings")
+    candidates = dict(saved) if isinstance(saved, dict) else None
+    _store_runtime_settings_defaults(None)
+    try:
+        model = await discovery_client.models.retrieve(model_id)
+    except Exception:
+        logger.warning(
+            "Runtime settings discovery failed for %s; settings are inactive",
+            model_id,
+            exc_info=True,
+        )
+        await cl.ChatSettings([]).refresh()
+        return
+
+    client_settings = model_client_settings(model)
+    if client_settings is None:
+        await cl.ChatSettings([]).send()
+        return
+
+    widgets = settings_widgets(client_settings, candidates)
+    await cl.ChatSettings(widgets).send()
+    _store_runtime_settings_defaults(client_settings.defaults)
+
+
+def chat_settings_metadata() -> dict[str, str]:
+    """Encode the current settings relative to their discovered defaults."""
+    defaults = cl.user_session.get(RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY)
+    selected = cl.user_session.get("chat_settings")
+    return settings_metadata(
+        defaults if isinstance(defaults, dict) else None,
+        selected if isinstance(selected, dict) else None,
+    )
 
 
 def settings_widgets(
@@ -77,6 +121,16 @@ def settings_metadata(
         )
 
     return {RUNTIME_SETTINGS_METADATA_KEY: encoded}
+
+
+def _store_runtime_settings_defaults(
+    defaults: Mapping[str, object] | None,
+) -> None:
+    """Store the baseline needed to encode settings on later requests."""
+    cl.user_session.set(
+        RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY,
+        dict(defaults) if defaults is not None else None,
+    )
 
 
 def _widget_for_property(

@@ -26,7 +26,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-chainlit` | Apply Chainlit migrations and run the UI locally |
 | `make sync-openwebui` | Create or update the bundled Open WebUI Functions |
 | `make compose` | Run the stack with published project-owned images |
-| `make compose-dev` | Build the API and Chainlit images, then run the stack |
+| `make compose-dev` | Build local images; run the API and LGOS packages editable |
 | `make sync` | Synchronize all three projects from their lockfiles |
 | `make test` | Test all three projects from their lockfiles |
 | `make lint` | Check all three projects with Ruff |

@@ -3,7 +3,7 @@
 from typing import Literal
 
 from openai.types.chat.chat_completion_message import Annotation, AnnotationURLCitation
-from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 CLIENT_EVENT_SCHEMA_VERSION = 1
 _CLIENT_EVENT_ENVELOPE_TYPE = "langgraph_openai_serve.client_event"
@@ -14,17 +14,39 @@ ClientEventType = Literal["status", "progress", "artifact"]
 class _ClientEventData(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    type: ClientEventType
-    namespace: tuple[str, ...] = ()
-    data: JsonValue
+    type: ClientEventType = Field(description="Kind of client event.")
+    namespace: tuple[str, ...] = Field(
+        default=(),
+        description="Author-defined path used to group related events.",
+    )
+    data: JsonValue = Field(description="JSON-safe event payload.")
 
 
 class _ClientEventEnvelope(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    type: Literal["langgraph_openai_serve.client_event"]
-    schema_version: Literal[1]
-    event: _ClientEventData
+    type: Literal["langgraph_openai_serve.client_event"] = Field(
+        description="Envelope type discriminator.",
+    )
+    schema_version: Literal[1] = Field(description="Client-event schema version.")
+    event: _ClientEventData = Field(description="Public event exposed to clients.")
+
+
+class _StatusEventData(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    description: str = Field(
+        min_length=1,
+        description="User-facing status text.",
+    )
+    done: bool = Field(
+        default=False,
+        description="Whether the reported work is complete.",
+    )
+    hidden: bool = Field(
+        default=False,
+        description="Whether clients should hide the status.",
+    )
 
 
 def client_event(
@@ -44,6 +66,26 @@ def client_event(
         ),
     )
     return envelope.model_dump(mode="json")
+
+
+def status_event(
+    description: str,
+    *,
+    done: bool = False,
+    hidden: bool = False,
+    namespace: tuple[str, ...] = (),
+) -> dict[str, object]:
+    """Build a portable status update for native client UI."""
+    data = _StatusEventData(
+        description=description,
+        done=done,
+        hidden=hidden,
+    )
+    return client_event(
+        "status",
+        data.model_dump(mode="json"),
+        namespace=namespace,
+    )
 
 
 def client_event_extension(value: object) -> dict[str, object] | None:

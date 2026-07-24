@@ -42,26 +42,23 @@ async def test_showcase_streams_a_small_event_timeline(
     events = [_public_event(item) for item in stream if isinstance(item, dict)]
 
     assert [(event["type"], event["namespace"]) for event in events] == [
-        ("status", ["research"]),
         ("progress", ["research"]),
         ("progress", ["research"]),
         ("progress", ["research"]),
         ("artifact", ["research", "report"]),
     ]
-    assert [event["data"].get("completed") for event in events] == [
-        None,
-        1,
-        2,
-        3,
-        None,
-    ]
+    assert [
+        event["data"]["completed"] for event in events if event["type"] == "progress"
+    ] == [1, 2, 3]
     assert events[-1]["data"]["id"] == "compatibility-brief"
     assert "".join(item for item in stream if isinstance(item, str)) == (
         custom_events.ANSWER
     )
 
     event_positions = [
-        index for index, item in enumerate(stream) if isinstance(item, dict)
+        index
+        for index, item in enumerate(stream)
+        if isinstance(item, dict) and _public_event(item)["type"] == "progress"
     ]
-    for start, stop in pairwise(event_positions[1:]):
+    for start, stop in pairwise(event_positions):
         assert any(isinstance(item, str) for item in stream[start + 1 : stop])

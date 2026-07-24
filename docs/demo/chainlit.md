@@ -109,15 +109,22 @@ visible but is excluded from later model context because it is incomplete.
 
 The UI renders Markdown links and images from assistant content. It does not
 consume structured OpenAI citation annotations. The bundled adapter opts into
-LGOS client stream events and renders them as one live-updating Chainlit
+LGOS client stream events. Portable status updates render as a native Chainlit
+[`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist). Other
+events render as one live-updating Chainlit
 [custom element](https://docs.chainlit.io/api-reference/elements/custom) per
 completion. The panel shows event type, namespace, progress, and artifact
 details, with a JSON fallback for other payload shapes. Its host message is
 excluded from model context. Unknown extension versions are ignored.
 
-To see the demo, select `custom-event-showcase` and ask **Build the compatibility
-report.** The activity panel advances from status through progress to an
-artifact while the assistant answer streams independently.
+To see native status rendering, select `status-events` and ask **Prepare the
+media workflow.** Each new status completes the previous task, and the final
+`done=True` update marks the list done. The task list is live UI state and is
+not restored from persisted chat history.
+
+Select `custom-event-showcase` and ask **Build the compatibility report** to see
+the separate activity panel render progress and an artifact while assistant
+text streams independently.
 
 Behind an OpenAI-compatible proxy, the activity panel requires a raw
 pass-through inference URL. A schema-normalizing route may still stream the

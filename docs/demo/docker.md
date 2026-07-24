@@ -10,12 +10,14 @@ The demo uses three independent uv projects rather than a uv workspace:
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command |
 
-Each project-owned image has only its project directory as build context. The
-Open WebUI integration uses the official Open WebUI image and keeps its Function
-sync command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
+Published project-owned images use only their project directories as build
+contexts. The development override additionally supplies the parent LGOS
+checkout as a named context for the API's editable install. The Open WebUI
+integration uses the official Open WebUI image and keeps its Function sync
+command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
 Python environment, or shared lockfile. Shared Compose-only configuration lives
 under `demo/docker/`. The API package includes the compact Markdown corpus used
-by `lgos-rag`; neither image nor Compose reads files above `demo/`.
+by `lgos-rag`.
 
 ## Compose Modes
 
@@ -48,24 +50,30 @@ directories. The checkout includes each empty service directory with a tracked
 
 === "Build demo projects"
 
-    Apply the explicit development model. The API and Chainlit services build
-    from their own Dockerfiles and lockfiles:
+    Apply the explicit development model from the LGOS repository checkout.
+    The API and Chainlit services build locally from their Dockerfiles and
+    lockfiles. The API image installs the parent LGOS checkout as an editable
+    package:
 
     ```bash
     docker compose -f compose.yaml -f compose.dev.yaml up --build
     ```
 
-    To rebuild on changes:
+    To watch for changes:
 
     ```bash
     docker compose -f compose.yaml -f compose.dev.yaml watch
     ```
 
-=== "Test this LGOS checkout"
+    Changes to either the demo API source or the parent LGOS package restart
+    the API against their narrow, read-only bind mounts. Both packages are
+    installed editable in the development image. Dependency metadata and
+    lockfile changes rebuild the image.
 
-    Only the demo API depends on LGOS. Its Docker build intentionally consumes
-    the PyPI dependency recorded in the API lock. For immediate feedback against
-    the parent LGOS checkout, use uv's temporary editable overlay:
+=== "Test this LGOS checkout without containers"
+
+    For immediate local feedback without containers, use uv's temporary
+    editable overlay:
 
     ```bash
     uv run --directory api --locked --with-editable ../.. pytest
@@ -133,8 +141,9 @@ schema migrations.
 
 ## What The Stack Demonstrates
 
-- The API and Chainlit applications build from their own contexts and
-  lockfiles.
+- The API and Chainlit applications use their own lockfiles. The production API
+  image uses the locked PyPI release in a minimal runtime, while the development
+  image installs both the API and the parent LGOS checkout as editable packages.
 - Third-party services use pinned official images rather than being repackaged.
 - Health checks and `pre_start` jobs establish service and schema readiness.
 - Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and

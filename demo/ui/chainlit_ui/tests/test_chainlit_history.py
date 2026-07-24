@@ -13,21 +13,19 @@ async def test_text_only_chat_messages_ignores_stale_user_session_history(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
 
-    from lgos_chainlit import history
+    from lgos_chainlit.utils import chat
 
     init_http_context()
-    history.cl.chat_context.clear()
-    history.cl.user_session.set("messages", [])
-    history.cl.chat_context.add(
-        history.cl.Message(content="Hello", type="user_message")
-    )
-    history.cl.chat_context.add(history.cl.Message(content="Hello!"))
+    chat.cl.chat_context.clear()
+    chat.cl.user_session.set("messages", [])
+    chat.cl.chat_context.add(chat.cl.Message(content="Hello", type="user_message"))
+    chat.cl.chat_context.add(chat.cl.Message(content="Hello!"))
 
-    assert history.text_only_chat_messages() == [
+    assert chat.text_only_chat_messages() == [
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hello!"},
     ]
-    assert history.cl.user_session.get("messages") == []
+    assert chat.cl.user_session.get("messages") == []
 
 
 @pytest.mark.anyio
@@ -39,33 +37,33 @@ async def test_text_only_chat_message_policy(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
 
-    from lgos_chainlit import history
+    from lgos_chainlit.utils import chat
 
     init_http_context()
-    history.cl.chat_context.clear()
+    chat.cl.chat_context.clear()
 
     included_messages = [
-        history.cl.Message(content="User turn", type="user_message"),
-        history.cl.Message(content="Model turn"),
-        history.cl.Message(content="Task manually stopped."),
+        chat.cl.Message(content="User turn", type="user_message"),
+        chat.cl.Message(content="Model turn"),
+        chat.cl.Message(content="Task manually stopped."),
     ]
     excluded_messages = [
-        history.cl.Message(content="Partial assistant output"),
-        history.cl.Message(content="Chat completion failed: unavailable"),
-        history.cl.AskActionMessage(content="Approve this action?", actions=[]),
-        history.cl.Message(content="Approval timed out."),
+        chat.cl.Message(content="Partial assistant output"),
+        chat.cl.Message(content="Chat completion failed: unavailable"),
+        chat.cl.AskActionMessage(content="Approve this action?", actions=[]),
+        chat.cl.Message(content="Approval timed out."),
     ]
     for message in excluded_messages:
-        history.mark_model_context_excluded(message)
+        chat.mark_model_context_excluded(message)
 
     for message in [
         *included_messages,
         *excluded_messages,
-        history.cl.ErrorMessage(content="Chainlit callback failed"),
+        chat.cl.ErrorMessage(content="Chainlit callback failed"),
     ]:
-        history.cl.chat_context.add(message)
+        chat.cl.chat_context.add(message)
 
-    assert history.text_only_chat_messages() == [
+    assert chat.text_only_chat_messages() == [
         {"role": "user", "content": "User turn"},
         {"role": "assistant", "content": "Model turn"},
         {"role": "assistant", "content": "Task manually stopped."},
@@ -81,10 +79,10 @@ async def test_persisted_chainlit_errors_are_excluded_after_resume(
     from chainlit.context import init_http_context
     from chainlit.types import ThreadDict
 
-    from lgos_chainlit import history
+    from lgos_chainlit.utils import chat
 
     init_http_context()
-    history.cl.chat_context.clear()
+    chat.cl.chat_context.clear()
     thread = cast(
         ThreadDict,
         {
@@ -109,15 +107,15 @@ async def test_persisted_chainlit_errors_are_excluded_after_resume(
         },
     )
 
-    history.mark_persisted_errors_excluded(thread)
+    chat.mark_persisted_errors_excluded(thread)
     for step in thread["steps"]:
-        history.cl.chat_context.add(history.cl.Message.from_dict(step))
+        chat.cl.chat_context.add(chat.cl.Message.from_dict(step))
 
     assert thread["steps"][0]["metadata"] == {
         "existing": "value",
-        history.MODEL_CONTEXT_EXCLUDED_KEY: True,
+        chat.MODEL_CONTEXT_EXCLUDED_KEY: True,
     }
-    assert history.text_only_chat_messages() == [
+    assert chat.text_only_chat_messages() == [
         {"role": "assistant", "content": "Valid turn"}
     ]
 
@@ -127,13 +125,13 @@ def test_mark_model_context_excluded_preserves_message_metadata(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    from lgos_chainlit import history
+    from lgos_chainlit.utils import chat
 
     message = Mock(metadata={"existing": "value"})
 
-    history.mark_model_context_excluded(message)
+    chat.mark_model_context_excluded(message)
 
     assert message.metadata == {
         "existing": "value",
-        history.MODEL_CONTEXT_EXCLUDED_KEY: True,
+        chat.MODEL_CONTEXT_EXCLUDED_KEY: True,
     }

@@ -128,15 +128,15 @@ response = client.chat.completions.create(
 )
 ```
 
-Try the deterministic custom-event showcase:
+Try the deterministic status-event showcase:
 
 ```python
 stream = client.chat.completions.create(
-    model="custom-event-showcase",
+    model="status-events",
     messages=[
         {
             "role": "user",
-            "content": "Build the compatibility report.",
+            "content": "Prepare the media workflow.",
         }
     ],
     stream=True,
@@ -153,9 +153,10 @@ for chunk in stream:
         print(text, end="", flush=True)
 ```
 
-The graph emits `status`, `progress`, and `artifact` events. Progress updates
-are interleaved with assistant text, so clients can update passive UI without
-changing the ordinary text stream.
+The graph emits `Generating audio`, `Calculating embeddings`, and a final
+`Media ready` status with `done=True`. The separate `custom-event-showcase`
+graph demonstrates application-defined `progress` and `artifact` events
+interleaved with assistant text.
 
 ## Try A Demo Client
 

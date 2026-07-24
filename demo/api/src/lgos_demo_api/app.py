@@ -25,6 +25,7 @@ from lgos_demo_api.graphs.custom_io import custom_io_graph_config
 from lgos_demo_api.graphs.interruptible import create_interruptible_graph
 from lgos_demo_api.graphs.lgos_rag import lgos_rag
 from lgos_demo_api.graphs.simple import SimpleContext, simple_graph
+from lgos_demo_api.graphs.status_events import status_event_graph_config
 from lgos_demo_api.loggers.setup import setup_logging
 from lgos_demo_api.settings import settings
 
@@ -98,6 +99,7 @@ def create_custom_app() -> FastAPI:
             "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "custom-event-showcase": custom_event_showcase_graph_config,
+            "status-events": status_event_graph_config,
             "interruptible-approval": GraphConfig(
                 graph=lambda: app.state.interruptible_graph,
                 request_to_input=lambda request, messages: {

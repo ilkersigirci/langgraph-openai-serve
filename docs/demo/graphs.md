@@ -9,7 +9,8 @@ none is installed as a built-in model by the `langgraph-openai-serve` package.
 | `citation-events` | Structured OpenAI URL citations with portable Markdown content | None |
 | `advanced-mcp-tools` | Async graph factories and a mock MCP-style tool | None |
 | `complex-subgraphs` | Router-selected subgraphs and nested streamed output | None |
-| `custom-event-showcase` | Public status, progress, and artifact events interleaved with text | None |
+| `status-events` | Portable status updates for native client UI | None |
+| `custom-event-showcase` | Public progress and artifact events interleaved with text | None |
 | `interruptible-approval` | Checkpointed human approval represented as an OpenAI tool call | PostgreSQL |
 | `simple-graph` | Streamed model output and discoverable runtime settings | Upstream chat model |
 | `lgos-rag` | Agentic retrieval over the packaged demo corpus | Upstream chat and embedding models |
@@ -21,9 +22,9 @@ with the [demo API instructions](api.md#start-postgresql-and-the-api).
 !!! tip "Start without provider credentials"
 
     Use `custom-input-output-context`, `citation-events`,
-    `advanced-mcp-tools`, `complex-subgraphs`, `custom-event-showcase`, or
-    `interruptible-approval` to explore the transport without a real model API
-    key.
+    `advanced-mcp-tools`, `complex-subgraphs`, `status-events`,
+    `custom-event-showcase`, or `interruptible-approval` to explore the
+    transport without a real model API key.
 
 ## Source Map
 
@@ -43,8 +44,10 @@ All graph code is owned by the independent `demo/api` project:
   an async factory and mock tool.
 - `demo/api/src/lgos_demo_api/graphs/complex_subgraphs.py` and
   `graphs/subgraphs/` implement router-selected specialists.
+- `demo/api/src/lgos_demo_api/graphs/status_events.py` emits portable status
+  updates.
 - `demo/api/src/lgos_demo_api/graphs/custom_events.py` emits explicitly public
-  client events.
+  progress and artifact events.
 - `demo/api/src/lgos_demo_api/graphs/interruptible.py` pauses and resumes a
   checkpointed approval flow.
 - `demo/api/src/lgos_demo_api/graphs/citations.py` emits citation events that
