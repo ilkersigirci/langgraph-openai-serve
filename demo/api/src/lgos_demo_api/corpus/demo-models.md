@@ -13,8 +13,9 @@ The demo API registers these graph names as OpenAI models:
 - `advanced-mcp-tools` demonstrates an asynchronous graph factory and mock
   MCP-style tools.
 - `complex-subgraphs` demonstrates routing across nested specialist graphs.
-- `custom-event-showcase` streams explicitly public status, progress, and
-  artifact events among ordinary assistant text.
+- `status-events` streams portable status updates for native client UI.
+- `custom-event-showcase` streams explicitly public progress and artifact
+  events among ordinary assistant text.
 - `interruptible-approval` persists an approval interrupt and resumes it from a
   standard OpenAI tool result.
 

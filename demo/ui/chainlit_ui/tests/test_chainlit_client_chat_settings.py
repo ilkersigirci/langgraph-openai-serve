@@ -9,7 +9,7 @@ from lgos_chainlit.lgos_protocol import ModelClientSettings, model_client_settin
 
 
 def client_module():
-    return importlib.import_module("lgos_chainlit.client_settings")
+    return importlib.import_module("lgos_chainlit.utils.chat_settings")
 
 
 def test_invalid_saved_values_use_defaults(

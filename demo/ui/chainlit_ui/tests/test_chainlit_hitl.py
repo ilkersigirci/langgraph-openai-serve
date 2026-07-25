@@ -126,7 +126,6 @@ async def test_completion_errors_are_excluded_from_model_context(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     hitl = importlib.import_module("lgos_chainlit.hitl")
     error_message = Mock(metadata=None, send=AsyncMock())
-    mark_model_context_excluded = Mock()
     monkeypatch.setattr(hitl, "text_only_chat_messages", Mock(return_value=[]))
     monkeypatch.setattr(
         hitl,
@@ -134,13 +133,8 @@ async def test_completion_errors_are_excluded_from_model_context(
         AsyncMock(side_effect=RuntimeError("backend unavailable")),
     )
     monkeypatch.setattr(hitl.cl, "Message", Mock(return_value=error_message))
-    monkeypatch.setattr(
-        hitl,
-        "mark_model_context_excluded",
-        mark_model_context_excluded,
-    )
 
     await hitl.on_message(Mock())
 
-    mark_model_context_excluded.assert_called_once_with(error_message)
+    assert error_message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
     error_message.send.assert_awaited_once_with()

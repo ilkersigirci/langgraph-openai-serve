@@ -1,7 +1,7 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.5
+version: 0.6
 """
 
 import json
@@ -10,10 +10,15 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from openai import AsyncOpenAI, OpenAIError
-from openai.lib.streaming.chat import AsyncChatCompletionStream, ContentDeltaEvent
+from openai.lib.streaming.chat import (
+    AsyncChatCompletionStream,
+    ChunkEvent,
+    ContentDeltaEvent,
+)
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
+    ChatCompletionChunk,
     ChatCompletionMessage,
     ChatCompletionMessageParam,
     ChatCompletionMessageToolCall,
@@ -27,6 +32,9 @@ from pydantic import BaseModel, Field
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/interrupts.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
+LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
+STREAM_EVENTS_METADATA_VALUE = "v1"
 THREAD_METADATA_KEY = "langgraph_thread_id"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
 PipeChunk = str | dict[str, Any]
@@ -59,6 +67,7 @@ class Pipe:
         self,
         body: dict[str, Any],
         __event_call__: Any = None,
+        __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
         thread_id = self._thread_id(__metadata__ or {})
@@ -73,7 +82,7 @@ class Pipe:
 
         try:
             async with self._chat(messages, thread_id, model_id) as stream:
-                async for delta in self._content_deltas(stream):
+                async for delta in self._content_deltas(stream, __event_emitter__):
                     yield delta
                 response = await stream.get_final_completion()
 
@@ -120,7 +129,7 @@ class Pipe:
                 ),
             ]
             async with self._chat(resume_messages, thread_id, model_id) as stream:
-                async for delta in self._content_deltas(stream):
+                async for delta in self._content_deltas(stream, __event_emitter__):
                     yield delta
                 response = await stream.get_final_completion()
 
@@ -179,11 +188,16 @@ class Pipe:
     async def _content_deltas(
         self,
         stream: AsyncChatCompletionStream[Any],
+        event_emitter: Any = None,
     ) -> AsyncIterator[str]:
-        """Yield text while retaining internal tool calls in the SDK accumulator."""
+        """Yield text and emit portable status updates."""
         async for event in stream:
             if isinstance(event, ContentDeltaEvent):
                 yield event.delta
+            elif isinstance(event, ChunkEvent) and event_emitter is not None:
+                status = self._status_event(event.chunk)
+                if status is not None:
+                    await event_emitter(status)
 
     @asynccontextmanager
     async def _chat(
@@ -197,7 +211,10 @@ class Pipe:
             client.chat.completions.stream(
                 model=model_id,
                 messages=messages,
-                metadata={THREAD_METADATA_KEY: thread_id},
+                metadata={
+                    THREAD_METADATA_KEY: thread_id,
+                    STREAM_EVENTS_METADATA_KEY: STREAM_EVENTS_METADATA_VALUE,
+                },
             ) as stream,
         ):
             yield stream
@@ -219,6 +236,41 @@ class Pipe:
             raise ValueError("Open WebUI did not provide a valid model ID.")
 
         return model_id
+
+    def _status_event(
+        self,
+        chunk: ChatCompletionChunk,
+    ) -> dict[str, Any] | None:
+        extension = (chunk.model_extra or {}).get(LGOS_EXTENSION_KEY)
+        if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+            return None
+
+        event = extension.get("event")
+        if not isinstance(event, dict) or event.get("type") != "status":
+            return None
+        data = event.get("data")
+        if not isinstance(data, dict):
+            return None
+
+        description = data.get("description")
+        done = data.get("done", False)
+        hidden = data.get("hidden", False)
+        if (
+            not isinstance(description, str)
+            or not description
+            or not isinstance(done, bool)
+            or not isinstance(hidden, bool)
+        ):
+            return None
+
+        return {
+            "type": "status",
+            "data": {
+                "description": description,
+                "done": done,
+                "hidden": hidden,
+            },
+        }
 
     def _thread_id(self, metadata: dict[str, Any]) -> str:
         value = metadata.get("chat_id") or metadata.get("session_id") or "default"

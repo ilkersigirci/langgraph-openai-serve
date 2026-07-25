@@ -7,6 +7,7 @@ from langgraph_openai_serve.graph.events import (
     citation_event,
     citation_slice,
     client_event,
+    status_event,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -26,4 +27,5 @@ __all__ = [
     "citation_event",
     "citation_slice",
     "client_event",
+    "status_event",
 ]

@@ -11,6 +11,7 @@ from langgraph_openai_serve.api.models.schemas import (
 from langgraph_openai_serve.graph.events import (
     client_event,
     client_event_extension,
+    status_event,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 
@@ -53,3 +54,18 @@ def test_chainlit_accepts_client_event_payload() -> None:
     parsed = CHAINLIT_PROTOCOL["ClientEventExtension"].model_validate(extension)
 
     assert parsed.model_dump(mode="json") == extension
+
+
+def test_chainlit_accepts_status_event_payload() -> None:
+    extension = client_event_extension(status_event("Generating audio"))
+    assert extension is not None
+
+    parsed = CHAINLIT_PROTOCOL["StatusUpdate"].model_validate(
+        extension["event"]["data"]
+    )
+
+    assert parsed.model_dump(mode="json") == {
+        "description": "Generating audio",
+        "done": False,
+        "hidden": False,
+    }

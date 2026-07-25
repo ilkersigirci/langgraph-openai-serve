@@ -210,9 +210,15 @@ structure do not become part of the public contract.
 
 Without the exact `v1` opt-in, LGOS emits no event extensions. Even with the
 opt-in, only explicitly marked event envelopes in the shape produced by
-`client_event()` and revalidated by the server are exposed. Ordinary LangGraph
-custom data, malformed events, debug data, and non-JSON Python objects stay
-private. The v1 public event types are `status`, `progress`, and `artifact`.
+`client_event()` or `status_event()` and revalidated by the server are exposed.
+Ordinary LangGraph custom data, malformed events, debug data, and non-JSON
+Python objects stay private. The v1 public event types are `status`, `progress`,
+and `artifact`.
+
+`status_event()` produces portable data with a user-facing `description` and
+the booleans `done` and `hidden`. The graph emits meaningful application status
+at the point where it knows what work is happening. LGOS does not infer status
+from node names, graph topology, inputs, or results.
 
 Keep standard response semantics separate:
 
@@ -223,6 +229,13 @@ Keep standard response semantics separate:
 | Citation | `delta.annotations` |
 | Midstream failure | OpenAI error object |
 | Passive status, progress, or artifact notification | `langgraph_openai_serve.event` |
+
+Status updates are deliberately not encoded as `delta.tool_calls`. In OpenAI
+[function calling](https://developers.openai.com/api/docs/guides/function-calling),
+a tool call asks the client application to execute work and return a matching
+tool message. A passive status only describes backend work already in progress.
+UI adapters render it with native status components without changing the Chat
+Completions tool protocol.
 
 The published
 [Chat Completions chunk schema](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events#chat.completion.chunk)

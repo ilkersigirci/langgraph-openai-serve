@@ -79,15 +79,32 @@ send runtime settings; use the dedicated simple Pipe for that demo.
     Add another dedicated single-model Pipe when another graph needs a different
     settings UI.
 
-## Streaming And Citations
+## Streaming, Status, And Citations
 
 The general manifold Pipe streams assistant content unchanged, so Open WebUI
 renders Markdown links and images normally. For streaming requests it also
 forwards final OpenAI citation annotations without translating them.
 Non-streaming generator results remain plain text. The simple Pipe streams only
-assistant text. Neither bundled Pipe opts into LGOS client stream events;
-support requires an explicit mapping from LGOS `status`, `progress`, and
-`artifact` data to Open WebUI's UI-specific event shapes.
+assistant text.
+
+The manifold Pipe opts into LGOS client stream events and maps every portable
+status update to Open WebUI's native
+[`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
+Select `status-events` and ask **Prepare the media workflow.** Open WebUI saves
+each update in the assistant message's `statusHistory`; `done=False` displays an
+active shimmer, `done=True` stops it, and `hidden=True` keeps the history entry
+out of the current display. Persisted statuses survive a reload or closed tab.
+`progress` and `artifact` events are currently ignored by this Pipe.
+
+The adapter deliberately does not turn status updates into OpenAI tool calls.
+Open WebUI treats a tool call as work it must execute, but LGOS has already
+started the backend work. The passive status mapping keeps execution in the
+graph and avoids an unknown-tool or duplicate-execution path.
+
+When the Pipe targets an OpenAI-compatible proxy, status updates require a raw
+pass-through inference URL because a schema-normalizing route may discard the
+extension-only chunks. See
+[proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
 ## Interrupt Approval
 

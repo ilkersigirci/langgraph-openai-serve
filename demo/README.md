@@ -3,13 +3,14 @@
 This directory is a self-contained demo distribution for
 `langgraph-openai-serve`. It deliberately is not a uv workspace: each
 application or integration tool has its own `pyproject.toml`, `.venv`, and
-`uv.lock`. Locked installs, tests, Docker builds, and Compose need no files
-outside this directory.
+`uv.lock`. Locked installs, tests, published Docker builds, and the published
+Compose stack need no files outside this directory.
 
 The API resolves `langgraph-openai-serve` from PyPI and packages the default
-`lgos-rag` Markdown corpus inside `lgos_demo_api`. A temporary editable overlay
-can test an LGOS source checkout, but it is never part of the demo metadata,
-lockfile, image, or default runtime.
+`lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
+override builds a local API image and installs both the API and parent LGOS
+checkout as editable packages without changing the locked production
+dependency source.
 
 | Project | Purpose | Deployment |
 | --- | --- | --- |
@@ -61,8 +62,8 @@ Use the two published demo images and the official third-party images:
 docker compose -f compose.yaml up
 ```
 
-Build the two project-owned application images from their own lockfiles and
-Docker contexts:
+From the LGOS source checkout, build the two project-owned application images
+from their own lockfiles and run the API against the editable parent package:
 
 ```bash
 docker compose -f compose.yaml -f compose.dev.yaml up --build

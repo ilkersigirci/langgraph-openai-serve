@@ -7,7 +7,6 @@ from typing import cast
 
 import chainlit as cl
 from chainlit.types import ThreadDict
-from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
@@ -19,11 +18,6 @@ from openai.types.chat import (
 )
 
 from lgos_chainlit.auth import authenticated_user_identifier
-from lgos_chainlit.history import (
-    mark_model_context_excluded,
-    mark_persisted_errors_excluded,
-    text_only_chat_messages,
-)
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     THREAD_METADATA_KEY,
@@ -31,17 +25,15 @@ from lgos_chainlit.lgos_protocol import (
     model_supports,
 )
 from lgos_chainlit.settings import settings
+from lgos_chainlit.utils.chat import (
+    mark_model_context_excluded,
+    mark_persisted_errors_excluded,
+    send_ui_message,
+    text_only_chat_messages,
+)
+from lgos_chainlit.utils.clients import discovery_client, inference_client
 
 logger = logging.getLogger(__name__)
-
-client = AsyncOpenAI(
-    base_url=settings.INFERENCE.base_url,
-    api_key=settings.INFERENCE.api_key,
-)
-discovery_client = AsyncOpenAI(
-    base_url=settings.chainlit_discovery_endpoint.base_url,
-    api_key=settings.chainlit_discovery_endpoint.api_key,
-)
 
 
 @cl.set_chat_profiles
@@ -87,9 +79,7 @@ async def on_message(_message: cl.Message) -> None:
         raise
     except Exception as exc:
         logger.exception("Chainlit HITL completion failed")
-        error_message = cl.Message(content=f"Chat completion failed: {exc}")
-        mark_model_context_excluded(error_message)
-        await error_message.send()
+        await send_ui_message(f"Chat completion failed: {exc}")
 
 
 async def handle_message() -> None:
@@ -122,7 +112,7 @@ async def handle_message() -> None:
 async def create_completion(
     messages: list[ChatCompletionMessageParam],
 ) -> ChatCompletion:
-    return await client.chat.completions.create(
+    return await inference_client.chat.completions.create(
         model=settings.chainlit_inference_model(
             cl.user_session.get("chat_profile") or settings.HITL_MODEL
         ),
@@ -155,9 +145,7 @@ def tool_call_param(
 async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None:
     payload = interrupt_payload(tool_call)
     if payload is None:
-        error_message = cl.Message(content="Received an unsupported interrupt payload.")
-        mark_model_context_excluded(error_message)
-        await error_message.send()
+        await send_ui_message("Received an unsupported interrupt payload.")
         return None
 
     action_message = cl.AskActionMessage(
@@ -182,9 +170,7 @@ async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None
     response = await action_message.send()
 
     if not response:
-        timeout_message = cl.Message(content="Approval timed out.")
-        mark_model_context_excluded(timeout_message)
-        await timeout_message.send()
+        await send_ui_message("Approval timed out.")
         return None
 
     payload = response.get("payload") or {}

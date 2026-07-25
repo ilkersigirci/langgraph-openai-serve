@@ -131,8 +131,47 @@ Use a durable checkpointer in production.
 
 ## Client Stream Events
 
-Inside a graph node or tool, mark a passive client notification as explicitly
-public with `client_event()`:
+Inside a long-running graph node or tool, publish user-facing status with
+`status_event()`:
+
+```python
+from langgraph.config import get_stream_writer
+from langgraph_openai_serve import status_event
+
+writer = get_stream_writer()
+writer(status_event("Generating audio", namespace=("media",)))
+
+# Perform the long-running work.
+
+writer(
+    status_event(
+        "Audio ready",
+        done=True,
+        namespace=("media",),
+    )
+)
+```
+
+The portable status data matches native UI status concepts:
+
+```json
+{
+  "type": "status",
+  "namespace": ["media"],
+  "data": {
+    "description": "Generating audio",
+    "done": false,
+    "hidden": false
+  }
+}
+```
+
+`done=False` displays ongoing work; always finish a visible status sequence with
+`done=True`. Set `hidden=True` on the final update when clients should remove the
+status after completion. Status text is deliberately authored by the graph:
+LGOS does not infer it from internal node names or state.
+
+For other passive notifications, use `client_event()`:
 
 ```python
 from langgraph.config import get_stream_writer

@@ -6,8 +6,8 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from openai.lib.streaming.chat import ContentDeltaEvent
-from openai.types.chat import ChatCompletion
+from openai.lib.streaming.chat import ChunkEvent, ContentDeltaEvent
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from lgos_openwebui.functions.generic import Pipe
 
@@ -350,7 +350,10 @@ async def test_chat_sends_model_and_thread_metadata(
     stream_factory.assert_called_once_with(
         model="graph.with.dots",
         messages=messages,
-        metadata={"langgraph_thread_id": THREAD_ID},
+        metadata={
+            "langgraph_thread_id": THREAD_ID,
+            "langgraph_stream_events": "v1",
+        },
     )
     stream_context.__aexit__.assert_awaited_once_with(None, None, None)
     client.__aexit__.assert_awaited_once_with(None, None, None)
@@ -419,3 +422,110 @@ async def test_pipe_forwards_annotations_only_when_streaming(
         )
     assert chunks == expected
     assert chat.calls[0][1:] == (THREAD_ID, "citation-events")
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        pytest.param(
+            {"description": "Generating audio"},
+            {
+                "description": "Generating audio",
+                "done": False,
+                "hidden": False,
+            },
+            id="defaults",
+        ),
+        pytest.param(
+            {
+                "description": "Audio ready",
+                "done": True,
+                "hidden": True,
+            },
+            {
+                "description": "Audio ready",
+                "done": True,
+                "hidden": True,
+            },
+            id="explicit",
+        ),
+    ],
+)
+def test_pipe_maps_status_event_to_openwebui_status(
+    data: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": MODEL_ID,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "event": {
+                    "type": "status",
+                    "namespace": [],
+                    "data": data,
+                },
+            },
+        }
+    )
+
+    assert Pipe()._status_event(chunk) == {
+        "type": "status",
+        "data": expected,
+    }
+
+
+async def test_content_stream_emits_status_event() -> None:
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": MODEL_ID,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "event": {
+                    "type": "status",
+                    "namespace": [],
+                    "data": {
+                        "description": "Calculating embeddings",
+                        "done": False,
+                        "hidden": False,
+                    },
+                },
+            },
+        }
+    )
+
+    async def stream():
+        yield ChunkEvent(
+            type="chunk",
+            chunk=chunk,
+            snapshot={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": MODEL_ID,
+                "choices": [],
+            },
+        )
+
+    emitter = AsyncMock()
+    deltas = [delta async for delta in Pipe()._content_deltas(stream(), emitter)]
+
+    assert deltas == []
+    emitter.assert_awaited_once_with(
+        {
+            "type": "status",
+            "data": {
+                "description": "Calculating embeddings",
+                "done": False,
+                "hidden": False,
+            },
+        }
+    )

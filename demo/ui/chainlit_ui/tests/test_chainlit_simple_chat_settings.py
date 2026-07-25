@@ -34,10 +34,10 @@ def configured_model(settings: ModelClientSettings) -> Model:
     )
 
 
-def chat_settings_spy(monkeypatch: pytest.MonkeyPatch, simple):
+def chat_settings_spy(monkeypatch: pytest.MonkeyPatch, chat_settings):
     form = Mock(send=AsyncMock(), refresh=AsyncMock())
     factory = Mock(return_value=form)
-    monkeypatch.setattr(simple.cl, "ChatSettings", factory)
+    monkeypatch.setattr(chat_settings.cl, "ChatSettings", factory)
     return factory, form
 
 
@@ -46,7 +46,7 @@ async def test_discovered_settings_are_published(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
@@ -58,11 +58,11 @@ async def test_discovered_settings_are_published(
         }
     )
     retrieve = AsyncMock(return_value=configured_model(runtime_client_settings))
-    factory, form = chat_settings_spy(monkeypatch, simple)
-    monkeypatch.setattr(simple.discovery_client.models, "retrieve", retrieve)
-    monkeypatch.setattr(simple.cl, "user_session", session)
+    factory, form = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(chat_settings.discovery_client.models, "retrieve", retrieve)
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
 
-    await simple.configure_chat_settings()
+    await chat_settings.configure_chat_settings()
 
     retrieve.assert_awaited_once_with("simple")
     assert [
@@ -74,7 +74,7 @@ async def test_discovered_settings_are_published(
         ("TextInput", "assistant_name", "Guide"),
     ]
     form.send.assert_awaited_once_with()
-    assert session.values[simple.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] == (
+    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] == (
         runtime_client_settings.defaults
     )
 
@@ -83,43 +83,43 @@ async def test_discovered_settings_are_published(
 async def test_discovery_failure_disables_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
             "chat_settings": {"mode": "detailed"},
-            simple.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: {"stale": True},
+            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: {"stale": True},
         }
     )
-    factory, form = chat_settings_spy(monkeypatch, simple)
+    factory, form = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
-        simple.discovery_client.models,
+        chat_settings.discovery_client.models,
         "retrieve",
         AsyncMock(side_effect=RuntimeError("temporarily unavailable")),
     )
-    monkeypatch.setattr(simple.cl, "user_session", session)
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
 
-    await simple.configure_chat_settings()
+    await chat_settings.configure_chat_settings()
 
     factory.assert_called_once_with([])
     form.refresh.assert_awaited_once_with()
-    assert session.values[simple.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
+    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
 @pytest.mark.anyio
 async def test_model_without_settings_clears_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
             "chat_settings": {"mode": "detailed"},
         }
     )
-    factory, form = chat_settings_spy(monkeypatch, simple)
+    factory, form = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
-        simple.discovery_client.models,
+        chat_settings.discovery_client.models,
         "retrieve",
         AsyncMock(
             return_value=Model(
@@ -130,14 +130,14 @@ async def test_model_without_settings_clears_settings(
             )
         ),
     )
-    monkeypatch.setattr(simple.cl, "user_session", session)
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
 
-    await simple.configure_chat_settings()
+    await chat_settings.configure_chat_settings()
 
     factory.assert_called_once_with([])
     form.send.assert_awaited_once_with()
     form.refresh.assert_not_awaited()
-    assert session.values[simple.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
+    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
 @pytest.mark.anyio
@@ -146,6 +146,7 @@ async def test_selected_settings_reach_the_openai_request(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
@@ -154,7 +155,7 @@ async def test_selected_settings_reach_the_openai_request(
                 "mode": "detailed",
                 "assistant_name": "Guide",
             },
-            simple.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
+            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
                 runtime_client_settings.defaults
             ),
         }
@@ -169,7 +170,7 @@ async def test_selected_settings_reach_the_openai_request(
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.client.chat.completions, "create", create)
+    monkeypatch.setattr(simple.inference_client.chat.completions, "create", create)
 
     await simple.on_message(Mock(content="Hello"))
 

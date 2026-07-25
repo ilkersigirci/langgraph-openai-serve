@@ -29,7 +29,7 @@ from enum import StrEnum
 from typing import Literal
 
 from openai.types import Model
-from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,16 @@ def model_client_settings(model: Model) -> ModelClientSettings | None:
 
 
 ClientEventType = Literal["status", "progress", "artifact"]
+
+
+class StatusUpdate(BaseModel):
+    """A portable status update rendered by the standalone client."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    description: str = Field(min_length=1)
+    done: bool = False
+    hidden: bool = False
 
 
 class ClientEventData(BaseModel):

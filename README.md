@@ -31,7 +31,7 @@ From this repository, prepare the demo environment and PostgreSQL:
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up -d postgres
+docker compose -f compose.yaml up -d lgos-db
 uv run --directory api --env-file ../.env \
   --locked --with-editable ../.. lgos-demo-api-setup
 uv run --directory api --env-file ../.env \

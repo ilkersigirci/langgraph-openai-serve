@@ -1,7 +1,12 @@
 name: lgos-demo
 
+networks:
+  default:
+    name: lgos-network
+
 services:
-  postgres:
+  lgos-db:
+    container_name: lgos-db
     image: postgres:18.4-alpine3.23
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"
@@ -40,6 +45,7 @@ services:
       retries: 5
 
   lgos-demo-api:
+    container_name: lgos-demo-api
     image: ghcr.io/ilkersigirci/lgos-demo-api:${DEMO_IMAGE_TAG:-latest}
     pull_policy: always
     restart: "no"
@@ -61,7 +67,7 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
-      postgres:
+      lgos-db:
         condition: service_healthy
     pre_start:
       - command: ["lgos-demo-api-setup"]
@@ -71,9 +77,10 @@ services:
       - path: .env
         required: false
     environment:
-      DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@postgres:5432/lgos
+      DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
 
   bifrost:
+    container_name: bifrost
     image: maximhq/bifrost:v1.6.3@sha256:95caedb1c368c6d88178c2b98b9238d8a6a62b51d9cb12b6661bf2671ed1aaa4
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"
@@ -121,6 +128,7 @@ services:
       retries: 10
 
   lgos-chainlit:
+    container_name: lgos-chainlit
     image: ghcr.io/ilkersigirci/lgos-chainlit:${DEMO_IMAGE_TAG:-latest}
     pull_policy: always
     restart: "no"
@@ -144,7 +152,7 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
-      postgres:
+      lgos-db:
         condition: service_healthy
       lgos-demo-api:
         condition: service_started
@@ -157,7 +165,7 @@ services:
         required: false
     environment:
       CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
-      DATABASE_URL: postgresql://lgos:lgos@postgres:5432/lgos
+      DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos
       DEMO_CHAINLIT_INFERENCE__BASE_URL: http://lgos-demo-api:8000/v1
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
@@ -166,6 +174,7 @@ services:
       retries: 5
 
   open-webui:
+    container_name: open-webui
     image: ghcr.io/open-webui/open-webui:v0.10.2@sha256:9fcea9c6e32ab60b0498f3986c6cdf651ddbe61db48d2213a3d28048ddd673d4
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"

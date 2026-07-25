@@ -31,15 +31,6 @@ async def build_compatibility_report(
     writer = get_stream_writer()
     writer(
         client_event(
-            "status",
-            {"message": "Planning compatibility report"},
-            namespace=("research",),
-        )
-    )
-    await asyncio.sleep(SHOWCASE_EVENT_DELAY_SECONDS)
-
-    writer(
-        client_event(
             "progress",
             {
                 "stage": "research",

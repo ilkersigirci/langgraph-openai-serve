@@ -23,6 +23,7 @@ DOCUMENTED_MODEL_IDS = {
     "interruptible-approval",
     "lgos-rag",
     "simple-graph",
+    "status-events",
 }
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
 

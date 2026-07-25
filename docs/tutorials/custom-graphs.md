@@ -200,6 +200,34 @@ return a final dictionary should be called without `stream=True`.
     List only nodes whose model chunks should reach the client. This prevents
     internal graph work from appearing as assistant output.
 
+## Status Updates
+
+Publish meaningful status from long-running graph code:
+
+```python
+from langgraph.config import get_stream_writer
+from langgraph_openai_serve import status_event
+
+
+async def generate_audio(state):
+    writer = get_stream_writer()
+    writer(status_event("Generating audio"))
+
+    audio = await audio_service.generate(state["text"])
+
+    writer(status_event("Audio ready", done=True))
+    return {"audio": audio}
+```
+
+Streaming clients opt into the events with
+`metadata={"langgraph_stream_events": "v1"}`. Emit a final `done=True` update so
+native clients stop showing the status as active. Use `hidden=True` on that final
+update when the status should disappear after completion.
+
+These passive updates are not OpenAI tool calls, which would ask the client to
+execute work. The graph remains responsible for its own work; the client only
+renders status.
+
 ## Interrupts
 
 Enable the interrupt feature for checkpointed human-in-the-loop graphs:

@@ -157,6 +157,11 @@ them. See the OpenAI SDK's
 [Chat Completions event reference](https://github.com/openai/openai-python/blob/main/helpers.md#chat-completions-events)
 and the LGOS [wire contract](../explanation/openai-compatibility.md#client-stream-events).
 
+Portable `status` events contain a user-facing `description` plus `done` and
+`hidden` booleans. Treat them as passive UI updates, and stop the active
+indicator when `done` is true. Do not execute them as OpenAI tool calls; the
+backend graph owns the work.
+
 ## Model Discovery And Runtime Settings
 
 List standard model summaries, then retrieve the selected model to discover its
