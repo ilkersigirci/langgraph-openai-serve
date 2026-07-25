@@ -53,7 +53,7 @@ jobs:
           docker compose
           -f demo/compose.yaml
           -f demo/compose.dev.yaml
-          build lgos-demo-api
+          build lgos-demo-api-a
 
       - name: Verify editable API packages
         run: |
