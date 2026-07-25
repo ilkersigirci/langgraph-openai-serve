@@ -6,6 +6,10 @@ inputs:
   directory:
     description: Relative or absolute project directory.
     required: true
+  editable-package:
+    description: Optional package checkout to overlay as an editable installation.
+    default: ""
+    required: false
   cache-dependency-glob:
     description: Lockfile path used for the uv cache key.
     required: true
@@ -28,8 +32,14 @@ runs:
     - name: Run tests
       shell: bash
       env:
+        EDITABLE_PACKAGE: ${{ inputs.editable-package }}
         PROJECT_DIR: ${{ inputs.directory }}
-      run: uv run --directory "$PROJECT_DIR" --locked pytest
+      run: |
+        uv_args=(--directory "$PROJECT_DIR" --locked)
+        if [[ -n "$EDITABLE_PACKAGE" ]]; then
+          uv_args+=(--with-editable "$EDITABLE_PACKAGE")
+        fi
+        uv run "${uv_args[@]}" pytest
 
     - name: Check lint and formatting
       shell: bash
