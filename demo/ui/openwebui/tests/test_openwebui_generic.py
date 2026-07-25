@@ -159,8 +159,8 @@ async def test_pipe_lists_registered_models(
     client.__aenter__.return_value = client
     client.models.list.return_value = SimpleNamespace(
         data=[
-            SimpleNamespace(id="interruptible-approval"),
-            SimpleNamespace(id="lgos-rag"),
+            SimpleNamespace(id="lgos-a/interruptible-approval"),
+            SimpleNamespace(id="lgos-b/lgos-rag"),
         ]
     )
     client_factory = Mock(return_value=client)
@@ -173,13 +173,13 @@ async def test_pipe_lists_registered_models(
 
     assert models == [
         {
-            "id": "interruptible-approval",
-            "name": "Generic / interruptible-approval",
+            "id": "lgos-a/interruptible-approval",
+            "name": "Generic / lgos-a/interruptible-approval",
         },
-        {"id": "lgos-rag", "name": "Generic / lgos-rag"},
+        {"id": "lgos-b/lgos-rag", "name": "Generic / lgos-b/lgos-rag"},
     ]
     client_factory.assert_called_once_with(
-        base_url="http://lgos-demo-api:8000/v1",
+        base_url="http://bifrost:8080/v1",
         api_key="DUMMY",
         timeout=30,
     )
@@ -336,7 +336,11 @@ async def test_chat_sends_model_and_thread_metadata(
     client_factory = Mock(return_value=client)
     monkeypatch.setattr(pipe, "_client", client_factory)
 
-    async with pipe._chat(messages, THREAD_ID, "graph.with.dots") as response_stream:
+    async with pipe._chat(
+        messages,
+        THREAD_ID,
+        "lgos-a/graph.with.dots",
+    ) as response_stream:
         deltas = [
             event.delta
             async for event in response_stream
@@ -349,6 +353,7 @@ async def test_chat_sends_model_and_thread_metadata(
     client_factory.assert_called_once_with()
     stream_factory.assert_called_once_with(
         model="graph.with.dots",
+        extra_headers={"x-model-provider": "lgos-a"},
         messages=messages,
         metadata={
             "langgraph_thread_id": THREAD_ID,

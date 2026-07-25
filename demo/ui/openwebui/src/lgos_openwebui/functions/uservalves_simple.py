@@ -1,7 +1,7 @@
 """
 title: UserValves-Simple / simple-graph
 author: langgraph-openai-serve
-version: 0.1
+version: 0.2
 """
 
 from collections.abc import AsyncIterator
@@ -20,12 +20,16 @@ RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 class Pipe:
     class Valves(BaseModel):
         OPENAI_API_BASE_URL: str = Field(
-            default="http://lgos-demo-api:8000/v1",
-            description="Base URL for the LangGraph OpenAI-compatible API.",
+            default="http://bifrost:8080/openai_passthrough/v1",
+            description="Bifrost pass-through base URL for LGOS requests.",
         )
         OPENAI_API_KEY: str = Field(
             default="DUMMY",
             description="Bearer token sent to the LangGraph API.",
+        )
+        MODEL: str = Field(
+            default="lgos-a/simple-graph",
+            description="LGOS model, optionally prefixed by its Bifrost provider.",
         )
 
     class UserValves(BaseModel):
@@ -52,7 +56,7 @@ class Pipe:
         try:
             async with self._client() as client:
                 stream = await client.chat.completions.create(
-                    model="simple-graph",
+                    **self._model_request(),
                     messages=messages,
                     metadata=metadata,
                     stream=True,
@@ -70,6 +74,15 @@ class Pipe:
         settings = (user or {}).get("valves") or self.UserValves()
         encoded = settings.model_dump_json(exclude_defaults=True)
         return {} if encoded == "{}" else {RUNTIME_SETTINGS_METADATA_KEY: encoded}
+
+    def _model_request(self) -> dict[str, Any]:
+        provider, separator, model = self.valves.MODEL.partition("/")
+        if not separator or not provider or not model:
+            return {"model": self.valves.MODEL}
+        return {
+            "model": model,
+            "extra_headers": {"x-model-provider": provider},
+        }
 
     def _client(self) -> AsyncOpenAI:
         return AsyncOpenAI(

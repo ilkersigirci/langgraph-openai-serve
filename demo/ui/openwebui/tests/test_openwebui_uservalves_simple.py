@@ -35,8 +35,32 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
     assert chunks == ["Hello"]
     client.chat.completions.create.assert_awaited_once_with(
         model="simple-graph",
+        extra_headers={"x-model-provider": "lgos-a"},
         messages=[{"role": "user", "content": "Hi"}],
         metadata={"langgraph_runtime_settings": '{"use_history":true}'},
         stream=True,
     )
     assert pipe._runtime_settings_metadata({"valves": pipe.UserValves()}) == {}
+
+
+@pytest.mark.anyio
+async def test_uservalves_simple_routes_the_configured_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+    pipe.valves.MODEL = "lgos-b/simple-graph"
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.chat.completions.create.return_value = Stream()
+    monkeypatch.setattr(pipe, "_client", Mock(return_value=client))
+
+    chunks = [chunk async for chunk in pipe.pipe(body={"messages": []})]
+
+    assert chunks == ["Hello"]
+    client.chat.completions.create.assert_awaited_once_with(
+        model="simple-graph",
+        extra_headers={"x-model-provider": "lgos-b"},
+        messages=[],
+        metadata={},
+        stream=True,
+    )

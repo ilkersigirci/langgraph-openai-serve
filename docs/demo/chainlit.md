@@ -45,7 +45,7 @@ for container endpoints.
 
 After a profile is selected, Chainlit:
 
-1. Retrieves the detailed model and reads
+1. Retrieves the detailed model through the inference endpoint and reads
    `langgraph_openai_serve.client_settings`.
 2. Renders supported JSON Schema properties as Chainlit Chat Settings.
 3. Restores saved values that still match the supported widget type or choice.
@@ -117,19 +117,26 @@ completion. The panel shows event type, namespace, progress, and artifact
 details, with a JSON fallback for other payload shapes. Its host message is
 excluded from model context. Unknown extension versions are ignored.
 
-To see native status rendering, select `status-events` and ask **Prepare the
-media workflow.** Each new status completes the previous task, and the final
-`done=True` update marks the list done. The task list is live UI state and is
-not restored from persisted chat history.
+To see native status rendering, select `lgos-a/status-events` in Compose or
+`status-events` in local-process mode, then ask **Prepare the media workflow.**
+Each new status completes the previous task, and the final `done=True` update
+marks the list done. The task list is live UI state and is not restored from
+persisted chat history.
 
-Select `custom-event-showcase` and ask **Build the compatibility report** to see
-the separate activity panel render progress and an artifact while assistant
-text streams independently.
+Select `lgos-a/custom-event-showcase` in Compose or `custom-event-showcase`
+locally, then ask **Build the compatibility report** to see the separate
+activity panel render progress and an artifact while assistant text streams
+independently.
 
 Behind an OpenAI-compatible proxy, the activity panel requires a raw
 pass-through inference URL. A schema-normalizing route may still stream the
 answer while silently omitting event-only chunks. See
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
+
+The Compose configuration lists the combined Bifrost catalog, then routes each
+prefixed selection through the pass-through endpoint with
+`x-model-provider`. Local-process defaults continue to target one LGOS API
+directly.
 
 ## Settings Reference
 
@@ -137,17 +144,16 @@ LGOS endpoint settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:8000/v1` | Inference API or gateway. |
+| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:8000/v1` | Inference and detailed-retrieval endpoint. |
 | `DEMO_CHAINLIT_INFERENCE__API_KEY` | `DUMMY` | Inference API or gateway key. |
-| `DEMO_CHAINLIT_INFERENCE_MODEL_PREFIX` | empty | Optional proxy model namespace, such as `openai/`. |
-| `DEMO_CHAINLIT_DISCOVERY__BASE_URL` | unset | Detailed discovery endpoint; otherwise inference is reused. |
-| `DEMO_CHAINLIT_DISCOVERY__API_KEY` | unset | Required with an explicit discovery endpoint. |
+| `DEMO_CHAINLIT_CATALOG__BASE_URL` | unset | Model-list endpoint; otherwise inference is reused. |
+| `DEMO_CHAINLIT_CATALOG__API_KEY` | unset | Required with an explicit catalog endpoint. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login: `mock` or `oauth`. |
 
-See the bundled [Bifrost gateway](bifrost.md#connect-the-demo-chainlit-client)
-for separate inference and discovery endpoint examples.
+See the bundled [Bifrost gateway](bifrost.md) for the Compose endpoint and
+model-routing defaults.
 
 Native Chainlit settings:
 

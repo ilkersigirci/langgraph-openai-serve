@@ -1,7 +1,7 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.6
+version: 0.7
 """
 
 import json
@@ -42,9 +42,13 @@ PipeChunk = str | dict[str, Any]
 
 class Pipe:
     class Valves(BaseModel):
+        OPENAI_CATALOG_BASE_URL: str = Field(
+            default="http://bifrost:8080/v1",
+            description="Bifrost base URL used to list all LGOS models.",
+        )
         OPENAI_API_BASE_URL: str = Field(
-            default="http://lgos-demo-api:8000/v1",
-            description="Base URL for the LangGraph OpenAI-compatible API.",
+            default="http://bifrost:8080/openai_passthrough/v1",
+            description="Bifrost pass-through base URL for LGOS requests.",
         )
         OPENAI_API_KEY: str = Field(
             default="DUMMY",
@@ -56,7 +60,7 @@ class Pipe:
 
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model in Open WebUI's selector."""
-        async with self._client() as client:
+        async with self._catalog_client() as client:
             models = await client.models.list()
 
         return [
@@ -209,7 +213,7 @@ class Pipe:
         async with (
             self._client() as client,
             client.chat.completions.stream(
-                model=model_id,
+                **self._model_request(model_id),
                 messages=messages,
                 metadata={
                     THREAD_METADATA_KEY: thread_id,
@@ -218,6 +222,13 @@ class Pipe:
             ) as stream,
         ):
             yield stream
+
+    def _catalog_client(self) -> AsyncOpenAI:
+        return AsyncOpenAI(
+            base_url=self.valves.OPENAI_CATALOG_BASE_URL,
+            api_key=self.valves.OPENAI_API_KEY,
+            timeout=30,
+        )
 
     def _client(self) -> AsyncOpenAI:
         return AsyncOpenAI(
@@ -236,6 +247,15 @@ class Pipe:
             raise ValueError("Open WebUI did not provide a valid model ID.")
 
         return model_id
+
+    def _model_request(self, model_id: str) -> dict[str, Any]:
+        provider, separator, model = model_id.partition("/")
+        if not separator or not provider or not model:
+            return {"model": model_id}
+        return {
+            "model": model,
+            "extra_headers": {"x-model-provider": provider},
+        }
 
     def _status_event(
         self,

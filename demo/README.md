@@ -19,7 +19,10 @@ dependency source.
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
 Shared Compose-only assets live under `docker/`; the Bifrost gateway
-configuration is at `docker/bifrost/config.json`.
+configuration is at `docker/bifrost/config.json`. Compose runs two LGOS API
+containers behind its `lgos-a/` and `lgos-b/` model prefixes. Both use the demo
+image today; either service can be replaced by an independently locked
+application image when graph dependencies conflict.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a

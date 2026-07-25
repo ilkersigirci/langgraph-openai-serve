@@ -59,7 +59,7 @@ async def test_discovered_settings_are_published(
     )
     retrieve = AsyncMock(return_value=configured_model(runtime_client_settings))
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(chat_settings.discovery_client.models, "retrieve", retrieve)
+    monkeypatch.setattr(chat_settings, "retrieve_model", retrieve)
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
 
     await chat_settings.configure_chat_settings()
@@ -93,8 +93,8 @@ async def test_discovery_failure_disables_settings(
     )
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
-        chat_settings.discovery_client.models,
-        "retrieve",
+        chat_settings,
+        "retrieve_model",
         AsyncMock(side_effect=RuntimeError("temporarily unavailable")),
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
@@ -119,8 +119,8 @@ async def test_model_without_settings_clears_settings(
     )
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
-        chat_settings.discovery_client.models,
-        "retrieve",
+        chat_settings,
+        "retrieve_model",
         AsyncMock(
             return_value=Model(
                 id="simple",
@@ -149,7 +149,7 @@ async def test_selected_settings_reach_the_openai_request(
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
-            "chat_profile": "simple",
+            "chat_profile": "lgos-a/simple",
             "chat_settings": {
                 "use_history": False,
                 "mode": "detailed",
@@ -176,6 +176,7 @@ async def test_selected_settings_reach_the_openai_request(
 
     create.assert_awaited_once_with(
         model="simple",
+        extra_headers={"x-model-provider": "lgos-a"},
         messages=messages,
         stream=True,
         user="demo-user",

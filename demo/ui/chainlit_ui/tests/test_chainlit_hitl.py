@@ -58,8 +58,8 @@ async def test_chat_profiles_fail_when_feature_metadata_is_missing(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     hitl = importlib.import_module("lgos_chainlit.hitl")
     monkeypatch.setattr(
-        hitl.discovery_client.models,
-        "retrieve",
+        hitl,
+        "retrieve_model",
         AsyncMock(
             return_value=Model(
                 id="interruptible",
@@ -72,6 +72,36 @@ async def test_chat_profiles_fail_when_feature_metadata_is_missing(
 
     with pytest.raises(RuntimeError, match="documented pass-through that targets LGOS"):
         await hitl.set_chat_profiles(None)
+
+
+@pytest.mark.anyio
+async def test_chat_profile_keeps_the_bifrost_provider_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+    hitl = importlib.import_module("lgos_chainlit.hitl")
+    monkeypatch.setattr(hitl.settings, "HITL_MODEL", "lgos-b/interruptible")
+    monkeypatch.setattr(
+        hitl,
+        "retrieve_model",
+        AsyncMock(
+            return_value=Model(
+                id="interruptible",
+                object="model",
+                created=1,
+                owned_by="test",
+                langgraph_openai_serve={
+                    "schema_version": 1,
+                    "features": ["interrupts"],
+                },
+            )
+        ),
+    )
+
+    profiles = await hitl.set_chat_profiles(None)
+
+    assert [profile.name for profile in profiles] == ["lgos-b/interruptible"]
 
 
 def test_helpers_extract_and_preserve_the_interrupt_tool_call(

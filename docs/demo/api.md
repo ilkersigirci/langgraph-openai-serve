@@ -161,8 +161,9 @@ interleaved with assistant text.
 ## Try A Demo Client
 
 The demo includes optional [Chainlit](chainlit.md) and
-[Open WebUI](open-webui.md) clients. Route either client through the bundled
-[Bifrost gateway](bifrost.md) to exercise normal and pass-through proxy paths.
+[Open WebUI](open-webui.md) clients. The Compose stack routes both through the
+bundled [Bifrost gateway](bifrost.md), which combines two LGOS services and
+preserves extensions through pass-through requests.
 
 ## Next Steps
 
