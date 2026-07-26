@@ -62,8 +62,8 @@ test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
 
-test-bifrost: DEMO_TEST_BIFROST_CATALOG_BASE_URL ?= http://localhost:8081/v1
-test-bifrost: DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL ?= http://localhost:8081/openai_passthrough/v1
+test-bifrost: DEMO_TEST_BIFROST_CATALOG_BASE_URL ?= http://localhost:3000/v1
+test-bifrost: DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
 test-bifrost: ## Run the optional Bifrost proxy integration test
 	DEMO_TEST_BIFROST_CATALOG_BASE_URL=$(DEMO_TEST_BIFROST_CATALOG_BASE_URL) \
 		DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=$(DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL) \

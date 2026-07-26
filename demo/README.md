@@ -39,13 +39,19 @@ Copy the shared environment template and configure any required credentials:
 cp .env.example .env
 ```
 
-Run the API:
+Run `lgos-a` on port 3004:
 
 ```bash
 make run-api
 ```
 
-Run Chainlit in another terminal:
+Run the same API image as `lgos-b` on port 3005:
+
+```bash
+make run-api-b
+```
+
+Run Chainlit on port 3002 in another terminal:
 
 ```bash
 make run-chainlit
@@ -64,6 +70,9 @@ Use the two published demo images and the official third-party images:
 ```bash
 docker compose -f compose.yaml up
 ```
+
+The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
+3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
 
 From the LGOS source checkout, build the two project-owned application images
 from their own lockfiles and run the API against the editable parent package:

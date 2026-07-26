@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     )
 
     INFERENCE: OpenAIEndpoint = OpenAIEndpoint(
-        base_url="http://localhost:8000/v1",
+        base_url="http://localhost:3004/v1",
         api_key="DUMMY",
     )
     CATALOG: OpenAIEndpoint | None = None

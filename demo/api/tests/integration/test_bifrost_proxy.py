@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 BIFROST_CATALOG_BASE_URL = os.getenv("DEMO_TEST_BIFROST_CATALOG_BASE_URL")
 BIFROST_PASSTHROUGH_BASE_URL = os.getenv(
     "DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL",
-    "http://localhost:8081/openai_passthrough/v1",
+    "http://localhost:3000/openai_passthrough/v1",
 )
 LGOS_PROVIDERS = ("lgos-a", "lgos-b")
 

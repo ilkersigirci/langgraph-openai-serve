@@ -20,7 +20,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 ```bash title="Prepare the demo"
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up -d postgres
+docker compose -f compose.yaml up -d lgos-db
 ```
 
 === "Test this checkout"
@@ -31,7 +31,8 @@ docker compose -f compose.yaml up -d postgres
     uv run --directory api --env-file ../.env \
       --locked --with-editable ../.. lgos-demo-api-setup
     uv run --directory api --env-file ../.env \
-      --locked --with-editable ../.. lgos-demo-api
+      --locked --with-editable ../.. \
+      uvicorn lgos_demo_api.app:app --host 0.0.0.0 --port 3004 --reload
     ```
 
 === "Use the locked PyPI release"
@@ -45,7 +46,7 @@ docker compose -f compose.yaml up -d postgres
 ??? info "Demo environment settings"
 
     The API reads `DEMO_API_POSTGRES_URI` and defaults to
-    `postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose
+    `postgresql://lgos:lgos@localhost:3001/lgos`, which matches the Compose
     service.
 
     LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
@@ -54,12 +55,12 @@ docker compose -f compose.yaml up -d postgres
     packaged with the API. These settings and dependencies belong to the API
     project and are not installed with the library.
 
-The base URL is `http://localhost:8000/v1`.
+The `lgos-a` base URL is `http://localhost:3004/v1`.
 
 Inspect registered graphs:
 
 ```bash
-curl http://localhost:8000/v1/models
+curl http://localhost:3004/v1/models
 ```
 
 The complete model and requirement matrix is in [Example Graphs](graphs.md).
@@ -69,7 +70,7 @@ The complete model and requirement matrix is in [Example Graphs](graphs.md).
 ```python title="Call a registered graph"
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 
 response = client.chat.completions.create(
     model="custom-input-output-context",

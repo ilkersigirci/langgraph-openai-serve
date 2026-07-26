@@ -38,7 +38,7 @@ Put the generated value in `CHAINLIT_AUTH_SECRET`.
     ```
 
 Both modes apply pending Chainlit schema migrations before the UI starts. Open
-`http://localhost:5000`. See [Docker Compose](docker.md#demo-services)
+`http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
 ## Runtime Settings
@@ -82,7 +82,7 @@ the same login identity.
     listed below. `OAUTH_GENERIC_USER_IDENTIFIER=sub` uses PocketID's stable
     subject as the Chainlit user identifier.
 
-    Register `http://localhost:5000/auth/oauth/PocketID/callback` for local use.
+    Register `http://localhost:3002/auth/oauth/PocketID/callback` for local use.
     Behind a reverse proxy, set `CHAINLIT_URL` to the external HTTPS origin and
     register `${CHAINLIT_URL}/auth/oauth/${OAUTH_GENERIC_NAME}/callback`.
 
@@ -144,7 +144,7 @@ LGOS endpoint settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:8000/v1` | Inference and detailed-retrieval endpoint. |
+| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:3004/v1` | Inference and detailed-retrieval endpoint. |
 | `DEMO_CHAINLIT_INFERENCE__API_KEY` | `DUMMY` | Inference API or gateway key. |
 | `DEMO_CHAINLIT_CATALOG__BASE_URL` | unset | Model-list endpoint; otherwise inference is reused. |
 | `DEMO_CHAINLIT_CATALOG__API_KEY` | unset | Required with an explicit catalog endpoint. |

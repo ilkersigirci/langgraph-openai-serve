@@ -64,7 +64,7 @@ services:
         soft: 4096
         hard: 8192
     ports:
-      - "5432:5432"
+      - "3001:5432"
     volumes:
       - type: bind
         source: ./docker/volumes/lgos-db
@@ -84,10 +84,14 @@ services:
   lgos-demo-api-a:
     <<: *lgos-demo-api
     container_name: lgos-demo-api-a
+    ports:
+      - "3004:8000"
 
   lgos-demo-api-b:
     <<: *lgos-demo-api
     container_name: lgos-demo-api-b
+    ports:
+      - "3005:8000"
 
   bifrost:
     container_name: bifrost
@@ -116,7 +120,7 @@ services:
       lgos-demo-api-b:
         condition: service_healthy
     ports:
-      - "8081:8080"
+      - "3000:8080"
     volumes:
       - type: bind
         source: ./docker/volumes/bifrost
@@ -171,7 +175,7 @@ services:
     pre_start:
       - command: ["lgos-chainlit-setup"]
     ports:
-      - "5000:5000"
+      - "3002:5000"
     env_file:
       - path: .env
         required: false
@@ -214,7 +218,7 @@ services:
       bifrost:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "3003:8080"
     volumes:
       - type: bind
         source: ./docker/volumes/open-webui

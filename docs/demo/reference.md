@@ -22,8 +22,9 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 
 | Command | Purpose |
 | --- | --- |
-| `make run-api` | Set up PostgreSQL checkpoints and run the API locally |
-| `make run-chainlit` | Apply Chainlit migrations and run the UI locally |
+| `make run-api` / `make run-api-a` | Set up PostgreSQL checkpoints and run `lgos-a` on port 3004 |
+| `make run-api-b` | Set up PostgreSQL checkpoints and run `lgos-b` on port 3005 |
+| `make run-chainlit` | Apply Chainlit migrations and run the UI on port 3002 |
 | `make sync-openwebui` | Create or update the bundled Open WebUI Functions |
 | `make compose` | Run the stack with published project-owned images |
 | `make compose-dev` | Build local images; run the API and LGOS packages editable |
@@ -48,7 +49,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `DEMO_API_OPENAI_API_KEY` | `DUMMY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by `lgos-rag` |
-| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:5432/lgos` | Checkpoint database |
+| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | Checkpoint database |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX` and
 `LGOS_OPENAI_API_DOCS_ENABLED` settings documented in the package

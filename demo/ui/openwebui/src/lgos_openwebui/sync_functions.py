@@ -139,7 +139,7 @@ def sync_functions(
 
 def main() -> None:
     """Authenticate and synchronize the bundled Open WebUI Functions."""
-    base_url = os.environ.get("DEMO_OPENWEBUI_URL", "http://localhost:8080")
+    base_url = os.environ.get("DEMO_OPENWEBUI_URL", "http://localhost:3003")
     email = os.environ.get("DEMO_OPENWEBUI_ADMIN_EMAIL", "lgos@example.com")
     password = os.environ.get("DEMO_OPENWEBUI_ADMIN_PASSWORD", "lgos")
 

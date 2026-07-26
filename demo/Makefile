@@ -1,7 +1,10 @@
 SHELL := /bin/sh
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
+LGOS_CHAINLIT_PORT ?= 3002
+LGOS_A_PORT ?= 3004
+LGOS_B_PORT ?= 3005
 
-.PHONY: help sync test lint check compose-config setup-api run-api setup-chainlit run-chainlit sync-openwebui compose compose-dev
+.PHONY: help sync test lint check compose-config setup-api run-api run-api-a run-api-b setup-chainlit run-chainlit sync-openwebui compose compose-dev
 .DEFAULT_GOAL := help
 
 help: ## Show available commands
@@ -34,14 +37,23 @@ check: test lint compose-config ## Run every standalone validation
 setup-api: ## Initialize or migrate the API checkpoint database
 	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-setup
 
-run-api: setup-api ## Run the demo API locally
-	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api
+run-api: run-api-a ## Run lgos-a locally
+
+run-api-a: setup-api ## Run lgos-a locally
+	$(LOCAL_API_RUN) --env-file ../.env uvicorn lgos_demo_api.app:app \
+		--host 0.0.0.0 --port $(LGOS_A_PORT) --reload
+
+run-api-b: setup-api ## Run lgos-b locally
+	$(LOCAL_API_RUN) --env-file ../.env uvicorn lgos_demo_api.app:app \
+		--host 0.0.0.0 --port $(LGOS_B_PORT) --reload
 
 setup-chainlit: ## Initialize or migrate the Chainlit database
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env lgos-chainlit-setup
 
 run-chainlit: setup-chainlit ## Run the Chainlit UI locally
-	uv run --directory ui/chainlit_ui --locked --env-file ../../.env lgos-chainlit
+	uv run --directory ui/chainlit_ui --locked --env-file ../../.env \
+		uvicorn lgos_chainlit.main:app --host 0.0.0.0 \
+		--port $(LGOS_CHAINLIT_PORT)
 
 sync-openwebui: ## Create or update the bundled Open WebUI Functions
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync

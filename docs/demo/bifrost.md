@@ -28,8 +28,8 @@ provider-selected LGOS requests:
 
 | Need | Base URL | Routing |
 | --- | --- | --- |
-| Combined model list | `http://localhost:8081/v1` | Bifrost adds the provider prefix |
-| Inference and detailed retrieval | `http://localhost:8081/openai_passthrough/v1` | Unprefixed model plus `x-model-provider` |
+| Combined model list | `http://localhost:3000/v1` | Bifrost adds the provider prefix |
+| Inference and detailed retrieval | `http://localhost:3000/openai_passthrough/v1` | Unprefixed model plus `x-model-provider` |
 
 The demo clients translate `lgos-a/simple-graph` into model `simple-graph` and
 header `x-model-provider: lgos-a`. Bifrost uses the header to select the custom
@@ -40,9 +40,9 @@ extension-only stream chunks.
 ```python title="Call one model from the combined catalog"
 from openai import OpenAI
 
-catalog = OpenAI(base_url="http://localhost:8081/v1", api_key="DUMMY")
+catalog = OpenAI(base_url="http://localhost:3000/v1", api_key="DUMMY")
 client = OpenAI(
-    base_url="http://localhost:8081/openai_passthrough/v1",
+    base_url="http://localhost:3000/openai_passthrough/v1",
     api_key="DUMMY",
 )
 
