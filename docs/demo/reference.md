@@ -22,9 +22,12 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 
 | Command | Purpose |
 | --- | --- |
-| `make run-api` / `make run-api-a` | Set up PostgreSQL checkpoints and run `lgos-a` on port 3004 |
-| `make run-api-b` | Set up PostgreSQL checkpoints and run `lgos-b` on port 3005 |
-| `make run-chainlit` | Apply Chainlit migrations and run the UI on port 3002 |
+| `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
+| `make run-api-b` | Run the published `lgos-b` container on port 3005 |
+| `make run-chainlit` | Run the published Chainlit container and its dependencies on port 3002 |
+| `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
+| `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
+| `make run-chainlit-local` | Apply Chainlit migrations and run the local UI process |
 | `make sync-openwebui` | Create or update the bundled Open WebUI Functions |
 | `make compose` | Run the stack with published project-owned images |
 | `make compose-dev` | Build local images; run the API and LGOS packages editable |

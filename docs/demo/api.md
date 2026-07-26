@@ -28,16 +28,12 @@ docker compose -f compose.yaml up -d lgos-db
     Overlay the parent LGOS checkout without changing the demo lockfile:
 
     ```bash
-    uv run --directory api --env-file ../.env \
-      --locked --with-editable ../.. lgos-demo-api-setup
-    uv run --directory api --env-file ../.env \
-      --locked --with-editable ../.. \
-      uvicorn lgos_demo_api.app:app --host 0.0.0.0 --port 3004 --reload
+    make run-api-local
     ```
 
-=== "Use the locked PyPI release"
+=== "Use the published image"
 
-    Run the API as a completely independent project:
+    Run the published API container and its PostgreSQL dependency:
 
     ```bash
     make run-api

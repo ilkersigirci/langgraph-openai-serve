@@ -42,7 +42,7 @@ directories. The checkout includes each empty service directory with a tracked
     `compose.yaml` contains no local builds:
 
     ```bash
-    docker compose -f compose.yaml up
+    make compose
     ```
 
     `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
@@ -56,7 +56,7 @@ directories. The checkout includes each empty service directory with a tracked
     package:
 
     ```bash
-    docker compose -f compose.yaml -f compose.dev.yaml up --build
+    make compose-dev
     ```
 
     To watch for changes:
@@ -88,8 +88,12 @@ directories. The checkout includes each empty service directory with a tracked
 === "APIs"
 
     ```bash
-    docker compose -f compose.yaml up -d lgos-demo-api-a lgos-demo-api-b
+    make run-api
+    make run-api-b
     ```
+
+    Run each attached service in a separate terminal. Compose starts their
+    shared PostgreSQL dependency automatically.
 
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
@@ -112,7 +116,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Chainlit"
 
     ```bash
-    docker compose -f compose.yaml up -d lgos-chainlit
+    make run-chainlit
     ```
 
     Chainlit: `http://localhost:3002`

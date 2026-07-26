@@ -23,7 +23,7 @@ Put the generated value in `CHAINLIT_AUTH_SECRET`.
 === "Compose"
 
     ```bash
-    docker compose -f compose.yaml up -d lgos-chainlit
+    make run-chainlit
     ```
 
 === "Local processes"
@@ -34,7 +34,7 @@ Put the generated value in `CHAINLIT_AUTH_SECRET`.
     In another terminal from `demo/`:
 
     ```bash
-    make run-chainlit
+    make run-chainlit-local
     ```
 
 Both modes apply pending Chainlit schema migrations before the UI starts. Open
@@ -94,7 +94,7 @@ See [Authentication](../how-to-guides/authentication.md).
 Run the dedicated approval UI:
 
 ```bash
-DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit
+DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 ```
 
 The HITL client adds the assistant tool call and matching tool result to the
