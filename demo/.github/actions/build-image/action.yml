@@ -43,7 +43,7 @@ runs:
         flavor: latest=false
         tags: |
           type=sha,prefix=validation-,format=long,enable=${{ inputs.publish != 'true' }}
-          type=raw,value=latest,enable=${{ inputs.publish == 'true' && github.ref_type == 'branch' }}
+          type=raw,value=latest,enable=${{ inputs.publish == 'true' && github.event_name == 'release' }}
           type=semver,pattern={{version}},enable=${{ inputs.publish == 'true' && github.ref_type == 'tag' }}
           type=sha,prefix=sha-,format=long,enable=${{ inputs.publish == 'true' }}
 

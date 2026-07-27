@@ -3,16 +3,9 @@
 name: Build demo API image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - demo/api/**
-      - demo/.github/actions/build-image/**
-      - demo/.github/workflows/image-api.yml
-      - .github/workflows/demo-image-api.yml
+  release:
+    types:
+      - created
   pull_request:
     paths:
       - demo/api/**
@@ -46,7 +39,7 @@ jobs:
           platforms: linux/amd64
 
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'release'
     name: Publish Demo API
     permissions:
       contents: read

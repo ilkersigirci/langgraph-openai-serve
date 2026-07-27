@@ -115,9 +115,10 @@ is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
 also runs the API against the current LGOS source.
 
-Pull requests validate changed image contexts without publishing. Pushes to
-`main` publish `latest` and an immutable `sha-<commit>` tag. Tags such as
-`v0.1.0` publish `0.1.0` and the immutable commit tag for both images.
+Pull requests validate changed image contexts without publishing. Pushes and
+tag creation do not run the image publishing jobs. Creating a GitHub release
+such as `v0.1.0` publishes `latest`, `0.1.0`, and the immutable commit tag for
+both images.
 
 Published images include an SBOM and maximum BuildKit provenance. Actions are
 pinned to full commit hashes, credentials are not persisted after checkout, and
