@@ -37,7 +37,7 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session({"chat_profile": "custom-event-showcase"})
+    session = Session({"chat_profile": "lgos-b/custom-event-showcase"})
     messages = [{"role": "user", "content": "Build the report."}]
 
     def chunk(
@@ -111,6 +111,7 @@ async def test_message_handler_renders_public_client_events(
 
     create.assert_awaited_once_with(
         model="custom-event-showcase",
+        extra_headers={"x-model-provider": "lgos-b"},
         messages=messages,
         stream=True,
         user="demo-user",

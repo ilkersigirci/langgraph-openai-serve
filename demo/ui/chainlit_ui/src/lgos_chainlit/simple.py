@@ -12,7 +12,6 @@ from lgos_chainlit.lgos_protocol import (
     STREAM_EVENTS_METADATA_KEY,
     STREAM_EVENTS_METADATA_VALUE,
 )
-from lgos_chainlit.settings import settings
 from lgos_chainlit.utils.chat import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
@@ -24,14 +23,18 @@ from lgos_chainlit.utils.chat_settings import (
     configure_chat_settings,
 )
 from lgos_chainlit.utils.client_events import ClientEventRenderer
-from lgos_chainlit.utils.clients import discovery_client, inference_client
+from lgos_chainlit.utils.clients import (
+    catalog_client,
+    inference_client,
+    model_request,
+)
 
 
 @cl.set_chat_profiles
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    models = await discovery_client.models.list()
+    models = await catalog_client.models.list()
 
     return [
         cl.ChatProfile(
@@ -82,7 +85,7 @@ async def on_message(_message: cl.Message) -> None:
         metadata = chat_settings_metadata()
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
         stream = await inference_client.chat.completions.create(
-            model=settings.chainlit_inference_model(model),
+            **model_request(model),
             messages=messages,
             stream=True,
             user=authenticated_user_identifier(),

@@ -31,7 +31,11 @@ from lgos_chainlit.utils.chat import (
     send_ui_message,
     text_only_chat_messages,
 )
-from lgos_chainlit.utils.clients import discovery_client, inference_client
+from lgos_chainlit.utils.clients import (
+    inference_client,
+    model_request,
+    retrieve_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ logger = logging.getLogger(__name__)
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    model = await discovery_client.models.retrieve(settings.HITL_MODEL)
+    model = await retrieve_model(settings.HITL_MODEL)
     if not model_supports(model, GraphFeature.INTERRUPTS):
         raise RuntimeError(
             "No interrupt-capable model metadata returned by model retrieval. "
@@ -48,7 +52,7 @@ async def set_chat_profiles(
         )
     return [
         cl.ChatProfile(
-            name=model.id,
+            name=settings.HITL_MODEL,
             markdown_description="Approve or reject a LangGraph interrupt.",
         )
     ]
@@ -113,9 +117,7 @@ async def create_completion(
     messages: list[ChatCompletionMessageParam],
 ) -> ChatCompletion:
     return await inference_client.chat.completions.create(
-        model=settings.chainlit_inference_model(
-            cl.user_session.get("chat_profile") or settings.HITL_MODEL
-        ),
+        **model_request(cl.user_session.get("chat_profile") or settings.HITL_MODEL),
         messages=messages,
         metadata={THREAD_METADATA_KEY: cl.context.session.thread_id},
         user=authenticated_user_identifier(),

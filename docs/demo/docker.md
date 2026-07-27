@@ -42,7 +42,7 @@ directories. The checkout includes each empty service directory with a tracked
     `compose.yaml` contains no local builds:
 
     ```bash
-    docker compose -f compose.yaml up
+    make compose
     ```
 
     `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
@@ -56,7 +56,7 @@ directories. The checkout includes each empty service directory with a tracked
     package:
 
     ```bash
-    docker compose -f compose.yaml -f compose.dev.yaml up --build
+    make compose-dev
     ```
 
     To watch for changes:
@@ -85,13 +85,18 @@ directories. The checkout includes each empty service directory with a tracked
 
 ## Demo Services
 
-=== "API"
+=== "APIs"
 
     ```bash
-    docker compose -f compose.yaml up -d lgos-demo-api
+    make run-api
+    make run-api-b
     ```
 
-    OpenAI base URL: `http://localhost:8000/v1`
+    Run each attached service in a separate terminal. Compose starts their
+    shared PostgreSQL dependency automatically.
+
+    - `lgos-a`: `http://localhost:3004/v1`
+    - `lgos-b`: `http://localhost:3005/v1`
 
 === "Bifrost"
 
@@ -100,9 +105,9 @@ directories. The checkout includes each empty service directory with a tracked
     ```
 
     - Standard inference, without client events:
-      `http://localhost:8081/v1` with `openai/`-prefixed models
+      `http://localhost:3000/v1` with `openai/`-prefixed models
     - Detailed discovery or event-enabled inference:
-      `http://localhost:8081/openai_passthrough/v1` with unprefixed models
+      `http://localhost:3000/openai_passthrough/v1` with unprefixed models
 
     From the package repository, run `make test-bifrost` to verify detailed
     model metadata through the proxy. See
@@ -111,10 +116,10 @@ directories. The checkout includes each empty service directory with a tracked
 === "Chainlit"
 
     ```bash
-    docker compose -f compose.yaml up -d lgos-chainlit
+    make run-chainlit
     ```
 
-    Chainlit: `http://localhost:5000`
+    Chainlit: `http://localhost:3002`
 
     Configure its signing secret as described in the
     [Chainlit client](chainlit.md).
@@ -126,13 +131,14 @@ directories. The checkout includes each empty service directory with a tracked
     make sync-openwebui
     ```
 
-    Open WebUI: `http://localhost:8080`
+    Open WebUI: `http://localhost:3003`
 
     Compose runs the official Open WebUI image. The local sync command creates
     or updates the bundled Functions. See the
     [Open WebUI Functions](open-webui.md).
 
-PostgreSQL checkpoints, Bifrost state, and Open WebUI state use host bind mounts
+PostgreSQL is published on `localhost:3001`. PostgreSQL checkpoints, Bifrost
+state, and Open WebUI state use host bind mounts
 under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
 service runs as `PUID:PGID` with a read-only root filesystem, dropped
 capabilities, and explicit resource limits. Narrow tmpfs mounts hold required

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    POSTGRES_URI: str = "postgresql://lgos:lgos@localhost:5432/lgos"
+    POSTGRES_URI: str = "postgresql://lgos:lgos@localhost:3001/lgos"
     OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"

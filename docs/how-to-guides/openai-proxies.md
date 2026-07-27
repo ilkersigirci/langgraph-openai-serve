@@ -34,11 +34,12 @@ them even while ordinary assistant text continues to work.
 | Schema-normalizing Chat Completions route | Not guaranteed | Preserved |
 | Documented raw pass-through route | Preserved when byte-transparent | Preserved |
 
-Use a raw pass-through route for both inference and discovery when a client
-requests `metadata.langgraph_stream_events`. A missing event extension is a
-safe degradation: the completion remains valid, but event-driven UI is absent.
-Verify event count and event/text order with the real client SDK after proxy
-upgrades.
+Use a raw pass-through route for inference when a client requests
+`metadata.langgraph_stream_events`, and for detailed model retrieval that must
+preserve LGOS extensions. A normalized model-list route is sufficient for
+catalog discovery. A missing event extension is a safe degradation: the
+completion remains valid, but event-driven UI is absent. Verify event count and
+event/text order with the real client SDK after proxy upgrades.
 
 ## Bifrost
 

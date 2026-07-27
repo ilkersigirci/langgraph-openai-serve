@@ -53,7 +53,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-transit-connection-horizontal:{ .lg .middle } __Route through Bifrost__
 
-    Compare normalized inference with raw pass-through discovery and events.
+    Combine two independently deployable LGOS services behind one model catalog.
 
     [:octicons-arrow-right-24: Bifrost gateway](bifrost.md)
 
@@ -63,16 +63,16 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
-| Demo API | FastAPI host, graph registry, example graphs, and PostgreSQL checkpointer | Independent uv project and `lgos-demo-api` image |
+| Demo APIs | Two FastAPI graph services behind distinct Bifrost model prefixes | Independent uv project; the demo runs `lgos-demo-api` twice |
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Two Function sources plus an idempotent synchronization command | Independent uv project; Open WebUI uses its official image |
-| Bifrost | OpenAI-provider configuration for normal and pass-through routes | Compose configuration with the official image |
+| Bifrost | Combined model catalog and raw provider-selected pass-through | Compose configuration with the official image |
 | PostgreSQL | LangGraph checkpoints and Chainlit persistence | Official image with a demo-owned bind directory |
 
-Only the API imports `langgraph-openai-serve`. Chainlit and Open WebUI exercise
-the OpenAI wire contract without importing the package. Bifrost demonstrates
-which extension data survives a schema-normalizing route and when a raw
-pass-through route is required.
+Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
+the OpenAI wire contract without importing the package. Bifrost lets both
+clients discover the two services as one catalog while preserving LGOS
+extensions through raw pass-through requests.
 
 ## Client Capabilities
 

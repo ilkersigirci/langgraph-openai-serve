@@ -14,7 +14,7 @@ from lgos_chainlit.lgos_protocol import (
     ModelClientSettings,
     model_client_settings,
 )
-from lgos_chainlit.utils.clients import discovery_client
+from lgos_chainlit.utils.clients import retrieve_model
 
 logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
@@ -31,7 +31,7 @@ async def configure_chat_settings() -> None:
     candidates = dict(saved) if isinstance(saved, dict) else None
     _store_runtime_settings_defaults(None)
     try:
-        model = await discovery_client.models.retrieve(model_id)
+        model = await retrieve_model(model_id)
     except Exception:
         logger.warning(
             "Runtime settings discovery failed for %s; settings are inactive",

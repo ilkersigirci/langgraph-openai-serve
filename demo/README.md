@@ -19,7 +19,10 @@ dependency source.
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
 Shared Compose-only assets live under `docker/`; the Bifrost gateway
-configuration is at `docker/bifrost/config.json`.
+configuration is at `docker/bifrost/config.json`. Compose runs two LGOS API
+containers behind its `lgos-a/` and `lgos-b/` model prefixes. Both use the demo
+image today; either service can be replaced by an independently locked
+application image when graph dependencies conflict.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -28,7 +31,7 @@ mounts under `docker/volumes/`. Each service directory is tracked with a
 dropped Linux capabilities, and explicit CPU, memory, PID, and file-descriptor
 limits.
 
-## Run independently
+## Run containers independently
 
 Copy the shared environment template and configure any required credentials:
 
@@ -36,13 +39,19 @@ Copy the shared environment template and configure any required credentials:
 cp .env.example .env
 ```
 
-Run the API:
+Run the published `lgos-a` container on port 3004:
 
 ```bash
 make run-api
 ```
 
-Run Chainlit in another terminal:
+Run the same published image as `lgos-b` on port 3005:
+
+```bash
+make run-api-b
+```
+
+Run Chainlit and its Compose dependencies on port 3002:
 
 ```bash
 make run-chainlit
@@ -54,19 +63,44 @@ With Open WebUI running, synchronize the bundled Functions:
 make sync-openwebui
 ```
 
+Compose starts each selected service's dependencies and applies the API and
+Chainlit migrations through their `pre_start` hooks.
+
+## Run local processes
+
+Start PostgreSQL for the local API and UI processes:
+
+```bash
+docker compose -f compose.yaml up -d lgos-db
+```
+
+The local targets use the independently locked projects. The API additionally
+overlays the parent LGOS checkout as an editable dependency:
+
+```bash
+make run-api-local
+make run-api-b-local
+make run-chainlit-local
+```
+
+Run each long-lived process in a separate terminal.
+
 ## Run the stack
 
 Use the two published demo images and the official third-party images:
 
 ```bash
-docker compose -f compose.yaml up
+make compose
 ```
+
+The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
+3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
 
 From the LGOS source checkout, build the two project-owned application images
 from their own lockfiles and run the API against the editable parent package:
 
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up --build
+make compose-dev
 ```
 
 Set `PUID` and `PGID` in `.env` to the host identity that owns

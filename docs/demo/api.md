@@ -20,7 +20,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 ```bash title="Prepare the demo"
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up -d postgres
+docker compose -f compose.yaml up -d lgos-db
 ```
 
 === "Test this checkout"
@@ -28,15 +28,12 @@ docker compose -f compose.yaml up -d postgres
     Overlay the parent LGOS checkout without changing the demo lockfile:
 
     ```bash
-    uv run --directory api --env-file ../.env \
-      --locked --with-editable ../.. lgos-demo-api-setup
-    uv run --directory api --env-file ../.env \
-      --locked --with-editable ../.. lgos-demo-api
+    make run-api-local
     ```
 
-=== "Use the locked PyPI release"
+=== "Use the published image"
 
-    Run the API as a completely independent project:
+    Run the published API container and its PostgreSQL dependency:
 
     ```bash
     make run-api
@@ -45,7 +42,7 @@ docker compose -f compose.yaml up -d postgres
 ??? info "Demo environment settings"
 
     The API reads `DEMO_API_POSTGRES_URI` and defaults to
-    `postgresql://lgos:lgos@localhost:5432/lgos`, which matches the Compose
+    `postgresql://lgos:lgos@localhost:3001/lgos`, which matches the Compose
     service.
 
     LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
@@ -54,12 +51,12 @@ docker compose -f compose.yaml up -d postgres
     packaged with the API. These settings and dependencies belong to the API
     project and are not installed with the library.
 
-The base URL is `http://localhost:8000/v1`.
+The `lgos-a` base URL is `http://localhost:3004/v1`.
 
 Inspect registered graphs:
 
 ```bash
-curl http://localhost:8000/v1/models
+curl http://localhost:3004/v1/models
 ```
 
 The complete model and requirement matrix is in [Example Graphs](graphs.md).
@@ -69,7 +66,7 @@ The complete model and requirement matrix is in [Example Graphs](graphs.md).
 ```python title="Call a registered graph"
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 
 response = client.chat.completions.create(
     model="custom-input-output-context",
@@ -161,8 +158,9 @@ interleaved with assistant text.
 ## Try A Demo Client
 
 The demo includes optional [Chainlit](chainlit.md) and
-[Open WebUI](open-webui.md) clients. Route either client through the bundled
-[Bifrost gateway](bifrost.md) to exercise normal and pass-through proxy paths.
+[Open WebUI](open-webui.md) clients. The Compose stack routes both through the
+bundled [Bifrost gateway](bifrost.md), which combines two LGOS services and
+preserves extensions through pass-through requests.
 
 ## Next Steps
 

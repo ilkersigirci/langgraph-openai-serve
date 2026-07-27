@@ -56,23 +56,18 @@ class Settings(BaseSettings):
     )
 
     INFERENCE: OpenAIEndpoint = OpenAIEndpoint(
-        base_url="http://localhost:8000/v1",
+        base_url="http://localhost:3004/v1",
         api_key="DUMMY",
     )
-    INFERENCE_MODEL_PREFIX: str = ""
-    DISCOVERY: OpenAIEndpoint | None = None
+    CATALOG: OpenAIEndpoint | None = None
     HITL_MODEL: str = "interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"
 
     @property
-    def chainlit_discovery_endpoint(self) -> OpenAIEndpoint:
-        """Use a complete discovery endpoint, or the inference endpoint."""
-        return self.DISCOVERY or self.INFERENCE
-
-    def chainlit_inference_model(self, model: str) -> str:
-        """Apply an optional proxy provider/model namespace."""
-        return f"{self.INFERENCE_MODEL_PREFIX}{model}"
+    def chainlit_catalog_endpoint(self) -> OpenAIEndpoint:
+        """Use a complete catalog endpoint, or the inference endpoint."""
+        return self.CATALOG or self.INFERENCE
 
 
 settings = Settings()

@@ -1,18 +1,48 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
   "providers": {
-    "openai": {
+    "lgos-a": {
       "keys": [
         {
-          "name": "lgos",
+          "name": "lgos-a",
           "value": "DUMMY",
           "models": ["*"],
           "weight": 1.0
         }
       ],
       "network_config": {
-        "base_url": "http://lgos-demo-api:8000",
+        "base_url": "http://lgos-demo-api-a:8000",
         "allow_private_network": true
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": true,
+          "passthrough": true,
+          "passthrough_stream": true
+        }
+      }
+    },
+    "lgos-b": {
+      "keys": [
+        {
+          "name": "lgos-b",
+          "value": "DUMMY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://lgos-demo-api-b:8000",
+        "allow_private_network": true
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": true,
+          "passthrough": true,
+          "passthrough_stream": true
+        }
       }
     }
   },
