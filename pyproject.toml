@@ -56,8 +56,11 @@ dev = [
     "ty>=0.0.55",
 ]
 doc = [
-    "zensical>=0.0.11",
+    # Zensical uses its mike fork as the versioning bridge until native support:
+    # https://zensical.org/docs/setup/versioning/
+    "mike @ git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac",
     "mkdocstrings-python>=2.0.0",
+    "zensical>=0.0.11",
 ]
 test = [
     "pytest-cov>=5.0.0",

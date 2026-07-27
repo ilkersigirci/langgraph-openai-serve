@@ -42,6 +42,11 @@ nav = [
   { Reference = "reference.md" },
 ]
 
+[project.extra.version]
+provider = "mike"
+default = "latest"
+alias = true
+
 [project.theme]
 variant = "modern"
 features = [
