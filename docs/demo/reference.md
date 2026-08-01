@@ -28,7 +28,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
 | `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
 | `make run-chainlit-local` | Apply Chainlit migrations and run the local UI process |
-| `make sync-openwebui` | Create or update the bundled Open WebUI Functions |
+| `make sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
 | `make compose` | Run the stack with published project-owned images |
 | `make compose-dev` | Build local images; run the API and LGOS packages editable |
 | `make sync` | Synchronize all three projects from their lockfiles |
@@ -57,6 +57,17 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX` and
 `LGOS_OPENAI_API_DOCS_ENABLED` settings documented in the package
 [Reference](../reference.md#settings).
+
+## Open WebUI Sync Settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `DEMO_OPENWEBUI_URL` | `http://localhost:3003` | Open WebUI API used by the sync command |
+| `DEMO_OPENWEBUI_ADMIN_EMAIL` | `lgos@example.com` | Open WebUI sync account |
+| `DEMO_OPENWEBUI_ADMIN_PASSWORD` | `lgos` | Open WebUI sync password |
+| `DEMO_OPENWEBUI_CATALOG_BASE_URL` | `http://localhost:3000/v1` | Combined LGOS model-list endpoint |
+| `DEMO_OPENWEBUI_INFERENCE_BASE_URL` | `http://localhost:3000/openai_passthrough/v1` | Detailed LGOS model-retrieval endpoint |
+| `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | LGOS API or gateway key used during sync |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the [example graph catalog](graphs.md)

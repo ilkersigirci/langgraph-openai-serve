@@ -57,7 +57,8 @@ Run Chainlit and its Compose dependencies on port 3002:
 make run-chainlit
 ```
 
-With Open WebUI running, synchronize the bundled Functions:
+With Open WebUI running, synchronize the Functions and generated Workspace
+Models:
 
 ```bash
 make sync-openwebui

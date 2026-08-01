@@ -2,6 +2,7 @@
 title: UserValves-Simple / simple-graph
 author: langgraph-openai-serve
 version: 0.2
+description: Static per-user settings for one fixed graph when dynamic per-chat discovery is unnecessary.
 """
 
 from collections.abc import AsyncIterator

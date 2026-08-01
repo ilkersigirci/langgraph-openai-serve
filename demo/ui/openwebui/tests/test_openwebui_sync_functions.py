@@ -10,6 +10,7 @@ from lgos_openwebui.sync_functions import (
     sign_in,
     sync_functions,
 )
+from lgos_openwebui.workspace_models import WorkspaceModelSpec
 
 
 def _response(data: object) -> httpx.Response:
@@ -138,18 +139,48 @@ def test_main_reads_demo_openwebui_environment(
     monkeypatch.setenv("DEMO_OPENWEBUI_URL", "https://openwebui.example")
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_PASSWORD", "password")
+    monkeypatch.setenv(
+        "DEMO_OPENWEBUI_CATALOG_BASE_URL",
+        "https://bifrost.example/v1",
+    )
+    monkeypatch.setenv(
+        "DEMO_OPENWEBUI_INFERENCE_BASE_URL",
+        "https://bifrost.example/openai_passthrough/v1",
+    )
+    monkeypatch.setenv("DEMO_OPENWEBUI_API_KEY", "api-key")
     client = Mock()
     client_context = MagicMock()
     client_context.__enter__.return_value = client
     client_factory = Mock(return_value=client_context)
+    catalog_client = Mock()
+    catalog_context = MagicMock()
+    catalog_context.__enter__.return_value = catalog_client
+    inference_client = Mock()
+    inference_context = MagicMock()
+    inference_context.__enter__.return_value = inference_client
+    openai_factory = Mock(side_effect=[catalog_context, inference_context])
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
+    model_specs = (WorkspaceModelSpec(id="plain", fields=()),)
+    discover_workspace_models_mock = Mock(return_value=model_specs)
+    sync_workspace_models_mock = Mock()
     monkeypatch.setattr(sync_functions_module.httpx, "Client", client_factory)
+    monkeypatch.setattr(sync_functions_module, "OpenAI", openai_factory)
     monkeypatch.setattr(sync_functions_module, "sign_in", sign_in_mock)
     monkeypatch.setattr(
         sync_functions_module,
         "sync_functions",
         sync_functions_mock,
+    )
+    monkeypatch.setattr(
+        sync_functions_module,
+        "discover_workspace_model_specs",
+        discover_workspace_models_mock,
+    )
+    monkeypatch.setattr(
+        sync_functions_module,
+        "sync_workspace_models",
+        sync_workspace_models_mock,
     )
 
     sync_functions_module.main()
@@ -160,3 +191,20 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
+    assert openai_factory.call_args_list == [
+        call(
+            base_url="https://bifrost.example/v1",
+            api_key="api-key",
+            timeout=10,
+        ),
+        call(
+            base_url="https://bifrost.example/openai_passthrough/v1",
+            api_key="api-key",
+            timeout=10,
+        ),
+    ]
+    discover_workspace_models_mock.assert_called_once_with(
+        catalog_client,
+        inference_client,
+    )
+    sync_workspace_models_mock.assert_called_once_with(client, model_specs)

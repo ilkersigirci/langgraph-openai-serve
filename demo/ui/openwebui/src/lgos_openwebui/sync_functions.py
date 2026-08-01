@@ -1,10 +1,16 @@
-"""Synchronize the demo Functions with a running Open WebUI instance."""
+"""Synchronize the demo integration with a running Open WebUI instance."""
 
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+from openai import OpenAI, OpenAIError
+
+from .workspace_models import (
+    discover_workspace_model_specs,
+    sync_workspace_models,
+)
 
 
 @dataclass(frozen=True)
@@ -138,20 +144,47 @@ def sync_functions(
 
 
 def main() -> None:
-    """Authenticate and synchronize the bundled Open WebUI Functions."""
+    """Synchronize the bundled Function and generated Workspace Models."""
     base_url = os.environ.get("DEMO_OPENWEBUI_URL", "http://localhost:3003")
     email = os.environ.get("DEMO_OPENWEBUI_ADMIN_EMAIL", "lgos@example.com")
     password = os.environ.get("DEMO_OPENWEBUI_ADMIN_PASSWORD", "lgos")
+    catalog_base_url = os.environ.get(
+        "DEMO_OPENWEBUI_CATALOG_BASE_URL",
+        "http://localhost:3000/v1",
+    )
+    inference_base_url = os.environ.get(
+        "DEMO_OPENWEBUI_INFERENCE_BASE_URL",
+        "http://localhost:3000/openai_passthrough/v1",
+    )
+    api_key = os.environ.get("DEMO_OPENWEBUI_API_KEY", "DUMMY")
 
     try:
-        with httpx.Client(base_url=base_url, timeout=10) as client:
+        with (
+            httpx.Client(base_url=base_url, timeout=10) as client,
+            OpenAI(
+                base_url=catalog_base_url,
+                api_key=api_key,
+                timeout=10,
+            ) as catalog_client,
+            OpenAI(
+                base_url=inference_base_url,
+                api_key=api_key,
+                timeout=10,
+            ) as inference_client,
+        ):
             sign_in(client, email, password)
-            results = sync_functions(client)
-    except (OSError, ValueError, httpx.HTTPError) as exc:
-        raise SystemExit(f"Open WebUI Function sync failed: {exc}") from exc
+            function_results = sync_functions(client)
+            model_specs = discover_workspace_model_specs(
+                catalog_client,
+                inference_client,
+            )
+            sync_workspace_models(client, model_specs)
+    except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
+        raise SystemExit(f"Open WebUI sync failed: {exc}") from exc
 
-    for function_id, action in results.items():
-        print(f"{action.capitalize()}: {function_id}")
+    for function_id, action in function_results.items():
+        print(f"{action.capitalize()} Function: {function_id}")
+    print(f"Synchronized Workspace Models: {len(model_specs)}")
 
 
 if __name__ == "__main__":

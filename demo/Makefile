@@ -67,7 +67,7 @@ run-api-b: ## Run the lgos-b container
 run-chainlit: ## Run the Chainlit container and its dependencies
 	$(COMPOSE) up lgos-chainlit
 
-sync-openwebui: ## Create or update the bundled Open WebUI Functions
+sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync
 
 compose: ## Run the stack from published images

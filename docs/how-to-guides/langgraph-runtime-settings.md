@@ -132,5 +132,6 @@ See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-
 for discovery code. The included Chainlit client automates descriptor discovery,
 Chat Settings, and metadata serialization; see the
 [Chainlit demo](../demo/chainlit.md#runtime-settings). The
-[Open WebUI demo](../demo/open-webui.md#runtime-settings) uses a
-separate, static `UserValves` Function for the `simple-graph` demo.
+[Open WebUI demo](../demo/open-webui.md#runtime-settings) projects each
+discovered model's descriptor into native per-chat Chat Variables and retains a
+static `UserValves` example for fixed single-model integrations.

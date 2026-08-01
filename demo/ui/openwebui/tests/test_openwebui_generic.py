@@ -9,6 +9,7 @@ import pytest
 from openai.lib.streaming.chat import ChunkEvent, ContentDeltaEvent
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
+from lgos_openwebui.functions import generic
 from lgos_openwebui.functions.generic import Pipe
 
 pytestmark = pytest.mark.anyio
@@ -59,16 +60,25 @@ class ScriptedChat:
     ) -> None:
         self._steps = steps
         self.calls: list[tuple[list[dict[str, Any]], str, str]] = []
+        self.runtime_metadata_calls: list[dict[str, str] | None] = []
+        self.timeouts: list[float] = []
 
     @asynccontextmanager
     async def __call__(
         self,
+        *,
+        base_url: str,
+        api_key: str,
+        timeout: float,
         messages: list[dict[str, Any]],
         thread_id: str,
         model_id: str,
+        runtime_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[ScriptedStream]:
         step_index = len(self.calls)
         self.calls.append((messages, thread_id, model_id))
+        self.runtime_metadata_calls.append(runtime_metadata)
+        self.timeouts.append(timeout)
         if step_index >= len(self._steps):
             raise AssertionError(f"Unexpected chat call {step_index + 1}")
 
@@ -152,9 +162,17 @@ def _citation_response() -> ChatCompletion:
     )
 
 
+def test_api_key_valve_uses_password_input() -> None:
+    api_key_schema = Pipe.Valves.model_json_schema()["properties"]["OPENAI_API_KEY"]
+
+    assert api_key_schema["input"] == {"type": "password"}
+
+
 async def test_pipe_lists_registered_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pipe = Pipe()
+    pipe.valves.OPENAI_API_TIMEOUT = 45
     client = AsyncMock()
     client.__aenter__.return_value = client
     client.models.list.return_value = SimpleNamespace(
@@ -169,7 +187,7 @@ async def test_pipe_lists_registered_models(
         client_factory,
     )
 
-    models = await Pipe().pipes()
+    models = await pipe.pipes()
 
     assert models == [
         {
@@ -181,7 +199,7 @@ async def test_pipe_lists_registered_models(
     client_factory.assert_called_once_with(
         base_url="http://bifrost:8080/v1",
         api_key="DUMMY",
-        timeout=30,
+        timeout=45,
     )
     client.models.list.assert_awaited_once_with()
     client.__aexit__.assert_awaited_once_with(None, None, None)
@@ -192,7 +210,7 @@ async def test_pipe_preserves_dots_in_selected_model(
 ) -> None:
     pipe = Pipe()
     chat = ScriptedChat((("ok",), _completion("ok")))
-    monkeypatch.setattr(pipe, "_chat", chat)
+    monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
@@ -247,7 +265,7 @@ async def test_pipe_resumes_confirmed_interrupt(
         events.append(event)
         return approved
 
-    monkeypatch.setattr(pipe, "_chat", chat)
+    monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
@@ -297,7 +315,7 @@ async def test_pipe_uses_fallback_confirmation_for_malformed_interrupt(
         events.append(event)
         return True
 
-    monkeypatch.setattr(pipe, "_chat", chat)
+    monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
@@ -334,12 +352,16 @@ async def test_chat_sends_model_and_thread_metadata(
     stream_factory = Mock(return_value=stream_context)
     client.chat.completions.stream = stream_factory
     client_factory = Mock(return_value=client)
-    monkeypatch.setattr(pipe, "_client", client_factory)
+    monkeypatch.setattr(generic, "_client", client_factory)
 
-    async with pipe._chat(
-        messages,
-        THREAD_ID,
-        "lgos-a/graph.with.dots",
+    async with generic._chat(
+        base_url=pipe.valves.OPENAI_API_BASE_URL,
+        api_key=pipe.valves.OPENAI_API_KEY,
+        timeout=pipe.valves.OPENAI_API_TIMEOUT,
+        messages=messages,
+        thread_id=THREAD_ID,
+        model_id="lgos-a/graph.with.dots",
+        runtime_metadata={"langgraph_runtime_settings": '{"mode":"detailed"}'},
     ) as response_stream:
         deltas = [
             event.delta
@@ -350,7 +372,11 @@ async def test_chat_sends_model_and_thread_metadata(
 
     assert response == completion
     assert deltas == ["ok"]
-    client_factory.assert_called_once_with()
+    client_factory.assert_called_once_with(
+        base_url=pipe.valves.OPENAI_API_BASE_URL,
+        api_key=pipe.valves.OPENAI_API_KEY,
+        timeout=pipe.valves.OPENAI_API_TIMEOUT,
+    )
     stream_factory.assert_called_once_with(
         model="graph.with.dots",
         extra_headers={"x-model-provider": "lgos-a"},
@@ -358,10 +384,110 @@ async def test_chat_sends_model_and_thread_metadata(
         metadata={
             "langgraph_thread_id": THREAD_ID,
             "langgraph_stream_events": "v1",
+            "langgraph_runtime_settings": '{"mode":"detailed"}',
         },
     )
     stream_context.__aexit__.assert_awaited_once_with(None, None, None)
     client.__aexit__.assert_awaited_once_with(None, None, None)
+
+
+async def test_pipe_forwards_changed_chat_variables_as_runtime_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+    model = SimpleNamespace(
+        model_extra={
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "client_settings": {
+                    "schema_version": 1,
+                    "defaults": {
+                        "use_history": False,
+                        "audience": "general",
+                    },
+                },
+            }
+        }
+    )
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.models.retrieve.return_value = model
+    client_factory = Mock(return_value=client)
+    monkeypatch.setattr(generic, "_client", client_factory)
+
+    metadata = await generic._runtime_settings_metadata(
+        base_url=pipe.valves.OPENAI_API_BASE_URL,
+        api_key=pipe.valves.OPENAI_API_KEY,
+        timeout=pipe.valves.OPENAI_API_TIMEOUT,
+        model_id="lgos-a/simple-graph",
+        metadata={
+            "chat_variables": {
+                "use_history": False,
+                "audience": "expert",
+                "stale": "ignored",
+            }
+        },
+    )
+
+    assert metadata == {
+        "langgraph_runtime_settings": '{"audience":"expert"}',
+    }
+    client_factory.assert_called_once_with(
+        base_url=pipe.valves.OPENAI_API_BASE_URL,
+        api_key=pipe.valves.OPENAI_API_KEY,
+        timeout=pipe.valves.OPENAI_API_TIMEOUT,
+    )
+    client.models.retrieve.assert_awaited_once_with(
+        model="simple-graph",
+        extra_headers={"x-model-provider": "lgos-a"},
+    )
+    client.__aexit__.assert_awaited_once_with(None, None, None)
+
+
+async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+    pipe.valves.OPENAI_API_TIMEOUT = 45
+    chat = ScriptedChat(
+        ((), _interrupt_response()),
+        (("Approved.",), _completion("Approved.")),
+    )
+    runtime_metadata = {
+        "langgraph_runtime_settings": '{"use_history":true}',
+    }
+    settings_metadata = AsyncMock(return_value=runtime_metadata)
+
+    async def confirm(_: dict[str, Any]) -> bool:
+        return True
+
+    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic, "_runtime_settings_metadata", settings_metadata)
+
+    chunks = await _collect_response(
+        pipe.pipe(
+            body=_body(USER_REQUEST),
+            __event_call__=confirm,
+            __metadata__={
+                "chat_id": "chat-1",
+                "chat_variables": {"use_history": True},
+            },
+        )
+    )
+
+    assert chunks == ["Approved."]
+    assert chat.runtime_metadata_calls == [runtime_metadata, runtime_metadata]
+    assert chat.timeouts == [45, 45]
+    settings_metadata.assert_awaited_once_with(
+        base_url=pipe.valves.OPENAI_API_BASE_URL,
+        api_key=pipe.valves.OPENAI_API_KEY,
+        timeout=pipe.valves.OPENAI_API_TIMEOUT,
+        model_id=MODEL_ID,
+        metadata={
+            "chat_id": "chat-1",
+            "chat_variables": {"use_history": True},
+        },
+    )
 
 
 async def test_pipe_streams_markdown_unchanged(
@@ -369,7 +495,7 @@ async def test_pipe_streams_markdown_unchanged(
 ) -> None:
     pipe = Pipe()
     chat = ScriptedChat((MARKDOWN_DELTAS, _completion(MARKDOWN_RESPONSE)))
-    monkeypatch.setattr(pipe, "_chat", chat)
+    monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
@@ -396,7 +522,7 @@ async def test_pipe_forwards_annotations_only_when_streaming(
     pipe = Pipe()
     completion = _citation_response()
     chat = ScriptedChat(((MARKDOWN_RESPONSE,), completion))
-    monkeypatch.setattr(pipe, "_chat", chat)
+    monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await _collect_response(
         pipe.pipe(
@@ -478,7 +604,7 @@ def test_pipe_maps_status_event_to_openwebui_status(
         }
     )
 
-    assert Pipe()._status_event(chunk) == {
+    assert generic._status_event(chunk) == {
         "type": "status",
         "data": expected,
     }
@@ -521,7 +647,7 @@ async def test_content_stream_emits_status_event() -> None:
         )
 
     emitter = AsyncMock()
-    deltas = [delta async for delta in Pipe()._content_deltas(stream(), emitter)]
+    deltas = [delta async for delta in generic._content_deltas(stream(), emitter)]
 
     assert deltas == []
     emitter.assert_awaited_once_with(

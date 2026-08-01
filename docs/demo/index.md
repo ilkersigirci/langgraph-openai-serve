@@ -65,7 +65,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services behind distinct Bifrost model prefixes | Independent uv project; the demo runs `lgos-demo-api` twice |
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Two Function sources plus an idempotent synchronization command | Independent uv project; Open WebUI uses its official image |
+| Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Combined model catalog and raw provider-selected pass-through | Compose configuration with the official image |
 | PostgreSQL | LangGraph checkpoints and Chainlit persistence | Official image with a demo-owned bind directory |
 
@@ -79,8 +79,8 @@ extensions through raw pass-through requests.
 | Demo client | Runtime settings | Interrupts | Client events | Citations |
 | --- | --- | --- | --- | --- |
 | Chainlit | Renders supported discovered fields | Dedicated approval UI | Native status task list and live activity panel | Markdown content |
-| Open WebUI manifold Pipe | Server defaults | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
-| Open WebUI `simple-graph` Pipe | Fixed `use_history` and `audience` UserValves | None | Not requested | Assistant text only |
+| Open WebUI generated models | Renders supported discovered fields as Chat Variables | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
+| Open WebUI static example | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
 Direct OpenAI SDK clients need no demo adapter. They can use every core field
 their own application handles, as shown in

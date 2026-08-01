@@ -133,8 +133,8 @@ directories. The checkout includes each empty service directory with a tracked
 
     Open WebUI: `http://localhost:3003`
 
-    Compose runs the official Open WebUI image. The local sync command creates
-    or updates the bundled Functions. See the
+    Compose runs the official Open WebUI image. The local sync command updates
+    the bundled Functions and generates Workspace Models from LGOS metadata. See the
     [Open WebUI Functions](open-webui.md).
 
 PostgreSQL is published on `localhost:3001`. PostgreSQL checkpoints, Bifrost
