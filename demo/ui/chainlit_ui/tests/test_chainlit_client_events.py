@@ -37,7 +37,13 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
-    session = Session({"chat_profile": "lgos-b/custom-event-showcase"})
+    clients = importlib.import_module("lgos_chainlit.utils.clients")
+    session = Session(
+        {
+            "chat_profile": "lgos-b/custom-event-showcase",
+            "lgos_model_features": ["client_events"],
+        }
+    )
     messages = [{"role": "user", "content": "Build the report."}]
 
     def chunk(
@@ -105,7 +111,15 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch.setattr(simple.cl, "CustomElement", custom_element_factory)
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.inference_client.chat.completions, "create", create)
+    monkeypatch.setattr(
+        clients.settings.OPENAI,
+        "model_routes",
+        {
+            "lgos-a": {"x-model-provider": "lgos-a"},
+            "lgos-b": {"x-model-provider": "lgos-b"},
+        },
+    )
+    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
 
     await simple.on_message(Mock(content=messages[0]["content"]))
 

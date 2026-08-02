@@ -19,10 +19,12 @@ dependency source.
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
 Shared Compose-only assets live under `docker/`; the Bifrost gateway
-configuration is at `docker/bifrost/config.json`. Compose runs two LGOS API
-containers behind its `lgos-a/` and `lgos-b/` model prefixes. Both use the demo
-image today; either service can be replaced by an independently locked
-application image when graph dependencies conflict.
+configuration is at `docker/bifrost/config.json`. Compose runs the demo API
+image as two independently addressable services, `lgos-a` and `lgos-b`. They
+serve the same graphs today so the stack can demonstrate routing multiple LGOS
+APIs through one Bifrost pass-through endpoint; either service can define a
+different graph set later. The clients keep one OpenAI client and select the
+provider per request.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -88,7 +90,7 @@ Run each long-lived process in a separate terminal.
 
 ## Run the stack
 
-Use the two published demo images and the official third-party images:
+Use the published demo images and the official third-party images:
 
 ```bash
 make compose
@@ -97,7 +99,7 @@ make compose
 The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
 3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
 
-From the LGOS source checkout, build the two project-owned application images
+From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:
 
 ```bash

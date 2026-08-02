@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 from openai import OpenAI, OpenAIError
+from pydantic import TypeAdapter, ValidationError
 
 from .workspace_models import (
     discover_workspace_model_specs,
@@ -23,6 +24,10 @@ class FunctionSpec:
 
 
 FUNCTIONS_DIR = Path(__file__).with_name("functions")
+MODEL_ROUTES_ADAPTER = TypeAdapter(dict[str, dict[str, str]])
+DEFAULT_MODEL_ROUTES = (
+    '{"lgos-a":{"x-model-provider":"lgos-a"},"lgos-b":{"x-model-provider":"lgos-b"}}'
+)
 
 
 def _frontmatter_title(content: str) -> str | None:
@@ -148,38 +153,34 @@ def main() -> None:
     base_url = os.environ.get("DEMO_OPENWEBUI_URL", "http://localhost:3003")
     email = os.environ.get("DEMO_OPENWEBUI_ADMIN_EMAIL", "lgos@example.com")
     password = os.environ.get("DEMO_OPENWEBUI_ADMIN_PASSWORD", "lgos")
-    catalog_base_url = os.environ.get(
-        "DEMO_OPENWEBUI_CATALOG_BASE_URL",
-        "http://localhost:3000/v1",
-    )
-    inference_base_url = os.environ.get(
-        "DEMO_OPENWEBUI_INFERENCE_BASE_URL",
+    openai_base_url = os.environ.get(
+        "DEMO_OPENWEBUI_OPENAI_BASE_URL",
         "http://localhost:3000/openai_passthrough/v1",
     )
     api_key = os.environ.get("DEMO_OPENWEBUI_API_KEY", "DUMMY")
+    model_routes_json = os.environ.get(
+        "DEMO_OPENWEBUI_MODEL_ROUTES",
+        DEFAULT_MODEL_ROUTES,
+    )
 
     try:
+        model_routes = MODEL_ROUTES_ADAPTER.validate_json(model_routes_json)
         with (
             httpx.Client(base_url=base_url, timeout=10) as client,
             OpenAI(
-                base_url=catalog_base_url,
+                base_url=openai_base_url,
                 api_key=api_key,
                 timeout=10,
-            ) as catalog_client,
-            OpenAI(
-                base_url=inference_base_url,
-                api_key=api_key,
-                timeout=10,
-            ) as inference_client,
+            ) as openai_client,
         ):
             sign_in(client, email, password)
             function_results = sync_functions(client)
             model_specs = discover_workspace_model_specs(
-                catalog_client,
-                inference_client,
+                openai_client,
+                model_routes,
             )
             sync_workspace_models(client, model_specs)
-    except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
+    except (OSError, ValueError, ValidationError, httpx.HTTPError, OpenAIError) as exc:
         raise SystemExit(f"Open WebUI sync failed: {exc}") from exc
 
     for function_id, action in function_results.items():

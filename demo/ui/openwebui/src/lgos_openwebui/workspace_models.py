@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
@@ -18,6 +18,12 @@ PUBLIC_READ_GRANT = {
     "principal_id": "*",
     "permission": "read",
 }
+LIMITED_FUNCTIONALITY_DESCRIPTION = (
+    "Limited functionality: the configured OpenAI endpoint did not return valid "
+    "langgraph_openai_serve model metadata. Runtime settings, client events, and "
+    "interrupts may be unavailable. Configure the proxy to pass LGOS /v1 requests "
+    "and responses through unchanged."
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +32,7 @@ class WorkspaceModelSpec:
 
     id: str
     fields: tuple[dict[str, Any], ...]
+    limited: bool = False
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
@@ -33,7 +40,8 @@ class WorkspaceModelSpec:
 
     @property
     def name(self) -> str:
-        return f"LGOS / {self.id}"
+        suffix = " (Limited functionality)" if self.limited else ""
+        return f"LGOS / {self.id}{suffix}"
 
     @property
     def workspace_model_id(self) -> str:
@@ -46,8 +54,8 @@ class WorkspaceModelSpec:
 
 def chat_variable_fields(model: Any) -> tuple[dict[str, Any], ...] | None:
     """Translate the Chainlit-supported LGOS schema subset to Chat Variables."""
-    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
-    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+    extension = _model_extension(model)
+    if extension is None:
         return None
 
     settings = extension.get("client_settings")
@@ -71,18 +79,64 @@ def chat_variable_fields(model: Any) -> tuple[dict[str, Any], ...] | None:
 
 
 def discover_workspace_model_specs(
-    catalog_client: OpenAI,
-    inference_client: OpenAI,
+    client: OpenAI,
+    model_routes: dict[str, dict[str, str]] | None = None,
 ) -> tuple[WorkspaceModelSpec, ...]:
-    """Build Workspace Models from detailed LGOS model metadata."""
+    """Build Workspace Models through one OpenAI endpoint."""
+    model_routes = model_routes or {}
+    _validate_model_routes(model_routes)
     specs = []
-    for listed_model in catalog_client.models.list().data:
-        model_id = listed_model.id
-        model = inference_client.models.retrieve(**_model_request(model_id))
+    for model_id in _list_model_ids(client, model_routes):
+        try:
+            model = client.models.retrieve(**_model_request(model_id, model_routes))
+        except OpenAIError:
+            model = None
         fields = chat_variable_fields(model)
-        if fields is not None:
-            specs.append(WorkspaceModelSpec(id=model_id, fields=fields))
+        specs.append(
+            WorkspaceModelSpec(
+                id=model_id,
+                fields=fields or (),
+                limited=fields is None,
+            )
+        )
     return tuple(sorted(specs, key=lambda spec: spec.id))
+
+
+def _list_model_ids(
+    client: OpenAI,
+    model_routes: dict[str, dict[str, str]],
+) -> list[str]:
+    if not model_routes:
+        return [model.id for model in client.models.list().data]
+
+    model_ids = []
+    for route, headers in model_routes.items():
+        models = client.models.list(extra_headers=headers)
+        model_ids.extend(f"{route}/{model.id}" for model in models.data)
+    return model_ids
+
+
+def _model_request(
+    model_id: str,
+    model_routes: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    if not model_routes:
+        return {"model": model_id}
+
+    route, separator, upstream_model = model_id.partition("/")
+    headers = model_routes.get(route)
+    if not separator or not upstream_model or headers is None:
+        raise ValueError(f"Unknown configured OpenAI model route in {model_id!r}.")
+
+    request: dict[str, Any] = {"model": upstream_model}
+    if headers:
+        request["extra_headers"] = headers
+    return request
+
+
+def _validate_model_routes(model_routes: dict[str, dict[str, str]]) -> None:
+    if any(not route or "/" in route for route in model_routes):
+        raise ValueError("Model routes must be non-empty and contain no '/'.")
 
 
 def sync_workspace_models(
@@ -167,14 +221,16 @@ def _chat_variable_field(
     }
 
 
-def _model_request(model_id: str) -> dict[str, Any]:
-    provider, separator, model = model_id.partition("/")
-    if not separator or not provider or not model:
-        return {"model": model_id}
-    return {
-        "model": model,
-        "extra_headers": {"x-model-provider": provider},
-    }
+def _model_extension(model: Any) -> dict[str, Any] | None:
+    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
+    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+        return None
+    features = extension.get("features")
+    if not isinstance(features, list) or any(
+        not isinstance(feature, str) for feature in features
+    ):
+        return None
+    return extension
 
 
 def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
@@ -200,7 +256,11 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         "base_model_id": spec.base_model_id,
         "name": spec.name,
         "meta": {
-            "description": "Generated from the LGOS model schema.",
+            "description": (
+                LIMITED_FUNCTIONALITY_DESCRIPTION
+                if spec.limited
+                else "Generated from the LGOS model schema."
+            ),
             CHAT_VARIABLES_META_KEY: {"fields": list(spec.fields)},
         },
         "params": {},

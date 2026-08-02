@@ -33,7 +33,7 @@ class Model(BaseModel):
 
 
 class ModelDetails(Model):
-    """Retrieved model with optional LGOS discovery metadata."""
+    """Retrieved model with required LGOS capability metadata."""
 
     langgraph_openai_serve: LangGraphModelExtension
 

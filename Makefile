@@ -7,6 +7,7 @@ PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
 DEMO_DIR=demo
 
 .PHONY: help install test test-demo test-demo-local check-demo clean build-sdist build-wheel publish pre-commit format lint
+.PHONY: test-bifrost
 .DEFAULT_GOAL=help
 
 help:
@@ -62,11 +63,9 @@ test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
 
-test-bifrost: DEMO_TEST_BIFROST_CATALOG_BASE_URL ?= http://localhost:3000/v1
-test-bifrost: DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
+test-bifrost: DEMO_TEST_BIFROST_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
 test-bifrost: ## Run the optional Bifrost proxy integration test
-	DEMO_TEST_BIFROST_CATALOG_BASE_URL=$(DEMO_TEST_BIFROST_CATALOG_BASE_URL) \
-		DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=$(DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL) \
+	DEMO_TEST_BIFROST_BASE_URL=$(DEMO_TEST_BIFROST_BASE_URL) \
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
 		pytest -m integration tests/integration/test_bifrost_proxy.py
 

@@ -73,3 +73,11 @@ Keep test setup explicit and assertions focused on observable behavior.
   `metadata.langgraph_thread_id`.
 - Tests that intentionally verify missing checkpointer behavior should use an
   uncheckpointed graph factory so the failure setup is obvious.
+
+## Client Event Tests
+
+- Graphs that emit client events must declare
+  `features={GraphFeature.CLIENT_EVENTS}`.
+- Streaming requests must also opt in with
+  `metadata.langgraph_stream_events="v1"`; test the feature declaration and
+  request opt-in as independent gates.

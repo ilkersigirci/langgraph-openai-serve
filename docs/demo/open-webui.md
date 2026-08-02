@@ -31,10 +31,10 @@ make sync-openwebui
 ```
 
 The sync command signs in through `/api/v1/auths/signin`, creates or updates the
-bundled Functions, reads the combined Bifrost model catalog, retrieves
-each model's detailed LGOS metadata, hides the corresponding public manifold
-base, and bulk-imports the generated Workspace Models. Run it again after
-changing the Function, graph catalog, or a graph's client settings schema.
+bundled Functions, lists and retrieves LGOS models through one OpenAI client,
+hides the corresponding public manifold base, and bulk-imports the generated
+Workspace Models. Run it again after changing the Function, graph catalog, or a
+graph's client settings schema.
 
 The operation is additive: it does not delete user-managed Functions or
 Workspace Models. Generated manifold bases remain public and hidden so regular
@@ -52,10 +52,15 @@ filenames must be lowercase Python identifiers.
 
 The defaults match `compose.yaml`. Override the Open WebUI connection with
 `DEMO_OPENWEBUI_URL`, `DEMO_OPENWEBUI_ADMIN_EMAIL`, and
-`DEMO_OPENWEBUI_ADMIN_PASSWORD`. Override LGOS discovery with
-`DEMO_OPENWEBUI_CATALOG_BASE_URL`, `DEMO_OPENWEBUI_INFERENCE_BASE_URL`, and
-`DEMO_OPENWEBUI_API_KEY`. Set secrets in the environment rather than passing
-them on the command line.
+`DEMO_OPENWEBUI_ADMIN_PASSWORD`. Configure the one LGOS client with
+`DEMO_OPENWEBUI_OPENAI_BASE_URL`, `DEMO_OPENWEBUI_API_KEY`, and
+`DEMO_OPENWEBUI_MODEL_ROUTES`. The last setting is a JSON object mapping
+synthetic model prefixes to request headers. The demo maps `lgos-a` and
+`lgos-b` to Bifrost's corresponding `x-model-provider` values. Set it to `{}`
+for a standard endpoint whose listed model IDs should be reused verbatim. Set
+secrets in the environment rather than passing them on the command line. Point
+this setting and the Function valve below at the same deployment; their
+hostnames differ when one runs on the host and the other runs inside Compose.
 
 Choose a generated entry such as `LGOS / lgos-a/simple-graph` to use Chat
 Variables. Its Workspace Model ID is `lgos.lgos-a/simple-graph`, and its base
@@ -64,9 +69,25 @@ is public but hidden, following Open WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
 `UserValves-Simple / simple-graph` remains available as the static alternative.
 
-Configure the two in-container LGOS URLs and key independently in the generic
-Function's admin valves. Open WebUI stores Function code in its database, so a
-bind mount of the Python file does not update it.
+Configure `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, and
+`OPENAI_API_MODEL_ROUTES` in the generic Function's admin valves. A configured
+route adds its prefix to the selector and applies its headers to listing,
+detailed retrieval, and inference. Leave the route object empty for a standard
+OpenAI endpoint. The static UserValves Function instead accepts one `MODEL` and
+one `OPENAI_API_HEADERS` object and sends both unchanged. Open WebUI stores
+Function code in its database, so a bind mount of the Python file does not
+update it.
+
+## Limited Functionality
+
+Every generated model remains visible when its detailed response lacks the
+required `langgraph_openai_serve` extension, but its name and native Workspace
+Model description say **Limited functionality**. At chat time both bundled
+Pipes also emit an Open WebUI
+[`notification`](https://docs.openwebui.com/features/extensibility/plugin/development/events/#notification)
+with warning severity. Standard assistant text may still work; runtime settings,
+client events, and interrupts are not assumed. Configure the selected OpenAI
+URL as the proxy's LGOS pass-through route to remove the warning.
 
 ## Runtime Settings
 
@@ -120,30 +141,36 @@ forwards final OpenAI citation annotations without translating them.
 Non-streaming generator results remain plain text. The static example streams
 assistant text only.
 
-The manifold Pipe opts into LGOS client stream events and maps every portable
-status update to Open WebUI's native
+The manifold Pipe opts into LGOS client stream events only when model retrieval
+advertises `client_events`, and maps every portable status update to Open
+WebUI's native
 [`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
-Select `status-events` and ask **Prepare the media workflow.** Open WebUI saves
-each update in the assistant message's `statusHistory`; `done=False` displays an
-active shimmer, `done=True` stops it, and `hidden=True` keeps the history entry
-out of the current display. Persisted statuses survive a reload or closed tab.
-`progress` and `artifact` events are currently ignored by this Pipe.
+Select `lgos-a/status-events` and ask **Prepare the media workflow.** Open WebUI
+saves each update in the assistant message's `statusHistory`; `done=False`
+displays an active shimmer, `done=True` stops it, and `hidden=True` keeps the
+history entry out of the current display. Persisted statuses survive a reload
+or closed tab. `progress` and `artifact` events are currently ignored by this
+Pipe.
 
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already
 started the backend work. The passive status mapping keeps execution in the
 graph and avoids an unknown-tool or duplicate-execution path.
 
-When the Pipe targets an OpenAI-compatible proxy, status updates require a raw
-pass-through inference URL because a schema-normalizing route may discard the
-extension-only chunks. See
+When the Pipe targets an OpenAI-compatible proxy, its one OpenAI base URL must
+be a raw pass-through because a schema-normalizing route may discard model
+metadata and extension-only chunks. For a multiplexed pass-through, configure
+its model routes and headers explicitly. For a normalized endpoint, clear the
+route object so returned model IDs are reused verbatim; standard chat may work,
+but the Pipe remains in limited mode when LGOS metadata is missing. See
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
 ## Interrupt Approval
 
-Select `interruptible-approval` from the manifold Pipe to try confirmation. The
-Pipe sends `metadata.langgraph_thread_id`, presents the interrupt, and returns
-the matching tool result when the user approves or rejects it.
+Select `lgos-b/interruptible-approval` from the manifold Pipe to try
+confirmation. The Pipe sends `metadata.langgraph_thread_id`, presents the
+interrupt, and returns the matching tool result when the user approves or
+rejects it.
 
 See the core [citation contract](../explanation/openai-compatibility.md#citation-ownership)
 and [interrupt protocol](../explanation/openai-compatibility.md#tool-calls-and-interrupts)

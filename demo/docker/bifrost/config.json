@@ -18,6 +18,8 @@
         "base_provider_type": "openai",
         "allowed_requests": {
           "list_models": true,
+          "chat_completion": true,
+          "chat_completion_stream": true,
           "passthrough": true,
           "passthrough_stream": true
         }
@@ -40,6 +42,8 @@
         "base_provider_type": "openai",
         "allowed_requests": {
           "list_models": true,
+          "chat_completion": true,
+          "chat_completion_stream": true,
           "passthrough": true,
           "passthrough_stream": true
         }

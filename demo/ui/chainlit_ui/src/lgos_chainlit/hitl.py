@@ -7,6 +7,7 @@ from typing import cast
 
 import chainlit as cl
 from chainlit.types import ThreadDict
+from openai import OpenAIError
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
@@ -22,18 +23,20 @@ from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     THREAD_METADATA_KEY,
     GraphFeature,
-    model_supports,
+    model_extension,
 )
 from lgos_chainlit.settings import settings
 from lgos_chainlit.utils.chat import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
+    send_limited_functionality_warning,
     send_ui_message,
     text_only_chat_messages,
 )
 from lgos_chainlit.utils.clients import (
-    inference_client,
     model_request,
+    openai_client,
     retrieve_model,
 )
 
@@ -44,16 +47,27 @@ logger = logging.getLogger(__name__)
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    model = await retrieve_model(settings.HITL_MODEL)
-    if not model_supports(model, GraphFeature.INTERRUPTS):
+    try:
+        model = await retrieve_model(settings.HITL_MODEL)
+    except OpenAIError:
+        model = None
+    extension = model_extension(model) if model is not None else None
+    if (
+        extension is not None
+        and GraphFeature.INTERRUPTS.value not in extension.features
+    ):
         raise RuntimeError(
-            "No interrupt-capable model metadata returned by model retrieval. "
-            "Use LGOS directly or a documented pass-through that targets LGOS."
+            f"The configured model {settings.HITL_MODEL!r} does not advertise "
+            "interrupt support."
         )
     return [
         cl.ChatProfile(
             name=settings.HITL_MODEL,
-            markdown_description="Approve or reject a LangGraph interrupt.",
+            markdown_description=(
+                "Approve or reject a LangGraph interrupt."
+                if extension is not None
+                else LIMITED_FUNCTIONALITY_MESSAGE
+            ),
         )
     ]
 
@@ -68,10 +82,16 @@ async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]
     ]
 
 
+@cl.on_chat_start
+async def on_chat_start() -> None:
+    await _warn_if_model_metadata_is_missing()
+
+
 @cl.on_chat_resume
-def on_chat_resume(thread: ThreadDict) -> None:
+async def on_chat_resume(thread: ThreadDict) -> None:
     """Keep the hook registered so Chainlit restores the native chat context."""
     mark_persisted_errors_excluded(thread)
+    await _warn_if_model_metadata_is_missing()
 
 
 @cl.on_message
@@ -116,12 +136,23 @@ async def handle_message() -> None:
 async def create_completion(
     messages: list[ChatCompletionMessageParam],
 ) -> ChatCompletion:
-    return await inference_client.chat.completions.create(
+    return await openai_client.chat.completions.create(
         **model_request(cl.user_session.get("chat_profile") or settings.HITL_MODEL),
         messages=messages,
         metadata={THREAD_METADATA_KEY: cl.context.session.thread_id},
         user=authenticated_user_identifier(),
     )
+
+
+async def _warn_if_model_metadata_is_missing() -> None:
+    """Warn without blocking standard Chat Completions behavior."""
+    model_id = cl.user_session.get("chat_profile") or settings.HITL_MODEL
+    try:
+        model = await retrieve_model(model_id)
+    except OpenAIError:
+        model = None
+    if model is None or model_extension(model) is None:
+        await send_limited_functionality_warning()
 
 
 def assistant_tool_call_message(

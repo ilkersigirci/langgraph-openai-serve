@@ -3,21 +3,26 @@
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 import chainlit as cl
 from chainlit.input_widget import InputWidget, Select, Switch, TextInput
+from openai import OpenAIError
 
 from lgos_chainlit.lgos_protocol import (
     OPENAI_METADATA_VALUE_MAX_LENGTH,
     RUNTIME_SETTINGS_METADATA_KEY,
+    GraphFeature,
     ModelClientSettings,
     model_client_settings,
+    model_extension,
 )
+from lgos_chainlit.utils.chat import send_limited_functionality_warning
 from lgos_chainlit.utils.clients import retrieve_model
 
 logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
+MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
 
 
 class SettingsTransportError(ValueError):
@@ -26,21 +31,34 @@ class SettingsTransportError(ValueError):
 
 async def configure_chat_settings() -> None:
     """Retrieve the selected model and publish its supported settings."""
-    model_id = cast(str, cl.user_session.get("chat_profile"))
+    model_id = cl.user_session.get("chat_profile")
     saved = cl.user_session.get("chat_settings")
     candidates = dict(saved) if isinstance(saved, dict) else None
     _store_runtime_settings_defaults(None)
+    _store_model_features(None)
+    if not isinstance(model_id, str) or not model_id:
+        await cl.ChatSettings([]).send()
+        return
+
     try:
         model = await retrieve_model(model_id)
-    except Exception:
+    except OpenAIError:
         logger.warning(
-            "Runtime settings discovery failed for %s; settings are inactive",
+            "Model retrieval failed for %s; runtime settings are inactive",
             model_id,
             exc_info=True,
         )
         await cl.ChatSettings([]).refresh()
+        await send_limited_functionality_warning()
         return
 
+    extension = model_extension(model)
+    if extension is None:
+        await cl.ChatSettings([]).send()
+        await send_limited_functionality_warning()
+        return
+
+    _store_model_features(extension.features)
     client_settings = model_client_settings(model)
     if client_settings is None:
         await cl.ChatSettings([]).send()
@@ -49,6 +67,12 @@ async def configure_chat_settings() -> None:
     widgets = settings_widgets(client_settings, candidates)
     await cl.ChatSettings(widgets).send()
     _store_runtime_settings_defaults(client_settings.defaults)
+
+
+def model_feature_enabled(feature: GraphFeature) -> bool:
+    """Return whether the selected model advertised a feature."""
+    features = cl.user_session.get(MODEL_FEATURES_SESSION_KEY)
+    return isinstance(features, list) and feature.value in features
 
 
 def chat_settings_metadata() -> dict[str, str]:
@@ -131,6 +155,11 @@ def _store_runtime_settings_defaults(
         RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY,
         dict(defaults) if defaults is not None else None,
     )
+
+
+def _store_model_features(features: list[str] | None) -> None:
+    """Store model capabilities returned by the OpenAI endpoint."""
+    cl.user_session.set(MODEL_FEATURES_SESSION_KEY, features)
 
 
 def _widget_for_property(

@@ -1,7 +1,7 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.8
+version: 0.9
 """
 
 import json
@@ -25,22 +25,32 @@ from openai.types.chat import (
     ChatCompletionMessageToolCallParam,
     ChatCompletionToolMessageParam,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # These values mirror the public LGOS wire contract. This standalone Open WebUI
 # Function must not import the server package:
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/interrupts.py
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/events.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+CLIENT_EVENTS_FEATURE = "client_events"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
 THREAD_METADATA_KEY = "langgraph_thread_id"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
+LIMITED_FUNCTIONALITY_MESSAGE = (
+    "Limited functionality: the configured OpenAI endpoint did not return valid "
+    "langgraph_openai_serve model metadata. Runtime settings, client events, and "
+    "interrupts may be unavailable. Configure the proxy to pass LGOS /v1 requests "
+    "and responses through unchanged."
+)
 PipeChunk = str | dict[str, Any]
 
 
@@ -50,17 +60,13 @@ class SettingsTransportError(ValueError):
 
 class Pipe:
     class Valves(BaseModel):
-        OPENAI_CATALOG_BASE_URL: str = Field(
-            default="http://bifrost:8080/v1",
-            description="Bifrost base URL used to list all LGOS models.",
-        )
         OPENAI_API_BASE_URL: str = Field(
             default="http://bifrost:8080/openai_passthrough/v1",
-            description="Bifrost pass-through base URL for LGOS requests.",
+            description="OpenAI base URL used for listing, retrieval, and chat.",
         )
         OPENAI_API_KEY: str = Field(
             default="DUMMY",
-            description="Bearer token sent to the LangGraph API.",
+            description="Bearer token sent to the configured OpenAI endpoint.",
             json_schema_extra={"input": {"type": "password"}},
         )
         OPENAI_API_TIMEOUT: float = Field(
@@ -68,6 +74,26 @@ class Pipe:
             gt=0,
             description="OpenAI client timeout in seconds.",
         )
+        OPENAI_API_MODEL_ROUTES: dict[str, dict[str, str]] = Field(
+            default_factory=lambda: {
+                "lgos-a": {"x-model-provider": "lgos-a"},
+                "lgos-b": {"x-model-provider": "lgos-b"},
+            },
+            description=(
+                "Synthetic model prefixes and request headers for a multiplexed "
+                "endpoint. Leave empty for a standard OpenAI endpoint."
+            ),
+        )
+
+        @field_validator("OPENAI_API_MODEL_ROUTES")
+        @classmethod
+        def validate_model_routes(
+            cls,
+            value: dict[str, dict[str, str]],
+        ) -> dict[str, dict[str, str]]:
+            if any(not route or "/" in route for route in value):
+                raise ValueError("Model routes must be non-empty and contain no '/'.")
+            return value
 
     def __init__(self) -> None:
         self.valves = self.Valves()
@@ -75,15 +101,34 @@ class Pipe:
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model in Open WebUI's selector."""
         async with _client(
-            base_url=self.valves.OPENAI_CATALOG_BASE_URL,
+            base_url=self.valves.OPENAI_API_BASE_URL,
             api_key=self.valves.OPENAI_API_KEY,
             timeout=self.valves.OPENAI_API_TIMEOUT,
-        ) as catalog_client:
-            models = await catalog_client.models.list()
+        ) as client:
+            model_ids = await _list_model_ids(
+                client,
+                self.valves.OPENAI_API_MODEL_ROUTES,
+            )
+            pipes = []
+            for model_id in model_ids:
+                model = await _retrieve_model(
+                    client,
+                    model_id,
+                    self.valves.OPENAI_API_MODEL_ROUTES,
+                )
+                suffix = (
+                    ""
+                    if _model_extension(model) is not None
+                    else " (Limited functionality)"
+                )
+                pipes.append(
+                    {
+                        "id": model_id,
+                        "name": f"Generic / {model_id}{suffix}",
+                    }
+                )
 
-        return [
-            {"id": model.id, "name": f"Generic / {model.id}"} for model in models.data
-        ]
+        return pipes
 
     async def pipe(
         self,
@@ -99,94 +144,106 @@ class Pipe:
         base_url = self.valves.OPENAI_API_BASE_URL
         api_key = self.valves.OPENAI_API_KEY
         timeout = self.valves.OPENAI_API_TIMEOUT
+        model_routes = self.valves.OPENAI_API_MODEL_ROUTES
 
         try:
             model_id = _model_id(body)
+            _model_request(model_id, model_routes)
         except ValueError as exc:
             yield str(exc)
             return
 
         try:
-            runtime_metadata = await _runtime_settings_metadata(
+            async with _client(
                 base_url=base_url,
                 api_key=api_key,
                 timeout=timeout,
-                model_id=model_id,
-                metadata=openwebui_metadata,
-            )
-            async with _chat(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=timeout,
-                messages=messages,
-                thread_id=thread_id,
-                model_id=model_id,
-                runtime_metadata=runtime_metadata,
-            ) as stream:
-                async for delta in _content_deltas(stream, __event_emitter__):
-                    yield delta
-                response = await stream.get_final_completion()
+            ) as client:
+                model = await _retrieve_model(client, model_id, model_routes)
+                extension = _model_extension(model)
+                if extension is None:
+                    await _emit_limited_functionality_warning(__event_emitter__)
+                runtime_metadata = _runtime_settings_metadata(
+                    model=model,
+                    metadata=openwebui_metadata,
+                )
+                include_client_events = _extension_supports(
+                    extension,
+                    CLIENT_EVENTS_FEATURE,
+                )
+                async with _chat(
+                    client=client,
+                    messages=messages,
+                    thread_id=thread_id,
+                    model_id=model_id,
+                    runtime_metadata=runtime_metadata,
+                    include_client_events=include_client_events,
+                    model_routes=model_routes,
+                ) as stream:
+                    async for delta in _content_deltas(stream, __event_emitter__):
+                        yield delta
+                    response = await stream.get_final_completion()
 
-            if not response.choices:
-                yield NO_CHOICES_MESSAGE
-                return
+                if not response.choices:
+                    yield NO_CHOICES_MESSAGE
+                    return
 
-            assistant_message = response.choices[0].message
-            for chunk in _completion_chunks(
-                response,
-                forward_annotations=forward_annotations,
-            ):
-                yield chunk
+                assistant_message = response.choices[0].message
+                for chunk in _completion_chunks(
+                    response,
+                    forward_annotations=forward_annotations,
+                ):
+                    yield chunk
 
-            tool_call = _interrupt_tool_call(assistant_message)
-            if tool_call is None:
-                return
+                tool_call = _interrupt_tool_call(assistant_message)
+                if tool_call is None:
+                    return
 
-            decision, approval_error = await _approval_decision(
-                tool_call,
-                __event_call__,
-            )
-            if approval_error is not None:
-                yield approval_error
-                return
+                decision, approval_error = await _approval_decision(
+                    tool_call,
+                    __event_call__,
+                )
+                if approval_error is not None:
+                    yield approval_error
+                    return
 
-            assert decision is not None
-            resume_messages = [
-                *messages,
-                ChatCompletionAssistantMessageParam(
-                    role=assistant_message.role,
-                    content=assistant_message.content,
-                    tool_calls=[
-                        cast(
-                            ChatCompletionMessageToolCallParam,
-                            tool_call.model_dump(mode="json"),
-                        )
-                    ],
-                ),
-                ChatCompletionToolMessageParam(
-                    role="tool",
-                    tool_call_id=tool_call.id,
-                    content=json.dumps({"resume": decision}),
-                ),
-            ]
-            async with _chat(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=timeout,
-                messages=resume_messages,
-                thread_id=thread_id,
-                model_id=model_id,
-                runtime_metadata=runtime_metadata,
-            ) as stream:
-                async for delta in _content_deltas(stream, __event_emitter__):
-                    yield delta
-                response = await stream.get_final_completion()
+                assert decision is not None
+                resume_messages = [
+                    *messages,
+                    ChatCompletionAssistantMessageParam(
+                        role=assistant_message.role,
+                        content=assistant_message.content,
+                        tool_calls=[
+                            cast(
+                                ChatCompletionMessageToolCallParam,
+                                tool_call.model_dump(mode="json"),
+                            )
+                        ],
+                    ),
+                    ChatCompletionToolMessageParam(
+                        role="tool",
+                        tool_call_id=tool_call.id,
+                        content=json.dumps({"resume": decision}),
+                    ),
+                ]
+                async with _chat(
+                    client=client,
+                    messages=resume_messages,
+                    thread_id=thread_id,
+                    model_id=model_id,
+                    runtime_metadata=runtime_metadata,
+                    include_client_events=include_client_events,
+                    model_routes=model_routes,
+                ) as stream:
+                    async for delta in _content_deltas(stream, __event_emitter__):
+                        yield delta
+                    response = await stream.get_final_completion()
 
-            for chunk in _completion_chunks(
-                response,
-                forward_annotations=forward_annotations,
-            ):
-                yield chunk
+                for chunk in _completion_chunks(
+                    response,
+                    forward_annotations=forward_annotations,
+                ):
+                    yield chunk
         except SettingsTransportError as exc:
             yield str(exc)
         except OpenAIError as exc:
@@ -201,30 +258,35 @@ class Pipe:
 @asynccontextmanager
 async def _chat(
     *,
-    base_url: str,
-    api_key: str,
-    timeout: float,
+    client: AsyncOpenAI,
     messages: list[ChatCompletionMessageParam],
     thread_id: str,
     model_id: str,
+    model_routes: dict[str, dict[str, str]],
     runtime_metadata: dict[str, str] | None = None,
+    include_client_events: bool = False,
 ) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
-    async with (
-        _client(base_url=base_url, api_key=api_key, timeout=timeout) as client,
-        client.chat.completions.stream(
-            **_model_request(model_id),
-            messages=messages,
-            metadata={
-                THREAD_METADATA_KEY: thread_id,
-                STREAM_EVENTS_METADATA_KEY: STREAM_EVENTS_METADATA_VALUE,
-                **(runtime_metadata or {}),
-            },
-        ) as stream,
-    ):
+    metadata = {
+        THREAD_METADATA_KEY: thread_id,
+        **(runtime_metadata or {}),
+    }
+    if include_client_events:
+        metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
+
+    async with client.chat.completions.stream(
+        **_model_request(model_id, model_routes),
+        messages=messages,
+        metadata=metadata,
+    ) as stream:
         yield stream
 
 
-def _client(*, base_url: str, api_key: str, timeout: float) -> AsyncOpenAI:
+def _client(
+    *,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+) -> AsyncOpenAI:
     return AsyncOpenAI(
         base_url=base_url,
         api_key=api_key,
@@ -244,38 +306,56 @@ def _model_id(body: dict[str, Any]) -> str:
     return model_id
 
 
-def _model_request(model_id: str) -> dict[str, Any]:
-    provider, separator, model = model_id.partition("/")
-    if not separator or not provider or not model:
-        return {"model": model_id}
-    return {
-        "model": model,
-        "extra_headers": {"x-model-provider": provider},
-    }
-
-
 def _thread_id(metadata: dict[str, Any]) -> str:
     value = metadata.get("chat_id") or metadata.get("session_id") or "default"
     return f"openwebui:function:{value}"
 
 
+async def _list_model_ids(
+    client: AsyncOpenAI,
+    model_routes: dict[str, dict[str, str]],
+) -> list[str]:
+    if not model_routes:
+        models = await client.models.list()
+        return [model.id for model in models.data]
+
+    model_ids = []
+    for route, headers in model_routes.items():
+        models = await client.models.list(extra_headers=headers)
+        model_ids.extend(f"{route}/{model.id}" for model in models.data)
+    return model_ids
+
+
+def _model_request(
+    model_id: str,
+    model_routes: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    if not model_routes:
+        return {"model": model_id}
+
+    route, separator, upstream_model = model_id.partition("/")
+    headers = model_routes.get(route)
+    if not separator or not upstream_model or headers is None:
+        raise ValueError(f"Unknown configured OpenAI model route in {model_id!r}.")
+
+    request: dict[str, Any] = {"model": upstream_model}
+    if headers:
+        request["extra_headers"] = headers
+    return request
+
+
 #### Chat Settings ####
 
 
-async def _runtime_settings_metadata(
+def _runtime_settings_metadata(
     *,
-    base_url: str,
-    api_key: str,
-    timeout: float,
-    model_id: str,
+    model: Any,
     metadata: dict[str, Any],
 ) -> dict[str, str]:
     values = metadata.get("chat_variables")
     if not isinstance(values, dict) or not values:
         return {}
 
-    async with _client(base_url=base_url, api_key=api_key, timeout=timeout) as client:
-        model = await client.models.retrieve(**_model_request(model_id))
     defaults = _runtime_settings_defaults(model)
     if defaults is None:
         return {}
@@ -310,14 +390,56 @@ async def _runtime_settings_metadata(
 
 
 def _runtime_settings_defaults(model: Any) -> dict[str, Any] | None:
-    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
-    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+    extension = _model_extension(model)
+    if extension is None:
         return None
     settings = extension.get("client_settings")
     if not isinstance(settings, dict) or settings.get("schema_version") != 1:
         return None
     defaults = settings.get("defaults")
     return defaults if isinstance(defaults, dict) else None
+
+
+async def _retrieve_model(
+    client: AsyncOpenAI,
+    model_id: str,
+    model_routes: dict[str, dict[str, str]],
+) -> Any:
+    """Return model details, or None when retrieval through this endpoint fails."""
+    try:
+        return await client.models.retrieve(**_model_request(model_id, model_routes))
+    except OpenAIError:
+        return None
+
+
+def _model_extension(model: Any) -> dict[str, Any] | None:
+    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
+    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+        return None
+    features = extension.get("features")
+    if not isinstance(features, list) or any(
+        not isinstance(feature, str) for feature in features
+    ):
+        return None
+    return extension
+
+
+def _extension_supports(extension: dict[str, Any] | None, feature: str) -> bool:
+    return extension is not None and feature in extension["features"]
+
+
+async def _emit_limited_functionality_warning(event_emitter: Any) -> None:
+    if event_emitter is None:
+        return
+    await event_emitter(
+        {
+            "type": "notification",
+            "data": {
+                "type": "warning",
+                "content": LIMITED_FUNCTIONALITY_MESSAGE,
+            },
+        }
+    )
 
 
 #### Streaming ####

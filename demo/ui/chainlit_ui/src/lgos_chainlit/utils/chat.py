@@ -6,8 +6,15 @@ import chainlit as cl
 from chainlit.types import ThreadDict
 from openai.types.chat import ChatCompletionMessageParam
 
+from lgos_chainlit.lgos_protocol import LGOS_EXTENSION_KEY
+
 # Persisted Chainlit metadata flag that keeps UI-only messages out of model context.
 MODEL_CONTEXT_EXCLUDED_KEY = "lgos_chainlit.exclude_from_model_context"
+LIMITED_FUNCTIONALITY_MESSAGE = (
+    "Limited functionality: The configured OpenAI endpoint did not return valid "
+    f"{LGOS_EXTENSION_KEY} model metadata. Runtime settings, client events, and "
+    "interrupts may be unavailable."
+)
 
 
 def mark_model_context_excluded(
@@ -25,6 +32,14 @@ async def send_ui_message(content: str) -> None:
     message = cl.Message(content=content)
     mark_model_context_excluded(message)
     await message.send()
+
+
+async def send_limited_functionality_warning() -> None:
+    """Show a transient warning when LGOS metadata was stripped."""
+    await cl.context.emitter.send_toast(
+        LIMITED_FUNCTIONALITY_MESSAGE,
+        type="warning",
+    )
 
 
 def mark_persisted_errors_excluded(thread: ThreadDict) -> None:

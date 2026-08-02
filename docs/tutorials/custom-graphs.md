@@ -206,7 +206,7 @@ Publish meaningful status from long-running graph code:
 
 ```python
 from langgraph.config import get_stream_writer
-from langgraph_openai_serve import status_event
+from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 
 
 async def generate_audio(state):
@@ -217,9 +217,16 @@ async def generate_audio(state):
 
     writer(status_event("Audio ready", done=True))
     return {"audio": audio}
+
+
+status_graph_config = GraphConfig(
+    graph=status_graph,
+    features={GraphFeature.CLIENT_EVENTS},
+)
 ```
 
-Streaming clients opt into the events with
+Declare `GraphFeature.CLIENT_EVENTS` on every graph that emits these events.
+Streaming clients then opt into the events with
 `metadata={"langgraph_stream_events": "v1"}`. Emit a final `done=True` update so
 native clients stop showing the status as active. Use `hidden=True` on that final
 update when the status should disappear after completion.

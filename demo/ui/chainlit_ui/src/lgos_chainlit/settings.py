@@ -41,6 +41,20 @@ class OpenAIEndpoint(BaseModel):
 
     base_url: HttpUrlStr
     api_key: str = Field(min_length=1)
+    model_routes: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+    @field_validator("model_routes")
+    @classmethod
+    def validate_model_routes(
+        cls,
+        value: dict[str, dict[str, str]],
+    ) -> dict[str, dict[str, str]]:
+        """Keep synthetic route prefixes unambiguous."""
+        if any(not route or "/" in route for route in value):
+            raise ValueError(
+                "OpenAI model routes must be non-empty and contain no '/'."
+            )
+        return value
 
 
 class Settings(BaseSettings):
@@ -55,19 +69,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    INFERENCE: OpenAIEndpoint = OpenAIEndpoint(
+    OPENAI: OpenAIEndpoint = OpenAIEndpoint(
         base_url="http://localhost:3004/v1",
         api_key="DUMMY",
     )
-    CATALOG: OpenAIEndpoint | None = None
     HITL_MODEL: str = "interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"
-
-    @property
-    def chainlit_catalog_endpoint(self) -> OpenAIEndpoint:
-        """Use a complete catalog endpoint, or the inference endpoint."""
-        return self.CATALOG or self.INFERENCE
 
 
 settings = Settings()

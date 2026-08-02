@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import GraphConfig, client_event
+from langgraph_openai_serve import GraphConfig, GraphFeature, client_event
 from pydantic import BaseModel
 
 ANSWER = (
@@ -102,6 +102,7 @@ custom_event_showcase_graph = workflow.compile()
 custom_event_showcase_graph_config = GraphConfig(
     graph=custom_event_showcase_graph,
     streamable_node_names=["build_compatibility_report"],
+    features={GraphFeature.CLIENT_EVENTS},
 )
 
 __all__ = ["custom_event_showcase_graph_config"]

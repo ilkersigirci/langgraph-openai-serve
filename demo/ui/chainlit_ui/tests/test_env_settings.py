@@ -1,10 +1,13 @@
 """Environment settings coverage for the standalone Chainlit application."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, call
+
 import pytest
 from pydantic import ValidationError
 
 from lgos_chainlit.settings import Settings
-from lgos_chainlit.utils.clients import model_request
+from lgos_chainlit.utils import clients
 
 
 def test_ui_file_rejects_unknown_target(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -14,54 +17,73 @@ def test_ui_file_rejects_unknown_target(monkeypatch: pytest.MonkeyPatch) -> None
         Settings(_env_file=None)
 
 
-def test_proxy_catalog_and_inference_settings(
+def test_openai_endpoint_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__API_KEY", "api-key")
     monkeypatch.setenv(
-        "DEMO_CHAINLIT_INFERENCE__BASE_URL", "https://gateway.example/v1"
+        "DEMO_CHAINLIT_OPENAI__MODEL_ROUTES",
+        '{"lgos-a":{"x-route":"a"},"lgos-b":{"x-route":"b"}}',
     )
-    monkeypatch.setenv("DEMO_CHAINLIT_INFERENCE__API_KEY", "inference-key")
-    monkeypatch.setenv("DEMO_CHAINLIT_CATALOG__BASE_URL", "https://lgos.example/v1")
-    monkeypatch.setenv("DEMO_CHAINLIT_CATALOG__API_KEY", "catalog-key")
 
     configured = Settings(_env_file=None)
 
-    assert configured.INFERENCE.base_url == "https://gateway.example/v1"
-    assert configured.INFERENCE.api_key == "inference-key"
-    assert configured.chainlit_catalog_endpoint.base_url == "https://lgos.example/v1"
-    assert configured.chainlit_catalog_endpoint.api_key == "catalog-key"
-
-
-def test_bifrost_model_prefix_routes_through_provider_header() -> None:
-    assert model_request("lgos-a/simple") == {
-        "model": "simple",
-        "extra_headers": {"x-model-provider": "lgos-a"},
+    assert configured.OPENAI.base_url == "https://gateway.example/v1"
+    assert configured.OPENAI.api_key == "api-key"
+    assert configured.OPENAI.model_routes == {
+        "lgos-a": {"x-route": "a"},
+        "lgos-b": {"x-route": "b"},
     }
-    assert model_request("simple") == {"model": "simple"}
 
 
-def test_catalog_requires_a_complete_endpoint(
+@pytest.mark.anyio
+async def test_one_client_lists_two_explicit_model_routes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DEMO_CHAINLIT_CATALOG__BASE_URL", "https://lgos.example/v1")
-    monkeypatch.delenv("DEMO_CHAINLIT_CATALOG__API_KEY", raising=False)
-
-    with pytest.raises(ValidationError) as exc_info:
-        Settings(_env_file=None)
-
-    assert exc_info.value.errors(include_url=False)[0]["loc"] == (
-        "CATALOG",
-        "api_key",
-    )
-
-
-def test_catalog_defaults_to_inference_client() -> None:
-    configured = Settings(
-        INFERENCE={
-            "base_url": "https://gateway.example/v1",
-            "api_key": "shared-key",
+    monkeypatch.setattr(
+        clients.settings.OPENAI,
+        "model_routes",
+        {
+            "lgos-a": {"x-route": "a"},
+            "lgos-b": {"x-route": "b"},
         },
     )
+    list_models = AsyncMock(
+        side_effect=[
+            SimpleNamespace(data=[SimpleNamespace(id="graph-a")]),
+            SimpleNamespace(data=[SimpleNamespace(id="graph-b")]),
+        ]
+    )
+    monkeypatch.setattr(clients.openai_client.models, "list", list_models)
 
-    assert configured.CATALOG is None
-    assert configured.chainlit_catalog_endpoint is configured.INFERENCE
+    assert await clients.list_model_ids() == ["lgos-a/graph-a", "lgos-b/graph-b"]
+    assert list_models.await_args_list == [
+        call(extra_headers={"x-route": "a"}),
+        call(extra_headers={"x-route": "b"}),
+    ]
+    assert clients.model_request("lgos-b/namespace/graph-b") == {
+        "model": "namespace/graph-b",
+        "extra_headers": {"x-route": "b"},
+    }
+    with pytest.raises(ValueError, match="model route"):
+        clients.model_request("graph-b")
+
+
+@pytest.mark.anyio
+async def test_standard_endpoint_preserves_listed_model_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(clients.settings.OPENAI, "model_routes", {})
+    list_models = AsyncMock(
+        return_value=SimpleNamespace(
+            data=[SimpleNamespace(id="lgos-b/namespace/graph-b")]
+        )
+    )
+    monkeypatch.setattr(clients.openai_client.models, "list", list_models)
+
+    assert await clients.list_model_ids() == ["lgos-b/namespace/graph-b"]
+    list_models.assert_awaited_once_with()
+    assert clients.model_request("lgos-b/namespace/graph-b") == {
+        "model": "lgos-b/namespace/graph-b"
+    }

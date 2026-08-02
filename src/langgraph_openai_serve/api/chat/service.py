@@ -20,6 +20,7 @@ from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
     chat_completion_response,
 )
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.runner import (
     LangGraphInterrupt,
     invoke_run,
@@ -76,7 +77,9 @@ class ChatCompletionService:
         response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
         custom_events: list[CustomStreamPart] = []
         content_parts: list[str] = []
-        include_client_events = stream_events_requested(chat_request.metadata)
+        include_client_events = run.config.supports(
+            GraphFeature.CLIENT_EVENTS
+        ) and stream_events_requested(chat_request.metadata)
 
         try:
             yield response_builder.role()

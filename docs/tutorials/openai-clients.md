@@ -4,6 +4,10 @@ Configure clients with the server base URL, usually `http://localhost:8000/v1`.
 The `api_key` value is sent as `Authorization: Bearer <key>`; the application
 from [Get Started](../getting-started.md) does not verify it.
 
+Use one OpenAI client and base URL for model listing, model retrieval, and chat
+completions. When a proxy is present, that URL must be its complete LGOS
+pass-through route.
+
 The basic examples below call that application's `echo` model. Examples named
 `my-graph`, `my-settings-graph`, or `research-graph` describe capabilities your
 registered graph must enable. The [demo graph catalog](../demo/graphs.md)
@@ -108,15 +112,37 @@ provides runnable models for those advanced behaviors.
 
 ## Client Stream Events
 
-Request explicitly public graph events with the standard metadata field. The
-Python SDK keeps the namespaced extension in each chunk's `model_extra`:
+First retrieve the model and confirm that
+`langgraph_openai_serve.features` contains `client_events`. Then request
+explicitly public graph events with the standard metadata field. The Python SDK
+keeps the namespaced extension in each chunk's `model_extra`:
 
 ```python
+model = client.models.retrieve("research-graph")
+model_extension = (model.model_extra or {}).get("langgraph_openai_serve")
+features = (
+    model_extension.get("features") if isinstance(model_extension, dict) else None
+)
+valid_extension = (
+    isinstance(model_extension, dict)
+    and model_extension.get("schema_version") == 1
+    and isinstance(features, list)
+    and all(isinstance(feature, str) for feature in features)
+)
+if not valid_extension:
+    show_limited_functionality_warning()
+
+event_metadata = (
+    {"langgraph_stream_events": "v1"}
+    if valid_extension and "client_events" in features
+    else {}
+)
+
 stream = client.chat.completions.create(
     model="research-graph",
     messages=[{"role": "user", "content": "Research this topic."}],
     stream=True,
-    metadata={"langgraph_stream_events": "v1"},
+    metadata=event_metadata,
 )
 
 for chunk in stream:
@@ -137,7 +163,7 @@ When using the higher-level streaming helper, inspect its raw `ChunkEvent`:
 with client.chat.completions.stream(
     model="research-graph",
     messages=[{"role": "user", "content": "Research this topic."}],
-    metadata={"langgraph_stream_events": "v1"},
+    metadata=event_metadata,
 ) as stream:
     for item in stream:
         if item.type != "chunk":
@@ -166,8 +192,11 @@ backend graph owns the work.
 
 List standard model summaries, then retrieve the selected model to discover its
 settings. Check both the LGOS extension version and the nested runtime-settings
-version. A missing or unsupported descriptor means the client should use server
-defaults.
+version. A valid extension without `client_settings` means the model has no
+public settings. A missing or invalid LGOS extension means the configured
+endpoint is degraded: keep standard chat available, omit extended behavior, and
+show **Limited functionality** rather than silently treating the model as fully
+capable.
 
 === "Python"
 

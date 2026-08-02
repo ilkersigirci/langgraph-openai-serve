@@ -66,6 +66,11 @@ async def test_app_lists_exactly_the_documented_models(
     extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]
     assert extension == {"schema_version": 1, "features": ["interrupts"]}
 
+    for model_id in ("custom-event-showcase", "status-events"):
+        model = await openai_client.models.retrieve(model_id)
+        extension = (model.model_extra or {})["langgraph_openai_serve"]
+        assert extension == {"schema_version": 1, "features": ["client_events"]}
+
 
 @pytest.mark.anyio
 async def test_simple_model_retrieval_exposes_runtime_settings(

@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import GraphConfig, status_event
+from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 from pydantic import BaseModel
 
 ANSWER = "The media workflow completed successfully."
@@ -46,6 +46,7 @@ status_event_graph = workflow.compile()
 status_event_graph_config = GraphConfig(
     graph=status_event_graph,
     streamable_node_names=["prepare_media"],
+    features={GraphFeature.CLIENT_EVENTS},
 )
 
 __all__ = ["status_event_graph_config"]

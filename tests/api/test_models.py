@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field
 from langgraph_openai_serve import (
     ClientSettings,
     GraphConfig,
+    GraphFeature,
     GraphRegistry,
 )
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
@@ -64,6 +65,35 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
     assert client_settings["defaults"] == {
         "enabled": True,
         "mode": "brief",
+    }
+
+
+async def test_retrieved_model_always_exposes_the_lgos_extension(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.models.retrieve("test")
+
+    assert (response.model_extra or {})["langgraph_openai_serve"] == {
+        "schema_version": 1,
+        "features": [],
+    }
+
+
+async def test_retrieved_model_exposes_sorted_graph_features(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    graph_registry.get_graph("test").features = {
+        GraphFeature.INTERRUPTS,
+        GraphFeature.CLIENT_EVENTS,
+    }
+
+    response = await openai_client.models.retrieve("test")
+
+    extension = (response.model_extra or {})["langgraph_openai_serve"]
+    assert extension == {
+        "schema_version": 1,
+        "features": ["client_events", "interrupts"],
     }
 
 

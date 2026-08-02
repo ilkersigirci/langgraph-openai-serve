@@ -67,8 +67,11 @@ and may show a declared value before field validators normalize it. Clients
 should use `defaults`, not those annotations, when initializing values or
 computing changes.
 
-If the descriptor is missing or its version is unsupported, the client should
-omit runtime settings and use server defaults.
+An absent `client_settings` member on a valid LGOS extension means the graph has
+no public runtime settings. If the `langgraph_openai_serve` extension itself is
+missing or invalid, omit runtime settings, use server defaults, and show the UI's
+**Limited functionality** warning. That condition usually means a proxy rebuilt
+the model response instead of passing it through.
 
 ## Client Request
 

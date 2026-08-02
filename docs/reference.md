@@ -8,7 +8,7 @@ Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/models` | List standard summaries for registered graph models. |
-| `GET` | `/v1/models/{model}` | Retrieve one model with optional LGOS discovery metadata. |
+| `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 
@@ -77,8 +77,9 @@ for values consumed by nodes.
 
 The same `features` set drives runtime behavior and the versioned
 `langgraph_openai_serve.features` extension returned by
-`GET /v1/models/{model}`. `GraphFeature.INTERRUPTS` enables and advertises the
-interrupt/resume flow.
+`GET /v1/models/{model}`. `GraphFeature.CLIENT_EVENTS` enables and advertises
+public client-event chunks. `GraphFeature.INTERRUPTS` enables and advertises
+the interrupt/resume flow.
 
 ### Runtime Settings
 
@@ -130,6 +131,17 @@ requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
 Use a durable checkpointer in production.
 
 ## Client Stream Events
+
+Declare the feature on every graph that publishes client events:
+
+```python
+from langgraph_openai_serve import GraphConfig, GraphFeature
+
+config = GraphConfig(
+    graph=graph,
+    features={GraphFeature.CLIENT_EVENTS},
+)
+```
 
 Inside a long-running graph node or tool, publish user-facing status with
 `status_event()`:
@@ -197,7 +209,8 @@ represent large artifacts by an ID or URL. The namespace is a stable,
 author-defined path; LGOS does not expose LangGraph's dynamic execution
 namespace.
 
-Events are streaming-only and opt-in. Clients request them with
+Events are streaming-only and require both the graph feature and client opt-in.
+Clients request them with
 `metadata={"langgraph_stream_events": "v1"}` and receive a versioned
 `langgraph_openai_serve` property on an otherwise standard Chat Completions
 chunk. Missing and unsupported versions produce the ordinary strict stream.

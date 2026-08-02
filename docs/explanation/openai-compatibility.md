@@ -71,20 +71,38 @@ Additive features do not require an outer schema-version change. The nested
 runtime settings descriptor has its own version, and clients must ignore
 versions they do not understand.
 
+| Feature | Enabled behavior |
+| --- | --- |
+| `client_events` | The server may emit opted-in public client-event chunks. |
+| `interrupts` | The server supports the checkpointed interrupt/resume flow. |
+
 `GET /v1/models` remains a lightweight list containing only the standard
-`id`, `object`, `created`, and `owned_by` fields. A client lists profiles first
-and retrieves details only for the selected model. This avoids large list
-responses and keeps internal or secret-bearing runtime context out of discovery.
+`id`, `object`, `created`, and `owned_by` fields. Every successful LGOS
+`GET /v1/models/{model}` response includes `langgraph_openai_serve`, even when
+its feature list is empty and it has no client settings. A UI lists models and
+retrieves the details it needs through the same configured OpenAI client. This
+keeps large schemas out of list responses and keeps internal or secret-bearing
+runtime context out of discovery.
 
 [OpenAI treats added response properties as backward-compatible](https://developers.openai.com/api/reference/overview#backwards-compatibility).
 Direct JavaScript clients can read the property normally, and the
 [OpenAI Python SDK exposes it through `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
-An intermediary may implement its own model catalog or rebuild a retrieved model
-from the standard fields and drop extensions. Clients that require detailed
-LGOS discovery must use direct model retrieval or a route that forwards the
-response unchanged. Request paths must also preserve OpenAI metadata. Concrete
-gateway configurations are documented under
+An intermediary may rebuild a retrieved model from the standard fields and drop
+extensions. LGOS clients must use one direct or pass-through OpenAI base URL for
+model listing, model retrieval, and chat completions. A separate normalized
+catalog is not a source of LGOS capabilities. Request paths must also preserve
+OpenAI metadata and extension-only stream chunks. Concrete gateway
+configurations are documented under
 [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
+
+!!! warning "Limited functionality signal"
+
+    Missing or invalid `langgraph_openai_serve` metadata means the configured
+    endpoint is not preserving the LGOS contract. A UI may continue ordinary
+    Chat Completions, but it must visibly label the model or chat as
+    **Limited functionality** and must not assume runtime settings, client
+    events, or interrupts are available. Configure the deployment or proxy;
+    do not hide this condition behind a second discovery client.
 
 ## Runtime Settings
 
@@ -127,8 +145,9 @@ runtime context. Clients must resend non-default settings on every request that
 needs them, including interrupt-resume requests. A later request that omits
 `langgraph_runtime_settings` uses registered defaults again.
 
-Treat a missing or unsupported discovery extension as a normal fallback to server
-defaults. See [Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
+When the required extension is missing or unsupported, the client omits runtime
+settings and shows the limited-functionality warning described above. See
+[Configure LangGraph Runtime Settings](../how-to-guides/langgraph-runtime-settings.md)
 for the complete author and client flow. Adapter support is summarized under
 [demo client capability matrix](../demo/index.md#client-capabilities).
 
@@ -150,8 +169,10 @@ limits.
 ## Client Stream Events
 
 Passive application notifications are an opt-in, namespaced extension on an
-otherwise complete `chat.completion.chunk`. A client requests v1 events through
-the standard Chat Completions metadata field:
+otherwise complete `chat.completion.chunk`. The graph must declare
+`GraphFeature.CLIENT_EVENTS`, and the client requests v1 events through the
+standard Chat Completions metadata field only when model retrieval advertises
+`client_events`:
 
 ```python
 stream = client.chat.completions.create(
@@ -208,8 +229,8 @@ structure do not become part of the public contract.
     [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md#client-event-compatibility)
     for verified Bifrost and LiteLLM behavior.
 
-Without the exact `v1` opt-in, LGOS emits no event extensions. Even with the
-opt-in, only explicitly marked event envelopes in the shape produced by
+Without the graph feature and exact `v1` opt-in, LGOS emits no event extensions.
+Even with both, only explicitly marked event envelopes in the shape produced by
 `client_event()` or `status_event()` and revalidated by the server are exposed.
 Ordinary LangGraph custom data, malformed events, debug data, and non-JSON
 Python objects stay private. The v1 public event types are `status`, `progress`,
@@ -294,8 +315,9 @@ Route code that knows the OpenAI error metadata should raise
 translate generic FastAPI validation and HTTP errors into the same envelope.
 
 Invalid runtime settings return HTTP 400 with
-`param: "metadata.langgraph_runtime_settings"`. A missing discovery extension is not an
-error; the client simply uses server defaults.
+`param: "metadata.langgraph_runtime_settings"`. A proxy-stripped model
+extension does not make standard chat invalid, but clients surface it as
+limited functionality rather than silently presenting a fully capable model.
 
 ## Tool Calls And Interrupts
 

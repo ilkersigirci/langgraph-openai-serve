@@ -104,13 +104,13 @@ directories. The checkout includes each empty service directory with a tracked
     docker compose -f compose.yaml up --wait bifrost
     ```
 
-    - Standard inference, without client events:
-      `http://localhost:3000/v1` with `openai/`-prefixed models
-    - Detailed discovery or event-enabled inference:
-      `http://localhost:3000/openai_passthrough/v1` with unprefixed models
+    Use `http://localhost:3000/openai_passthrough/v1` as the one OpenAI base
+    URL for model listing, model retrieval, and inference. Send either
+    `x-model-provider: lgos-a` or `x-model-provider: lgos-b` per request.
 
-    From the package repository, run `make test-bifrost` to verify detailed
-    model metadata through the proxy. See
+    From the package repository, run `make test-bifrost` to verify both APIs,
+    detailed model metadata, inference, and client events through one SDK
+    client. See
     [Bifrost Gateway](bifrost.md).
 
 === "Chainlit"

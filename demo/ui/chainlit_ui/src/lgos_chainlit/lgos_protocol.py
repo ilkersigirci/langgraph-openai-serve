@@ -6,7 +6,7 @@ image is an independent OpenAI client, not an LGOS Python application.
 
 Authoritative LGOS sources:
 
-* Model discovery schemas:
+* Model-detail extension schema:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 * Graph feature values:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
@@ -45,6 +45,7 @@ INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 class GraphFeature(StrEnum):
     """Features advertised for an LGOS model."""
 
+    CLIENT_EVENTS = "client_events"
     INTERRUPTS = "interrupts"
 
 
@@ -59,7 +60,7 @@ class ModelClientSettings(BaseModel):
 
 
 class LangGraphModelExtension(BaseModel):
-    """Forward-compatible LGOS extension returned by model discovery."""
+    """Forward-compatible LGOS extension returned by model retrieval."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
@@ -77,7 +78,10 @@ def model_extension(model: Model) -> LangGraphModelExtension | None:
     try:
         return LangGraphModelExtension.model_validate(extension)
     except ValidationError:
-        logger.warning("Ignoring invalid LGOS metadata for model %s", model.id)
+        logger.warning(
+            "Ignoring invalid LGOS metadata for model %s",
+            model.id,
+        )
         return None
 
 

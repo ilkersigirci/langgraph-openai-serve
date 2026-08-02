@@ -95,37 +95,112 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
     assert chat_variable_fields(SimpleNamespace(model_extra={})) is None
 
 
-def test_discover_workspace_models_retrieves_qualified_models() -> None:
+def test_discover_workspace_models_uses_one_openai_client() -> None:
     configured = SimpleNamespace(
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
-                "client_settings": None,
+                "features": [],
             }
         }
     )
-    catalog_client = Mock()
-    catalog_client.models.list.return_value = SimpleNamespace(
+    client = Mock()
+    client.models.list.return_value = SimpleNamespace(
         data=[
             SimpleNamespace(id="plain"),
-            SimpleNamespace(id="lgos-a/simple-graph"),
+            SimpleNamespace(id="simple-graph"),
         ]
     )
-    inference_client = Mock()
-    inference_client.models.retrieve.return_value = configured
+    client.models.retrieve.return_value = configured
 
-    specs = discover_workspace_model_specs(catalog_client, inference_client)
+    specs = discover_workspace_model_specs(client)
 
     assert specs == (
-        WorkspaceModelSpec(id="lgos-a/simple-graph", fields=()),
         WorkspaceModelSpec(id="plain", fields=()),
+        WorkspaceModelSpec(id="simple-graph", fields=()),
     )
-    assert inference_client.models.retrieve.call_args_list == [
+    assert client.models.retrieve.call_args_list == [
         call(model="plain"),
+        call(model="simple-graph"),
+    ]
+
+
+def test_discover_workspace_models_uses_explicit_routes() -> None:
+    configured = SimpleNamespace(
+        model_extra={
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "features": [],
+            }
+        }
+    )
+    client = Mock()
+    client.models.list.side_effect = [
+        SimpleNamespace(data=[SimpleNamespace(id="graph-a")]),
+        SimpleNamespace(data=[SimpleNamespace(id="graph-b")]),
+    ]
+    client.models.retrieve.return_value = configured
+
+    specs = discover_workspace_model_specs(
+        client,
+        {
+            "lgos-a": {"x-route": "a"},
+            "lgos-b": {"x-route": "b"},
+        },
+    )
+
+    assert specs == (
+        WorkspaceModelSpec(id="lgos-a/graph-a", fields=()),
+        WorkspaceModelSpec(id="lgos-b/graph-b", fields=()),
+    )
+    assert client.models.list.call_args_list == [
+        call(extra_headers={"x-route": "a"}),
+        call(extra_headers={"x-route": "b"}),
+    ]
+    assert client.models.retrieve.call_args_list == [
         call(
-            model="simple-graph",
-            extra_headers={"x-model-provider": "lgos-a"},
+            model="graph-a",
+            extra_headers={"x-route": "a"},
         ),
+        call(
+            model="graph-b",
+            extra_headers={"x-route": "b"},
+        ),
+    ]
+
+
+def test_discover_workspace_models_keeps_limited_models_visible() -> None:
+    client = Mock()
+    client.models.list.return_value = SimpleNamespace(
+        data=[SimpleNamespace(id="proxy-model")]
+    )
+    client.models.retrieve.return_value = SimpleNamespace(model_extra={})
+
+    specs = discover_workspace_model_specs(client)
+
+    assert specs == (WorkspaceModelSpec(id="proxy-model", fields=(), limited=True),)
+
+
+def test_discover_workspace_models_preserves_standard_catalog_ids() -> None:
+    client = Mock()
+    catalog = SimpleNamespace(
+        data=[
+            SimpleNamespace(id="lgos-a/graph-a"),
+            SimpleNamespace(id="lgos-b/graph-b"),
+        ]
+    )
+    client.models.list.return_value = catalog
+    client.models.retrieve.return_value = "unsupported model detail"
+
+    specs = discover_workspace_model_specs(client)
+
+    assert specs == (
+        WorkspaceModelSpec(id="lgos-a/graph-a", fields=(), limited=True),
+        WorkspaceModelSpec(id="lgos-b/graph-b", fields=(), limited=True),
+    )
+    assert client.models.retrieve.call_args_list == [
+        call(model="lgos-a/graph-a"),
+        call(model="lgos-b/graph-b"),
     ]
 
 
@@ -148,7 +223,7 @@ def test_sync_workspace_models_skips_an_empty_catalog() -> None:
 def test_sync_workspace_models_bulk_imports_base_and_new_wrapper() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="lgos-a/simple-graph",
+        id="simple-graph",
         fields=(
             {
                 "key": "use_history",
@@ -166,8 +241,8 @@ def test_sync_workspace_models_bulk_imports_base_and_new_wrapper() -> None:
     base, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert client.post.call_args.args == ("/api/v1/models/import",)
     assert [base["id"], wrapper["id"]] == [
-        "generic.lgos-a/simple-graph",
-        "lgos.lgos-a/simple-graph",
+        "generic.simple-graph",
+        "lgos.simple-graph",
     ]
     assert base["base_model_id"] is None
     assert base["access_grants"] == [PUBLIC_READ_GRANT]
@@ -175,6 +250,17 @@ def test_sync_workspace_models_bulk_imports_base_and_new_wrapper() -> None:
     assert wrapper["base_model_id"] == base["id"]
     assert wrapper["access_grants"] == [PUBLIC_READ_GRANT]
     assert wrapper["meta"]["chat_variables_schema"] == {"fields": list(spec.fields)}
+
+
+def test_limited_workspace_model_has_a_visible_warning() -> None:
+    client = _client([])
+    spec = WorkspaceModelSpec(id="proxy-model", fields=(), limited=True)
+
+    sync_workspace_models(client, (spec,))
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert "Limited functionality" in wrapper["name"]
+    assert "Limited functionality" in wrapper["meta"]["description"]
 
 
 def test_sync_workspace_models_leaves_existing_wrapper_state_to_openwebui() -> None:

@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
     GraphConfig,
+    GraphFeature,
     GraphRegistry,
     LanggraphOpenaiServe,
     client_event,
@@ -60,6 +61,7 @@ def fastapi_app() -> FastAPI:
             "client-events": GraphConfig(
                 graph=client_event_graph,
                 streamable_node_names=["generate"],
+                features={GraphFeature.CLIENT_EVENTS},
             )
         }
     )
@@ -172,6 +174,26 @@ async def test_v1_stream_exposes_only_public_events_in_graph_order(
         assert chunk.choices[0].delta.model_dump(exclude_none=True) == {}
         assert chunk.choices[0].finish_reason is None
     assert chunks[-1].choices[0].finish_reason == "stop"
+
+
+async def test_client_events_require_the_graph_feature(
+    openai_client: AsyncOpenAI,
+    fastapi_app: FastAPI,
+) -> None:
+    fastapi_app.state.graph_registry.get_graph("client-events").features.clear()
+
+    stream = await openai_client.chat.completions.create(
+        model="client-events",
+        messages=[{"role": "user", "content": "Research this"}],
+        stream=True,
+        metadata=STREAM_EVENTS_METADATA,
+    )
+
+    chunks = [chunk async for chunk in stream]
+
+    assert all(
+        "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
+    )
 
 
 @pytest.mark.parametrize(
