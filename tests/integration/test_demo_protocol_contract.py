@@ -21,13 +21,14 @@ CHAINLIT_PROTOCOL = run_path(
 )
 
 
-def test_chainlit_accepts_model_discovery_payload() -> None:
+def test_chainlit_accepts_model_detail_extension() -> None:
     payload = ModelDetails(
         id="interruptible",
         created=1,
         owned_by="langgraph-openai-serve",
         langgraph_openai_serve=LangGraphModelExtension(
-            features=[GraphFeature.INTERRUPTS],
+            description="DUMMY",
+            features=[GraphFeature.CLIENT_EVENTS, GraphFeature.INTERRUPTS],
             client_settings=ModelClientSettings(
                 json_schema={"type": "object", "additionalProperties": False},
                 defaults={},

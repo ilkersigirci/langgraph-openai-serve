@@ -41,11 +41,15 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
+Profile discovery reads each `langgraph_openai_serve.description` directly from
+the model list. The demo API owns these required descriptions; Chainlit marks a
+model as **Limited functionality** when an endpoint omits or strips one.
+
 ## Runtime Settings
 
 After a profile is selected, Chainlit:
 
-1. Retrieves the detailed model through the inference endpoint and reads
+1. Retrieves the detailed model through the configured OpenAI client and reads
    `langgraph_openai_serve.client_settings`.
 2. Renders supported JSON Schema properties as Chainlit Chat Settings.
 3. Restores saved values that still match the supported widget type or choice.
@@ -57,8 +61,11 @@ Booleans become switches, inline string enums become selects, and strings
 become text inputs. Other schema shapes are not rendered. The adapter checks
 only boolean/string types and select membership when restoring the UI; it does
 not interpret general JSON Schema constraints. LGOS remains the validation
-authority. If detailed model metadata is unavailable, Chainlit hides the
-controls and uses server defaults.
+authority. If the required LGOS model extension is unavailable, Chainlit hides
+the controls, uses server defaults, and shows a transient **Limited
+functionality** warning after selection. Profile discovery itself stays
+list-only because descriptions arrive with the list response. Standard Chat
+Completions remain available.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
@@ -109,7 +116,8 @@ visible but is excluded from later model context because it is incomplete.
 
 The UI renders Markdown links and images from assistant content. It does not
 consume structured OpenAI citation annotations. The bundled adapter opts into
-LGOS client stream events. Portable status updates render as a native Chainlit
+LGOS client stream events only when model retrieval advertises
+`client_events`. Portable status updates render as a native Chainlit
 [`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist). Other
 events render as one live-updating Chainlit
 [custom element](https://docs.chainlit.io/api-reference/elements/custom) per
@@ -123,20 +131,29 @@ Each new status completes the previous task, and the final `done=True` update
 marks the list done. The task list is live UI state and is not restored from
 persisted chat history.
 
-Select `lgos-a/custom-event-showcase` in Compose or `custom-event-showcase`
+Select `lgos-b/custom-event-showcase` in Compose or `custom-event-showcase`
 locally, then ask **Build the compatibility report** to see the separate
 activity panel render progress and an artifact while assistant text streams
 independently.
 
-Behind an OpenAI-compatible proxy, the activity panel requires a raw
-pass-through inference URL. A schema-normalizing route may still stream the
-answer while silently omitting event-only chunks. See
+Behind an OpenAI-compatible proxy, the one configured client must use a raw
+pass-through URL for model listing, detailed retrieval, and inference. A
+schema-normalizing route may still stream the answer while stripping both
+capability metadata and event-only chunks; Chainlit displays the limited-mode
+warning when model retrieval reveals that condition. See
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
-The Compose configuration lists the combined Bifrost catalog, then routes each
-prefixed selection through the pass-through endpoint with
-`x-model-provider`. Local-process defaults continue to target one LGOS API
-directly.
+Compose configures the Bifrost pass-through URL plus two explicit model routes.
+Each route maps a synthetic UI prefix such as `lgos-a/` to request headers such
+as `x-model-provider: lgos-a`. Chainlit lists each route and reuses its headers
+for model retrieval and chat. The model ID after the synthetic prefix remains
+opaque, including any additional `/` characters.
+
+An empty route map means a standard OpenAI endpoint: Chainlit lists once and
+reuses every returned model ID verbatim. Use that mode for a direct LGOS API or
+a normalized proxy endpoint. If the endpoint strips the LGOS model extension,
+the profile remains usable and Chainlit warns after it is selected. Chainlit
+never infers routing behavior from the base URL.
 
 ## Settings Reference
 
@@ -144,10 +161,9 @@ LGOS endpoint settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_CHAINLIT_INFERENCE__BASE_URL` | `http://localhost:3004/v1` | Inference and detailed-retrieval endpoint. |
-| `DEMO_CHAINLIT_INFERENCE__API_KEY` | `DUMMY` | Inference API or gateway key. |
-| `DEMO_CHAINLIT_CATALOG__BASE_URL` | unset | Model-list endpoint; otherwise inference is reused. |
-| `DEMO_CHAINLIT_CATALOG__API_KEY` | unset | Required with an explicit catalog endpoint. |
+| `DEMO_CHAINLIT_OPENAI__BASE_URL` | `http://localhost:3004/v1` | One endpoint for listing, retrieval, and inference. |
+| `DEMO_CHAINLIT_OPENAI__API_KEY` | `DUMMY` | OpenAI API or gateway key. |
+| `DEMO_CHAINLIT_OPENAI__MODEL_ROUTES` | `{}` | JSON object mapping synthetic model prefixes to request headers. Compose configures the two Bifrost pass-through routes; keep empty for a standard endpoint. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login: `mock` or `oauth`. |

@@ -3,68 +3,67 @@ import os
 import pytest
 from openai import AsyncOpenAI
 
-BIFROST_CATALOG_BASE_URL = os.getenv("DEMO_TEST_BIFROST_CATALOG_BASE_URL")
-BIFROST_PASSTHROUGH_BASE_URL = os.getenv(
-    "DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL",
-    "http://localhost:3000/openai_passthrough/v1",
-)
-LGOS_PROVIDERS = ("lgos-a", "lgos-b")
+BIFROST_BASE_URL = os.getenv("DEMO_TEST_BIFROST_BASE_URL")
 
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.integration,
     pytest.mark.skipif(
-        BIFROST_CATALOG_BASE_URL is None,
-        reason="set DEMO_TEST_BIFROST_CATALOG_BASE_URL to test through Bifrost",
+        BIFROST_BASE_URL is None,
+        reason="set DEMO_TEST_BIFROST_BASE_URL to test through Bifrost",
     ),
 ]
 
 
-async def test_bifrost_combines_both_lgos_servers() -> None:
-    assert BIFROST_CATALOG_BASE_URL is not None
+async def test_bifrost_routes_two_lgos_apis_through_one_openai_client() -> None:
+    assert BIFROST_BASE_URL is not None
 
-    async with (
-        AsyncOpenAI(
-            base_url=BIFROST_CATALOG_BASE_URL,
-            api_key="DUMMY",
-            max_retries=0,
-            timeout=10.0,
-        ) as catalog_client,
-        AsyncOpenAI(
-            base_url=BIFROST_PASSTHROUGH_BASE_URL,
-            api_key="DUMMY",
-            max_retries=0,
-            timeout=10.0,
-        ) as passthrough_client,
-    ):
-        models = {model.id for model in (await catalog_client.models.list()).data}
-        for provider in LGOS_PROVIDERS:
-            assert f"{provider}/simple-graph" in models
+    async with AsyncOpenAI(
+        base_url=BIFROST_BASE_URL,
+        api_key="DUMMY",
+        max_retries=0,
+        timeout=10.0,
+    ) as client:
+        for provider in ("lgos-a", "lgos-b"):
+            extra_headers = {"x-model-provider": provider}
+            models = {
+                model.id
+                for model in (
+                    await client.models.list(extra_headers=extra_headers)
+                ).data
+            }
+            assert "simple-graph" in models
 
-            headers = {"x-model-provider": provider}
-            model = await passthrough_client.models.retrieve(
+            model = await client.models.retrieve(
                 "simple-graph",
-                extra_headers=headers,
+                extra_headers=extra_headers,
             )
             extension = (model.model_extra or {})["langgraph_openai_serve"]
             assert extension["client_settings"]["schema_version"] == 1
 
-            response = await passthrough_client.chat.completions.create(
+            event_model = await client.models.retrieve(
+                "custom-event-showcase",
+                extra_headers=extra_headers,
+            )
+            event_extension = (event_model.model_extra or {})["langgraph_openai_serve"]
+            assert "client_events" in event_extension["features"]
+
+            response = await client.chat.completions.create(
                 model="custom-input-output-context",
                 messages=[{"role": "user", "content": "Show me custom schemas."}],
                 user="demo-user",
-                extra_headers=headers,
+                extra_headers=extra_headers,
             )
             assert response.choices[0].message.content == (
                 "demo-user asked: Show me custom schemas."
             )
 
-            stream = await passthrough_client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model="custom-event-showcase",
                 messages=[{"role": "user", "content": "Build the report."}],
                 metadata={"langgraph_stream_events": "v1"},
                 stream=True,
-                extra_headers=headers,
+                extra_headers=extra_headers,
             )
             event_types = []
             async for chunk in stream:

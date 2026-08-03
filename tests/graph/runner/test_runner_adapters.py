@@ -60,6 +60,7 @@ async def test_typed_dict_schemas_and_native_context(
         registry={
             "typed": GraphConfig(
                 graph=graph,
+                description="DUMMY",
                 request_to_input=lambda request, messages: {
                     "question": messages[-1].content,
                     "ignored": True,
@@ -113,6 +114,7 @@ async def test_async_graph_factory_and_async_adapters(
         registry={
             "pydantic": GraphConfig(
                 graph=resolve_graph,
+                description="DUMMY",
                 request_to_input=request_to_input,
                 context_factory=context_factory,
                 output_to_text=lambda output: output["answer"],

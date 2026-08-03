@@ -2,18 +2,20 @@
 
 The demo API registers the following graphs. They demonstrate LGOS features;
 none is installed as a built-in model by the `langgraph-openai-serve` package.
+Each registration also supplies a short `GraphConfig.description` used by the
+demo model catalogs.
 
-| Model | Demonstrates | Extra runtime requirement |
-| --- | --- | --- |
-| `custom-input-output-context` | Request, output, and typed runtime-context adapters | None |
-| `citation-events` | Structured OpenAI URL citations with portable Markdown content | None |
-| `advanced-mcp-tools` | Async graph factories and a mock MCP-style tool | None |
-| `complex-subgraphs` | Router-selected subgraphs and nested streamed output | None |
-| `status-events` | Portable status updates for native client UI | None |
-| `custom-event-showcase` | Public progress and artifact events interleaved with text | None |
-| `interruptible-approval` | Checkpointed human approval represented as an OpenAI tool call | PostgreSQL |
-| `simple-graph` | Streamed model output and discoverable runtime settings | Upstream chat model |
-| `lgos-rag` | Agentic retrieval over the packaged demo corpus | Upstream chat and embedding models |
+| Model | Demonstrates | Graph feature | Extra runtime requirement |
+| --- | --- | --- | --- |
+| `custom-input-output-context` | Request, output, and typed runtime-context adapters | None | None |
+| `citation-events` | Structured OpenAI URL citations with portable Markdown content | None | None |
+| `advanced-mcp-tools` | Async graph factories and a mock MCP-style tool | None | None |
+| `complex-subgraphs` | Router-selected subgraphs and nested streamed output | None | None |
+| `status-events` | Portable status updates for native client UI | `client_events` | None |
+| `custom-event-showcase` | Public progress and artifact events interleaved with text | `client_events` | None |
+| `interruptible-approval` | Checkpointed human approval represented as an OpenAI tool call | `interrupts` | PostgreSQL |
+| `simple-graph` | Streamed model output and discoverable runtime settings | None | Upstream chat model |
+| `lgos-rag` | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL checkpointer during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it

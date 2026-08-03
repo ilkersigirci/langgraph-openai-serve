@@ -51,13 +51,18 @@ docker compose -f compose.yaml up -d lgos-db
     packaged with the API. These settings and dependencies belong to the API
     project and are not installed with the library.
 
-The `lgos-a` base URL is `http://localhost:3004/v1`.
+The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
+the same image as independently addressable `lgos-b` on port 3005; the two
+services intentionally expose the same graph set today.
 
 Inspect registered graphs:
 
 ```bash
 curl http://localhost:3004/v1/models
 ```
+
+Each demo graph publishes its API-owned description in the lightweight
+`langgraph_openai_serve` list extension.
 
 The complete model and requirement matrix is in [Example Graphs](graphs.md).
 
@@ -159,8 +164,9 @@ interleaved with assistant text.
 
 The demo includes optional [Chainlit](chainlit.md) and
 [Open WebUI](open-webui.md) clients. The Compose stack routes both through the
-bundled [Bifrost gateway](bifrost.md), which combines two LGOS services and
-preserves extensions through pass-through requests.
+bundled [Bifrost gateway](bifrost.md). Each client uses the gateway's one raw
+pass-through base URL for model listing, model retrieval, and inference across
+both LGOS providers.
 
 ## Next Steps
 

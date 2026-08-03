@@ -43,6 +43,7 @@ builder.set_finish_point("answer")
 
 graph_config = GraphConfig(
     graph=builder.compile(),
+    description="Answer questions for a configurable audience.",
     client_settings=ChatSettings,
 )
 ```
@@ -67,8 +68,11 @@ and may show a declared value before field validators normalize it. Clients
 should use `defaults`, not those annotations, when initializing values or
 computing changes.
 
-If the descriptor is missing or its version is unsupported, the client should
-omit runtime settings and use server defaults.
+An absent `client_settings` member on a valid LGOS extension means the graph has
+no public runtime settings. If the `langgraph_openai_serve` extension itself is
+missing or invalid, omit runtime settings, use server defaults, and show the UI's
+**Limited functionality** warning. That condition usually means a proxy rebuilt
+the model response instead of passing it through.
 
 ## Client Request
 
@@ -132,5 +136,6 @@ See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-
 for discovery code. The included Chainlit client automates descriptor discovery,
 Chat Settings, and metadata serialization; see the
 [Chainlit demo](../demo/chainlit.md#runtime-settings). The
-[Open WebUI demo](../demo/open-webui.md#runtime-settings) uses a
-separate, static `UserValves` Function for the `simple-graph` demo.
+[Open WebUI demo](../demo/open-webui.md#runtime-settings) projects each
+discovered model's descriptor into native per-chat Chat Variables and retains a
+static `UserValves` example for fixed single-model integrations.

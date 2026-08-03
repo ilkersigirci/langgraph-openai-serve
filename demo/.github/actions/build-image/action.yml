@@ -9,6 +9,9 @@ inputs:
   repository:
     description: GHCR image repository name.
     required: true
+  build-args:
+    description: Optional Docker build arguments.
+    required: false
   platforms:
     description: Comma-separated target platforms.
     default: linux/amd64,linux/arm64
@@ -40,12 +43,9 @@ runs:
       uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
       with:
         images: ghcr.io/${{ github.repository_owner }}/${{ inputs.repository }}
-        flavor: latest=false
         tags: |
           type=sha,prefix=validation-,format=long,enable=${{ inputs.publish != 'true' }}
-          type=raw,value=latest,enable=${{ inputs.publish == 'true' && github.event_name == 'release' }}
-          type=semver,pattern={{version}},enable=${{ inputs.publish == 'true' && github.ref_type == 'tag' }}
-          type=sha,prefix=sha-,format=long,enable=${{ inputs.publish == 'true' }}
+          type=semver,pattern={{version}},enable=${{ inputs.publish == 'true' }}
 
     - name: Build and push
       uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -56,6 +56,7 @@ runs:
         push: ${{ inputs.publish == 'true' }}
         tags: ${{ steps.metadata.outputs.tags }}
         labels: ${{ steps.metadata.outputs.labels }}
+        build-args: ${{ inputs.build-args }}
         sbom: true
         provenance: mode=max
         cache-from: type=gha,scope=${{ inputs.repository }}

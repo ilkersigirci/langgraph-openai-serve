@@ -4,6 +4,7 @@ import importlib
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from openai import OpenAIError
 from openai.types import Model
 
 from lgos_chainlit.lgos_protocol import ModelClientSettings
@@ -28,9 +29,19 @@ def configured_model(settings: ModelClientSettings) -> Model:
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": [],
             "client_settings": settings.model_dump(mode="json"),
         },
+    )
+
+
+def model_without_extension(model_id: str) -> Model:
+    return Model(
+        id=model_id,
+        object="model",
+        created=1,
+        owned_by="test",
     )
 
 
@@ -77,10 +88,50 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] == (
         runtime_client_settings.defaults
     )
+    assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
 @pytest.mark.anyio
-async def test_discovery_failure_disables_settings(
+async def test_chat_profiles_use_list_only_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    simple = importlib.import_module("lgos_chainlit.simple")
+    monkeypatch.setattr(
+        simple.openai_client.models,
+        "list",
+        AsyncMock(
+            return_value=MagicMock(
+                data=[
+                    Model(
+                        id="configured",
+                        object="model",
+                        created=1,
+                        owned_by="test",
+                        langgraph_openai_serve={
+                            "schema_version": 1,
+                            "description": "DUMMY",
+                        },
+                    ),
+                    model_without_extension("proxy-model"),
+                ]
+            )
+        ),
+    )
+    retrieve = AsyncMock()
+    monkeypatch.setattr(simple.openai_client.models, "retrieve", retrieve)
+
+    profiles = await simple.set_chat_profiles(None)
+
+    assert [profile.name for profile in profiles] == ["configured", "proxy-model"]
+    assert [profile.markdown_description for profile in profiles] == [
+        "DUMMY",
+        simple.LIMITED_FUNCTIONALITY_MESSAGE,
+    ]
+    retrieve.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_model_retrieval_failure_disables_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
@@ -92,22 +143,29 @@ async def test_discovery_failure_disables_settings(
         }
     )
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
+    warning = AsyncMock()
     monkeypatch.setattr(
         chat_settings,
         "retrieve_model",
-        AsyncMock(side_effect=RuntimeError("temporarily unavailable")),
+        AsyncMock(side_effect=OpenAIError("temporarily unavailable")),
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    monkeypatch.setattr(
+        chat_settings,
+        "send_limited_functionality_warning",
+        warning,
+    )
 
     await chat_settings.configure_chat_settings()
 
     factory.assert_called_once_with([])
     form.refresh.assert_awaited_once_with()
+    warning.assert_awaited_once_with()
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
 @pytest.mark.anyio
-async def test_model_without_settings_clears_settings(
+async def test_model_without_extension_warns_and_clears_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
@@ -118,26 +176,52 @@ async def test_model_without_settings_clears_settings(
         }
     )
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
+    warning = AsyncMock()
     monkeypatch.setattr(
         chat_settings,
         "retrieve_model",
-        AsyncMock(
-            return_value=Model(
-                id="simple",
-                object="model",
-                created=1,
-                owned_by="proxy",
-            )
-        ),
+        AsyncMock(return_value=model_without_extension("simple")),
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    monkeypatch.setattr(
+        chat_settings,
+        "send_limited_functionality_warning",
+        warning,
+    )
 
     await chat_settings.configure_chat_settings()
 
     factory.assert_called_once_with([])
     form.send.assert_awaited_once_with()
     form.refresh.assert_not_awaited()
+    warning.assert_awaited_once_with()
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
+
+
+@pytest.mark.anyio
+async def test_missing_profile_disables_settings_and_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    simple = importlib.import_module("lgos_chainlit.simple")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session({})
+    retrieve = AsyncMock()
+    send_ui_message = AsyncMock()
+    factory, form = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(chat_settings, "retrieve_model", retrieve)
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    monkeypatch.setattr(simple.cl, "user_session", session)
+    monkeypatch.setattr(simple, "send_ui_message", send_ui_message)
+
+    await chat_settings.configure_chat_settings()
+    await simple.on_message(Mock())
+
+    retrieve.assert_not_awaited()
+    factory.assert_called_once_with([])
+    form.send.assert_awaited_once_with()
+    send_ui_message.assert_awaited_once_with(
+        "Chat completion failed: no model profile is selected."
+    )
 
 
 @pytest.mark.anyio
@@ -146,6 +230,7 @@ async def test_selected_settings_reach_the_openai_request(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
+    clients = importlib.import_module("lgos_chainlit.utils.clients")
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
@@ -170,7 +255,15 @@ async def test_selected_settings_reach_the_openai_request(
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.inference_client.chat.completions, "create", create)
+    monkeypatch.setattr(
+        clients.settings.OPENAI,
+        "model_routes",
+        {
+            "lgos-a": {"x-model-provider": "lgos-a"},
+            "lgos-b": {"x-model-provider": "lgos-b"},
+        },
+    )
+    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
 
     await simple.on_message(Mock(content="Hello"))
 
@@ -184,6 +277,5 @@ async def test_selected_settings_reach_the_openai_request(
             "langgraph_runtime_settings": (
                 '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
             ),
-            "langgraph_stream_events": "v1",
         },
     )

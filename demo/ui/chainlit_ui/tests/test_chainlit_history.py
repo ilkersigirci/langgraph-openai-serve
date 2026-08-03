@@ -1,8 +1,29 @@
 from pathlib import Path
 from typing import cast
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+
+
+@pytest.mark.anyio
+async def test_limited_functionality_warning_uses_transient_toast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lgos_chainlit.utils import chat
+
+    send_toast = AsyncMock()
+    monkeypatch.setattr(
+        chat.cl,
+        "context",
+        Mock(emitter=Mock(send_toast=send_toast)),
+    )
+
+    await chat.send_limited_functionality_warning()
+
+    send_toast.assert_awaited_once_with(
+        chat.LIMITED_FUNCTIONALITY_MESSAGE,
+        type="warning",
+    )
 
 
 @pytest.mark.anyio

@@ -29,6 +29,22 @@ class PublicSettings(ClientSettings):
     day: date = date(2026, 7, 17)
 
 
+def test_graph_description_is_required(message_graph) -> None:
+    with pytest.raises(ValidationError, match="description"):
+        GraphConfig(graph=message_graph)
+
+
+def test_graph_description_cannot_be_blank(message_graph) -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        GraphConfig(graph=message_graph, description="   ")
+
+
+def test_graph_description_is_trimmed(message_graph) -> None:
+    graph_config = GraphConfig(graph=message_graph, description="  DUMMY  ")
+
+    assert graph_config.description == "DUMMY"
+
+
 def make_context_graph(context_schema):
     return (
         StateGraph(MessageState, context_schema=context_schema)
@@ -55,6 +71,7 @@ def make_request(
 def test_client_settings_own_the_public_contract_and_defaults() -> None:
     graph_config = GraphConfig(
         graph=make_context_graph(PublicSettings),
+        description="DUMMY",
         client_settings=PublicSettings,
     )
 
@@ -68,7 +85,11 @@ def test_client_settings_require_a_complete_default(message_graph) -> None:
         required: int
 
     with pytest.raises(ValidationError, match="Field required"):
-        GraphConfig(graph=message_graph, client_settings=RequiredSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=RequiredSettings,
+        )
 
 
 def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
@@ -81,7 +102,11 @@ def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
         nested: NestedValue = invalid
 
     with pytest.raises(ValidationError, match="serialized value"):
-        GraphConfig(graph=message_graph, client_settings=InvalidSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=InvalidSettings,
+        )
 
 
 def test_client_settings_reject_non_finite_defaults(message_graph) -> None:
@@ -89,7 +114,11 @@ def test_client_settings_reject_non_finite_defaults(message_graph) -> None:
         number: float = float("inf")
 
     with pytest.raises(ValidationError, match="finite number"):
-        GraphConfig(graph=message_graph, client_settings=InvalidSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=InvalidSettings,
+        )
 
 
 def test_client_settings_reject_non_finite_schema_extras(message_graph) -> None:
@@ -101,7 +130,11 @@ def test_client_settings_reject_non_finite_schema_extras(message_graph) -> None:
         enabled: bool = True
 
     with pytest.raises(ValidationError, match="finite number"):
-        GraphConfig(graph=message_graph, client_settings=InvalidSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=InvalidSettings,
+        )
 
 
 def test_default_factory_is_evaluated_once_for_discovery_and_requests() -> None:
@@ -117,6 +150,7 @@ def test_default_factory_is_evaluated_once_for_discovery_and_requests() -> None:
 
     GraphConfig(
         graph=make_context_graph(FactorySettings),
+        description="DUMMY",
         client_settings=FactorySettings,
     )
 
@@ -181,6 +215,7 @@ async def test_context_factory_composes_public_and_server_context() -> None:
 
     graph_config = GraphConfig(
         graph=graph,
+        description="DUMMY",
         client_settings=PublicSettings,
         context_factory=context_factory,
     )
@@ -199,7 +234,11 @@ async def test_context_factory_composes_public_and_server_context() -> None:
 async def test_direct_settings_require_the_same_graph_context_schema(
     message_graph,
 ) -> None:
-    graph_config = GraphConfig(graph=message_graph, client_settings=PublicSettings)
+    graph_config = GraphConfig(
+        graph=message_graph,
+        description="DUMMY",
+        client_settings=PublicSettings,
+    )
 
     with pytest.raises(GraphConfigurationError, match="must use that settings model"):
         await graph_config.resolve_graph()
@@ -210,6 +249,7 @@ async def test_lazy_graph_non_null_context_requires_schema(
 ) -> None:
     graph_config = GraphConfig(
         graph=lambda: message_graph,
+        description="DUMMY",
         context_factory=lambda _request, _settings: {"user_id": "alice"},
     )
 
@@ -226,7 +266,11 @@ def test_client_settings_cannot_relax_required_model_config(message_graph) -> No
         enabled: bool = True
 
     with pytest.raises(ValidationError, match="preserve the inherited model config"):
-        GraphConfig(graph=message_graph, client_settings=RelaxedSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=RelaxedSettings,
+        )
 
 
 def test_client_settings_fields_cannot_be_excluded_from_defaults(message_graph) -> None:
@@ -234,4 +278,8 @@ def test_client_settings_fields_cannot_be_excluded_from_defaults(message_graph) 
         hidden: str = Field(default="hidden", exclude=True)
 
     with pytest.raises(ValidationError, match="cannot be excluded from defaults"):
-        GraphConfig(graph=message_graph, client_settings=ExcludedSettings)
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            client_settings=ExcludedSettings,
+        )

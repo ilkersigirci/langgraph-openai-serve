@@ -7,15 +7,14 @@ import pytest
 from openai.types import Model
 from openai.types.chat import ChatCompletionMessage
 
-from lgos_chainlit.lgos_protocol import GraphFeature
+from lgos_chainlit.lgos_protocol import (
+    GraphFeature,
+    model_description,
+    model_supports,
+)
 
 
-def test_model_support_is_read_from_openai_extension(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    hitl = importlib.import_module("lgos_chainlit.hitl")
+def test_model_support_is_read_from_openai_extension() -> None:
     model = Model(
         id="interruptible",
         object="model",
@@ -23,19 +22,15 @@ def test_model_support_is_read_from_openai_extension(
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": ["interrupts"],
         },
     )
 
-    assert hitl.model_supports(model, GraphFeature.INTERRUPTS)
+    assert model_supports(model, GraphFeature.INTERRUPTS)
 
 
-def test_model_support_rejects_unknown_extension_version(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    hitl = importlib.import_module("lgos_chainlit.hitl")
+def test_model_support_rejects_unknown_extension_version() -> None:
     model = Model(
         id="interruptible",
         object="model",
@@ -47,41 +42,33 @@ def test_model_support_rejects_unknown_extension_version(
         },
     )
 
-    assert not hitl.model_supports(model, GraphFeature.INTERRUPTS)
+    assert not model_supports(model, GraphFeature.INTERRUPTS)
 
 
-@pytest.mark.anyio
-async def test_chat_profiles_fail_when_feature_metadata_is_missing(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    hitl = importlib.import_module("lgos_chainlit.hitl")
-    monkeypatch.setattr(
-        hitl,
-        "retrieve_model",
-        AsyncMock(
-            return_value=Model(
-                id="interruptible",
-                object="model",
-                created=1,
-                owned_by="test",
-            )
-        ),
+def test_model_metadata_rejects_a_blank_description() -> None:
+    model = Model(
+        id="interruptible",
+        object="model",
+        created=1,
+        owned_by="test",
+        langgraph_openai_serve={
+            "schema_version": 1,
+            "description": "   ",
+            "features": ["interrupts"],
+        },
     )
 
-    with pytest.raises(RuntimeError, match="documented pass-through that targets LGOS"):
-        await hitl.set_chat_profiles(None)
+    assert model_description(model) is None
+    assert not model_supports(model, GraphFeature.INTERRUPTS)
 
 
 @pytest.mark.anyio
-async def test_chat_profile_keeps_the_bifrost_provider_prefix(
+async def test_chat_profile_warns_when_description_metadata_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     hitl = importlib.import_module("lgos_chainlit.hitl")
-    monkeypatch.setattr(hitl.settings, "HITL_MODEL", "lgos-b/interruptible")
     monkeypatch.setattr(
         hitl,
         "retrieve_model",
@@ -101,7 +88,69 @@ async def test_chat_profile_keeps_the_bifrost_provider_prefix(
 
     profiles = await hitl.set_chat_profiles(None)
 
+    assert len(profiles) == 1
+    assert profiles[0].markdown_description == hitl.LIMITED_FUNCTIONALITY_MESSAGE
+
+
+@pytest.mark.anyio
+async def test_chat_profile_keeps_the_provider_qualified_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+    hitl = importlib.import_module("lgos_chainlit.hitl")
+    monkeypatch.setattr(hitl.settings, "HITL_MODEL", "lgos-b/interruptible")
+    monkeypatch.setattr(
+        hitl,
+        "retrieve_model",
+        AsyncMock(
+            return_value=Model(
+                id="interruptible",
+                object="model",
+                created=1,
+                owned_by="test",
+                langgraph_openai_serve={
+                    "schema_version": 1,
+                    "description": "DUMMY",
+                    "features": ["interrupts"],
+                },
+            )
+        ),
+    )
+
+    profiles = await hitl.set_chat_profiles(None)
+
     assert [profile.name for profile in profiles] == ["lgos-b/interruptible"]
+    assert profiles[0].markdown_description == "DUMMY"
+
+
+@pytest.mark.anyio
+async def test_chat_profile_rejects_a_valid_non_interrupt_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+    hitl = importlib.import_module("lgos_chainlit.hitl")
+    monkeypatch.setattr(
+        hitl,
+        "retrieve_model",
+        AsyncMock(
+            return_value=Model(
+                id="simple",
+                object="model",
+                created=1,
+                owned_by="test",
+                langgraph_openai_serve={
+                    "schema_version": 1,
+                    "description": "DUMMY",
+                    "features": [],
+                },
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="does not advertise interrupt support"):
+        await hitl.set_chat_profiles(None)
 
 
 def test_helpers_extract_and_preserve_the_interrupt_tool_call(

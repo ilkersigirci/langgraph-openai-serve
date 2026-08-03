@@ -6,6 +6,7 @@ from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool, tool
+from langgraph_openai_serve import GraphConfig
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
@@ -52,3 +53,11 @@ async def advanced_mcp_graph():
         ]
     )
     return create_agent(model=model, tools=tools)
+
+
+advanced_mcp_graph_config = GraphConfig(
+    graph=advanced_mcp_graph,
+    description="Demonstrates async graph factories with a mock MCP-style tool.",
+)
+
+__all__ = ["advanced_mcp_graph", "advanced_mcp_graph_config"]

@@ -65,6 +65,7 @@ async def test_nested_subgraph_streaming(
         registry={
             "nested": GraphConfig(
                 graph=graph,
+                description="DUMMY",
                 request_to_input=lambda request, messages: {
                     "question": messages[-1].content
                 },
@@ -109,6 +110,7 @@ async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
         registry={
             "filtered": GraphConfig(
                 graph=builder.compile(),
+                description="DUMMY",
                 streamable_node_names=["non_ai", "generate"],
             )
         },
@@ -139,7 +141,11 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
 
     graph = Graph()
     run = GraphRun(
-        config=GraphConfig(graph=lambda: graph, streamable_node_names=["generate"]),
+        config=GraphConfig(
+            graph=lambda: graph,
+            description="DUMMY",
+            streamable_node_names=["generate"],
+        ),
         graph=graph,
         inputs={},
         context=None,
@@ -171,7 +177,10 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
 
     graph = Graph()
     run = GraphRun(
-        config=GraphConfig(graph=lambda: graph),
+        config=GraphConfig(
+            graph=lambda: graph,
+            description="DUMMY",
+        ),
         graph=graph,
         inputs={},
         context=None,

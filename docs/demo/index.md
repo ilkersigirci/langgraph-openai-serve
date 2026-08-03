@@ -53,7 +53,8 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-transit-connection-horizontal:{ .lg .middle } __Route through Bifrost__
 
-    Combine two independently deployable LGOS services behind one model catalog.
+    Route two independently addressable LGOS APIs through one raw OpenAI
+    pass-through endpoint.
 
     [:octicons-arrow-right-24: Bifrost gateway](bifrost.md)
 
@@ -63,24 +64,25 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
-| Demo APIs | Two FastAPI graph services behind distinct Bifrost model prefixes | Independent uv project; the demo runs `lgos-demo-api` twice |
+| Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Two Function sources plus an idempotent synchronization command | Independent uv project; Open WebUI uses its official image |
-| Bifrost | Combined model catalog and raw provider-selected pass-through | Compose configuration with the official image |
+| Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
+| Bifrost | Raw provider-selected pass-through for the complete `/v1` surface | Compose configuration with the official image |
 | PostgreSQL | LangGraph checkpoints and Chainlit persistence | Official image with a demo-owned bind directory |
 
 Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
-the OpenAI wire contract without importing the package. Bifrost lets both
-clients discover the two services as one catalog while preserving LGOS
-extensions through raw pass-through requests.
+the OpenAI wire contract without importing the package. Each UI uses one client
+for model listing, model details, and chat across both Bifrost providers.
+Bifrost preserves the required LGOS model-detail extension through raw
+pass-through requests.
 
 ## Client Capabilities
 
-| Demo client | Runtime settings | Interrupts | Client events | Citations |
-| --- | --- | --- | --- | --- |
-| Chainlit | Renders supported discovered fields | Dedicated approval UI | Native status task list and live activity panel | Markdown content |
-| Open WebUI manifold Pipe | Server defaults | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
-| Open WebUI `simple-graph` Pipe | Fixed `use_history` and `audience` UserValves | None | Not requested | Assistant text only |
+| Demo client | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
+| --- | --- | --- | --- | --- | --- |
+| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Dedicated approval UI | Native status task list and live activity panel | Markdown content |
+| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
+| Open WebUI static example | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
 Direct OpenAI SDK clients need no demo adapter. They can use every core field
 their own application handles, as shown in

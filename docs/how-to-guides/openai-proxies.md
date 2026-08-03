@@ -16,10 +16,15 @@ gateway so that it:
 - preserves assistant tool calls and matching `tool` messages for interrupt
   resume;
 - propagates downstream disconnects to the upstream streaming request;
-- exposes model retrieval when clients need LGOS feature or runtime-settings
-  discovery; and
-- provides a documented byte-transparent route when clients consume LGOS
-  extension-only stream chunks.
+- preserves `langgraph_openai_serve` on model retrieval;
+- preserves extension-only stream chunks; and
+- exposes model listing, model retrieval, and Chat Completions beneath one
+  OpenAI base URL.
+
+Configure that one base URL in the client. Do not pair a proxy-normalized model
+catalog with a separate inference or discovery client. If the selected route
+strips the required model extension, the UI should keep standard chat available
+but show **Limited functionality**.
 
 ## Client Event Compatibility
 
@@ -31,15 +36,15 @@ them even while ordinary assistant text continues to work.
 | Proxy path | Client events | Assistant text |
 | --- | --- | --- |
 | Direct LGOS | Preserved | Preserved |
-| Schema-normalizing Chat Completions route | Not guaranteed | Preserved |
+| Schema-normalizing OpenAI route | Not guaranteed | Preserved |
 | Documented raw pass-through route | Preserved when byte-transparent | Preserved |
 
-Use a raw pass-through route for inference when a client requests
-`metadata.langgraph_stream_events`, and for detailed model retrieval that must
-preserve LGOS extensions. A normalized model-list route is sufficient for
-catalog discovery. A missing event extension is a safe degradation: the
-completion remains valid, but event-driven UI is absent. Verify event count and
-event/text order with the real client SDK after proxy upgrades.
+Use the raw pass-through route as the client's only OpenAI base URL. It must
+carry model listing, detailed model retrieval, request metadata, and chat
+streams together. A missing model extension is the detectable degraded state;
+the completion may remain valid, but the UI labels the model as limited. Verify
+model metadata, event count, and event/text order with the real client SDK after
+proxy upgrades.
 
 ## Bifrost
 
@@ -56,8 +61,8 @@ LGOS deployment.
 ## LiteLLM
 
 LiteLLM's normal Chat Completions stream handler does not retain LGOS
-event-only chunks. Configure a distinct pass-through prefix that targets LGOS
-and includes subpaths for event-enabled inference and detailed discovery:
+event-only chunks. Configure one pass-through prefix that targets LGOS and
+includes every OpenAI subpath:
 
 ```yaml
 general_settings:
@@ -68,8 +73,8 @@ general_settings:
       methods: ["GET", "POST"]
 ```
 
-Use `https://gateway.example/lgos/v1` as both the inference and discovery base
-URL, with unprefixed LGOS model names. LiteLLM's custom pass-through streams
+Use `https://gateway.example/lgos/v1` as the client's only OpenAI base URL, with
+unprefixed LGOS model names. LiteLLM's custom pass-through streams
 upstream bytes directly; it also bypasses LiteLLM's normal response conversion
 and model routing for that endpoint. See LiteLLM's
 [custom pass-through documentation](https://docs.litellm.ai/docs/proxy/pass_through),
@@ -79,9 +84,8 @@ and
 
 ## Other Proxies
 
-Use a proxy's native OpenAI route for strict standard chat completions. Use only
-a documented raw pass-through route for client events and detailed model
-extensions. Verify `models.list()`, `models.retrieve(model)`, request metadata,
-and event/text stream order after proxy upgrades. When raw pass-through is not
-available, connect directly to LGOS or accept standard text streaming without
-client events.
+Use one documented raw pass-through route for the complete LGOS OpenAI client.
+Verify `models.list()`, `models.retrieve(model)`, request metadata, and
+event/text stream order after proxy upgrades. When raw pass-through is not
+available, connect directly to LGOS or expose the deployment as limited
+functionality in the UI.

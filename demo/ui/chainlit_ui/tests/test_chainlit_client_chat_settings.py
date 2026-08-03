@@ -89,6 +89,7 @@ def test_model_settings_are_versioned_and_optional(
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": [],
             "client_settings": runtime_client_settings.model_dump(mode="json"),
         },
@@ -100,6 +101,7 @@ def test_model_settings_are_versioned_and_optional(
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": [],
             "client_settings": {
                 "schema_version": 2,

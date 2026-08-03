@@ -95,7 +95,7 @@ services:
 
   bifrost:
     container_name: bifrost
-    image: maximhq/bifrost:v1.6.3@sha256:95caedb1c368c6d88178c2b98b9238d8a6a62b51d9cb12b6661bf2671ed1aaa4
+    image: maximhq/bifrost:v1.6.7@sha256:bf2208978308477a9f667dfc04cef3153197aeaca8618befefbecde3ed3378b7
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"
     read_only: true
@@ -182,9 +182,11 @@ services:
     environment:
       CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos
-      DEMO_CHAINLIT_INFERENCE__BASE_URL: http://bifrost:8080/openai_passthrough/v1
-      DEMO_CHAINLIT_CATALOG__BASE_URL: http://bifrost:8080/v1
-      DEMO_CHAINLIT_CATALOG__API_KEY: DUMMY
+      # For limited-functionality testing, use /openai/v1 and set MODEL_ROUTES to '{}'.
+      DEMO_CHAINLIT_OPENAI__BASE_URL: http://bifrost:8080/openai_passthrough/v1
+      # DEMO_CHAINLIT_OPENAI__BASE_URL: http://bifrost:8080/openai/v1 # NOTE: For testing the limited functionality
+      DEMO_CHAINLIT_OPENAI__API_KEY: DUMMY
+      DEMO_CHAINLIT_OPENAI__MODEL_ROUTES: '{"lgos-a":{"x-model-provider":"lgos-a"},"lgos-b":{"x-model-provider":"lgos-b"}}'
       DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
@@ -194,7 +196,7 @@ services:
 
   open-webui:
     container_name: open-webui
-    image: ghcr.io/open-webui/open-webui:v0.10.2@sha256:9fcea9c6e32ab60b0498f3986c6cdf651ddbe61db48d2213a3d28048ddd673d4
+    image: ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"
     read_only: true

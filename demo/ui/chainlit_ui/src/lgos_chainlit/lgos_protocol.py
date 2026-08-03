@@ -6,7 +6,7 @@ image is an independent OpenAI client, not an LGOS Python application.
 
 Authoritative LGOS sources:
 
-* Model discovery schemas:
+* Model-detail extension schema:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 * Graph feature values:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
@@ -26,10 +26,17 @@ Authoritative LGOS sources:
 
 import logging
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 from openai.types import Model
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    ValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +52,7 @@ INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 class GraphFeature(StrEnum):
     """Features advertised for an LGOS model."""
 
+    CLIENT_EVENTS = "client_events"
     INTERRUPTS = "interrupts"
 
 
@@ -59,25 +67,49 @@ class ModelClientSettings(BaseModel):
 
 
 class LangGraphModelExtension(BaseModel):
-    """Forward-compatible LGOS extension returned by model discovery."""
+    """Forward-compatible LGOS extension returned by model retrieval."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
     schema_version: Literal[1]
+    description: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+    ]
     features: list[str]
     client_settings: JsonValue = None
 
 
+def _raw_model_extension(model: Model) -> dict[str, Any] | None:
+    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
+    return extension if isinstance(extension, dict) else None
+
+
+def model_description(model: Model) -> str | None:
+    """Read a required LGOS description, returning None for degraded metadata."""
+    extension = _raw_model_extension(model)
+    if extension is None or extension.get("schema_version") != 1:
+        return None
+    description = extension.get("description")
+    if not isinstance(description, str):
+        return None
+    description = description.strip()
+    return description or None
+
+
 def model_extension(model: Model) -> LangGraphModelExtension | None:
     """Parse the versioned LGOS extension preserved by the OpenAI SDK."""
-    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
-    if not isinstance(extension, dict):
+    extension = _raw_model_extension(model)
+    if extension is None:
         return None
 
     try:
         return LangGraphModelExtension.model_validate(extension)
     except ValidationError:
-        logger.warning("Ignoring invalid LGOS metadata for model %s", model.id)
+        logger.warning(
+            "Ignoring invalid LGOS metadata for model %s",
+            model.id,
+        )
         return None
 
 

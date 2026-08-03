@@ -5,7 +5,7 @@ name: Build demo API image
 on:
   release:
     types:
-      - created
+      - published
   pull_request:
     paths:
       - demo/api/**
@@ -52,9 +52,39 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.11.29"
+
+      - name: Build LGOS release wheel
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=${RELEASE_TAG#v}
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The tag $RELEASE_TAG must use 'v<MAJOR>.<MINOR>.<PATCH>'"
+            exit 1
+          fi
+
+          uv version "$version" --frozen
+          uv build --wheel --out-dir demo/api/dist
+
+          shopt -s nullglob
+          wheels=(demo/api/dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            echo "Expected exactly one LGOS wheel"
+            exit 1
+          fi
+
+          echo "wheel=$(basename "${wheels[0]}")" >> "$GITHUB_OUTPUT"
+
       - name: Publish image
         uses: ./demo/.github/actions/build-image
         with:
           context: demo/api
           repository: lgos-demo-api
+          build-args: |
+            LGOS_WHEEL=${{ steps.release.outputs.wheel }}
           publish: true

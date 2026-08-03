@@ -12,9 +12,13 @@ GraphRegistry(
     registry={
         "chat": GraphConfig(
             graph=chat_graph,
+            description="General-purpose chat graph.",
             streamable_node_names=["generate"],
         ),
-        "advanced-mcp-tools": GraphConfig(graph=advanced_graph),
+        "advanced-mcp-tools": GraphConfig(
+            graph=advanced_graph,
+            description="Chat graph with MCP tools.",
+        ),
     }
 )
 ```

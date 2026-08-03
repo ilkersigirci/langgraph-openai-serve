@@ -60,11 +60,28 @@ async def test_app_lists_exactly_the_documented_models(
 
     assert response.object == "list"
     assert {model.id for model in response.data} == DOCUMENTED_MODEL_IDS
-    assert all(not model.model_extra for model in response.data)
+    descriptions = {
+        model.id: (model.model_extra or {})["langgraph_openai_serve"]["description"]
+        for model in response.data
+    }
+    assert all(description.strip() for description in descriptions.values())
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]
-    assert extension == {"schema_version": 1, "features": ["interrupts"]}
+    assert extension == {
+        "schema_version": 1,
+        "description": descriptions["interruptible-approval"],
+        "features": ["interrupts"],
+    }
+
+    for model_id in ("custom-event-showcase", "status-events"):
+        model = await openai_client.models.retrieve(model_id)
+        extension = (model.model_extra or {})["langgraph_openai_serve"]
+        assert extension == {
+            "schema_version": 1,
+            "description": descriptions[model_id],
+            "features": ["client_events"],
+        }
 
 
 @pytest.mark.anyio

@@ -104,13 +104,13 @@ directories. The checkout includes each empty service directory with a tracked
     docker compose -f compose.yaml up --wait bifrost
     ```
 
-    - Standard inference, without client events:
-      `http://localhost:3000/v1` with `openai/`-prefixed models
-    - Detailed discovery or event-enabled inference:
-      `http://localhost:3000/openai_passthrough/v1` with unprefixed models
+    Use `http://localhost:3000/openai_passthrough/v1` as the one OpenAI base
+    URL for model listing, model retrieval, and inference. Send either
+    `x-model-provider: lgos-a` or `x-model-provider: lgos-b` per request.
 
-    From the package repository, run `make test-bifrost` to verify detailed
-    model metadata through the proxy. See
+    From the package repository, run `make test-bifrost` to verify both APIs,
+    detailed model metadata, inference, and client events through one SDK
+    client. See
     [Bifrost Gateway](bifrost.md).
 
 === "Chainlit"
@@ -133,8 +133,8 @@ directories. The checkout includes each empty service directory with a tracked
 
     Open WebUI: `http://localhost:3003`
 
-    Compose runs the official Open WebUI image. The local sync command creates
-    or updates the bundled Functions. See the
+    Compose runs the official Open WebUI image. The local sync command updates
+    the bundled Functions and generates Workspace Models from LGOS metadata. See the
     [Open WebUI Functions](open-webui.md).
 
 PostgreSQL is published on `localhost:3001`. PostgreSQL checkpoints, Bifrost
@@ -147,9 +147,9 @@ schema migrations.
 
 ## What The Stack Demonstrates
 
-- The API and Chainlit applications use their own lockfiles. The production API
-  image uses the locked PyPI release in a minimal runtime, while the development
-  image installs both the API and the parent LGOS checkout as editable packages.
+- The API and Chainlit applications use their own lockfiles. The LGOS release
+  workflow injects its tagged wheel into the API image, while development uses
+  an editable parent checkout.
 - Third-party services use pinned official images rather than being repackaged.
 - Health checks and `pre_start` jobs establish service and schema readiness.
 - Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and

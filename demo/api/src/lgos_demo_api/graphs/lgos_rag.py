@@ -26,6 +26,7 @@ from langgraph.constants import TAG_HIDDEN
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph_openai_serve import GraphConfig
 from pydantic import BaseModel, Field, SecretStr
 
 from lgos_demo_api.settings import settings
@@ -411,4 +412,16 @@ workflow.add_edge("answer_no_results", END)
 
 lgos_rag = workflow.compile()
 
-__all__ = ["lgos_rag"]
+lgos_rag_graph_config = GraphConfig(
+    graph=lgos_rag,
+    description=(
+        "Answers questions with agentic retrieval over the packaged demo corpus."
+    ),
+    streamable_node_names=[
+        "generate_query_or_respond",
+        "generate_answer",
+        "answer_no_results",
+    ],
+)
+
+__all__ = ["lgos_rag", "lgos_rag_graph_config"]

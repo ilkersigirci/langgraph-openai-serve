@@ -66,10 +66,21 @@ USER app
 
 FROM dependencies AS production-build
 
+ARG LGOS_WHEEL
+
 COPY . /app
 
+# Release builds inject the wheel made from the tagged LGOS checkout. Ordinary
+# standalone builds keep using the registry package recorded in uv.lock.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-default-groups --no-editable \
+    if [ -n "$LGOS_WHEEL" ]; then \
+        uv sync --locked --no-default-groups --no-editable \
+            --no-install-package langgraph-openai-serve \
+        && uv pip install --python /app/.venv/bin/python --no-deps \
+            "/app/dist/$LGOS_WHEEL"; \
+    else \
+        uv sync --locked --no-default-groups --no-editable; \
+    fi \
     && uv pip check --python /app/.venv/bin/python
 
 FROM python AS production

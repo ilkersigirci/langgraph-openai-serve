@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-from typing import cast
 
 import chainlit as cl
 from chainlit.types import ThreadDict
@@ -11,8 +10,11 @@ from lgos_chainlit.auth import authenticated_user_identifier
 from lgos_chainlit.lgos_protocol import (
     STREAM_EVENTS_METADATA_KEY,
     STREAM_EVENTS_METADATA_VALUE,
+    GraphFeature,
+    model_description,
 )
 from lgos_chainlit.utils.chat import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
     send_ui_message,
@@ -21,12 +23,13 @@ from lgos_chainlit.utils.chat import (
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
+    model_feature_enabled,
 )
 from lgos_chainlit.utils.client_events import ClientEventRenderer
 from lgos_chainlit.utils.clients import (
-    catalog_client,
-    inference_client,
+    list_models,
     model_request,
+    openai_client,
 )
 
 
@@ -34,14 +37,14 @@ from lgos_chainlit.utils.clients import (
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    models = await catalog_client.models.list()
-
     return [
         cl.ChatProfile(
             name=model.id,
-            markdown_description=f"Talk to `{model.id}` from the demo backend.",
+            markdown_description=(
+                model_description(model) or LIMITED_FUNCTIONALITY_MESSAGE
+            ),
         )
-        for model in models.data
+        for model in await list_models()
     ]
 
 
@@ -75,7 +78,11 @@ async def on_chat_resume(thread: ThreadDict) -> None:
 @cl.on_message
 async def on_message(_message: cl.Message) -> None:
     """Reply from chat context; Chainlit adds the user message before this hook."""
-    model = cast(str, cl.user_session.get("chat_profile"))
+    model = cl.user_session.get("chat_profile")
+    if not isinstance(model, str) or not model:
+        await send_ui_message("Chat completion failed: no model profile is selected.")
+        return
+
     messages = text_only_chat_messages()
     assistant_message = cl.Message(content="")
     client_events = ClientEventRenderer()
@@ -83,8 +90,9 @@ async def on_message(_message: cl.Message) -> None:
 
     try:
         metadata = chat_settings_metadata()
-        metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
-        stream = await inference_client.chat.completions.create(
+        if model_feature_enabled(GraphFeature.CLIENT_EVENTS):
+            metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
+        stream = await openai_client.chat.completions.create(
             **model_request(model),
             messages=messages,
             stream=True,

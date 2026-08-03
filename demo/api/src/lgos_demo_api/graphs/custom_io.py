@@ -69,6 +69,9 @@ def output_to_text(output: Output) -> str:
 
 custom_io_graph_config = GraphConfig(
     graph=custom_io_graph,
+    description=(
+        "Demonstrates custom input, output, and typed runtime-context adapters."
+    ),
     request_to_input=request_to_input,
     context_factory=context_factory,
     output_to_text=output_to_text,

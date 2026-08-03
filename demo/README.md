@@ -19,10 +19,12 @@ dependency source.
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
 Shared Compose-only assets live under `docker/`; the Bifrost gateway
-configuration is at `docker/bifrost/config.json`. Compose runs two LGOS API
-containers behind its `lgos-a/` and `lgos-b/` model prefixes. Both use the demo
-image today; either service can be replaced by an independently locked
-application image when graph dependencies conflict.
+configuration is at `docker/bifrost/config.json`. Compose runs the demo API
+image as two independently addressable services, `lgos-a` and `lgos-b`. They
+serve the same graphs today so the stack can demonstrate routing multiple LGOS
+APIs through one Bifrost pass-through endpoint; either service can define a
+different graph set later. The clients keep one OpenAI client and select the
+provider per request.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -57,7 +59,8 @@ Run Chainlit and its Compose dependencies on port 3002:
 make run-chainlit
 ```
 
-With Open WebUI running, synchronize the bundled Functions:
+With Open WebUI running, synchronize the Functions and generated Workspace
+Models:
 
 ```bash
 make sync-openwebui
@@ -87,7 +90,7 @@ Run each long-lived process in a separate terminal.
 
 ## Run the stack
 
-Use the two published demo images and the official third-party images:
+Use the published demo images and the official third-party images:
 
 ```bash
 make compose
@@ -96,7 +99,7 @@ make compose
 The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
 3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
 
-From the LGOS source checkout, build the two project-owned application images
+From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:
 
 ```bash
@@ -115,10 +118,10 @@ is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
 also runs the API against the current LGOS source.
 
-Pull requests validate changed image contexts without publishing. Pushes and
-tag creation do not run the image publishing jobs. Creating a GitHub release
-such as `v0.1.0` publishes `latest`, `0.1.0`, and the immutable commit tag for
-both images.
+Pull requests validate changed image contexts without publishing. Creating a
+GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for both images.
+In the LGOS repository, the API image includes a wheel built from the tagged
+checkout instead of waiting for PyPI.
 
 Published images include an SBOM and maximum BuildKit provenance. Actions are
 pinned to full commit hashes, credentials are not persisted after checkout, and

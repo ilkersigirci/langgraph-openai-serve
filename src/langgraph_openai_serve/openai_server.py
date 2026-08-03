@@ -12,8 +12,14 @@ Examples:
     >>> app = FastAPI(title="LangGraph OpenAI API")
     >>> graphs = GraphRegistry(
     ...     registry={
-    ...         "simple_graph_1": GraphConfig(graph=simple_graph_1),
-    ...         "simple_graph_2": GraphConfig(graph=simple_graph_2),
+    ...         "simple_graph_1": GraphConfig(
+    ...             graph=simple_graph_1,
+    ...             description="First simple graph.",
+    ...         ),
+    ...         "simple_graph_2": GraphConfig(
+    ...             graph=simple_graph_2,
+    ...             description="Second simple graph.",
+    ...         ),
     ...     }
     ... )
     >>> graph_serve = LanggraphOpenaiServe(
