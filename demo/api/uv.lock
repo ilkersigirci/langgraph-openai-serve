@@ -963,7 +963,7 @@ requires-dist = [
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
     { name = "langgraph", specifier = ">=1.1.10,<2.0.0" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.1.0" },
-    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.6.0,<0.7.0" },
+    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.6.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.11,<3" },

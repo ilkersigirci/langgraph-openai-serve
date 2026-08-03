@@ -147,9 +147,9 @@ schema migrations.
 
 ## What The Stack Demonstrates
 
-- The API and Chainlit applications use their own lockfiles. The production API
-  image uses the locked PyPI release in a minimal runtime, while the development
-  image installs both the API and the parent LGOS checkout as editable packages.
+- The API and Chainlit applications use their own lockfiles. The LGOS release
+  workflow injects its tagged wheel into the API image, while development uses
+  an editable parent checkout.
 - Third-party services use pinned official images rather than being repackaged.
 - Health checks and `pre_start` jobs establish service and schema readiness.
 - Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and

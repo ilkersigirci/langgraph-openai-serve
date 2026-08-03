@@ -5,7 +5,7 @@ name: Build demo API image
 on:
   release:
     types:
-      - created
+      - published
   pull_request:
     paths:
       - api/**
