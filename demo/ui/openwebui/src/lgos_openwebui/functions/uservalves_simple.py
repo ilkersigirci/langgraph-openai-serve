@@ -121,9 +121,13 @@ class Pipe:
         extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
         if not isinstance(extension, dict) or extension.get("schema_version") != 1:
             return None
+        description = extension.get("description")
         features = extension.get("features")
-        if not isinstance(features, list) or any(
-            not isinstance(feature, str) for feature in features
+        if (
+            not isinstance(features, list)
+            or any(not isinstance(feature, str) for feature in features)
+            or not isinstance(description, str)
+            or not description.strip()
         ):
             return None
         return extension

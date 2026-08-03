@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
-from langgraph_openai_serve import ClientSettings
+from langgraph_openai_serve import ClientSettings, GraphConfig
 from pydantic import BaseModel, Field
 
 from lgos_demo_api.settings import settings
@@ -75,3 +75,14 @@ workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")
 
 simple_graph = workflow.compile()
+
+simple_graph_config = GraphConfig(
+    graph=simple_graph,
+    description=(
+        "Streams model output with configurable history and audience settings."
+    ),
+    streamable_node_names=["generate"],
+    client_settings=SimpleContext,
+)
+
+__all__ = ["simple_graph", "simple_graph_config"]

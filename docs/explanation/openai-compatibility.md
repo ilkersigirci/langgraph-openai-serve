@@ -36,6 +36,7 @@ on the standard model-retrieval response:
   "owned_by": "langgraph-openai-serve",
   "langgraph_openai_serve": {
     "schema_version": 1,
+    "description": "Streams responses with configurable history and audience.",
     "features": [],
     "client_settings": {
       "schema_version": 1,
@@ -63,6 +64,11 @@ on the standard model-retrieval response:
 }
 ```
 
+The standard OpenAI Model object has no description field. The required
+`GraphConfig.description` is therefore exposed as
+`langgraph_openai_serve.description` on both list entries and detailed model
+responses. It is API-owned presentation text; clients decide how to render it.
+
 `GraphConfig.features` is the single source of truth: the runner uses it to
 enable behavior and `GET /v1/models/{model}` serializes it for discovery.
 `GraphConfig.client_settings` is an explicit, allowlisted public Pydantic model;
@@ -76,13 +82,16 @@ versions they do not understand.
 | `client_events` | The server may emit opted-in public client-event chunks. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 
-`GET /v1/models` remains a lightweight list containing only the standard
-`id`, `object`, `created`, and `owned_by` fields. Every successful LGOS
-`GET /v1/models/{model}` response includes `langgraph_openai_serve`, even when
-its feature list is empty and it has no client settings. A UI lists models and
-retrieves the details it needs through the same configured OpenAI client. This
-keeps large schemas out of list responses and keeps internal or secret-bearing
-runtime context out of discovery.
+`GET /v1/models` remains lightweight. Every entry contains the standard `id`,
+`object`, `created`, and `owned_by` fields plus a small
+`langgraph_openai_serve` object with only `schema_version` and `description`.
+Features and client-settings schemas remain detail-only.
+Every successful LGOS `GET /v1/models/{model}` response includes the complete
+`langgraph_openai_serve` extension, even when its feature list is empty and it
+has no client settings. A UI reads catalog descriptions from the list and
+retrieves the selected model details through the same configured OpenAI client.
+This keeps large schemas out of list responses and keeps internal or
+secret-bearing runtime context out of discovery.
 
 [OpenAI treats added response properties as backward-compatible](https://developers.openai.com/api/reference/overview#backwards-compatibility).
 Direct JavaScript clients can read the property normally, and the
@@ -97,12 +106,13 @@ configurations are documented under
 
 !!! warning "Limited functionality signal"
 
-    Missing or invalid `langgraph_openai_serve` metadata means the configured
+    A missing description in model listing or missing or invalid
+    `langgraph_openai_serve` metadata on model retrieval means the configured
     endpoint is not preserving the LGOS contract. A UI may continue ordinary
-    Chat Completions, but it must visibly label the model or chat as
-    **Limited functionality** and must not assume runtime settings, client
-    events, or interrupts are available. Configure the deployment or proxy;
-    do not hide this condition behind a second discovery client.
+    Chat Completions, but it must visibly label the model or chat as **Limited
+    functionality** and must not assume runtime settings, client events, or
+    interrupts are available. Configure the deployment or proxy; do not hide
+    this condition behind a second discovery client.
 
 ## Runtime Settings
 

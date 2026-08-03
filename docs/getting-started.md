@@ -57,15 +57,22 @@ graph = (
 )
 
 registry = GraphRegistry(
-    registry={"echo": GraphConfig(graph=graph)},
+    registry={
+        "echo": GraphConfig(
+            graph=graph,
+            description="Echo the latest user message.",
+        )
+    },
 )
 
 app = FastAPI()
 LanggraphOpenaiServe(app=app, graphs=registry).bind_openai_api()
 ```
 
-The registry key `echo` is the OpenAI model name. This deterministic graph is
-deliberately provider-free, so the first request needs no upstream API key.
+The registry key `echo` is the OpenAI model name. Its required description is
+advertised by the LGOS model extension for clients that render model catalogs.
+This deterministic graph is deliberately provider-free, so the first request
+needs no upstream API key.
 
 ## Run The Server
 

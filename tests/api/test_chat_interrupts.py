@@ -75,6 +75,7 @@ async def fastapi_app() -> AsyncIterator[FastAPI]:
                         INTERRUPT_PAYLOAD,
                         checkpointer=checkpointer,
                     ),
+                    description="DUMMY",
                     features={GraphFeature.INTERRUPTS},
                 ),
             }

@@ -33,6 +33,7 @@ async def test_runtime_callbacks_reach_default_message_graph(
         registry={
             "messages": GraphConfig(
                 graph=make_message_graph("hello"),
+                description="DUMMY",
                 runtime_callbacks=[recording_callback],
             )
         },
@@ -54,7 +55,10 @@ async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
     chat_request = make_request("missing")
     graph_registry = GraphRegistry(
         registry={
-            "known": GraphConfig(graph=make_message_graph("hello")),
+            "known": GraphConfig(
+                graph=make_message_graph("hello"),
+                description="DUMMY",
+            ),
         }
     )
 
@@ -85,6 +89,7 @@ async def test_invoke_run_collects_generic_custom_events() -> None:
     run = GraphRun(
         config=GraphConfig(
             graph=lambda: graph,
+            description="DUMMY",
             output_to_text=lambda output: output["answer"],
         ),
         graph=graph,

@@ -101,6 +101,9 @@ workflow.set_entry_point("build_compatibility_report")
 custom_event_showcase_graph = workflow.compile()
 custom_event_showcase_graph_config = GraphConfig(
     graph=custom_event_showcase_graph,
+    description=(
+        "Streams public progress and artifact events alongside assistant text."
+    ),
     streamable_node_names=["build_compatibility_report"],
     features={GraphFeature.CLIENT_EVENTS},
 )

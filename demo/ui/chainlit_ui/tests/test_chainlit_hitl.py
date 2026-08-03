@@ -7,7 +7,11 @@ import pytest
 from openai.types import Model
 from openai.types.chat import ChatCompletionMessage
 
-from lgos_chainlit.lgos_protocol import GraphFeature, model_supports
+from lgos_chainlit.lgos_protocol import (
+    GraphFeature,
+    model_description,
+    model_supports,
+)
 
 
 def test_model_support_is_read_from_openai_extension() -> None:
@@ -18,6 +22,7 @@ def test_model_support_is_read_from_openai_extension() -> None:
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": ["interrupts"],
         },
     )
@@ -40,8 +45,25 @@ def test_model_support_rejects_unknown_extension_version() -> None:
     assert not model_supports(model, GraphFeature.INTERRUPTS)
 
 
+def test_model_metadata_rejects_a_blank_description() -> None:
+    model = Model(
+        id="interruptible",
+        object="model",
+        created=1,
+        owned_by="test",
+        langgraph_openai_serve={
+            "schema_version": 1,
+            "description": "   ",
+            "features": ["interrupts"],
+        },
+    )
+
+    assert model_description(model) is None
+    assert not model_supports(model, GraphFeature.INTERRUPTS)
+
+
 @pytest.mark.anyio
-async def test_chat_profile_warns_when_feature_metadata_is_missing(
+async def test_chat_profile_warns_when_description_metadata_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -56,6 +78,10 @@ async def test_chat_profile_warns_when_feature_metadata_is_missing(
                 object="model",
                 created=1,
                 owned_by="test",
+                langgraph_openai_serve={
+                    "schema_version": 1,
+                    "features": ["interrupts"],
+                },
             )
         ),
     )
@@ -63,7 +89,7 @@ async def test_chat_profile_warns_when_feature_metadata_is_missing(
     profiles = await hitl.set_chat_profiles(None)
 
     assert len(profiles) == 1
-    assert "Limited functionality" in profiles[0].markdown_description
+    assert profiles[0].markdown_description == hitl.LIMITED_FUNCTIONALITY_MESSAGE
 
 
 @pytest.mark.anyio
@@ -85,6 +111,7 @@ async def test_chat_profile_keeps_the_provider_qualified_model(
                 owned_by="test",
                 langgraph_openai_serve={
                     "schema_version": 1,
+                    "description": "DUMMY",
                     "features": ["interrupts"],
                 },
             )
@@ -94,6 +121,7 @@ async def test_chat_profile_keeps_the_provider_qualified_model(
     profiles = await hitl.set_chat_profiles(None)
 
     assert [profile.name for profile in profiles] == ["lgos-b/interruptible"]
+    assert profiles[0].markdown_description == "DUMMY"
 
 
 @pytest.mark.anyio
@@ -114,6 +142,7 @@ async def test_chat_profile_rejects_a_valid_non_interrupt_model(
                 owned_by="test",
                 langgraph_openai_serve={
                     "schema_version": 1,
+                    "description": "DUMMY",
                     "features": [],
                 },
             )

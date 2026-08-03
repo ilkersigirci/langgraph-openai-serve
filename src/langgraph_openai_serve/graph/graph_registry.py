@@ -60,6 +60,10 @@ class GraphNotFoundError(ValueError):
 
 class GraphConfig(BaseModel):
     graph: GraphResolver
+    description: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+    ]
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
     client_settings: type[ClientSettings] | None = None

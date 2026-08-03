@@ -43,6 +43,7 @@ builder.set_finish_point("answer")
 
 graph_config = GraphConfig(
     graph=builder.compile(),
+    description="Answer questions for a configurable audience.",
     client_settings=ChatSettings,
 )
 ```

@@ -133,6 +133,7 @@ def _model(*, features: list[str] | None = None) -> SimpleNamespace:
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": features or [],
             }
         }
@@ -198,15 +199,33 @@ async def test_pipe_lists_registered_models(
     client.__aenter__.return_value = client
     client.models.list.return_value = SimpleNamespace(
         data=[
-            SimpleNamespace(id="interruptible-approval"),
-            SimpleNamespace(id="lgos-rag"),
+            SimpleNamespace(
+                id="interruptible-approval",
+                model_extra={
+                    "langgraph_openai_serve": {
+                        "schema_version": 1,
+                        "description": "DUMMY",
+                    }
+                },
+            ),
+            SimpleNamespace(
+                id="lgos-rag",
+                model_extra={
+                    "langgraph_openai_serve": {
+                        "schema_version": 1,
+                        "description": "DUMMY",
+                    }
+                },
+            ),
         ]
     )
     client_factory = Mock(return_value=client)
+    retrieve_model = AsyncMock()
     monkeypatch.setattr(
         "lgos_openwebui.functions.generic.AsyncOpenAI",
         client_factory,
     )
+    monkeypatch.setattr(generic, "_retrieve_model", retrieve_model)
 
     models = await pipe.pipes()
 
@@ -231,6 +250,7 @@ async def test_pipe_lists_registered_models(
         call(extra_headers={"x-model-provider": "lgos-a"}),
         call(extra_headers={"x-model-provider": "lgos-b"}),
     ]
+    retrieve_model.assert_not_awaited()
     client.__aexit__.assert_awaited_once_with(None, None, None)
 
 
@@ -255,7 +275,7 @@ async def test_pipe_preserves_dots_in_selected_model(
     assert chat.include_client_events_calls == [False]
 
 
-async def test_pipes_preserve_standard_catalog_ids(
+async def test_pipes_preserve_standard_catalog_ids_without_retrieving_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()
@@ -270,11 +290,8 @@ async def test_pipes_preserve_standard_catalog_ids(
     client.__aenter__.return_value = client
     client.models.list.return_value = catalog
     monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
-    monkeypatch.setattr(
-        generic,
-        "_retrieve_model",
-        AsyncMock(return_value="unsupported model detail"),
-    )
+    retrieve_model = AsyncMock()
+    monkeypatch.setattr(generic, "_retrieve_model", retrieve_model)
 
     models = await pipe.pipes()
 
@@ -288,6 +305,7 @@ async def test_pipes_preserve_standard_catalog_ids(
             "name": "Generic / lgos-b/graph-b (Limited functionality)",
         },
     ]
+    retrieve_model.assert_not_awaited()
     assert generic._model_request(
         "lgos-b/graph-b",
         {},
@@ -518,6 +536,7 @@ async def test_pipe_forwards_changed_chat_variables_as_runtime_settings(
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": [],
                 "client_settings": {
                     "schema_version": 1,

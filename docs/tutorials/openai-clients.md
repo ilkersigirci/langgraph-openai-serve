@@ -190,22 +190,34 @@ backend graph owns the work.
 
 ## Model Discovery And Runtime Settings
 
-List standard model summaries, then retrieve the selected model to discover its
-settings. Check both the LGOS extension version and the nested runtime-settings
-version. A valid extension without `client_settings` means the model has no
-public settings. A missing or invalid LGOS extension means the configured
-endpoint is degraded: keep standard chat available, omit extended behavior, and
-show **Limited functionality** rather than silently treating the model as fully
-capable.
+List model summaries and read descriptions from their lightweight LGOS
+extensions, then retrieve the selected model to discover its settings. Check
+both the LGOS extension version and the nested runtime-settings version. A valid
+detail extension without `client_settings` means the model has no public
+settings. A missing description or an invalid detail extension means the
+configured endpoint is degraded: keep standard chat available, omit extended
+behavior, and show **Limited functionality** rather than silently treating the
+model as fully capable.
 
 === "Python"
 
     ```python
     models = client.models.list()
-    model_id = next(
-        model.id for model in models.data if model.id == "my-settings-graph"
+    selected = next(
+        model for model in models.data if model.id == "my-settings-graph"
     )
-    model = client.models.retrieve(model_id)
+    summary_extension = (selected.model_extra or {}).get(
+        "langgraph_openai_serve"
+    )
+    description = (
+        summary_extension.get("description")
+        if isinstance(summary_extension, dict)
+        and summary_extension.get("schema_version") == 1
+        else None
+    )
+    print(description)
+
+    model = client.models.retrieve(selected.id)
 
     extension = (model.model_extra or {}).get("langgraph_openai_serve")
     settings = (
@@ -227,6 +239,13 @@ capable.
       (model) => model.id === "my-settings-graph",
     );
     if (!selectedModel) throw new Error("my-settings-graph is not registered");
+    const summaryExtension = selectedModel.langgraph_openai_serve;
+    const description =
+      summaryExtension?.schema_version === 1
+        ? summaryExtension.description
+        : undefined;
+    console.log(description);
+
     const model = await openai.models.retrieve(selectedModel.id);
 
     const extension = model.langgraph_openai_serve;

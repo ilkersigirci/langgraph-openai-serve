@@ -26,6 +26,7 @@ class PublicSettings(ClientSettings):
 def bind_public_settings(graph_registry: GraphRegistry) -> GraphConfig:
     graph_config = GraphConfig(
         graph=make_message_graph(context_schema=PublicSettings),
+        description="DUMMY",
         streamable_node_names=["generate"],
         client_settings=PublicSettings,
     )
@@ -33,7 +34,7 @@ def bind_public_settings(graph_registry: GraphRegistry) -> GraphConfig:
     return graph_config
 
 
-async def test_registered_graphs_are_exposed_as_standard_model_summaries(
+async def test_registered_graphs_are_exposed_with_standard_model_fields(
     openai_client: AsyncOpenAI,
 ) -> None:
     response = await openai_client.models.list()
@@ -42,7 +43,26 @@ async def test_registered_graphs_are_exposed_as_standard_model_summaries(
     assert response.data[0].id == "test"
     assert response.data[0].object == "model"
     assert response.data[0].owned_by == "langgraph-openai-serve"
-    assert not response.data[0].model_extra
+
+
+async def test_model_description_is_exposed_by_list_and_retrieval(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    graph_config = bind_public_settings(graph_registry)
+    graph_config.features = {GraphFeature.CLIENT_EVENTS}
+
+    listed = await openai_client.models.list()
+    retrieved = await openai_client.models.retrieve("test")
+
+    assert (listed.data[0].model_extra or {})["langgraph_openai_serve"] == {
+        "schema_version": 1,
+        "description": "DUMMY",
+    }
+    detail_extension = (retrieved.model_extra or {})["langgraph_openai_serve"]
+    assert detail_extension["description"] == "DUMMY"
+    assert detail_extension["features"] == ["client_events"]
+    assert "client_settings" in detail_extension
 
 
 async def test_retrieved_model_exposes_public_schema_and_defaults(
@@ -75,6 +95,7 @@ async def test_retrieved_model_always_exposes_the_lgos_extension(
 
     assert (response.model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
+        "description": "DUMMY",
         "features": [],
     }
 
@@ -93,6 +114,7 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     extension = (response.model_extra or {})["langgraph_openai_serve"]
     assert extension == {
         "schema_version": 1,
+        "description": "DUMMY",
         "features": ["client_events", "interrupts"],
     }
 
@@ -117,6 +139,7 @@ async def test_model_retrieval_reuses_the_registration_schema(
         "stateful",
         GraphConfig(
             graph=make_message_graph(context_schema=StatefulSchemaSettings),
+            description="DUMMY",
             client_settings=StatefulSchemaSettings,
         ),
     )

@@ -105,28 +105,21 @@ class Pipe:
             api_key=self.valves.OPENAI_API_KEY,
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
-            model_ids = await _list_model_ids(
+            models = await _list_models(
                 client,
                 self.valves.OPENAI_API_MODEL_ROUTES,
             )
-            pipes = []
-            for model_id in model_ids:
-                model = await _retrieve_model(
-                    client,
-                    model_id,
-                    self.valves.OPENAI_API_MODEL_ROUTES,
-                )
-                suffix = (
-                    ""
-                    if _model_extension(model) is not None
-                    else " (Limited functionality)"
-                )
-                pipes.append(
-                    {
-                        "id": model_id,
-                        "name": f"Generic / {model_id}{suffix}",
-                    }
-                )
+            pipes = [
+                {
+                    "id": model_id,
+                    "name": (
+                        f"Generic / {model_id}"
+                        if _model_description(model) is not None
+                        else f"Generic / {model_id} (Limited functionality)"
+                    ),
+                }
+                for model_id, model in models
+            ]
 
         return pipes
 
@@ -311,19 +304,19 @@ def _thread_id(metadata: dict[str, Any]) -> str:
     return f"openwebui:function:{value}"
 
 
-async def _list_model_ids(
+async def _list_models(
     client: AsyncOpenAI,
     model_routes: dict[str, dict[str, str]],
-) -> list[str]:
+) -> list[tuple[str, Any]]:
     if not model_routes:
         models = await client.models.list()
-        return [model.id for model in models.data]
+        return [(model.id, model) for model in models.data]
 
-    model_ids = []
+    listed_models = []
     for route, headers in model_routes.items():
         models = await client.models.list(extra_headers=headers)
-        model_ids.extend(f"{route}/{model.id}" for model in models.data)
-    return model_ids
+        listed_models.extend((f"{route}/{model.id}", model) for model in models.data)
+    return listed_models
 
 
 def _model_request(
@@ -416,12 +409,27 @@ def _model_extension(model: Any) -> dict[str, Any] | None:
     extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
     if not isinstance(extension, dict) or extension.get("schema_version") != 1:
         return None
+    description = extension.get("description")
     features = extension.get("features")
-    if not isinstance(features, list) or any(
-        not isinstance(feature, str) for feature in features
+    if (
+        not isinstance(features, list)
+        or any(not isinstance(feature, str) for feature in features)
+        or not isinstance(description, str)
+        or not description.strip()
     ):
         return None
     return extension
+
+
+def _model_description(model: Any) -> str | None:
+    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
+    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+        return None
+    description = extension.get("description")
+    if not isinstance(description, str):
+        return None
+    description = description.strip()
+    return description or None
 
 
 def _extension_supports(extension: dict[str, Any] | None, feature: str) -> bool:

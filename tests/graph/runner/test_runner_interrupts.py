@@ -48,6 +48,7 @@ async def test_thread_id_reaches_runnable_config(
         registry={
             "threaded": GraphConfig(
                 graph=graph,
+                description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
             )
         }
@@ -74,6 +75,7 @@ async def test_interrupt_result_is_returned_before_output_rendering(
         registry={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="DUMMY",
                 output_to_text=output_to_text,
                 features={GraphFeature.INTERRUPTS},
             )
@@ -115,6 +117,7 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
 
     graph_config = GraphConfig(
         graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        description="DUMMY",
         output_to_text=output_to_text,
     )
     run = GraphRun(
@@ -140,6 +143,7 @@ async def test_streaming_interrupt_detected_from_updates(
         registry={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
             )
         }
@@ -172,6 +176,7 @@ async def test_interrupt_enabled_graph_requires_thread_id(
         registry={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
             )
         }
@@ -187,6 +192,7 @@ async def test_interrupt_enabled_graph_requires_checkpointer(make_request) -> No
         registry={
             "broken": GraphConfig(
                 graph=make_message_graph("ok"),
+                description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
             )
         }

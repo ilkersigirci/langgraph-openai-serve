@@ -5,14 +5,13 @@ import contextlib
 
 import chainlit as cl
 from chainlit.types import ThreadDict
-from openai import OpenAIError
 
 from lgos_chainlit.auth import authenticated_user_identifier
 from lgos_chainlit.lgos_protocol import (
     STREAM_EVENTS_METADATA_KEY,
     STREAM_EVENTS_METADATA_VALUE,
     GraphFeature,
-    model_extension,
+    model_description,
 )
 from lgos_chainlit.utils.chat import (
     LIMITED_FUNCTIONALITY_MESSAGE,
@@ -28,10 +27,9 @@ from lgos_chainlit.utils.chat_settings import (
 )
 from lgos_chainlit.utils.client_events import ClientEventRenderer
 from lgos_chainlit.utils.clients import (
-    list_model_ids,
+    list_models,
     model_request,
     openai_client,
-    retrieve_model,
 )
 
 
@@ -39,24 +37,15 @@ from lgos_chainlit.utils.clients import (
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    profiles = []
-    for model_id in await list_model_ids():
-        try:
-            model = await retrieve_model(model_id)
-        except OpenAIError:
-            model = None
-        description = (
-            f"Talk to `{model_id}` from the demo backend."
-            if model is not None and model_extension(model) is not None
-            else LIMITED_FUNCTIONALITY_MESSAGE
+    return [
+        cl.ChatProfile(
+            name=model.id,
+            markdown_description=(
+                model_description(model) or LIMITED_FUNCTIONALITY_MESSAGE
+            ),
         )
-        profiles.append(
-            cl.ChatProfile(
-                name=model_id,
-                markdown_description=description,
-            )
-        )
-    return profiles
+        for model in await list_models()
+    ]
 
 
 @cl.set_starters

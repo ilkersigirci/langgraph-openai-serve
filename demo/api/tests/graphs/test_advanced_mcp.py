@@ -12,7 +12,12 @@ async def test_async_factory_loads_and_calls_the_mock_mcp_tool(make_request) -> 
         content="What is the weather in Istanbul?",
     )
     registry = GraphRegistry(
-        registry={"advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph)}
+        registry={
+            "advanced-mcp-tools": GraphConfig(
+                graph=advanced_mcp_graph,
+                description="DUMMY",
+            )
+        }
     )
 
     result = await run_langgraph(

@@ -64,7 +64,7 @@ async def set_chat_profiles(
         cl.ChatProfile(
             name=settings.HITL_MODEL,
             markdown_description=(
-                "Approve or reject a LangGraph interrupt."
+                extension.description
                 if extension is not None
                 else LIMITED_FUNCTIONALITY_MESSAGE
             ),

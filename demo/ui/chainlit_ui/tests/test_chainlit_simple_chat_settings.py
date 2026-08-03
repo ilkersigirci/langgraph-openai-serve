@@ -29,6 +29,7 @@ def configured_model(settings: ModelClientSettings) -> Model:
         owned_by="test",
         langgraph_openai_serve={
             "schema_version": 1,
+            "description": "DUMMY",
             "features": [],
             "client_settings": settings.model_dump(mode="json"),
         },
@@ -91,34 +92,42 @@ async def test_discovered_settings_are_published(
 
 
 @pytest.mark.anyio
-async def test_chat_profiles_mark_models_with_stripped_metadata_as_limited(
+async def test_chat_profiles_use_list_only_discovery(
     monkeypatch: pytest.MonkeyPatch,
-    runtime_client_settings: ModelClientSettings,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     monkeypatch.setattr(
         simple.openai_client.models,
         "list",
         AsyncMock(
-            return_value=MagicMock(data=[Mock(id="configured"), Mock(id="proxy-model")])
+            return_value=MagicMock(
+                data=[
+                    Model(
+                        id="configured",
+                        object="model",
+                        created=1,
+                        owned_by="test",
+                        langgraph_openai_serve={
+                            "schema_version": 1,
+                            "description": "DUMMY",
+                        },
+                    ),
+                    model_without_extension("proxy-model"),
+                ]
+            )
         ),
     )
-    monkeypatch.setattr(
-        simple,
-        "retrieve_model",
-        AsyncMock(
-            side_effect=[
-                configured_model(runtime_client_settings),
-                model_without_extension("proxy-model"),
-            ]
-        ),
-    )
+    retrieve = AsyncMock()
+    monkeypatch.setattr(simple.openai_client.models, "retrieve", retrieve)
 
     profiles = await simple.set_chat_profiles(None)
 
     assert [profile.name for profile in profiles] == ["configured", "proxy-model"]
-    assert "Limited functionality" not in profiles[0].markdown_description
-    assert "Limited functionality" in profiles[1].markdown_description
+    assert [profile.markdown_description for profile in profiles] == [
+        "DUMMY",
+        simple.LIMITED_FUNCTIONALITY_MESSAGE,
+    ]
+    retrieve.assert_not_awaited()
 
 
 @pytest.mark.anyio

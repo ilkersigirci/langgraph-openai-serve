@@ -32,11 +32,15 @@ class WorkspaceModelSpec:
 
     id: str
     fields: tuple[dict[str, Any], ...]
-    limited: bool = False
+    description: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
             raise ValueError(f"LGOS model ID is too long for Open WebUI: {self.id}")
+
+    @property
+    def limited(self) -> bool:
+        return self.description is None
 
     @property
     def name(self) -> str:
@@ -54,7 +58,12 @@ class WorkspaceModelSpec:
 
 def chat_variable_fields(model: Any) -> tuple[dict[str, Any], ...] | None:
     """Translate the Chainlit-supported LGOS schema subset to Chat Variables."""
-    extension = _model_extension(model)
+    return _chat_variable_fields(_model_extension(model))
+
+
+def _chat_variable_fields(
+    extension: dict[str, Any] | None,
+) -> tuple[dict[str, Any], ...] | None:
     if extension is None:
         return None
 
@@ -91,12 +100,15 @@ def discover_workspace_model_specs(
             model = client.models.retrieve(**_model_request(model_id, model_routes))
         except OpenAIError:
             model = None
-        fields = chat_variable_fields(model)
+        extension = _model_extension(model)
+        fields = _chat_variable_fields(extension)
         specs.append(
             WorkspaceModelSpec(
                 id=model_id,
                 fields=fields or (),
-                limited=fields is None,
+                description=(
+                    extension["description"].strip() if extension is not None else None
+                ),
             )
         )
     return tuple(sorted(specs, key=lambda spec: spec.id))
@@ -225,9 +237,13 @@ def _model_extension(model: Any) -> dict[str, Any] | None:
     extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
     if not isinstance(extension, dict) or extension.get("schema_version") != 1:
         return None
+    description = extension.get("description")
     features = extension.get("features")
-    if not isinstance(features, list) or any(
-        not isinstance(feature, str) for feature in features
+    if (
+        not isinstance(features, list)
+        or any(not isinstance(feature, str) for feature in features)
+        or not isinstance(description, str)
+        or not description.strip()
     ):
         return None
     return extension
@@ -256,11 +272,7 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         "base_model_id": spec.base_model_id,
         "name": spec.name,
         "meta": {
-            "description": (
-                LIMITED_FUNCTIONALITY_DESCRIPTION
-                if spec.limited
-                else "Generated from the LGOS model schema."
-            ),
+            "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
             CHAT_VARIABLES_META_KEY: {"fields": list(spec.fields)},
         },
         "params": {},

@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, StringConstraints
 
 from langgraph_openai_serve.graph.features import GraphFeature
 
@@ -15,10 +15,19 @@ class ModelClientSettings(BaseModel):
     defaults: dict[str, JsonValue]
 
 
-class LangGraphModelExtension(BaseModel):
-    """Versioned LangGraph OpenAI Serve model extension."""
+class LangGraphModelSummaryExtension(BaseModel):
+    """Versioned LGOS fields safe to include in a model list."""
 
     schema_version: Literal[1] = 1
+    description: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+    ]
+
+
+class LangGraphModelExtension(LangGraphModelSummaryExtension):
+    """Versioned LangGraph OpenAI Serve model-detail extension."""
+
     features: list[GraphFeature]
     client_settings: ModelClientSettings | None = None
 
@@ -30,6 +39,7 @@ class Model(BaseModel):
     object: str = "model"
     created: int
     owned_by: str
+    langgraph_openai_serve: LangGraphModelSummaryExtension
 
 
 class ModelDetails(Model):

@@ -5,11 +5,16 @@ Each `GraphRegistry` key becomes an OpenAI `model` name.
 ## Default Message Graph
 
 ```python title="Default message graph"
-GraphConfig(graph=my_graph, streamable_node_names=["generate"])
+GraphConfig(
+    graph=my_graph,
+    description="Answer questions with the default message graph.",
+    streamable_node_names=["generate"],
+)
 ```
 
 Without adapters, graph input is `{"messages": langchain_messages}` and output
-text is read from `result["messages"][-1].content`.
+text is read from `result["messages"][-1].content`. The required description is
+published in LGOS model list and detail extensions for catalog UIs.
 
 ## Custom Schemas
 
@@ -19,6 +24,7 @@ schemas:
 ```python title="Custom graph adapters"
 GraphConfig(
     graph=custom_io_graph,  # (1)!
+    description="Answer questions with application context.",
     request_to_input=request_to_input,  # (2)!
     context_factory=context_factory,  # (3)!
     output_to_text=output_to_text,  # (4)!
@@ -100,6 +106,7 @@ def output_to_text(output: State) -> str:
 
 custom_graph_config = GraphConfig(
     graph=custom_graph,
+    description="Answer questions with application context.",
     request_to_input=request_to_input,
     context_factory=context_factory,
     output_to_text=output_to_text,
@@ -168,7 +175,10 @@ async def advanced_graph():
     tools = await mcp_client.get_tools()
     return create_agent(model=model, tools=tools)
 
-GraphConfig(graph=advanced_graph)
+GraphConfig(
+    graph=advanced_graph,
+    description="Answer questions with asynchronously loaded tools.",
+)
 ```
 
 See `demo/api/src/lgos_demo_api/graphs/advanced_mcp.py` for a mock MCP-style
@@ -181,8 +191,15 @@ from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiSe
 
 graphs = GraphRegistry(
     registry={
-        "my-graph": GraphConfig(graph=my_graph, streamable_node_names=["generate"]),
-        "advanced-mcp-tools": GraphConfig(graph=advanced_graph),
+        "my-graph": GraphConfig(
+            graph=my_graph,
+            description="Answer questions with my graph.",
+            streamable_node_names=["generate"],
+        ),
+        "advanced-mcp-tools": GraphConfig(
+            graph=advanced_graph,
+            description="Answer questions with MCP tools.",
+        ),
     }
 )
 
@@ -221,6 +238,7 @@ async def generate_audio(state):
 
 status_graph_config = GraphConfig(
     graph=status_graph,
+    description="Generate audio with visible status updates.",
     features={GraphFeature.CLIENT_EVENTS},
 )
 ```
@@ -244,6 +262,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 
 GraphConfig(
     graph=interruptible_graph,
+    description="Request approval before performing an action.",
     features={GraphFeature.INTERRUPTS},
 )
 ```

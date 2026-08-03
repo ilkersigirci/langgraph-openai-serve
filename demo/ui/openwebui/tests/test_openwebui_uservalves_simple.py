@@ -19,6 +19,7 @@ def _configured_model() -> SimpleNamespace:
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": [],
                 "client_settings": {
                     "schema_version": 1,
@@ -109,6 +110,7 @@ async def test_uservalves_simple_requires_advertised_runtime_settings(
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": [],
             }
         }

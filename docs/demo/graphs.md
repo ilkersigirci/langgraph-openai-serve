@@ -2,6 +2,8 @@
 
 The demo API registers the following graphs. They demonstrate LGOS features;
 none is installed as a built-in model by the `langgraph-openai-serve` package.
+Each registration also supplies a short `GraphConfig.description` used by the
+demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Extra runtime requirement |
 | --- | --- | --- | --- |

@@ -58,6 +58,7 @@ def citation_app() -> FastAPI:
         registry={
             "citations": GraphConfig(
                 graph=graph,
+                description="DUMMY",
                 streamable_node_names=["generate"],
             )
         }

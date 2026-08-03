@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import citation_event
+from langgraph_openai_serve import GraphConfig, citation_event
 from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 from pydantic import BaseModel
 
@@ -69,4 +69,12 @@ workflow.set_entry_point("answer_with_citation")
 
 citation_graph = workflow.compile()
 
-__all__ = ["citation_graph"]
+citation_graph_config = GraphConfig(
+    graph=citation_graph,
+    description=(
+        "Demonstrates structured OpenAI URL citations with portable Markdown content."
+    ),
+    streamable_node_names=["answer_with_citation"],
+)
+
+__all__ = ["citation_graph", "citation_graph_config"]

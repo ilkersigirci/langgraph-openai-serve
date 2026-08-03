@@ -60,6 +60,7 @@ def fastapi_app() -> FastAPI:
         registry={
             "client-events": GraphConfig(
                 graph=client_event_graph,
+                description="DUMMY",
                 streamable_node_names=["generate"],
                 features={GraphFeature.CLIENT_EVENTS},
             )

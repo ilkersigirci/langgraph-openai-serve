@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 from openai.types import Model
 
 from lgos_chainlit.settings import settings
@@ -15,21 +15,27 @@ openai_client = AsyncOpenAI(
 
 async def retrieve_model(model_id: str) -> Model:
     """Retrieve LGOS model metadata through the configured endpoint."""
-    return await openai_client.models.retrieve(**model_request(model_id))
+    model = await openai_client.models.retrieve(**model_request(model_id))
+    if not isinstance(model, Model):
+        raise OpenAIError("The endpoint returned an invalid model response.")
+    return model
 
 
-async def list_model_ids() -> list[str]:
+async def list_models() -> list[Model]:
     """List standard or explicitly routed models through one OpenAI client."""
     routes = settings.OPENAI.model_routes
     if not routes:
         models = await openai_client.models.list()
-        return [model.id for model in models.data]
+        return list(models.data)
 
-    model_ids = []
+    listed_models = []
     for route, headers in routes.items():
         models = await openai_client.models.list(extra_headers=headers)
-        model_ids.extend(f"{route}/{model.id}" for model in models.data)
-    return model_ids
+        listed_models.extend(
+            model.model_copy(update={"id": f"{route}/{model.id}"})
+            for model in models.data
+        )
+    return listed_models
 
 
 def model_request(model_id: str) -> dict[str, Any]:

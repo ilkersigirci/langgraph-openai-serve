@@ -7,7 +7,7 @@ Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List standard summaries for registered graph models. |
+| `GET` | `/v1/models` | List registered graph models with LGOS descriptions. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
@@ -40,6 +40,8 @@ or replace a graph.
 `GraphConfig` accepts:
 
 - `graph`: compiled graph, sync factory, or async factory.
+- `description`: required human-readable model description advertised by model
+  listing and retrieval.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded to clients.
 - `features`: `GraphFeature` values that enable optional server behavior.
@@ -139,6 +141,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 
 config = GraphConfig(
     graph=graph,
+    description="Graph that reports media-generation status.",
     features={GraphFeature.CLIENT_EVENTS},
 )
 ```

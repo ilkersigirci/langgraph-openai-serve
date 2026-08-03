@@ -67,9 +67,10 @@ The normalized `/openai/v1` route is deliberately not the demo default. It
 returns provider-qualified catalog IDs but does not preserve the LGOS model
 extension. To demonstrate this mode, point a demo client at `/openai/v1` and
 clear its model-route configuration. The client lists once, sends Bifrost's
-returned model IDs back verbatim, and shows **Limited functionality**. It does
-not inspect the URL or create a separate catalog client: list, retrieve, and
-chat requests all use the same client and base URL.
+returned model IDs back verbatim, and marks their missing LGOS descriptions as
+**Limited functionality**. It does not inspect the URL or create a separate
+catalog client: list, retrieve, and chat requests all use the same client and
+base URL.
 
 ## Configuration Boundary
 

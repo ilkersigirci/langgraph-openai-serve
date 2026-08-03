@@ -36,14 +36,18 @@ hides the corresponding public manifold base, and bulk-imports the generated
 Workspace Models. Run it again after changing the Function, graph catalog, or a
 graph's client settings schema.
 
+Generated Workspace Model descriptions come from the selected graph's required
+`GraphConfig.description`. The sync marks a model as **Limited functionality**
+when the API omits a description.
+
 The operation is additive: it does not delete user-managed Functions or
 Workspace Models. Generated manifold bases remain public and hidden so regular
 users can access their visible wrappers without seeing duplicate selector
 entries. The sync owns that base visibility and public access. New generated
 Workspace Models are public; later syncs preserve their access grants and
-active state. Their generated name, base model, settings schema, and model
-parameters remain sync-owned. Delete generated records manually after removing
-an LGOS model from the catalog.
+active state. Their generated name, base model, settings schema, description,
+and parameters remain sync-owned. Delete generated records manually after
+removing an LGOS model from the catalog.
 
 The command discovers every top-level `.py` file in that directory except files
 whose names start with `_`. The filename stem is the Function ID, and the
@@ -78,12 +82,16 @@ one `OPENAI_API_HEADERS` object and sends both unchanged. Open WebUI stores
 Function code in its database, so a bind mount of the Python file does not
 update it.
 
+The generic selector uses only model listing and labels entries without the
+required LGOS description as **Limited functionality**. It retrieves detailed
+metadata after a model is selected for chat, when settings and capability
+checks need it.
+
 ## Limited Functionality
 
 Every generated model remains visible when its detailed response lacks the
-required `langgraph_openai_serve` extension, but its name and native Workspace
-Model description say **Limited functionality**. At chat time both bundled
-Pipes also emit an Open WebUI
+required `langgraph_openai_serve` extension. Its name and description say
+**Limited functionality**. At chat time both bundled Pipes also emit an Open WebUI
 [`notification`](https://docs.openwebui.com/features/extensibility/plugin/development/events/#notification)
 with warning severity. Standard assistant text may still work; runtime settings,
 client events, and interrupts are not assumed. Configure the selected OpenAI

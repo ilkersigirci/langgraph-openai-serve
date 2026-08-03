@@ -38,6 +38,7 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": [],
                 "client_settings": {
                     "schema_version": 1,
@@ -100,6 +101,7 @@ def test_discover_workspace_models_uses_one_openai_client() -> None:
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "  DUMMY  ",
                 "features": [],
             }
         }
@@ -116,8 +118,16 @@ def test_discover_workspace_models_uses_one_openai_client() -> None:
     specs = discover_workspace_model_specs(client)
 
     assert specs == (
-        WorkspaceModelSpec(id="plain", fields=()),
-        WorkspaceModelSpec(id="simple-graph", fields=()),
+        WorkspaceModelSpec(
+            id="plain",
+            fields=(),
+            description="DUMMY",
+        ),
+        WorkspaceModelSpec(
+            id="simple-graph",
+            fields=(),
+            description="DUMMY",
+        ),
     )
     assert client.models.retrieve.call_args_list == [
         call(model="plain"),
@@ -130,6 +140,7 @@ def test_discover_workspace_models_uses_explicit_routes() -> None:
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
+                "description": "DUMMY",
                 "features": [],
             }
         }
@@ -150,8 +161,16 @@ def test_discover_workspace_models_uses_explicit_routes() -> None:
     )
 
     assert specs == (
-        WorkspaceModelSpec(id="lgos-a/graph-a", fields=()),
-        WorkspaceModelSpec(id="lgos-b/graph-b", fields=()),
+        WorkspaceModelSpec(
+            id="lgos-a/graph-a",
+            fields=(),
+            description="DUMMY",
+        ),
+        WorkspaceModelSpec(
+            id="lgos-b/graph-b",
+            fields=(),
+            description="DUMMY",
+        ),
     )
     assert client.models.list.call_args_list == [
         call(extra_headers={"x-route": "a"}),
@@ -174,11 +193,18 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
     client.models.list.return_value = SimpleNamespace(
         data=[SimpleNamespace(id="proxy-model")]
     )
-    client.models.retrieve.return_value = SimpleNamespace(model_extra={})
+    client.models.retrieve.return_value = SimpleNamespace(
+        model_extra={
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "features": [],
+            }
+        }
+    )
 
     specs = discover_workspace_model_specs(client)
 
-    assert specs == (WorkspaceModelSpec(id="proxy-model", fields=(), limited=True),)
+    assert specs == (WorkspaceModelSpec(id="proxy-model", fields=()),)
 
 
 def test_discover_workspace_models_preserves_standard_catalog_ids() -> None:
@@ -195,8 +221,8 @@ def test_discover_workspace_models_preserves_standard_catalog_ids() -> None:
     specs = discover_workspace_model_specs(client)
 
     assert specs == (
-        WorkspaceModelSpec(id="lgos-a/graph-a", fields=(), limited=True),
-        WorkspaceModelSpec(id="lgos-b/graph-b", fields=(), limited=True),
+        WorkspaceModelSpec(id="lgos-a/graph-a", fields=()),
+        WorkspaceModelSpec(id="lgos-b/graph-b", fields=()),
     )
     assert client.models.retrieve.call_args_list == [
         call(model="lgos-a/graph-a"),
@@ -224,6 +250,7 @@ def test_sync_workspace_models_bulk_imports_base_and_new_wrapper() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
         id="simple-graph",
+        description="DUMMY",
         fields=(
             {
                 "key": "use_history",
@@ -249,12 +276,13 @@ def test_sync_workspace_models_bulk_imports_base_and_new_wrapper() -> None:
     assert base["is_active"] is False
     assert wrapper["base_model_id"] == base["id"]
     assert wrapper["access_grants"] == [PUBLIC_READ_GRANT]
+    assert wrapper["meta"]["description"] == "DUMMY"
     assert wrapper["meta"]["chat_variables_schema"] == {"fields": list(spec.fields)}
 
 
-def test_limited_workspace_model_has_a_visible_warning() -> None:
+def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:
     client = _client([])
-    spec = WorkspaceModelSpec(id="proxy-model", fields=(), limited=True)
+    spec = WorkspaceModelSpec(id="proxy-model", fields=())
 
     sync_workspace_models(client, (spec,))
 
@@ -274,5 +302,6 @@ def test_sync_workspace_models_leaves_existing_wrapper_state_to_openwebui() -> N
     base, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert base["access_grants"] == [PUBLIC_READ_GRANT]
     assert base["is_active"] is False
+    assert "Limited functionality" in wrapper["meta"]["description"]
     assert "access_grants" not in wrapper
     assert "is_active" not in wrapper

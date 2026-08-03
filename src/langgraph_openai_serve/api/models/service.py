@@ -7,6 +7,7 @@ import logging
 
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
+    LangGraphModelSummaryExtension,
     Model,
     ModelClientSettings,
     ModelDetails,
@@ -40,8 +41,11 @@ class ModelService:
                 id=name,
                 created=MODEL_CREATED,
                 owned_by=MODEL_OWNER,
+                langgraph_openai_serve=LangGraphModelSummaryExtension(
+                    description=graph_config.description
+                ),
             )
-            for name in graph_registry.registry
+            for name, graph_config in graph_registry.registry.items()
         ]
 
         logger.info(f"Retrieved {len(models)} available models")
@@ -63,6 +67,7 @@ class ModelService:
             created=MODEL_CREATED,
             owned_by=MODEL_OWNER,
             langgraph_openai_serve=LangGraphModelExtension(
+                description=graph_config.description,
                 features=sorted(
                     graph_config.features,
                     key=lambda feature: feature.value,

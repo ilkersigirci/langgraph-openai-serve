@@ -32,6 +32,9 @@ def create_complex_subgraphs_graph_config() -> GraphConfig:
 
     return GraphConfig(
         graph=create_specialist_team_graph(),
+        description=(
+            "Routes questions through specialist subgraphs and streams nested output."
+        ),
         request_to_input=request_to_input,
         output_to_text=output_to_text,
         streamable_node_names=[

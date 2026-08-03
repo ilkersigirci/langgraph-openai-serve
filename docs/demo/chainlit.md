@@ -41,6 +41,10 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
+Profile discovery reads each `langgraph_openai_serve.description` directly from
+the model list. The demo API owns these required descriptions; Chainlit marks a
+model as **Limited functionality** when an endpoint omits or strips one.
+
 ## Runtime Settings
 
 After a profile is selected, Chainlit:
@@ -58,9 +62,10 @@ become text inputs. Other schema shapes are not rendered. The adapter checks
 only boolean/string types and select membership when restoring the UI; it does
 not interpret general JSON Schema constraints. LGOS remains the validation
 authority. If the required LGOS model extension is unavailable, Chainlit hides
-the controls, uses server defaults, marks the profile description as
-**Limited functionality**, and shows a transient warning toast after selection.
-Standard Chat Completions remain available.
+the controls, uses server defaults, and shows a transient **Limited
+functionality** warning after selection. Profile discovery itself stays
+list-only because descriptions arrive with the list response. Standard Chat
+Completions remain available.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
@@ -147,7 +152,7 @@ opaque, including any additional `/` characters.
 An empty route map means a standard OpenAI endpoint: Chainlit lists once and
 reuses every returned model ID verbatim. Use that mode for a direct LGOS API or
 a normalized proxy endpoint. If the endpoint strips the LGOS model extension,
-the profile remains usable with the **Limited functionality** label. Chainlit
+the profile remains usable and Chainlit warns after it is selected. Chainlit
 never infers routing behavior from the base URL.
 
 ## Settings Reference

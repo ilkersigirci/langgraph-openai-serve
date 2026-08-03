@@ -182,6 +182,7 @@ services:
     environment:
       CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos
+      # For limited-functionality testing, use /openai/v1 and set MODEL_ROUTES to '{}'.
       DEMO_CHAINLIT_OPENAI__BASE_URL: http://bifrost:8080/openai_passthrough/v1
       # DEMO_CHAINLIT_OPENAI__BASE_URL: http://bifrost:8080/openai/v1 # NOTE: For testing the limited functionality
       DEMO_CHAINLIT_OPENAI__API_KEY: DUMMY

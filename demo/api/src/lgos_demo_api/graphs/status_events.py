@@ -45,6 +45,7 @@ workflow.set_entry_point("prepare_media")
 status_event_graph = workflow.compile()
 status_event_graph_config = GraphConfig(
     graph=status_event_graph,
+    description="Streams portable status updates for native client rendering.",
     streamable_node_names=["prepare_media"],
     features={GraphFeature.CLIENT_EVENTS},
 )

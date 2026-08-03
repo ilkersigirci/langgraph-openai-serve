@@ -9,22 +9,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphFeature,
-    GraphRegistry,
-    LanggraphOpenaiServe,
-)
+from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 
 from lgos_demo_api.checkpointer import postgres_checkpointer
-from lgos_demo_api.graphs.advanced_mcp import advanced_mcp_graph
-from lgos_demo_api.graphs.citations import citation_graph
+from lgos_demo_api.graphs.advanced_mcp import advanced_mcp_graph_config
+from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
-from lgos_demo_api.graphs.interruptible import create_interruptible_graph
-from lgos_demo_api.graphs.lgos_rag import lgos_rag
-from lgos_demo_api.graphs.simple import SimpleContext, simple_graph
+from lgos_demo_api.graphs.interruptible import (
+    create_interruptible_graph,
+    create_interruptible_graph_config,
+)
+from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
+from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.status_events import status_event_graph_config
 from lgos_demo_api.loggers.setup import setup_logging
 from lgos_demo_api.settings import settings
@@ -61,7 +59,6 @@ def create_custom_app() -> FastAPI:
 
     app = FastAPI(
         title="Demo",
-        description="Demo LangGraph OpenAI-compatible API",
         version="0.0.1",
         lifespan=lifespan,
     )
@@ -78,35 +75,16 @@ def create_custom_app() -> FastAPI:
 
     graph_registry = GraphRegistry(
         registry={
-            "citation-events": GraphConfig(
-                graph=citation_graph,
-                streamable_node_names=["answer_with_citation"],
-            ),
-            "simple-graph": GraphConfig(
-                graph=simple_graph,
-                streamable_node_names=["generate"],
-                client_settings=SimpleContext,
-            ),
-            "lgos-rag": GraphConfig(
-                graph=lgos_rag,
-                streamable_node_names=[
-                    "generate_query_or_respond",
-                    "generate_answer",
-                    "answer_no_results",
-                ],
-            ),
+            "citation-events": citation_graph_config,
+            "simple-graph": simple_graph_config,
+            "lgos-rag": lgos_rag_graph_config,
             "custom-input-output-context": custom_io_graph_config,
-            "advanced-mcp-tools": GraphConfig(graph=advanced_mcp_graph),
+            "advanced-mcp-tools": advanced_mcp_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
-            "interruptible-approval": GraphConfig(
-                graph=lambda: app.state.interruptible_graph,
-                request_to_input=lambda request, messages: {
-                    "request": messages[-1].content or ""
-                },
-                output_to_text=lambda output: output["response"],
-                features={GraphFeature.INTERRUPTS},
+            "interruptible-approval": create_interruptible_graph_config(
+                lambda: app.state.interruptible_graph
             ),
         }
     )
