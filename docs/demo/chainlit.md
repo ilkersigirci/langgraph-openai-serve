@@ -41,9 +41,12 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
-Profile discovery reads each `langgraph_openai_serve.description` directly from
-the model list. The demo API owns these required descriptions; Chainlit marks a
-model as **Limited functionality** when an endpoint omits or strips one.
+In direct mode, profile discovery reads each
+`langgraph_openai_serve.description` from the model list. In Bifrost mode, the
+catalog discovers providers and provider-qualified IDs, then one pass-through
+list request per discovered provider supplies the native model metadata. The
+demo API owns these required descriptions; Chainlit marks a model as **Limited
+functionality** when an endpoint omits or strips one.
 
 ## Runtime Settings
 
@@ -136,24 +139,24 @@ locally, then ask **Build the compatibility report** to see the separate
 activity panel render progress and an artifact while assistant text streams
 independently.
 
-Behind an OpenAI-compatible proxy, the one configured client must use a raw
-pass-through URL for model listing, detailed retrieval, and inference. A
-schema-normalizing route may still stream the answer while stripping both
-capability metadata and event-only chunks; Chainlit displays the limited-mode
-warning when model retrieval reveals that condition. See
+Behind Bifrost, Chainlit discovers providers from the catalog URL and uses the
+raw pass-through URL for metadata-bearing model lists, detailed retrieval, and
+inference. A schema-normalizing route may still stream the answer while
+stripping both capability metadata and event-only chunks; Chainlit displays the
+limited-mode warning when model retrieval reveals that condition. See
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
-Compose configures the Bifrost pass-through URL plus two explicit model routes.
-Each route maps a synthetic UI prefix such as `lgos-a/` to request headers such
-as `x-model-provider: lgos-a`. Chainlit lists each route and reuses its headers
-for model retrieval and chat. The model ID after the synthetic prefix remains
-opaque, including any additional `/` characters.
+When a catalog URL is configured, the adapter keeps models owned by
+`langgraph-openai-serve`, discovers their providers, and sends the provider as
+`x-model-provider` for pass-through listing, retrieval, and chat. Its code has
+no provider list. The upstream model ID remains opaque, including any
+additional `/` characters.
 
-An empty route map means a standard OpenAI endpoint: Chainlit lists once and
-reuses every returned model ID verbatim. Use that mode for a direct LGOS API or
-a normalized proxy endpoint. If the endpoint strips the LGOS model extension,
-the profile remains usable and Chainlit warns after it is selected. Chainlit
-never infers routing behavior from the base URL.
+Without a catalog URL, Chainlit follows the standard OpenAI path: it lists once
+and reuses every returned model ID verbatim. Use that default for a direct LGOS
+API or another OpenAI-compatible endpoint. If the endpoint strips the LGOS
+model extension, the profile remains usable and Chainlit warns after it is
+selected. Chainlit never infers routing behavior from the base URL.
 
 ## Settings Reference
 
@@ -161,15 +164,15 @@ LGOS endpoint settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_CHAINLIT_OPENAI__BASE_URL` | `http://localhost:3004/v1` | One endpoint for listing, retrieval, and inference. |
+| `DEMO_CHAINLIT_OPENAI__BASE_URL` | `http://localhost:3004/v1` | Endpoint used for retrieval and inference. Direct mode also lists from it. |
+| `DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL` | unset | Optional Bifrost model catalog endpoint; setting it enables provider-qualified pass-through routing. |
 | `DEMO_CHAINLIT_OPENAI__API_KEY` | `DUMMY` | OpenAI API or gateway key. |
-| `DEMO_CHAINLIT_OPENAI__MODEL_ROUTES` | `{}` | JSON object mapping synthetic model prefixes to request headers. Compose configures the two Bifrost pass-through routes; keep empty for a standard endpoint. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login: `mock` or `oauth`. |
 
 See the bundled [Bifrost gateway](bifrost.md) for the Compose endpoint and
-model-routing defaults.
+adapter behavior.
 
 Native Chainlit settings:
 

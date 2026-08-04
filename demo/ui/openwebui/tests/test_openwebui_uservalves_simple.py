@@ -71,8 +71,7 @@ async def test_uservalves_simple_uses_the_configured_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()
-    pipe.valves.MODEL = "other-graph"
-    pipe.valves.OPENAI_API_HEADERS = {}
+    pipe.valves.MODEL = "lgos-b/other-graph"
     client = AsyncMock()
     client.__aenter__.return_value = client
     client.models.retrieve.return_value = _configured_model()
@@ -82,21 +81,37 @@ async def test_uservalves_simple_uses_the_configured_model(
     chunks = [chunk async for chunk in pipe.pipe(body={"messages": []})]
 
     assert chunks == ["Hello"]
-    client.models.retrieve.assert_awaited_once_with(model="other-graph")
+    client.models.retrieve.assert_awaited_once_with(
+        model="other-graph",
+        extra_headers={"x-model-provider": "lgos-b"},
+    )
     client.chat.completions.create.assert_awaited_once_with(
         model="other-graph",
+        extra_headers={"x-model-provider": "lgos-b"},
         messages=[],
         metadata={},
         stream=True,
     )
 
 
-def test_uservalves_simple_uses_standard_model_ids_without_headers() -> None:
+def test_uservalves_simple_requires_a_provider_qualified_model() -> None:
     pipe = Pipe()
-    pipe.valves.MODEL = "lgos-b/simple-graph"
-    pipe.valves.OPENAI_API_HEADERS = {}
+    pipe.valves.MODEL = "simple-graph"
 
-    assert pipe._model_request() == {"model": "lgos-b/simple-graph"}
+    with pytest.raises(ValueError, match="provider/model"):
+        pipe._model_request()
+
+
+@pytest.mark.anyio
+async def test_uservalves_simple_reports_an_invalid_model() -> None:
+    pipe = Pipe()
+    pipe.valves.MODEL = "simple-graph"
+
+    chunks = [chunk async for chunk in pipe.pipe(body={"messages": []})]
+
+    assert chunks == [
+        "Bifrost model ID must use the provider/model format: 'simple-graph'."
+    ]
 
 
 @pytest.mark.anyio

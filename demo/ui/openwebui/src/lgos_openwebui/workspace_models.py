@@ -13,6 +13,7 @@ CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERIC_FUNCTION_ID = "generic"
 WORKSPACE_MODEL_PREFIX = "lgos."
 OPENWEBUI_MODEL_ID_MAX_LENGTH = 256
+LGOS_MODEL_OWNER = "langgraph-openai-serve"
 PUBLIC_READ_GRANT = {
     "principal_type": "user",
     "principal_id": "*",
@@ -88,16 +89,14 @@ def _chat_variable_fields(
 
 
 def discover_workspace_model_specs(
-    client: OpenAI,
-    model_routes: dict[str, dict[str, str]] | None = None,
+    catalog_client: OpenAI,
+    passthrough_client: OpenAI,
 ) -> tuple[WorkspaceModelSpec, ...]:
-    """Build Workspace Models through one OpenAI endpoint."""
-    model_routes = model_routes or {}
-    _validate_model_routes(model_routes)
+    """Build Workspace Models from Bifrost catalog and pass-through metadata."""
     specs = []
-    for model_id in _list_model_ids(client, model_routes):
+    for model_id in _list_model_ids(catalog_client):
         try:
-            model = client.models.retrieve(**_model_request(model_id, model_routes))
+            model = passthrough_client.models.retrieve(**_model_request(model_id))
         except OpenAIError:
             model = None
         extension = _model_extension(model)
@@ -114,58 +113,61 @@ def discover_workspace_model_specs(
     return tuple(sorted(specs, key=lambda spec: spec.id))
 
 
-def _list_model_ids(
-    client: OpenAI,
-    model_routes: dict[str, dict[str, str]],
-) -> list[str]:
-    if not model_routes:
-        return [model.id for model in client.models.list().data]
-
-    model_ids = []
-    for route, headers in model_routes.items():
-        models = client.models.list(extra_headers=headers)
-        model_ids.extend(f"{route}/{model.id}" for model in models.data)
-    return model_ids
+def _list_model_ids(client: OpenAI) -> list[str]:
+    return [
+        model.id
+        for model in client.models.list().data
+        if model.owned_by == LGOS_MODEL_OWNER
+    ]
 
 
-def _model_request(
-    model_id: str,
-    model_routes: dict[str, dict[str, str]],
-) -> dict[str, Any]:
-    if not model_routes:
-        return {"model": model_id}
+def _model_request(model_id: str) -> dict[str, Any]:
+    provider, separator, upstream_model = model_id.partition("/")
+    if not provider or not separator or not upstream_model:
+        raise ValueError(
+            f"Bifrost model ID must use the provider/model format: {model_id!r}."
+        )
 
-    route, separator, upstream_model = model_id.partition("/")
-    headers = model_routes.get(route)
-    if not separator or not upstream_model or headers is None:
-        raise ValueError(f"Unknown configured OpenAI model route in {model_id!r}.")
-
-    request: dict[str, Any] = {"model": upstream_model}
-    if headers:
-        request["extra_headers"] = headers
-    return request
-
-
-def _validate_model_routes(model_routes: dict[str, dict[str, str]]) -> None:
-    if any(not route or "/" in route for route in model_routes):
-        raise ValueError("Model routes must be non-empty and contain no '/'.")
+    return {
+        "model": upstream_model,
+        "extra_headers": {"x-model-provider": provider},
+    }
 
 
 def sync_workspace_models(
     client: httpx.Client,
     specs: tuple[WorkspaceModelSpec, ...],
 ) -> None:
-    """Bulk-upsert generated bases and Workspace Models without deleting others."""
-    if not specs:
-        return
-
-    exported = client.get("/api/v1/models/export").raise_for_status().json()
-    if not isinstance(exported, list):
+    """Replace generated Workspace Models and their hidden manifold bases."""
+    workspace_models = client.get("/api/v1/models/export").raise_for_status().json()
+    if not isinstance(workspace_models, list):
         raise ValueError("Open WebUI models export returned invalid data.")
+    base_models = client.get("/api/v1/models/base").raise_for_status().json()
+    if not isinstance(base_models, list):
+        raise ValueError("Open WebUI base models response returned invalid data.")
     existing_model_ids = {
         model["id"]
-        for model in exported
+        for model in workspace_models
         if isinstance(model, dict) and isinstance(model.get("id"), str)
+    }
+    desired_workspace_model_ids = {spec.workspace_model_id for spec in specs}
+    desired_base_model_ids = {spec.base_model_id for spec in specs}
+    generated_workspace_model_ids = {
+        model["id"]
+        for model in workspace_models
+        if isinstance(model, dict)
+        and isinstance(model.get("id"), str)
+        and model["id"].startswith(WORKSPACE_MODEL_PREFIX)
+        and isinstance(model.get("base_model_id"), str)
+        and model["base_model_id"].startswith(f"{GENERIC_FUNCTION_ID}.")
+    }
+    generated_base_model_ids = {
+        model["id"]
+        for model in base_models
+        if isinstance(model, dict)
+        and isinstance(model.get("id"), str)
+        and model["id"].startswith(f"{GENERIC_FUNCTION_ID}.")
+        and model.get("base_model_id") is None
     }
 
     payloads = []
@@ -181,6 +183,21 @@ def sync_workspace_models(
         client.post(
             "/api/v1/models/import",
             json={"models": payloads},
+        ).raise_for_status()
+
+    stale_workspace_model_ids = (
+        generated_workspace_model_ids - desired_workspace_model_ids
+    )
+    stale_base_model_ids = generated_base_model_ids - desired_base_model_ids
+    for model_id in sorted(stale_workspace_model_ids):
+        client.post(
+            "/api/v1/models/model/delete",
+            json={"id": model_id},
+        ).raise_for_status()
+    for model_id in sorted(stale_base_model_ids):
+        client.post(
+            "/api/v1/models/model/delete",
+            json={"id": model_id},
         ).raise_for_status()
 
 
@@ -254,12 +271,10 @@ def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         "id": spec.base_model_id,
         "base_model_id": None,
         "name": f"Generic / {spec.id}",
-        "meta": {
-            "description": "Hidden base for generated LGOS Workspace Models.",
-        },
+        "meta": {"hidden": True},
         "params": {},
         "access_grants": [PUBLIC_READ_GRANT],
-        "is_active": False,
+        "is_active": True,
     }
 
 

@@ -104,9 +104,12 @@ directories. The checkout includes each empty service directory with a tracked
     docker compose -f compose.yaml up --wait bifrost
     ```
 
-    Use `http://localhost:3000/openai_passthrough/v1` as the one OpenAI base
-    URL for model listing, model retrieval, and inference. Send either
-    `x-model-provider: lgos-a` or `x-model-provider: lgos-b` per request.
+    Use `http://localhost:3000/v1` as the provider-qualified model catalog. Use
+    `http://localhost:3000/openai_passthrough/v1` for detailed model retrieval
+    and inference, sending the selected model's provider prefix as
+    `x-model-provider`. Both dynamic UI integrations discover this routing
+    information from the catalog. Chainlit uses direct mode only when its
+    optional catalog URL is unset.
 
     From the package repository, run `make test-bifrost` to verify both APIs,
     detailed model metadata, inference, and client events through one SDK

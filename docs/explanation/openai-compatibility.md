@@ -97,10 +97,13 @@ secret-bearing runtime context out of discovery.
 Direct JavaScript clients can read the property normally, and the
 [OpenAI Python SDK exposes it through `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
 An intermediary may rebuild a retrieved model from the standard fields and drop
-extensions. LGOS clients must use one direct or pass-through OpenAI base URL for
-model listing, model retrieval, and chat completions. A separate normalized
-catalog is not a source of LGOS capabilities. Request paths must also preserve
-OpenAI metadata and extension-only stream chunks. Concrete gateway
+extensions. For one LGOS deployment, clients must use one direct or
+pass-through OpenAI base URL for model listing, model retrieval, and chat
+completions. A federating gateway may expose a separate normalized catalog for
+provider and model routing, but that catalog is not a source of LGOS
+descriptions or capabilities. Clients must obtain those fields again through
+the selected provider's direct or pass-through route. Request paths must also
+preserve OpenAI metadata and extension-only stream chunks. Concrete gateway
 configurations are documented under
 [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
 
@@ -111,8 +114,8 @@ configurations are documented under
     endpoint is not preserving the LGOS contract. A UI may continue ordinary
     Chat Completions, but it must visibly label the model or chat as **Limited
     functionality** and must not assume runtime settings, client events, or
-    interrupts are available. Configure the deployment or proxy; do not hide
-    this condition behind a second discovery client.
+    interrupts are available. A normalized routing catalog cannot remove this
+    requirement.
 
 ## Runtime Settings
 

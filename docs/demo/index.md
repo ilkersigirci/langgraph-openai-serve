@@ -67,14 +67,15 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
-| Bifrost | Raw provider-selected pass-through for the complete `/v1` surface | Compose configuration with the official image |
+| Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
 | PostgreSQL | LangGraph checkpoints and Chainlit persistence | Official image with a demo-owned bind directory |
 
 Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
-the OpenAI wire contract without importing the package. Each UI uses one client
-for model listing, model details, and chat across both Bifrost providers.
-Bifrost preserves the required LGOS model-detail extension through raw
-pass-through requests.
+the OpenAI wire contract without importing the package. Their dynamic clients
+use Bifrost's catalog for provider-qualified discovery and raw pass-through for
+model details and chat. The fixed-model Open WebUI example uses Bifrost
+pass-through without catalog discovery. Pass-through preserves the required
+LGOS model-detail extension.
 
 ## Client Capabilities
 

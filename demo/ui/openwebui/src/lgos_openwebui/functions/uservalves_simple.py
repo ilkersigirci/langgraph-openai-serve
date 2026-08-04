@@ -1,10 +1,11 @@
 """
 title: UserValves-Simple / simple-graph
 author: langgraph-openai-serve
-version: 0.3
+version: 0.5
 description: Static per-user settings for one fixed graph when dynamic per-chat settings are unnecessary.
 """
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
@@ -29,21 +30,21 @@ LIMITED_FUNCTIONALITY_MESSAGE = (
 class Pipe:
     class Valves(BaseModel):
         OPENAI_API_BASE_URL: str = Field(
-            default="http://bifrost:8080/openai_passthrough/v1",
-            description="OpenAI base URL used for model retrieval and chat.",
+            default=os.environ.get(
+                "OPENAI_API_BASE_URL",
+                "http://bifrost:8080/openai_passthrough/v1",
+            ),
+            description="OpenAI-compatible base URL used for retrieval and chat.",
         )
         OPENAI_API_KEY: str = Field(
-            default="DUMMY",
-            description="Bearer token sent to the configured OpenAI endpoint.",
+            default=os.environ.get("OPENAI_API_KEY", "DUMMY"),
+            description="API key sent to the configured OpenAI-compatible endpoint.",
+            json_schema_extra={"input": {"type": "password"}},
         )
         MODEL: str = Field(
-            default="simple-graph",
+            default="lgos-a/simple-graph",
             min_length=1,
-            description="LGOS model exposed by the configured OpenAI endpoint.",
-        )
-        OPENAI_API_HEADERS: dict[str, str] = Field(
-            default_factory=lambda: {"x-model-provider": "lgos-a"},
-            description="Additional headers sent with model and chat requests.",
+            description="Bifrost provider-qualified LGOS model ID.",
         )
 
     class UserValves(BaseModel):
@@ -86,6 +87,8 @@ class Pipe:
                 async for chunk in stream:
                     if chunk.choices and (content := chunk.choices[0].delta.content):
                         yield content
+        except ValueError as exc:
+            yield str(exc)
         except OpenAIError as exc:
             yield f"Error calling LangGraph API: {exc}"
 
@@ -111,10 +114,16 @@ class Pipe:
             return None
 
     def _model_request(self) -> dict[str, Any]:
-        request: dict[str, Any] = {"model": self.valves.MODEL}
-        if self.valves.OPENAI_API_HEADERS:
-            request["extra_headers"] = self.valves.OPENAI_API_HEADERS
-        return request
+        provider, separator, model = self.valves.MODEL.partition("/")
+        if not provider or not separator or not model:
+            raise ValueError(
+                "Bifrost model ID must use the provider/model format: "
+                f"{self.valves.MODEL!r}."
+            )
+        return {
+            "model": model,
+            "extra_headers": {"x-model-provider": provider},
+        }
 
     @staticmethod
     def _model_extension(model: Any) -> dict[str, Any] | None:

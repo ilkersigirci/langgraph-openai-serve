@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock, call
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from openai.lib.streaming.chat import ChunkEvent, ContentDeltaEvent
@@ -72,7 +72,6 @@ class ScriptedChat:
         messages: list[dict[str, Any]],
         thread_id: str,
         model_id: str,
-        model_routes: dict[str, dict[str, str]],
         runtime_metadata: dict[str, str] | None = None,
         include_client_events: bool = False,
     ) -> AsyncIterator[ScriptedStream]:
@@ -200,22 +199,20 @@ async def test_pipe_lists_registered_models(
     client.models.list.return_value = SimpleNamespace(
         data=[
             SimpleNamespace(
-                id="interruptible-approval",
-                model_extra={
-                    "langgraph_openai_serve": {
-                        "schema_version": 1,
-                        "description": "DUMMY",
-                    }
-                },
+                id="lgos-a/interruptible-approval",
+                owned_by="langgraph-openai-serve",
             ),
             SimpleNamespace(
-                id="lgos-rag",
-                model_extra={
-                    "langgraph_openai_serve": {
-                        "schema_version": 1,
-                        "description": "DUMMY",
-                    }
-                },
+                id="lgos-a/lgos-rag",
+                owned_by="langgraph-openai-serve",
+            ),
+            SimpleNamespace(
+                id="lgos-b/interruptible-approval",
+                owned_by="langgraph-openai-serve",
+            ),
+            SimpleNamespace(
+                id="lgos-b/lgos-rag",
+                owned_by="langgraph-openai-serve",
             ),
         ]
     )
@@ -242,14 +239,11 @@ async def test_pipe_lists_registered_models(
         {"id": "lgos-b/lgos-rag", "name": "Generic / lgos-b/lgos-rag"},
     ]
     client_factory.assert_called_once_with(
-        base_url="http://bifrost:8080/openai_passthrough/v1",
+        base_url="http://bifrost:8080/v1",
         api_key="DUMMY",
         timeout=45,
     )
-    assert client.models.list.await_args_list == [
-        call(extra_headers={"x-model-provider": "lgos-a"}),
-        call(extra_headers={"x-model-provider": "lgos-b"}),
-    ]
+    client.models.list.assert_awaited_once_with()
     retrieve_model.assert_not_awaited()
     client.__aexit__.assert_awaited_once_with(None, None, None)
 
@@ -275,15 +269,17 @@ async def test_pipe_preserves_dots_in_selected_model(
     assert chat.include_client_events_calls == [False]
 
 
-async def test_pipes_preserve_standard_catalog_ids_without_retrieving_details(
+async def test_pipes_ignore_non_lgos_catalog_models(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pipe = Pipe()
-    pipe.valves.OPENAI_API_MODEL_ROUTES = {}
     catalog = SimpleNamespace(
         data=[
-            SimpleNamespace(id="lgos-a/graph-a"),
-            SimpleNamespace(id="lgos-b/graph-b"),
+            SimpleNamespace(
+                id="lgos-future/graph-a",
+                owned_by="langgraph-openai-serve",
+            ),
+            SimpleNamespace(id="openai/gpt-5", owned_by="openai"),
         ]
     )
     client = AsyncMock()
@@ -297,19 +293,15 @@ async def test_pipes_preserve_standard_catalog_ids_without_retrieving_details(
 
     assert models == [
         {
-            "id": "lgos-a/graph-a",
-            "name": "Generic / lgos-a/graph-a (Limited functionality)",
-        },
-        {
-            "id": "lgos-b/graph-b",
-            "name": "Generic / lgos-b/graph-b (Limited functionality)",
+            "id": "lgos-future/graph-a",
+            "name": "Generic / lgos-future/graph-a",
         },
     ]
     retrieve_model.assert_not_awaited()
-    assert generic._model_request(
-        "lgos-b/graph-b",
-        {},
-    ) == {"model": "lgos-b/graph-b"}
+    assert generic._model_request("lgos-future/graph-a") == {
+        "model": "graph-a",
+        "extra_headers": {"x-model-provider": "lgos-future"},
+    }
 
 
 async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
@@ -369,13 +361,13 @@ async def test_pipe_rejects_model_without_function_prefix() -> None:
     assert chunks == ["Open WebUI did not provide a valid model ID."]
 
 
-async def test_pipe_requires_a_known_model_route() -> None:
+async def test_pipe_requires_a_provider_qualified_bifrost_model() -> None:
     chunks = await _collect_response(
         Pipe().pipe(body=_body("hello", model="generic.interruptible-approval"))
     )
 
     assert chunks == [
-        "Unknown configured OpenAI model route in 'interruptible-approval'."
+        "Bifrost model ID must use the provider/model format: 'interruptible-approval'."
     ]
 
 
@@ -505,7 +497,6 @@ async def test_chat_sends_model_and_thread_metadata(
         model_id="lgos-a/namespace/graph.with.dots",
         runtime_metadata={"langgraph_runtime_settings": '{"mode":"detailed"}'},
         include_client_events=True,
-        model_routes={"lgos-a": {"x-model-provider": "lgos-a"}},
     ) as response_stream:
         deltas = [
             event.delta
