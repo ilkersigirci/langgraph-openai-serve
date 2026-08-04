@@ -60,14 +60,18 @@ The API also reads the package-owned `LGOS_OPENAI_API_PREFIX` and
 
 ## Open WebUI Sync Settings
 
+The typed
+[settings model](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/src/lgos_openwebui/settings.py)
+is the source of truth for these `DEMO_OPENWEBUI_` variables.
+
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `DEMO_OPENWEBUI_URL` | `http://localhost:3003` | Open WebUI API used by the sync command |
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | `lgos@example.com` | Open WebUI sync account |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | `lgos` | Open WebUI sync password |
-| `DEMO_OPENWEBUI_OPENAI_BASE_URL` | `http://localhost:3000/openai_passthrough/v1` | OpenAI endpoint used for model listing and retrieval during sync |
-| `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | LGOS API or gateway key used during sync |
-| `DEMO_OPENWEBUI_MODEL_ROUTES` | `{"lgos-a":{"x-model-provider":"lgos-a"},"lgos-b":{"x-model-provider":"lgos-b"}}` | JSON object mapping synthetic model prefixes to request headers; use `{}` for a standard endpoint |
+| `DEMO_OPENWEBUI_OPENAI_CATALOG_BASE_URL` | `http://localhost:3000/v1` | Bifrost model catalog used for discovery |
+| `DEMO_OPENWEBUI_OPENAI_BASE_URL` | `http://localhost:3000/openai_passthrough/v1` | Bifrost pass-through used for model metadata |
+| `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | Gateway key used by both OpenAI clients |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the [example graph catalog](graphs.md)

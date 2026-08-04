@@ -18,13 +18,15 @@ gateway so that it:
 - propagates downstream disconnects to the upstream streaming request;
 - preserves `langgraph_openai_serve` on model retrieval;
 - preserves extension-only stream chunks; and
-- exposes model listing, model retrieval, and Chat Completions beneath one
-  OpenAI base URL.
+- exposes metadata-bearing model listing, model retrieval, and Chat Completions
+  beneath one pass-through OpenAI base URL per selected provider.
 
-Configure that one base URL in the client. Do not pair a proxy-normalized model
-catalog with a separate inference or discovery client. If the selected route
-strips the required model extension, the UI should keep standard chat available
-but show **Limited functionality**.
+Configure that pass-through base URL in the client. A federating gateway may
+also expose a normalized catalog for discovering provider-qualified routing
+IDs. Do not treat that catalog as LGOS capability metadata: list or retrieve the
+selected provider again through pass-through. If the selected route strips the
+required model extension, the UI should keep standard chat available but show
+**Limited functionality**.
 
 ## Client Event Compatibility
 
@@ -39,19 +41,21 @@ them even while ordinary assistant text continues to work.
 | Schema-normalizing OpenAI route | Not guaranteed | Preserved |
 | Documented raw pass-through route | Preserved when byte-transparent | Preserved |
 
-Use the raw pass-through route as the client's only OpenAI base URL. It must
-carry model listing, detailed model retrieval, request metadata, and chat
-streams together. A missing model extension is the detectable degraded state;
-the completion may remain valid, but the UI labels the model as limited. Verify
-model metadata, event count, and event/text order with the real client SDK after
-proxy upgrades.
+Use the raw pass-through route for metadata-bearing model listing, detailed
+model retrieval, request metadata, and chat streams. A normalized federation
+catalog may precede those operations but cannot replace them. A missing model
+extension is the detectable degraded state; the completion may remain valid,
+but the UI labels the model as limited. Verify model metadata, event count, and
+event/text order with the real client SDK after proxy upgrades.
 
 ## Bifrost
 
 Bifrost provides both a schema-normalizing OpenAI route and a provider
 pass-through route. Keep an LGOS provider base URL free of `/v1`; the route adds
-the OpenAI subpath. Enable private-network access only when the upstream LGOS
-application actually uses a private address.
+the OpenAI subpath. Its normalized catalog can discover provider-qualified IDs;
+send the provider prefix as `x-model-provider` when repeating model listing and
+making detail or chat requests through pass-through. Enable private-network
+access only when the upstream LGOS application actually uses a private address.
 
 The repository's [Bifrost demo](../demo/bifrost.md) records the pinned version,
 configuration, endpoints, Chainlit settings, and verified event behavior. Those

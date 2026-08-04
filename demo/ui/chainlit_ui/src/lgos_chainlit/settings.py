@@ -39,22 +39,19 @@ def _is_unconfigured(value: str | None) -> bool:
 class OpenAIEndpoint(BaseModel):
     """A complete OpenAI-compatible endpoint and its credential."""
 
-    base_url: HttpUrlStr
-    api_key: str = Field(min_length=1)
-    model_routes: dict[str, dict[str, str]] = Field(default_factory=dict)
-
-    @field_validator("model_routes")
-    @classmethod
-    def validate_model_routes(
-        cls,
-        value: dict[str, dict[str, str]],
-    ) -> dict[str, dict[str, str]]:
-        """Keep synthetic route prefixes unambiguous."""
-        if any(not route or "/" in route for route in value):
-            raise ValueError(
-                "OpenAI model routes must be non-empty and contain no '/'."
-            )
-        return value
+    base_url: HttpUrlStr = Field(
+        description="OpenAI-compatible base URL used for retrieval and chat."
+    )
+    catalog_base_url: HttpUrlStr | None = Field(
+        default=None,
+        description=(
+            "Optional Bifrost catalog URL used for provider-qualified model discovery."
+        ),
+    )
+    api_key: str = Field(
+        min_length=1,
+        description="API key sent to the configured OpenAI-compatible endpoints.",
+    )
 
 
 class Settings(BaseSettings):

@@ -1,13 +1,12 @@
 """Synchronize the demo integration with a running Open WebUI instance."""
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 from openai import OpenAI, OpenAIError
-from pydantic import TypeAdapter, ValidationError
 
+from .settings import Settings
 from .workspace_models import (
     discover_workspace_model_specs,
     sync_workspace_models,
@@ -24,10 +23,6 @@ class FunctionSpec:
 
 
 FUNCTIONS_DIR = Path(__file__).with_name("functions")
-MODEL_ROUTES_ADAPTER = TypeAdapter(dict[str, dict[str, str]])
-DEFAULT_MODEL_ROUTES = (
-    '{"lgos-a":{"x-model-provider":"lgos-a"},"lgos-b":{"x-model-provider":"lgos-b"}}'
-)
 
 
 def _frontmatter_title(content: str) -> str | None:
@@ -150,37 +145,29 @@ def sync_functions(
 
 def main() -> None:
     """Synchronize the bundled Function and generated Workspace Models."""
-    base_url = os.environ.get("DEMO_OPENWEBUI_URL", "http://localhost:3003")
-    email = os.environ.get("DEMO_OPENWEBUI_ADMIN_EMAIL", "lgos@example.com")
-    password = os.environ.get("DEMO_OPENWEBUI_ADMIN_PASSWORD", "lgos")
-    openai_base_url = os.environ.get(
-        "DEMO_OPENWEBUI_OPENAI_BASE_URL",
-        "http://localhost:3000/openai_passthrough/v1",
-    )
-    api_key = os.environ.get("DEMO_OPENWEBUI_API_KEY", "DUMMY")
-    model_routes_json = os.environ.get(
-        "DEMO_OPENWEBUI_MODEL_ROUTES",
-        DEFAULT_MODEL_ROUTES,
-    )
-
     try:
-        model_routes = MODEL_ROUTES_ADAPTER.validate_json(model_routes_json)
+        settings = Settings()
         with (
-            httpx.Client(base_url=base_url, timeout=10) as client,
+            httpx.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
-                base_url=openai_base_url,
-                api_key=api_key,
+                base_url=settings.OPENAI_CATALOG_BASE_URL,
+                api_key=settings.API_KEY,
                 timeout=10,
-            ) as openai_client,
+            ) as catalog_client,
+            OpenAI(
+                base_url=settings.OPENAI_BASE_URL,
+                api_key=settings.API_KEY,
+                timeout=10,
+            ) as passthrough_client,
         ):
-            sign_in(client, email, password)
+            sign_in(client, settings.ADMIN_EMAIL, settings.ADMIN_PASSWORD)
             function_results = sync_functions(client)
             model_specs = discover_workspace_model_specs(
-                openai_client,
-                model_routes,
+                catalog_client,
+                passthrough_client,
             )
             sync_workspace_models(client, model_specs)
-    except (OSError, ValueError, ValidationError, httpx.HTTPError, OpenAIError) as exc:
+    except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
         raise SystemExit(f"Open WebUI sync failed: {exc}") from exc
 
     for function_id, action in function_results.items():

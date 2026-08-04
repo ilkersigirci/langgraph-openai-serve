@@ -164,9 +164,10 @@ interleaved with assistant text.
 
 The demo includes optional [Chainlit](chainlit.md) and
 [Open WebUI](open-webui.md) clients. The Compose stack routes both through the
-bundled [Bifrost gateway](bifrost.md). Each client uses the gateway's one raw
-pass-through base URL for model listing, model retrieval, and inference across
-both LGOS providers.
+bundled [Bifrost gateway](bifrost.md). The dynamic clients use the gateway
+catalog for provider-qualified discovery and raw pass-through for LGOS model
+metadata and inference. The fixed-model Open WebUI example uses Bifrost
+pass-through without catalog discovery.
 
 ## Next Steps
 

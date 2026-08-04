@@ -23,8 +23,9 @@ configuration is at `docker/bifrost/config.json`. Compose runs the demo API
 image as two independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs today so the stack can demonstrate routing multiple LGOS
 APIs through one Bifrost pass-through endpoint; either service can define a
-different graph set later. The clients keep one OpenAI client and select the
-provider per request.
+different graph set later. The dynamic clients discover provider-qualified
+models from Bifrost's catalog and use its OpenAI pass-through endpoint for
+detailed model metadata and chat.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a

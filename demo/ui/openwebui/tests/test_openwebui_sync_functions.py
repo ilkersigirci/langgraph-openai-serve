@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, call
 
@@ -144,20 +143,22 @@ def test_main_reads_demo_openwebui_environment(
         "DEMO_OPENWEBUI_OPENAI_BASE_URL",
         "https://bifrost.example/openai_passthrough/v1",
     )
+    monkeypatch.setenv(
+        "DEMO_OPENWEBUI_OPENAI_CATALOG_BASE_URL",
+        "https://bifrost.example/v1",
+    )
     monkeypatch.setenv("DEMO_OPENWEBUI_API_KEY", "api-key")
-    model_routes = {
-        "lgos-a": {"x-route": "a"},
-        "lgos-b": {"x-route": "b"},
-    }
-    monkeypatch.setenv("DEMO_OPENWEBUI_MODEL_ROUTES", json.dumps(model_routes))
     client = Mock()
     client_context = MagicMock()
     client_context.__enter__.return_value = client
     client_factory = Mock(return_value=client_context)
-    openai_client = Mock()
-    openai_context = MagicMock()
-    openai_context.__enter__.return_value = openai_client
-    openai_factory = Mock(return_value=openai_context)
+    catalog_client = Mock()
+    catalog_context = MagicMock()
+    catalog_context.__enter__.return_value = catalog_client
+    passthrough_client = Mock()
+    passthrough_context = MagicMock()
+    passthrough_context.__enter__.return_value = passthrough_client
+    openai_factory = Mock(side_effect=[catalog_context, passthrough_context])
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
     model_specs = (WorkspaceModelSpec(id="plain", fields=()),)
@@ -190,13 +191,23 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
-    openai_factory.assert_called_once_with(
-        base_url="https://bifrost.example/openai_passthrough/v1",
-        api_key="api-key",
-        timeout=10,
-    )
+    assert openai_factory.call_args_list == [
+        call(
+            base_url="https://bifrost.example/v1",
+            api_key="api-key",
+            timeout=10,
+        ),
+        call(
+            base_url="https://bifrost.example/openai_passthrough/v1",
+            api_key="api-key",
+            timeout=10,
+        ),
+    ]
     discover_workspace_models_mock.assert_called_once_with(
-        openai_client,
-        model_routes,
+        catalog_client,
+        passthrough_client,
     )
-    sync_workspace_models_mock.assert_called_once_with(client, model_specs)
+    sync_workspace_models_mock.assert_called_once_with(
+        client,
+        model_specs,
+    )

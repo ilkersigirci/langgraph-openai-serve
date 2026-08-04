@@ -23,35 +23,53 @@ def test_openai_endpoint_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__BASE_URL", "https://gateway.example/v1")
-    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__API_KEY", "api-key")
     monkeypatch.setenv(
-        "DEMO_CHAINLIT_OPENAI__MODEL_ROUTES",
-        '{"lgos-a":{"x-route":"a"},"lgos-b":{"x-route":"b"}}',
+        "DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL",
+        "https://gateway.example/catalog/v1",
     )
+    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__API_KEY", "api-key")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI.base_url == "https://gateway.example/v1"
+    assert configured.OPENAI.catalog_base_url == "https://gateway.example/catalog/v1"
     assert configured.OPENAI.api_key == "api-key"
-    assert configured.OPENAI.model_routes == {
-        "lgos-a": {"x-route": "a"},
-        "lgos-b": {"x-route": "b"},
-    }
 
 
 @pytest.mark.anyio
-async def test_one_client_lists_two_explicit_model_routes(
+async def test_catalog_discovers_providers_and_preserves_model_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         clients.settings.OPENAI,
-        "model_routes",
-        {
-            "lgos-a": {"x-route": "a"},
-            "lgos-b": {"x-route": "b"},
-        },
+        "catalog_base_url",
+        "https://gateway.example/v1",
     )
-    list_models = AsyncMock(
+    catalog_list = AsyncMock(
+        return_value=SimpleNamespace(
+            data=[
+                Model(
+                    id="lgos-a/graph-a",
+                    object="model",
+                    created=1,
+                    owned_by="langgraph-openai-serve",
+                ),
+                Model(
+                    id="lgos-future/graph-b",
+                    object="model",
+                    created=1,
+                    owned_by="langgraph-openai-serve",
+                ),
+                Model(
+                    id="gpt-5",
+                    object="model",
+                    created=1,
+                    owned_by="openai",
+                ),
+            ]
+        )
+    )
+    passthrough_list = AsyncMock(
         side_effect=[
             SimpleNamespace(
                 data=[
@@ -59,7 +77,7 @@ async def test_one_client_lists_two_explicit_model_routes(
                         id="graph-a",
                         object="model",
                         created=1,
-                        owned_by="test",
+                        owned_by="langgraph-openai-serve",
                         langgraph_openai_serve={
                             "schema_version": 1,
                             "description": "DUMMY",
@@ -73,30 +91,35 @@ async def test_one_client_lists_two_explicit_model_routes(
                         id="graph-b",
                         object="model",
                         created=1,
-                        owned_by="test",
+                        owned_by="langgraph-openai-serve",
                     )
                 ]
             ),
         ]
     )
-    monkeypatch.setattr(clients.openai_client.models, "list", list_models)
+    monkeypatch.setattr(clients.catalog_client.models, "list", catalog_list)
+    monkeypatch.setattr(clients.openai_client.models, "list", passthrough_list)
 
     models = await clients.list_models()
 
-    assert [model.id for model in models] == ["lgos-a/graph-a", "lgos-b/graph-b"]
+    assert [model.id for model in models] == [
+        "lgos-a/graph-a",
+        "lgos-future/graph-b",
+    ]
     assert (models[0].model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
         "description": "DUMMY",
     }
-    assert list_models.await_args_list == [
-        call(extra_headers={"x-route": "a"}),
-        call(extra_headers={"x-route": "b"}),
+    catalog_list.assert_awaited_once_with()
+    assert passthrough_list.await_args_list == [
+        call(extra_headers={"x-model-provider": "lgos-a"}),
+        call(extra_headers={"x-model-provider": "lgos-future"}),
     ]
     assert clients.model_request("lgos-b/namespace/graph-b") == {
         "model": "namespace/graph-b",
-        "extra_headers": {"x-route": "b"},
+        "extra_headers": {"x-model-provider": "lgos-b"},
     }
-    with pytest.raises(ValueError, match="model route"):
+    with pytest.raises(ValueError, match="provider/model"):
         clients.model_request("graph-b")
 
 
@@ -104,7 +127,7 @@ async def test_one_client_lists_two_explicit_model_routes(
 async def test_standard_endpoint_preserves_listed_model_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(clients.settings.OPENAI, "model_routes", {})
+    monkeypatch.setattr(clients.settings.OPENAI, "catalog_base_url", None)
     list_models = AsyncMock(
         return_value=SimpleNamespace(
             data=[

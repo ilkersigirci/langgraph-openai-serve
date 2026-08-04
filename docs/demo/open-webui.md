@@ -1,6 +1,6 @@
 # Open WebUI Functions
 
-The demo includes two Open WebUI Functions over the LGOS OpenAI-compatible API:
+The demo includes two Open WebUI Functions over LGOS APIs registered in Bifrost:
 
 - `demo/ui/openwebui/src/lgos_openwebui/functions/generic.py` is a
   [manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
@@ -31,71 +31,69 @@ make sync-openwebui
 ```
 
 The sync command signs in through `/api/v1/auths/signin`, creates or updates the
-bundled Functions, lists and retrieves LGOS models through one OpenAI client,
-hides the corresponding public manifold base, and bulk-imports the generated
-Workspace Models. Run it again after changing the Function, graph catalog, or a
-graph's client settings schema.
+bundled Functions, lists provider-qualified LGOS models from Bifrost's `/v1`
+catalog, retrieves detailed metadata through `/openai_passthrough/v1`, and
+bulk-imports each generated Workspace Model with an active, public, hidden
+override for its manifold base. Run it again after changing the Function,
+Bifrost provider catalog, or a graph's client settings schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
 `GraphConfig.description`. The sync marks a model as **Limited functionality**
 when the API omits a description.
 
-The operation is additive: it does not delete user-managed Functions or
-Workspace Models. Generated manifold bases remain public and hidden so regular
-users can access their visible wrappers without seeing duplicate selector
-entries. The sync owns that base visibility and public access. New generated
+After importing the current catalog, sync deletes obsolete generated `lgos.*`
+Workspace Models and `generic.*` base visibility records. It does not delete
+bundled Functions or unrelated user-managed Workspace Models. New generated
 Workspace Models are public; later syncs preserve their access grants and
-active state. Their generated name, base model, settings schema, description,
-and parameters remain sync-owned. Delete generated records manually after
-removing an LGOS model from the catalog.
+active state. The sync owns the generated bases' hidden, public, and active
+state.
 
 The command discovers every top-level `.py` file in that directory except files
 whose names start with `_`. The filename stem is the Function ID, and the
 required Open WebUI frontmatter `title` is its display name. Function
 filenames must be lowercase Python identifiers.
 
-The defaults match `compose.yaml`. Override the Open WebUI connection with
-`DEMO_OPENWEBUI_URL`, `DEMO_OPENWEBUI_ADMIN_EMAIL`, and
-`DEMO_OPENWEBUI_ADMIN_PASSWORD`. Configure the one LGOS client with
-`DEMO_OPENWEBUI_OPENAI_BASE_URL`, `DEMO_OPENWEBUI_API_KEY`, and
-`DEMO_OPENWEBUI_MODEL_ROUTES`. The last setting is a JSON object mapping
-synthetic model prefixes to request headers. The demo maps `lgos-a` and
-`lgos-b` to Bifrost's corresponding `x-model-provider` values. Set it to `{}`
-for a standard endpoint whose listed model IDs should be reused verbatim. Set
-secrets in the environment rather than passing them on the command line. Point
-this setting and the Function valve below at the same deployment; their
-hostnames differ when one runs on the host and the other runs inside Compose.
+The typed
+[sync settings model](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/src/lgos_openwebui/settings.py)
+defines its environment names, defaults, and descriptions. The shared
+`.env.example` configures the local sync command. Set secrets in the environment
+rather than passing them on the command line. Point the sync client and the
+Function valve below at the same deployment; their hostnames differ when one
+runs on the host and the other runs inside Compose.
 
 Choose a generated entry such as `LGOS / lgos-a/simple-graph` to use Chat
 Variables. Its Workspace Model ID is `lgos.lgos-a/simple-graph`, and its base
 model is `generic.lgos-a/simple-graph`. The raw `Generic / ...` manifold entry
-is public but hidden, following Open WebUI's
+remains active and public but is hidden from the chat selector, following Open
+WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
 `UserValves-Simple / simple-graph` remains available as the static alternative.
 
-Configure `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, and
-`OPENAI_API_MODEL_ROUTES` in the generic Function's admin valves. A configured
-route adds its prefix to the selector and applies its headers to listing,
-detailed retrieval, and inference. Leave the route object empty for a standard
-OpenAI endpoint. The static UserValves Function instead accepts one `MODEL` and
-one `OPENAI_API_HEADERS` object and sends both unchanged. Open WebUI stores
-Function code in its database, so a bind mount of the Python file does not
-update it.
+Configure `OPENAI_API_BASE_URL`, `OPENAI_CATALOG_BASE_URL`, `OPENAI_API_KEY`,
+and `OPENAI_API_TIMEOUT` in the generic Function's admin valves. The Pydantic
+valve model in the Function is the source of truth for their defaults and
+descriptions. The Function lists the Bifrost catalog once, keeps models owned by
+`langgraph-openai-serve`, and exposes Bifrost's existing `provider/model` IDs.
+For detailed retrieval and inference, it removes the provider prefix from the
+model and sends it as `x-model-provider` through Bifrost pass-through. The
+static UserValves Function accepts one provider-qualified `MODEL` and uses the
+same routing rule. Open WebUI stores Function code in its database, so a bind
+mount of the Python file does not update it.
 
-The generic selector uses only model listing and labels entries without the
-required LGOS description as **Limited functionality**. It retrieves detailed
-metadata after a model is selected for chat, when settings and capability
-checks need it.
+The generic manifold uses only Bifrost's catalog for discovery. It retrieves
+detailed LGOS metadata after a model is selected for chat, when settings and
+capability checks need it. The sync command performs the same detailed
+retrieval before it generates Workspace Models and their Chat Variables.
 
 ## Limited Functionality
 
-Every generated model remains visible when its detailed response lacks the
-required `langgraph_openai_serve` extension. Its name and description say
-**Limited functionality**. At chat time both bundled Pipes also emit an Open WebUI
+Every generated model remains visible when its pass-through detail response
+lacks the required `langgraph_openai_serve` extension. Its name and description
+say **Limited functionality**. At chat time both bundled Pipes also emit an Open
+WebUI
 [`notification`](https://docs.openwebui.com/features/extensibility/plugin/development/events/#notification)
 with warning severity. Standard assistant text may still work; runtime settings,
-client events, and interrupts are not assumed. Configure the selected OpenAI
-URL as the proxy's LGOS pass-through route to remove the warning.
+client events, and interrupts are not assumed.
 
 ## Runtime Settings
 
@@ -140,6 +138,12 @@ take their schemas only from LGOS.
     keeps extra [Workspace Model metadata](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/backend/open_webui/models/models.py#L67-L76)
     and reads the schema in the
     [Chat Variables UI](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/src/lib/components/chat/Chat.svelte#L396-L405).
+    The pinned backend [keeps active base overrides and removes inactive
+    ones](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/backend/open_webui/utils/models.py#L157-L187),
+    while the [chat selector filters
+    `meta.hidden`](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/src/lib/components/chat/ModelSelector/Selector.svelte#L308-L321).
+    Disabling a hidden base would therefore break its generated Workspace
+    Model.
 
 ## Streaming, Status, And Citations
 
@@ -165,12 +169,10 @@ Open WebUI treats a tool call as work it must execute, but LGOS has already
 started the backend work. The passive status mapping keeps execution in the
 graph and avoids an unknown-tool or duplicate-execution path.
 
-When the Pipe targets an OpenAI-compatible proxy, its one OpenAI base URL must
-be a raw pass-through because a schema-normalizing route may discard model
-metadata and extension-only chunks. For a multiplexed pass-through, configure
-its model routes and headers explicitly. For a normalized endpoint, clear the
-route object so returned model IDs are reused verbatim; standard chat may work,
-but the Pipe remains in limited mode when LGOS metadata is missing. See
+The Pipe uses Bifrost's normalized `/v1/models` response only as its catalog.
+Detailed model retrieval and chat always use raw pass-through because a
+schema-normalizing route may discard LGOS metadata and extension-only chunks.
+See
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
 ## Interrupt Approval

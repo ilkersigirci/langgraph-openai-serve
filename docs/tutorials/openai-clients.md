@@ -4,9 +4,12 @@ Configure clients with the server base URL, usually `http://localhost:8000/v1`.
 The `api_key` value is sent as `Authorization: Bearer <key>`; the application
 from [Get Started](../getting-started.md) does not verify it.
 
-Use one OpenAI client and base URL for model listing, model retrieval, and chat
-completions. When a proxy is present, that URL must be its complete LGOS
-pass-through route.
+For one LGOS deployment, use one OpenAI client and base URL for model listing,
+model retrieval, and chat completions. When a proxy is present, that URL must be
+its complete LGOS pass-through route. A gateway that federates multiple LGOS
+providers may expose a separate routing catalog; use it only to discover
+provider-qualified IDs, then use pass-through for LGOS metadata and chat. The
+[Bifrost demo](../demo/bifrost.md) shows that split.
 
 The basic examples below call that application's `echo` model. Examples named
 `my-graph`, `my-settings-graph`, or `research-graph` describe capabilities your

@@ -1,10 +1,11 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.9
+version: 0.11
 """
 
 import json
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
@@ -25,7 +26,7 @@ from openai.types.chat import (
     ChatCompletionMessageToolCallParam,
     ChatCompletionToolMessageParam,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 # These values mirror the public LGOS wire contract. This standalone Open WebUI
 # Function must not import the server package:
@@ -44,6 +45,7 @@ RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
 THREAD_METADATA_KEY = "langgraph_thread_id"
+LGOS_MODEL_OWNER = "langgraph-openai-serve"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
@@ -61,67 +63,48 @@ class SettingsTransportError(ValueError):
 class Pipe:
     class Valves(BaseModel):
         OPENAI_API_BASE_URL: str = Field(
-            default="http://bifrost:8080/openai_passthrough/v1",
-            description="OpenAI base URL used for listing, retrieval, and chat.",
+            default=os.environ.get(
+                "OPENAI_API_BASE_URL",
+                "http://bifrost:8080/openai_passthrough/v1",
+            ),
+            description="OpenAI-compatible base URL used for retrieval and chat.",
+        )
+        OPENAI_CATALOG_BASE_URL: str = Field(
+            default=os.environ.get(
+                "OPENAI_CATALOG_BASE_URL",
+                "http://bifrost:8080/v1",
+            ),
+            description="OpenAI-compatible base URL used to list the model catalog.",
         )
         OPENAI_API_KEY: str = Field(
-            default="DUMMY",
-            description="Bearer token sent to the configured OpenAI endpoint.",
+            default=os.environ.get("OPENAI_API_KEY", "DUMMY"),
+            description="API key sent to the configured OpenAI-compatible endpoints.",
             json_schema_extra={"input": {"type": "password"}},
         )
         OPENAI_API_TIMEOUT: float = Field(
             default=30,
             gt=0,
-            description="OpenAI client timeout in seconds.",
+            description="OpenAI-compatible request timeout in seconds.",
         )
-        OPENAI_API_MODEL_ROUTES: dict[str, dict[str, str]] = Field(
-            default_factory=lambda: {
-                "lgos-a": {"x-model-provider": "lgos-a"},
-                "lgos-b": {"x-model-provider": "lgos-b"},
-            },
-            description=(
-                "Synthetic model prefixes and request headers for a multiplexed "
-                "endpoint. Leave empty for a standard OpenAI endpoint."
-            ),
-        )
-
-        @field_validator("OPENAI_API_MODEL_ROUTES")
-        @classmethod
-        def validate_model_routes(
-            cls,
-            value: dict[str, dict[str, str]],
-        ) -> dict[str, dict[str, str]]:
-            if any(not route or "/" in route for route in value):
-                raise ValueError("Model routes must be non-empty and contain no '/'.")
-            return value
 
     def __init__(self) -> None:
         self.valves = self.Valves()
 
     async def pipes(self) -> list[dict[str, str]]:
-        """Expose every registered LangGraph model in Open WebUI's selector."""
+        """Expose every registered LangGraph model to Open WebUI."""
         async with _client(
-            base_url=self.valves.OPENAI_API_BASE_URL,
+            base_url=self.valves.OPENAI_CATALOG_BASE_URL,
             api_key=self.valves.OPENAI_API_KEY,
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
-            models = await _list_models(
-                client,
-                self.valves.OPENAI_API_MODEL_ROUTES,
-            )
-            pipes = [
+            model_ids = await _list_model_ids(client)
+            return [
                 {
                     "id": model_id,
-                    "name": (
-                        f"Generic / {model_id}"
-                        if _model_description(model) is not None
-                        else f"Generic / {model_id} (Limited functionality)"
-                    ),
+                    "name": f"Generic / {model_id}",
                 }
-                for model_id, model in models
+                for model_id in model_ids
             ]
-
-        return pipes
 
     async def pipe(
         self,
@@ -137,11 +120,10 @@ class Pipe:
         base_url = self.valves.OPENAI_API_BASE_URL
         api_key = self.valves.OPENAI_API_KEY
         timeout = self.valves.OPENAI_API_TIMEOUT
-        model_routes = self.valves.OPENAI_API_MODEL_ROUTES
 
         try:
             model_id = _model_id(body)
-            _model_request(model_id, model_routes)
+            _model_request(model_id)
         except ValueError as exc:
             yield str(exc)
             return
@@ -152,7 +134,7 @@ class Pipe:
                 api_key=api_key,
                 timeout=timeout,
             ) as client:
-                model = await _retrieve_model(client, model_id, model_routes)
+                model = await _retrieve_model(client, model_id)
                 extension = _model_extension(model)
                 if extension is None:
                     await _emit_limited_functionality_warning(__event_emitter__)
@@ -171,7 +153,6 @@ class Pipe:
                     model_id=model_id,
                     runtime_metadata=runtime_metadata,
                     include_client_events=include_client_events,
-                    model_routes=model_routes,
                 ) as stream:
                     async for delta in _content_deltas(stream, __event_emitter__):
                         yield delta
@@ -226,7 +207,6 @@ class Pipe:
                     model_id=model_id,
                     runtime_metadata=runtime_metadata,
                     include_client_events=include_client_events,
-                    model_routes=model_routes,
                 ) as stream:
                     async for delta in _content_deltas(stream, __event_emitter__):
                         yield delta
@@ -255,7 +235,6 @@ async def _chat(
     messages: list[ChatCompletionMessageParam],
     thread_id: str,
     model_id: str,
-    model_routes: dict[str, dict[str, str]],
     runtime_metadata: dict[str, str] | None = None,
     include_client_events: bool = False,
 ) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
@@ -267,7 +246,7 @@ async def _chat(
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
     async with client.chat.completions.stream(
-        **_model_request(model_id, model_routes),
+        **_model_request(model_id),
         messages=messages,
         metadata=metadata,
     ) as stream:
@@ -304,37 +283,22 @@ def _thread_id(metadata: dict[str, Any]) -> str:
     return f"openwebui:function:{value}"
 
 
-async def _list_models(
-    client: AsyncOpenAI,
-    model_routes: dict[str, dict[str, str]],
-) -> list[tuple[str, Any]]:
-    if not model_routes:
-        models = await client.models.list()
-        return [(model.id, model) for model in models.data]
-
-    listed_models = []
-    for route, headers in model_routes.items():
-        models = await client.models.list(extra_headers=headers)
-        listed_models.extend((f"{route}/{model.id}", model) for model in models.data)
-    return listed_models
+async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
+    models = await client.models.list()
+    return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]
 
 
-def _model_request(
-    model_id: str,
-    model_routes: dict[str, dict[str, str]],
-) -> dict[str, Any]:
-    if not model_routes:
-        return {"model": model_id}
+def _model_request(model_id: str) -> dict[str, Any]:
+    provider, separator, upstream_model = model_id.partition("/")
+    if not provider or not separator or not upstream_model:
+        raise ValueError(
+            f"Bifrost model ID must use the provider/model format: {model_id!r}."
+        )
 
-    route, separator, upstream_model = model_id.partition("/")
-    headers = model_routes.get(route)
-    if not separator or not upstream_model or headers is None:
-        raise ValueError(f"Unknown configured OpenAI model route in {model_id!r}.")
-
-    request: dict[str, Any] = {"model": upstream_model}
-    if headers:
-        request["extra_headers"] = headers
-    return request
+    return {
+        "model": upstream_model,
+        "extra_headers": {"x-model-provider": provider},
+    }
 
 
 #### Chat Settings ####
@@ -396,11 +360,10 @@ def _runtime_settings_defaults(model: Any) -> dict[str, Any] | None:
 async def _retrieve_model(
     client: AsyncOpenAI,
     model_id: str,
-    model_routes: dict[str, dict[str, str]],
 ) -> Any:
     """Return model details, or None when retrieval through this endpoint fails."""
     try:
-        return await client.models.retrieve(**_model_request(model_id, model_routes))
+        return await client.models.retrieve(**_model_request(model_id))
     except OpenAIError:
         return None
 
@@ -419,17 +382,6 @@ def _model_extension(model: Any) -> dict[str, Any] | None:
     ):
         return None
     return extension
-
-
-def _model_description(model: Any) -> str | None:
-    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
-    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
-        return None
-    description = extension.get("description")
-    if not isinstance(description, str):
-        return None
-    description = description.strip()
-    return description or None
 
 
 def _extension_supports(extension: dict[str, Any] | None, feature: str) -> bool:

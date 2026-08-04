@@ -64,8 +64,10 @@ test-all: ## Run all tests
 	uv run --module pytest
 
 test-bifrost: DEMO_TEST_BIFROST_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
+test-bifrost: DEMO_TEST_BIFROST_CATALOG_BASE_URL ?= http://localhost:3000/v1
 test-bifrost: ## Run the optional Bifrost proxy integration test
 	DEMO_TEST_BIFROST_BASE_URL=$(DEMO_TEST_BIFROST_BASE_URL) \
+		DEMO_TEST_BIFROST_CATALOG_BASE_URL=$(DEMO_TEST_BIFROST_CATALOG_BASE_URL) \
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
 		pytest -m integration tests/integration/test_bifrost_proxy.py
 

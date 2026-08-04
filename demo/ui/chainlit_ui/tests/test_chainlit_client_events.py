@@ -113,11 +113,8 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
         clients.settings.OPENAI,
-        "model_routes",
-        {
-            "lgos-a": {"x-model-provider": "lgos-a"},
-            "lgos-b": {"x-model-provider": "lgos-b"},
-        },
+        "catalog_base_url",
+        "https://gateway.example/v1",
     )
     monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
 
