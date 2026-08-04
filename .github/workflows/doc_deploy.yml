@@ -4,6 +4,12 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish, for example v0.8.1
+        required: true
+        type: string
 
 concurrency:
   group: pages
@@ -11,7 +17,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event.release.prerelease == false
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -20,6 +26,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -37,10 +44,15 @@ jobs:
 
       - name: Publish version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a release tag such as v0.8.1, got: $RELEASE_TAG" >&2
+            exit 1
+          fi
           VERSION="${RELEASE_TAG#v}"
           uv run mike deploy \
+            --push \
             --update-aliases \
             --alias-type redirect \
             --title "$VERSION" \
