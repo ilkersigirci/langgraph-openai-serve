@@ -119,6 +119,9 @@ is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
 also runs the API against the current LGOS source.
 
+Each workflow layout lets `setup-uv` discover the version requirement at its
+repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
+
 Pull requests validate changed image contexts without publishing. Creating a
 GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for both images.
 In the LGOS repository, the API image includes a wheel built from the tagged
