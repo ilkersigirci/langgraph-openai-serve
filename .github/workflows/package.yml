@@ -42,7 +42,7 @@ jobs:
           VERSION=${{ needs.extract-version.outputs.version }}
           echo "Using version: $VERSION"
 
-          sed -i "s/version = \"[^\"]*\"/version = \"$VERSION\"/" pyproject.toml
+          uv version --frozen "$VERSION"
 
       - name: Build source distribution
         run: uv build --sdist --out-dir dist
