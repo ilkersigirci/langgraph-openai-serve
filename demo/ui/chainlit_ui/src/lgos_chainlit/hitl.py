@@ -7,6 +7,13 @@ from typing import cast
 
 import chainlit as cl
 from chainlit.types import ThreadDict
+from chainlit_utils.auth import authenticated_user_identifier
+from chainlit_utils.chat import (
+    mark_model_context_excluded,
+    mark_persisted_errors_excluded,
+    send_ui_message,
+    text_only_chat_messages,
+)
 from openai import OpenAIError
 from openai.types.chat import (
     ChatCompletion,
@@ -18,7 +25,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
 )
 
-from lgos_chainlit.auth import authenticated_user_identifier
+from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     THREAD_METADATA_KEY,
@@ -28,17 +35,15 @@ from lgos_chainlit.lgos_protocol import (
 from lgos_chainlit.settings import settings
 from lgos_chainlit.utils.chat import (
     LIMITED_FUNCTIONALITY_MESSAGE,
-    mark_model_context_excluded,
-    mark_persisted_errors_excluded,
     send_limited_functionality_warning,
-    send_ui_message,
-    text_only_chat_messages,
 )
 from lgos_chainlit.utils.clients import (
     model_request,
     openai_client,
     retrieve_model,
 )
+
+register_auth_callback()
 
 logger = logging.getLogger(__name__)
 
