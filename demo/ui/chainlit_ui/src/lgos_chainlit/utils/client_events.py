@@ -1,6 +1,7 @@
 """Render LGOS client events in Chainlit."""
 
 import chainlit as cl
+from chainlit_utils.chat import mark_model_context_excluded
 from openai.types.chat import ChatCompletionChunk
 from pydantic import ValidationError
 
@@ -9,7 +10,6 @@ from lgos_chainlit.lgos_protocol import (
     ClientEventExtension,
     StatusUpdate,
 )
-from lgos_chainlit.utils.chat import mark_model_context_excluded
 
 
 def client_event(chunk: ChatCompletionChunk) -> dict[str, object] | None:

@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from chainlit_utils.settings import settings as chainlit_utils_settings
 
 
 @pytest.mark.anyio
@@ -33,8 +34,7 @@ async def test_text_only_chat_messages_ignores_stale_user_session_history(
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
-
-    from lgos_chainlit.utils import chat
+    from chainlit_utils import chat
 
     init_http_context()
     chat.cl.chat_context.clear()
@@ -57,8 +57,7 @@ async def test_text_only_chat_message_policy(
     """Keep the model-context policy explicit across Chainlit upgrades."""
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
-
-    from lgos_chainlit.utils import chat
+    from chainlit_utils import chat
 
     init_http_context()
     chat.cl.chat_context.clear()
@@ -99,8 +98,7 @@ async def test_persisted_chainlit_errors_are_excluded_after_resume(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
     from chainlit.types import ThreadDict
-
-    from lgos_chainlit.utils import chat
+    from chainlit_utils import chat
 
     init_http_context()
     chat.cl.chat_context.clear()
@@ -134,7 +132,7 @@ async def test_persisted_chainlit_errors_are_excluded_after_resume(
 
     assert thread["steps"][0]["metadata"] == {
         "existing": "value",
-        chat.MODEL_CONTEXT_EXCLUDED_KEY: True,
+        chainlit_utils_settings.MODEL_CONTEXT_EXCLUDED_KEY: True,
     }
     assert chat.text_only_chat_messages() == [
         {"role": "assistant", "content": "Valid turn"}
@@ -146,7 +144,7 @@ def test_mark_model_context_excluded_preserves_message_metadata(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
-    from lgos_chainlit.utils import chat
+    from chainlit_utils import chat
 
     message = Mock(metadata={"existing": "value"})
 
@@ -154,5 +152,5 @@ def test_mark_model_context_excluded_preserves_message_metadata(
 
     assert message.metadata == {
         "existing": "value",
-        chat.MODEL_CONTEXT_EXCLUDED_KEY: True,
+        chainlit_utils_settings.MODEL_CONTEXT_EXCLUDED_KEY: True,
     }

@@ -25,6 +25,17 @@ entry point.
   `openai.types.shared.ErrorObject`.
 - Check demo graph adapters before changing public graph APIs.
 
+## Chainlit Utilities
+
+- Keep the Chainlit demo pinned to the released `chainlit-utils` package from
+  PyPI; do not commit a local path source.
+- Agents may change the sibling `../chainlit-utils` repository when reusable
+  Chainlit behavior needs development. Test those unpublished changes in the
+  demo with `uv run --with-editable ../../../../chainlit-utils <command>` from
+  `demo/ui/chainlit_ui/`.
+- Keep using the editable overlay during joint development, then publish
+  `chainlit-utils` and update the demo's PyPI pin when the changes are released.
+
 ## Documentation Style
 
 - Prefer native Zensical Markdown features enabled in `zensical.toml`; avoid

@@ -5,21 +5,22 @@ import contextlib
 
 import chainlit as cl
 from chainlit.types import ThreadDict
+from chainlit_utils.auth import authenticated_user_identifier
+from chainlit_utils.chat import (
+    mark_model_context_excluded,
+    mark_persisted_errors_excluded,
+    send_ui_message,
+    text_only_chat_messages,
+)
 
-from lgos_chainlit.auth import authenticated_user_identifier
+from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
     STREAM_EVENTS_METADATA_KEY,
     STREAM_EVENTS_METADATA_VALUE,
     GraphFeature,
     model_description,
 )
-from lgos_chainlit.utils.chat import (
-    LIMITED_FUNCTIONALITY_MESSAGE,
-    mark_model_context_excluded,
-    mark_persisted_errors_excluded,
-    send_ui_message,
-    text_only_chat_messages,
-)
+from lgos_chainlit.utils.chat import LIMITED_FUNCTIONALITY_MESSAGE
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
@@ -31,6 +32,8 @@ from lgos_chainlit.utils.clients import (
     model_request,
     openai_client,
 )
+
+register_auth_callback()
 
 
 @cl.set_chat_profiles
