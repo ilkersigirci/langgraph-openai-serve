@@ -57,6 +57,12 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: [extract-version, build-sdist]
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/langgraph-openai-serve
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -72,6 +78,4 @@ jobs:
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.UV_PUBLISH_TOKEN }}
         run: uv publish dist/*
