@@ -445,7 +445,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.0.2"
+version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -453,7 +453,10 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/c1/403cc534b31463a53b0567201a6d3d7e7be87aa46cd711f270ea1f37621c/chainlit_utils-0.0.2.tar.gz", hash = "sha256:9a0e1cbae54cfaafd8b08df68b5fef97f29dc4d1a981da13d1f9c36bcc762f4a", size = 8148, upload-time = "2026-08-06T12:02:16.086Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/db/28a2c35c255bd4f2f705af0bc924f4b652edce44011426164056bf8dfd8c/chainlit_utils-0.0.3.tar.gz", hash = "sha256:2427a1e9a9e06e7424a3d09b1bb76c5cb1a4f550ef014c639d1fd6e0a02fc9d0", size = 8148, upload-time = "2026-08-07T07:36:22.663Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/14/72c3f45e1abcefb8ecd7cab665746bf85670f1addcd6151d777cc28ca9cd/chainlit_utils-0.0.3-py3-none-any.whl", hash = "sha256:504937bb3bd411f2c0f549eb83f8c4e55064cccb53bdedd6e11db71e52378519", size = 12451, upload-time = "2026-08-07T07:36:21.591Z" },
+]
 
 [[package]]
 name = "charset-normalizer"
@@ -1320,7 +1323,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "chainlit", specifier = ">=2.11.1,<3" },
-    { name = "chainlit-utils", specifier = "==0.0.2" },
+    { name = "chainlit-utils", specifier = "==0.0.3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
     { name = "openai", specifier = ">=2.0.0,<3.0.0" },
     { name = "pydantic", specifier = ">=2.11,<3" },
