@@ -101,7 +101,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Bifrost"
 
     ```bash
-    docker compose -f compose.yaml up --wait bifrost
+    docker compose -f compose.yaml up --wait lgos-bifrost
     ```
 
     Use `http://localhost:3000/v1` as the provider-qualified model catalog. Use
@@ -130,7 +130,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Open WebUI"
 
     ```bash
-    docker compose -f compose.yaml up --wait open-webui
+    docker compose -f compose.yaml up --wait lgos-openwebui
     make sync-openwebui
     ```
 

@@ -21,7 +21,7 @@ Start the official Open WebUI image:
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up --wait open-webui
+docker compose -f compose.yaml up --wait lgos-openwebui
 ```
 
 Then run the independent synchronization project locally:

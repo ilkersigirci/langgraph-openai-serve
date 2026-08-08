@@ -32,7 +32,7 @@ class Pipe:
         OPENAI_API_BASE_URL: str = Field(
             default=os.environ.get(
                 "OPENAI_API_BASE_URL",
-                "http://bifrost:8080/openai_passthrough/v1",
+                "http://lgos-bifrost:8080/openai_passthrough/v1",
             ),
             description="OpenAI-compatible base URL used for retrieval and chat.",
         )

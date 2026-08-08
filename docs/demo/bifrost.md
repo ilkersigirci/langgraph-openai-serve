@@ -11,7 +11,7 @@ different graph sets later, can share one proxy endpoint. The configuration at
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up --wait bifrost
+docker compose -f compose.yaml up --wait lgos-bifrost
 ```
 
 Bifrost exposes each service as a custom provider:

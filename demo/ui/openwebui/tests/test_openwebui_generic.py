@@ -239,7 +239,7 @@ async def test_pipe_lists_registered_models(
         {"id": "lgos-b/lgos-rag", "name": "Generic / lgos-b/lgos-rag"},
     ]
     client_factory.assert_called_once_with(
-        base_url="http://bifrost:8080/v1",
+        base_url="http://lgos-bifrost:8080/v1",
         api_key="DUMMY",
         timeout=45,
     )
