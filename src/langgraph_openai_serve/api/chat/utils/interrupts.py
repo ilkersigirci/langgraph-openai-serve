@@ -1,23 +1,42 @@
-"""OpenAI chat protocol helpers for LangGraph interrupts."""
+"""OpenAI Chat Completions codec for LangGraph interrupts."""
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
     Role,
+    ToolCall,
 )
 
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 INTERRUPT_TOOL_CALL_ID_PREFIX = "lg_interrupt_"
-INTERRUPT_ARGUMENT_VERSION = 1
-INTERRUPT_ARGUMENT_KIND = "hitl.interrupt"
-
-NO_RESUME = object()
+_INTERRUPT_ARGUMENT_FIELDS = {"run_id", "state_token", "payload"}
 
 
 class InvalidResumeRequestError(ValueError):
-    """Raised when a tool response cannot be used to resume an interrupt."""
+    """Raised when an OpenAI tool exchange is not a valid interrupt resume."""
+
+
+class InvalidInterruptPayloadError(ValueError):
+    """Raised when graph-authored interrupt data cannot cross the JSON API."""
+
+
+@dataclass(frozen=True)
+class InterruptResume:
+    """A complete, causally bound set of interrupt answers."""
+
+    run_id: str
+    state_token: str
+    values: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _InterruptCall:
+    interrupt_id: str
+    run_id: str
+    state_token: str
 
 
 def interrupt_tool_call_id(interrupt_id: str) -> str:
@@ -26,54 +45,210 @@ def interrupt_tool_call_id(interrupt_id: str) -> str:
 
 def interrupt_arguments(
     *,
-    thread_id: str,
-    interrupt_id: str,
+    run_id: str,
+    state_token: str,
     payload: Any,
 ) -> str:
-    # Graph-owned payloads may contain application objects; keep the OpenAI tool
-    # call serializable without constraining the graph's internal value types.
-    return json.dumps(
+    """Encode one interrupt without coercing unsupported graph values."""
+    return _dump_json(
         {
-            "version": INTERRUPT_ARGUMENT_VERSION,
-            "kind": INTERRUPT_ARGUMENT_KIND,
-            "thread_id": thread_id,
-            "interrupt_id": interrupt_id,
+            "run_id": run_id,
+            "state_token": state_token,
             "payload": payload,
-        },
-        default=str,
+        }
     )
 
 
-def parse_resume_value(
+def validate_interrupt_payload(payload: Any) -> None:
+    """Reject graph values that cannot cross the OpenAI JSON boundary."""
+    _dump_json(payload)
+
+
+def _dump_json(value: Any) -> str:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise InvalidInterruptPayloadError(
+            "LangGraph interrupt payloads must be valid JSON values."
+        ) from exc
+
+
+def parse_resume_request(
     messages: list[ChatCompletionRequestMessage],
-) -> Any:
+) -> InterruptResume | None:
+    """Parse the trailing canonical assistant/tool interrupt exchange.
+
+    Ordinary tool messages remain ordinary graph input. A LangGraph resume is
+    recognized only when the tool results answer a preceding assistant message
+    whose function calls are all ``langgraph_interrupt`` calls.
+    """
+    tool_start = _trailing_tool_start(messages)
+    if tool_start is None:
+        return None
+
+    tool_messages = messages[tool_start:]
+    assistant = messages[tool_start - 1] if tool_start else None
+    calls = assistant.tool_calls if assistant is not None else None
+    interrupt_calls = [
+        call for call in calls or [] if call.function.name == INTERRUPT_TOOL_NAME
+    ]
+
+    if not interrupt_calls:
+        if any(_is_interrupt_tool_result(message) for message in tool_messages):
+            raise InvalidResumeRequestError(
+                "Interrupt tool results must follow their assistant tool calls."
+            )
+        return None
+
+    if assistant is None or assistant.role != Role.ASSISTANT:
+        raise InvalidResumeRequestError(
+            "Interrupt tool results must follow their assistant tool calls."
+        )
+    if len(interrupt_calls) != len(calls or []):
+        raise InvalidResumeRequestError(
+            "Interrupt and ordinary tool calls cannot be resumed in one exchange."
+        )
+
+    parsed_calls = _parse_interrupt_calls(interrupt_calls)
+    values = _parse_tool_results(tool_messages, parsed_calls)
+
+    run_ids = {call.run_id for call in parsed_calls.values()}
+    state_tokens = {call.state_token for call in parsed_calls.values()}
+    if len(run_ids) != 1 or len(state_tokens) != 1:
+        raise InvalidResumeRequestError(
+            "All interrupt tool calls in one exchange must belong to the same run "
+            "and interrupt generation."
+        )
+
+    return InterruptResume(
+        run_id=run_ids.pop(),
+        state_token=state_tokens.pop(),
+        values=values,
+    )
+
+
+def _trailing_tool_start(
+    messages: list[ChatCompletionRequestMessage],
+) -> int | None:
     if not messages or messages[-1].role != Role.TOOL:
-        return NO_RESUME
+        return None
 
-    tool_message = messages[-1]
-    if not tool_message.tool_call_id:
-        raise InvalidResumeRequestError(
-            "Interrupt resume tool messages must include tool_call_id."
-        )
+    index = len(messages) - 1
+    while index > 0 and messages[index - 1].role == Role.TOOL:
+        index -= 1
+    return index
 
-    if not tool_message.tool_call_id.startswith(INTERRUPT_TOOL_CALL_ID_PREFIX):
-        raise InvalidResumeRequestError(
-            "Tool response is not for a LangGraph interrupt tool call."
-        )
 
-    if tool_message.tool_call_id == INTERRUPT_TOOL_CALL_ID_PREFIX:
-        raise InvalidResumeRequestError("Interrupt resume tool_call_id is invalid.")
+def _is_interrupt_tool_result(message: ChatCompletionRequestMessage) -> bool:
+    return bool(
+        message.tool_call_id
+        and message.tool_call_id.startswith(INTERRUPT_TOOL_CALL_ID_PREFIX)
+    )
+
+
+def _parse_interrupt_calls(calls: list[ToolCall]) -> dict[str, _InterruptCall]:
+    parsed: dict[str, _InterruptCall] = {}
+    for call in calls:
+        if call.id in parsed:
+            raise InvalidResumeRequestError(
+                "Interrupt assistant tool_call IDs must be unique."
+            )
+        parsed[call.id] = _parse_interrupt_call(call)
+    return parsed
+
+
+def _parse_interrupt_call(call: ToolCall) -> _InterruptCall:
+    if not call.id.startswith(INTERRUPT_TOOL_CALL_ID_PREFIX):
+        raise InvalidResumeRequestError("Interrupt assistant tool_call ID is invalid.")
+
+    interrupt_id = call.id.removeprefix(INTERRUPT_TOOL_CALL_ID_PREFIX)
+    if not interrupt_id:
+        raise InvalidResumeRequestError("Interrupt assistant tool_call ID is invalid.")
 
     try:
-        payload = json.loads(tool_message.content or "")
-    except json.JSONDecodeError as e:
+        arguments = _load_json(call.function.arguments)
+    except (TypeError, ValueError) as exc:
         raise InvalidResumeRequestError(
-            'Interrupt resume tool content must be JSON like {"resume": "..."}'
-        ) from e
+            "Interrupt assistant tool arguments must be valid JSON."
+        ) from exc
 
-    if not isinstance(payload, dict) or "resume" not in payload:
+    if not isinstance(arguments, dict):
         raise InvalidResumeRequestError(
-            'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            "Interrupt assistant tool arguments must be a JSON object."
+        )
+    if set(arguments) != _INTERRUPT_ARGUMENT_FIELDS:
+        raise InvalidResumeRequestError(
+            "Interrupt assistant tool arguments must contain exactly run_id, "
+            "state_token, and payload."
         )
 
-    return payload["resume"]
+    run_id = _required_string_argument(arguments, "run_id")
+    state_token = _required_string_argument(arguments, "state_token")
+
+    return _InterruptCall(
+        interrupt_id=interrupt_id,
+        run_id=run_id,
+        state_token=state_token,
+    )
+
+
+def _required_string_argument(arguments: dict[str, Any], name: str) -> str:
+    value = arguments.get(name)
+    if not isinstance(value, str) or not value:
+        raise InvalidResumeRequestError(
+            f"Interrupt assistant tool arguments must include {name}."
+        )
+    return value
+
+
+def _parse_tool_results(
+    messages: list[ChatCompletionRequestMessage],
+    calls: dict[str, _InterruptCall],
+) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    for message in messages:
+        tool_call_id = message.tool_call_id
+        if not tool_call_id:
+            raise InvalidResumeRequestError(
+                "Interrupt resume tool messages must include tool_call_id."
+            )
+        if tool_call_id not in calls:
+            raise InvalidResumeRequestError(
+                "Interrupt resume tool_call_id does not match the assistant request."
+            )
+        interrupt_id = calls[tool_call_id].interrupt_id
+        if interrupt_id in results:
+            raise InvalidResumeRequestError(
+                "Interrupt resume tool_call_id values must be unique."
+            )
+
+        try:
+            payload = _load_json(message.content or "")
+        except (TypeError, ValueError) as exc:
+            raise InvalidResumeRequestError(
+                'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            ) from exc
+
+        if not isinstance(payload, dict) or "resume" not in payload:
+            raise InvalidResumeRequestError(
+                'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            )
+        results[interrupt_id] = payload["resume"]
+
+    if set(results) != {call.interrupt_id for call in calls.values()}:
+        raise InvalidResumeRequestError(
+            "Every interrupt tool call must have exactly one tool result."
+        )
+    return results
+
+
+def _load_json(value: str) -> Any:
+    return json.loads(value, parse_constant=_reject_json_constant)
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"Unsupported JSON constant: {value}")

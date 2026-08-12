@@ -68,7 +68,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
-| PostgreSQL | LangGraph checkpoints and Chainlit persistence | Official image with a demo-owned bind directory |
+| PostgreSQL | Pending LangGraph interrupts, cross-worker run coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 
 Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
 the OpenAI wire contract without importing the package. Their dynamic clients
@@ -81,13 +81,29 @@ LGOS model-detail extension.
 
 | Demo client | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
 | --- | --- | --- | --- | --- | --- |
-| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Dedicated approval UI | Native status task list and live activity panel | Markdown content |
-| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Approval through the Pipe | Native status updates | Streaming annotations and Markdown |
+| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Dedicated live approval adapter | Native status task list and live activity panel | Markdown content |
+| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Live approval through the Pipe | Native status updates | Streaming annotations and Markdown |
 | Open WebUI static example | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
-Direct OpenAI SDK clients need no demo adapter. They can use every core field
-their own application handles, as shown in
+Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
+An interrupt still uses standard OpenAI `tool_calls`, but a client application
+must recognize `langgraph_interrupt`, collect human answers, and replay the
+canonical assistant/tool exchange. The Chainlit and Open WebUI adapters show
+that client behavior without importing LGOS. See
 [OpenAI Clients](../tutorials/openai-clients.md).
+
+## Persistence Boundary
+
+The UI owns chat history; LGOS stores only resumable interrupt state. PostgreSQL
+provides both checkpoints and cross-worker coordination, with no Redis service.
+See [Demo Graphs](graphs.md#interrupt-runtime) for the server lifecycle and
+[OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
+for the normative replay and retention contract.
+
+Chainlit persists its pending tool-call ledger with a documented crash window;
+the Open WebUI adapter is live-request-only. Their exact recovery boundaries
+are documented on the [Chainlit](chainlit.md#interrupt-demo) and
+[Open WebUI](open-webui.md#interrupt-approval) pages.
 
 For exact commands and environment ownership, use
 [Demo Settings and Commands](reference.md). To build your own application,

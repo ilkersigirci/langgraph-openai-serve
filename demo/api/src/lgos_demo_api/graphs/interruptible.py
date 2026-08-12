@@ -8,6 +8,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.graph.coordination import RunCoordinator
 
 
 class ApprovalState(TypedDict, total=False):
@@ -24,10 +25,13 @@ def request_approval(state: ApprovalState) -> dict[str, str]:
         }
     )
 
-    if str(decision).strip().lower() in {"approve", "approved", "yes", "y"}:
+    normalized_decision = str(decision).strip().lower()
+    if normalized_decision == "approve":
         response = f"Approved agent action: {state['request']}"
-    else:
+    elif normalized_decision == "reject":
         response = f"Rejected agent action: {state['request']}"
+    else:
+        raise ValueError("Approval decision must be 'approve' or 'reject'.")
 
     return {"response": response}
 
@@ -57,6 +61,7 @@ def output_to_text(output: ApprovalState) -> str:
 
 def create_interruptible_graph_config(
     graph_factory: Callable[[], CompiledStateGraph],
+    run_coordinator: RunCoordinator,
 ) -> GraphConfig:
     """Create the interrupt demo config around its lifespan-managed graph."""
     return GraphConfig(
@@ -65,6 +70,7 @@ def create_interruptible_graph_config(
         request_to_input=request_to_input,
         output_to_text=output_to_text,
         features={GraphFeature.INTERRUPTS},
+        run_coordinator=run_coordinator,
     )
 
 

@@ -31,7 +31,6 @@ def _configured_model() -> SimpleNamespace:
     )
 
 
-@pytest.mark.anyio
 async def test_uservalves_simple_forwards_only_changed_user_valves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -66,7 +65,6 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
     assert pipe._runtime_settings_metadata({"valves": pipe.UserValves()}) == {}
 
 
-@pytest.mark.anyio
 async def test_uservalves_simple_uses_the_configured_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -102,7 +100,6 @@ def test_uservalves_simple_requires_a_provider_qualified_model() -> None:
         pipe._model_request()
 
 
-@pytest.mark.anyio
 async def test_uservalves_simple_reports_an_invalid_model() -> None:
     pipe = Pipe()
     pipe.valves.MODEL = "simple-graph"
@@ -114,7 +111,6 @@ async def test_uservalves_simple_reports_an_invalid_model() -> None:
     ]
 
 
-@pytest.mark.anyio
 async def test_uservalves_simple_requires_advertised_runtime_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -151,7 +147,6 @@ async def test_uservalves_simple_requires_advertised_runtime_settings(
     )
 
 
-@pytest.mark.anyio
 async def test_uservalves_simple_warns_when_metadata_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

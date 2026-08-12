@@ -24,7 +24,6 @@ def _registry() -> GraphRegistry:
     )
 
 
-@pytest.mark.anyio
 async def test_keyword_extraction_falls_back_to_general() -> None:
     result = await extract_keywords(KeywordState(normalized_question="Hello."))
 
@@ -34,7 +33,6 @@ async def test_keyword_extraction_falls_back_to_general() -> None:
     }
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("question", "expected"),
     [
@@ -67,7 +65,6 @@ async def test_routes_to_the_expected_specialist(
     assert result.output == expected
 
 
-@pytest.mark.anyio
 async def test_streams_the_selected_nested_subgraphs_in_order(make_request) -> None:
     request = make_request(
         "complex-subgraphs",

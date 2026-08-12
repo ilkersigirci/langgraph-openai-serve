@@ -1,17 +1,22 @@
 import importlib
 import logging.config
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
     Role,
 )
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
+from lgos_demo_api.checkpointer import PostgresRuntime
 from lgos_demo_api.graphs.simple import SimpleContext
 
 DOCUMENTED_MODEL_IDS = {
@@ -33,26 +38,27 @@ def demo_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> FastAPI:
     monkeypatch.setattr(logging.config, "dictConfig", lambda _: None)
-    return importlib.import_module("lgos_demo_api.app").app
+    app_module = importlib.import_module("lgos_demo_api.app")
+    return app_module.create_custom_app()
 
 
 @pytest.fixture
 async def openai_client(demo_app: FastAPI) -> AsyncIterator[AsyncOpenAI]:
-    http_client = AsyncClient(
-        transport=ASGITransport(app=demo_app),
-        base_url="http://test",
-    )
-    openai_client = AsyncOpenAI(
-        api_key="test",
-        base_url="http://test/v1",
-        http_client=http_client,
-        max_retries=0,
-    )
-    yield openai_client
-    await openai_client.close()
+    async with (
+        AsyncClient(
+            transport=ASGITransport(app=demo_app),
+            base_url="http://test",
+        ) as http_client,
+        AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=http_client,
+            max_retries=0,
+        ) as openai_client,
+    ):
+        yield openai_client
 
 
-@pytest.mark.anyio
 async def test_app_lists_exactly_the_documented_models(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -84,7 +90,6 @@ async def test_app_lists_exactly_the_documented_models(
         }
 
 
-@pytest.mark.anyio
 async def test_simple_model_retrieval_exposes_runtime_settings(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -104,7 +109,6 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
     ]
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("metadata", "expected_context"),
     [
@@ -136,7 +140,6 @@ async def test_simple_model_builds_its_runtime_context(
     assert await graph_config.build_context(request, graph) == expected_context
 
 
-@pytest.mark.anyio
 async def test_custom_io_demo_works_through_openai_client(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -149,3 +152,36 @@ async def test_custom_io_demo_works_through_openai_client(
     assert response.choices[0].message.content == (
         "demo-user asked: Show me custom schemas."
     )
+
+
+async def test_lifespan_installs_shared_interrupt_runtime(
+    demo_app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    app_module = importlib.import_module("lgos_demo_api.app")
+    coordinator = InMemoryRunCoordinator()
+
+    runtime = PostgresRuntime(
+        checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
+        run_coordinator=coordinator,  # type: ignore[arg-type]
+    )
+
+    @asynccontextmanager
+    async def postgres_runtime(postgres_uri: str):
+        assert postgres_uri == app_module.settings.POSTGRES_URI
+        yield runtime
+
+    runtime_factory = Mock(wraps=postgres_runtime)
+    monkeypatch.setattr(app_module, "postgres_runtime", runtime_factory)
+
+    async with app_module.lifespan(demo_app):
+        assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
+        assert demo_app.state.interruptible_run_coordinator is coordinator
+
+        config = demo_app.state.graph_registry.get_graph("interruptible-approval")
+        assert config.run_coordinator is not None
+        async with config.run_coordinator("thread-1"):
+            pass
+
+    runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)

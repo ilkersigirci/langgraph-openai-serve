@@ -12,12 +12,11 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from lgos_openwebui.functions import generic
 from lgos_openwebui.functions.generic import Pipe
 
-pytestmark = pytest.mark.anyio
-
 USER_REQUEST = "Refund order ORDER-123"
-THREAD_ID = "openwebui:function:chat-1"
 UPSTREAM_MODEL_ID = "interruptible-approval"
 MODEL_ID = f"lgos-a/{UPSTREAM_MODEL_ID}"
+RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
+STATE_TOKEN = "state-token-1"
 MARKDOWN_DELTAS = (
     "Read the [source](https://example.com/source), ",
     "view ![diagram](https://example.com/diagram.png), ",
@@ -60,7 +59,7 @@ class ScriptedChat:
         *steps: tuple[Sequence[str], ChatCompletion],
     ) -> None:
         self._steps = steps
-        self.calls: list[tuple[list[dict[str, Any]], str, str]] = []
+        self.calls: list[tuple[list[dict[str, Any]], str]] = []
         self.runtime_metadata_calls: list[dict[str, str] | None] = []
         self.include_client_events_calls: list[bool] = []
 
@@ -70,13 +69,12 @@ class ScriptedChat:
         *,
         client: Any,
         messages: list[dict[str, Any]],
-        thread_id: str,
         model_id: str,
         runtime_metadata: dict[str, str] | None = None,
         include_client_events: bool = False,
     ) -> AsyncIterator[ScriptedStream]:
         step_index = len(self.calls)
-        self.calls.append((messages, thread_id, model_id))
+        self.calls.append((messages, model_id))
         self.runtime_metadata_calls.append(runtime_metadata)
         self.include_client_events_calls.append(include_client_events)
         if step_index >= len(self._steps):
@@ -90,6 +88,16 @@ async def _collect_response(
     pipe_response: AsyncIterator[str | dict[str, Any]],
 ) -> list[str | dict[str, Any]]:
     return [chunk async for chunk in pipe_response]
+
+
+async def _run_interrupt_pipe(event_call: Any) -> list[str | dict[str, Any]]:
+    return await _collect_response(
+        Pipe().pipe(
+            body=_body(USER_REQUEST),
+            __event_call__=event_call,
+            __metadata__={"chat_id": "chat-1", "session_id": "session-1"},
+        )
+    )
 
 
 def _body(
@@ -148,18 +156,40 @@ def configured_model_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def _interrupt_call(
+    interrupt_id: str,
+    payload: object,
+    *,
+    arguments: object | None = None,
+    state_token: str = STATE_TOKEN,
+) -> dict[str, Any]:
+    arguments = (
+        {
+            "run_id": RUN_ID,
+            "state_token": state_token,
+            "payload": payload,
+        }
+        if arguments is None
+        else arguments
+    )
+    return {
+        "id": f"lg_interrupt_{interrupt_id}",
+        "type": "function",
+        "function": {
+            "name": "langgraph_interrupt",
+            "arguments": json.dumps(arguments, separators=(",", ":")),
+        },
+    }
+
+
 def _interrupt_response(arguments: object | None = None) -> ChatCompletion:
-    arguments = {"payload": INTERRUPT_PAYLOAD} if arguments is None else arguments
     return _completion(
         tool_calls=[
-            {
-                "id": "call-1",
-                "type": "function",
-                "function": {
-                    "name": "langgraph_interrupt",
-                    "arguments": json.dumps(arguments),
-                },
-            }
+            _interrupt_call(
+                "interrupt-1",
+                INTERRUPT_PAYLOAD,
+                arguments=arguments,
+            )
         ]
     )
 
@@ -242,6 +272,7 @@ async def test_pipe_lists_registered_models(
         base_url="http://lgos-bifrost:8080/v1",
         api_key="DUMMY",
         timeout=45,
+        max_retries=0,
     )
     client.models.list.assert_awaited_once_with()
     retrieve_model.assert_not_awaited()
@@ -263,9 +294,7 @@ async def test_pipe_preserves_dots_in_selected_model(
     )
 
     assert chunks == ["ok"]
-    assert chat.calls == [
-        ([{"role": "user", "content": "hello"}], THREAD_ID, "lgos-a/graph.v2")
-    ]
+    assert chat.calls == [([{"role": "user", "content": "hello"}], "lgos-a/graph.v2")]
     assert chat.include_client_events_calls == [False]
 
 
@@ -394,7 +423,6 @@ async def test_pipe_resumes_confirmed_interrupt(
     decision: str,
     answer_deltas: tuple[str, ...],
 ) -> None:
-    pipe = Pipe()
     chat = ScriptedChat(
         ((), _interrupt_response()),
         (answer_deltas, _completion("".join(answer_deltas))),
@@ -407,13 +435,7 @@ async def test_pipe_resumes_confirmed_interrupt(
 
     monkeypatch.setattr(generic, "_chat", chat)
 
-    chunks = await _collect_response(
-        pipe.pipe(
-            body=_body(USER_REQUEST),
-            __event_call__=confirm,
-            __metadata__={"chat_id": "chat-1", "session_id": "session-1"},
-        )
-    )
+    chunks = await _run_interrupt_pipe(confirm)
 
     assert chunks == list(answer_deltas)
     assert events == [
@@ -423,31 +445,275 @@ async def test_pipe_resumes_confirmed_interrupt(
         }
     ]
     (
-        (initial_messages, initial_thread_id, initial_model_id),
-        (resume_messages, resume_thread_id, resume_model_id),
+        (initial_messages, initial_model_id),
+        (resume_messages, resume_model_id),
     ) = chat.calls
     assert initial_messages == [{"role": "user", "content": USER_REQUEST}]
-    assert resume_messages[0] == initial_messages[0]
-    assert resume_messages[1]["tool_calls"][0]["id"] == "call-1"
-    assert json.loads(resume_messages[1]["tool_calls"][0]["function"]["arguments"]) == {
-        "payload": INTERRUPT_PAYLOAD
+    assert resume_messages[0]["tool_calls"][0]["id"] == ("lg_interrupt_interrupt-1")
+    assert json.loads(resume_messages[0]["tool_calls"][0]["function"]["arguments"]) == {
+        "run_id": RUN_ID,
+        "state_token": STATE_TOKEN,
+        "payload": INTERRUPT_PAYLOAD,
     }
-    assert resume_messages[2] == {
+    assert resume_messages[1] == {
         "role": "tool",
-        "tool_call_id": "call-1",
+        "tool_call_id": "lg_interrupt_interrupt-1",
         "content": json.dumps({"resume": decision}),
     }
-    assert (initial_thread_id, resume_thread_id) == (THREAD_ID, THREAD_ID)
     assert (initial_model_id, resume_model_id) == (MODEL_ID, MODEL_ID)
 
 
-async def test_pipe_uses_fallback_confirmation_for_malformed_interrupt(
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        pytest.param("Approve transfer?", "Approve transfer?", id="string"),
+        pytest.param(
+            ["transfer", {"amount": 42}],
+            '[\n  "transfer",\n  {\n    "amount": 42\n  }\n]',
+            id="list",
+        ),
+        pytest.param(42, "42", id="number"),
+        pytest.param(True, "true", id="boolean"),
+        pytest.param(None, "null", id="null"),
+    ],
+)
+async def test_approval_event_renders_every_json_payload(
+    payload: object,
+    message: str,
+) -> None:
+    tool_call = (
+        _completion(tool_calls=[_interrupt_call("interrupt-1", payload)])
+        .choices[0]
+        .message.tool_calls[0]
+    )
+
+    assert generic._interrupt_payload(tool_call) == payload
+    assert generic._approval_event(tool_call) == {
+        "type": "confirmation",
+        "data": {
+            "title": "Approve this agent action?",
+            "message": message,
+        },
+    }
+
+
+async def test_approval_event_rejects_a_missing_payload() -> None:
+    arguments = {
+        "run_id": RUN_ID,
+        "state_token": STATE_TOKEN,
+    }
+    tool_call = (
+        _completion(
+            tool_calls=[
+                _interrupt_call("interrupt-1", {}, arguments=arguments),
+            ]
+        )
+        .choices[0]
+        .message.tool_calls[0]
+    )
+
+    assert generic._approval_event(tool_call) is None
+
+
+async def test_pipe_collects_every_interrupt_and_resumes_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pipe = Pipe()
+    first_call = _interrupt_call(
+        "interrupt-1",
+        {"question": "Approve refund?", "request": USER_REQUEST},
+    )
+    second_call = _interrupt_call(
+        "interrupt-2",
+        {
+            "question": "Approve notification?",
+            "request": "Email the customer",
+        },
+    )
+    interrupt_response = _completion(tool_calls=[first_call, second_call])
+    chat = ScriptedChat(
+        ((), interrupt_response),
+        (("Applied.",), _completion("Applied.")),
+    )
+    events: list[dict[str, Any]] = []
+    answers = iter([True, False])
+
+    async def confirm(event: dict[str, Any]) -> bool:
+        events.append(event)
+        return next(answers)
+
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await _run_interrupt_pipe(confirm)
+
+    assert chunks == ["Applied."]
+    assert events == [
+        {
+            "type": "confirmation",
+            "data": {"title": "Approve refund?", "message": USER_REQUEST},
+        },
+        {
+            "type": "confirmation",
+            "data": {
+                "title": "Approve notification?",
+                "message": "Email the customer",
+            },
+        },
+    ]
+    assert len(chat.calls) == 2
+    resume_messages = chat.calls[1][0]
+    assert resume_messages[0] == {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [first_call, second_call],
+    }
+    assert resume_messages[1:] == [
+        {
+            "role": "tool",
+            "tool_call_id": "lg_interrupt_interrupt-1",
+            "content": json.dumps({"resume": "approve"}),
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "lg_interrupt_interrupt-2",
+            "content": json.dumps({"resume": "reject"}),
+        },
+    ]
+
+
+async def test_pipe_keeps_the_ledger_across_interrupt_rounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_call = _interrupt_call("interrupt-1", {"question": "First?"})
+    second_call = _interrupt_call(
+        "interrupt-2",
+        {"question": "Second?"},
+        state_token="state-token-2",
+    )
+    chat = ScriptedChat(
+        ((), _completion(tool_calls=[first_call])),
+        ((), _completion(tool_calls=[second_call])),
+        (("Done.",), _completion("Done.")),
+    )
+    answers = iter([True, False])
+
+    async def confirm(_: dict[str, Any]) -> bool:
+        return next(answers)
+
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await _run_interrupt_pipe(confirm)
+
+    assert chunks == ["Done."]
+    assert len(chat.calls) == 3
+    first_ledger = chat.calls[1][0]
+    second_ledger = chat.calls[2][0]
+    assert [message["role"] for message in first_ledger] == ["assistant", "tool"]
+    assert [message["role"] for message in second_ledger] == ["assistant", "tool"]
+    assert first_ledger[0]["tool_calls"] == [first_call]
+    assert second_ledger[0]["tool_calls"] == [second_call]
+
+
+async def test_pipe_does_not_partially_resume_cancelled_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat = ScriptedChat(
+        (
+            (),
+            _completion(
+                tool_calls=[
+                    _interrupt_call("interrupt-1", {"question": "First?"}),
+                    _interrupt_call("interrupt-2", {"question": "Second?"}),
+                ]
+            ),
+        )
+    )
+    events: list[dict[str, Any]] = []
+
+    async def confirm(event: dict[str, Any]) -> bool | None:
+        events.append(event)
+        return None
+
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await _run_interrupt_pipe(confirm)
+
+    assert chunks == ["Open WebUI approval was cancelled or timed out."]
+    assert len(events) == 1
+    assert len(chat.calls) == 1
+
+
+async def test_pipe_reports_host_approval_failure_without_resuming_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat = ScriptedChat(
+        (
+            (),
+            _completion(
+                tool_calls=[
+                    _interrupt_call("interrupt-1", {"question": "First?"}),
+                    _interrupt_call("interrupt-2", {"question": "Second?"}),
+                ]
+            ),
+        )
+    )
+    event_call = AsyncMock(
+        return_value={
+            "error": "Event call timed out. The browser tab may be inactive or closed."
+        }
+    )
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await _run_interrupt_pipe(event_call)
+
+    assert chunks == [
+        "Open WebUI approval failed: Event call timed out. "
+        "The browser tab may be inactive or closed."
+    ]
+    event_call.assert_awaited_once_with(
+        {
+            "type": "confirmation",
+            "data": {
+                "title": "First?",
+                "message": json.dumps(
+                    {"question": "First?"},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            },
+        }
+    )
+    assert len(chat.calls) == 1
+
+
+@pytest.mark.parametrize("mixed", [False, True], ids=["ordinary", "mixed"])
+async def test_pipe_reports_unsupported_tool_call_batches(
+    monkeypatch: pytest.MonkeyPatch,
+    mixed: bool,
+) -> None:
+    ordinary_call = {
+        "id": "call_other",
+        "type": "function",
+        "function": {"name": "other_tool", "arguments": "{}"},
+    }
+    tool_calls = [ordinary_call]
+    if mixed:
+        tool_calls.insert(0, _interrupt_call("interrupt-1", INTERRUPT_PAYLOAD))
+    chat = ScriptedChat(((), _completion(tool_calls=tool_calls)))
+    event_call = AsyncMock(return_value=True)
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await _run_interrupt_pipe(event_call)
+
+    assert chunks == ["Open WebUI received an unsupported tool-call batch."]
+    event_call.assert_not_awaited()
+    assert len(chat.calls) == 1
+
+
+async def test_pipe_does_not_resume_a_malformed_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat = ScriptedChat(
         ((), _interrupt_response([])),
-        (("Approved ", "agent action."), _completion("Approved agent action.")),
     )
     events: list[dict[str, Any]] = []
 
@@ -457,28 +723,37 @@ async def test_pipe_uses_fallback_confirmation_for_malformed_interrupt(
 
     monkeypatch.setattr(generic, "_chat", chat)
 
-    chunks = await _collect_response(
-        pipe.pipe(
-            body=_body(USER_REQUEST),
-            __event_call__=confirm,
-            __metadata__={"chat_id": "chat-1"},
-        )
+    chunks = await _run_interrupt_pipe(confirm)
+
+    assert chunks == ["Open WebUI received an unsupported interrupt payload."]
+    assert events == []
+    assert len(chat.calls) == 1
+
+
+async def test_chat_omits_metadata_when_no_ephemeral_options_are_needed() -> None:
+    messages = [{"role": "user", "content": "hello"}]
+    stream = ScriptedStream(("ok",), _completion("ok"))
+    stream_context = AsyncMock()
+    stream_context.__aenter__.return_value = stream
+    client = AsyncMock()
+    stream_factory = Mock(return_value=stream_context)
+    client.chat.completions.stream = stream_factory
+
+    async with generic._chat(
+        client=client,
+        messages=messages,
+        model_id="lgos-a/interruptible-approval",
+    ):
+        pass
+
+    stream_factory.assert_called_once_with(
+        model="interruptible-approval",
+        extra_headers={"x-model-provider": "lgos-a"},
+        messages=messages,
     )
 
-    assert chunks == ["Approved ", "agent action."]
-    assert events == [
-        {
-            "type": "confirmation",
-            "data": {
-                "title": "Approve this agent action?",
-                "message": "{}",
-            },
-        }
-    ]
-    assert json.loads(chat.calls[1][0][-1]["content"]) == {"resume": "approve"}
 
-
-async def test_chat_sends_model_and_thread_metadata(
+async def test_chat_sends_model_and_ephemeral_request_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     messages = [{"role": "user", "content": "hello"}]
@@ -493,7 +768,6 @@ async def test_chat_sends_model_and_thread_metadata(
     async with generic._chat(
         client=client,
         messages=messages,
-        thread_id=THREAD_ID,
         model_id="lgos-a/namespace/graph.with.dots",
         runtime_metadata={"langgraph_runtime_settings": '{"mode":"detailed"}'},
         include_client_events=True,
@@ -512,7 +786,6 @@ async def test_chat_sends_model_and_thread_metadata(
         extra_headers={"x-model-provider": "lgos-a"},
         messages=messages,
         metadata={
-            "langgraph_thread_id": THREAD_ID,
             "langgraph_stream_events": "v1",
             "langgraph_runtime_settings": '{"mode":"detailed"}',
         },
@@ -612,7 +885,7 @@ async def test_pipe_streams_markdown_unchanged(
     )
 
     assert chunks == list(MARKDOWN_DELTAS)
-    assert chat.calls[0][1:] == (THREAD_ID, "lgos-a/lgos-rag")
+    assert chat.calls[0][1:] == ("lgos-a/lgos-rag",)
 
 
 @pytest.mark.parametrize(
@@ -659,7 +932,7 @@ async def test_pipe_forwards_annotations_only_when_streaming(
             }
         )
     assert chunks == expected
-    assert chat.calls[0][1:] == (THREAD_ID, "lgos-a/citation-events")
+    assert chat.calls[0][1:] == ("lgos-a/citation-events",)
 
 
 @pytest.mark.parametrize(

@@ -14,7 +14,6 @@ from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.graph.client_settings import RUNTIME_SETTINGS_METADATA_KEY
 from tests.graph.support.message import make_message_graph
 
-pytestmark = pytest.mark.anyio
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 

@@ -278,12 +278,76 @@ request uses server defaults again.
 ## Interrupt Resume
 
 Interrupt-enabled graphs use OpenAI tool calls. Retrieve the selected model and
-check `langgraph_openai_serve.features` for `interrupts` before starting. Pass
-`metadata.langgraph_thread_id`, then resume `langgraph_interrupt` with a matching
-`tool` message. The thread ID restores checkpoint state only; include the same
-non-default `langgraph_runtime_settings` string on the resume request when the resumed run
-needs those settings. See
-[OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
+check `langgraph_openai_serve.features` for `interrupts` before starting. No
+metadata is required for a first request: LGOS generates a UUID operation ID and
+places it in the interrupt arguments. Supply your own non-nil UUID in
+`metadata.langgraph_run_id` when an initial request might be retried after its
+response is lost. Generate a new UUID per operation; terminal checkpoints are
+deleted, so LGOS retains no tombstone that could reject a later ordinary initial
+request reusing the same UUID.
+
+```python
+import json
+from uuid import uuid4
+
+run_id = str(uuid4())
+metadata = {"langgraph_run_id": run_id}
+messages = [
+    {"role": "user", "content": "Perform the protected action"}
+]
+
+paused = client.chat.completions.create(
+    model="interruptible",
+    messages=messages,
+    metadata=metadata,
+)
+assistant = paused.choices[0].message
+tool_calls = assistant.tool_calls or []
+if not tool_calls:
+    raise RuntimeError("The graph completed without interrupting")
+
+# Render every pending call to the user, then collect one decision per call.
+decisions = {
+    tool_call.id: "approved" for tool_call in tool_calls
+}
+
+assistant_message = {
+    "role": "assistant",
+    "content": assistant.content,
+    "tool_calls": [
+        tool_call.model_dump(mode="json") for tool_call in tool_calls
+    ],
+}
+tool_messages = [
+    {
+        "role": "tool",
+        "tool_call_id": tool_call.id,
+        "content": json.dumps({"resume": decisions[tool_call.id]}),
+    }
+    for tool_call in tool_calls
+]
+
+completed = client.chat.completions.create(
+    model="interruptible",
+    messages=[assistant_message, *tool_messages],
+    metadata=metadata,
+)
+```
+
+The resume request must replay the complete assistant `tool_calls` message,
+unchanged, followed by exactly one `tool` message for each call. Answer all
+parallel interrupts in one batch; do not resume a subset. For streaming, first
+assemble the complete assistant tool-call message from every delta and persist
+that canonical message before asking for decisions.
+
+The run ID comes from the tool arguments, making resume metadata optional; if
+resent, it must match. Runtime settings remain per-request. Dedicated approval
+clients should use `OpenAI(max_retries=0)` (or JavaScript `maxRetries: 0`)
+because a lost terminal response is not reconstructable from the deleted
+checkpoint.
+
+See [OpenAI compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
+for validation errors, stale-state conflicts, and recovery rules.
 
 ## Diagnostics
 

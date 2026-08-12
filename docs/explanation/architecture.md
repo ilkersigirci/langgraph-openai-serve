@@ -15,13 +15,22 @@ flowchart LR
   subgraph execution["LGOS adapter and execution"]
     direction TB
     E["GraphConfig<br/>resolve graph and adapt input/context"]
-    E --> F["Runner<br/>collect or stream events"]
-    F -->|graph.astream| G["LangGraph graph"]
-    G --> H["LGOS response rendering<br/>OpenAI completion or SSE chunks"]
+    E --> F["Run preparation<br/>identity and single-flight lease"]
+    F --> G["Runner<br/>collect or stream events"]
+    G -->|graph.astream| H["LangGraph graph"]
+    H --> I["LGOS response rendering<br/>OpenAI completion or SSE chunks"]
+  end
+
+  subgraph durable["Interrupt-only durable boundary"]
+    direction TB
+    J["Async checkpointer"]
+    K["Cross-process run coordinator"]
   end
 
   D --> E
-  H -.->|OpenAI-compatible response| A
+  F -.->|lease one scope/model/run key| K
+  H -.->|exit checkpoint / resume / cleanup| J
+  I -.->|OpenAI-compatible response| A
 ```
 
 ## Components
@@ -41,23 +50,34 @@ present, and tells the runner which optional `GraphFeature` values are enabled.
 The runner is the only layer that calls LangGraph. It executes the prepared run
 and returns graph output or stream events for OpenAI response rendering.
 
+Ordinary chats remain request-scoped and rely on the UI's message history.
+Interrupt-enabled graphs add a narrow durable boundary: an asynchronous
+checkpointer stores paused workflow state, while a run coordinator serializes
+inspection and execution for the same scope/model/run key across replicas. PostgreSQL
+can provide both roles; Redis is not required by this design. The demo uses a
+PostgreSQL checkpointer and session advisory locks through one shared pool per
+API process.
+
 Endpoint paths and settings live in [Reference](../reference.md).
 
 ## Request Flow
 
-1. An OpenAI-compatible client sends a chat completion request.
-2. FastAPI validates the request schema.
-3. The requested `model` is resolved from `GraphRegistry`.
-4. OpenAI messages are converted to LangChain messages.
-5. `GraphConfig` builds graph input and typed runtime context. Run preparation
-   separately builds `RunnableConfig` from callbacks and an optional checkpoint
-   thread ID.
-6. The runner passes input, runtime context, and runnable config as separate
-   LangGraph arguments.
-7. The runner consumes `graph.astream` in both response modes. It either collects
-   root values and custom events before returning a complete response, or passes
-   message, custom, and interrupt events to the SSE response service.
-8. LGOS renders the result as an OpenAI chat completion or SSE chunk sequence.
+1. FastAPI validates the chat request and resolves its `model` through
+   `GraphRegistry`.
+2. `GraphConfig` converts messages and builds graph input, runtime context, and
+   runnable configuration.
+3. Interrupt preparation derives the scoped operation key, acquires its
+   coordinator lease, and validates any resume against durable state.
+4. The runner consumes `graph.astream`, collecting a complete response or
+   forwarding eligible message and custom events to the SSE service.
+5. After execution quiesces, pending interrupts become one durable OpenAI
+   tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
+6. LGOS releases the lease and renders an OpenAI completion or SSE sequence.
+
+The tool-call assistant message is part of the client-owned chat ledger. A UI
+that supports reconnectable approvals persists that exact message and the
+matching tool results; the backend does not become a general chat-history
+database.
 
 See [LangGraph Integration](langgraph-integration.md) for adapter and runner
 details, [OpenAI compatibility](openai-compatibility.md#tool-calls-and-interrupts)

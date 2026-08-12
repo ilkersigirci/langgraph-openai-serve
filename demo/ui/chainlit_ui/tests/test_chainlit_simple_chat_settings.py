@@ -52,7 +52,6 @@ def chat_settings_spy(monkeypatch: pytest.MonkeyPatch, chat_settings):
     return factory, form
 
 
-@pytest.mark.anyio
 async def test_discovered_settings_are_published(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
@@ -91,7 +90,6 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
-@pytest.mark.anyio
 async def test_chat_profiles_use_list_only_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -130,7 +128,6 @@ async def test_chat_profiles_use_list_only_discovery(
     retrieve.assert_not_awaited()
 
 
-@pytest.mark.anyio
 async def test_model_retrieval_failure_disables_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -164,7 +161,6 @@ async def test_model_retrieval_failure_disables_settings(
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
-@pytest.mark.anyio
 async def test_model_without_extension_warns_and_clears_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -198,7 +194,6 @@ async def test_model_without_extension_warns_and_clears_settings(
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
-@pytest.mark.anyio
 async def test_missing_profile_disables_settings_and_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -224,7 +219,6 @@ async def test_missing_profile_disables_settings_and_message(
     )
 
 
-@pytest.mark.anyio
 async def test_selected_settings_reach_the_openai_request(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,

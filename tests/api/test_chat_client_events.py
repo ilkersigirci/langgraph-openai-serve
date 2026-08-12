@@ -17,8 +17,6 @@ from langgraph_openai_serve import (
 )
 from tests.graph.support.schemas import MessageState
 
-pytestmark = pytest.mark.anyio
-
 STREAM_EVENTS_METADATA = {"langgraph_stream_events": "v1"}
 PROGRESS_DATA = {"completed": 2, "total": 5}
 

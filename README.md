@@ -18,6 +18,13 @@ The equivalent `pip` command is:
 pip install langgraph-openai-serve
 ```
 
+For interrupt-enabled deployments that use PostgreSQL for checkpointing and
+cross-worker run coordination, install the optional integration:
+
+```bash
+uv add "langgraph-openai-serve[postgres]"
+```
+
 The package contains the OpenAI-compatible server integration, not a built-in
 LLM graph. Applications register their own graphs. The `demo/` checkout keeps
 each deployable application in an independent uv project with its own lockfile.

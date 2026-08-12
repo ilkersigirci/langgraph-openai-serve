@@ -107,10 +107,34 @@ Run the dedicated approval UI:
 DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 ```
 
-The HITL client adds the assistant tool call and matching tool result to the
-immediate resume request. Chainlit's saved role/content transcript is not a
-canonical tool-protocol ledger, so a future general tool-executing UI must store
-completed tool pairs explicitly.
+Initial requests need no interrupt metadata. The HITL client implements the
+[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
+it asks for every decision, sends no partial batch, and repeats when the graph
+pauses again.
+
+!!! note "Reconnect recovery and its boundary"
+
+    Before showing any approval action, the adapter sends the exact assistant
+    tool-call batch through a model-context-excluded Chainlit message. Its
+    [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
+    hook restores the newest pending batch. The next user interaction reopens
+    that approval instead of starting another run; recovery is deferred because
+    the pinned Chainlit host rebuilds the displayed thread after the resume hook.
+    That interaction is UI-only and excluded from later model context because it
+    is consumed as the recovery trigger, not as a new user request.
+    Chainlit queues data-layer writes asynchronously, with no public flush API,
+    so a process crash can still occur before that message reaches PostgreSQL.
+    Once stored, cancellation, reload, or worker loss before the resume request
+    does not require API-side chat history.
+
+    The demo does not durably cache a terminal response or a later interrupt
+    response that has not yet reached Chainlit. If the API accepts a resume but
+    the worker loses the following response, replaying the older ledger fails
+    safely as stale; the completed output or newer batch cannot be reconstructed
+    from that old ledger. Applications requiring recovery across that window
+    need a durable result/pending-response handoff in their UI boundary. They
+    must also define retention for abandoned pending runs; the demo has no
+    expiry worker.
 
 ## Streaming, Events, And Citations
 

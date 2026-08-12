@@ -188,7 +188,6 @@ def test_splits_documents_and_preserves_source_metadata(
     assert all(isinstance(chunk.metadata["start_index"], int) for chunk in chunks)
 
 
-@pytest.mark.anyio
 async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
     make_request,
     monkeypatch: pytest.MonkeyPatch,
@@ -236,7 +235,6 @@ async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
     assert DECISION_PREAMBLE not in streamed_answer
 
 
-@pytest.mark.anyio
 async def test_direct_response_skips_retrieval(
     make_request,
     monkeypatch: pytest.MonkeyPatch,
@@ -263,7 +261,6 @@ async def test_direct_response_skips_retrieval(
     assert await _stream_text(request) == HISTORY_ANSWER
 
 
-@pytest.mark.anyio
 async def test_irrelevant_retrieval_rewrites_once_then_stops(
     make_request,
     monkeypatch: pytest.MonkeyPatch,

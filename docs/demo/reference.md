@@ -33,6 +33,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make compose-dev` | Build local images; run the API and LGOS packages editable |
 | `make sync` | Synchronize all three projects from their lockfiles |
 | `make test` | Test all three projects from their lockfiles |
+| `make test-postgres` | Run the end-to-end interrupt test against PostgreSQL on port 3001 |
 | `make lint` | Check all three projects with Ruff |
 | `make check` | Run tests, lint, formatting checks, and Compose validation |
 

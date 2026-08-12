@@ -1,8 +1,8 @@
 """Chainlit UI for the LangGraph interrupt demo graph."""
 
-import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from typing import cast
 
 import chainlit as cl
@@ -28,7 +28,6 @@ from openai.types.chat import (
 from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
-    THREAD_METADATA_KEY,
     GraphFeature,
     model_extension,
 )
@@ -46,6 +45,25 @@ from lgos_chainlit.utils.clients import (
 register_auth_callback()
 
 logger = logging.getLogger(__name__)
+
+INTERRUPT_LEDGER_METADATA_KEY = "lgos_chainlit.hitl_interrupt_ledger"
+INTERRUPT_LEDGER_SCHEMA_VERSION = 1
+PENDING_LEDGER_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
+PENDING_LEDGER_STATUS = "pending"
+COMPLETED_LEDGER_STATUS = "completed"
+
+
+class InvalidInterruptLedgerError(ValueError):
+    """A persisted Chainlit interrupt ledger is unsafe to resume."""
+
+
+@dataclass(frozen=True)
+class PendingInterruptLedger:
+    """Validated pending state restored from one Chainlit message."""
+
+    message: cl.Message
+    model_id: str
+    assistant_message: ChatCompletionMessage
 
 
 @cl.set_chat_profiles
@@ -94,64 +112,247 @@ async def on_chat_start() -> None:
 
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
-    """Keep the hook registered so Chainlit restores the native chat context."""
+    """Restore the latest durable ledger for the next user interaction."""
     mark_persisted_errors_excluded(thread)
-    await _warn_if_model_metadata_is_missing()
+    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
+    try:
+        ledger = pending_interrupt_ledger(thread)
+        if ledger is not None:
+            cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
+    except InvalidInterruptLedgerError:
+        logger.exception("Persisted Chainlit HITL ledger is invalid")
+    except Exception as exc:
+        logger.exception("Chainlit HITL resume failed: %s", exc)
 
 
 @cl.on_message
-async def on_message(_message: cl.Message) -> None:
+async def on_message(message: cl.Message) -> None:
     """Reply from chat context; Chainlit adds the user message before this hook."""
     try:
-        await handle_message()
-    except asyncio.CancelledError:
-        raise
+        await handle_message(message)
     except Exception as exc:
         logger.exception("Chainlit HITL completion failed")
         await send_ui_message(f"Chat completion failed: {exc}")
 
 
-async def handle_message() -> None:
-    messages = text_only_chat_messages()
+async def handle_message(trigger_message: cl.Message | None = None) -> None:
+    """Start a run and publish every interrupt ledger before prompting.
 
-    response = await create_completion(messages)
-    assistant_message = response.choices[0].message
-    tool_call = interrupt_tool_call(assistant_message)
-
-    if tool_call is not None:
-        messages.append(assistant_tool_call_message(assistant_message, tool_call))
-        resume_value = await ask_for_resume(tool_call)
-        if resume_value is None:
-            return
-
-        messages.append(
-            ChatCompletionToolMessageParam(
-                role="tool",
-                tool_call_id=tool_call.id,
-                content=json.dumps({"resume": resume_value}),
-            )
+    Chainlit exposes public ``Message.metadata`` in restored ``ThreadDict``
+    values. A model-context-excluded assistant message therefore owns the exact
+    OpenAI tool-call ledger without private data-layer access.
+    """
+    pending = cl.user_session.get(PENDING_LEDGER_SESSION_KEY)
+    if isinstance(pending, PendingInterruptLedger):
+        if trigger_message is not None:
+            mark_model_context_excluded(trigger_message)
+            await trigger_message.update()
+        await send_ui_message(
+            "Resolve the pending approval before starting another request."
         )
-        response = await create_completion(messages)
+        await resolve_interrupts(
+            assistant_message=pending.assistant_message,
+            model_id=pending.model_id,
+            ledger_message=pending.message,
+        )
+        return
+
+    messages = text_only_chat_messages()
+    model_id = selected_model_id()
+
+    response = await create_completion(messages, model_id=model_id)
+    await resolve_interrupts(
+        assistant_message=response.choices[0].message,
+        model_id=model_id,
+    )
+
+
+async def resolve_interrupts(
+    *,
+    assistant_message: ChatCompletionMessage,
+    model_id: str,
+    ledger_message: cl.Message | None = None,
+) -> None:
+    """Resolve complete interrupt batches until the graph returns terminal text."""
+    while True:
+        tool_calls = interrupt_tool_calls(assistant_message)
+        if tool_calls is None:
+            if ledger_message is not None:
+                await mark_ledger_completed(ledger_message)
+            await send_ui_message("Received an unsupported tool-call batch.")
+            return
+        if not tool_calls:
+            break
+
+        ledger_message = await persist_pending_ledger(
+            ledger_message=ledger_message,
+            model_id=model_id,
+            assistant_message=assistant_message,
+        )
+        decisions = []
+        for tool_call in tool_calls:
+            decision = await ask_for_resume(tool_call)
+            if decision is None:
+                return
+            decisions.append(decision)
+
+        resume_messages: list[ChatCompletionMessageParam] = [
+            assistant_tool_call_message(assistant_message),
+            *[
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    content=json.dumps({"resume": decision}),
+                )
+                for tool_call, decision in zip(tool_calls, decisions, strict=True)
+            ],
+        ]
+        response = await create_completion(resume_messages, model_id=model_id)
         assistant_message = response.choices[0].message
 
-    content = assistant_message.content or ""
-    await cl.Message(content=content).send()
+    if ledger_message is not None:
+        await mark_ledger_completed(ledger_message)
+    await cl.Message(content=assistant_message.content or "").send()
 
 
 async def create_completion(
     messages: list[ChatCompletionMessageParam],
+    *,
+    model_id: str | None = None,
 ) -> ChatCompletion:
     return await openai_client.chat.completions.create(
-        **model_request(cl.user_session.get("chat_profile") or settings.HITL_MODEL),
+        **model_request(model_id or selected_model_id()),
         messages=messages,
-        metadata={THREAD_METADATA_KEY: cl.context.session.thread_id},
         user=authenticated_user_identifier(),
     )
 
 
+def selected_model_id() -> str:
+    return cl.user_session.get("chat_profile") or settings.HITL_MODEL
+
+
+async def persist_pending_ledger(
+    *,
+    ledger_message: cl.Message | None,
+    model_id: str,
+    assistant_message: ChatCompletionMessage,
+) -> cl.Message:
+    """Create or update the one public Chainlit message that owns the ledger."""
+    ledger = {
+        "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
+        "status": PENDING_LEDGER_STATUS,
+        "model_id": model_id,
+        "assistant_message": assistant_tool_call_message(assistant_message),
+    }
+    if ledger_message is None:
+        ledger_message = cl.Message(content="")
+        set_ledger_message_metadata(ledger_message, ledger)
+        await ledger_message.send()
+    else:
+        set_ledger_message_metadata(ledger_message, ledger)
+        await ledger_message.update()
+    cl.user_session.set(
+        PENDING_LEDGER_SESSION_KEY,
+        PendingInterruptLedger(
+            message=ledger_message,
+            model_id=model_id,
+            assistant_message=assistant_message,
+        ),
+    )
+    return ledger_message
+
+
+async def mark_ledger_completed(ledger_message: cl.Message) -> None:
+    """Persist a terminal marker before rendering output so resume cannot replay."""
+    set_ledger_message_metadata(
+        ledger_message,
+        {
+            "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
+            "status": COMPLETED_LEDGER_STATUS,
+        },
+    )
+    await ledger_message.update()
+    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
+
+
+def set_ledger_message_metadata(
+    message: cl.Message,
+    ledger: dict[str, object],
+) -> None:
+    # During on_chat_resume(), Message.from_dict() shares this mapping with the
+    # original thread step. Chainlit rebuilds chat context from that step after
+    # the hook returns, so preserve its identity while updating the message.
+    metadata = message.metadata if isinstance(message.metadata, dict) else {}
+    mark_model_context_excluded(message)
+    metadata.update(message.metadata or {})
+    metadata[INTERRUPT_LEDGER_METADATA_KEY] = ledger
+    message.metadata = metadata
+
+
+def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | None:
+    """Decode the newest ledger step; a completed ledger blocks older replay."""
+    for step in reversed(thread.get("steps", [])):
+        metadata = step.get("metadata")
+        if (
+            not isinstance(metadata, dict)
+            or INTERRUPT_LEDGER_METADATA_KEY not in metadata
+        ):
+            continue
+
+        parsed = parse_interrupt_ledger_metadata(
+            metadata[INTERRUPT_LEDGER_METADATA_KEY]
+        )
+        if parsed is None:
+            return None
+        model_id, assistant_message = parsed
+        try:
+            message = cl.Message.from_dict(step)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise InvalidInterruptLedgerError(
+                "The pending interrupt message cannot be restored."
+            ) from exc
+        return PendingInterruptLedger(
+            message=message,
+            model_id=model_id,
+            assistant_message=assistant_message,
+        )
+    return None
+
+
+def parse_interrupt_ledger_metadata(
+    raw_ledger: object,
+) -> tuple[str, ChatCompletionMessage] | None:
+    if not isinstance(raw_ledger, dict):
+        raise InvalidInterruptLedgerError("Interrupt ledger metadata is not an object.")
+    if raw_ledger.get("schema_version") != INTERRUPT_LEDGER_SCHEMA_VERSION:
+        raise InvalidInterruptLedgerError("Interrupt ledger schema is unsupported.")
+
+    status = raw_ledger.get("status")
+    if status == COMPLETED_LEDGER_STATUS:
+        return None
+    if status != PENDING_LEDGER_STATUS:
+        raise InvalidInterruptLedgerError("Interrupt ledger status is invalid.")
+    model_id = raw_ledger.get("model_id")
+    if not isinstance(model_id, str) or not model_id:
+        raise InvalidInterruptLedgerError("Interrupt ledger model ID is invalid.")
+    try:
+        assistant_message = ChatCompletionMessage.model_validate(
+            raw_ledger.get("assistant_message")
+        )
+    except (TypeError, ValueError) as exc:
+        raise InvalidInterruptLedgerError(
+            "Interrupt ledger assistant message is invalid."
+        ) from exc
+    if not interrupt_tool_calls(assistant_message):
+        raise InvalidInterruptLedgerError(
+            "Interrupt ledger assistant message has no interrupt calls."
+        )
+    return model_id, assistant_message
+
+
 async def _warn_if_model_metadata_is_missing() -> None:
     """Warn without blocking standard Chat Completions behavior."""
-    model_id = cl.user_session.get("chat_profile") or settings.HITL_MODEL
+    model_id = selected_model_id()
     try:
         model = await retrieve_model(model_id)
     except OpenAIError:
@@ -162,12 +363,14 @@ async def _warn_if_model_metadata_is_missing() -> None:
 
 def assistant_tool_call_message(
     message: ChatCompletionMessage,
-    tool_call: ChatCompletionMessageToolCall,
 ) -> ChatCompletionAssistantMessageParam:
+    """Preserve the complete assistant tool-call ledger without re-encoding it."""
     return ChatCompletionAssistantMessageParam(
         role=message.role,
         content=message.content,
-        tool_calls=[tool_call_param(tool_call)],
+        tool_calls=[
+            tool_call_param(tool_call) for tool_call in message.tool_calls or []
+        ],
     )
 
 
@@ -181,8 +384,9 @@ def tool_call_param(
 
 
 async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None:
-    payload = interrupt_payload(tool_call)
-    if payload is None:
+    try:
+        payload = interrupt_payload(tool_call)
+    except ValueError:
         await send_ui_message("Received an unsupported interrupt payload.")
         return None
 
@@ -211,41 +415,57 @@ async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None
         await send_ui_message("Approval timed out.")
         return None
 
-    payload = response.get("payload") or {}
-    return str(payload.get("resume") or "reject")
+    response_payload = response.get("payload")
+    if not isinstance(response_payload, dict):
+        await send_ui_message("No approval decision was received.")
+        return None
+
+    decision = response_payload.get("resume")
+    if decision not in {"approve", "reject"}:
+        await send_ui_message("No approval decision was received.")
+        return None
+    return decision
 
 
-def interrupt_tool_call(
+def interrupt_tool_calls(
     message: ChatCompletionMessage,
-) -> ChatCompletionMessageToolCall | None:
-    for tool_call in message.tool_calls or []:
-        if (
-            isinstance(tool_call, ChatCompletionMessageToolCall)
-            and tool_call.function.name == INTERRUPT_TOOL_NAME
-        ):
-            return tool_call
-    return None
+) -> list[ChatCompletionMessageToolCall] | None:
+    tool_calls = list(message.tool_calls or [])
+    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
+        return None
+    return tool_calls
 
 
 def interrupt_payload(
     tool_call: ChatCompletionMessageToolCall,
-) -> dict[str, object] | None:
+) -> object:
     try:
         arguments = json.loads(tool_call.function.arguments)
-    except (TypeError, json.JSONDecodeError):
-        return None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Interrupt tool arguments must be valid JSON.") from exc
 
-    payload = arguments.get("payload")
-    return payload if isinstance(payload, dict) else None
+    if not isinstance(arguments, dict):
+        raise ValueError("Interrupt tool arguments must be a JSON object.")
+    if "payload" not in arguments:
+        raise ValueError("Interrupt tool arguments must contain a payload.")
+
+    return arguments["payload"]
 
 
-def interrupt_prompt(payload: dict[str, object]) -> str:
+def interrupt_prompt(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return _json_payload_text(payload)
+
     lines = [str(payload.get("question") or "Approve this action?")]
     if payload.get("request"):
         lines.append(f"Request: {payload['request']}")
-
-    choices = payload.get("choices")
-    if isinstance(choices, list) and choices:
-        lines.append("Choices: " + ", ".join(str(choice) for choice in choices))
+    elif set(payload) != {"question"}:
+        lines.append(_json_payload_text(payload))
 
     return "\n\n".join(lines)
+
+
+def _json_payload_text(payload: object) -> str:
+    if isinstance(payload, str) and payload:
+        return payload
+    return json.dumps(payload, ensure_ascii=False, indent=2)

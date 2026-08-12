@@ -32,7 +32,6 @@ async def _get(app: FastAPI, path: str) -> Response:
         return await client.get(path)
 
 
-@pytest.mark.anyio
 async def test_bind_openai_api_uses_settings_prefix_by_default(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
@@ -46,7 +45,6 @@ async def test_bind_openai_api_uses_settings_prefix_by_default(
     assert response.status_code == status.HTTP_200_OK
 
 
-@pytest.mark.anyio
 async def test_bind_openai_api_explicit_prefix_overrides_settings(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
@@ -62,7 +60,6 @@ async def test_bind_openai_api_explicit_prefix_overrides_settings(
     assert settings_response.status_code == status.HTTP_404_NOT_FOUND
 
 
-@pytest.mark.anyio
 async def test_bind_openai_api_normalizes_explicit_prefix(
     graph_registry: GraphRegistry,
 ) -> None:
@@ -89,7 +86,6 @@ def test_bind_openai_api_rejects_invalid_explicit_prefix(
         pytest.param(True, status.HTTP_200_OK, id="enabled"),
     ],
 )
-@pytest.mark.anyio
 async def test_openai_api_docs_visibility_follows_settings(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
@@ -108,7 +104,6 @@ async def test_openai_api_docs_visibility_follows_settings(
     assert [response.status_code for response in responses] == [expected_status] * 3
 
 
-@pytest.mark.anyio
 async def test_openai_api_schema_describes_mounted_api(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,

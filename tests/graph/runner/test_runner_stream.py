@@ -1,6 +1,6 @@
 import asyncio
 
-import pytest
+from anyio import sleep_forever
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessageChunk, HumanMessage
 from langgraph.constants import TAG_HIDDEN
@@ -19,8 +19,6 @@ from tests.graph.support.schemas import (
     QuestionInput,
     QuestionState,
 )
-
-pytestmark = pytest.mark.anyio
 
 
 async def stream_text(name: str, graph_registry: GraphRegistry, make_request) -> str:
@@ -131,7 +129,7 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
                     {"langgraph_node": "generate"},
                 ),
             }
-            await asyncio.Event().wait()
+            await sleep_forever()
         finally:
             closed.set()
 
@@ -150,7 +148,7 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
         inputs={},
         context=None,
         runnable_config=None,
-        thread_id=None,
+        run_id=None,
     )
 
     chunks = stream_run(run)
@@ -185,7 +183,7 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
         inputs={},
         context=None,
         runnable_config=None,
-        thread_id=None,
+        run_id=None,
     )
 
     assert [event async for event in stream_run(run)] == [

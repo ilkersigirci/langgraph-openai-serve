@@ -36,7 +36,6 @@ def test_openai_endpoint_settings(
     assert configured.OPENAI.api_key == "api-key"
 
 
-@pytest.mark.anyio
 async def test_catalog_discovers_providers_and_preserves_model_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -123,7 +122,6 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
         clients.model_request("graph-b")
 
 
-@pytest.mark.anyio
 async def test_standard_endpoint_preserves_listed_model_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -151,7 +149,6 @@ async def test_standard_endpoint_preserves_listed_model_ids(
     }
 
 
-@pytest.mark.anyio
 async def test_model_retrieval_rejects_a_non_model_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -32,7 +32,6 @@ class Session:
         return self.values.get(key, default)
 
 
-@pytest.mark.anyio
 async def test_message_handler_renders_public_client_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -147,7 +146,6 @@ async def test_message_handler_renders_public_client_events(
     stream.close.assert_awaited_once_with()
 
 
-@pytest.mark.anyio
 async def test_renderer_maps_status_updates_to_chainlit_task_list(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

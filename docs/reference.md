@@ -37,6 +37,17 @@ and model IDs that cannot be addressed as one URL path segment. Registry keys
 are read-only after validation; use `registry.register(model_id, config)` to add
 or replace a graph.
 
+`LanggraphOpenaiServe(..., checkpoint_scope=resolver)` accepts an optional sync
+or async callable from FastAPI `Request` to a non-empty, server-trusted string.
+Interrupt checkpoint keys include this scope before model and run identity. Use
+an authenticated tenant or principal identifier when caller-chosen run UUIDs
+must be isolated between security domains; do not derive the scope from
+untrusted Chat Completions metadata or the Chat Completions `user` field. The
+default `"default"` scope is suitable only for a single-tenant or shared-trust
+deployment. The resolver must return the same scope for the initial request and
+its resume; changing tenant identity makes the other scope's checkpoint
+deliberately unreachable.
+
 `GraphConfig` accepts:
 
 - `graph`: compiled graph, sync factory, or async factory.
@@ -48,6 +59,9 @@ or replace a graph.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
+- `run_coordinator`: asynchronous single-flight coordination for interrupt
+  runs. It receives LGOS's internal run key, rejects an occupied key instead of
+  queueing it, and returns an async context manager.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
   runtime context from server-owned values and optional validated public settings.
@@ -70,12 +84,14 @@ Runtime context is separate from `RunnableConfig`:
 | Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
-| Checkpoint thread | `metadata.langgraph_thread_id` → `config["configurable"]["thread_id"]` | Load, save, interrupt, and resume checkpoint state. |
+| Interrupt run | server scope + model + optional `metadata.langgraph_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
 
-LGOS assembles runnable config from `runtime_callbacks` and, when present, the
-checkpoint thread ID. There is intentionally no adapter for placing arbitrary
-OpenAI request fields into `config["configurable"]`; use typed runtime context
-for values consumed by nodes.
+LGOS assembles runnable config from `runtime_callbacks` and, for an
+interrupt-enabled run, a fixed-length SHA-256 checkpoint key derived from the
+server-trusted scope, registered model, and operation UUID. This is deliberately
+not a UI chat or thread ID. There is intentionally no adapter for placing
+arbitrary OpenAI request fields into `config["configurable"]`; use typed runtime
+context for values consumed by nodes.
 
 The same `features` set drives runtime behavior and the versioned
 `langgraph_openai_serve.features` extension returned by
@@ -128,9 +144,50 @@ for the runtime settings flow, and
 [Runtime Settings](explanation/openai-compatibility.md#runtime-settings) for the
 request lifecycle.
 
-Interrupt-enabled graphs must be compiled with a LangGraph checkpointer and
-requests must include `metadata={"langgraph_thread_id": "<client-chat-id>"}`.
-Use a durable checkpointer in production.
+Interrupt-enabled graphs have additional registration requirements:
+
+- compile the graph with an asynchronous checkpointer that supports
+  `aget_tuple()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
+- configure an asynchronous `run_coordinator`; and
+- use a durable checkpointer and cross-process coordinator in production.
+
+The initial request does not require metadata. LGOS generates a UUID operation
+ID and returns it in every interrupt tool call. A caller that needs deterministic
+initial-request retries can instead supply a non-nil UUID in
+`metadata.langgraph_run_id`. `InMemoryRunCoordinator` is suitable only for
+tests and a single-process development server; it cannot serialize requests
+across workers or hosts.
+
+Pending checkpoints exist only to resume an interrupt batch returned to the
+client. LGOS deletes isolated checkpoint state after terminal completion or
+when execution fails or is cancelled before producing that batch. Operators
+must separately define an expiry policy for runs abandoned after a batch is
+returned.
+
+### PostgreSQL Coordination
+
+Install `langgraph-openai-serve[postgres]` to use the public
+`langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator`. Use
+LangGraph's official
+[`AsyncPostgresSaver`](https://reference.langchain.com/python/langgraph.checkpoint.postgres/aio/AsyncPostgresSaver)
+for checkpoint storage; the LGOS adapter only supplies the cross-worker run
+lease that the saver does not own. Run the saver's `setup()` once before API
+workers start. A shared pool must follow the saver's upstream connection
+requirements: `autocommit=True`, `prepare_threshold=0`, and mapping rows.
+
+`PostgresRunCoordinator(pool, max_concurrent_leases=...)` accepts an existing
+`psycopg_pool.AsyncConnectionPool` configured with mapping rows and the default
+`close_returns=False`; physical session closure is the safety fallback for an
+indeterminate lock operation. When the saver shares that pool, set the lease
+limit below the pool maximum so at least one connection remains available for
+checkpoint writes. Create one coordinator per process-owned pool so that this
+capacity limit is not accidentally multiplied. Session advisory locks require
+direct PostgreSQL connections or session-mode pooling; transaction-mode poolers
+cannot preserve the lease. Lock contention itself fails immediately through
+PostgreSQL's `pg_try_advisory_lock`; connection checkout still follows the
+pool's configured timeout. The
+[demo deployment](demo/docker.md#demo-services) uses one pool for both
+components and a separate one-shot schema setup process.
 
 ## Client Stream Events
 

@@ -5,7 +5,7 @@ LGOS_CHAINLIT_PORT ?= 3002
 LGOS_A_PORT ?= 3004
 LGOS_B_PORT ?= 3005
 
-.PHONY: help sync test lint check compose-config \
+.PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
 	sync-openwebui compose compose-dev
@@ -23,6 +23,12 @@ test: ## Run all standalone project tests from their lockfiles
 	$(LOCAL_API_RUN) pytest
 	uv run --directory ui/chainlit_ui --locked pytest
 	uv run --directory ui/openwebui --locked pytest
+
+DEMO_API_TEST_POSTGRES_URI ?= postgresql://lgos:lgos@localhost:3001/lgos
+test-postgres: ## Test interrupt restart and coordination against PostgreSQL
+	DEMO_API_TEST_POSTGRES_URI=$(DEMO_API_TEST_POSTGRES_URI) \
+		$(LOCAL_API_RUN) pytest -m integration \
+		tests/integration/test_postgres_interrupt_runtime.py
 
 lint: ## Check lint and formatting for all standalone projects
 	uv run --directory api --locked ruff check src tests
