@@ -165,6 +165,14 @@ response. Dependency teardown then cancels and awaits the producer and closes
 the nested graph iterator. This uses the normal OpenAI streaming connection; it
 adds no custom cancellation route, header, or SSE event.
 
+!!! note "Why the producer remains an asyncio task"
+
+    This is an intentional compatibility boundary. AnyIO task groups use
+    [level cancellation](https://anyio.readthedocs.io/en/stable/cancellation.html#differences-between-asyncio-and-anyio-cancellation-semantics),
+    while LangGraph's stream teardown is asyncio-native and relies on edge
+    cancellation. LGOS therefore uses AnyIO for the memory channel and shielded
+    cleanup, but keeps producer cancellation on `asyncio.Task.cancel()`.
+
 !!! info "Why cancellation raises the dependency minimums"
 
     LGOS requires `fastapi[standard]>=0.121.0` because stream ownership depends

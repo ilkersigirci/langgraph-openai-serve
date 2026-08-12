@@ -89,8 +89,9 @@ class _StreamOwner:
         self._run = run
         self._send_stream = send_stream
         self._receive_stream = receive_stream
-        # The request-scoped dependency owns this task outside Starlette's
-        # response cancellation scope.
+        # The request dependency owns and joins this task outside Starlette's
+        # response cancellation scope. Keep it asyncio-native: LangGraph stream
+        # unwinding relies on edge cancellation, unlike AnyIO task groups.
         self._producer = asyncio.create_task(produce(), name="chat-completion-stream")
         return receive_stream
 
