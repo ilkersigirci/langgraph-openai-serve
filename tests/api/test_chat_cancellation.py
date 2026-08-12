@@ -20,7 +20,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.api.chat.views import _StreamOwner
+from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
 from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
 
