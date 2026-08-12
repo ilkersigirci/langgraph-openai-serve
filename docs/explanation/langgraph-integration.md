@@ -182,13 +182,13 @@ adds no custom cancellation route, header, or SSE event.
     `Depends(scope="request")` support in 0.121.0, making that the functional
     compatibility floor.
 
-    FastAPI 0.139 is important because it introduced native SSE support built
-    around a request-scoped producer, an AnyIO memory channel, and an ordinary
+    FastAPI 0.135 introduced native SSE support. Its current implementation uses
+    a request-scoped producer, an AnyIO memory channel, and an ordinary
     `StreamingResponse`. That implementation inspired LGOS's architecture and
     confirms this lifecycle as a framework-supported pattern. LGOS cannot use it
     directly because `/v1/chat/completions` must dynamically return either JSON
-    or pre-framed OpenAI SSE from the same route, so 0.139 is not the functional
-    minimum. See FastAPI's [SSE documentation](https://fastapi.tiangolo.com/tutorial/server-sent-events/)
+    or pre-framed OpenAI SSE from the same route, so native SSE does not set the
+    functional minimum. See FastAPI's [SSE documentation](https://fastapi.tiangolo.com/tutorial/server-sent-events/)
     and
     [dependency lifecycle notes](https://fastapi.tiangolo.com/advanced/advanced-dependencies/#dependencies-with-yield-and-streamingresponse-technical-details).
 
