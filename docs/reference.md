@@ -147,7 +147,7 @@ request lifecycle.
 Interrupt-enabled graphs have additional registration requirements:
 
 - compile the graph with an asynchronous checkpointer that supports
-  `aget_tuple()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
+  `aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
 - configure an asynchronous `run_coordinator`; and
 - use a durable checkpointer and cross-process coordinator in production.
 

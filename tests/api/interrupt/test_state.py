@@ -9,6 +9,7 @@ from openai import AsyncOpenAI, BadRequestError, ConflictError
 
 from .support import (
     MODEL,
+    NESTED_SEQUENTIAL_MODEL,
     SEQUENTIAL_MODEL,
     assert_checkpoint_deleted,
     assert_interrupt_arguments,
@@ -157,13 +158,15 @@ async def test_modified_replayed_payload_does_not_change_resume_target(
     assert response.choices[0].message.content == "resumed:approve"
 
 
+@pytest.mark.parametrize("model", [SEQUENTIAL_MODEL, NESTED_SEQUENTIAL_MODEL])
 async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
     openai_client: AsyncOpenAI,
+    model: str,
 ) -> None:
-    first_pause = await create_completion(openai_client, model=SEQUENTIAL_MODEL)
+    first_pause = await create_completion(openai_client, model=model)
     first_messages = resume_messages(first_pause, ["one"])
     second_pause = await openai_client.chat.completions.create(
-        model=SEQUENTIAL_MODEL,
+        model=model,
         messages=first_messages,
     )
 
@@ -176,7 +179,7 @@ async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
 
     with pytest.raises(ConflictError):
         await openai_client.chat.completions.create(
-            model=SEQUENTIAL_MODEL,
+            model=model,
             messages=first_messages,
         )
 
@@ -184,7 +187,7 @@ async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
         openai_client,
         second_pause,
         "two",
-        model=SEQUENTIAL_MODEL,
+        model=model,
     )
     assert final_response.choices[0].message.content == "one,two"
 

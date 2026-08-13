@@ -20,6 +20,7 @@ from tests.graph.support.interrupt import (
     make_parallel_interrupt_graph,
     make_parallel_nested_interrupt_graph,
     make_sequential_interrupt_graph,
+    make_sequential_nested_interrupt_graph,
 )
 
 from .support import (
@@ -28,6 +29,7 @@ from .support import (
     INVALID_PAYLOAD_MODEL,
     MODEL,
     NESTED_MODEL,
+    NESTED_SEQUENTIAL_MODEL,
     PARALLEL_MODEL,
     SEQUENTIAL_MODEL,
 )
@@ -105,6 +107,11 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
                 make_parallel_nested_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
                 output_to_text=render_sorted_answers,
+            ),
+            NESTED_SEQUENTIAL_MODEL: interrupt_config(
+                make_sequential_nested_interrupt_graph(sqlite_checkpointer),
+                request_to_input=empty_answers,
+                output_to_text=render_answers,
             ),
         }
     )

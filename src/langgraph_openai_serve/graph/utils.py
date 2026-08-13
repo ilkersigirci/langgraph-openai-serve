@@ -19,7 +19,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     RESUME,
     BaseCheckpointSaver,
-    CheckpointTuple,
     get_checkpoint_id,
 )
 from langgraph.graph.state import CompiledStateGraph
@@ -194,27 +193,23 @@ async def _prepare_interrupt_input(
     if not pending_interrupts:
         raise InterruptStateConflictError("This run no longer has pending interrupts.")
 
-    checkpoint_tuple = await get_checkpoint_tuple(graph, snapshot.config)
-    if checkpoint_tuple is None:
+    state_token = await checkpoint_state_token(graph, snapshot.config)
+    if state_token is None:
         raise InterruptStateConflictError(
             "No durable interrupt state exists for this run."
         )
     return (
-        _resume_interrupt_inputs(
-            checkpoint_tuple,
-            set(pending_interrupts),
-            resume,
-        ),
+        _resume_interrupt_inputs(state_token, set(pending_interrupts), resume),
         True,
     )
 
 
 def _resume_interrupt_inputs(
-    checkpoint_tuple: CheckpointTuple,
+    state_token: str,
     pending_ids: set[str],
     resume: InterruptResume,
 ) -> Command:
-    if resume.state_token != checkpoint_state_token(checkpoint_tuple):
+    if resume.state_token != state_token:
         raise InterruptStateConflictError(
             "The interrupt result is stale for the current interrupt generation."
         )
@@ -295,35 +290,48 @@ def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
-async def get_checkpoint_tuple(
+async def checkpoint_state_token(
     graph: CompiledStateGraph,
     runnable_config: RunnableConfig,
-) -> CheckpointTuple | None:
-    checkpointer = cast(BaseCheckpointSaver, graph.checkpointer)
-    return await checkpointer.aget_tuple(runnable_config)
+) -> str | None:
+    """Fingerprint the latest checkpoint in every namespace.
 
-
-def checkpoint_state_token(checkpoint_tuple: CheckpointTuple) -> str:
-    """Bind a tool call to a checkpoint and its durable resume generation.
-
-    Sequential interrupts in one LangGraph task may reuse both interrupt ID and
-    checkpoint ID. LangGraph records preceding answers as resume-channel pending
-    writes, so their per-task lengths provide the missing durable generation.
+    Nested resumes may not advance the root checkpoint, and indirectly invoked
+    subgraphs are not exposed through state snapshots. Scanning the checkpointer
+    keeps stale-resume detection generic without introducing separate state.
     """
-    checkpoint_id = require_checkpoint_id(checkpoint_tuple.config)
-    resume_generations = sorted(
-        (
-            task_id,
-            len(value) if isinstance(value, (list, tuple)) else 1,
+    checkpointer = cast(BaseCheckpointSaver, graph.checkpointer)
+    thread_id = runnable_config["configurable"]["thread_id"]
+    heads: dict[str, tuple[str, list[tuple[str, int]]]] = {}
+
+    async for checkpoint_tuple in checkpointer.alist(
+        {"configurable": {"thread_id": thread_id}}
+    ):
+        namespace = checkpoint_tuple.config["configurable"].get("checkpoint_ns", "")
+        checkpoint_id = require_checkpoint_id(checkpoint_tuple.config)
+        head = heads.get(namespace)
+        if head is not None and checkpoint_id <= head[0]:
+            continue
+
+        heads[namespace] = (
+            checkpoint_id,
+            sorted(
+                (
+                    task_id,
+                    len(value) if isinstance(value, (list, tuple)) else 1,
+                )
+                for task_id, channel, value in checkpoint_tuple.pending_writes or ()
+                if channel == RESUME
+            ),
         )
-        for task_id, channel, value in checkpoint_tuple.pending_writes or ()
-        if channel == RESUME
-    )
+
+    if not heads:
+        return None
+
     identity = json.dumps(
         [
-            "langgraph-openai-serve.interrupt-state.v1",
-            checkpoint_id,
-            resume_generations,
+            "langgraph-openai-serve.interrupt-state.v2",
+            sorted((namespace, *head) for namespace, head in heads.items()),
         ],
         separators=(",", ":"),
     )

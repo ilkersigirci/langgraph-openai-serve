@@ -123,14 +123,16 @@ best-effort terminal cleanup. The complete lifecycle is specified in
 [OpenAI compatibility](openai-compatibility.md#durable-validation-and-recovery).
 
 The graph therefore needs an async checkpointer implementing `aget_tuple()`,
-`aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator shared by
-all workers. See [PostgreSQL Coordination](../reference.md#postgresql-coordination)
-for the production adapter.
+`alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator
+shared by all workers. See
+[PostgreSQL Coordination](../reference.md#postgresql-coordination) for the
+production adapter.
 
 !!! warning "Test the interrupt contract before every LangGraph upgrade"
 
     Sequential interrupts can reuse their interrupt and checkpoint IDs, so the
-    opaque `state_token` also incorporates durable resume-channel generations.
+    opaque `state_token` fingerprints every checkpoint namespace and its
+    durable resume-channel generations.
     Keep the sequential, parallel, nested, stale-resume, and restart tests as
     an upgrade gate before widening the supported LangGraph range. See the
     official

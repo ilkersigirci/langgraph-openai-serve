@@ -55,7 +55,7 @@ def make_parallel_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
     )
 
 
-def make_sequential_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
+def _sequential_interrupt_graph() -> StateGraph:
     def ask_twice(_state: InterruptAnswerState) -> dict[str, list[str]]:
         first = interrupt({"question": "first"})
         second = interrupt({"question": "second"})
@@ -66,6 +66,26 @@ def make_sequential_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
         .add_node("ask_twice", ask_twice)
         .add_edge(START, "ask_twice")
         .add_edge("ask_twice", END)
+    )
+
+
+def make_sequential_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
+    return _sequential_interrupt_graph().compile(checkpointer=checkpointer)
+
+
+def make_sequential_nested_interrupt_graph(
+    checkpointer: BaseCheckpointSaver,
+) -> Any:
+    nested = _sequential_interrupt_graph().compile()
+
+    async def invoke_nested(state: InterruptAnswerState) -> Any:
+        return await nested.ainvoke(state)
+
+    return (
+        StateGraph(InterruptAnswerState)
+        .add_node("nested", invoke_nested)
+        .add_edge(START, "nested")
+        .add_edge("nested", END)
         .compile(checkpointer=checkpointer)
     )
 

@@ -26,7 +26,6 @@ from langgraph_openai_serve.graph.utils import (
     GraphRun,
     _interrupts_by_id,
     checkpoint_state_token,
-    get_checkpoint_tuple,
     prepare_run,
 )
 
@@ -295,12 +294,12 @@ async def durable_interrupt_batch(run: GraphRun) -> LangGraphInterruptBatch | No
         validate_interrupt_payload(interrupt.value)
 
     assert run.run_id is not None
-    checkpoint_tuple = await get_checkpoint_tuple(run.graph, snapshot.config)
-    if checkpoint_tuple is None:
+    state_token = await checkpoint_state_token(run.graph, snapshot.config)
+    if state_token is None:
         raise RuntimeError("Interrupted LangGraph state has no checkpoint tuple.")
     return LangGraphInterruptBatch(
         run_id=run.run_id,
-        state_token=checkpoint_state_token(checkpoint_tuple),
+        state_token=state_token,
         interrupts=tuple(interrupts_by_id.values()),
     )
 

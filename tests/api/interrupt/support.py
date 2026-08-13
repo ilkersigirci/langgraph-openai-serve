@@ -12,6 +12,7 @@ SEQUENTIAL_MODEL = "sequential-interrupts"
 CONCURRENT_MODEL = "concurrent-resume"
 INVALID_PAYLOAD_MODEL = "invalid-interrupt-payload"
 NESTED_MODEL = "nested-parallel-interrupts"
+NESTED_SEQUENTIAL_MODEL = "nested-sequential-interrupts"
 CHECKPOINT_SCOPE_HEADER = "x-test-checkpoint-scope"
 
 

@@ -1,5 +1,5 @@
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -20,6 +20,7 @@ from langgraph.checkpoint.base import (
     ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
+    CheckpointTuple,
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
@@ -61,6 +62,18 @@ class AsyncReadOnlyCheckpointer(BaseCheckpointSaver):
     async def aget_tuple(self, config: RunnableConfig):
         return None
 
+    async def alist(
+        self,
+        config: RunnableConfig | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[CheckpointTuple]:
+        items: tuple[CheckpointTuple, ...] = ()
+        for item in items:
+            yield item
+
 
 class AsyncCheckpointerWithoutPendingWrites(AsyncReadOnlyCheckpointer):
     async def aput(
@@ -76,7 +89,7 @@ class AsyncCheckpointerWithoutPendingWrites(AsyncReadOnlyCheckpointer):
         return None
 
 
-class AsyncCheckpointerWithoutDelete(AsyncCheckpointerWithoutPendingWrites):
+class AsyncCheckpointerWithoutList(AsyncCheckpointerWithoutPendingWrites):
     async def aput_writes(
         self,
         config: RunnableConfig,
@@ -86,6 +99,11 @@ class AsyncCheckpointerWithoutDelete(AsyncCheckpointerWithoutPendingWrites):
     ) -> None:
         return None
 
+    alist = BaseCheckpointSaver.alist
+
+
+class AsyncCheckpointerWithoutDelete(AsyncCheckpointerWithoutList):
+    alist = AsyncReadOnlyCheckpointer.alist
     adelete_thread = BaseCheckpointSaver.adelete_thread
 
 
@@ -433,6 +451,7 @@ async def test_interrupt_enabled_graph_requires_run_coordinator(
             AsyncCheckpointerWithoutPendingWrites,
             id="missing-pending-writes",
         ),
+        pytest.param(AsyncCheckpointerWithoutList, id="missing-list"),
         pytest.param(AsyncCheckpointerWithoutDelete, id="missing-thread-deletion"),
     ],
 )
