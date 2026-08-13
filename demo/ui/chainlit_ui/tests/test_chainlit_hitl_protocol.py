@@ -270,13 +270,111 @@ async def test_ask_for_resume_never_defaults_missing_decision_to_reject(
         .message.tool_calls[0]
     )
     monkeypatch.setattr(hitl.cl, "AskActionMessage", Mock(return_value=action_message))
-    monkeypatch.setattr(hitl, "mark_model_context_excluded", Mock())
     monkeypatch.setattr(hitl, "send_ui_message", send_ui_message)
 
-    decision = await hitl.ask_for_resume(tool_call)
+    decision = await hitl.ask_for_resume(
+        tool_call,
+        Mock(
+            id="persisted-ledger-message",
+            parent_id=None,
+            created_at="2026-08-10T12:00:00Z",
+            content="",
+            metadata={"lgos_chainlit.hitl_interrupt_ledger": {}},
+        ),
+    )
 
     assert decision is None
     send_ui_message.assert_awaited_once_with(message)
+
+
+async def test_ask_for_resume_reuses_the_persisted_ledger_step(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    ledger_message = Mock(
+        id="persisted-ledger-message",
+        parent_id="parent-message",
+        created_at="2026-08-10T12:00:00Z",
+        content="",
+        metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
+    )
+    action_message = Mock(
+        id="new-action-message",
+        parent_id=None,
+        created_at=None,
+        content="Approve?",
+        metadata=None,
+    )
+
+    async def send() -> dict[str, object]:
+        action_message.content = "**Selected:** Approve"
+        return {"payload": {"resume": "approve"}}
+
+    action_message.send = AsyncMock(side_effect=send)
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskActionMessage",
+        Mock(return_value=action_message),
+    )
+    tool_call = (
+        completion(tool_calls=[interrupt_call("interrupt-1", {"question": "Approve?"})])
+        .choices[0]
+        .message.tool_calls[0]
+    )
+
+    decision = await hitl.ask_for_resume(tool_call, ledger_message)
+
+    assert decision == "approve"
+    assert action_message.id == ledger_message.id
+    assert action_message.parent_id == ledger_message.parent_id
+    assert action_message.created_at == ledger_message.created_at
+    assert action_message.metadata is ledger_message.metadata
+    assert action_message.persisted is True
+    assert ledger_message.content == "**Selected:** Approve"
+    action_message.send.assert_awaited_once_with()
+
+
+async def test_reopened_actions_keep_one_message_id_across_refreshes(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    ledger_message = Mock(
+        id="persisted-ledger-message",
+        parent_id=None,
+        created_at="2026-08-10T12:00:00Z",
+        content="Approve?",
+        metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
+    )
+    action_messages = [
+        Mock(
+            id=f"transient-action-{index}",
+            parent_id=None,
+            created_at=None,
+            content="Approve?",
+            metadata=None,
+            send=AsyncMock(return_value=None),
+        )
+        for index in range(2)
+    ]
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskActionMessage",
+        Mock(side_effect=action_messages),
+    )
+    monkeypatch.setattr(hitl, "send_ui_message", AsyncMock())
+    tool_call = (
+        completion(tool_calls=[interrupt_call("interrupt-1", {"question": "Approve?"})])
+        .choices[0]
+        .message.tool_calls[0]
+    )
+
+    await hitl.ask_for_resume(tool_call, ledger_message)
+    await hitl.ask_for_resume(tool_call, ledger_message)
+
+    assert [message.id for message in action_messages] == [
+        ledger_message.id,
+        ledger_message.id,
+    ]
 
 
 async def test_create_completion_sends_no_long_lived_run_metadata(

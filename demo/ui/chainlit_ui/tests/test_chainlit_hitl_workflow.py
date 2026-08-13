@@ -35,11 +35,12 @@ async def test_handle_message_resumes_all_interrupts_once(
     _, created_messages, writes = install_message_factory(monkeypatch, hitl)
     decisions = iter(["approve", "reject"])
 
-    async def decide(_: object) -> str:
+    async def decide(_: object, ledger_message: object) -> str:
         assert writes[0][0] == "send"
         assert writes[0][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]["status"] == (
             hitl.PENDING_LEDGER_STATUS
         )
+        assert ledger_message is created_messages[0]
         return next(decisions)
 
     ask_for_resume = AsyncMock(side_effect=decide)
@@ -92,6 +93,7 @@ async def test_handle_message_resumes_all_interrupts_once(
         "lg_interrupt_interrupt-2",
     ]
     ledger_message, output_message = created_messages
+    assert ledger_message.content == "Approve refund?\n\nRequest: ORDER-123"
     assert [write[0] for write in writes] == ["send", "update", "send"]
     pending_metadata = writes[0][2]
     assert pending_metadata["lgos_chainlit.exclude_from_model_context"] is True

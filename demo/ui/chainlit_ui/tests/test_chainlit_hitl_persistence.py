@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -13,7 +14,23 @@ from .chainlit_hitl_support import (
 )
 
 
-async def test_on_chat_resume_restores_ledger_for_the_next_user_interaction(
+async def test_on_chat_end_cancels_the_live_approval_task(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    task = Mock(done=Mock(return_value=False), cancel=Mock())
+    monkeypatch.setattr(
+        hitl,
+        "chainlit_context",
+        Mock(session=SimpleNamespace(current_task=task)),
+    )
+
+    await hitl.on_chat_end()
+
+    task.cancel.assert_called_once_with()
+
+
+async def test_on_chat_resume_reopens_the_pending_interrupt_after_hydration(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -22,6 +39,7 @@ async def test_on_chat_resume_restores_ledger_for_the_next_user_interaction(
         interrupt_call("interrupt-2", {"question": "Second?"}),
     ]
     step = ledger_step(interrupt_calls)
+    step["createdAt"] = "2026-08-10T12:00:00.000000"
     restored_writes: list[tuple[str, Mock, dict[str, object] | None]] = []
     restored_message = recording_message(
         metadata=step["metadata"],
@@ -38,19 +56,28 @@ async def test_on_chat_resume_restores_ledger_for_the_next_user_interaction(
     monkeypatch.setattr(hitl, "create_completion", create_completion)
     monkeypatch.setattr(hitl, "ask_for_resume", ask_for_resume)
     monkeypatch.setattr(hitl, "send_ui_message", send_ui_message)
+    schedule_replay = Mock()
+    monkeypatch.setattr(hitl, "schedule_after_thread_hydration", schedule_replay)
+    emitter = Mock(task_start=AsyncMock(), task_end=AsyncMock())
+    monkeypatch.setattr(hitl, "chainlit_context", Mock(emitter=emitter))
 
     await hitl.on_chat_resume({"steps": [step]})
 
-    factory.from_dict.assert_called_once_with(step)
+    factory.from_dict.assert_called_once_with(
+        {**step, "createdAt": "2026-08-10T12:00:00.000000Z"}
+    )
     create_completion.assert_not_awaited()
     ask_for_resume.assert_not_awaited()
-    assert isinstance(
-        hitl.cl.user_session.get(hitl.PENDING_LEDGER_SESSION_KEY),
-        hitl.PendingInterruptLedger,
-    )
+    ledger = hitl.cl.user_session.get(hitl.PENDING_LEDGER_SESSION_KEY)
+    assert isinstance(ledger, hitl.PendingInterruptLedger)
+    scheduled = schedule_replay.call_args.args[0]
+    assert scheduled.func is hitl.reopen_pending_interrupt
+    assert scheduled.args == (ledger,)
 
-    await hitl.handle_message()
+    await hitl.reopen_pending_interrupt(ledger)
 
+    emitter.task_start.assert_awaited_once_with()
+    emitter.task_end.assert_awaited_once_with()
     resume_messages = create_completion.await_args.args[0]
     assert resume_messages == [
         {
@@ -88,9 +115,28 @@ async def test_on_chat_resume_restores_ledger_for_the_next_user_interaction(
     assert len(created_messages) == 1
     assert created_messages[0].content == "Resumed."
     assert [write[0] for write in writes] == ["send"]
-    send_ui_message.assert_awaited_once_with(
-        "Resolve the pending approval before starting another request."
-    )
+    send_ui_message.assert_not_awaited()
+
+
+async def test_automatic_resume_ignores_a_superseded_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    step = ledger_step([interrupt_call("interrupt-1", {"question": "Approve?"})])
+    restored_message = recording_message(metadata=step["metadata"], writes=[])
+    install_message_factory(monkeypatch, hitl, restored=restored_message)
+    schedule_replay = Mock()
+    monkeypatch.setattr(hitl, "schedule_after_thread_hydration", schedule_replay)
+    resolve_interrupts = AsyncMock()
+    monkeypatch.setattr(hitl, "resolve_interrupts", resolve_interrupts)
+
+    await hitl.on_chat_resume({"steps": [step]})
+    ledger = hitl.cl.user_session.get(hitl.PENDING_LEDGER_SESSION_KEY)
+    hitl.cl.user_session.set(hitl.PENDING_LEDGER_SESSION_KEY, None)
+
+    await hitl.reopen_pending_interrupt(ledger)
+
+    resolve_interrupts.assert_not_awaited()
 
 
 async def test_on_chat_resume_does_not_emit_during_malformed_rehydration(
@@ -105,6 +151,8 @@ async def test_on_chat_resume_does_not_emit_during_malformed_rehydration(
     monkeypatch.setattr(hitl, "create_completion", create_completion)
     monkeypatch.setattr(hitl, "ask_for_resume", ask_for_resume)
     monkeypatch.setattr(hitl, "send_ui_message", send_ui_message)
+    schedule_replay = Mock()
+    monkeypatch.setattr(hitl, "schedule_after_thread_hydration", schedule_replay)
 
     await hitl.on_chat_resume({"steps": [step]})
 
@@ -112,6 +160,7 @@ async def test_on_chat_resume_does_not_emit_during_malformed_rehydration(
     factory.from_dict.assert_not_called()
     create_completion.assert_not_awaited()
     ask_for_resume.assert_not_awaited()
+    schedule_replay.assert_not_called()
 
 
 async def test_on_chat_resume_does_not_replay_completed_ledger(
@@ -127,9 +176,12 @@ async def test_on_chat_resume_does_not_replay_completed_ledger(
     ask_for_resume = AsyncMock()
     monkeypatch.setattr(hitl, "create_completion", create_completion)
     monkeypatch.setattr(hitl, "ask_for_resume", ask_for_resume)
+    schedule_replay = Mock()
+    monkeypatch.setattr(hitl, "schedule_after_thread_hydration", schedule_replay)
 
     await hitl.on_chat_resume({"steps": [step]})
 
     factory.from_dict.assert_not_called()
     create_completion.assert_not_awaited()
     ask_for_resume.assert_not_awaited()
+    schedule_replay.assert_not_called()

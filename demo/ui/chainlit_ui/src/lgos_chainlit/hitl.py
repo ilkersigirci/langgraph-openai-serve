@@ -1,11 +1,14 @@
 """Chainlit UI for the LangGraph interrupt demo graph."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
+from functools import partial
 from typing import cast
 
 import chainlit as cl
+from chainlit.context import context as chainlit_context
 from chainlit.types import ThreadDict
 from chainlit_utils.auth import authenticated_user_identifier
 from chainlit_utils.chat import (
@@ -40,6 +43,10 @@ from lgos_chainlit.utils.clients import (
     model_request,
     openai_client,
     retrieve_model,
+)
+from lgos_chainlit.utils.thread_resume import (
+    reuse_persisted_step,
+    schedule_after_thread_hydration,
 )
 
 register_auth_callback()
@@ -110,19 +117,51 @@ async def on_chat_start() -> None:
     await _warn_if_model_metadata_is_missing()
 
 
+@cl.on_chat_end
+async def on_chat_end() -> None:
+    """Cancel the live prompt; its durable ledger is restored on reconnect."""
+    task = chainlit_context.session.current_task
+    if task is not None and task is not asyncio.current_task() and not task.done():
+        task.cancel()
+
+
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
-    """Restore the latest durable ledger for the next user interaction."""
+    """Restore the latest durable ledger and reopen its approval prompt."""
     mark_persisted_errors_excluded(thread)
     cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
     try:
         ledger = pending_interrupt_ledger(thread)
         if ledger is not None:
             cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
+            schedule_after_thread_hydration(partial(reopen_pending_interrupt, ledger))
     except InvalidInterruptLedgerError:
         logger.exception("Persisted Chainlit HITL ledger is invalid")
     except Exception as exc:
         logger.exception("Chainlit HITL resume failed: %s", exc)
+
+
+async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
+    """Recreate the live approval actions from a durable interrupt ledger."""
+    if cl.user_session.get(PENDING_LEDGER_SESSION_KEY) is not ledger:
+        return
+    task_started = False
+    try:
+        await chainlit_context.emitter.task_start()
+        task_started = True
+        await resolve_interrupts(
+            assistant_message=ledger.assistant_message,
+            model_id=ledger.model_id,
+            ledger_message=ledger.message,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.exception("Chainlit HITL automatic resume failed")
+        await send_ui_message(f"Chat completion failed: {exc}")
+    finally:
+        if task_started:
+            await chainlit_context.emitter.task_end()
 
 
 @cl.on_message
@@ -191,7 +230,7 @@ async def resolve_interrupts(
         )
         decisions = []
         for tool_call in tool_calls:
-            decision = await ask_for_resume(tool_call)
+            decision = await ask_for_resume(tool_call, ledger_message)
             if decision is None:
                 return
             decisions.append(decision)
@@ -244,11 +283,13 @@ async def persist_pending_ledger(
         "model_id": model_id,
         "assistant_message": assistant_tool_call_message(assistant_message),
     }
+    prompt = pending_interrupt_prompt(assistant_message)
     if ledger_message is None:
-        ledger_message = cl.Message(content="")
+        ledger_message = cl.Message(content=prompt)
         set_ledger_message_metadata(ledger_message, ledger)
         await ledger_message.send()
     else:
+        ledger_message.content = prompt
         set_ledger_message_metadata(ledger_message, ledger)
         await ledger_message.update()
     cl.user_session.set(
@@ -305,8 +346,14 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         if parsed is None:
             return None
         model_id, assistant_message = parsed
+        restored_step = dict(step)
+        created_at = restored_step.get("createdAt")
+        if isinstance(created_at, str) and not created_at.endswith("Z"):
+            # The pinned SQL layer returns naive ISO text, but its write path
+            # accepts only the same timestamp with an explicit UTC suffix.
+            restored_step["createdAt"] = f"{created_at}Z"
         try:
-            message = cl.Message.from_dict(step)
+            message = cl.Message.from_dict(restored_step)
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidInterruptLedgerError(
                 "The pending interrupt message cannot be restored."
@@ -383,7 +430,10 @@ def tool_call_param(
     )
 
 
-async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None:
+async def ask_for_resume(
+    tool_call: ChatCompletionMessageToolCall,
+    ledger_message: cl.Message,
+) -> str | None:
     try:
         payload = interrupt_payload(tool_call)
     except ValueError:
@@ -408,8 +458,13 @@ async def ask_for_resume(tool_call: ChatCompletionMessageToolCall) -> str | None
         ],
         timeout=300,
     )
-    mark_model_context_excluded(action_message)
+    # Chainlit persists ask messages but not their live actions. Reusing the
+    # ledger step identity lets its resumed prompt receive a fresh ask without
+    # adding another persisted message on every reconnect.
+    reuse_persisted_step(action_message, ledger_message)
+    ledger_message.content = action_message.content
     response = await action_message.send()
+    ledger_message.content = action_message.content
 
     if not response:
         await send_ui_message("Approval timed out.")
@@ -450,6 +505,17 @@ def interrupt_payload(
         raise ValueError("Interrupt tool arguments must contain a payload.")
 
     return arguments["payload"]
+
+
+def pending_interrupt_prompt(message: ChatCompletionMessage) -> str:
+    """Render the ledger step without letting malformed payloads skip persistence."""
+    tool_calls = interrupt_tool_calls(message)
+    if not tool_calls:
+        return ""
+    try:
+        return interrupt_prompt(interrupt_payload(tool_calls[0]))
+    except ValueError:
+        return ""
 
 
 def interrupt_prompt(payload: object) -> str:

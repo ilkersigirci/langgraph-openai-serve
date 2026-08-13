@@ -117,14 +117,14 @@ depend on the graph topology.
 
 !!! note "Reconnect recovery and its boundary"
 
-    Before showing any approval action, the adapter sends the exact assistant
-    tool-call batch through a model-context-excluded Chainlit message. Its
+    The adapter stores the exact assistant tool-call batch on the same
+    model-context-excluded Chainlit message that displays the current approval.
+    Its
     [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
-    hook restores the newest pending batch. The next user interaction reopens
-    that approval instead of starting another run; recovery is deferred because
-    the pinned Chainlit host rebuilds the displayed thread after the resume hook.
-    That interaction is UI-only and excluded from later model context because it
-    is consumed as the recovery trigger, not as a new user request.
+    hook restores the newest pending batch and reattaches **Approve** and
+    **Reject** to that message after the pinned Chainlit host hydrates the
+    displayed thread. Refreshing abandons only the old live actions; it neither
+    duplicates the prompt nor rejects or resumes the graph.
     Chainlit queues data-layer writes asynchronously, with no public flush API,
     so a process crash can still occur before that message reaches PostgreSQL.
     Once stored, cancellation, reload, or worker loss before the resume request
