@@ -1,10 +1,9 @@
-import asyncio
 from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from anyio import sleep_forever
+from anyio import Event, fail_after, sleep_forever
 from langchain_core.messages import AIMessageChunk
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
@@ -114,7 +113,7 @@ async def test_execution_failure_deletes_without_replacing_error(
 
 
 async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> None:
-    closed = asyncio.Event()
+    closed = Event()
 
     async def events():
         try:
@@ -134,7 +133,8 @@ async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> N
     stream = stream_run(cleanup_run(graph, streamable_node_names=["generate"]))
 
     assert await anext(stream) == "token"
-    await stream.aclose()
+    with fail_after(1):
+        await stream.aclose()
 
     assert closed.is_set()
     assert graph.checkpointer.deleted_threads == [THREAD_ID]

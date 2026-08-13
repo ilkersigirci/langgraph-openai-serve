@@ -1,4 +1,3 @@
-import asyncio
 import json
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
@@ -6,7 +5,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from anyio import create_task_group, get_cancelled_exc_class, sleep_forever
+from anyio import (
+    Event,
+    create_task_group,
+    fail_after,
+    get_cancelled_exc_class,
+    sleep_forever,
+)
 from anyio.lowlevel import checkpoint
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -50,7 +55,6 @@ from tests.graph.support.schemas import MessageState
 EXPECTED_PARALLEL_INTERRUPTS = 2
 SHA256_HEX_LENGTH = 64
 RUN_ID = "11111111-1111-4111-8111-111111111111"
-STREAM_RUN_ID = "22222222-2222-4222-8222-222222222222"
 
 
 class AsyncReadOnlyCheckpointer(BaseCheckpointSaver):
@@ -90,10 +94,10 @@ async def test_cancelled_preparation_finishes_lease_release(
     monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    state_read_started = asyncio.Event()
-    release_started = asyncio.Event()
-    released = asyncio.Event()
-    cancellation_propagated = asyncio.Event()
+    state_read_started = Event()
+    release_started = Event()
+    released = Event()
+    cancellation_propagated = Event()
 
     graph = make_interrupt_graph(checkpointer=sqlite_checkpointer)
 
@@ -135,10 +139,11 @@ async def test_cancelled_preparation_finishes_lease_release(
         except get_cancelled_exc_class():
             cancellation_propagated.set()
 
-    async with create_task_group() as task_group:
-        task_group.start_soon(run_preparation)
-        await state_read_started.wait()
-        task_group.cancel_scope.cancel()
+    with fail_after(1):
+        async with create_task_group() as task_group:
+            task_group.start_soon(run_preparation)
+            await state_read_started.wait()
+            task_group.cancel_scope.cancel()
 
     assert release_started.is_set()
     assert released.is_set()
@@ -267,7 +272,13 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     assert invocation.custom_events == ()
 
 
-@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "stream",
+    [
+        pytest.param(False, id="non-streaming"),
+        pytest.param(True, id="streaming"),
+    ],
+)
 async def test_parallel_interrupts_are_returned_as_one_durable_batch(
     make_request,
     monkeypatch,
@@ -289,7 +300,7 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
                 graph=graph,
                 description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
-                request_to_input=lambda request, messages: {"answers": []},
+                request_to_input=lambda _request, _messages: {"answers": []},
                 output_to_text=lambda output: str(output["answers"]),
                 run_coordinator=InMemoryRunCoordinator(),
             )
@@ -297,9 +308,7 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
     )
     request = make_request(
         "parallel",
-        metadata={
-            RUN_METADATA_KEY: STREAM_RUN_ID if stream else RUN_ID,
-        },
+        metadata={RUN_METADATA_KEY: RUN_ID},
     )
 
     if stream:
@@ -390,35 +399,47 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
     assert completed.output == "resumed:approve"
 
 
-async def test_interrupt_enabled_graph_requires_checkpointer(make_request) -> None:
-    registry = GraphRegistry(
-        registry={
-            "broken": GraphConfig(
-                graph=make_message_graph("ok"),
-                description="DUMMY",
-                features={GraphFeature.INTERRUPTS},
-                run_coordinator=InMemoryRunCoordinator(),
-            )
-        }
+async def test_interrupt_enabled_graph_requires_checkpointer() -> None:
+    config = GraphConfig(
+        graph=make_message_graph("ok"),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request("broken", metadata={RUN_METADATA_KEY: RUN_ID})
 
     with pytest.raises(GraphConfigurationError, match="checkpointer"):
-        await run_langgraph("broken", request.messages, registry, request)
+        await config.resolve_graph()
+
+
+async def test_interrupt_enabled_graph_requires_run_coordinator(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    config = GraphConfig(
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+    )
+
+    with pytest.raises(GraphConfigurationError, match="run_coordinator"):
+        await config.resolve_graph()
 
 
 @pytest.mark.parametrize(
-    "checkpointer",
+    "checkpointer_type",
     [
-        BaseCheckpointSaver(),
-        AsyncReadOnlyCheckpointer(),
-        AsyncCheckpointerWithoutPendingWrites(),
-        AsyncCheckpointerWithoutDelete(),
+        pytest.param(BaseCheckpointSaver, id="base"),
+        pytest.param(AsyncReadOnlyCheckpointer, id="read-only"),
+        pytest.param(
+            AsyncCheckpointerWithoutPendingWrites,
+            id="missing-pending-writes",
+        ),
+        pytest.param(AsyncCheckpointerWithoutDelete, id="missing-thread-deletion"),
     ],
 )
 async def test_interrupt_checkpointer_must_override_required_async_methods(
-    checkpointer: BaseCheckpointSaver,
+    checkpointer_type: type[BaseCheckpointSaver],
 ) -> None:
+    checkpointer = checkpointer_type()
     config = GraphConfig(
         graph=make_interrupt_graph(checkpointer=checkpointer),
         description="DUMMY",

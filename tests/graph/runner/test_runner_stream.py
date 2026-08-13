@@ -1,6 +1,4 @@
-import asyncio
-
-from anyio import sleep_forever
+from anyio import Event, fail_after, sleep_forever
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessageChunk, HumanMessage
 from langgraph.constants import TAG_HIDDEN
@@ -118,7 +116,7 @@ async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
 
 
 async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
-    closed = asyncio.Event()
+    closed = Event()
 
     async def graph_events():
         try:
@@ -154,7 +152,8 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
     chunks = stream_run(run)
     assert await anext(chunks) == "token"
 
-    await chunks.aclose()
+    with fail_after(1):
+        await chunks.aclose()
 
     assert closed.is_set()
 

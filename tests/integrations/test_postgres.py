@@ -2,6 +2,7 @@ from asyncio import CancelledError
 from unittest.mock import ANY, AsyncMock, Mock, call
 
 import pytest
+from anyio import fail_after
 
 from langgraph_openai_serve.graph.coordination import RunBusyError
 from langgraph_openai_serve.integrations import postgres
@@ -30,7 +31,16 @@ def test_coordinator_rejects_close_returns_pool() -> None:
         postgres.PostgresRunCoordinator(pool, max_concurrent_leases=1)
 
 
-@pytest.mark.parametrize("value", [0, -1, 1.5, float("nan"), True])
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(0, id="zero"),
+        pytest.param(-1, id="negative"),
+        pytest.param(1.5, id="non-integer"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(True, id="boolean"),
+    ],
+)
 def test_coordinator_rejects_invalid_capacity(value: object) -> None:
     with pytest.raises(ValueError, match="positive integer"):
         postgres.PostgresRunCoordinator(Mock(), max_concurrent_leases=value)
@@ -141,7 +151,7 @@ async def test_coordinator_reserves_pool_capacity_for_checkpoints() -> None:
     coordinator, pool, _ = _coordinator_for(connection)
 
     async with coordinator("thread-1"):
-        with pytest.raises(RunBusyError) as exc_info:
+        with fail_after(1), pytest.raises(RunBusyError) as exc_info:
             async with coordinator("thread-2"):
                 pass
 

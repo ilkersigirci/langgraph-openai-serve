@@ -1,0 +1,1 @@
+"""Open WebUI demo tests."""

@@ -1,4 +1,6 @@
+import importlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +19,11 @@ def chainlit_app_root(
 def anyio_backend() -> str:
     """Run the Chainlit test suite on its supported async backend."""
     return "asyncio"
+
+
+@pytest.fixture
+def hitl() -> Any:
+    return importlib.import_module("lgos_chainlit.hitl")
 
 
 @pytest.fixture

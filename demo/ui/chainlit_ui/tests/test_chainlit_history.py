@@ -25,6 +25,7 @@ async def test_limited_functionality_warning_uses_transient_toast(
     )
 
 
+# Chainlit binds the HTTP contexts used by the next three tests to the running loop.
 async def test_text_only_chat_messages_ignores_stale_user_session_history() -> None:
     from chainlit.context import init_http_context
     from chainlit_utils import chat

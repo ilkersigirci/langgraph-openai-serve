@@ -224,10 +224,11 @@ async def test_closing_openai_stream_cancels_graph_and_provider() -> None:
 
 
 async def test_immediate_stream_close_releases_prepared_run() -> None:
-    source_started = asyncio.Event()
+    source_started = False
 
     async def source() -> AsyncGenerator[str, None]:
-        source_started.set()
+        nonlocal source_started
+        source_started = True
         yield "unreachable"
 
     coordinator = InMemoryRunCoordinator()
@@ -247,6 +248,6 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
     owner.start(source(), run)
     await owner.aclose()
 
-    assert not source_started.is_set()
+    assert not source_started
     async with coordinator("prepared-run"):
         pass

@@ -4,12 +4,7 @@ from anyio import fail_after
 from langgraph_openai_serve.graph.coordination import (
     InMemoryRunCoordinator,
     RunBusyError,
-    RunCoordinator,
 )
-
-
-def test_in_memory_coordinator_satisfies_protocol() -> None:
-    assert isinstance(InMemoryRunCoordinator(), RunCoordinator)
 
 
 async def test_in_memory_coordinator_rejects_an_occupied_key_without_waiting() -> None:

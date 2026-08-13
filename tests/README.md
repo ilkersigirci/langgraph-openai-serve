@@ -5,6 +5,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Test Roots
 
 - `tests/` owns the installed package's API, graph runner, and utility tests.
+- `tests/api/interrupt/` keeps the interrupt codec, response, HTTP contract,
+  durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
   checkout into the demo API test run.

@@ -1,3 +1,5 @@
+"""Unit coverage for the OpenAI interrupt request codec."""
+
 import json
 
 import pytest
@@ -108,6 +110,10 @@ def test_parse_resume_request_leaves_ordinary_tool_exchange_as_graph_input() -> 
     assert parse_resume_request(messages) is None
 
 
+def test_parse_resume_request_ignores_unanswered_interrupt_call() -> None:
+    assert parse_resume_request(_exchange("interrupt-1")[:-1]) is None
+
+
 @pytest.mark.parametrize(
     ("messages", "error"),
     [
@@ -121,11 +127,6 @@ def test_parse_resume_request_leaves_ordinary_tool_exchange_as_graph_input() -> 
             ],
             "must follow",
             id="missing-assistant-call",
-        ),
-        pytest.param(
-            _exchange("interrupt-1")[:-1],
-            None,
-            id="no-tool-result-is-not-a-resume",
         ),
         pytest.param(
             [
@@ -163,17 +164,20 @@ def test_parse_resume_request_leaves_ordinary_tool_exchange_as_graph_input() -> 
 )
 def test_parse_resume_request_rejects_malformed_interrupt_exchange(
     messages: list[ChatCompletionRequestMessage],
-    error: str | None,
+    error: str,
 ) -> None:
-    if error is None:
-        assert parse_resume_request(messages) is None
-        return
-
     with pytest.raises(InvalidResumeRequestError, match=error):
         parse_resume_request(messages)
 
 
-@pytest.mark.parametrize("payload", [object(), float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(object(), id="object"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="infinity"),
+    ],
+)
 def test_interrupt_arguments_rejects_non_json_payload(payload: object) -> None:
     with pytest.raises((TypeError, ValueError)):
         interrupt_arguments(

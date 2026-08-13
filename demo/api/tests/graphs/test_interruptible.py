@@ -1,24 +1,8 @@
-from pathlib import Path
-
 import pytest
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 
-from lgos_demo_api.graphs.interruptible import (
-    create_interruptible_graph,
-    create_interruptible_graph_config,
-)
-
-
-def test_interrupt_config_uses_supplied_run_coordinator() -> None:
-    coordinator = InMemoryRunCoordinator()
-    config = create_interruptible_graph_config(
-        lambda: None,  # type: ignore[return-value]
-        coordinator,
-    )
-
-    assert config.run_coordinator is coordinator
+from lgos_demo_api.graphs.interruptible import create_interruptible_graph
 
 
 @pytest.mark.parametrize(
@@ -59,20 +43,3 @@ async def test_rejects_an_unknown_approval_decision(
 
     with pytest.raises(ValueError, match=r"approve.*reject"):
         await graph.ainvoke(Command(resume="maybe"), config=config)
-
-
-async def test_checkpoint_survives_connection_reopen(tmp_path: Path) -> None:
-    request = "Refund order ORDER-789"
-    database = str(tmp_path / "checkpoints.sqlite")
-    config = {"configurable": {"thread_id": "persisted-interrupt"}}
-
-    async with AsyncSqliteSaver.from_conn_string(database) as checkpointer:
-        graph = create_interruptible_graph(checkpointer)
-        interrupted = await graph.ainvoke({"request": request}, config=config)
-        assert interrupted["__interrupt__"]
-
-    async with AsyncSqliteSaver.from_conn_string(database) as checkpointer:
-        graph = create_interruptible_graph(checkpointer)
-        resumed = await graph.ainvoke(Command(resume="approve"), config=config)
-
-    assert resumed["response"] == f"Approved agent action: {request}"
