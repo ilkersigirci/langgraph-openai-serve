@@ -299,6 +299,9 @@ async def checkpoint_state_token(
     Nested resumes may not advance the root checkpoint, and indirectly invoked
     subgraphs are not exposed through state snapshots. Scanning the checkpointer
     keeps stale-resume detection generic without introducing separate state.
+
+    Performance impact: Local PostgreSQL measurements were 0.5-0.7 ms for the current 1-2 tuple
+    runs, scaling linearly to about 5 ms at 100 and 45 ms at 1,000 small tuples.
     """
     checkpointer = cast(BaseCheckpointSaver, graph.checkpointer)
     thread_id = runnable_config["configurable"]["thread_id"]
