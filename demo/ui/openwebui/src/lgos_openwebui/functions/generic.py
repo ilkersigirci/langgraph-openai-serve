@@ -1,7 +1,7 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.13
+version: 0.14
 """
 
 import json
@@ -484,7 +484,13 @@ async def _approval_decision(
     if event is None:
         return None, "Open WebUI received an unsupported interrupt payload."
 
-    approval = await event_call(event)
+    try:
+        approval = await event_call(event)
+    except Exception as exc:
+        detail = str(exc).strip()
+        if not detail:
+            detail = "the confirmation session disconnected or timed out"
+        return None, f"Open WebUI approval failed: {detail}"
     if isinstance(approval, dict) and approval.get("error"):
         return None, f"Open WebUI approval failed: {approval['error']}"
     if approval is True:

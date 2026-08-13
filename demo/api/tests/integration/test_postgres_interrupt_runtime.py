@@ -98,15 +98,21 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
         )
 
     assistant = paused.choices[0].message
-    tool_call = (assistant.tool_calls or [])[0]
-    assert json.loads(tool_call.function.arguments)["run_id"] == run_id
+    tool_calls = assistant.tool_calls or []
+    assert len(tool_calls) == 2
+    arguments = [json.loads(tool_call.function.arguments) for tool_call in tool_calls]
+    assert {item["run_id"] for item in arguments} == {run_id}
+    assert len({item["state_token"] for item in arguments}) == 1
     resume_messages = [
         assistant.model_dump(mode="json", exclude_none=True),
-        {
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": json.dumps({"resume": "approve"}),
-        },
+        *[
+            {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": json.dumps({"resume": "approve"}),
+            }
+            for tool_call in tool_calls
+        ],
     ]
 
     async with (
@@ -128,7 +134,9 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
         )
 
         assert completed.choices[0].message.content == (
-            f"Approved agent action: {public_request}"
+            f"Approval results for: {public_request}\n"
+            "- Refund: approve\n"
+            "- Customer notification: approve"
         )
         config = {"configurable": {"thread_id": checkpoint_thread_id}}
         assert await restarted_runtime.checkpointer.aget_tuple(config) is None

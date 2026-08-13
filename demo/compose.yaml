@@ -200,6 +200,7 @@ services:
       # DEMO_CHAINLIT_OPENAI__BASE_URL: http://lgos-bifrost:8080/openai/v1 # NOTE: For testing the limited functionality
       DEMO_CHAINLIT_OPENAI__API_KEY: DUMMY
       DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval
+      DEMO_CHAINLIT_UI_FILE: hitl
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
       interval: 10s
@@ -255,7 +256,7 @@ services:
       OPENAI_API_BASE_URL: http://lgos-bifrost:8080/openai_passthrough/v1
       OPENAI_CATALOG_BASE_URL: http://lgos-bifrost:8080/v1
       OPENAI_API_KEY: ${DEMO_OPENWEBUI_API_KEY:-DUMMY}
-      WEBSOCKET_EVENT_CALLER_TIMEOUT: 300
+      WEBSOCKET_EVENT_CALLER_TIMEOUT: 30
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false
       RAG_EMBEDDING_ENGINE: openai

@@ -177,20 +177,23 @@ See
 
 ## Interrupt Approval
 
-Select `lgos-b/interruptible-approval` from the manifold Pipe to try
-confirmation. Initial requests need no interrupt metadata. The Pipe implements the
+Select `lgos-b/interruptible-approval` from the manifold Pipe and request a
+refund to try confirmation. Initial requests need no interrupt metadata. The
+demo graph produces two consecutive confirmations from parallel nested
+subgraphs: refund approval and customer-notification approval. The Pipe implements the
 [canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay),
 keeps only the current assistant/tool exchange in each resume request, and
 sends no partial batch. Compose bounds an unanswered Open WebUI confirmation to
-300 seconds with `WEBSOCKET_EVENT_CALLER_TIMEOUT`.
+30 seconds with `WEBSOCKET_EVENT_CALLER_TIMEOUT`.
 
 !!! warning "Approval recovery is live-only in this demo"
 
     Open WebUI persists its conversation, but this Function keeps the exact
     assistant/tool resume ledger only inside the active Pipe invocation. If the
     request is cancelled, the tab reloads, or the worker is lost before the
-    resume reaches LGOS, the PostgreSQL checkpoint remains pending and this
-    demo cannot reconstruct it from visible chat history.
+    resume reaches LGOS, the confirmation fails within 30 seconds and the
+    PostgreSQL checkpoint remains pending. This demo cannot reconstruct it from
+    visible chat history.
 
     A production Pipe must durably store the complete assistant tool-call
     message and its result for every call before resuming. It must also own an

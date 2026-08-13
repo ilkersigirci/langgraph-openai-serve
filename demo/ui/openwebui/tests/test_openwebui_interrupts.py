@@ -314,6 +314,23 @@ async def test_pipe_reports_host_approval_failure_without_resuming_batch(
     assert len(chat.calls) == 1
 
 
+async def test_pipe_reports_empty_host_approval_exception_without_resuming_batch(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    chat = ScriptedChat(((), interrupt_response()))
+    event_call = AsyncMock(side_effect=TimeoutError())
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await run_interrupt_pipe(configured_pipe, event_call)
+
+    assert chunks == [
+        "Open WebUI approval failed: the confirmation session disconnected or timed out"
+    ]
+    event_call.assert_awaited_once()
+    assert len(chat.calls) == 1
+
+
 @pytest.mark.parametrize("mixed", [False, True], ids=["ordinary", "mixed"])
 async def test_pipe_reports_unsupported_tool_call_batches(
     monkeypatch: pytest.MonkeyPatch,

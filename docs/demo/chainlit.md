@@ -110,7 +110,10 @@ DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 Initial requests need no interrupt metadata. The HITL client implements the
 [canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
 it asks for every decision, sends no partial batch, and repeats when the graph
-pauses again.
+pauses again. The bundled model demonstrates this with two consecutive dialogs
+from parallel nested subgraphs: refund approval and customer-notification
+approval. The client sees only one standard OpenAI tool-call batch and does not
+depend on the graph topology.
 
 !!! note "Reconnect recovery and its boundary"
 
