@@ -14,8 +14,6 @@ from langgraph_openai_serve.graph.runner import (
 from langgraph_openai_serve.graph.utils import GraphRun
 from tests.graph.support.message import make_message_graph
 
-pytestmark = pytest.mark.anyio
-
 
 class RecordingCallback(BaseCallbackHandler):
     def __init__(self) -> None:
@@ -96,7 +94,7 @@ async def test_invoke_run_collects_generic_custom_events() -> None:
         inputs={},
         context=None,
         runnable_config=None,
-        thread_id=None,
+        run_id=None,
     )
 
     invocation = await invoke_run(run)

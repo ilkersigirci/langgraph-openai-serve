@@ -18,10 +18,8 @@ Authoritative LGOS sources:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/events.py
 * Client-event schema:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/events.py
-* Interrupt tool name:
+* Interrupt tool contract:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/interrupts.py
-* Interrupt thread metadata key:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 """
 
 import logging
@@ -45,7 +43,6 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
-THREAD_METADATA_KEY = "langgraph_thread_id"
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 
 

@@ -30,8 +30,9 @@ Examples:
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from langgraph_openai_serve.api.chat import views as chat_views
 from langgraph_openai_serve.api.health import views as health_views
@@ -60,6 +61,7 @@ class LanggraphOpenaiServe:
         self,
         graphs: GraphRegistry,
         app: FastAPI | None = None,
+        checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
     ):
         """Initialize the server with a FastAPI app and a populated graph registry.
 
@@ -67,6 +69,8 @@ class LanggraphOpenaiServe:
             app: The host FastAPI application to mount the OpenAI API on. If None,
                 a new FastAPI app will be created.
             graphs: A GraphRegistry instance containing the graphs to serve.
+            checkpoint_scope: Optional server-trusted resolver used to isolate
+                interrupt checkpoints by deployment or authenticated principal.
 
         Raises:
             TypeError: If graphs is not a GraphRegistry instance.
@@ -83,6 +87,7 @@ class LanggraphOpenaiServe:
                 version=get_version(),
             )
         self.app: FastAPI = app
+        self.checkpoint_scope = checkpoint_scope or (lambda _request: "default")
 
         logger.info("Using provided GraphRegistry instance")
         self.graph_registry = graphs
@@ -90,6 +95,7 @@ class LanggraphOpenaiServe:
         # Host integrations can inspect registered graphs without traversing the
         # mounted OpenAI sub-application.
         self.app.state.graph_registry = self.graph_registry
+        self.app.state.checkpoint_scope = self.checkpoint_scope
 
         logger.info(
             f"Initialized LanggraphOpenaiServe with {len(self.graph_registry.registry)} graphs"
@@ -124,6 +130,7 @@ class LanggraphOpenaiServe:
         )
         # Dependencies in mounted routes resolve against the mounted app.
         openai_app.state.graph_registry = self.graph_registry
+        openai_app.state.checkpoint_scope = self.checkpoint_scope
         configure_openai_error_handlers(openai_app)
         openai_app.include_router(chat_views.router)
         openai_app.include_router(health_views.router)

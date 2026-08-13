@@ -109,3 +109,42 @@ jobs:
           editable-package: ${{ matrix.name == 'API' && github.workspace || '' }}
           cache-dependency-glob: demo/${{ matrix.directory }}/uv.lock
           verify-api-corpus: ${{ matrix.name == 'API' }}
+
+  postgres:
+    name: Test PostgreSQL interrupt lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.4-alpine3.23
+        env:
+          POSTGRES_USER: lgos
+          POSTGRES_PASSWORD: lgos
+          POSTGRES_DB: lgos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lgos -d lgos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: demo/api/uv.lock
+
+      - name: Test the complete interrupt lifecycle
+        env:
+          DEMO_API_TEST_POSTGRES_URI: postgresql://lgos:lgos@localhost:5432/lgos
+        run: >-
+          uv run --directory demo/api --locked --with-editable ../..
+          pytest -m integration
+          tests/integration/test_postgres_interrupt_runtime.py

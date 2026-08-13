@@ -44,6 +44,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+postgres = [
+    "langgraph-checkpoint-postgres>=3.1.0,<4",
+    "psycopg>=3.3.4,<4",
+    "psycopg-pool>=3.3.0,<4",
+]
 tracing = [
     "langfuse>=4.0.0,<5.0.0",
 ]
@@ -63,10 +68,12 @@ doc = [
     "zensical>=0.0.11",
 ]
 test = [
+    "anyio>=4.14,<5",
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.6.1",
     "pytest>=8.3.3",
-    "langgraph-checkpoint-sqlite>=3.1.0",
+    "langgraph-checkpoint-sqlite>=3.1.0,<4",
+    "psycopg[binary,pool]>=3.3.4,<4",
     "pytest-env>=1.6.0",
 ]
 [tool.uv]
@@ -75,6 +82,7 @@ required-version = "==0.12.1"
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"
+anyio_mode = "auto"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",

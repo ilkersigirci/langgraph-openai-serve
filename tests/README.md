@@ -5,6 +5,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Test Roots
 
 - `tests/` owns the installed package's API, graph runner, and utility tests.
+- `tests/api/interrupt/` keeps the interrupt codec, response, HTTP contract,
+  durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
   checkout into the demo API test run.
@@ -35,10 +37,25 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Fixtures
 
 - Use `conftest.py` for pytest fixtures only.
-- `tests/conftest.py` owns app/client fixtures shared by package tests.
+- `tests/conftest.py` owns app, client, and fresh in-memory SQLite saver
+  fixtures shared by package tests.
 - Subdirectory `conftest.py` files may add local fixtures. Package graph tests
   import reusable builders from `tests.graph.support` modules.
-- Prefer explicit fixture arguments over autouse fixtures.
+- Prefer explicit fixture arguments over autouse fixtures. Reserve autouse for
+  test-root invariants such as the isolated Chainlit application directory.
+
+## Async Tests
+
+- Each standalone test root enables AnyIO's automatic test discovery and pins
+  AnyIO 4.14 or newer. Do not add per-test or module-level AnyIO markers.
+- Each standalone test root selects the `asyncio` backend in its top-level
+  `conftest.py`. Keep the fixture function-scoped so async resources cannot
+  leak between tests.
+- Own async clients, savers, pools, and servers with yield fixtures or async
+  context managers. Keep creation and teardown together.
+- Use events plus bounded timeout scopes for concurrency assertions. Use
+  `sleep_forever()` only when a task is intentionally waiting for cancellation;
+  do not add timing sleeps to coordinate tests.
 
 ## Test Shape
 
@@ -65,14 +82,37 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Stateful LangGraph Tests
 
 - Graphs with `features={GraphFeature.INTERRUPTS}` must use a fresh
-  `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer per test.
+  `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer and a fresh
+  `InMemoryRunCoordinator` per test. Register the coordinator on
+  `GraphConfig.run_coordinator`.
+- The checkpointer used by an interrupt graph must implement asynchronous state
+  reads, checkpoint writes, pending writes, and `adelete_thread`;
+  configuration-error tests should make whichever
+  missing capability they exercise explicit.
 - Persistence tests must use a `tmp_path` SQLite file, close the first
   checkpointer, and recreate the graph with a reopened checkpointer before
   resuming.
-- Requests for interrupt-enabled graphs must include
-  `metadata.langgraph_thread_id`.
+- Initial interrupt requests need no metadata. Tests for caller-owned
+  idempotency should pass a non-nil UUID as
+  `metadata.langgraph_run_id`; invalid or reused UUID cases should remain
+  separate assertions.
+- Resume helpers must copy the complete assistant message with all original
+  `tool_calls`, then append exactly one JSON `{"resume": ...}` tool result for
+  every call. Parallel interrupts must be answered together and matched by
+  `tool_call_id`; never synthesize only the visible payload or select the first
+  call.
+- Cover the durable lifecycle at the API boundary: an initial retry with the
+  same caller run UUID re-emits the pending batch, stale or repeated resumes
+  return a conflict without re-executing work, concurrent resumes are
+  single-flight, and terminal completion deletes the checkpoint lineage.
 - Tests that intentionally verify missing checkpointer behavior should use an
   uncheckpointed graph factory so the failure setup is obvious.
+
+Real PostgreSQL tests use a unique caller-provided run UUID, close and recreate
+the runtime before resume, and delete that exact checkpoint thread in fixture
+teardown. Keep them excluded from default runs and invoke them through
+`make -C demo test-postgres` so ordinary and parallel unit runs never share an
+external database.
 
 ## Client Event Tests
 

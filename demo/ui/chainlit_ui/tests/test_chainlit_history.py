@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 
@@ -6,7 +5,6 @@ import pytest
 from chainlit_utils.settings import settings as chainlit_utils_settings
 
 
-@pytest.mark.anyio
 async def test_limited_functionality_warning_uses_transient_toast(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -27,12 +25,8 @@ async def test_limited_functionality_warning_uses_transient_toast(
     )
 
 
-@pytest.mark.anyio
-async def test_text_only_chat_messages_ignores_stale_user_session_history(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+# Chainlit binds the HTTP contexts used by the next three tests to the running loop.
+async def test_text_only_chat_messages_ignores_stale_user_session_history() -> None:
     from chainlit.context import init_http_context
     from chainlit_utils import chat
 
@@ -49,13 +43,8 @@ async def test_text_only_chat_messages_ignores_stale_user_session_history(
     assert chat.cl.user_session.get("messages") == []
 
 
-@pytest.mark.anyio
-async def test_text_only_chat_message_policy(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+async def test_text_only_chat_message_policy() -> None:
     """Keep the model-context policy explicit across Chainlit upgrades."""
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     from chainlit.context import init_http_context
     from chainlit_utils import chat
 
@@ -90,12 +79,7 @@ async def test_text_only_chat_message_policy(
     ]
 
 
-@pytest.mark.anyio
-async def test_persisted_chainlit_errors_are_excluded_after_resume(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+async def test_persisted_chainlit_errors_are_excluded_after_resume() -> None:
     from chainlit.context import init_http_context
     from chainlit.types import ThreadDict
     from chainlit_utils import chat
@@ -139,11 +123,7 @@ async def test_persisted_chainlit_errors_are_excluded_after_resume(
     ]
 
 
-def test_mark_model_context_excluded_preserves_message_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
+def test_mark_model_context_excluded_preserves_message_metadata() -> None:
     from chainlit_utils import chat
 
     message = Mock(metadata={"existing": "value"})

@@ -1,10 +1,8 @@
-import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from starlette import status
 
 
-@pytest.mark.anyio
 async def test_health_endpoint_returns_ok(
     client: AsyncClient,
     fastapi_app: FastAPI,

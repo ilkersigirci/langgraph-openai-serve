@@ -1,8 +1,9 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
@@ -16,7 +17,7 @@ _BASE_URL = "http://test"
 _TIMEOUT = 2.0
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def anyio_backend() -> str:
     """Run the package test suite on its supported async backend."""
     return "asyncio"
@@ -25,6 +26,12 @@ def anyio_backend() -> str:
 @pytest.fixture
 def message_graph():
     return build_message_graph()
+
+
+@pytest.fixture
+async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
+    async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
+        yield checkpointer
 
 
 @pytest.fixture
@@ -52,7 +59,7 @@ def fastapi_app(graph_registry: GraphRegistry) -> FastAPI:
 
 
 @pytest.fixture
-async def client(fastapi_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
+async def client(fastapi_app: FastAPI) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(
         transport=transport,
@@ -65,12 +72,11 @@ async def client(fastapi_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 async def openai_client(
     client: AsyncClient,
-) -> AsyncGenerator[AsyncOpenAI, None]:
-    openai_client = AsyncOpenAI(
+) -> AsyncIterator[AsyncOpenAI]:
+    async with AsyncOpenAI(
         api_key="test",
         base_url=f"{_BASE_URL}/v1",
         http_client=client,
         max_retries=0,
-    )
-    yield openai_client
-    await openai_client.close()
+    ) as openai_client:
+        yield openai_client

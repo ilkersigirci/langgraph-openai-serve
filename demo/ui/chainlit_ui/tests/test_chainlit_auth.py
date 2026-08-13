@@ -12,12 +12,9 @@ CHAINLIT_TARGET = (
 ).as_posix()
 
 
-@pytest.mark.anyio
 async def test_mock_chainlit_login_returns_the_demo_user(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     monkeypatch.setenv(
         "CHAINLIT_AUTH_SECRET",
         "test-chainlit-secret-with-at-least-32-bytes",

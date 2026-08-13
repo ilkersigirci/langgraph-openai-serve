@@ -7,8 +7,6 @@ from starlette import status
 
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 
-pytestmark = pytest.mark.anyio
-
 
 async def test_validation_error_returns_openai_error(
     openai_client: AsyncOpenAI,

@@ -16,8 +16,8 @@ The demo API registers these graph names as OpenAI models:
 - `status-events` streams portable status updates for native client UI.
 - `custom-event-showcase` streams explicitly public progress and artifact
   events among ordinary assistant text.
-- `interruptible-approval` persists an approval interrupt and resumes it from a
-  standard OpenAI tool result.
+- `interruptible-approval` persists one atomic interrupt batch from parallel
+  nested approval subgraphs and resumes it from standard OpenAI tool results.
 
 `GET /v1/models` lists the registered names. Detailed retrieval of one model
 can additionally advertise versioned LGOS features and safe client settings.

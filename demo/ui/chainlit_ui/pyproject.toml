@@ -23,7 +23,7 @@ dev = [
     "ruff>=0.15.12",
 ]
 test = [
-    "anyio>=4,<5",
+    "anyio>=4.14,<5",
     "httpx>=0.28.0",
     "pytest>=8.3.3",
     "pytest-env>=1.6.0",
@@ -35,6 +35,7 @@ default-groups = ["dev", "test"]
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"
+anyio_mode = "auto"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",

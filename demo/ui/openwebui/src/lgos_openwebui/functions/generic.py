@@ -1,7 +1,7 @@
 """
 title: Generic
 author: langgraph-openai-serve
-version: 0.11
+version: 0.14
 """
 
 import json
@@ -44,7 +44,6 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
-THREAD_METADATA_KEY = "langgraph_thread_id"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
 LIMITED_FUNCTIONALITY_MESSAGE = (
@@ -113,8 +112,14 @@ class Pipe:
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
+        """Forward chat and complete each interrupt batch in one invocation.
+
+        Open WebUI supplies the input ledger but this Function does not assume
+        an undocumented API for persisting raw assistant tool calls. The exact
+        assistant/tool exchange therefore remains local; cancellation leaves
+        the durable run paused and sends no partial resume.
+        """
         openwebui_metadata = __metadata__ or {}
-        thread_id = _thread_id(openwebui_metadata)
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
         forward_annotations = body.get("stream") is True
         base_url = self.valves.OPENAI_API_BASE_URL
@@ -146,77 +151,66 @@ class Pipe:
                     extension,
                     CLIENT_EVENTS_FEATURE,
                 )
-                async with _chat(
-                    client=client,
-                    messages=messages,
-                    thread_id=thread_id,
-                    model_id=model_id,
-                    runtime_metadata=runtime_metadata,
-                    include_client_events=include_client_events,
-                ) as stream:
-                    async for delta in _content_deltas(stream, __event_emitter__):
-                        yield delta
-                    response = await stream.get_final_completion()
+                while True:
+                    async with _chat(
+                        client=client,
+                        messages=messages,
+                        model_id=model_id,
+                        runtime_metadata=runtime_metadata,
+                        include_client_events=include_client_events,
+                    ) as stream:
+                        async for delta in _content_deltas(
+                            stream,
+                            __event_emitter__,
+                        ):
+                            yield delta
+                        response = await stream.get_final_completion()
 
-                if not response.choices:
-                    yield NO_CHOICES_MESSAGE
-                    return
+                    if not response.choices:
+                        yield NO_CHOICES_MESSAGE
+                        return
 
-                assistant_message = response.choices[0].message
-                for chunk in _completion_chunks(
-                    response,
-                    forward_annotations=forward_annotations,
-                ):
-                    yield chunk
+                    assistant_message = response.choices[0].message
+                    for chunk in _completion_chunks(
+                        response,
+                        forward_annotations=forward_annotations,
+                    ):
+                        yield chunk
 
-                tool_call = _interrupt_tool_call(assistant_message)
-                if tool_call is None:
-                    return
+                    tool_calls = _interrupt_tool_calls(assistant_message)
+                    if tool_calls is None:
+                        yield "Open WebUI received an unsupported tool-call batch."
+                        return
+                    if not tool_calls:
+                        return
 
-                decision, approval_error = await _approval_decision(
-                    tool_call,
-                    __event_call__,
-                )
-                if approval_error is not None:
-                    yield approval_error
-                    return
+                    decisions = []
+                    for tool_call in tool_calls:
+                        decision, error = await _approval_decision(
+                            tool_call,
+                            __event_call__,
+                        )
+                        if error is not None:
+                            yield error
+                            return
+                        assert decision is not None
+                        decisions.append(decision)
 
-                assert decision is not None
-                resume_messages = [
-                    *messages,
-                    ChatCompletionAssistantMessageParam(
-                        role=assistant_message.role,
-                        content=assistant_message.content,
-                        tool_calls=[
-                            cast(
-                                ChatCompletionMessageToolCallParam,
-                                tool_call.model_dump(mode="json"),
+                    messages = [
+                        _assistant_tool_call_message(assistant_message),
+                        *[
+                            ChatCompletionToolMessageParam(
+                                role="tool",
+                                tool_call_id=tool_call.id,
+                                content=json.dumps({"resume": decision}),
+                            )
+                            for tool_call, decision in zip(
+                                tool_calls,
+                                decisions,
+                                strict=True,
                             )
                         ],
-                    ),
-                    ChatCompletionToolMessageParam(
-                        role="tool",
-                        tool_call_id=tool_call.id,
-                        content=json.dumps({"resume": decision}),
-                    ),
-                ]
-                async with _chat(
-                    client=client,
-                    messages=resume_messages,
-                    thread_id=thread_id,
-                    model_id=model_id,
-                    runtime_metadata=runtime_metadata,
-                    include_client_events=include_client_events,
-                ) as stream:
-                    async for delta in _content_deltas(stream, __event_emitter__):
-                        yield delta
-                    response = await stream.get_final_completion()
-
-                for chunk in _completion_chunks(
-                    response,
-                    forward_annotations=forward_annotations,
-                ):
-                    yield chunk
+                    ]
         except SettingsTransportError as exc:
             yield str(exc)
         except OpenAIError as exc:
@@ -233,23 +227,19 @@ async def _chat(
     *,
     client: AsyncOpenAI,
     messages: list[ChatCompletionMessageParam],
-    thread_id: str,
     model_id: str,
     runtime_metadata: dict[str, str] | None = None,
     include_client_events: bool = False,
 ) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
-    metadata = {
-        THREAD_METADATA_KEY: thread_id,
-        **(runtime_metadata or {}),
-    }
+    metadata = dict(runtime_metadata or {})
     if include_client_events:
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
-    async with client.chat.completions.stream(
-        **_model_request(model_id),
-        messages=messages,
-        metadata=metadata,
-    ) as stream:
+    request: dict[str, Any] = {**_model_request(model_id), "messages": messages}
+    if metadata:
+        request["metadata"] = metadata
+
+    async with client.chat.completions.stream(**request) as stream:
         yield stream
 
 
@@ -263,6 +253,7 @@ def _client(
         base_url=base_url,
         api_key=api_key,
         timeout=timeout,
+        max_retries=0,
     )
 
 
@@ -276,11 +267,6 @@ def _model_id(body: dict[str, Any]) -> str:
         raise ValueError("Open WebUI did not provide a valid model ID.")
 
     return model_id
-
-
-def _thread_id(metadata: dict[str, Any]) -> str:
-    value = metadata.get("chat_id") or metadata.get("session_id") or "default"
-    return f"openwebui:function:{value}"
 
 
 async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
@@ -494,31 +480,69 @@ async def _approval_decision(
     if event_call is None:
         return None, "Open WebUI approval modal is unavailable for this request."
 
-    approval = await event_call(_approval_event(tool_call))
+    event = _approval_event(tool_call)
+    if event is None:
+        return None, "Open WebUI received an unsupported interrupt payload."
+
+    try:
+        approval = await event_call(event)
+    except Exception as exc:
+        detail = str(exc).strip()
+        if not detail:
+            detail = "the confirmation session disconnected or timed out"
+        return None, f"Open WebUI approval failed: {detail}"
     if isinstance(approval, dict) and approval.get("error"):
         return None, f"Open WebUI approval failed: {approval['error']}"
+    if approval is True:
+        return "approve", None
+    if approval is False:
+        return "reject", None
 
-    return ("approve" if approval is True else "reject"), None
+    return None, "Open WebUI approval was cancelled or timed out."
 
 
-def _interrupt_tool_call(
+def _interrupt_tool_calls(
     message: ChatCompletionMessage,
-) -> ChatCompletionMessageToolCall | None:
-    for tool_call in message.tool_calls or []:
-        if (
-            isinstance(tool_call, ChatCompletionMessageToolCall)
-            and tool_call.function.name == INTERRUPT_TOOL_NAME
-        ):
-            return tool_call
-    return None
+) -> list[ChatCompletionMessageToolCall] | None:
+    tool_calls = list(message.tool_calls or [])
+    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
+        return None
+    return tool_calls
+
+
+def _assistant_tool_call_message(
+    message: ChatCompletionMessage,
+) -> ChatCompletionAssistantMessageParam:
+    """Copy every tool call because their arguments are the resume cursor."""
+    return ChatCompletionAssistantMessageParam(
+        role=message.role,
+        content=message.content,
+        tool_calls=[
+            cast(
+                ChatCompletionMessageToolCallParam,
+                tool_call.model_dump(mode="json"),
+            )
+            for tool_call in message.tool_calls or []
+        ],
+    )
 
 
 def _approval_event(
     tool_call: ChatCompletionMessageToolCall,
-) -> dict[str, Any]:
-    payload = _interrupt_payload(tool_call) or {}
-    question = str(payload.get("question") or "Approve this agent action?")
-    request = str(payload.get("request") or json.dumps(payload, indent=2))
+) -> dict[str, Any] | None:
+    try:
+        payload = _interrupt_payload(tool_call)
+    except ValueError:
+        return None
+
+    if isinstance(payload, dict):
+        question = str(payload.get("question") or "Approve this agent action?")
+        request = str(
+            payload.get("request") or json.dumps(payload, ensure_ascii=False, indent=2)
+        )
+    else:
+        question = "Approve this agent action?"
+        request = _json_payload_text(payload)
     return {
         "type": "confirmation",
         "data": {
@@ -530,14 +554,22 @@ def _approval_event(
 
 def _interrupt_payload(
     tool_call: ChatCompletionMessageToolCall,
-) -> dict[str, object] | None:
+) -> object:
     try:
         arguments = json.loads(tool_call.function.arguments)
-    except (TypeError, json.JSONDecodeError):
-        return None
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Interrupt tool arguments must be valid JSON.") from exc
 
     if not isinstance(arguments, dict):
-        return None
+        raise ValueError("Interrupt tool arguments must be a JSON object.")
 
-    payload = arguments.get("payload")
-    return payload if isinstance(payload, dict) else None
+    if "payload" not in arguments:
+        raise ValueError("Interrupt tool arguments must contain a payload.")
+
+    return arguments["payload"]
+
+
+def _json_payload_text(payload: object) -> str:
+    if isinstance(payload, str) and payload:
+        return payload
+    return json.dumps(payload, ensure_ascii=False, indent=2)

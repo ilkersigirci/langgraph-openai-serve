@@ -7,9 +7,10 @@ implementing an OpenAI-compatible interface for model listing.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from openai.types.shared import ErrorObject
 
+from langgraph_openai_serve.api.models.deps import get_graph_registry_dependency
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 from langgraph_openai_serve.api.models.service import ModelService
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
@@ -21,11 +22,6 @@ from langgraph_openai_serve.graph.graph_registry import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/models", tags=["openai"])
-
-
-def get_graph_registry_dependency(request: Request) -> GraphRegistry:
-    """Dependency to get the graph registry from the app state."""
-    return request.app.state.graph_registry
 
 
 @router.get("", response_model=ModelList)

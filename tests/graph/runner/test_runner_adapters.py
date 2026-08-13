@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph
@@ -16,8 +15,6 @@ from tests.graph.support.schemas import (
     QuestionInput,
     QuestionState,
 )
-
-pytestmark = pytest.mark.anyio
 
 
 @dataclass

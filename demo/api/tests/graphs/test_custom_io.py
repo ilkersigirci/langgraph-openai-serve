@@ -5,7 +5,6 @@ from langgraph_openai_serve.graph.runner import run_langgraph
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("user", "expected_user"),
     [

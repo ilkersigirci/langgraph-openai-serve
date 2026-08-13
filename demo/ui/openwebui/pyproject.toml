@@ -20,7 +20,7 @@ dev = [
     "ruff>=0.15.12",
 ]
 test = [
-    "anyio>=4,<5",
+    "anyio>=4.14,<5",
     "pytest>=8.3.3",
     "pytest-xdist>=3.6.1",
 ]
@@ -30,6 +30,7 @@ default-groups = ["dev", "test"]
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"
+anyio_mode = "auto"
 addopts = [
     "--import-mode=importlib",
     "--color=yes",

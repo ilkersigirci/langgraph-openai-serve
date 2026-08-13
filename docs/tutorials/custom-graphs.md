@@ -259,23 +259,40 @@ Enable the interrupt feature for checkpointed human-in-the-loop graphs:
 
 ```python
 from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
 GraphConfig(
     graph=interruptible_graph,
     description="Request approval before performing an action.",
     features={GraphFeature.INTERRUPTS},
+    run_coordinator=InMemoryRunCoordinator(),
 )
 ```
 
-Clients must pass `metadata.langgraph_thread_id` so follow-up tool messages
-resume the same LangGraph thread. The interrupt is represented as an OpenAI tool
-call named `langgraph_interrupt`.
+The graph must be compiled with an asynchronous checkpointer that implements
+`aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`.
+LGOS generates a UUID for an initial interrupt run; callers only need to send
+`metadata.langgraph_run_id` when they want to choose that UUID for deterministic
+retries and isolation. The OpenAI tool-call ID and opaque arguments carry the
+operation and state-generation identities needed for a resume.
 
-!!! warning "A checkpointer is required"
+!!! warning "Choose coordination and storage together"
 
-    Interrupt-enabled graphs must be compiled with a checkpointer. Production
-    deployments should use durable storage so a pending thread can resume after
-    a process restart.
+    `InMemoryRunCoordinator` coordinates only one Python process. It is useful
+    only for tests or a single-process server. Production deployments need a
+    durable checkpointer and coordinator shared by every replica. Install
+    `langgraph-openai-serve[postgres]` and combine
+    `langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator` with
+    LangGraph's official `AsyncPostgresSaver`; see
+    [package reference](../reference.md#postgresql-coordination).
+
+Clients must preserve the complete assistant `tool_calls` message and submit
+exactly one result for every pending call in one resume request. See
+[Interrupt resume](openai-clients.md#interrupt-resume) for client code and
+[Tool calls and interrupts](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
+for the normative protocol, node-restart/idempotency rules, and retention
+requirements. Harden persistent deserialization according to LangGraph's
+[security advisory](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).
 
 ## Next Steps
 

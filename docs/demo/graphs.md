@@ -13,13 +13,43 @@ demo model catalogs.
 | `complex-subgraphs` | Router-selected subgraphs and nested streamed output | None | None |
 | `status-events` | Portable status updates for native client UI | `client_events` | None |
 | `custom-event-showcase` | Public progress and artifact events interleaved with text | `client_events` | None |
-| `interruptible-approval` | Checkpointed human approval represented as an OpenAI tool call | `interrupts` | PostgreSQL |
+| `interruptible-approval` | One checkpointed batch from parallel nested approval subgraphs | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | `simple-graph` | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | `lgos-rag` | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL checkpointer during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](api.md#start-postgresql-and-the-api).
+
+## Interrupt Runtime
+
+`interruptible-approval` is the only demo graph that persists API execution
+state; ordinary chat history remains client-owned. The demo uses LGOS's default
+shared checkpoint scope, so multi-tenant applications must instead derive that
+scope from authenticated server state. Operation identity, canonical replay,
+and retention rules are defined in
+[OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
+The graph runs two instances of one reusable approval subgraph in parallel:
+one approves the refund and the other approves notifying the customer. Their
+interrupts cross `/v1` as one atomic tool-call batch; clients answer the whole
+batch together without needing to understand the nested graph topology.
+
+Each demo API process opens one PostgreSQL connection pool in its FastAPI
+lifespan, waits for the pool to become ready before serving, and closes it at
+shutdown. The checkpointer and same-run coordinator share that pool. The latter
+holds a
+session-level [PostgreSQL advisory lock](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
+only while validating or advancing a request, never while awaiting human input.
+One of the pool's five connections is reserved for checkpoint I/O; exhausting
+the other four coordination slots returns HTTP 409.
+
+The demo environment enables `LANGGRAPH_STRICT_MSGPACK=true`. This selects
+LangGraph's strict allowlist policy for checkpoint deserialization; it does not
+replace database access controls or integrity monitoring. See the upstream
+[LangGraph security advisory](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).
+The demo has no expiry worker; production deployments must reap abandoned
+pending runs and follow LangGraph's
+[interrupt idempotency rules](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
 
 !!! tip "Start without provider credentials"
 
@@ -50,8 +80,8 @@ All graph code is owned by the independent `demo/api` project:
   updates.
 - `demo/api/src/lgos_demo_api/graphs/custom_events.py` emits explicitly public
   progress and artifact events.
-- `demo/api/src/lgos_demo_api/graphs/interruptible.py` pauses and resumes a
-  checkpointed approval flow.
+- `demo/api/src/lgos_demo_api/graphs/interruptible.py` runs reusable nested
+  approval steps as one checkpointed batch.
 - `demo/api/src/lgos_demo_api/graphs/citations.py` emits citation events that
   LGOS maps to OpenAI annotations.
 

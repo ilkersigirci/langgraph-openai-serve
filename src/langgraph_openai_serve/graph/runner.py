@@ -4,9 +4,11 @@ import logging
 import time
 from contextlib import aclosing
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, AsyncGenerator, cast
+from typing import Any, AsyncGenerator, Literal, cast
 
+from anyio import CancelScope
 from langchain_core.messages import AIMessageChunk
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import TAG_HIDDEN
 from langgraph.types import CustomStreamPart, StreamMode
 from pydantic import BaseModel
@@ -17,19 +19,16 @@ from langgraph_openai_serve.api.chat.schemas import (
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.interrupt import (
+    models as interrupt_models,
+    state as interrupt_state,
+)
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
     prepare_run,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class LangGraphInterrupt:
-    thread_id: str
-    interrupt_id: str
-    payload: Any
 
 
 @dataclass(frozen=True)
@@ -40,10 +39,11 @@ class LangGraphInvocation:
     custom_events: tuple[CustomStreamPart, ...]
 
 
-LangGraphOutput = str | LangGraphInterrupt
-LangGraphStreamEvent = str | LangGraphInterrupt | CustomStreamPart
+LangGraphOutput = str | interrupt_models.LangGraphInterruptBatch
+LangGraphStreamEvent = str | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
 
 _MISSING = object()
+_CheckpointDisposition = Literal["unknown", "preserve", "delete"]
 
 
 async def run_langgraph(
@@ -86,47 +86,63 @@ async def run_langgraph(
 
 async def invoke_run(run: GraphRun) -> LangGraphInvocation:
     """Invoke a graph and collect its custom events."""
-    stream_mode: list[StreamMode] = ["values", "custom"]
+    checkpoint_disposition: _CheckpointDisposition = "unknown"
+    try:
+        if not run.should_execute:
+            interrupt_batch = await _durable_interrupt_batch(run)
+            if interrupt_batch is None:
+                raise RuntimeError("Pending interrupt state disappeared before use.")
+            checkpoint_disposition = "preserve"
+            return LangGraphInvocation(output=interrupt_batch, custom_events=())
 
-    final_output: Any = _MISSING
-    custom_events: list[CustomStreamPart] = []
-    graph_stream = cast(
-        AsyncGenerator[dict[str, Any], None],
-        run.graph.astream(
-            run.inputs,
-            config=run.runnable_config,
-            context=run.context,
-            stream_mode=stream_mode,
-            output_keys=run.graph.output_channels,
-            subgraphs=True,
-            version="v2",
-        ),
-    )
-    async with aclosing(graph_stream):
-        async for event in graph_stream:
-            if event.get("type") == "custom":
-                custom_events.append(cast(CustomStreamPart, event))
-                continue
+        stream_mode: list[StreamMode] = ["values", "custom"]
 
-            # Subgraph values share this stream, but only the root namespace is
-            # the registered graph's final output.
-            if event.get("type") == "values" and not event.get("ns"):
-                if run.config.supports(GraphFeature.INTERRUPTS):
-                    interrupt = extract_stream_interrupt(event, run.thread_id)
-                    if interrupt is not None:
-                        return LangGraphInvocation(
-                            output=interrupt,
-                            custom_events=tuple(custom_events),
-                        )
-                final_output = event.get("data")
+        final_output: Any = _MISSING
+        custom_events: list[CustomStreamPart] = []
+        graph_stream = cast(
+            AsyncGenerator[dict[str, Any], None],
+            run.graph.astream(
+                run.inputs,
+                config=run.runnable_config,
+                context=run.context,
+                stream_mode=stream_mode,
+                output_keys=run.graph.output_channels,
+                **_astream_options(run),
+            ),
+        )
+        async with aclosing(graph_stream):
+            async for event in graph_stream:
+                if event.get("type") == "custom":
+                    custom_events.append(cast(CustomStreamPart, event))
+                    continue
 
-    if final_output is _MISSING:
-        raise RuntimeError("LangGraph invocation completed without a final value.")
+                # Subgraph values share this stream, but only the root namespace is
+                # the registered graph's final output.
+                if event.get("type") == "values" and not event.get("ns"):
+                    final_output = event.get("data")
 
-    return LangGraphInvocation(
-        output=await run.config.render_output(legacy_output(final_output)),
-        custom_events=tuple(custom_events),
-    )
+        if run.config.supports(GraphFeature.INTERRUPTS):
+            interrupt_batch = await _durable_interrupt_batch(run)
+            if interrupt_batch is not None:
+                checkpoint_disposition = "preserve"
+                return LangGraphInvocation(
+                    output=interrupt_batch,
+                    custom_events=tuple(custom_events),
+                )
+
+        if final_output is _MISSING:
+            raise RuntimeError("LangGraph invocation completed without a final value.")
+
+        rendered_output = await run.config.render_output(legacy_output(final_output))
+        if run.config.supports(GraphFeature.INTERRUPTS):
+            checkpoint_disposition = "delete"
+
+        return LangGraphInvocation(
+            output=rendered_output,
+            custom_events=tuple(custom_events),
+        )
+    finally:
+        await finalize_run(run, checkpoint_disposition)
 
 
 async def run_langgraph_stream(
@@ -154,47 +170,60 @@ async def run_langgraph_stream(
     logger.info(f"Starting streaming LangGraph completion for model '{model}'")
 
     run = await prepare_run(model, messages, graph_registry, request)
-    async for event in stream_run(run):
-        yield event
+    run_stream = stream_run(run)
+    async with aclosing(run_stream):
+        async for event in run_stream:
+            yield event
 
 
 async def stream_run(
     run: GraphRun,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """Stream an already prepared LangGraph invocation."""
-    stream_mode: list[StreamMode] = ["messages", "custom"]
-    if run.config.supports(GraphFeature.INTERRUPTS):
-        stream_mode.append("updates")
+    checkpoint_disposition: _CheckpointDisposition = "unknown"
+    try:
+        if not run.should_execute:
+            interrupt_batch = await _durable_interrupt_batch(run)
+            if interrupt_batch is None:
+                raise RuntimeError("Pending interrupt state disappeared before use.")
+            checkpoint_disposition = "preserve"
+            yield interrupt_batch
+            return
 
-    graph_stream = cast(
-        AsyncGenerator[dict[str, Any], None],
-        run.graph.astream(
-            run.inputs,
-            config=run.runnable_config,
-            context=run.context,
-            stream_mode=stream_mode,
-            subgraphs=True,
-            version="v2",
-        ),
-    )
-    async with aclosing(graph_stream):
-        async for event in graph_stream:
-            if event.get("type") == "custom":
-                yield cast(CustomStreamPart, event)
-                continue
+        stream_mode: list[StreamMode] = ["messages", "custom"]
 
-            if event.get("type") == "updates":
-                interrupt = extract_interrupt(event.get("data"), run.thread_id)
-                if interrupt is not None:
-                    yield interrupt
-                continue
+        graph_stream = cast(
+            AsyncGenerator[dict[str, Any], None],
+            run.graph.astream(
+                run.inputs,
+                config=run.runnable_config,
+                context=run.context,
+                stream_mode=stream_mode,
+                **_astream_options(run),
+            ),
+        )
+        async with aclosing(graph_stream):
+            async for event in graph_stream:
+                if event.get("type") == "custom":
+                    yield cast(CustomStreamPart, event)
+                    continue
 
-            if event.get("type") != "messages":
-                continue
+                if event.get("type") != "messages":
+                    continue
 
-            content = text_from_message_event(event, run)
-            if content:
-                yield content
+                content = text_from_message_event(event, run)
+                if content:
+                    yield content
+
+        if run.config.supports(GraphFeature.INTERRUPTS):
+            interrupt_batch = await _durable_interrupt_batch(run)
+            if interrupt_batch is not None:
+                checkpoint_disposition = "preserve"
+                yield interrupt_batch
+            else:
+                checkpoint_disposition = "delete"
+    finally:
+        await finalize_run(run, checkpoint_disposition)
 
 
 def text_from_message_event(event: dict, run: GraphRun) -> str | None:
@@ -220,6 +249,14 @@ def legacy_output(output: Any) -> Any:
     return output
 
 
+def _astream_options(run: GraphRun) -> dict[str, Any]:
+    """Build the shared execution options for LangGraph event streams."""
+    options: dict[str, Any] = {"subgraphs": True, "version": "v2"}
+    if run.config.supports(GraphFeature.INTERRUPTS):
+        options["durability"] = "exit"
+    return options
+
+
 def usage_for(
     output: LangGraphOutput,
     messages: list[ChatCompletionRequestMessage],
@@ -233,40 +270,49 @@ def usage_for(
     }
 
 
-def extract_interrupt(output: Any, thread_id: str | None) -> LangGraphInterrupt | None:
-    if not isinstance(output, dict) or "__interrupt__" not in output:
-        return None
-
-    interrupts = output["__interrupt__"]
-    if not interrupts:
-        return None
-
-    return interrupt_from_value(interrupts[0], thread_id)
-
-
-def extract_stream_interrupt(
-    event: dict,
-    thread_id: str | None,
-) -> LangGraphInterrupt | None:
-    """Extract interrupt metadata from a LangGraph v2 values stream part."""
-    interrupts = event.get("interrupts") or ()
-    if not interrupts:
-        return None
-    return interrupt_from_value(interrupts[0], thread_id)
-
-
-def interrupt_from_value(
-    interrupt: Any,
-    thread_id: str | None,
-) -> LangGraphInterrupt | None:
-    interrupt_id = getattr(interrupt, "id", None)
-    payload = getattr(interrupt, "value", interrupt)
-
-    if not interrupt_id:
-        return None
-
-    return LangGraphInterrupt(
-        thread_id=thread_id or "",
-        interrupt_id=interrupt_id,
-        payload=payload,
+async def _durable_interrupt_batch(
+    run: GraphRun,
+) -> interrupt_models.LangGraphInterruptBatch | None:
+    return await interrupt_state.durable_interrupt_batch(
+        run.graph,
+        run.runnable_config,
+        run.run_id,
     )
+
+
+async def finalize_run(
+    run: GraphRun,
+    checkpoint_disposition: _CheckpointDisposition,
+) -> None:
+    """Apply checkpoint retention policy and release the run lease."""
+    with CancelScope(shield=True):
+        if checkpoint_disposition == "unknown":
+            try:
+                try:
+                    if run.config.supports(GraphFeature.INTERRUPTS):
+                        await delete_checkpoint_thread(run)
+                except Exception:
+                    logger.exception(
+                        "Could not clean up an incomplete checkpoint thread."
+                    )
+            finally:
+                try:
+                    await run.aclose()
+                except Exception:
+                    logger.exception("Could not release the graph run lease.")
+            return
+
+        try:
+            if checkpoint_disposition == "delete":
+                await delete_checkpoint_thread(run)
+        finally:
+            await run.aclose()
+
+
+async def delete_checkpoint_thread(run: GraphRun) -> None:
+    """Delete terminal state retained only to support an active interrupt."""
+    if run.checkpoint_thread_id is None:
+        raise RuntimeError("Interrupt-enabled run has no checkpoint thread id.")
+
+    checkpointer = cast(BaseCheckpointSaver, run.graph.checkpointer)
+    await checkpointer.adelete_thread(run.checkpoint_thread_id)

@@ -5,6 +5,7 @@ from typing import Annotated, Any, Awaitable, Callable
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import BaseMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import (
     AfterValidator,
@@ -22,6 +23,7 @@ from langgraph_openai_serve.graph.client_settings import (
     validate_client_settings_model,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 
 GraphResolver = (
     CompiledStateGraph
@@ -35,6 +37,13 @@ ContextFactory = Callable[
     Any | Awaitable[Any],
 ]
 OutputToText = Callable[[Any], str | Awaitable[str]]
+_INTERRUPT_CHECKPOINTER_METHODS = (
+    "aget_tuple",
+    "alist",
+    "aput",
+    "aput_writes",
+    "adelete_thread",
+)
 
 
 def _addressable_model_id(value: str) -> str:
@@ -71,6 +80,7 @@ class GraphConfig(BaseModel):
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_text: OutputToText | None = None
+    run_coordinator: RunCoordinator | None = None
 
     @field_validator("client_settings")
     @classmethod
@@ -102,10 +112,20 @@ class GraphConfig(BaseModel):
                 "as context_schema."
             )
 
-        if self.supports(GraphFeature.INTERRUPTS) and graph.checkpointer is None:
-            raise GraphConfigurationError(
-                "Interrupt-enabled graphs must be compiled with a checkpointer."
-            )
+        if self.supports(GraphFeature.INTERRUPTS):
+            checkpointer = graph.checkpointer
+            if checkpointer is None or any(
+                not _overrides_checkpointer_method(checkpointer, method_name)
+                for method_name in _INTERRUPT_CHECKPOINTER_METHODS
+            ):
+                raise GraphConfigurationError(
+                    "Interrupt-enabled graphs must use a fully asynchronous "
+                    "checkpointer with thread deletion."
+                )
+            if self.run_coordinator is None:
+                raise GraphConfigurationError(
+                    "Interrupt-enabled graphs must configure a run_coordinator."
+                )
 
         return graph
 
@@ -163,6 +183,16 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _overrides_checkpointer_method(
+    checkpointer: object,
+    method_name: str,
+) -> bool:
+    """Reject async methods inherited unchanged from the saver's base stubs."""
+    implementation = getattr(type(checkpointer), method_name, None)
+    base_implementation = getattr(BaseCheckpointSaver, method_name)
+    return callable(implementation) and implementation is not base_implementation
 
 
 def _freeze_registry(

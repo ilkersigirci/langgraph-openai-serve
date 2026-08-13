@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 
+from langgraph.types import Interrupt
 from openai.types.chat.chat_completion_message import Annotation
 from openai.types.shared import ErrorObject
 
@@ -27,7 +28,8 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
     interrupt_tool_call_id,
 )
 from langgraph_openai_serve.core.errors import openai_error_payload
-from langgraph_openai_serve.graph.runner import LangGraphInterrupt, LangGraphOutput
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.runner import LangGraphOutput
 
 
 def chat_completion_response(
@@ -62,12 +64,15 @@ def response_message(
     completion: LangGraphOutput,
     annotations: list[Annotation] | None = None,
 ) -> tuple[ChatCompletionResponseMessage, str]:
-    if isinstance(completion, LangGraphInterrupt):
+    if isinstance(completion, LangGraphInterruptBatch):
         return (
             ChatCompletionResponseMessage(
                 role=Role.ASSISTANT,
                 content=None,
-                tool_calls=[interrupt_tool_call(completion)],
+                tool_calls=[
+                    interrupt_tool_call(completion, interrupt)
+                    for interrupt in completion.interrupts
+                ],
             ),
             "tool_calls",
         )
@@ -82,22 +87,28 @@ def response_message(
     )
 
 
-def interrupt_tool_call(interrupt: LangGraphInterrupt) -> ToolCall:
+def interrupt_tool_call(
+    batch: LangGraphInterruptBatch,
+    interrupt: Interrupt,
+) -> ToolCall:
     return ToolCall(
-        id=interrupt_tool_call_id(interrupt.interrupt_id),
+        id=interrupt_tool_call_id(interrupt.id),
         type="function",
         function=ToolCallFunction(
             name=INTERRUPT_TOOL_NAME,
-            arguments=interrupt_tool_arguments(interrupt),
+            arguments=interrupt_tool_arguments(batch, interrupt),
         ),
     )
 
 
-def interrupt_tool_arguments(interrupt: LangGraphInterrupt) -> str:
+def interrupt_tool_arguments(
+    batch: LangGraphInterruptBatch,
+    interrupt: Interrupt,
+) -> str:
     return interrupt_arguments(
-        thread_id=interrupt.thread_id,
-        interrupt_id=interrupt.interrupt_id,
-        payload=interrupt.payload,
+        run_id=batch.run_id,
+        state_token=batch.state_token,
+        payload=interrupt.value,
     )
 
 
@@ -122,19 +133,20 @@ class ChatCompletionStreamResponseBuilder:
             client_event_extension=extension,
         )
 
-    def interrupt(self, interrupt: LangGraphInterrupt) -> str:
+    def interrupt(self, batch: LangGraphInterruptBatch) -> str:
         return self._chunk(
             ChatCompletionStreamResponseDelta(
                 tool_calls=[
                     ChatCompletionStreamToolCall(
-                        index=0,
-                        id=interrupt_tool_call_id(interrupt.interrupt_id),
+                        index=index,
+                        id=interrupt_tool_call_id(interrupt.id),
                         type="function",
                         function=ChatCompletionStreamToolCallFunction(
                             name=INTERRUPT_TOOL_NAME,
-                            arguments=interrupt_tool_arguments(interrupt),
+                            arguments=interrupt_tool_arguments(batch, interrupt),
                         ),
                     )
+                    for index, interrupt in enumerate(batch.interrupts)
                 ],
             ),
         )

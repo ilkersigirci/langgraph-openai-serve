@@ -7,7 +7,6 @@ from langchain_core.runnables import RunnableLambda
 from lgos_demo_api.graphs import simple as simple_module
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("context", "expected_messages"),
     [

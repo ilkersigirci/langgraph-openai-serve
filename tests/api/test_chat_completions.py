@@ -13,8 +13,6 @@ from langgraph_openai_serve.api.chat.schemas import (
     Role,
 )
 
-pytestmark = pytest.mark.anyio
-
 
 def test_chat_completion_schema_excludes_legacy_function_fields() -> None:
     assert "functions" not in ChatCompletionRequest.model_fields

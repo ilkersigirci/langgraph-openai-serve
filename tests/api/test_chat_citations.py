@@ -71,7 +71,6 @@ def fastapi_app() -> FastAPI:
     return citation_app()
 
 
-@pytest.mark.anyio
 async def test_non_streaming_completion_uses_openai_inclusive_end_index(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -104,7 +103,6 @@ def test_citation_event_rejects_invalid_half_open_spans(
         citation_event(url=SOURCE_URL, title=SOURCE_TITLE, span=span)
 
 
-@pytest.mark.anyio
 async def test_streaming_completion_emits_annotations_on_final_delta(
     openai_client: AsyncOpenAI,
 ) -> None:

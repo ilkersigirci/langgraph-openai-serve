@@ -23,8 +23,10 @@ by `lgos-rag`.
 
 !!! note "Docker Compose 5.3.0 or newer"
 
-    The demo uses `pre_start` init containers to apply the API and Chainlit
-    schema migrations before their services start.
+    Chainlit uses `pre_start` for its private schema migrations. The two API
+    services instead share one dedicated `lgos-demo-api-setup` job and wait for
+    its successful completion. This avoids running the same LangGraph
+    checkpoint migration concurrently in both API workers.
 
 Prepare the demo environment:
 
@@ -93,7 +95,11 @@ directories. The checkout includes each empty service directory with a tracked
     ```
 
     Run each attached service in a separate terminal. Compose starts their
-    shared PostgreSQL dependency automatically.
+    shared PostgreSQL dependency automatically. Before either API starts,
+    `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
+    checkpoint schema once. Both APIs use
+    [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
+    as their readiness dependency.
 
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
@@ -145,8 +151,47 @@ state, and Open WebUI state use host bind mounts
 under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
 service runs as `PUID:PGID` with a read-only root filesystem, dropped
 capabilities, and explicit resource limits. Narrow tmpfs mounts hold required
-ephemeral writes. The API and Chainlit `pre_start` hooks apply their independent
-schema migrations.
+ephemeral writes. The one-shot API setup service initializes the LangGraph
+checkpoint schema before both API workers, while Chainlit's `pre_start` hook
+applies its independent UI migrations.
+
+The API workers share PostgreSQL for both durable checkpoints and fail-fast
+same-run coordination. Session-level advisory locks prevent two workers from
+advancing the same interrupt run at once; a contended request fails instead of
+waiting. No Redis service is required. The lock is held only while an API
+request validates or advances the run, never while a human is deciding. A
+per-process capacity gate also fails fast when its four lease slots are full,
+leaving the fifth pool connection available for checkpoint I/O.
+
+Compose also forces `LANGGRAPH_STRICT_MSGPACK=true` for the APIs. Strict
+deserialization narrows which checkpoint object types LangGraph may
+reconstruct, following its
+[security guidance](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).
+Protect the PostgreSQL credentials and storage as integrity-sensitive data as
+well.
+
+!!! warning "PostgreSQL is sufficient state infrastructure, not a complete operations plan"
+
+    The Compose database is a single demo container. A production deployment
+    still owns tested [backup and restore](https://www.postgresql.org/docs/current/backup.html),
+    monitoring, upgrades, and its chosen
+    [replication and failover](https://www.postgresql.org/docs/current/high-availability.html)
+    guarantees. LangGraph's exit durability writes the resumable state when an
+    invocation pauses or finishes; LGOS drains that invocation before exposing
+    interrupt tool calls. Whether the resulting commit survives loss of the
+    primary depends on the PostgreSQL replication policy.
+
+    Budget connections across every API replica. Each demo API process has a
+    five-connection pool and permits at most four simultaneous advisory leases,
+    preserving one connection for checkpoint I/O. Psycopg recommends monitoring
+    pool statistics and sizing from observed workload; see its
+    [pool guidance](https://www.psycopg.org/psycopg3/docs/advanced/pool.html#pool-connection-and-sizing).
+
+    The coordinator uses session-level advisory locks and must retain one
+    database session for the whole lease. If a proxy such as PgBouncer sits in
+    front of PostgreSQL, use session pooling or a direct coordinator connection;
+    PgBouncer documents session advisory locks as unsupported in
+    [transaction-pooling mode](https://www.pgbouncer.org/features.html#sql-feature-map-for-pooling-modes).
 
 ## What The Stack Demonstrates
 
@@ -154,7 +199,10 @@ schema migrations.
   workflow injects its tagged wheel into the API image, while development uses
   an editable parent checkout.
 - Third-party services use pinned official images rather than being repackaged.
-- Health checks and `pre_start` jobs establish service and schema readiness.
+- Health checks, the one-shot API setup service, and Chainlit's `pre_start` job
+  establish service and schema readiness.
+- PostgreSQL provides both interrupt durability and cross-worker advisory
+  coordination; the graph API needs no second persistence service.
 - Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and
   host-owned bind directories make operational assumptions visible.
 - The API, UIs, and gateway communicate only through their documented network

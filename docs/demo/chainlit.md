@@ -107,10 +107,37 @@ Run the dedicated approval UI:
 DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 ```
 
-The HITL client adds the assistant tool call and matching tool result to the
-immediate resume request. Chainlit's saved role/content transcript is not a
-canonical tool-protocol ledger, so a future general tool-executing UI must store
-completed tool pairs explicitly.
+Initial requests need no interrupt metadata. The HITL client implements the
+[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
+it asks for every decision, sends no partial batch, and repeats when the graph
+pauses again. The bundled model demonstrates this with two consecutive dialogs
+from parallel nested subgraphs: refund approval and customer-notification
+approval. The client sees only one standard OpenAI tool-call batch and does not
+depend on the graph topology.
+
+!!! note "Reconnect recovery and its boundary"
+
+    The adapter stores the exact assistant tool-call batch on the same
+    model-context-excluded Chainlit message that displays the current approval.
+    Its
+    [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
+    hook restores the newest pending batch and reattaches **Approve** and
+    **Reject** to that message after the pinned Chainlit host hydrates the
+    displayed thread. Refreshing abandons only the old live actions; it neither
+    duplicates the prompt nor rejects or resumes the graph.
+    Chainlit queues data-layer writes asynchronously, with no public flush API,
+    so a process crash can still occur before that message reaches PostgreSQL.
+    Once stored, cancellation, reload, or worker loss before the resume request
+    does not require API-side chat history.
+
+    The demo does not durably cache a terminal response or a later interrupt
+    response that has not yet reached Chainlit. If the API accepts a resume but
+    the worker loses the following response, replaying the older ledger fails
+    safely as stale; the completed output or newer batch cannot be reconstructed
+    from that old ledger. Applications requiring recovery across that window
+    need a durable result/pending-response handoff in their UI boundary. They
+    must also define retention for abandoned pending runs; the demo has no
+    expiry worker.
 
 ## Streaming, Events, And Citations
 

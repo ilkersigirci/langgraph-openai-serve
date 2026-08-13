@@ -1,4 +1,3 @@
-import pytest
 from langgraph_openai_serve import GraphConfig, GraphRegistry, citation_slice
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 from openai.types.chat.chat_completion_message import Annotation
@@ -22,7 +21,6 @@ EXPECTED_CITATIONS = [
 ]
 
 
-@pytest.mark.anyio
 async def test_streams_portable_markdown_with_anchored_citations(make_request) -> None:
     registry = GraphRegistry(
         registry={

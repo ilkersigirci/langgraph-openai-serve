@@ -21,8 +21,6 @@ from langgraph_openai_serve.graph.client_settings import (
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from tests.graph.support.schemas import MessageState
 
-pytestmark = pytest.mark.anyio
-
 
 class PublicSettings(ClientSettings):
     enabled: bool = True

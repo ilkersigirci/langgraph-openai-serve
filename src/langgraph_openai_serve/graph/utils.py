@@ -1,33 +1,40 @@
-import logging
-from dataclasses import dataclass
-from typing import Any
+"""Prepare one isolated LangGraph execution for the OpenAI API."""
 
-from langchain_core.callbacks.base import BaseCallbackManager, Callbacks
+import logging
+import sys
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass, field
+from typing import Any, cast
+
+from anyio import CancelScope
+from langchain_core.callbacks.base import (
+    BaseCallbackHandler,
+    BaseCallbackManager,
+    Callbacks,
+)
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
 )
-from langgraph_openai_serve.api.chat.utils.interrupts import (
-    NO_RESUME,
-    parse_resume_value,
-)
+from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import (
+    GraphConfig,
+    GraphRegistry,
+)
+from langgraph_openai_serve.graph.interrupt import state as interrupt_state
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = logging.getLogger(__name__)
 
-THREAD_METADATA_KEY = "langgraph_thread_id"
-
 if settings.ENABLE_LANGFUSE is True:
     from langfuse.langchain import CallbackHandler
 
-    langfuse_handler = CallbackHandler()
+    langfuse_handler = cast(BaseCallbackHandler, CallbackHandler())
 
 
 @dataclass
@@ -37,11 +44,19 @@ class GraphRun:
     inputs: Any
     context: Any
     runnable_config: RunnableConfig | None
-    thread_id: str | None
+    run_id: str | None
+    checkpoint_thread_id: str | None = None
+    should_execute: bool = True
+    _lease: AbstractAsyncContextManager[None] | None = field(
+        default=None,
+        repr=False,
+    )
 
-
-class MissingThreadIDError(ValueError):
-    """Raised when an interrupt-enabled graph request has no thread id."""
+    async def aclose(self) -> None:
+        """Release this run's single-flight lease exactly once."""
+        lease, self._lease = self._lease, None
+        if lease is not None:
+            await lease.__aexit__(None, None, None)
 
 
 async def prepare_run(
@@ -49,62 +64,84 @@ async def prepare_run(
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None,
+    *,
+    checkpoint_scope: str = "default",
 ) -> GraphRun:
     try:
         graph_config = graph_registry.get_graph(model)
-    except ValueError as e:
-        logger.error(f"Error getting graph for model '{model}': {e}")
-        raise e
+    except ValueError as exc:
+        logger.error(f"Error getting graph for model '{model}': {exc}")
+        raise
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
-    thread_id, resume_value = validate_interrupt_request(
-        graph_config,
-        messages,
-        request,
-    )
     graph = await graph_config.resolve_graph()
 
-    if resume_value is NO_RESUME:
+    if not graph_config.supports(GraphFeature.INTERRUPTS):
         lc_messages = convert_to_lc_messages(messages)
-        inputs = await graph_config.build_input(request, lc_messages)
-    else:
-        inputs = Command(resume=resume_value)
+        return GraphRun(
+            config=graph_config,
+            graph=graph,
+            inputs=await graph_config.build_input(request, lc_messages),
+            context=await graph_config.build_context(request, graph),
+            runnable_config=build_runnable_config(graph_config.runtime_callbacks),
+            run_id=None,
+        )
+
+    resume = parse_resume_request(messages)
+    requested_run_id = interrupt_state.get_run_id(request)
+    run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
+    checkpoint_thread_id = interrupt_state.checkpoint_key(
+        model,
+        run_id,
+        scope=interrupt_state.normalize_checkpoint_scope(checkpoint_scope),
+    )
+    runnable_config = build_runnable_config(
+        graph_config.runtime_callbacks,
+        configurable={"thread_id": checkpoint_thread_id},
+    )
+    if runnable_config is None:  # The configurable thread always creates one.
+        raise RuntimeError("Interrupt run has no runnable configuration.")
+
+    coordinator = graph_config.run_coordinator
+    if coordinator is None:  # resolve_graph() reports this as configuration error.
+        raise RuntimeError("Interrupt run has no coordinator.")
+    lease = coordinator(checkpoint_thread_id)
+    await lease.__aenter__()
+
+    try:
+        snapshot = await graph.aget_state(runnable_config, subgraphs=True)
+        inputs, should_execute = await interrupt_state.prepare_interrupt_input(
+            graph_config,
+            graph,
+            request,
+            snapshot,
+            resume,
+        )
+        context = (
+            await graph_config.build_context(request, graph) if should_execute else None
+        )
+    except BaseException:
+        error_info = sys.exc_info()
+        with CancelScope(shield=True):
+            try:
+                await lease.__aexit__(*error_info)
+            except Exception:
+                logger.exception(
+                    "Could not release a graph-run lease after preparation failed."
+                )
+        raise
 
     return GraphRun(
         config=graph_config,
         graph=graph,
         inputs=inputs,
-        context=await graph_config.build_context(request, graph),
-        runnable_config=build_runnable_config(
-            graph_config.runtime_callbacks,
-            configurable={"thread_id": thread_id} if thread_id else None,
-        ),
-        thread_id=thread_id,
+        context=context,
+        runnable_config=runnable_config,
+        run_id=run_id,
+        checkpoint_thread_id=checkpoint_thread_id,
+        should_execute=should_execute,
+        _lease=lease,
     )
-
-
-def validate_interrupt_request(
-    graph_config: GraphConfig,
-    messages: list[ChatCompletionRequestMessage],
-    request: ChatCompletionRequest,
-) -> tuple[str | None, Any]:
-    thread_id = get_thread_id(request)
-    if graph_config.supports(GraphFeature.INTERRUPTS) and not thread_id:
-        raise MissingThreadIDError(
-            f"metadata.{THREAD_METADATA_KEY} is required for interrupt-enabled graphs."
-        )
-
-    resume_value = (
-        parse_resume_value(messages)
-        if graph_config.supports(GraphFeature.INTERRUPTS)
-        else NO_RESUME
-    )
-
-    return thread_id, resume_value
-
-
-def get_thread_id(request: ChatCompletionRequest) -> str | None:
-    return (request.metadata or {}).get(THREAD_METADATA_KEY)
 
 
 def build_runnable_config(
@@ -117,7 +154,10 @@ def build_runnable_config(
         if callbacks is None:
             callbacks = [langfuse_handler]
         elif isinstance(callbacks, list):
-            callbacks = [*callbacks, langfuse_handler]
+            callbacks = [
+                *cast(list[BaseCallbackHandler], callbacks),
+                langfuse_handler,
+            ]
         else:
             callback_manager: BaseCallbackManager = callbacks.copy()
             callback_manager.add_handler(langfuse_handler)

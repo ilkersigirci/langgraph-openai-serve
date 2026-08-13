@@ -1,10 +1,10 @@
 import asyncio
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
+from typing import Any, cast
 
-import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -20,8 +20,9 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-
-pytestmark = pytest.mark.anyio
+from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.utils import GraphRun
 
 _TEST_TIMEOUT = 5.0
 _PROVIDER_CHUNK = (
@@ -55,7 +56,8 @@ class _NodeLifecycle:
 
 
 async def _wait_for_event(event: asyncio.Event) -> None:
-    await asyncio.wait_for(event.wait(), timeout=_TEST_TIMEOUT)
+    async with asyncio.timeout(_TEST_TIMEOUT):
+        await event.wait()
 
 
 async def _wait_until_started(
@@ -94,7 +96,8 @@ async def _serve_over_tcp(app: FastAPI) -> AsyncIterator[str]:
     finally:
         server.should_exit = True
         try:
-            await asyncio.wait_for(server_task, timeout=_TEST_TIMEOUT)
+            async with asyncio.timeout(_TEST_TIMEOUT):
+                await server_task
         except TimeoutError:
             server.force_exit = True
             server_task.cancel()
@@ -218,3 +221,33 @@ async def test_closing_openai_stream_cancels_graph_and_provider() -> None:
                 node.finalizer_release.set()
                 if stream is not None:
                     await stream.close()
+
+
+async def test_immediate_stream_close_releases_prepared_run() -> None:
+    source_started = False
+
+    async def source() -> AsyncGenerator[str, None]:
+        nonlocal source_started
+        source_started = True
+        yield "unreachable"
+
+    coordinator = InMemoryRunCoordinator()
+    lease = coordinator("prepared-run")
+    await lease.__aenter__()
+    run = GraphRun(
+        config=cast(Any, None),
+        graph=cast(Any, None),
+        inputs=None,
+        context=None,
+        runnable_config=None,
+        run_id=None,
+        _lease=lease,
+    )
+    owner = _StreamOwner()
+
+    owner.start(source(), run)
+    await owner.aclose()
+
+    assert not source_started
+    async with coordinator("prepared-run"):
+        pass

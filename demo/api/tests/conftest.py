@@ -1,14 +1,21 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def anyio_backend() -> str:
     """Run the API test suite on its supported async backend."""
     return "asyncio"
+
+
+@pytest.fixture
+async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
+    async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
+        yield checkpointer
 
 
 @pytest.fixture

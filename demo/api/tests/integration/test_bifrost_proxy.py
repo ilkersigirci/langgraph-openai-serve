@@ -7,7 +7,6 @@ BIFROST_BASE_URL = os.getenv("DEMO_TEST_BIFROST_BASE_URL")
 BIFROST_CATALOG_BASE_URL = os.getenv("DEMO_TEST_BIFROST_CATALOG_BASE_URL")
 
 pytestmark = [
-    pytest.mark.anyio,
     pytest.mark.integration,
     pytest.mark.skipif(
         BIFROST_BASE_URL is None or BIFROST_CATALOG_BASE_URL is None,

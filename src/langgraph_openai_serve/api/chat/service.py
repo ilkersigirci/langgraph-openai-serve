@@ -21,8 +21,8 @@ from langgraph_openai_serve.api.chat.utils.responses import (
     chat_completion_response,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import (
-    LangGraphInterrupt,
     invoke_run,
     stream_run,
     usage_for,
@@ -88,7 +88,7 @@ class ChatCompletionService:
             # Closing the HTTP response must also close the nested graph stream.
             async with aclosing(run_stream):
                 async for event in run_stream:
-                    if isinstance(event, LangGraphInterrupt):
+                    if isinstance(event, LangGraphInterruptBatch):
                         yield response_builder.interrupt(event)
                         yield response_builder.finish("tool_calls")
                         yield response_builder.done()
@@ -119,7 +119,7 @@ class ChatCompletionService:
                 f"Streamed chat completion finished in {time.time() - start_time:.2f}s"
             )
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error streaming chat completion")
-            yield response_builder.error(str(e))
+            yield response_builder.error("Internal server error")
             yield response_builder.done()
