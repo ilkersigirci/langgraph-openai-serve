@@ -10,35 +10,25 @@ from anyio import CancelScope
 from langchain_core.messages import AIMessageChunk
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import TAG_HIDDEN
-from langgraph.types import CustomStreamPart, Interrupt, StreamMode
+from langgraph.types import CustomStreamPart, StreamMode
 from pydantic import BaseModel
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
 )
-from langgraph_openai_serve.api.chat.utils.interrupts import (
-    validate_interrupt_payload,
-)
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.interrupt import (
+    models as interrupt_models,
+    state as interrupt_state,
+)
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
-    _interrupts_by_id,
-    checkpoint_state_token,
     prepare_run,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class LangGraphInterruptBatch:
-    """The durable interrupts awaiting answers for one graph run."""
-
-    run_id: str
-    state_token: str
-    interrupts: tuple[Interrupt, ...]
 
 
 @dataclass(frozen=True)
@@ -49,8 +39,8 @@ class LangGraphInvocation:
     custom_events: tuple[CustomStreamPart, ...]
 
 
-LangGraphOutput = str | LangGraphInterruptBatch
-LangGraphStreamEvent = str | LangGraphInterruptBatch | CustomStreamPart
+LangGraphOutput = str | interrupt_models.LangGraphInterruptBatch
+LangGraphStreamEvent = str | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
 
 _MISSING = object()
 _CheckpointDisposition = Literal["unknown", "preserve", "delete"]
@@ -99,7 +89,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
-            interrupt_batch = await durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is None:
                 raise RuntimeError("Pending interrupt state disappeared before use.")
             checkpoint_disposition = "preserve"
@@ -132,7 +122,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                     final_output = event.get("data")
 
         if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
                 return LangGraphInvocation(
@@ -193,7 +183,7 @@ async def stream_run(
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
-            interrupt_batch = await durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is None:
                 raise RuntimeError("Pending interrupt state disappeared before use.")
             checkpoint_disposition = "preserve"
@@ -226,7 +216,7 @@ async def stream_run(
                     yield content
 
         if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
                 yield interrupt_batch
@@ -280,27 +270,13 @@ def usage_for(
     }
 
 
-async def durable_interrupt_batch(run: GraphRun) -> LangGraphInterruptBatch | None:
-    """Read the durable checkpoint head after graph execution has quiesced."""
-    if run.runnable_config is None:
-        raise RuntimeError("Interrupt-enabled runs require runnable configuration.")
-
-    snapshot = await run.graph.aget_state(run.runnable_config, subgraphs=True)
-    if not snapshot.interrupts:
-        return None
-
-    interrupts_by_id = _interrupts_by_id(snapshot)
-    for interrupt in interrupts_by_id.values():
-        validate_interrupt_payload(interrupt.value)
-
-    assert run.run_id is not None
-    state_token = await checkpoint_state_token(run.graph, snapshot.config)
-    if state_token is None:
-        raise RuntimeError("Interrupted LangGraph state has no checkpoint tuple.")
-    return LangGraphInterruptBatch(
-        run_id=run.run_id,
-        state_token=state_token,
-        interrupts=tuple(interrupts_by_id.values()),
+async def _durable_interrupt_batch(
+    run: GraphRun,
+) -> interrupt_models.LangGraphInterruptBatch | None:
+    return await interrupt_state.durable_interrupt_batch(
+        run.graph,
+        run.runnable_config,
+        run.run_id,
     )
 
 

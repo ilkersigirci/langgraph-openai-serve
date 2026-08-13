@@ -22,8 +22,8 @@ from langgraph_openai_serve.graph.client_settings import (
     ClientSettings,
     validate_client_settings_model,
 )
-from langgraph_openai_serve.graph.coordination import RunCoordinator
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 
 GraphResolver = (
     CompiledStateGraph

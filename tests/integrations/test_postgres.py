@@ -4,7 +4,7 @@ from unittest.mock import ANY, AsyncMock, Mock, call
 import pytest
 from anyio import fail_after
 
-from langgraph_openai_serve.graph.coordination import RunBusyError
+from langgraph_openai_serve.graph.interrupt import RunBusyError
 from langgraph_openai_serve.integrations import postgres
 
 THREAD_1_LOCK_KEY = 5407239785987761849

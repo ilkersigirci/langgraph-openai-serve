@@ -11,7 +11,7 @@ from anyio import CancelScope
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from langgraph_openai_serve.graph.coordination import RunBusyError
+from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
 
 _TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock(%s) AS acquired"
 _UNLOCK_ADVISORY_LOCK_SQL = "SELECT pg_advisory_unlock(%s) AS released"

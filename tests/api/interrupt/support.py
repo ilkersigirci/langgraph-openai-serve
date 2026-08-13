@@ -4,7 +4,7 @@ import uuid
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI
 
-from langgraph_openai_serve.graph.utils import checkpoint_key
+from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 
 MODEL = "interruptible"
 PARALLEL_MODEL = "parallel-interrupts"

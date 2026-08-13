@@ -21,8 +21,8 @@ from langgraph_openai_serve.api.chat.utils.responses import (
     chat_completion_response,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import (
-    LangGraphInterruptBatch,
     invoke_run,
     stream_run,
     usage_for,

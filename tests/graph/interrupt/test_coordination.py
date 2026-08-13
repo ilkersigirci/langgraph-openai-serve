@@ -1,7 +1,7 @@
 import pytest
 from anyio import fail_after
 
-from langgraph_openai_serve.graph.coordination import (
+from langgraph_openai_serve.graph.interrupt import (
     InMemoryRunCoordinator,
     RunBusyError,
 )

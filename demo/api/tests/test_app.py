@@ -13,7 +13,7 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
     Role,
 )
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
 from lgos_demo_api.checkpointer import PostgresRuntime

@@ -21,7 +21,7 @@ from langgraph_openai_serve import (
     LanggraphOpenaiServe,
 )
 from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
 
 _TEST_TIMEOUT = 5.0

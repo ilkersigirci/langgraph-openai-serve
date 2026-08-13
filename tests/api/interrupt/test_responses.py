@@ -6,7 +6,7 @@ from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
     response_message,
 )
-from langgraph_openai_serve.graph.runner import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
 EXPECTED_TOOL_CALL_IDS = [
     "lg_interrupt_interrupt-b",

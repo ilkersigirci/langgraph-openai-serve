@@ -26,23 +26,27 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 
 from langgraph_openai_serve.api.chat.utils.responses import response_message
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphConfigurationError,
     GraphRegistry,
 )
-from langgraph_openai_serve.graph.runner import (
+from langgraph_openai_serve.graph.interrupt import (
+    InMemoryRunCoordinator,
     LangGraphInterruptBatch,
+)
+from langgraph_openai_serve.graph.interrupt.state import (
+    RUN_METADATA_KEY,
+    checkpoint_key,
+)
+from langgraph_openai_serve.graph.runner import (
     invoke_run,
     run_langgraph,
     run_langgraph_stream,
 )
 from langgraph_openai_serve.graph.utils import (
-    RUN_METADATA_KEY,
     GraphRun,
-    checkpoint_key,
     prepare_run,
 )
 from tests.graph.support.interrupt import (

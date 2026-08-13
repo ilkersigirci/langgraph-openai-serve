@@ -10,7 +10,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.graph.coordination import RunCoordinator
+from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 
 ApprovalDecision = Literal["approve", "reject"]
 

@@ -258,11 +258,8 @@ renders status.
 Enable the interrupt feature for checkpointed human-in-the-loop graphs:
 
 ```python
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphFeature,
-    InMemoryRunCoordinator,
-)
+from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
 GraphConfig(
     graph=interruptible_graph,

@@ -28,10 +28,8 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
     interrupt_tool_call_id,
 )
 from langgraph_openai_serve.core.errors import openai_error_payload
-from langgraph_openai_serve.graph.runner import (
-    LangGraphInterruptBatch,
-    LangGraphOutput,
-)
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.runner import LangGraphOutput
 
 
 def chat_completion_response(
