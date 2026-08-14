@@ -200,7 +200,7 @@ services:
       # DEMO_CHAINLIT_OPENAI__BASE_URL: http://lgos-bifrost:8080/openai/v1 # NOTE: For testing the limited functionality
       DEMO_CHAINLIT_OPENAI__API_KEY: DUMMY
       DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval
-      DEMO_CHAINLIT_UI_FILE: hitl
+      # DEMO_CHAINLIT_UI_FILE: hitl # NOTE: To select HITL chainlit file
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
       interval: 10s
