@@ -266,6 +266,7 @@ cython_debug/
 ##### Custom ignores ####
 
 .agents/prompts
+.agents/progress
 /.ruff_cache/
 /public/
 profile.*
