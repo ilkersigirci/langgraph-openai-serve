@@ -55,9 +55,12 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by `lgos-rag` |
 | `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | Checkpoint database |
 
-The API also reads the package-owned `LGOS_OPENAI_API_PREFIX` and
-`LGOS_OPENAI_API_DOCS_ENABLED` settings documented in the package
-[Reference](../reference.md#settings).
+The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
+`LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
+in the package [Reference](../reference.md#settings).
+The demo settings model deliberately supports its own `.env` file for local
+development; the installed LGOS package itself reads only process environment
+values or explicit constructor arguments.
 
 ## Open WebUI Sync Settings
 

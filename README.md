@@ -25,6 +25,16 @@ cross-worker run coordination, install the optional integration:
 uv add "langgraph-openai-serve[postgres]"
 ```
 
+For built-in Langfuse tracing, install the tracing integration:
+
+```bash
+uv add "langgraph-openai-serve[tracing]"
+```
+
+Set `LGOS_ENABLE_LANGFUSE=true` together with `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY`. LGOS creates the callback lazily on the first graph run;
+importing the package never initializes Langfuse.
+
 The package contains the OpenAI-compatible server integration, not a built-in
 LLM graph. Applications register their own graphs. The `demo/` checkout keeps
 each deployable application in an independent uv project with its own lockfile.

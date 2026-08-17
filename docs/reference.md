@@ -24,6 +24,7 @@ Package settings:
 | --- | --- | --- |
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
+| `LGOS_ENABLE_LANGFUSE` | `false` | Lazily adds the package Langfuse callback to every graph run. |
 
 Settings prefixed with `DEMO_` belong to the independent example applications
 and are documented under [Demo Settings and Commands](demo/reference.md).
@@ -59,6 +60,8 @@ deliberately unreachable.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
+  When Langfuse tracing is enabled, LGOS adds its callback without mutating this
+  collection or manager.
 - `run_coordinator`: asynchronous single-flight coordination for interrupt
   runs. It receives LGOS's internal run key, rejects an occupied key instead of
   queueing it, and returns an async context manager.
@@ -92,6 +95,29 @@ server-trusted scope, registered model, and operation UUID. This is deliberately
 not a UI chat or thread ID. There is intentionally no adapter for placing
 arbitrary OpenAI request fields into `config["configurable"]`; use typed runtime
 context for values consumed by nodes.
+
+Langfuse is a first-class optional integration. Install it and enable the
+default callback through process environment settings:
+
+```bash
+uv add "langgraph-openai-serve[tracing]"
+export LGOS_ENABLE_LANGFUSE=true
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+`LANGFUSE_BASE_URL` can select a self-hosted instance or an explicit cloud
+endpoint. Langfuse's `CallbackHandler` owns its standard SDK configuration and
+error behavior. LGOS constructs it on the first graph run that needs runnable
+configuration, then reuses that process-wide handler. When enabled, the
+deployment-level toggle is authoritative: LGOS adds Langfuse alongside empty,
+list, or manager callbacks without altering the registered `GraphConfig` or
+caller-owned collection. To provide a custom Langfuse handler, leave the toggle
+off and pass that handler through `runtime_callbacks`.
+
+For explicit construction, import
+`langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
+application-created vendor handler through `runtime_callbacks`.
 
 The same `features` set drives runtime behavior and the versioned
 `langgraph_openai_serve.features` extension returned by

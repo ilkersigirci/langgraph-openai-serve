@@ -7,11 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from anyio import CancelScope
-from langchain_core.callbacks.base import (
-    BaseCallbackHandler,
-    BaseCallbackManager,
-    Callbacks,
-)
+from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
@@ -27,14 +23,10 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import state as interrupt_state
+from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = logging.getLogger(__name__)
-
-if settings.ENABLE_LANGFUSE is True:
-    from langfuse.langchain import CallbackHandler
-
-    langfuse_handler = cast(BaseCallbackHandler, CallbackHandler())
 
 
 @dataclass
@@ -148,20 +140,20 @@ def build_runnable_config(
     callbacks: Callbacks,
     configurable: dict[str, Any] | None = None,
 ) -> RunnableConfig | None:
-    if settings.ENABLE_LANGFUSE is True:
+    if settings.ENABLE_LANGFUSE:
         # GraphConfig is shared across requests; add tracing without mutating its
         # callback collection or manager.
+        langfuse_callback = get_langfuse_callback()
         if callbacks is None:
-            callbacks = [langfuse_handler]
+            callbacks = [langfuse_callback]
         elif isinstance(callbacks, list):
             callbacks = [
                 *cast(list[BaseCallbackHandler], callbacks),
-                langfuse_handler,
+                langfuse_callback,
             ]
         else:
-            callback_manager: BaseCallbackManager = callbacks.copy()
-            callback_manager.add_handler(langfuse_handler)
-            callbacks = callback_manager
+            callbacks = callbacks.copy()
+            callbacks.add_handler(langfuse_callback)
 
     kwargs: dict[str, Any] = {}
     if callbacks:
