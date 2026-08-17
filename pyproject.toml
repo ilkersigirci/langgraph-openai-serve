@@ -121,61 +121,59 @@ skip-magic-trailing-comma = false
 [tool.ruff.lint]
 
 select = [
+    "A", # flake8-builtins
+    "ANN", # flake8-annotations
+    "ARG", # flake8-unused-arguments
+    "ASYNC", # async
     "B",  # flake8-bugbear
+    "BLE", # flake8-blind-except
     "C",  # flake8-comprehensions
     "C9",  # mccabe
+    "DTZ", # flake8-datetimez
     "E",  # pycodestyle errors (default)
+    "ERA", # eradicate
+    "EXE", # flake8-executable
     "F",  # pyflakes (default)
+    "FA", # flake8-future-annotations
+    "FAST", # fastapi
+    "FBT", # flake8-boolean-trap
+    "FIX", # flake8-fixme
+    "FLY", # flynt
+    "FURB", # refurb
     "I",  # isort
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420
+    "ISC", # flake8-implicit-str-concat
+    "LOG", # flake8-logging
+    "N", # pep8-naming
     "PD", # pandas-vet
+    "PERF", # perflint
+    "PGH", # pygrep-hooks
     "PIE", # pie
     "PL",  # pylint
-    "PTH", # pathlib
-    "Q",  # flake8-quotes
-    "RET", # return
-    "RUF", # Enable all ruff-specific checks
-    "SIM", # simplify
-    "S307", # eval
-    # "T20",  # (disallow print statements) keep debugging statements out of the codebase
-    "W",  # pycodestyle warnings
-    "ASYNC", # async
-    "FAST", # fastapi
-    "UP", # pyupgrade
-    "TC", # flake8-type-checking
-    "LOG", # flake8-logging
-    "PT", # flake8-pytest-style
-    "A", # flake8-builtins
-    "DTZ", # flake8-datetimez
-    "ERA", # eradicate
-    "ISC", # flake8-implicit-str-concat
-    "PERF", # perflint
-    "FURB", # refurb
-    "FLY", # flynt
-    "BLE", # flake8-blind-except
-    "INP", # flake8-no-pep420
-    "PGH", # pygrep-hooks
-    "TID", # flake8-tidy-imports
-    "YTT", # flake8-2020
-    "N", # pep8-naming
-    "EXE", # flake8-executable
-    "ICN", # flake8-import-conventions
-    "TD", # flake8-todos
-    "RSE", # flake8-raise
-    "T10", # flake8-debugger
-    "FA", # flake8-future-annotations
-    "SLOT", # flake8-slots
-    "PYI", # flake8-pyi
-    "ARG", # flake8-unused-arguments
-    "S",   # flake8-bandit
-    "T20", # flake8-print
-    "ANN", # flake8-annotations
-    "SLF", # flake8-self
-    "FBT", # flake8-boolean-trap
     "PLC", # pylint convention
     "PLE", # pylint error
     "PLW", # pylint warning
-    "N",   # pep8-naming
-    "FIX", # flake8-fixme
+    "PT", # flake8-pytest-style
+    "PTH", # pathlib
+    "PYI", # flake8-pyi
+    "Q",  # flake8-quotes
+    "RET", # return
+    "RSE", # flake8-raise
+    "RUF", # Enable all ruff-specific checks
+    "S",   # flake8-bandit
+    "S307", # eval
+    "SIM", # simplify
+    "SLF", # flake8-self
+    "SLOT", # flake8-slots
+    "T10", # flake8-debugger
+    "T20", # flake8-print
+    "TC", # flake8-type-checking
+    "TD", # flake8-todos
+    "TID", # flake8-tidy-imports
+    "UP", # pyupgrade
+    "W",  # pycodestyle warnings
+    "YTT", # flake8-2020
 ]
 
 ignore = [
