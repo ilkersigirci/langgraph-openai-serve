@@ -91,10 +91,18 @@ def parse_resume_request(
         return None
 
     tool_messages = messages[tool_start:]
-    assistant = messages[tool_start - 1] if tool_start else None
-    calls = assistant.tool_calls if assistant is not None else None
+    assistant = messages[tool_start - 1] if tool_start > 0 else None
+
+    if assistant is None or assistant.role != Role.ASSISTANT:
+        if any(_is_interrupt_tool_result(message) for message in tool_messages):
+            raise InvalidResumeRequestError(
+                "Interrupt tool results must follow their assistant tool calls."
+            )
+        return None
+
+    calls = assistant.tool_calls or []
     interrupt_calls = [
-        call for call in calls or [] if call.function.name == INTERRUPT_TOOL_NAME
+        call for call in calls if call.function.name == INTERRUPT_TOOL_NAME
     ]
 
     if not interrupt_calls:
@@ -104,11 +112,7 @@ def parse_resume_request(
             )
         return None
 
-    if assistant is None or assistant.role != Role.ASSISTANT:
-        raise InvalidResumeRequestError(
-            "Interrupt tool results must follow their assistant tool calls."
-        )
-    if len(interrupt_calls) != len(calls or []):
+    if len(interrupt_calls) != len(calls):
         raise InvalidResumeRequestError(
             "Interrupt and ordinary tool calls cannot be resumed in one exchange."
         )

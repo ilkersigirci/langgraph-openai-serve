@@ -154,7 +154,7 @@ class Pipe:
                 while True:
                     async with _chat(
                         client=client,
-                        messages=messages,
+                        messages=messages,  # ty: ignore[invalid-argument-type]
                         model_id=model_id,
                         runtime_metadata=runtime_metadata,
                         include_client_events=include_client_events,
@@ -193,7 +193,8 @@ class Pipe:
                         if error is not None:
                             yield error
                             return
-                        assert decision is not None
+                        if decision is None:
+                            raise RuntimeError("Decision cannot be None")
                         decisions.append(decision)
 
                     messages = [
@@ -505,9 +506,9 @@ def _interrupt_tool_calls(
     message: ChatCompletionMessage,
 ) -> list[ChatCompletionMessageToolCall] | None:
     tool_calls = list(message.tool_calls or [])
-    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
+    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):  # ty: ignore[unresolved-attribute]
         return None
-    return tool_calls
+    return tool_calls  # ty: ignore[invalid-return-type]
 
 
 def _assistant_tool_call_message(

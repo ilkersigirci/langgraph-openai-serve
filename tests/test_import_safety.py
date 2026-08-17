@@ -58,14 +58,7 @@ def _import_settings(
 
 def test_package_import_ignores_working_directory_dotenv(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text(
-        "\n".join(
-            (
-                "LGOS_OPENAI_API_PREFIX=not-a-path",
-                "LGOS_OPENAI_API_DOCS_ENABLED=not-a-boolean",
-                "LGOS_ENABLE_LANGFUSE=true",
-                "LANGFUSE_BASE_URL=not-a-url",
-            )
-        ),
+        "LGOS_OPENAI_API_PREFIX=not-a-path\nLGOS_OPENAI_API_DOCS_ENABLED=not-a-boolean\nLGOS_ENABLE_LANGFUSE=true\nLANGFUSE_BASE_URL=not-a-url",
         encoding="utf-8",
     )
 

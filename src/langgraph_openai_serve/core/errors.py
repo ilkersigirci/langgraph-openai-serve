@@ -1,14 +1,16 @@
 """OpenAI-compatible error response helpers."""
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai.types.shared import ErrorObject
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.types import HTTPExceptionHandler
+
+if TYPE_CHECKING:
+    from starlette.types import HTTPExceptionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +36,9 @@ class OpenAIHTTPException(HTTPException):
 def configure_openai_error_handlers(app: FastAPI) -> None:
     """Install OpenAI-compatible JSON error handlers on a FastAPI app."""
     # Starlette dispatches each handler only for its registered exception class.
-    http_handler = cast(HTTPExceptionHandler, openai_http_exception_handler)
+    http_handler = cast("HTTPExceptionHandler", openai_http_exception_handler)
     validation_handler = cast(
-        HTTPExceptionHandler,
+        "HTTPExceptionHandler",
         openai_request_validation_exception_handler,
     )
 
@@ -57,7 +59,7 @@ def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
 
 
 async def openai_http_exception_handler(
-    request: Request,
+    _request: Request,
     exc: StarletteHTTPException,
 ) -> JSONResponse:
     if isinstance(exc, OpenAIHTTPException):
@@ -79,7 +81,7 @@ async def openai_http_exception_handler(
 
 
 async def openai_request_validation_exception_handler(
-    request: Request,
+    _request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
     first_error = exc.errors()[0] if exc.errors() else {}
@@ -106,10 +108,10 @@ async def openai_request_validation_exception_handler(
 
 
 async def openai_unhandled_exception_handler(
-    request: Request,
-    exc: Exception,
+    _request: Request,
+    _exc: Exception,
 ) -> JSONResponse:
-    logger.exception("Unhandled OpenAI-compatible API error")
+    logger.error("Unhandled OpenAI-compatible API error")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=openai_error_payload(

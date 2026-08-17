@@ -183,7 +183,7 @@ async def checkpoint_state_token(
     current 1-2 tuple runs, scaling linearly to about 5 ms at 100 and 45 ms at
     1,000 small tuples.
     """
-    checkpointer = cast(BaseCheckpointSaver, graph.checkpointer)
+    checkpointer = cast("BaseCheckpointSaver", graph.checkpointer)
     thread_id = runnable_config["configurable"]["thread_id"]
     heads: dict[str, tuple[str, list[tuple[str, int]]]] = {}
 
@@ -249,7 +249,8 @@ async def durable_interrupt_batch(
     for interrupt in pending_interrupts.values():
         validate_interrupt_payload(interrupt.value)
 
-    assert run_id is not None
+    if run_id is None:
+        raise RuntimeError("run_id cannot be None")
     state_token = await checkpoint_state_token(graph, snapshot.config)
     if state_token is None:
         raise RuntimeError("Interrupted LangGraph state has no checkpoint tuple.")

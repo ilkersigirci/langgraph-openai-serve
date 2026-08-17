@@ -58,8 +58,8 @@ tracing = [
 dev = [
     "ipykernel>=6.29.5",
     "prek>=0.3.11",
-    "ruff>=0.15.12",
-    "ty>=0.0.55",
+    "ruff>=0.16.3",
+    "ty>=0.0.72",
 ]
 doc = [
     # Zensical uses its mike fork as the versioning bridge until native support:
@@ -109,6 +109,11 @@ extend-exclude = [
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
+"*.ipynb" = ["ERA001", "T201", "ANN"]
+"tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT"]
+"demo/*/tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT", "PLC0415"]
+"demo/*" = ["S104", "T201", "PLC0415"]
+"src/langgraph_openai_serve/core/settings.py" = ["FBT001"]
 
 [tool.ruff.format]
 skip-magic-trailing-comma = false
@@ -116,30 +121,65 @@ skip-magic-trailing-comma = false
 [tool.ruff.lint]
 
 select = [
+    "A", # flake8-builtins
+    "ANN", # flake8-annotations
+    "ARG", # flake8-unused-arguments
+    "ASYNC", # async
     "B",  # flake8-bugbear
+    "BLE", # flake8-blind-except
     "C",  # flake8-comprehensions
     "C9",  # mccabe
-
+    "DTZ", # flake8-datetimez
     "E",  # pycodestyle errors (default)
+    "ERA", # eradicate
+    "EXE", # flake8-executable
     "F",  # pyflakes (default)
+    "FA", # flake8-future-annotations
+    "FAST", # fastapi
+    "FBT", # flake8-boolean-trap
+    "FIX", # flake8-fixme
+    "FLY", # flynt
+    "FURB", # refurb
     "I",  # isort
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420
+    "ISC", # flake8-implicit-str-concat
+    "LOG", # flake8-logging
+    "N", # pep8-naming
     "PD", # pandas-vet
+    "PERF", # perflint
+    "PGH", # pygrep-hooks
     "PIE", # pie
     "PL",  # pylint
+    "PLC", # pylint convention
+    "PLE", # pylint error
+    "PLW", # pylint warning
+    "PT", # flake8-pytest-style
     "PTH", # pathlib
+    "PYI", # flake8-pyi
     "Q",  # flake8-quotes
     "RET", # return
+    "RSE", # flake8-raise
     "RUF", # Enable all ruff-specific checks
-    "SIM", # simplify
+    "S",   # flake8-bandit
     "S307", # eval
-    # "T20",  # (disallow print statements) keep debugging statements out of the codebase
+    "SIM", # simplify
+    "SLF", # flake8-self
+    "SLOT", # flake8-slots
+    "T10", # flake8-debugger
+    "T20", # flake8-print
+    "TC", # flake8-type-checking
+    "TD", # flake8-todos
+    "TID", # flake8-tidy-imports
+    "UP", # pyupgrade
     "W",  # pycodestyle warnings
-    "ASYNC" # async
+    "YTT", # flake8-2020
 ]
 
 ignore = [
     "E501",  # Line too long, handled by ruff formatter
     "D107", # "Missing docstring in __init__",
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
 ]
 
 unfixable = [

@@ -40,24 +40,25 @@ def convert_to_lc_messages(
 
     lc_messages: list[BaseMessage] = []
     for m in messages:
-        if m.role == Role.SYSTEM:
-            lc_messages.append(SystemMessage(content=m.content or "", name=m.name))
-        elif m.role == Role.USER:
-            lc_messages.append(HumanMessage(content=m.content or "", name=m.name))
-        elif m.role == Role.ASSISTANT:
-            lc_messages.append(_assistant_message(m))
-        elif m.role == Role.TOOL:
-            if m.tool_call_id is None:
-                raise InvalidChatMessageError(
-                    "Tool messages require the 'tool_call_id' field."
+        match m.role:
+            case Role.SYSTEM:
+                lc_messages.append(SystemMessage(content=m.content or "", name=m.name))
+            case Role.USER:
+                lc_messages.append(HumanMessage(content=m.content or "", name=m.name))
+            case Role.ASSISTANT:
+                lc_messages.append(_assistant_message(m))
+            case Role.TOOL:
+                if m.tool_call_id is None:
+                    raise InvalidChatMessageError(
+                        "Tool messages require the 'tool_call_id' field."
+                    )
+                lc_messages.append(
+                    ToolMessage(
+                        content=m.content or "",
+                        name=m.name,
+                        tool_call_id=m.tool_call_id,
+                    )
                 )
-            lc_messages.append(
-                ToolMessage(
-                    content=m.content or "",
-                    name=m.name,
-                    tool_call_id=m.tool_call_id,
-                )
-            )
     return lc_messages
 
 
@@ -74,15 +75,13 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
         additional_kwargs["tool_calls"] = raw_tool_calls
 
         for raw_tool_call in raw_tool_calls:
-            raw_arguments = raw_tool_call["function"]["arguments"]
+            raw_arguments = raw_tool_call.get("function", {}).get("arguments", "")
             if raw_arguments:
+                # LangChain's parse_tool_call handles invalid JSON strings (like "false" or "0")
+                # by coercing them to an empty dict. We manually parse first to reject these.
                 try:
-                    decoded_arguments = json.loads(raw_arguments)
-                except json.JSONDecodeError:
-                    # Preserve LangChain's richer invalid-tool-call diagnostics.
-                    pass
-                else:
-                    if not isinstance(decoded_arguments, dict):
+                    decoded = json.loads(raw_arguments)
+                    if not isinstance(decoded, dict):
                         invalid_tool_calls.append(
                             make_invalid_tool_call(
                                 raw_tool_call,
@@ -90,6 +89,9 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
                             )
                         )
                         continue
+                except json.JSONDecodeError:
+                    # Let LangChain handle actual JSONDecodeErrors for richer diagnostics.
+                    pass
 
             try:
                 parsed_tool_call = parse_tool_call(raw_tool_call, return_id=True)
@@ -101,6 +103,7 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
 
             if parsed_tool_call is None:
                 continue
+
             if not isinstance(parsed_tool_call.get("args"), dict):
                 invalid_tool_calls.append(
                     make_invalid_tool_call(
@@ -109,7 +112,8 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
                     )
                 )
                 continue
-            tool_calls.append(cast(ToolCall, parsed_tool_call))
+
+            tool_calls.append(cast("ToolCall", parsed_tool_call))
 
     return AIMessage(
         content=message.content or "",

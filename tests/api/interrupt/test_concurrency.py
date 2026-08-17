@@ -1,14 +1,18 @@
+from typing import TYPE_CHECKING
+
 import pytest
 from anyio import create_task_group, fail_after
 from fastapi import FastAPI
 from openai import AsyncOpenAI, ConflictError
-from openai.types.chat import ChatCompletion
 
 from .support import (
     CONCURRENT_MODEL,
     create_completion,
     resume_messages,
 )
+
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletion
 
 
 async def test_concurrent_resume_executes_post_interrupt_work_once(

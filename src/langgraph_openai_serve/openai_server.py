@@ -62,7 +62,7 @@ class LanggraphOpenaiServe:
         graphs: GraphRegistry,
         app: FastAPI | None = None,
         checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
-    ):
+    ) -> None:
         """Initialize the server with a FastAPI app and a populated graph registry.
 
         Args:
@@ -104,29 +104,24 @@ class LanggraphOpenaiServe:
             f"Available graphs: {', '.join(self.graph_registry.get_graph_names())}"
         )
 
-    def bind_openai_api(self, prefix: str | None = None):
+    def bind_openai_api(self, prefix: str | None = None) -> "LanggraphOpenaiServe":
         """Mount OpenAI-compatible endpoints on the host FastAPI app.
 
         Args:
             prefix: Optional; The URL prefix for the OpenAI-compatible endpoints.
                 Defaults to settings.OPENAI_API_PREFIX.
         """
-        if prefix is None:
-            prefix = settings.OPENAI_API_PREFIX
-        else:
-            prefix = normalize_openai_api_prefix(prefix)
-
-        docs_url = "/docs" if settings.OPENAI_API_DOCS_ENABLED else None
-        redoc_url = "/redoc" if settings.OPENAI_API_DOCS_ENABLED else None
-        openapi_url = "/openapi.json" if settings.OPENAI_API_DOCS_ENABLED else None
+        prefix = (
+            normalize_openai_api_prefix(prefix)
+            if prefix is not None
+            else settings.OPENAI_API_PREFIX
+        )
 
         openai_app = FastAPI(
             title="LangGraph OpenAI Compatible API",
             description="An OpenAI-compatible API for LangGraph",
             version=get_version(),
-            docs_url=docs_url,
-            redoc_url=redoc_url,
-            openapi_url=openapi_url,
+            **settings.fastapi_docs_kwargs,
         )
         # Dependencies in mounted routes resolve against the mounted app.
         openai_app.state.graph_registry = self.graph_registry

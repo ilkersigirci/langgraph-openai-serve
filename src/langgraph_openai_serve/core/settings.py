@@ -1,8 +1,15 @@
 import importlib.util
 import os
+from typing import TypedDict
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class FastAPIDocsKwargs(TypedDict):
+    docs_url: str | None
+    redoc_url: str | None
+    openapi_url: str | None
 
 
 def normalize_openai_api_prefix(v: str) -> str:
@@ -62,6 +69,17 @@ class Settings(BaseSettings):
             )
 
         return v
+
+    @property
+    def fastapi_docs_kwargs(self) -> FastAPIDocsKwargs:
+        """Return kwargs to configure FastAPI docs visibility."""
+        if self.OPENAI_API_DOCS_ENABLED:
+            return {
+                "docs_url": "/docs",
+                "redoc_url": "/redoc",
+                "openapi_url": "/openapi.json",
+            }
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
 
 settings = Settings()

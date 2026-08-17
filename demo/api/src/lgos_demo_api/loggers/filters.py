@@ -26,7 +26,7 @@ class SimpleThreadFilter(logging.Filter):
         thread_name: Name of the thread that will be filtered.
     """
 
-    def __init__(self, thread_name: str):
+    def __init__(self, thread_name: str) -> None:
         self.thread_name = thread_name
         super().__init__()
 

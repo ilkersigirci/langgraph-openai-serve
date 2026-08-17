@@ -3,7 +3,7 @@ import socket
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import uvicorn
 from fastapi import FastAPI
@@ -12,7 +12,6 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from openai import AsyncOpenAI, AsyncStream
-from openai.types.chat import ChatCompletionChunk
 from pydantic import BaseModel
 
 from langgraph_openai_serve import (
@@ -23,6 +22,9 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
+
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletionChunk
 
 _TEST_TIMEOUT = 5.0
 _PROVIDER_CHUNK = (
@@ -235,8 +237,8 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
     lease = coordinator("prepared-run")
     await lease.__aenter__()
     run = GraphRun(
-        config=cast(Any, None),
-        graph=cast(Any, None),
+        config=cast("Any", None),
+        graph=cast("Any", None),
         inputs=None,
         context=None,
         runnable_config=None,

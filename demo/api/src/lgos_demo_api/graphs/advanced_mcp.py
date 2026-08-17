@@ -6,13 +6,16 @@ from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool, tool
+from langgraph.graph.state import CompiledStateGraph
 from langgraph_openai_serve import GraphConfig
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
     """Fake chat model that supports LangGraph tool binding for the demo."""
 
-    def bind_tools(self, tools: list[BaseTool], **kwargs: Any):
+    def bind_tools(
+        self, tools: list[BaseTool], **kwargs: Any
+    ) -> "MockToolCallingChatModel":  # ty: ignore[invalid-method-override]
         return self
 
 
@@ -29,7 +32,7 @@ async def mock_weather_tool(city: str) -> str:
     return f"The mock MCP weather service says it is sunny in {city}."
 
 
-async def advanced_mcp_graph():
+async def advanced_mcp_graph() -> CompiledStateGraph:
     """Build a ReAct graph after asynchronously loading MCP-style tools."""
     tools = await MockMCPClient().get_tools()
     model = MockToolCallingChatModel(

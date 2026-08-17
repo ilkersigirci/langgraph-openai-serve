@@ -10,7 +10,9 @@ async def stream_fake_chat_response(
 ) -> str:
     """Stream a deterministic fake chat response and collect it for graph state."""
     model = GenericFakeChatModel(messages=iter([response]))
-    chunks = []
-    async for chunk in model.astream([HumanMessage(content=prompt)]):
-        chunks.append(str(chunk.content))
-    return "".join(chunks)
+    return "".join(
+        [
+            str(chunk.content)
+            async for chunk in model.astream([HumanMessage(content=prompt)])
+        ]
+    )

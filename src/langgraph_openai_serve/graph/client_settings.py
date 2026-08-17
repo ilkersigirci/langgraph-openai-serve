@@ -30,7 +30,7 @@ class ClientSettings(BaseModel):
     def defaults(cls) -> Self:
         """Return a deep copy of the registration-validated defaults."""
         return cast(
-            Self,
+            "Self",
             _validated_contract(cls).defaults.model_copy(deep=True),
         )
 

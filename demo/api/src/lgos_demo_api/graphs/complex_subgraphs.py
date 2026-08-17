@@ -15,7 +15,7 @@ class QuestionInput(BaseModel):
 
 
 def request_to_input(
-    request: ChatCompletionRequest,
+    _request: ChatCompletionRequest,
     messages: list[BaseMessage],
 ) -> dict[str, str]:
     last_message = messages[-1]
@@ -23,8 +23,8 @@ def request_to_input(
     return {"question": input_model.question}
 
 
-def output_to_text(output: dict[str, Any]) -> str:
-    return output["answer"]
+def output_to_text(output: Any) -> str:
+    return output.answer
 
 
 def create_complex_subgraphs_graph_config() -> GraphConfig:

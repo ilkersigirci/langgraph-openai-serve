@@ -1,7 +1,7 @@
 import inspect
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
-from typing import Annotated, Any, Awaitable, Callable
+from typing import Annotated, Any
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import BaseMessage
@@ -234,6 +234,7 @@ class GraphRegistry(BaseModel):
         Raises:
             GraphNotFoundError: If the graph name is not found in the registry.
         """
-        if name not in self.registry:
-            raise GraphNotFoundError(f"Graph '{name}' not found in registry.")
-        return self.registry[name]
+        try:
+            return self.registry[name]
+        except KeyError as exc:
+            raise GraphNotFoundError(f"Graph '{name}' not found in registry.") from exc

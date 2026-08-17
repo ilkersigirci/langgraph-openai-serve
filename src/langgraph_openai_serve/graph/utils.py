@@ -59,11 +59,7 @@ async def prepare_run(
     *,
     checkpoint_scope: str = "default",
 ) -> GraphRun:
-    try:
-        graph_config = graph_registry.get_graph(model)
-    except ValueError as exc:
-        logger.error(f"Error getting graph for model '{model}': {exc}")
-        raise
+    graph_config = graph_registry.get_graph(model)
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
     graph = await graph_config.resolve_graph()
@@ -148,7 +144,7 @@ def build_runnable_config(
             callbacks = [langfuse_callback]
         elif isinstance(callbacks, list):
             callbacks = [
-                *cast(list[BaseCallbackHandler], callbacks),
+                *cast("list[BaseCallbackHandler]", callbacks),
                 langfuse_callback,
             ]
         else:

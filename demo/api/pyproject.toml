@@ -12,7 +12,7 @@ dependencies = [
     "langchain-text-splitters>=1.1.0",
     "langgraph>=1.1.10,<2.0.0",
     "langgraph-checkpoint-postgres>=3.1.0,<4",
-    "langgraph-openai-serve[tracing]>=0.6.0",
+    "langgraph-openai-serve[tracing]>=0.10.1",
     "numpy>=2.4.6",
     "psycopg[binary,pool]>=3.3.4,<4",
     "pydantic>=2.11,<3",
@@ -25,7 +25,8 @@ lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.12",
+    "ruff>=0.16.3",
+    "ty>=0.0.72",
 ]
 test = [
     "anyio>=4.14,<5",

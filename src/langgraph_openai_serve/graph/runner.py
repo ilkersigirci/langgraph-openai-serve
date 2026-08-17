@@ -2,16 +2,15 @@
 
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, AsyncGenerator, Literal, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from anyio import CancelScope
 from langchain_core.messages import AIMessageChunk
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import TAG_HIDDEN
 from langgraph.types import CustomStreamPart, StreamMode
-from pydantic import BaseModel
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -27,6 +26,9 @@ from langgraph_openai_serve.graph.utils import (
     GraphRun,
     prepare_run,
 )
+
+if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +102,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         final_output: Any = _MISSING
         custom_events: list[CustomStreamPart] = []
         graph_stream = cast(
-            AsyncGenerator[dict[str, Any], None],
+            "AsyncGenerator[dict[str, Any], None]",
             run.graph.astream(
                 run.inputs,
                 config=run.runnable_config,
@@ -113,7 +115,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         async with aclosing(graph_stream):
             async for event in graph_stream:
                 if event.get("type") == "custom":
-                    custom_events.append(cast(CustomStreamPart, event))
+                    custom_events.append(cast("CustomStreamPart", event))
                     continue
 
                 # Subgraph values share this stream, but only the root namespace is
@@ -133,7 +135,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         if final_output is _MISSING:
             raise RuntimeError("LangGraph invocation completed without a final value.")
 
-        rendered_output = await run.config.render_output(legacy_output(final_output))
+        rendered_output = await run.config.render_output(final_output)
         if run.config.supports(GraphFeature.INTERRUPTS):
             checkpoint_disposition = "delete"
 
@@ -193,7 +195,7 @@ async def stream_run(
         stream_mode: list[StreamMode] = ["messages", "custom"]
 
         graph_stream = cast(
-            AsyncGenerator[dict[str, Any], None],
+            "AsyncGenerator[dict[str, Any], None]",
             run.graph.astream(
                 run.inputs,
                 config=run.runnable_config,
@@ -205,7 +207,7 @@ async def stream_run(
         async with aclosing(graph_stream):
             async for event in graph_stream:
                 if event.get("type") == "custom":
-                    yield cast(CustomStreamPart, event)
+                    yield cast("CustomStreamPart", event)
                     continue
 
                 if event.get("type") != "messages":
@@ -238,15 +240,6 @@ def text_from_message_event(event: dict, run: GraphRun) -> str | None:
 
     content = str(message.text)
     return content or None
-
-
-def legacy_output(output: Any) -> Any:
-    """Match the plain output shape adapters received from LangGraph v1."""
-    if isinstance(output, BaseModel):
-        return dict(output)
-    if is_dataclass(output) and not isinstance(output, type):
-        return {field.name: getattr(output, field.name) for field in fields(output)}
-    return output
 
 
 def _astream_options(run: GraphRun) -> dict[str, Any]:
@@ -284,29 +277,30 @@ async def finalize_run(
     run: GraphRun,
     checkpoint_disposition: _CheckpointDisposition,
 ) -> None:
-    """Apply checkpoint retention policy and release the run lease."""
-    with CancelScope(shield=True):
-        if checkpoint_disposition == "unknown":
-            try:
-                try:
-                    if run.config.supports(GraphFeature.INTERRUPTS):
-                        await delete_checkpoint_thread(run)
-                except Exception:
-                    logger.exception(
-                        "Could not clean up an incomplete checkpoint thread."
-                    )
-            finally:
-                try:
-                    await run.aclose()
-                except Exception:
-                    logger.exception("Could not release the graph run lease.")
-            return
+    """Finalize checkpoint retention, then release the run lease.
 
+    Only state exposed as a resumable interrupt is preserved. Cleanup for an
+    unclassified run is best-effort so it cannot mask the failure that prevented
+    classification.
+    """
+    with CancelScope(shield=True):
         try:
-            if checkpoint_disposition == "delete":
+            if checkpoint_disposition == "delete" or (
+                checkpoint_disposition == "unknown"
+                and run.config.supports(GraphFeature.INTERRUPTS)
+            ):
                 await delete_checkpoint_thread(run)
+        except Exception:
+            if checkpoint_disposition != "unknown":
+                raise
+            logger.exception("Could not clean up an incomplete checkpoint thread.")
         finally:
-            await run.aclose()
+            try:
+                await run.aclose()
+            except Exception:
+                if checkpoint_disposition != "unknown":
+                    raise
+                logger.exception("Could not release the graph run lease.")
 
 
 async def delete_checkpoint_thread(run: GraphRun) -> None:
@@ -314,5 +308,5 @@ async def delete_checkpoint_thread(run: GraphRun) -> None:
     if run.checkpoint_thread_id is None:
         raise RuntimeError("Interrupt-enabled run has no checkpoint thread id.")
 
-    checkpointer = cast(BaseCheckpointSaver, run.graph.checkpointer)
+    checkpointer = cast("BaseCheckpointSaver", run.graph.checkpointer)
     await checkpointer.adelete_thread(run.checkpoint_thread_id)
