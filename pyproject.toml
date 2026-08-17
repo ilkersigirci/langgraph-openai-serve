@@ -50,6 +50,7 @@ postgres = [
     "psycopg-pool>=3.3.0,<4",
 ]
 tracing = [
+    "langchain>=1.2.0",
     "langfuse>=4.0.0,<5.0.0",
 ]
 

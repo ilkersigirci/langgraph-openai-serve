@@ -1,13 +1,14 @@
 """OpenAI-compatible error response helpers."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai.types.shared import ErrorObject
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import HTTPExceptionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +33,21 @@ class OpenAIHTTPException(HTTPException):
 
 def configure_openai_error_handlers(app: FastAPI) -> None:
     """Install OpenAI-compatible JSON error handlers on a FastAPI app."""
-    app.add_exception_handler(OpenAIHTTPException, openai_http_exception_handler)
-    app.add_exception_handler(StarletteHTTPException, openai_http_exception_handler)
+    # Starlette dispatches each handler only for its registered exception class.
+    http_handler = cast(HTTPExceptionHandler, openai_http_exception_handler)
+    validation_handler = cast(
+        HTTPExceptionHandler,
+        openai_request_validation_exception_handler,
+    )
+
+    app.add_exception_handler(OpenAIHTTPException, http_handler)
+    app.add_exception_handler(
+        StarletteHTTPException,
+        http_handler,
+    )
     app.add_exception_handler(
         RequestValidationError,
-        openai_request_validation_exception_handler,
+        validation_handler,
     )
     app.add_exception_handler(Exception, openai_unhandled_exception_handler)
 

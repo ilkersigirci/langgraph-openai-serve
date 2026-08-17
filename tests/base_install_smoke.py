@@ -2,33 +2,63 @@
 
 import asyncio
 import importlib.util
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
-def assert_postgres_is_not_installed() -> None:
+def assert_optional_integrations_are_not_installed() -> None:
     for module in (
+        "langchain",
+        "langfuse",
         "langgraph.checkpoint.postgres",
         "psycopg",
         "psycopg_pool",
     ):
         assert importlib.util.find_spec(module) is None, (
-            f"PostgreSQL dependency unexpectedly installed: {module}"
+            f"Optional integration dependency unexpectedly installed: {module}"
         )
 
 
+@contextmanager
+def hostile_working_directory() -> Iterator[None]:
+    original_working_directory = Path.cwd()
+    with TemporaryDirectory() as temporary_directory:
+        Path(temporary_directory, ".env").write_text(
+            "\n".join(
+                (
+                    "LGOS_OPENAI_API_PREFIX=not-a-path",
+                    "LGOS_OPENAI_API_DOCS_ENABLED=not-a-boolean",
+                    "LGOS_ENABLE_LANGFUSE=true",
+                )
+            ),
+            encoding="utf-8",
+        )
+        try:
+            os.chdir(temporary_directory)
+            yield
+        finally:
+            os.chdir(original_working_directory)
+
+
 async def main() -> None:
-    assert_postgres_is_not_installed()
+    assert_optional_integrations_are_not_installed()
 
-    # Import only after proving no transitive dependency installed PostgreSQL.
-    from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
-    from langchain_core.messages import AIMessage  # noqa: PLC0415
-    from langgraph.graph import MessagesState, StateGraph  # noqa: PLC0415
-    from openai import AsyncOpenAI  # noqa: PLC0415
+    # Import only after proving no optional integration was installed, and from
+    # a directory whose dotenv values must not configure the library.
+    with hostile_working_directory():
+        from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
+        from langchain_core.messages import AIMessage  # noqa: PLC0415
+        from langgraph.graph import MessagesState, StateGraph  # noqa: PLC0415
+        from openai import AsyncOpenAI  # noqa: PLC0415
 
-    from langgraph_openai_serve import (  # noqa: PLC0415
-        GraphConfig,
-        GraphRegistry,
-        LanggraphOpenaiServe,
-    )
+        from langgraph_openai_serve import (  # noqa: PLC0415
+            GraphConfig,
+            GraphRegistry,
+            LanggraphOpenaiServe,
+        )
 
     async def respond(_state: MessagesState):
         return {"messages": [AIMessage(content="base install works")]}

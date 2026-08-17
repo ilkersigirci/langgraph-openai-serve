@@ -18,27 +18,15 @@ def normalize_openai_api_prefix(v: str) -> str:
 
 
 class Settings(BaseSettings):
-    """This class is used to load environment variables either from environment or
-    from a .env file and store them as class attributes.
-    NOTE:
-        - environment variables will always take priority over values loaded from a dotenv file
-        - environment variable names are case-insensitive
-        - environment variable type is inferred from the type hint of the class attribute
-        - For environment variables that are not set, a default value should be provided
-
-    For more info, see the related pydantic docs: https://docs.pydantic.dev/latest/concepts/pydantic_settings
-    """
+    """Package settings read from explicit values and the process environment."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_prefix="LGOS_",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
     OPENAI_API_PREFIX: str = "/v1"
     OPENAI_API_DOCS_ENABLED: bool = False
-
     ENABLE_LANGFUSE: bool = False
 
     @field_validator("OPENAI_API_PREFIX")
