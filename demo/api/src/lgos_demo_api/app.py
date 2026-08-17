@@ -86,8 +86,11 @@ def create_custom_app() -> FastAPI:
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
             "interruptible-approval": create_interruptible_graph_config(
+                # We use lambdas here because app.state is populated asynchronously
+                # during the FastAPI lifespan event. Eagerly evaluating app.state
+                # attributes at registry initialization time would raise an
+                # AttributeError since the lifespan has not executed yet.
                 lambda: app.state.interruptible_graph,
-                # Defer access to app.state until after the lifespan manager initializes it
                 lambda key: app.state.interruptible_run_coordinator(key),
             ),
         }
