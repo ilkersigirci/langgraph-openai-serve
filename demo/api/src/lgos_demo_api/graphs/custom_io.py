@@ -49,7 +49,7 @@ custom_io_graph = (
 
 
 def request_to_input(
-    request: ChatCompletionRequest,
+    _request: ChatCompletionRequest,
     messages: list[BaseMessage],
 ) -> Input:
     last_message = messages[-1]

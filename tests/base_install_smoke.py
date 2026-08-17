@@ -27,13 +27,7 @@ def hostile_working_directory() -> Iterator[None]:
     original_working_directory = Path.cwd()
     with TemporaryDirectory() as temporary_directory:
         Path(temporary_directory, ".env").write_text(
-            "\n".join(
-                (
-                    "LGOS_OPENAI_API_PREFIX=not-a-path",
-                    "LGOS_OPENAI_API_DOCS_ENABLED=not-a-boolean",
-                    "LGOS_ENABLE_LANGFUSE=true",
-                )
-            ),
+            "LGOS_OPENAI_API_PREFIX=not-a-path\nLGOS_OPENAI_API_DOCS_ENABLED=not-a-boolean\nLGOS_ENABLE_LANGFUSE=true",
             encoding="utf-8",
         )
         try:

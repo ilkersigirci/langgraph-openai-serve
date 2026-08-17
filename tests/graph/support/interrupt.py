@@ -1,10 +1,11 @@
 import operator
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from typing_extensions import TypedDict
 
 from tests.graph.support.schemas import MessageState
 
@@ -38,7 +39,7 @@ def make_interrupt_graph(
 
 def make_parallel_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
     def ask(question: str):
-        def node(_state: InterruptAnswerState) -> dict[str, list[str]]:
+        def node(state: InterruptAnswerState) -> dict[str, list[str]]:
             return {"answers": [str(interrupt({"question": question}))]}
 
         return node
@@ -56,7 +57,7 @@ def make_parallel_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
 
 
 def _sequential_interrupt_graph() -> StateGraph:
-    def ask_twice(_state: InterruptAnswerState) -> dict[str, list[str]]:
+    def ask_twice(state: InterruptAnswerState) -> dict[str, list[str]]:
         first = interrupt({"question": "first"})
         second = interrupt({"question": "second"})
         return {"answers": [str(first), str(second)]}
@@ -94,7 +95,7 @@ def make_parallel_nested_interrupt_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> Any:
     def subgraph(question: str):
-        def ask(_state: InterruptAnswerState) -> dict[str, list[str]]:
+        def ask(state: InterruptAnswerState) -> dict[str, list[str]]:
             answer = interrupt({"question": question})
             return {"answers": [f"{question}:{answer}"]}
 

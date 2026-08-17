@@ -58,8 +58,8 @@ tracing = [
 dev = [
     "ipykernel>=6.29.5",
     "prek>=0.3.11",
-    "ruff>=0.15.12",
-    "ty>=0.0.55",
+    "ruff>=0.16.3",
+    "ty>=0.0.72",
 ]
 doc = [
     # Zensical uses its mike fork as the versioning bridge until native support:
@@ -109,6 +109,11 @@ extend-exclude = [
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
+"*.ipynb" = ["ERA001", "T201", "ANN"]
+"tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT"]
+"demo/*/tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT", "PLC0415"]
+"demo/*" = ["S104", "T201", "PLC0415"]
+"src/langgraph_openai_serve/core/settings.py" = ["FBT001"]
 
 [tool.ruff.format]
 skip-magic-trailing-comma = false
@@ -133,12 +138,50 @@ select = [
     "S307", # eval
     # "T20",  # (disallow print statements) keep debugging statements out of the codebase
     "W",  # pycodestyle warnings
-    "ASYNC" # async
+    "ASYNC", # async
+    "FAST", # fastapi
+    "UP", # pyupgrade
+    "TC", # flake8-type-checking
+    "LOG", # flake8-logging
+    "PT", # flake8-pytest-style
+    "A", # flake8-builtins
+    "DTZ", # flake8-datetimez
+    "ERA", # eradicate
+    "ISC", # flake8-implicit-str-concat
+    "PERF", # perflint
+    "FURB", # refurb
+    "FLY", # flynt
+    "BLE", # flake8-blind-except
+    "INP", # flake8-no-pep420
+    "PGH", # pygrep-hooks
+    "TID", # flake8-tidy-imports
+    "YTT", # flake8-2020
+    "N", # pep8-naming
+    "EXE", # flake8-executable
+    "ICN", # flake8-import-conventions
+    "TD", # flake8-todos
+    "RSE", # flake8-raise
+    "T10", # flake8-debugger
+    "FA", # flake8-future-annotations
+    "SLOT", # flake8-slots
+    "PYI", # flake8-pyi
+    "ARG", # flake8-unused-arguments
+    "S",   # flake8-bandit
+    "T20", # flake8-print
+    "ANN", # flake8-annotations
+    "SLF", # flake8-self
+    "FBT", # flake8-boolean-trap
+    "PLC", # pylint convention
+    "PLE", # pylint error
+    "PLW", # pylint warning
+    "N",   # pep8-naming
+    "FIX", # flake8-fixme
 ]
 
 ignore = [
     "E501",  # Line too long, handled by ruff formatter
     "D107", # "Missing docstring in __init__",
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
 ]
 
 unfixable = [

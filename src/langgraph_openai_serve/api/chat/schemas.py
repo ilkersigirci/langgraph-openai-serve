@@ -3,7 +3,7 @@
 This module defines Pydantic models that match the OpenAI API request and response formats.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 from openai.types.chat.chat_completion_message import Annotation
@@ -57,7 +57,7 @@ def _reject_legacy_fields(
     return data
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     """Role options for chat messages."""
 
     SYSTEM = "system"

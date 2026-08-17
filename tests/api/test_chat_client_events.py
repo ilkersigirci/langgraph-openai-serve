@@ -208,7 +208,7 @@ def test_client_event_rejects_invalid_public_values(
     data: Any,
     namespace: tuple[Any, ...],
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="validation error"):
         client_event(event_type, data, namespace=namespace)
 
 
@@ -228,5 +228,5 @@ def test_status_event_builds_the_portable_status_shape() -> None:
         namespace=("media",),
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="validation error"):
         status_event("")

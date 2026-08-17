@@ -109,10 +109,7 @@ async def test_streaming_completion_uses_sse_wire_format(
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"].startswith("text/event-stream")
 
-        events = []
-        async for line in response.aiter_lines():
-            if line:
-                events.append(line)
+        events = [line async for line in response.aiter_lines() if line]
 
     assert events
     assert all(event.startswith("data: ") for event in events)

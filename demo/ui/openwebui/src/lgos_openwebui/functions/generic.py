@@ -193,7 +193,8 @@ class Pipe:
                         if error is not None:
                             yield error
                             return
-                        assert decision is not None
+                        if decision is None:
+                            raise RuntimeError("Decision cannot be None")
                         decisions.append(decision)
 
                     messages = [

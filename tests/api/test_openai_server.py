@@ -75,7 +75,7 @@ def test_bind_openai_api_rejects_invalid_explicit_prefix(
 ) -> None:
     server = LanggraphOpenaiServe(graphs=graph_registry)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="OPENAI_API_PREFIX must start with '/'"):
         server.bind_openai_api(prefix="openai/v1")
 
 

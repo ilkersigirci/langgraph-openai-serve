@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def is_module_installed(module_name: str, throw_error: bool = False) -> bool:
+def is_module_installed(module_name: str, *, throw_error: bool = False) -> bool:
     """Check if the module is installed or not.
 
     Examples:

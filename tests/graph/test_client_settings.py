@@ -94,7 +94,7 @@ def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
     class NestedValue(BaseModel):
         count: int
 
-    invalid = NestedValue.model_construct(count=cast(int, "one"))
+    invalid = NestedValue.model_construct(count=cast("int", "one"))
 
     class InvalidSettings(ClientSettings):
         nested: NestedValue = invalid

@@ -59,7 +59,7 @@ def cleanup_run(
             output_to_text=output_to_text,
             streamable_node_names=streamable_node_names or [],
         ),
-        graph=cast(Any, graph),
+        graph=cast("Any", graph),
         inputs={},
         context=None,
         runnable_config={"configurable": {"thread_id": THREAD_ID}},

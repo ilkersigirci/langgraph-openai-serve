@@ -113,7 +113,7 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
                 )
                 continue
 
-            tool_calls.append(cast(ToolCall, parsed_tool_call))
+            tool_calls.append(cast("ToolCall", parsed_tool_call))
 
     return AIMessage(
         content=message.content or "",

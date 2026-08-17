@@ -2,10 +2,9 @@
 
 import logging
 import time
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from typing import AsyncGenerator
-
-from langgraph.types import CustomStreamPart
+from typing import TYPE_CHECKING
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -28,6 +27,9 @@ from langgraph_openai_serve.graph.runner import (
     usage_for,
 )
 from langgraph_openai_serve.graph.utils import GraphRun
+
+if TYPE_CHECKING:
+    from langgraph.types import CustomStreamPart
 
 logger = logging.getLogger(__name__)
 

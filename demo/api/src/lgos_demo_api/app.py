@@ -5,6 +5,7 @@ graphs through the OpenAI-compatible API.
 """
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager.
 
     This function handles the startup and shutdown events for the application.
@@ -86,7 +87,7 @@ def create_custom_app() -> FastAPI:
             "status-events": status_event_graph_config,
             "interruptible-approval": create_interruptible_graph_config(
                 lambda: app.state.interruptible_graph,
-                lambda key: app.state.interruptible_run_coordinator(key),
+                app.state.interruptible_run_coordinator,
             ),
         }
     )

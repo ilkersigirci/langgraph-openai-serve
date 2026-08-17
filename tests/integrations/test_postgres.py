@@ -56,10 +56,13 @@ async def test_coordinator_holds_and_releases_session_lock() -> None:
     coordinator, pool, connection_context = _coordinator_for(connection)
     lock_key = postgres._advisory_lock_key("thread-1")
 
-    with pytest.raises(RuntimeError, match="run failed"):
+    async def _body():
         async with coordinator("thread-1"):
             connection_context.__aexit__.assert_not_awaited()
             raise RuntimeError("run failed")
+
+    with pytest.raises(RuntimeError, match="run failed"):
+        await _body()
 
     assert connection.execute.await_args_list == [
         call(postgres._TRY_ADVISORY_LOCK_SQL, (lock_key,)),
@@ -204,10 +207,13 @@ async def test_coordinator_discards_session_after_unlock_failure(
     )
     coordinator, _, _ = _coordinator_for(connection)
 
-    with pytest.raises(expected_error, match=match):
+    async def _body():
         async with coordinator("thread-1"):
             if body_error is not None:
                 raise body_error
+
+    with pytest.raises(expected_error, match=match):
+        await _body()
 
     connection.close.assert_awaited_once_with()
 

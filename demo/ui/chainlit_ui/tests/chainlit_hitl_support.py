@@ -68,7 +68,7 @@ def install_message_factory(
         "user_session",
         SimpleNamespace(
             get=lambda key, default=None: session_data.get(key, default),
-            set=lambda key, value: session_data.__setitem__(key, value),
+            set=session_data.__setitem__,
         ),
     )
     return factory, created, writes

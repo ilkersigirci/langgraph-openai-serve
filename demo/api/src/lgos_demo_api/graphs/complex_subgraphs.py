@@ -15,7 +15,7 @@ class QuestionInput(BaseModel):
 
 
 def request_to_input(
-    request: ChatCompletionRequest,
+    _request: ChatCompletionRequest,
     messages: list[BaseMessage],
 ) -> dict[str, str]:
     last_message = messages[-1]

@@ -144,7 +144,7 @@ def build_runnable_config(
             callbacks = [langfuse_callback]
         elif isinstance(callbacks, list):
             callbacks = [
-                *cast(list[BaseCallbackHandler], callbacks),
+                *cast("list[BaseCallbackHandler]", callbacks),
                 langfuse_callback,
             ]
         else:

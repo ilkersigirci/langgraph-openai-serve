@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/models", tags=["openai"])
 
 
-@router.get("", response_model=ModelList)
+@router.get("")
 def list_models(
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
-):
+) -> ModelList:
     """Get a list of available models."""
     logger.info("Received request to list models")
     models = models_service.get_models(graph_registry)
@@ -37,7 +37,6 @@ def list_models(
 
 @router.get(
     "/{model}",
-    response_model=ModelDetails,
     response_model_exclude_none=True,
 )
 def retrieve_model(

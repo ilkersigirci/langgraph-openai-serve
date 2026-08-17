@@ -62,7 +62,7 @@ class LanggraphOpenaiServe:
         graphs: GraphRegistry,
         app: FastAPI | None = None,
         checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
-    ):
+    ) -> None:
         """Initialize the server with a FastAPI app and a populated graph registry.
 
         Args:
@@ -104,7 +104,7 @@ class LanggraphOpenaiServe:
             f"Available graphs: {', '.join(self.graph_registry.get_graph_names())}"
         )
 
-    def bind_openai_api(self, prefix: str | None = None):
+    def bind_openai_api(self, prefix: str | None = None) -> "LanggraphOpenaiServe":
         """Mount OpenAI-compatible endpoints on the host FastAPI app.
 
         Args:

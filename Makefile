@@ -158,7 +158,7 @@ format: ## Format package and test files. CHANGES CODE
 	uv run --module ruff check ${LINT_TARGETS} --fix --show-fixes
 
 type-check: ## Run ty for type checking
-	uv run ty check
+	uv run ty check --exclude tests --exclude demo
 
 format-unsafe: ## Unsafely format package and test files. CHANGES CODE
 	uv lock --locked

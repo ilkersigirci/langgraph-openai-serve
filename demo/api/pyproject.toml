@@ -25,7 +25,7 @@ lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.12",
+    "ruff>=0.16.3",
 ]
 test = [
     "anyio>=4.14,<5",
