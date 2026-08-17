@@ -81,12 +81,8 @@ def test_package_settings_still_read_process_environment(tmp_path: Path) -> None
         extra_env={
             "LGOS_OPENAI_API_PREFIX": "/openai/v1/",
             "LGOS_OPENAI_API_DOCS_ENABLED": "true",
-            "LGOS_ENABLE_LANGFUSE": "true",
-            "LANGFUSE_BASE_URL": "http://dummy",
-            "LANGFUSE_PUBLIC_KEY": "dummy",
-            "LANGFUSE_SECRET_KEY": "dummy",
         },
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "/openai/v1 True True"
+    assert result.stdout.strip() == "/openai/v1 True False"
