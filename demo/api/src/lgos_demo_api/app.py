@@ -87,7 +87,8 @@ def create_custom_app() -> FastAPI:
             "status-events": status_event_graph_config,
             "interruptible-approval": create_interruptible_graph_config(
                 lambda: app.state.interruptible_graph,
-                app.state.interruptible_run_coordinator,
+                # Defer access to app.state until after the lifespan manager initializes it
+                lambda key: app.state.interruptible_run_coordinator(key),
             ),
         }
     )
