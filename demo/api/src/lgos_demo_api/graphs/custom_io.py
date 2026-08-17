@@ -36,9 +36,9 @@ async def generate(state: State, runtime: Runtime[AppContext]) -> Output:
 
 custom_io_graph = (
     StateGraph(
-        State,
-        input_schema=Input,
-        output_schema=Output,
+        State,  # ty: ignore[invalid-argument-type]
+        input_schema=Input,  # ty: ignore[invalid-argument-type]
+        output_schema=Output,  # ty: ignore[invalid-argument-type]
         context_schema=AppContext,
     )
     .add_node("generate", generate)

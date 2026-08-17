@@ -74,7 +74,7 @@ def create_approval_subgraph(spec: ApprovalSpec) -> CompiledStateGraph:
         }
 
     return (
-        StateGraph(ApprovalState)
+        StateGraph(ApprovalState)  # ty: ignore[invalid-argument-type]
         .add_node("request_approval", request_approval)
         .add_edge(START, "request_approval")
         .add_edge("request_approval", END)
@@ -85,7 +85,7 @@ def create_approval_subgraph(spec: ApprovalSpec) -> CompiledStateGraph:
 def create_interruptible_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> CompiledStateGraph:
-    graph = StateGraph(ApprovalState)
+    graph = StateGraph(ApprovalState)  # ty: ignore[invalid-argument-type]
     for index, spec in enumerate(APPROVAL_SPECS):
         node_name = f"approval_{index}"
         graph.add_node(node_name, create_approval_subgraph(spec))

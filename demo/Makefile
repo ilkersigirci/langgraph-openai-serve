@@ -38,11 +38,21 @@ lint: ## Check lint and formatting for all standalone projects
 	uv run --directory ui/openwebui --locked ruff check src tests
 	uv run --directory ui/openwebui --locked ruff format --check src tests
 
+type-check-ui: ## Run type checking for the UI projects
+	uv run --directory ui/chainlit_ui --locked ty check src
+	uv run --directory ui/openwebui --locked ty check src
+
+type-check: type-check-ui ## Run type checking for all standalone projects
+	uv run --directory api --locked ty check src
+
+type-check-local: type-check-ui ## Run type checking for all standalone projects with local API source
+	$(LOCAL_API_RUN) ty check src --extra-search-path ../../src
+
 compose-config: ## Validate published and development Compose models
 	$(COMPOSE) config --quiet
 	$(COMPOSE) -f compose.dev.yaml config --quiet
 
-check: test lint compose-config ## Run every standalone validation
+check: test lint type-check compose-config ## Run every standalone validation
 
 run-api-local: run-api-a-local ## Run lgos-a locally
 

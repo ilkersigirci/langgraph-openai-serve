@@ -286,11 +286,11 @@ async def persist_pending_ledger(
     prompt = pending_interrupt_prompt(assistant_message)
     if ledger_message is None:
         ledger_message = cl.Message(content=prompt)
-        set_ledger_message_metadata(ledger_message, ledger)
+        set_ledger_message_metadata(ledger_message, ledger)  # ty: ignore[invalid-argument-type]
         await ledger_message.send()
     else:
         ledger_message.content = prompt
-        set_ledger_message_metadata(ledger_message, ledger)
+        set_ledger_message_metadata(ledger_message, ledger)  # ty: ignore[invalid-argument-type]
         await ledger_message.update()
     cl.user_session.set(
         PENDING_LEDGER_SESSION_KEY,
@@ -353,7 +353,7 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
             # accepts only the same timestamp with an explicit UTC suffix.
             restored_step["createdAt"] = f"{created_at}Z"
         try:
-            message = cl.Message.from_dict(restored_step)
+            message = cl.Message.from_dict(restored_step)  # ty: ignore[invalid-argument-type]
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidInterruptLedgerError(
                 "The pending interrupt message cannot be restored."
@@ -416,7 +416,8 @@ def assistant_tool_call_message(
         role=message.role,
         content=message.content,
         tool_calls=[
-            tool_call_param(tool_call) for tool_call in message.tool_calls or []
+            tool_call_param(tool_call)  # ty: ignore[invalid-argument-type]
+            for tool_call in message.tool_calls or []
         ],
     )
 
@@ -486,9 +487,9 @@ def interrupt_tool_calls(
     message: ChatCompletionMessage,
 ) -> list[ChatCompletionMessageToolCall] | None:
     tool_calls = list(message.tool_calls or [])
-    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
+    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):  # ty: ignore[unresolved-attribute]
         return None
-    return tool_calls
+    return tool_calls  # ty: ignore[invalid-return-type]
 
 
 def interrupt_payload(
