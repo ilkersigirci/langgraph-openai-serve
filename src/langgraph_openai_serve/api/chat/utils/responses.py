@@ -190,6 +190,9 @@ class ChatCompletionStreamResponseBuilder:
                 )
             ],
         )
+        # We apply exclude_none=True here because SSE (StreamingResponse) chunks
+        # bypass FastAPI's route-level response_model_exclude_none setting.
+        # This prevents sending bloated chunks and matches OpenAI's REST behavior.
         data = response.model_dump(mode="json", exclude_none=True)
         if annotations:
             # The Chat Completions delta schema omits annotations, so add the
