@@ -3,7 +3,7 @@
 import logging
 import time
 from contextlib import aclosing
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Literal, cast
 
 from anyio import CancelScope
@@ -11,7 +11,6 @@ from langchain_core.messages import AIMessageChunk
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import TAG_HIDDEN
 from langgraph.types import CustomStreamPart, StreamMode
-from pydantic import BaseModel
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -133,7 +132,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         if final_output is _MISSING:
             raise RuntimeError("LangGraph invocation completed without a final value.")
 
-        rendered_output = await run.config.render_output(legacy_output(final_output))
+        rendered_output = await run.config.render_output(final_output)
         if run.config.supports(GraphFeature.INTERRUPTS):
             checkpoint_disposition = "delete"
 
@@ -240,15 +239,6 @@ def text_from_message_event(event: dict, run: GraphRun) -> str | None:
     return content or None
 
 
-def legacy_output(output: Any) -> Any:
-    """Match the plain output shape adapters received from LangGraph v1."""
-    if isinstance(output, BaseModel):
-        return dict(output)
-    if is_dataclass(output) and not isinstance(output, type):
-        return {field.name: getattr(output, field.name) for field in fields(output)}
-    return output
-
-
 def _astream_options(run: GraphRun) -> dict[str, Any]:
     """Build the shared execution options for LangGraph event streams."""
     options: dict[str, Any] = {"subgraphs": True, "version": "v2"}
@@ -284,29 +274,30 @@ async def finalize_run(
     run: GraphRun,
     checkpoint_disposition: _CheckpointDisposition,
 ) -> None:
-    """Apply checkpoint retention policy and release the run lease."""
-    with CancelScope(shield=True):
-        if checkpoint_disposition == "unknown":
-            try:
-                try:
-                    if run.config.supports(GraphFeature.INTERRUPTS):
-                        await delete_checkpoint_thread(run)
-                except Exception:
-                    logger.exception(
-                        "Could not clean up an incomplete checkpoint thread."
-                    )
-            finally:
-                try:
-                    await run.aclose()
-                except Exception:
-                    logger.exception("Could not release the graph run lease.")
-            return
+    """Finalize checkpoint retention, then release the run lease.
 
+    Only state exposed as a resumable interrupt is preserved. Cleanup for an
+    unclassified run is best-effort so it cannot mask the failure that prevented
+    classification.
+    """
+    with CancelScope(shield=True):
         try:
-            if checkpoint_disposition == "delete":
+            if checkpoint_disposition == "delete" or (
+                checkpoint_disposition == "unknown"
+                and run.config.supports(GraphFeature.INTERRUPTS)
+            ):
                 await delete_checkpoint_thread(run)
+        except Exception:
+            if checkpoint_disposition != "unknown":
+                raise
+            logger.exception("Could not clean up an incomplete checkpoint thread.")
         finally:
-            await run.aclose()
+            try:
+                await run.aclose()
+            except Exception:
+                if checkpoint_disposition != "unknown":
+                    raise
+                logger.exception("Could not release the graph run lease.")
 
 
 async def delete_checkpoint_thread(run: GraphRun) -> None:

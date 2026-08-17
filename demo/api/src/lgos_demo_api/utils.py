@@ -1,6 +1,6 @@
 """General utility functions."""
 
-import importlib
+import importlib.util
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,8 @@ def is_module_installed(module_name: str, throw_error: bool = False) -> bool:
     Raises:
         ImportError: If throw_error is True and module is not installed.
     """
-    try:
-        importlib.import_module(module_name)
-        return True
-    except ImportError as e:
-        if throw_error:
-            message = f"Module {module_name} is not installed."
-            raise ImportError(message) from e
-        return False
+
+    is_installed = importlib.util.find_spec(module_name) is not None
+    if not is_installed and throw_error:
+        raise ImportError(f"Module {module_name} is not installed.")
+    return is_installed

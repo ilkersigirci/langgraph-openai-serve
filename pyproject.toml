@@ -119,7 +119,6 @@ select = [
     "B",  # flake8-bugbear
     "C",  # flake8-comprehensions
     "C9",  # mccabe
-
     "E",  # pycodestyle errors (default)
     "F",  # pyflakes (default)
     "I",  # isort

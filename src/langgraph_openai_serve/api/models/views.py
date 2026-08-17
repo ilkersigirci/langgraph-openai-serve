@@ -10,9 +10,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from openai.types.shared import ErrorObject
 
+from langgraph_openai_serve.api.models import service as models_service
 from langgraph_openai_serve.api.models.deps import get_graph_registry_dependency
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
-from langgraph_openai_serve.api.models.service import ModelService
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.graph_registry import (
     GraphNotFoundError,
@@ -26,12 +26,11 @@ router = APIRouter(prefix="/models", tags=["openai"])
 
 @router.get("", response_model=ModelList)
 def list_models(
-    service: Annotated[ModelService, Depends(ModelService)],
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
 ):
     """Get a list of available models."""
     logger.info("Received request to list models")
-    models = service.get_models(graph_registry)
+    models = models_service.get_models(graph_registry)
     logger.info(f"Returning {len(models.data)} models")
     return models
 
@@ -43,13 +42,12 @@ def list_models(
 )
 def retrieve_model(
     model: str,
-    service: Annotated[ModelService, Depends(ModelService)],
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
 ) -> ModelDetails:
     """Retrieve one registered graph as an OpenAI model."""
     logger.info(f"Received request to retrieve model: {model}")
     try:
-        return service.get_model(model, graph_registry)
+        return models_service.get_model(model, graph_registry)
     except GraphNotFoundError as exc:
         raise OpenAIHTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

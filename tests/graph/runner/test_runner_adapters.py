@@ -114,7 +114,7 @@ async def test_async_graph_factory_and_async_adapters(
                 description="DUMMY",
                 request_to_input=request_to_input,
                 context_factory=context_factory,
-                output_to_text=lambda output: output["answer"],
+                output_to_text=lambda output: output.answer,
             )
         },
     )

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from openai.types.shared import ErrorObject
 
+from langgraph_openai_serve.api.chat import service as chat_service
 from langgraph_openai_serve.api.chat.deps import (
     checkpoint_scope_dependency,
     stream_owner_dependency,
@@ -19,7 +20,6 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
 )
-from langgraph_openai_serve.api.chat.service import ChatCompletionService
 from langgraph_openai_serve.api.chat.utils.interrupts import (
     InvalidInterruptPayloadError,
     InvalidResumeRequestError,
@@ -55,23 +55,26 @@ _CLIENT_ERROR_TYPES = (
 
 
 def client_error_param(error: Exception) -> str | None:
-    if isinstance(error, GraphNotFoundError):
-        return "model"
-    if isinstance(error, InvalidRunIDError):
-        return f"metadata.{RUN_METADATA_KEY}"
-    if isinstance(error, InvalidResumeRequestError):
-        return "messages"
-    if isinstance(error, ClientSettingsValidationError):
-        return error.param
-    if isinstance(error, InvalidChatMessageError):
-        return "messages"
-    return None
+    match error:
+        case GraphNotFoundError():
+            return "model"
+        case InvalidRunIDError():
+            return f"metadata.{RUN_METADATA_KEY}"
+        case InvalidResumeRequestError() | InvalidChatMessageError():
+            return "messages"
+        case ClientSettingsValidationError():
+            return error.param
+        case _:
+            return None
 
 
-@router.post("/chat/completions", response_model=ChatCompletionResponse)
+@router.post(
+    "/chat/completions",
+    response_model=ChatCompletionResponse,
+    response_model_exclude_none=True,
+)
 async def create_chat_completion(
     chat_request: ChatCompletionRequest,
-    service: Annotated[ChatCompletionService, Depends(ChatCompletionService)],
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
     checkpoint_scope: Annotated[str, Depends(checkpoint_scope_dependency)],
     stream_owner: Annotated[
@@ -86,7 +89,7 @@ async def create_chat_completion(
     Args:
         chat_request: The parsed chat completion request.
         graph_registry: The graph registry dependency.
-        service: The chat completion service dependency.
+        checkpoint_scope: The checkpoint scope boundary.
         stream_owner: The request-scoped streaming task owner.
 
     Returns:
@@ -110,7 +113,7 @@ async def create_chat_completion(
         if chat_request.stream:
             logger.info("Streaming chat completion response")
             body = stream_owner.start(
-                service.stream_completion(chat_request, run),
+                chat_service.stream_completion(chat_request, run),
                 run,
             )
             return StreamingResponse(
@@ -119,7 +122,7 @@ async def create_chat_completion(
             )
 
         logger.info("Generating non-streaming chat completion response")
-        response = await service.generate_completion(chat_request, run)
+        response = await chat_service.generate_completion(chat_request, run)
     except RunBusyError as e:
         raise OpenAIHTTPException(
             status_code=status.HTTP_409_CONFLICT,

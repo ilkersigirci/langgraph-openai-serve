@@ -234,6 +234,7 @@ class GraphRegistry(BaseModel):
         Raises:
             GraphNotFoundError: If the graph name is not found in the registry.
         """
-        if name not in self.registry:
-            raise GraphNotFoundError(f"Graph '{name}' not found in registry.")
-        return self.registry[name]
+        try:
+            return self.registry[name]
+        except KeyError as exc:
+            raise GraphNotFoundError(f"Graph '{name}' not found in registry.") from exc
