@@ -120,6 +120,9 @@ class Pipe:
         an undocumented API for persisting raw assistant tool calls. The exact
         assistant/tool exchange therefore remains local; cancellation leaves
         the durable run paused and sends no partial resume.
+
+        Yields:
+            PipeChunk objects for Open WebUI stream.
         """
         openwebui_metadata = __metadata__ or {}
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
@@ -428,7 +431,11 @@ async def _content_deltas(
     stream: AsyncChatCompletionStream[Any],
     event_emitter: Any = None,
 ) -> AsyncIterator[str]:
-    """Yield text and emit portable status updates."""
+    """Yield text and emit portable status updates.
+
+    Yields:
+        String chunks for the response.
+    """
     async for event in stream:
         if isinstance(event, ContentDeltaEvent):
             yield event.delta
@@ -566,7 +573,7 @@ def _interrupt_payload(
 
     if not isinstance(arguments, dict):
         msg = "Interrupt tool arguments must be a JSON object."
-        raise TypeError(msg)
+        raise ValueError(msg)
 
     if "payload" not in arguments:
         msg = "Interrupt tool arguments must contain a payload."
