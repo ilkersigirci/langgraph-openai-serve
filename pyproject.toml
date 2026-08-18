@@ -187,7 +187,6 @@ ignore = [
     "undocumented-public-init",
     "undocumented-public-module",
     "undocumented-public-package",
-    "unused-async",
     "yield-in-context-manager-in-async-generator",
 ]
 
@@ -224,6 +223,7 @@ unfixable = [
     "import-outside-top-level",
     "no-self-use",
     "private-member-access",
+    "unused-async",
     "unused-function-argument",
     "unused-lambda-argument",
     "unused-method-argument",
@@ -245,6 +245,7 @@ unfixable = [
     "implicit-namespace-package",
     "no-self-use",
     "private-member-access",
+    "unused-async",
     "unused-function-argument",
     "unused-lambda-argument",
     "unused-method-argument",

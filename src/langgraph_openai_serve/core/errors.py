@@ -59,7 +59,7 @@ def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
     return {"error": error.model_dump(mode="json")}
 
 
-async def openai_http_exception_handler(
+async def openai_http_exception_handler(  # ruff: ignore[unused-async]
     _request: Request,
     exc: StarletteHTTPException,
 ) -> JSONResponse:
@@ -82,7 +82,7 @@ async def openai_http_exception_handler(
     )
 
 
-async def openai_request_validation_exception_handler(
+async def openai_request_validation_exception_handler(  # ruff: ignore[unused-async]
     _request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
@@ -110,7 +110,7 @@ async def openai_request_validation_exception_handler(
     )
 
 
-async def openai_unhandled_exception_handler(
+async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async]
     _request: Request,
     _exc: Exception,
 ) -> JSONResponse:
