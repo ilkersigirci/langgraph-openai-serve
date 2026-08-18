@@ -187,7 +187,13 @@ async def run_langgraph_stream(
 async def stream_run(
     run: GraphRun,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
-    """Stream an already prepared LangGraph invocation."""
+    """
+    Stream an already prepared LangGraph invocation.
+
+    Yields:
+        LangGraph stream events.
+
+    """
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:

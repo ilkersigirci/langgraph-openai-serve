@@ -19,7 +19,9 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
+from langgraph_openai_serve.api.chat.utils.streaming import (
+    _StreamOwner,  # ruff: ignore[import-private-name]
+)
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
 
@@ -236,7 +238,7 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
 
     coordinator = InMemoryRunCoordinator()
     lease = coordinator("prepared-run")
-    await lease.__aenter__()
+    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
     run = GraphRun(
         config=cast("Any", None),
         graph=cast("Any", None),

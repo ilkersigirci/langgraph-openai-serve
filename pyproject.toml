@@ -106,16 +106,6 @@ extend-exclude = [
     "docs",
 ]
 
-# Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["module-import-not-at-top-of-file", "unused-import"]
-"*.ipynb" = ["commented-out-code", "print", "ANN", "D"]
-"tests/*" = ["implicit-namespace-package", "unused-function-argument", "unused-method-argument", "unused-lambda-argument", "assert", "hardcoded-password-string", "hardcoded-password-func-arg", "hardcoded-password-default", "private-member-access", "ANN", "FBT", "D"]
-"demo/*/tests/*" = ["implicit-namespace-package", "unused-function-argument", "unused-method-argument", "unused-lambda-argument", "assert", "hardcoded-password-string", "hardcoded-password-func-arg", "hardcoded-password-default", "private-member-access", "ANN", "FBT", "import-outside-top-level", "D"]
-"demo/ui/openwebui/*" = ["D"]
-"demo/*" = ["hardcoded-bind-all-interfaces", "print", "import-outside-top-level", "D"]
-"src/langgraph_openai_serve/core/settings.py" = ["boolean-type-hint-positional-argument"]
-
 [tool.ruff.format]
 skip-magic-trailing-comma = false
 
@@ -188,33 +178,76 @@ select = [
 # numeric codes for better readability.
 ignore = [
     "any-type",
-    "compare-to-empty-string",
     "docstring-missing-exception",
     "docstring-missing-returns",
-    "docstring-missing-yields",
     "import-outside-top-level",
-    "import-private-name",
     "incorrect-blank-line-before-class",
     "line-too-long",
     "multi-line-summary-first-line",
-    "no-self-use",
-    "property-docstring-starts-with-verb",
-    "raise-vanilla-args",
-    "raise-within-try",
-    "suspicious-subprocess-import",
-    "too-many-locals",
-    "too-many-nested-blocks",
-    "too-many-statements-in-try-clause",
     "undocumented-public-init",
     "undocumented-public-module",
     "undocumented-public-package",
-    "unnecessary-dunder-call",
     "unused-async",
     "yield-in-context-manager-in-async-generator",
 ]
 
 unfixable = [
     "unused-import",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = [
+    "ANN",
+    "D",
+    "commented-out-code",
+    "print",
+]
+"__init__.py" = [
+    "module-import-not-at-top-of-file",
+    "unused-import",
+]
+"demo/*" = [
+    "D",
+    "hardcoded-bind-all-interfaces",
+    "import-outside-top-level",
+    "print",
+]
+"demo/*/tests/*" = [
+    "ANN",
+    "D",
+    "FBT",
+    "assert",
+    "hardcoded-password-default",
+    "hardcoded-password-func-arg",
+    "hardcoded-password-string",
+    "implicit-namespace-package",
+    "import-outside-top-level",
+    "no-self-use",
+    "private-member-access",
+    "unused-function-argument",
+    "unused-lambda-argument",
+    "unused-method-argument",
+]
+"demo/ui/openwebui/*" = [
+    "D",
+]
+"src/langgraph_openai_serve/core/settings.py" = [
+    "boolean-type-hint-positional-argument",
+]
+"tests/*" = [
+    "ANN",
+    "D",
+    "FBT",
+    "assert",
+    "hardcoded-password-default",
+    "hardcoded-password-func-arg",
+    "hardcoded-password-string",
+    "implicit-namespace-package",
+    "no-self-use",
+    "private-member-access",
+    "unused-function-argument",
+    "unused-lambda-argument",
+    "unused-method-argument",
 ]
 
 [tool.ruff.lint.mccabe]

@@ -89,7 +89,7 @@ def test_tool_call_round_trip_preserves_wire_fields_and_order():
     ]
     assistant_message = result[1]
     assert isinstance(assistant_message, AIMessage)
-    assert assistant_message.content == ""
+    assert not assistant_message.content
     assert assistant_message.name == "planner"
     assert assistant_message.additional_kwargs["tool_calls"] == [
         {

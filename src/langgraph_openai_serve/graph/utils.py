@@ -53,7 +53,7 @@ class GraphRun:
             await lease.__aexit__(None, None, None)
 
 
-async def prepare_run(
+async def prepare_run(  # ruff: ignore[too-many-locals]
     model: str,
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
@@ -99,7 +99,7 @@ async def prepare_run(
         msg = "Interrupt run has no coordinator."
         raise RuntimeError(msg)
     lease = coordinator(checkpoint_thread_id)
-    await lease.__aenter__()
+    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
 
     try:
         snapshot = await graph.aget_state(runnable_config, subgraphs=True)

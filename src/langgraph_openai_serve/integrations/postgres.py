@@ -99,7 +99,7 @@ async def _try_acquire_advisory_lock(
         row = await cursor.fetchone()
         if row is None:
             msg = "PostgreSQL advisory lease acquisition returned no result."
-            raise RuntimeError(msg)
+            raise RuntimeError(msg)  # ruff: ignore[raise-within-try]
         return bool(row["acquired"])
     except BaseException:
         # Cancellation may arrive after PostgreSQL acquired the session lock.
@@ -121,7 +121,7 @@ async def _release_advisory_lock(
         row = await cursor.fetchone()
         if row is None or not row["released"]:
             msg = "PostgreSQL advisory lease could not be released."
-            raise RuntimeError(msg)
+            raise RuntimeError(msg)  # ruff: ignore[raise-within-try]
     except BaseException:
         # Session locks survive transaction rollback. Closing makes PostgreSQL
         # release the lock and tells psycopg_pool to replace this connection.

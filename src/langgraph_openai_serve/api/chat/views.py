@@ -105,7 +105,7 @@ async def create_chat_completion(
         chat_request.stream,
     )
 
-    try:
+    try:  # ruff: ignore[too-many-statements-in-try-clause]
         run = await prepare_run(
             chat_request.model,
             chat_request.messages,

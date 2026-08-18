@@ -73,7 +73,13 @@ async def generate_completion(
 async def stream_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> AsyncGenerator[str, None]:
-    """Stream a chat completion response."""
+    """
+    Stream a chat completion response.
+
+    Yields:
+        String chunks representing Server-Sent Events.
+
+    """
     start_time = time.time()
     response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
     custom_events: list[CustomStreamPart] = []
@@ -82,7 +88,7 @@ async def stream_completion(
         GraphFeature.CLIENT_EVENTS
     ) and stream_events_requested(chat_request.metadata)
 
-    try:
+    try:  # ruff: ignore[too-many-nested-blocks, too-many-statements-in-try-clause]
         yield response_builder.role()
 
         run_stream = stream_run(run)

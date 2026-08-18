@@ -9,7 +9,13 @@ from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
 
 
 async def stream_owner_dependency() -> AsyncIterator[_StreamOwner]:
-    """Manage stream ownership."""
+    """
+    Manage stream ownership.
+
+    Yields:
+        The stream owner dependency instance.
+
+    """
     owner = _StreamOwner()
     try:
         yield owner

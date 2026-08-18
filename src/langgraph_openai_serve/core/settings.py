@@ -78,7 +78,7 @@ class Settings(BaseSettings):
 
     @property
     def fastapi_docs_kwargs(self) -> FastAPIDocsKwargs:
-        """Return kwargs to configure FastAPI docs visibility."""
+        """Kwargs to configure FastAPI docs visibility."""
         if self.OPENAI_API_DOCS_ENABLED:
             return {
                 "docs_url": "/docs",

@@ -176,7 +176,7 @@ class ChatCompletionStreamResponseBuilder:
             openai_error_payload(ErrorObject(message=message, type="server_error"))
         )
 
-    def done(self) -> str:
+    def done(self) -> str:  # ruff: ignore[no-self-use]
         """Stream done."""
         return "data: [DONE]\n\n"
 
@@ -217,5 +217,5 @@ class ChatCompletionStreamResponseBuilder:
             data["langgraph_openai_serve"] = client_event_extension
         return self._format_data(data)
 
-    def _format_data(self, data: dict) -> str:
+    def _format_data(self, data: dict) -> str:  # ruff: ignore[no-self-use]
         return f"data: {json.dumps(data)}\n\n"
