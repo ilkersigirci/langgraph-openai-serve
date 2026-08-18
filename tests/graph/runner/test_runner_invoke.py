@@ -37,10 +37,9 @@ class RecordingCallback(BaseCallbackHandler):
 @pytest.fixture
 def mock_langfuse_callback(monkeypatch: pytest.MonkeyPatch) -> RecordingCallback:
     callback = RecordingCallback()
-    monkeypatch.setenv("LANGFUSE_BASE_URL", "http://test")
-    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "test")
-    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "test")
-    monkeypatch.setattr(graph_utils, "settings", Settings(ENABLE_LANGFUSE=True))
+    monkeypatch.setattr(
+        graph_utils, "settings", Settings.model_construct(ENABLE_LANGFUSE=True)
+    )
     monkeypatch.setattr(
         graph_utils,
         "get_langfuse_callback",
