@@ -6,7 +6,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class FastAPIDocsKwargs(TypedDict):
+class _FastAPIDocsKwargs(TypedDict):
     """FastAPI docs kwargs."""
 
     docs_url: str | None
@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LGOS_",
         extra="ignore",
+        frozen=True,
     )
 
     OPENAI_API_PREFIX: str = "/v1"
@@ -77,7 +78,7 @@ class Settings(BaseSettings):
         return v
 
     @property
-    def fastapi_docs_kwargs(self) -> FastAPIDocsKwargs:
+    def fastapi_docs_kwargs(self) -> _FastAPIDocsKwargs:
         """Kwargs to configure FastAPI docs visibility."""
         if self.OPENAI_API_DOCS_ENABLED:
             return {
