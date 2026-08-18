@@ -12,11 +12,13 @@ def setup_logging(
     logging_config: dict | None = None,
     default_level: int = logging.INFO,
 ) -> None:
-    """Set up the logger using default or custom configuration.
+    """
+    Set up the logger using default or custom configuration.
 
     Args:
         logging_config: Custom logging configuration.
         default_level: Default level of the logger.
+
     """
     loaded_config = DEFAULT_LOGGER_CONFIG if logging_config is None else logging_config
 

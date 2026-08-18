@@ -108,18 +108,21 @@ extend-exclude = [
 
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["E402", "F401"]
-"*.ipynb" = ["ERA001", "T201", "ANN"]
-"tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT"]
-"demo/*/tests/*" = ["INP001", "ARG001", "ARG002", "ARG005", "S101", "S105", "S106", "S107", "SLF001", "ANN", "FBT", "PLC0415"]
-"demo/*" = ["S104", "T201", "PLC0415"]
-"src/langgraph_openai_serve/core/settings.py" = ["FBT001"]
+"__init__.py" = ["module-import-not-at-top-of-file", "unused-import"]
+"*.ipynb" = ["commented-out-code", "print", "ANN", "D"]
+"tests/*" = ["implicit-namespace-package", "unused-function-argument", "unused-method-argument", "unused-lambda-argument", "assert", "hardcoded-password-string", "hardcoded-password-func-arg", "hardcoded-password-default", "private-member-access", "ANN", "FBT", "D"]
+"demo/*/tests/*" = ["implicit-namespace-package", "unused-function-argument", "unused-method-argument", "unused-lambda-argument", "assert", "hardcoded-password-string", "hardcoded-password-func-arg", "hardcoded-password-default", "private-member-access", "ANN", "FBT", "import-outside-top-level", "D"]
+"demo/ui/openwebui/*" = ["D"]
+"demo/*" = ["hardcoded-bind-all-interfaces", "print", "import-outside-top-level", "D"]
+"src/langgraph_openai_serve/core/settings.py" = ["boolean-type-hint-positional-argument"]
 
 [tool.ruff.format]
 skip-magic-trailing-comma = false
 
 [tool.ruff.lint]
+preview = true
 
+# Note: `select` requires short alphanumeric prefix codes for linter categories.
 select = [
     "A", # flake8-builtins
     "ANN", # flake8-annotations
@@ -129,8 +132,11 @@ select = [
     "BLE", # flake8-blind-except
     "C",  # flake8-comprehensions
     "C9",  # mccabe
+    "D",   # pydocstyle
+    "DOC", # pydoclint
     "DTZ", # flake8-datetimez
     "E",  # pycodestyle errors (default)
+    "EM",  # flake8-errmsg
     "ERA", # eradicate
     "EXE", # flake8-executable
     "F",  # pyflakes (default)
@@ -140,6 +146,7 @@ select = [
     "FIX", # flake8-fixme
     "FLY", # flynt
     "FURB", # refurb
+    "G",  # flake8-logging-format
     "I",  # isort
     "ICN", # flake8-import-conventions
     "INP", # flake8-no-pep420
@@ -162,28 +169,52 @@ select = [
     "RSE", # flake8-raise
     "RUF", # Enable all ruff-specific checks
     "S",   # flake8-bandit
-    "S307", # eval
     "SIM", # simplify
     "SLF", # flake8-self
     "SLOT", # flake8-slots
+    "suspicious-eval-usage", # eval
     "T10", # flake8-debugger
     "T20", # flake8-print
     "TC", # flake8-type-checking
     "TD", # flake8-todos
     "TID", # flake8-tidy-imports
+    "TRY", # tryceratops
     "UP", # pyupgrade
     "W",  # pycodestyle warnings
     "YTT", # flake8-2020
 ]
 
+# Note: For specific rules, we use their full English names rather than
+# numeric codes for better readability.
 ignore = [
-    "E501",  # Line too long, handled by ruff formatter
-    "D107", # "Missing docstring in __init__",
-    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "any-type",
+    "compare-to-empty-string",
+    "docstring-missing-exception",
+    "docstring-missing-returns",
+    "docstring-missing-yields",
+    "import-outside-top-level",
+    "import-private-name",
+    "incorrect-blank-line-before-class",
+    "line-too-long",
+    "multi-line-summary-first-line",
+    "no-self-use",
+    "property-docstring-starts-with-verb",
+    "raise-vanilla-args",
+    "raise-within-try",
+    "suspicious-subprocess-import",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-statements-in-try-clause",
+    "undocumented-public-init",
+    "undocumented-public-module",
+    "undocumented-public-package",
+    "unnecessary-dunder-call",
+    "unused-async",
+    "yield-in-context-manager-in-async-generator",
 ]
 
 unfixable = [
-    "F401" # Unused imports.
+    "unused-import",
 ]
 
 [tool.ruff.lint.mccabe]

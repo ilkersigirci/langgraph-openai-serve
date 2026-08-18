@@ -26,7 +26,8 @@ class InvalidChatMessageError(ValueError):
 def convert_to_lc_messages(
     messages: list[ChatCompletionRequestMessage],
 ) -> list[BaseMessage]:
-    """Convert OpenAI messages to LangChain messages.
+    """
+    Convert OpenAI messages to LangChain messages.
 
     This function converts a list of OpenAI-compatible message objects to their
     LangChain equivalents for use with LangGraph.
@@ -36,8 +37,8 @@ def convert_to_lc_messages(
 
     Returns:
         A list of LangChain message objects.
-    """
 
+    """
     lc_messages: list[BaseMessage] = []
     for m in messages:
         match m.role:
@@ -49,9 +50,8 @@ def convert_to_lc_messages(
                 lc_messages.append(_assistant_message(m))
             case Role.TOOL:
                 if m.tool_call_id is None:
-                    raise InvalidChatMessageError(
-                        "Tool messages require the 'tool_call_id' field."
-                    )
+                    msg = "Tool messages require the 'tool_call_id' field."
+                    raise InvalidChatMessageError(msg)
                 lc_messages.append(
                     ToolMessage(
                         content=m.content or "",

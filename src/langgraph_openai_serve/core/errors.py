@@ -55,6 +55,7 @@ def configure_openai_error_handlers(app: FastAPI) -> None:
 
 
 def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
+    """Create OpenAI error payload."""
     return {"error": error.model_dump(mode="json")}
 
 
@@ -62,6 +63,7 @@ async def openai_http_exception_handler(
     _request: Request,
     exc: StarletteHTTPException,
 ) -> JSONResponse:
+    """Handle HTTP exceptions."""
     if isinstance(exc, OpenAIHTTPException):
         error = exc.error
     else:
@@ -84,6 +86,7 @@ async def openai_request_validation_exception_handler(
     _request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    """Handle validation exceptions."""
     first_error = exc.errors()[0] if exc.errors() else {}
     location = first_error.get("loc", ())
     if not isinstance(location, (tuple, list)):
@@ -111,6 +114,7 @@ async def openai_unhandled_exception_handler(
     _request: Request,
     _exc: Exception,
 ) -> JSONResponse:
+    """Handle unhandled exceptions."""
     logger.error("Unhandled OpenAI-compatible API error")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

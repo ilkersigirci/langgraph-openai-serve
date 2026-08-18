@@ -1,4 +1,5 @@
-"""Regression coverage for package import configuration sources.
+"""
+Regression coverage for package import configuration sources.
 
 This test uses an isolated subprocess to ensure that merely importing the
 package does not accidentally load a `.env` file from the consumer's current

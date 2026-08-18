@@ -75,7 +75,8 @@ class ScriptedChat:
         self.runtime_metadata_calls.append(runtime_metadata)
         self.include_client_events_calls.append(include_client_events)
         if step_index >= len(self._steps):
-            raise AssertionError(f"Unexpected chat call {step_index + 1}")
+            msg = f"Unexpected chat call {step_index + 1}"
+            raise AssertionError(msg)
 
         deltas, completion = self._steps[step_index]
         yield ScriptedStream(deltas, completion)

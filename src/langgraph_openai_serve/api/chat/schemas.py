@@ -1,4 +1,5 @@
-"""Pydantic models for the OpenAI API.
+"""
+Pydantic models for the OpenAI API.
 
 This module defines Pydantic models that match the OpenAI API request and response formats.
 """

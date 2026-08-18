@@ -48,7 +48,8 @@ _INTERRUPT_CHECKPOINTER_METHODS = (
 
 def _addressable_model_id(value: str) -> str:
     if value in {".", ".."}:
-        raise ValueError("model id must be addressable")
+        msg = "model id must be addressable"
+        raise ValueError(msg)
     return value
 
 
@@ -68,6 +69,8 @@ class GraphNotFoundError(ValueError):
 
 
 class GraphConfig(BaseModel):
+    """Graph configuration."""
+
     graph: GraphResolver
     description: Annotated[
         str,
@@ -107,10 +110,11 @@ class GraphConfig(BaseModel):
             and self.context_factory is None
             and graph.context_schema is not self.client_settings
         ):
-            raise GraphConfigurationError(
+            msg = (
                 "Graphs using client_settings directly must use that settings model "
                 "as context_schema."
             )
+            raise GraphConfigurationError(msg)
 
         if self.supports(GraphFeature.INTERRUPTS):
             checkpointer = graph.checkpointer
@@ -118,14 +122,14 @@ class GraphConfig(BaseModel):
                 not _overrides_checkpointer_method(checkpointer, method_name)
                 for method_name in _INTERRUPT_CHECKPOINTER_METHODS
             ):
-                raise GraphConfigurationError(
+                msg = (
                     "Interrupt-enabled graphs must use a fully asynchronous "
                     "checkpointer with thread deletion."
                 )
+                raise GraphConfigurationError(msg)
             if self.run_coordinator is None:
-                raise GraphConfigurationError(
-                    "Interrupt-enabled graphs must configure a run_coordinator."
-                )
+                msg = "Interrupt-enabled graphs must configure a run_coordinator."
+                raise GraphConfigurationError(msg)
 
         return graph
 
@@ -158,9 +162,8 @@ class GraphConfig(BaseModel):
         if context is None:
             return None
         if graph.context_schema is None:
-            raise GraphConfigurationError(
-                "A graph that produces runtime context must declare context_schema."
-            )
+            msg = "A graph that produces runtime context must declare context_schema."
+            raise GraphConfigurationError(msg)
 
         # Preserve server-owned context objects; LangGraph applies context_schema
         # coercion when it invokes the graph.
@@ -210,6 +213,8 @@ _RegistryEntries = Annotated[
 
 
 class GraphRegistry(BaseModel):
+    """Registry of graphs."""
+
     registry: _RegistryEntries
 
     model_config = ConfigDict(validate_assignment=True)
@@ -223,7 +228,8 @@ class GraphRegistry(BaseModel):
         return list(self.registry.keys())
 
     def get_graph(self, name: str) -> GraphConfig:
-        """Get a graph by its name.
+        """
+        Get a graph by its name.
 
         Args:
             name: The name of the graph to retrieve.
@@ -233,8 +239,10 @@ class GraphRegistry(BaseModel):
 
         Raises:
             GraphNotFoundError: If the graph name is not found in the registry.
+
         """
         try:
             return self.registry[name]
         except KeyError as exc:
-            raise GraphNotFoundError(f"Graph '{name}' not found in registry.") from exc
+            msg = f"Graph '{name}' not found in registry."
+            raise GraphNotFoundError(msg) from exc

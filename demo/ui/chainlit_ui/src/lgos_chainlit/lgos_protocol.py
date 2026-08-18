@@ -1,4 +1,5 @@
-"""The narrow LGOS wire contract consumed by the standalone Chainlit client.
+"""
+The narrow LGOS wire contract consumed by the standalone Chainlit client.
 
 This module deliberately duplicates and decodes only the public protocol pieces
 that the UI needs. It must not import ``langgraph_openai_serve``: the Chainlit

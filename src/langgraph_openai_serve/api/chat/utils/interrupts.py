@@ -40,6 +40,7 @@ class _InterruptCall:
 
 
 def interrupt_tool_call_id(interrupt_id: str) -> str:
+    """Format interrupt tool call ID."""
     return f"{INTERRUPT_TOOL_CALL_ID_PREFIX}{interrupt_id}"
 
 
@@ -72,15 +73,15 @@ def _dump_json(value: Any) -> str:
             separators=(",", ":"),
         )
     except (TypeError, ValueError) as exc:
-        raise InvalidInterruptPayloadError(
-            "LangGraph interrupt payloads must be valid JSON values."
-        ) from exc
+        msg = "LangGraph interrupt payloads must be valid JSON values."
+        raise InvalidInterruptPayloadError(msg) from exc
 
 
 def parse_resume_request(
     messages: list[ChatCompletionRequestMessage],
 ) -> InterruptResume | None:
-    """Parse the trailing canonical assistant/tool interrupt exchange.
+    """
+    Parse the trailing canonical assistant/tool interrupt exchange.
 
     Ordinary tool messages remain ordinary graph input. A LangGraph resume is
     recognized only when the tool results answer a preceding assistant message
@@ -95,9 +96,8 @@ def parse_resume_request(
 
     if assistant is None or assistant.role != Role.ASSISTANT:
         if any(_is_interrupt_tool_result(message) for message in tool_messages):
-            raise InvalidResumeRequestError(
-                "Interrupt tool results must follow their assistant tool calls."
-            )
+            msg = "Interrupt tool results must follow their assistant tool calls."
+            raise InvalidResumeRequestError(msg)
         return None
 
     calls = assistant.tool_calls or []
@@ -107,15 +107,13 @@ def parse_resume_request(
 
     if not interrupt_calls:
         if any(_is_interrupt_tool_result(message) for message in tool_messages):
-            raise InvalidResumeRequestError(
-                "Interrupt tool results must follow their assistant tool calls."
-            )
+            msg = "Interrupt tool results must follow their assistant tool calls."
+            raise InvalidResumeRequestError(msg)
         return None
 
     if len(interrupt_calls) != len(calls):
-        raise InvalidResumeRequestError(
-            "Interrupt and ordinary tool calls cannot be resumed in one exchange."
-        )
+        msg = "Interrupt and ordinary tool calls cannot be resumed in one exchange."
+        raise InvalidResumeRequestError(msg)
 
     parsed_calls = _parse_interrupt_calls(interrupt_calls)
     values = _parse_tool_results(tool_messages, parsed_calls)
@@ -123,10 +121,11 @@ def parse_resume_request(
     run_ids = {call.run_id for call in parsed_calls.values()}
     state_tokens = {call.state_token for call in parsed_calls.values()}
     if len(run_ids) != 1 or len(state_tokens) != 1:
-        raise InvalidResumeRequestError(
+        msg = (
             "All interrupt tool calls in one exchange must belong to the same run "
             "and interrupt generation."
         )
+        raise InvalidResumeRequestError(msg)
 
     return InterruptResume(
         run_id=run_ids.pop(),
@@ -158,37 +157,37 @@ def _parse_interrupt_calls(calls: list[ToolCall]) -> dict[str, _InterruptCall]:
     parsed: dict[str, _InterruptCall] = {}
     for call in calls:
         if call.id in parsed:
-            raise InvalidResumeRequestError(
-                "Interrupt assistant tool_call IDs must be unique."
-            )
+            msg = "Interrupt assistant tool_call IDs must be unique."
+            raise InvalidResumeRequestError(msg)
         parsed[call.id] = _parse_interrupt_call(call)
     return parsed
 
 
 def _parse_interrupt_call(call: ToolCall) -> _InterruptCall:
     if not call.id.startswith(INTERRUPT_TOOL_CALL_ID_PREFIX):
-        raise InvalidResumeRequestError("Interrupt assistant tool_call ID is invalid.")
+        msg = "Interrupt assistant tool_call ID is invalid."
+        raise InvalidResumeRequestError(msg)
 
     interrupt_id = call.id.removeprefix(INTERRUPT_TOOL_CALL_ID_PREFIX)
     if not interrupt_id:
-        raise InvalidResumeRequestError("Interrupt assistant tool_call ID is invalid.")
+        msg = "Interrupt assistant tool_call ID is invalid."
+        raise InvalidResumeRequestError(msg)
 
     try:
         arguments = _load_json(call.function.arguments)
     except (TypeError, ValueError) as exc:
-        raise InvalidResumeRequestError(
-            "Interrupt assistant tool arguments must be valid JSON."
-        ) from exc
+        msg = "Interrupt assistant tool arguments must be valid JSON."
+        raise InvalidResumeRequestError(msg) from exc
 
     if not isinstance(arguments, dict):
-        raise InvalidResumeRequestError(
-            "Interrupt assistant tool arguments must be a JSON object."
-        )
+        msg = "Interrupt assistant tool arguments must be a JSON object."
+        raise InvalidResumeRequestError(msg)
     if set(arguments) != _INTERRUPT_ARGUMENT_FIELDS:
-        raise InvalidResumeRequestError(
+        msg = (
             "Interrupt assistant tool arguments must contain exactly run_id, "
             "state_token, and payload."
         )
+        raise InvalidResumeRequestError(msg)
 
     run_id = _required_string_argument(arguments, "run_id")
     state_token = _required_string_argument(arguments, "state_token")
@@ -203,9 +202,8 @@ def _parse_interrupt_call(call: ToolCall) -> _InterruptCall:
 def _required_string_argument(arguments: dict[str, Any], name: str) -> str:
     value = arguments.get(name)
     if not isinstance(value, str) or not value:
-        raise InvalidResumeRequestError(
-            f"Interrupt assistant tool arguments must include {name}."
-        )
+        msg = f"Interrupt assistant tool arguments must include {name}."
+        raise InvalidResumeRequestError(msg)
     return value
 
 
@@ -217,36 +215,30 @@ def _parse_tool_results(
     for message in messages:
         tool_call_id = message.tool_call_id
         if not tool_call_id:
-            raise InvalidResumeRequestError(
-                "Interrupt resume tool messages must include tool_call_id."
-            )
+            msg = "Interrupt resume tool messages must include tool_call_id."
+            raise InvalidResumeRequestError(msg)
         if tool_call_id not in calls:
-            raise InvalidResumeRequestError(
-                "Interrupt resume tool_call_id does not match the assistant request."
-            )
+            msg = "Interrupt resume tool_call_id does not match the assistant request."
+            raise InvalidResumeRequestError(msg)
         interrupt_id = calls[tool_call_id].interrupt_id
         if interrupt_id in results:
-            raise InvalidResumeRequestError(
-                "Interrupt resume tool_call_id values must be unique."
-            )
+            msg = "Interrupt resume tool_call_id values must be unique."
+            raise InvalidResumeRequestError(msg)
 
         try:
             payload = _load_json(message.content or "")
         except (TypeError, ValueError) as exc:
-            raise InvalidResumeRequestError(
-                'Interrupt resume tool content must be JSON like {"resume": "..."}'
-            ) from exc
+            msg = 'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            raise InvalidResumeRequestError(msg) from exc
 
         if not isinstance(payload, dict) or "resume" not in payload:
-            raise InvalidResumeRequestError(
-                'Interrupt resume tool content must be JSON like {"resume": "..."}'
-            )
+            msg = 'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            raise InvalidResumeRequestError(msg)
         results[interrupt_id] = payload["resume"]
 
     if set(results) != {call.interrupt_id for call in calls.values()}:
-        raise InvalidResumeRequestError(
-            "Every interrupt tool call must have exactly one tool result."
-        )
+        msg = "Every interrupt tool call must have exactly one tool result."
+        raise InvalidResumeRequestError(msg)
     return results
 
 
@@ -255,4 +247,5 @@ def _load_json(value: str) -> Any:
 
 
 def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"Unsupported JSON constant: {value}")
+    msg = f"Unsupported JSON constant: {value}"
+    raise ValueError(msg)

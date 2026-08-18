@@ -50,7 +50,8 @@ def _stub_runnable(
 
     async def respond(_: Any) -> Any:
         if not remaining:
-            raise AssertionError(f"Unexpected call to {factory_name}")
+            msg = f"Unexpected call to {factory_name}"
+            raise AssertionError(msg)
         return remaining.popleft()
 
     runnable = RunnableLambda(respond)
@@ -240,7 +241,8 @@ async def test_direct_response_skips_retrieval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def unexpected_retrieval(query: str) -> list[Document]:
-        raise AssertionError(f"Conversation unexpectedly retrieved: {query}")
+        msg = f"Conversation unexpectedly retrieved: {query}"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", unexpected_retrieval)
     _stub_runnable(

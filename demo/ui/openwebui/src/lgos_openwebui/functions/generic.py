@@ -1,5 +1,6 @@
 """
 title: Generic
+
 author: langgraph-openai-serve
 version: 0.14
 """
@@ -112,7 +113,8 @@ class Pipe:
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
-        """Forward chat and complete each interrupt batch in one invocation.
+        """
+        Forward chat and complete each interrupt batch in one invocation.
 
         Open WebUI supplies the input ledger but this Function does not assume
         an undocumented API for persisting raw assistant tool calls. The exact
@@ -194,7 +196,8 @@ class Pipe:
                             yield error
                             return
                         if decision is None:
-                            raise RuntimeError("Decision cannot be None")
+                            msg = "Decision cannot be None"
+                            raise RuntimeError(msg)
                         decisions.append(decision)
 
                     messages = [
@@ -261,11 +264,13 @@ def _client(
 def _model_id(body: dict[str, Any]) -> str:
     qualified_model_id = body.get("model")
     if not isinstance(qualified_model_id, str):
-        raise ValueError("Open WebUI did not provide a valid model ID.")
+        msg = "Open WebUI did not provide a valid model ID."
+        raise TypeError(msg)
 
     _, separator, model_id = qualified_model_id.partition(".")
     if not separator or not model_id:
-        raise ValueError("Open WebUI did not provide a valid model ID.")
+        msg = "Open WebUI did not provide a valid model ID."
+        raise ValueError(msg)
 
     return model_id
 
@@ -278,9 +283,8 @@ async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
 def _model_request(model_id: str) -> dict[str, Any]:
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
-        raise ValueError(
-            f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        )
+        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
+        raise ValueError(msg)
 
     return {
         "model": upstream_model,
@@ -323,13 +327,11 @@ def _runtime_settings_metadata(
             separators=(",", ":"),
         )
     except (TypeError, ValueError) as exc:
-        raise SettingsTransportError(
-            "The selected runtime settings cannot be encoded as JSON."
-        ) from exc
+        msg = "The selected runtime settings cannot be encoded as JSON."
+        raise SettingsTransportError(msg) from exc
     if len(encoded) > OPENAI_METADATA_VALUE_MAX_LENGTH:
-        raise SettingsTransportError(
-            "The selected runtime settings exceed the OpenAI metadata value limit."
-        )
+        msg = "The selected runtime settings exceed the OpenAI metadata value limit."
+        raise SettingsTransportError(msg)
     return {RUNTIME_SETTINGS_METADATA_KEY: encoded}
 
 
@@ -559,13 +561,16 @@ def _interrupt_payload(
     try:
         arguments = json.loads(tool_call.function.arguments)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Interrupt tool arguments must be valid JSON.") from exc
+        msg = "Interrupt tool arguments must be valid JSON."
+        raise ValueError(msg) from exc
 
     if not isinstance(arguments, dict):
-        raise ValueError("Interrupt tool arguments must be a JSON object.")
+        msg = "Interrupt tool arguments must be a JSON object."
+        raise TypeError(msg)
 
     if "payload" not in arguments:
-        raise ValueError("Interrupt tool arguments must contain a payload.")
+        msg = "Interrupt tool arguments must contain a payload."
+        raise ValueError(msg)
 
     return arguments["payload"]
 

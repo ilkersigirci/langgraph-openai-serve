@@ -69,7 +69,8 @@ async def _wait_until_started(
         while not server.started:
             if server_task.done():
                 await server_task
-                raise RuntimeError("Uvicorn stopped before accepting requests")
+                msg = "Uvicorn stopped before accepting requests"
+                raise RuntimeError(msg)
             await asyncio.sleep(0)
 
 

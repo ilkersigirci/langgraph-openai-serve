@@ -24,7 +24,6 @@ def create_docs_graph(
     keyword_graph: CompiledStateGraph | None = None,
 ) -> CompiledStateGraph:
     """Create the docs specialist graph."""
-
     keyword_subgraph = keyword_graph or create_keyword_graph()
 
     builder = StateGraph(DocsState)

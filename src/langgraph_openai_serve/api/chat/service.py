@@ -62,8 +62,9 @@ async def generate_completion(
     )
 
     logger.info(
-        f"Chat completion finished in {time.time() - start_time:.2f}s. "
-        f"Total tokens: {tokens_used['total_tokens']}"
+        "Chat completion finished in %.2fs. Total tokens: %d",
+        time.time() - start_time,
+        tokens_used["total_tokens"],
     )
 
     return response
@@ -115,7 +116,7 @@ async def stream_completion(
         yield response_builder.done()
 
         logger.info(
-            f"Streamed chat completion finished in {time.time() - start_time:.2f}s"
+            "Streamed chat completion finished in %.2fs", time.time() - start_time
         )
 
     except Exception:

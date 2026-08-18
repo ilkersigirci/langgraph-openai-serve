@@ -22,7 +22,9 @@ class RunCoordinator(Protocol):
         self,
         key: str,
         /,
-    ) -> AbstractAsyncContextManager[None]: ...
+    ) -> AbstractAsyncContextManager[None]:
+        """Acquire lease synchronously."""
+        ...
 
 
 class InMemoryRunCoordinator:
@@ -34,6 +36,7 @@ class InMemoryRunCoordinator:
 
     @asynccontextmanager
     async def __call__(self, key: str, /) -> AsyncIterator[None]:
+        """Acquire lease asynchronously."""
         self._acquire(key)
         try:
             yield

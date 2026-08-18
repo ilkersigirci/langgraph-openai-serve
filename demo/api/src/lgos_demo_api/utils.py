@@ -7,7 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def is_module_installed(module_name: str, *, throw_error: bool = False) -> bool:
-    """Check if the module is installed or not.
+    """
+    Check if the module is installed or not.
 
     Examples:
         >>> is_module_installed(module_name="yaml", throw_error=False)
@@ -27,9 +28,10 @@ def is_module_installed(module_name: str, *, throw_error: bool = False) -> bool:
 
     Raises:
         ImportError: If throw_error is True and module is not installed.
-    """
 
+    """
     is_installed = importlib.util.find_spec(module_name) is not None
     if not is_installed and throw_error:
-        raise ImportError(f"Module {module_name} is not installed.")
+        msg = f"Module {module_name} is not installed."
+        raise ImportError(msg)
     return is_installed

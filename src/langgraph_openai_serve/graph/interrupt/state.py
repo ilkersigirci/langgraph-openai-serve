@@ -56,20 +56,20 @@ async def prepare_interrupt_input(
         if pending_interrupts:
             # Re-emit persisted tool calls without rerunning graph nodes.
             return None, False
-        raise InterruptStateConflictError("This run_id has already been used.")
+        msg = "This run_id has already been used."
+        raise InterruptStateConflictError(msg)
 
     if checkpoint_id is None:
-        raise InterruptStateConflictError(
-            "No durable interrupt state exists for this run."
-        )
+        msg = "No durable interrupt state exists for this run."
+        raise InterruptStateConflictError(msg)
     if not pending_interrupts:
-        raise InterruptStateConflictError("This run no longer has pending interrupts.")
+        msg = "This run no longer has pending interrupts."
+        raise InterruptStateConflictError(msg)
 
     state_token = await checkpoint_state_token(graph, snapshot.config)
     if state_token is None:
-        raise InterruptStateConflictError(
-            "No durable interrupt state exists for this run."
-        )
+        msg = "No durable interrupt state exists for this run."
+        raise InterruptStateConflictError(msg)
     return _resume_interrupt_inputs(
         state_token,
         set(pending_interrupts),
@@ -83,13 +83,11 @@ def _resume_interrupt_inputs(
     resume: InterruptResume,
 ) -> Command:
     if resume.state_token != state_token:
-        raise InterruptStateConflictError(
-            "The interrupt result is stale for the current interrupt generation."
-        )
+        msg = "The interrupt result is stale for the current interrupt generation."
+        raise InterruptStateConflictError(msg)
     if set(resume.values) != pending_ids:
-        raise InterruptStateConflictError(
-            "Interrupt results do not match the complete pending interrupt set."
-        )
+        msg = "Interrupt results do not match the complete pending interrupt set."
+        raise InterruptStateConflictError(msg)
 
     # Always use the ID/value form, including for one interrupt. It preserves
     # OpenAI tool_call causality and handles JSON null as a legitimate answer.
@@ -102,9 +100,11 @@ def interrupts_by_id(snapshot: StateSnapshot) -> dict[str, Interrupt]:
     for interrupt in snapshot.interrupts:
         interrupt_id = interrupt.id
         if not isinstance(interrupt_id, str) or not interrupt_id:
-            raise RuntimeError("Durable interrupt state has an invalid interrupt id.")
+            msg = "Durable interrupt state has an invalid interrupt id."
+            raise RuntimeError(msg)
         if interrupt_id in pending:
-            raise RuntimeError("Durable interrupt state has duplicate interrupt ids.")
+            msg = "Durable interrupt state has duplicate interrupt ids."
+            raise RuntimeError(msg)
         pending[interrupt_id] = interrupt
     return pending
 
@@ -119,10 +119,11 @@ def resolve_run_id(
         if requested_run_id is not None:
             requested_run_id = normalize_run_id(requested_run_id)
             if requested_run_id != resume_run_id:
-                raise InvalidResumeRequestError(
+                msg = (
                     f"metadata.{RUN_METADATA_KEY} does not match the interrupt "
                     "tool call."
                 )
+                raise InvalidResumeRequestError(msg)
         return resume_run_id
 
     if requested_run_id is not None:
@@ -135,13 +136,11 @@ def normalize_run_id(value: str) -> str:
     try:
         parsed = uuid.UUID(value)
     except (AttributeError, TypeError, ValueError) as exc:
-        raise InvalidRunIDError(
-            f"metadata.{RUN_METADATA_KEY} must be a UUID when provided."
-        ) from exc
+        msg = f"metadata.{RUN_METADATA_KEY} must be a UUID when provided."
+        raise InvalidRunIDError(msg) from exc
     if parsed.int == 0:
-        raise InvalidRunIDError(
-            f"metadata.{RUN_METADATA_KEY} must not be the nil UUID."
-        )
+        msg = f"metadata.{RUN_METADATA_KEY} must not be the nil UUID."
+        raise InvalidRunIDError(msg)
     return str(parsed)
 
 
@@ -153,9 +152,8 @@ def get_run_id(request: ChatCompletionRequest) -> str | None:
 def normalize_checkpoint_scope(value: str) -> str:
     """Validate a server-owned checkpoint isolation scope."""
     if not isinstance(value, str) or not value.strip():
-        raise GraphConfigurationError(
-            "checkpoint_scope must resolve to a non-empty server-trusted string."
-        )
+        msg = "checkpoint_scope must resolve to a non-empty server-trusted string."
+        raise GraphConfigurationError(msg)
     return value.strip()
 
 
@@ -173,7 +171,8 @@ async def checkpoint_state_token(
     graph: CompiledStateGraph,
     runnable_config: RunnableConfig,
 ) -> str | None:
-    """Fingerprint the latest checkpoint in every namespace.
+    """
+    Fingerprint the latest checkpoint in every namespace.
 
     Nested resumes may not advance the root checkpoint, and indirectly invoked
     subgraphs are not exposed through state snapshots. Scanning the checkpointer
@@ -228,7 +227,8 @@ def require_checkpoint_id(config: RunnableConfig) -> str:
     except (AttributeError, KeyError, TypeError):
         checkpoint_id = None
     if not isinstance(checkpoint_id, str) or not checkpoint_id:
-        raise RuntimeError("Durable interrupt state has no checkpoint_id.")
+        msg = "Durable interrupt state has no checkpoint_id."
+        raise RuntimeError(msg)
     return checkpoint_id
 
 
@@ -239,7 +239,8 @@ async def durable_interrupt_batch(
 ) -> LangGraphInterruptBatch | None:
     """Read the durable checkpoint head after graph execution has quiesced."""
     if runnable_config is None:
-        raise RuntimeError("Interrupt-enabled runs require runnable configuration.")
+        msg = "Interrupt-enabled runs require runnable configuration."
+        raise RuntimeError(msg)
 
     snapshot = await graph.aget_state(runnable_config, subgraphs=True)
     if not snapshot.interrupts:
@@ -250,10 +251,12 @@ async def durable_interrupt_batch(
         validate_interrupt_payload(interrupt.value)
 
     if run_id is None:
-        raise RuntimeError("run_id cannot be None")
+        msg = "run_id cannot be None"
+        raise RuntimeError(msg)
     state_token = await checkpoint_state_token(graph, snapshot.config)
     if state_token is None:
-        raise RuntimeError("Interrupted LangGraph state has no checkpoint tuple.")
+        msg = "Interrupted LangGraph state has no checkpoint tuple."
+        raise RuntimeError(msg)
     return LangGraphInterruptBatch(
         run_id=run_id,
         state_token=state_token,

@@ -20,7 +20,8 @@ def merge_shared_request(current: str, update: str) -> str:
     if not current:
         return update
     if current != update:
-        raise ValueError("Parallel approval steps received different requests.")
+        msg = "Parallel approval steps received different requests."
+        raise ValueError(msg)
     return current
 
 
@@ -62,7 +63,8 @@ def create_approval_subgraph(spec: ApprovalSpec) -> CompiledStateGraph:
         )
         normalized_decision = str(decision).strip().lower()
         if normalized_decision not in {"approve", "reject"}:
-            raise ValueError("Approval decision must be 'approve' or 'reject'.")
+            msg = "Approval decision must be 'approve' or 'reject'."
+            raise ValueError(msg)
 
         return {
             "approvals": [

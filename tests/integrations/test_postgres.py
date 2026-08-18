@@ -59,7 +59,8 @@ async def test_coordinator_holds_and_releases_session_lock() -> None:
     async def _body():
         async with coordinator("thread-1"):
             connection_context.__aexit__.assert_not_awaited()
-            raise RuntimeError("run failed")
+            msg = "run failed"
+            raise RuntimeError(msg)
 
     with pytest.raises(RuntimeError, match="run failed"):
         await _body()

@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class PostgresRunCoordinator:
-    """Coordinate runs with PostgreSQL session advisory locks.
+    """
+    Coordinate runs with PostgreSQL session advisory locks.
 
     The pool must return mapping rows, as required by ``AsyncPostgresSaver``
     when both components share one pool (for example, ``row_factory=dict_row``).
@@ -37,20 +38,21 @@ class PostgresRunCoordinator:
         max_concurrent_leases: int,
     ) -> None:
         if getattr(pool, "close_returns", False) is True:
-            raise ValueError(
-                "PostgresRunCoordinator requires a pool with close_returns=False."
-            )
+            msg = "PostgresRunCoordinator requires a pool with close_returns=False."
+            raise ValueError(msg)
         if (
             isinstance(max_concurrent_leases, bool)
             or not isinstance(max_concurrent_leases, int)
             or max_concurrent_leases < 1
         ):
-            raise ValueError("max_concurrent_leases must be a positive integer")
+            msg = "max_concurrent_leases must be a positive integer"
+            raise ValueError(msg)
         self._pool = pool
         self._capacity = BoundedSemaphore(max_concurrent_leases)
 
     @asynccontextmanager
     async def __call__(self, key: str, /) -> AsyncIterator[None]:
+        """Acquire Postgres advisory lease."""
         if not self._capacity.acquire(blocking=False):
             raise RunBusyError(key)
         try:
@@ -96,9 +98,8 @@ async def _try_acquire_advisory_lock(
         )
         row = await cursor.fetchone()
         if row is None:
-            raise RuntimeError(
-                "PostgreSQL advisory lease acquisition returned no result."
-            )
+            msg = "PostgreSQL advisory lease acquisition returned no result."
+            raise RuntimeError(msg)
         return bool(row["acquired"])
     except BaseException:
         # Cancellation may arrive after PostgreSQL acquired the session lock.
@@ -119,7 +120,8 @@ async def _release_advisory_lock(
         )
         row = await cursor.fetchone()
         if row is None or not row["released"]:
-            raise RuntimeError("PostgreSQL advisory lease could not be released.")
+            msg = "PostgreSQL advisory lease could not be released."
+            raise RuntimeError(msg)
     except BaseException:
         # Session locks survive transaction rollback. Closing makes PostgreSQL
         # release the lock and tells psycopg_pool to replace this connection.

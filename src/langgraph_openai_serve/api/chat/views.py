@@ -1,4 +1,5 @@
-"""Chat completion router.
+"""
+Chat completion router.
 
 This module provides the FastAPI router for the chat completion endpoint,
 implementing an OpenAI-compatible interface.
@@ -55,6 +56,7 @@ _CLIENT_ERROR_TYPES = (
 
 
 def client_error_param(error: Exception) -> str | None:
+    """Get client error param."""
     match error:
         case GraphNotFoundError():
             return "model"
@@ -82,7 +84,8 @@ async def create_chat_completion(
         Depends(stream_owner_dependency, scope="request"),
     ],
 ) -> StreamingResponse | ChatCompletionResponse:
-    """Create a chat completion.
+    """
+    Create a chat completion.
 
     This endpoint is compatible with OpenAI's chat completion API.
 
@@ -94,11 +97,12 @@ async def create_chat_completion(
 
     Returns:
         A chat completion response, either as a complete response or as a stream.
-    """
 
+    """
     logger.info(
-        f"Received chat completion request for model: {chat_request.model}, "
-        f"stream: {chat_request.stream}"
+        "Received chat completion request for model: %s, stream: %s",
+        chat_request.model,
+        chat_request.stream,
     )
 
     try:

@@ -9,6 +9,7 @@ from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
 
 
 async def stream_owner_dependency() -> AsyncIterator[_StreamOwner]:
+    """Manage stream ownership."""
     owner = _StreamOwner()
     try:
         yield owner
@@ -17,6 +18,7 @@ async def stream_owner_dependency() -> AsyncIterator[_StreamOwner]:
 
 
 async def checkpoint_scope_dependency(request: Request) -> str:
+    """Resolve checkpoint scope."""
     value = request.app.state.checkpoint_scope(request)
     if inspect.isawaitable(value):
         value = await value

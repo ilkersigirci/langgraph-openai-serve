@@ -1,5 +1,6 @@
 """
 title: UserValves-Simple / simple-graph
+
 author: langgraph-openai-serve
 version: 0.5
 description: Static per-user settings for one fixed graph when dynamic per-chat settings are unnecessary.
@@ -116,10 +117,11 @@ class Pipe:
     def _model_request(self) -> dict[str, Any]:
         provider, separator, model = self.valves.MODEL.partition("/")
         if not provider or not separator or not model:
-            raise ValueError(
+            msg = (
                 "Bifrost model ID must use the provider/model format: "
                 f"{self.valves.MODEL!r}."
             )
+            raise ValueError(msg)
         return {
             "model": model,
             "extra_headers": {"x-model-provider": provider},

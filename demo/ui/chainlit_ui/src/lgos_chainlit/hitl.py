@@ -86,10 +86,11 @@ async def set_chat_profiles(
         extension is not None
         and GraphFeature.INTERRUPTS.value not in extension.features
     ):
-        raise RuntimeError(
+        msg = (
             f"The configured model {settings.HITL_MODEL!r} does not advertise "
             "interrupt support."
         )
+        raise RuntimeError(msg)
     return [
         cl.ChatProfile(
             name=settings.HITL_MODEL,
@@ -175,7 +176,8 @@ async def on_message(message: cl.Message) -> None:
 
 
 async def handle_message(trigger_message: cl.Message | None = None) -> None:
-    """Start a run and publish every interrupt ledger before prompting.
+    """
+    Start a run and publish every interrupt ledger before prompting.
 
     Chainlit exposes public ``Message.metadata`` in restored ``ThreadDict``
     values. A model-context-excluded assistant message therefore owns the exact
@@ -355,9 +357,8 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         try:
             message = cl.Message.from_dict(restored_step)  # ty: ignore[invalid-argument-type]
         except (KeyError, TypeError, ValueError) as exc:
-            raise InvalidInterruptLedgerError(
-                "The pending interrupt message cannot be restored."
-            ) from exc
+            msg = "The pending interrupt message cannot be restored."
+            raise InvalidInterruptLedgerError(msg) from exc
         return PendingInterruptLedger(
             message=message,
             model_id=model_id,
@@ -370,30 +371,32 @@ def parse_interrupt_ledger_metadata(
     raw_ledger: object,
 ) -> tuple[str, ChatCompletionMessage] | None:
     if not isinstance(raw_ledger, dict):
-        raise InvalidInterruptLedgerError("Interrupt ledger metadata is not an object.")
+        msg = "Interrupt ledger metadata is not an object."
+        raise InvalidInterruptLedgerError(msg)
     if raw_ledger.get("schema_version") != INTERRUPT_LEDGER_SCHEMA_VERSION:
-        raise InvalidInterruptLedgerError("Interrupt ledger schema is unsupported.")
+        msg = "Interrupt ledger schema is unsupported."
+        raise InvalidInterruptLedgerError(msg)
 
     status = raw_ledger.get("status")
     if status == COMPLETED_LEDGER_STATUS:
         return None
     if status != PENDING_LEDGER_STATUS:
-        raise InvalidInterruptLedgerError("Interrupt ledger status is invalid.")
+        msg = "Interrupt ledger status is invalid."
+        raise InvalidInterruptLedgerError(msg)
     model_id = raw_ledger.get("model_id")
     if not isinstance(model_id, str) or not model_id:
-        raise InvalidInterruptLedgerError("Interrupt ledger model ID is invalid.")
+        msg = "Interrupt ledger model ID is invalid."
+        raise InvalidInterruptLedgerError(msg)
     try:
         assistant_message = ChatCompletionMessage.model_validate(
             raw_ledger.get("assistant_message")
         )
     except (TypeError, ValueError) as exc:
-        raise InvalidInterruptLedgerError(
-            "Interrupt ledger assistant message is invalid."
-        ) from exc
+        msg = "Interrupt ledger assistant message is invalid."
+        raise InvalidInterruptLedgerError(msg) from exc
     if not interrupt_tool_calls(assistant_message):
-        raise InvalidInterruptLedgerError(
-            "Interrupt ledger assistant message has no interrupt calls."
-        )
+        msg = "Interrupt ledger assistant message has no interrupt calls."
+        raise InvalidInterruptLedgerError(msg)
     return model_id, assistant_message
 
 
@@ -498,12 +501,15 @@ def interrupt_payload(
     try:
         arguments = json.loads(tool_call.function.arguments)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Interrupt tool arguments must be valid JSON.") from exc
+        msg = "Interrupt tool arguments must be valid JSON."
+        raise ValueError(msg) from exc
 
     if not isinstance(arguments, dict):
-        raise ValueError("Interrupt tool arguments must be a JSON object.")
+        msg = "Interrupt tool arguments must be a JSON object."
+        raise TypeError(msg)
     if "payload" not in arguments:
-        raise ValueError("Interrupt tool arguments must contain a payload.")
+        msg = "Interrupt tool arguments must contain a payload."
+        raise ValueError(msg)
 
     return arguments["payload"]
 

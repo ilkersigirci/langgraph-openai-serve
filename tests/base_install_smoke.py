@@ -43,12 +43,20 @@ async def main() -> None:
     # Import only after proving no optional integration was installed, and from
     # a directory whose dotenv values must not configure the library.
     with hostile_working_directory():
-        from httpx import ASGITransport, AsyncClient  # noqa: PLC0415
-        from langchain_core.messages import AIMessage  # noqa: PLC0415
-        from langgraph.graph import MessagesState, StateGraph  # noqa: PLC0415
-        from openai import AsyncOpenAI  # noqa: PLC0415
+        from httpx import (
+            ASGITransport,
+            AsyncClient,
+        )
+        from langchain_core.messages import (
+            AIMessage,
+        )
+        from langgraph.graph import (
+            MessagesState,
+            StateGraph,
+        )
+        from openai import AsyncOpenAI
 
-        from langgraph_openai_serve import (  # noqa: PLC0415
+        from langgraph_openai_serve import (
             GraphConfig,
             GraphRegistry,
             LanggraphOpenaiServe,

@@ -109,7 +109,8 @@ def citation_event(
     """Build an OpenAI URL citation from a Python-style half-open span."""
     start, stop = span
     if not 0 <= start < stop:
-        raise ValueError("citation span must define a valid non-empty text range")
+        msg = "citation span must define a valid non-empty text range"
+        raise ValueError(msg)
 
     return Annotation(
         type="url_citation",
@@ -128,5 +129,6 @@ def citation_slice(annotation: Annotation, content: str) -> slice:
     start = citation.start_index
     stop = citation.end_index + 1
     if not 0 <= start < stop <= len(content):
-        raise ValueError("citation indices must refer to the final assistant text")
+        msg = "citation indices must refer to the final assistant text"
+        raise ValueError(msg)
     return slice(start, stop)

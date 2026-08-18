@@ -37,7 +37,8 @@ class WorkspaceModelSpec:
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
-            raise ValueError(f"LGOS model ID is too long for Open WebUI: {self.id}")
+            msg = f"LGOS model ID is too long for Open WebUI: {self.id}"
+            raise ValueError(msg)
 
     @property
     def limited(self) -> bool:
@@ -124,9 +125,8 @@ def _list_model_ids(client: OpenAI) -> list[str]:
 def _model_request(model_id: str) -> dict[str, Any]:
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
-        raise ValueError(
-            f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        )
+        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
+        raise ValueError(msg)
 
     return {
         "model": upstream_model,
@@ -141,10 +141,12 @@ def sync_workspace_models(
     """Replace generated Workspace Models and their hidden manifold bases."""
     workspace_models = client.get("/api/v1/models/export").raise_for_status().json()
     if not isinstance(workspace_models, list):
-        raise ValueError("Open WebUI models export returned invalid data.")
+        msg = "Open WebUI models export returned invalid data."
+        raise TypeError(msg)
     base_models = client.get("/api/v1/models/base").raise_for_status().json()
     if not isinstance(base_models, list):
-        raise ValueError("Open WebUI base models response returned invalid data.")
+        msg = "Open WebUI base models response returned invalid data."
+        raise TypeError(msg)
     existing_model_ids = {
         model["id"]
         for model in workspace_models

@@ -12,7 +12,7 @@ NEST_COUNT = 2
 
 
 class InfoFilter(logging.Filter):
-    """This filter only shows log entries for INFO level."""
+    """Filter that only shows log entries for INFO level."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Filter function."""
@@ -20,10 +20,12 @@ class InfoFilter(logging.Filter):
 
 
 class SimpleThreadFilter(logging.Filter):
-    """This filter only shows log entries for specified thread name.
+    """
+    Filter that only shows log entries for specified thread name.
 
     Args:
         thread_name: Name of the thread that will be filtered.
+
     """
 
     def __init__(self, thread_name: str) -> None:
@@ -36,7 +38,8 @@ class SimpleThreadFilter(logging.Filter):
 
 
 class ThreadFilter(logging.Filter):
-    """Only accept log records from a specific thread or thread name.
+    """
+    Only accept log records from a specific thread or thread name.
 
     Args:
         thread_id: Id of the thread that will be filtered.
@@ -44,13 +47,15 @@ class ThreadFilter(logging.Filter):
 
     Raises:
         ValueError: Occurs when `thread_id` and/or `thread_id` not given.
+
     """
 
     def __init__(
         self, thread_id: int | None = None, thread_name: str | None = None
     ) -> None:
         if thread_id is None and thread_name is None:
-            raise ValueError("Must specify either thread_id or thread_name")
+            msg = "Must specify either thread_id or thread_name"
+            raise ValueError(msg)
 
         self._thread_id = thread_id
         self._thread_name = thread_name
@@ -66,10 +71,12 @@ class ThreadFilter(logging.Filter):
 
 
 class IgnoreThreadsFilter(logging.Filter):
-    """Only accepts log records that originated from the main thread.
+    """
+    Only accepts log records that originated from the main thread.
 
     Attributes:
         _main_thread_id: Id of the main thread.
+
     """
 
     def __init__(self) -> None:

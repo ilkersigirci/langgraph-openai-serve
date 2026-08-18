@@ -1,3 +1,5 @@
+import operator
+
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.types import CustomStreamPart
@@ -154,7 +156,7 @@ async def test_invoke_run_collects_generic_custom_events() -> None:
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",
-            output_to_text=lambda output: output["answer"],
+            output_to_text=operator.itemgetter("answer"),
         ),
         graph=graph,
         inputs={},

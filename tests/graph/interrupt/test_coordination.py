@@ -28,9 +28,10 @@ async def test_in_memory_coordinator_allows_distinct_keys() -> None:
 async def test_in_memory_coordinator_releases_after_failure() -> None:
     coordinator = InMemoryRunCoordinator()
 
-    with pytest.raises(RuntimeError, match="run failed"):
+    msg = "run failed"
+    with pytest.raises(RuntimeError, match=msg):
         async with coordinator("thread-1"):
-            raise RuntimeError("run failed")
+            raise RuntimeError(msg)
 
     async with coordinator("thread-1"):
         pass

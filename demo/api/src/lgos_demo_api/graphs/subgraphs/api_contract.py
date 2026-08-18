@@ -32,7 +32,6 @@ async def summarize_contract(state: ApiContractState) -> dict[str, str]:
 
 def create_api_contract_graph() -> CompiledStateGraph:
     """Create the API contract specialist graph."""
-
     builder = StateGraph(ApiContractState)
     builder.add_node("collect_contract_checks", collect_contract_checks)
     builder.add_node("summarize_contract", summarize_contract)
