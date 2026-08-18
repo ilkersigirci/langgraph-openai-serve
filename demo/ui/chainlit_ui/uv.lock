@@ -445,7 +445,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.0.3"
+version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -453,9 +453,9 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/db/28a2c35c255bd4f2f705af0bc924f4b652edce44011426164056bf8dfd8c/chainlit_utils-0.0.3.tar.gz", hash = "sha256:2427a1e9a9e06e7424a3d09b1bb76c5cb1a4f550ef014c639d1fd6e0a02fc9d0", size = 8148, upload-time = "2026-08-07T07:36:22.663Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/53/d6d57eb06b78963ac6f527d97a787b485aa41678a5656c3103302225fd76/chainlit_utils-0.1.0.tar.gz", hash = "sha256:b5fe85342a6d04ef20299b3ddf9d1a69c9e491ff17b04296ad6285972bf18339", size = 8140, upload-time = "2026-08-18T12:51:25.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/14/72c3f45e1abcefb8ecd7cab665746bf85670f1addcd6151d777cc28ca9cd/chainlit_utils-0.0.3-py3-none-any.whl", hash = "sha256:504937bb3bd411f2c0f549eb83f8c4e55064cccb53bdedd6e11db71e52378519", size = 12451, upload-time = "2026-08-07T07:36:21.591Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/44/9d039bfb32b43835bcce4977c075da2d970e776a26ee64503dc54596ca1b/chainlit_utils-0.1.0-py3-none-any.whl", hash = "sha256:086c4f57a78b450fab83c775b2bddf169bfe83c12db8669315bf76f7ba463b5d", size = 12438, upload-time = "2026-08-18T12:51:24.8Z" },
 ]
 
 [[package]]
@@ -1324,7 +1324,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "chainlit", specifier = ">=2.11.1,<3" },
-    { name = "chainlit-utils", specifier = "==0.0.3" },
+    { name = "chainlit-utils", specifier = "==0.1.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
     { name = "openai", specifier = ">=2.0.0,<3.0.0" },
     { name = "pydantic", specifier = ">=2.11,<3" },
