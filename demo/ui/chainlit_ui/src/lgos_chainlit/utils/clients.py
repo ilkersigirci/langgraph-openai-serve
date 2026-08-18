@@ -25,7 +25,8 @@ async def retrieve_model(model_id: str) -> Model:
     """Retrieve LGOS model metadata through the configured endpoint."""
     model = await openai_client.models.retrieve(**model_request(model_id))
     if not isinstance(model, Model):
-        raise OpenAIError("The endpoint returned an invalid model response.")
+        msg = "The endpoint returned an invalid model response."
+        raise OpenAIError(msg)
     return model
 
 
@@ -58,7 +59,8 @@ async def list_models() -> list[Model]:
 def model_request(model_id: str) -> dict[str, Any]:
     """Build a request for a standard endpoint or Bifrost pass-through."""
     if not isinstance(model_id, str) or not model_id:
-        raise ValueError("OpenAI model ID is missing.")
+        msg = "OpenAI model ID is missing."
+        raise ValueError(msg)
 
     if settings.OPENAI.catalog_base_url is None:
         return {"model": model_id}
@@ -74,7 +76,6 @@ def model_request(model_id: str) -> dict[str, Any]:
 def _bifrost_model(model_id: str) -> tuple[str, str]:
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
-        raise ValueError(
-            f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        )
+        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
+        raise ValueError(msg)
     return provider, upstream_model

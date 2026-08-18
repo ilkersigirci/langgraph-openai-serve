@@ -1,4 +1,5 @@
-"""FastAPI application for LangGraph with OpenAI compatible API.
+"""
+FastAPI application for LangGraph with OpenAI compatible API.
 
 This module provides a demo FastAPI application that exposes example LangGraph
 graphs through the OpenAI-compatible API.
@@ -33,12 +34,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan manager.
+    """
+    Application lifespan manager.
 
     This function handles the startup and shutdown events for the application.
 
     Args:
         app: The FastAPI application.
+
     """
     logger.info("Starting DEMO LangGraph OpenAI compatible server")
 
@@ -51,12 +54,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_custom_app() -> FastAPI:
-    """Create and configure the FastAPI application.
+    """
+    Create and configure the FastAPI application.
 
     Returns:
         A configured FastAPI application.
-    """
 
+    """
     setup_logging()
 
     app = FastAPI(

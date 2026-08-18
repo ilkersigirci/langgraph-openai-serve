@@ -62,8 +62,9 @@ async def generate_completion(
     )
 
     logger.info(
-        f"Chat completion finished in {time.time() - start_time:.2f}s. "
-        f"Total tokens: {tokens_used['total_tokens']}"
+        "Chat completion finished in %.2fs. Total tokens: %d",
+        time.time() - start_time,
+        tokens_used["total_tokens"],
     )
 
     return response
@@ -72,7 +73,13 @@ async def generate_completion(
 async def stream_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> AsyncGenerator[str, None]:
-    """Stream a chat completion response."""
+    """
+    Stream a chat completion response.
+
+    Yields:
+        String chunks representing Server-Sent Events.
+
+    """
     start_time = time.time()
     response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
     custom_events: list[CustomStreamPart] = []
@@ -81,7 +88,7 @@ async def stream_completion(
         GraphFeature.CLIENT_EVENTS
     ) and stream_events_requested(chat_request.metadata)
 
-    try:
+    try:  # ruff: ignore[too-many-nested-blocks, too-many-statements-in-try-clause]
         yield response_builder.role()
 
         run_stream = stream_run(run)
@@ -115,7 +122,7 @@ async def stream_completion(
         yield response_builder.done()
 
         logger.info(
-            f"Streamed chat completion finished in {time.time() - start_time:.2f}s"
+            "Streamed chat completion finished in %.2fs", time.time() - start_time
         )
 
     except Exception:

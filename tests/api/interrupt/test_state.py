@@ -30,7 +30,8 @@ async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
     graph = await graph_config.resolve_graph()
 
     def fail_execution(*_args, **_kwargs):
-        raise AssertionError("a pending retry must not execute the graph")
+        msg = "a pending retry must not execute the graph"
+        raise AssertionError(msg)
 
     with monkeypatch.context() as retry_patch:
         retry_patch.setattr(graph, "astream", fail_execution)
@@ -228,7 +229,8 @@ async def test_repeated_resume_does_not_execute_completed_run_again(
     graph = await graph_config.resolve_graph()
 
     def fail_execution(*_args, **_kwargs):
-        raise AssertionError("a repeated resume must not execute the graph")
+        msg = "a repeated resume must not execute the graph"
+        raise AssertionError(msg)
 
     with monkeypatch.context() as retry_patch:
         retry_patch.setattr(graph, "astream", fail_execution)

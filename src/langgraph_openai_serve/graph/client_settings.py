@@ -11,7 +11,8 @@ RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 
 
 class ClientSettings(BaseModel):
-    """Base class for settings that clients may configure for a graph.
+    """
+    Base class for settings that clients may configure for a graph.
 
     Subclasses define the complete public contract. Every field must have a
     valid JSON-serializable default so model discovery can advertise a usable
@@ -58,14 +59,15 @@ class ClientSettings(BaseModel):
                 by_alias=False,
                 by_name=True,
             )
-            _validated_settings_json(settings)
-            return settings
         except ValidationError as exc:
             field = _first_error_field(exc)
             raise ClientSettingsValidationError(
                 _validation_message(exc, label=field or "runtime settings"),
                 param=parameter,
             ) from exc
+        else:
+            _validated_settings_json(settings)
+            return settings
 
 
 class ClientSettingsValidationError(ValueError):
@@ -144,15 +146,15 @@ def validate_client_settings_model(
         settings_model.model_config.get(key) != expected
         for key, expected in ClientSettings.model_config.items()
     ):
-        raise ValueError(
-            "ClientSettings subclasses must preserve the inherited model config."
-        )
+        msg = "ClientSettings subclasses must preserve the inherited model config."
+        raise ValueError(msg)
 
     if any(
         field.exclude or getattr(field, "exclude_if", None) is not None
         for field in settings_model.model_fields.values()
     ):
-        raise ValueError("ClientSettings fields cannot be excluded from defaults.")
+        msg = "ClientSettings fields cannot be excluded from defaults."
+        raise ValueError(msg)
 
     client_settings_json_schema(settings_model)
     return settings_model

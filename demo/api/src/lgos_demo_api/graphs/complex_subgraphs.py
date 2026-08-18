@@ -29,7 +29,6 @@ def output_to_text(output: Any) -> str:
 
 def create_complex_subgraphs_graph_config() -> GraphConfig:
     """Create the complex subgraphs demo config during app setup."""
-
     return GraphConfig(
         graph=create_specialist_team_graph(),
         description=(

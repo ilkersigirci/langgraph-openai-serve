@@ -1,4 +1,5 @@
-"""LangGraph OpenAI API Serve.
+"""
+LangGraph OpenAI API Serve.
 
 This module provides a server class that connects LangGraph instances to an
 OpenAI-compatible API. It allows users to register their LangGraph instances
@@ -27,6 +28,7 @@ Examples:
     ...     graphs=graphs,
     ... )
     >>> graph_serve.bind_openai_api()
+
 """
 
 import logging
@@ -46,7 +48,8 @@ logger = logging.getLogger(__name__)
 
 
 class LanggraphOpenaiServe:
-    """Server class to connect LangGraph instances with an OpenAI-compatible API.
+    """
+    Server class to connect LangGraph instances with an OpenAI-compatible API.
 
     This class serves as a bridge between LangGraph instances and an OpenAI-compatible API.
     It allows users to register their LangGraph instances and expose them
@@ -55,6 +58,7 @@ class LanggraphOpenaiServe:
     Attributes:
         app: The host FastAPI application to mount the OpenAI API on.
         graph_registry: The populated GraphRegistry containing the graphs to serve.
+
     """
 
     def __init__(
@@ -63,7 +67,8 @@ class LanggraphOpenaiServe:
         app: FastAPI | None = None,
         checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
     ) -> None:
-        """Initialize the server with a FastAPI app and a populated graph registry.
+        """
+        Initialize the server with a FastAPI app and a populated graph registry.
 
         Args:
             app: The host FastAPI application to mount the OpenAI API on. If None,
@@ -74,11 +79,11 @@ class LanggraphOpenaiServe:
 
         Raises:
             TypeError: If graphs is not a GraphRegistry instance.
+
         """
         if not isinstance(graphs, GraphRegistry):
-            raise TypeError(
-                "Invalid type for graphs parameter. Expected GraphRegistry."
-            )
+            msg = "Invalid type for graphs parameter. Expected GraphRegistry."
+            raise TypeError(msg)
 
         if app is None:
             app = FastAPI(
@@ -98,18 +103,21 @@ class LanggraphOpenaiServe:
         self.app.state.checkpoint_scope = self.checkpoint_scope
 
         logger.info(
-            f"Initialized LanggraphOpenaiServe with {len(self.graph_registry.registry)} graphs"
+            "Initialized LanggraphOpenaiServe with %d graphs",
+            len(self.graph_registry.registry),
         )
         logger.info(
-            f"Available graphs: {', '.join(self.graph_registry.get_graph_names())}"
+            "Available graphs: %s", ", ".join(self.graph_registry.get_graph_names())
         )
 
     def bind_openai_api(self, prefix: str | None = None) -> "LanggraphOpenaiServe":
-        """Mount OpenAI-compatible endpoints on the host FastAPI app.
+        """
+        Mount OpenAI-compatible endpoints on the host FastAPI app.
 
         Args:
             prefix: Optional; The URL prefix for the OpenAI-compatible endpoints.
                 Defaults to settings.OPENAI_API_PREFIX.
+
         """
         prefix = (
             normalize_openai_api_prefix(prefix)
@@ -133,6 +141,6 @@ class LanggraphOpenaiServe:
 
         self.app.mount(prefix, openai_app, name="openai")
 
-        logger.info(f"Bound OpenAI chat completion endpoints with prefix: {prefix}")
+        logger.info("Bound OpenAI chat completion endpoints with prefix: %s", prefix)
 
         return self

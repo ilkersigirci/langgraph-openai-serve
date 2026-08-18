@@ -70,7 +70,7 @@ class AsyncReadOnlyCheckpointer(BaseCheckpointSaver):
         self,
         config: RunnableConfig | None,
         *,
-        filter: dict[str, Any] | None = None,  # noqa: A002
+        filter: dict[str, Any] | None = None,  # ruff: ignore[builtin-argument-shadowing]
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
@@ -226,7 +226,8 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     async def output_to_text(output):
-        raise AssertionError("interrupt output should not be rendered")
+        msg = "interrupt output should not be rendered"
+        raise AssertionError(msg)
 
     registry = GraphRegistry(
         registry={

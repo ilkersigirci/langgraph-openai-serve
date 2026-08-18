@@ -64,6 +64,7 @@ def response_message(
     completion: LangGraphOutput,
     annotations: list[Annotation] | None = None,
 ) -> tuple[ChatCompletionResponseMessage, str]:
+    """Format response message."""
     if isinstance(completion, LangGraphInterruptBatch):
         return (
             ChatCompletionResponseMessage(
@@ -91,6 +92,7 @@ def interrupt_tool_call(
     batch: LangGraphInterruptBatch,
     interrupt: Interrupt,
 ) -> ToolCall:
+    """Format interrupt tool call."""
     return ToolCall(
         id=interrupt_tool_call_id(interrupt.id),
         type="function",
@@ -105,6 +107,7 @@ def interrupt_tool_arguments(
     batch: LangGraphInterruptBatch,
     interrupt: Interrupt,
 ) -> str:
+    """Format interrupt tool arguments."""
     return interrupt_arguments(
         run_id=batch.run_id,
         state_token=batch.state_token,
@@ -121,9 +124,11 @@ class ChatCompletionStreamResponseBuilder:
         self.model = model
 
     def role(self) -> str:
+        """Stream role."""
         return self._chunk(ChatCompletionStreamResponseDelta(role=Role.ASSISTANT))
 
     def text(self, content: str) -> str:
+        """Stream text content."""
         return self._chunk(ChatCompletionStreamResponseDelta(content=content))
 
     def client_event(self, extension: dict[str, object]) -> str:
@@ -134,6 +139,7 @@ class ChatCompletionStreamResponseBuilder:
         )
 
     def interrupt(self, batch: LangGraphInterruptBatch) -> str:
+        """Stream interrupt."""
         return self._chunk(
             ChatCompletionStreamResponseDelta(
                 tool_calls=[
@@ -157,6 +163,7 @@ class ChatCompletionStreamResponseBuilder:
         *,
         annotations: list[Annotation] | None = None,
     ) -> str:
+        """Stream finish."""
         return self._chunk(
             ChatCompletionStreamResponseDelta(),
             finish_reason=finish_reason,
@@ -164,11 +171,13 @@ class ChatCompletionStreamResponseBuilder:
         )
 
     def error(self, message: str) -> str:
+        """Stream error."""
         return self._format_data(
             openai_error_payload(ErrorObject(message=message, type="server_error"))
         )
 
-    def done(self) -> str:
+    def done(self) -> str:  # ruff: ignore[no-self-use]
+        """Stream done."""
         return "data: [DONE]\n\n"
 
     def _chunk(
@@ -208,5 +217,5 @@ class ChatCompletionStreamResponseBuilder:
             data["langgraph_openai_serve"] = client_event_extension
         return self._format_data(data)
 
-    def _format_data(self, data: dict) -> str:
+    def _format_data(self, data: dict) -> str:  # ruff: ignore[no-self-use]
         return f"data: {json.dumps(data)}\n\n"

@@ -80,7 +80,8 @@ async def test_rendering_failure_deletes_without_replacing_error(
         yield {"type": "values", "ns": (), "data": {"answer": "done"}}
 
     async def fail_rendering(_output: Any) -> str:
-        raise ValueError("rendering failed")
+        msg = "rendering failed"
+        raise ValueError(msg)
 
     graph = CleanupGraph(events, delete_error=delete_error)
 
@@ -101,7 +102,8 @@ async def test_execution_failure_deletes_without_replacing_error(
 ) -> None:
     async def events():
         yield {"type": "values", "ns": (), "data": {"answer": "partial"}}
-        raise ValueError("graph failed")
+        msg = "graph failed"
+        raise ValueError(msg)
 
     graph = CleanupGraph(events, delete_error=delete_error)
 

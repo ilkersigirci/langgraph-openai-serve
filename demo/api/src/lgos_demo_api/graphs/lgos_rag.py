@@ -117,7 +117,8 @@ def load_documents(
     """Load every Markdown file in the LGOS documentation corpus."""
     paths = sorted(root.rglob("*.md"))
     if not paths:
-        raise RuntimeError(f"No Markdown documentation found under {root}")
+        msg = f"No Markdown documentation found under {root}"
+        raise RuntimeError(msg)
 
     documents = []
     for path in paths:
@@ -252,19 +253,22 @@ def _latest_human_text(state: LgosRagState) -> str:
     for message in reversed(state.messages):
         if isinstance(message, HumanMessage):
             return str(message.text)
-    raise ValueError("LGOS RAG requires a user message.")
+    msg = "LGOS RAG requires a user message."
+    raise ValueError(msg)
 
 
 def _last_tool_message(state: LgosRagState) -> ToolMessage:
     for message in reversed(state.messages):
         if isinstance(message, ToolMessage):
             return message
-    raise RuntimeError("LGOS RAG retrieval completed without a tool result.")
+    msg = "LGOS RAG retrieval completed without a tool result."
+    raise RuntimeError(msg)
 
 
 def _original_question(state: LgosRagState) -> str:
     if state.question is None:
-        raise RuntimeError("LGOS RAG retrieval has no original question.")
+        msg = "LGOS RAG retrieval has no original question."
+        raise RuntimeError(msg)
     return state.question
 
 
@@ -278,7 +282,8 @@ def _retrieval_query(state: LgosRagState) -> str:
             query = call["args"].get("query")
             if isinstance(query, str) and query.strip():
                 return query.strip()
-    raise RuntimeError("LGOS RAG retrieval has no search query.")
+    msg = "LGOS RAG retrieval has no search query."
+    raise RuntimeError(msg)
 
 
 def _retrieved_documents(state: LgosRagState) -> list[Document]:
@@ -286,7 +291,8 @@ def _retrieved_documents(state: LgosRagState) -> list[Document]:
     if not isinstance(artifact, list) or not all(
         isinstance(document, Document) for document in artifact
     ):
-        raise RuntimeError("LGOS RAG retrieval returned invalid source metadata.")
+        msg = "LGOS RAG retrieval returned invalid source metadata."
+        raise RuntimeError(msg)
     return artifact
 
 

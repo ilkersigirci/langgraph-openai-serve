@@ -39,7 +39,6 @@ def create_specialist_team_graph(
     docs_graph: CompiledStateGraph | None = None,
 ) -> CompiledStateGraph:
     """Create the coordinator graph with specialist subgraphs as direct nodes."""
-
     api_contract_subgraph = api_contract_graph or create_api_contract_graph()
     docs_subgraph = docs_graph or create_docs_graph()
 

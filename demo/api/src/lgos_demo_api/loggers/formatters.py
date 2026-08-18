@@ -13,7 +13,8 @@ class _TerminalLogColor(str, Enum):
 
 
 class ColoredFormatter(logging.Formatter):
-    """Formatter for colored logs.
+    """
+    Formatter for colored logs.
 
     It uses ansi escape codes to color the logs
     in the terminal.

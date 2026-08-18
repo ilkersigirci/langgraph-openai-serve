@@ -1,4 +1,5 @@
-"""Tie LangGraph stream production to a FastAPI request's lifetime.
+"""
+Tie LangGraph stream production to a FastAPI request's lifetime.
 
 Starlette owns response consumption, not the nested graph producer, so a client
 disconnect may leave graph and provider work running. The request dependency
@@ -41,7 +42,8 @@ class _StreamOwner:
         run: GraphRun,
     ) -> MemoryObjectReceiveStream[str]:
         if self._started:
-            raise RuntimeError("A stream owner can only start one producer.")
+            msg = "A stream owner can only start one producer."
+            raise RuntimeError(msg)
 
         # An unbuffered handoff propagates response backpressure into graph
         # execution.

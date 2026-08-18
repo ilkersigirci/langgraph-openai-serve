@@ -54,7 +54,8 @@ async def run_langgraph(
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
 ) -> LangGraphInvocation:
-    """Prepare and invoke a graph for direct runner callers.
+    """
+    Prepare and invoke a graph for direct runner callers.
 
     This convenience wrapper combines :func:`prepare_run` and :func:`invoke_run`.
     The HTTP route prepares its run before creating a response so preparation
@@ -74,15 +75,16 @@ async def run_langgraph(
 
     Returns:
         The graph output and custom events emitted during the invocation.
+
     """
-    logger.info(f"Running LangGraph model {model} with {len(messages)} messages")
+    logger.info("Running LangGraph model %s with %d messages", model, len(messages))
     start_time = time.time()
 
     run = await prepare_run(model, messages, graph_registry, request)
 
     invocation = await invoke_run(run)
 
-    logger.info(f"LangGraph completion generated in {time.time() - start_time:.2f}s")
+    logger.info("LangGraph completion generated in %.2fs", time.time() - start_time)
     return invocation
 
 
@@ -93,7 +95,8 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         if not run.should_execute:
             interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is None:
-                raise RuntimeError("Pending interrupt state disappeared before use.")
+                msg = "Pending interrupt state disappeared before use."
+                raise RuntimeError(msg)
             checkpoint_disposition = "preserve"
             return LangGraphInvocation(output=interrupt_batch, custom_events=())
 
@@ -133,7 +136,8 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                 )
 
         if final_output is _MISSING:
-            raise RuntimeError("LangGraph invocation completed without a final value.")
+            msg = "LangGraph invocation completed without a final value."
+            raise RuntimeError(msg)
 
         rendered_output = await run.config.render_output(final_output)
         if run.config.supports(GraphFeature.INTERRUPTS):
@@ -153,7 +157,8 @@ async def run_langgraph_stream(
     graph_registry: GraphRegistry,
     request: ChatCompletionRequest | None = None,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
-    """Prepare and stream a graph for direct runner callers.
+    """
+    Prepare and stream a graph for direct runner callers.
 
     This convenience wrapper combines :func:`prepare_run` and :func:`stream_run`.
     The HTTP route prepares its run before starting the streaming response so
@@ -168,8 +173,9 @@ async def run_langgraph_stream(
 
     Yields:
         Assistant text chunks, custom events, or LangGraph interrupts.
+
     """
-    logger.info(f"Starting streaming LangGraph completion for model '{model}'")
+    logger.info("Starting streaming LangGraph completion for model '%s'", model)
 
     run = await prepare_run(model, messages, graph_registry, request)
     run_stream = stream_run(run)
@@ -181,13 +187,20 @@ async def run_langgraph_stream(
 async def stream_run(
     run: GraphRun,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
-    """Stream an already prepared LangGraph invocation."""
+    """
+    Stream an already prepared LangGraph invocation.
+
+    Yields:
+        LangGraph stream events.
+
+    """
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
             interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is None:
-                raise RuntimeError("Pending interrupt state disappeared before use.")
+                msg = "Pending interrupt state disappeared before use."
+                raise RuntimeError(msg)
             checkpoint_disposition = "preserve"
             yield interrupt_batch
             return
@@ -254,6 +267,7 @@ def usage_for(
     output: LangGraphOutput,
     messages: list[ChatCompletionRequestMessage],
 ) -> dict[str, int]:
+    """Calculate token usage."""
     prompt_tokens = sum(len((message.content or "").split()) for message in messages)
     completion_tokens = len(output.split()) if isinstance(output, str) else 0
     return {
@@ -277,7 +291,8 @@ async def finalize_run(
     run: GraphRun,
     checkpoint_disposition: _CheckpointDisposition,
 ) -> None:
-    """Finalize checkpoint retention, then release the run lease.
+    """
+    Finalize checkpoint retention, then release the run lease.
 
     Only state exposed as a resumable interrupt is preserved. Cleanup for an
     unclassified run is best-effort so it cannot mask the failure that prevented
@@ -306,7 +321,8 @@ async def finalize_run(
 async def delete_checkpoint_thread(run: GraphRun) -> None:
     """Delete terminal state retained only to support an active interrupt."""
     if run.checkpoint_thread_id is None:
-        raise RuntimeError("Interrupt-enabled run has no checkpoint thread id.")
+        msg = "Interrupt-enabled run has no checkpoint thread id."
+        raise RuntimeError(msg)
 
     checkpointer = cast("BaseCheckpointSaver", run.graph.checkpointer)
     await checkpointer.adelete_thread(run.checkpoint_thread_id)

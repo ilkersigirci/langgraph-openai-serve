@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GraphRun:
+    """Context for a graph run."""
+
     config: GraphConfig
     graph: CompiledStateGraph
     inputs: Any
@@ -51,7 +53,7 @@ class GraphRun:
             await lease.__aexit__(None, None, None)
 
 
-async def prepare_run(
+async def prepare_run(  # ruff: ignore[too-many-locals]
     model: str,
     messages: list[ChatCompletionRequestMessage],
     graph_registry: GraphRegistry,
@@ -59,6 +61,7 @@ async def prepare_run(
     *,
     checkpoint_scope: str = "default",
 ) -> GraphRun:
+    """Prepare a graph run."""
     graph_config = graph_registry.get_graph(model)
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
@@ -88,13 +91,15 @@ async def prepare_run(
         configurable={"thread_id": checkpoint_thread_id},
     )
     if runnable_config is None:  # The configurable thread always creates one.
-        raise RuntimeError("Interrupt run has no runnable configuration.")
+        msg = "Interrupt run has no runnable configuration."
+        raise RuntimeError(msg)
 
     coordinator = graph_config.run_coordinator
     if coordinator is None:  # resolve_graph() reports this as configuration error.
-        raise RuntimeError("Interrupt run has no coordinator.")
+        msg = "Interrupt run has no coordinator."
+        raise RuntimeError(msg)
     lease = coordinator(checkpoint_thread_id)
-    await lease.__aenter__()
+    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
 
     try:
         snapshot = await graph.aget_state(runnable_config, subgraphs=True)
@@ -136,6 +141,7 @@ def build_runnable_config(
     callbacks: Callbacks,
     configurable: dict[str, Any] | None = None,
 ) -> RunnableConfig | None:
+    """Build runnable config."""
     if settings.ENABLE_LANGFUSE:
         # GraphConfig is shared across requests; add tracing without mutating its
         # callback collection or manager.

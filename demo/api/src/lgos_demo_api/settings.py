@@ -12,18 +12,19 @@ HttpUrlStr = Annotated[
 
 
 class Settings(BaseSettings):
-    """This class is used to load environment variables either from environment or
-    from a .env file and store them as class attributes.
+    """
+    Load environment variables either from environment or    from a .env file and store them as class attributes.
 
     Configuration owned by the standalone demo API.
 
-    NOTE:
+    Note:
         - environment variables will always take priority over values loaded from a dotenv file
         - environment variable names are case-insensitive
         - environment variable type is inferred from the type hint of the class attribute
         - For environment variables that are not set, a default value should be provided
 
     For more info, see the related pydantic docs: https://docs.pydantic.dev/latest/concepts/pydantic_settings
+
     """
 
     model_config = SettingsConfigDict(

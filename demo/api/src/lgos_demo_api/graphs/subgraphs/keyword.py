@@ -33,7 +33,6 @@ async def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
 
 def create_keyword_graph() -> CompiledStateGraph:
     """Create the keyword extraction subgraph."""
-
     return (
         StateGraph(KeywordState)
         .add_node("extract_keywords", extract_keywords)

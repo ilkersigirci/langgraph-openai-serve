@@ -102,7 +102,8 @@ class ChainlitSettings(BaseSettings):
     def validate_auth_secret(cls, value: str) -> str:
         """Reject a missing or example signing secret before Chainlit starts."""
         if _is_unconfigured(value):
-            raise ValueError("CHAINLIT_AUTH_SECRET must be configured.")
+            msg = "CHAINLIT_AUTH_SECRET must be configured."
+            raise ValueError(msg)
         return value
 
     @model_validator(mode="after")
@@ -118,9 +119,8 @@ class ChainlitSettings(BaseSettings):
         ]
         if missing:
             missing_settings = ", ".join(missing)
-            raise ValueError(
-                f"Configure the required Chainlit OAuth settings: {missing_settings}."
-            )
+            msg = f"Configure the required Chainlit OAuth settings: {missing_settings}."
+            raise ValueError(msg)
         return self
 
 

@@ -22,13 +22,15 @@ MODEL_OWNER = "langgraph-openai-serve"
 
 
 def get_models(graph_registry: GraphRegistry) -> ModelList:
-    """Get a list of available models.
+    """
+    Get a list of available models.
 
     Args:
         graph_registry: The GraphRegistry containing registered graphs.
 
     Returns:
         A list of models in OpenAI compatible format.
+
     """
     models = [
         Model(
@@ -42,7 +44,7 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
         for name, graph_config in graph_registry.registry.items()
     ]
 
-    logger.info(f"Retrieved {len(models)} available models")
+    logger.info("Retrieved %d available models", len(models))
     return ModelList(data=models)
 
 
@@ -70,5 +72,5 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
             client_settings=client_settings_details,
         ),
     )
-    logger.info(f"Retrieved model details for {model}")
+    logger.info("Retrieved model details for %s", model)
     return details

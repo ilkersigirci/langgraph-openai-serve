@@ -1,4 +1,5 @@
-"""Regression coverage for package import configuration sources.
+"""
+Regression coverage for package import configuration sources.
 
 This test uses an isolated subprocess to ensure that merely importing the
 package does not accidentally load a `.env` file from the consumer's current
@@ -7,7 +8,7 @@ to the package's SettingsConfigDict).
 """
 
 import os
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
 from pathlib import Path
 

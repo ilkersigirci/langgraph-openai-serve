@@ -1,3 +1,5 @@
+import operator
+
 from anyio import Event, fail_after, sleep_forever
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessageChunk, HumanMessage
@@ -67,7 +69,7 @@ async def test_nested_subgraph_streaming(
                 request_to_input=lambda request, messages: {
                     "question": messages[-1].content
                 },
-                output_to_text=lambda output: output["answer"],
+                output_to_text=operator.itemgetter("answer"),
                 streamable_node_names=["generate"],
             )
         },

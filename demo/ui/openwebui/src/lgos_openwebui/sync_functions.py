@@ -54,17 +54,17 @@ def discover_function_specs(
     for source in sources:
         function_id = source.stem
         if not function_id.isidentifier() or function_id != function_id.lower():
-            raise ValueError(
+            msg = (
                 f"Open WebUI Function filename must be a lowercase Python identifier: "
                 f"{source.name}"
             )
+            raise ValueError(msg)
 
         content = source.read_text(encoding="utf-8")
         title = _frontmatter_title(content)
         if not title:
-            raise ValueError(
-                f"Open WebUI Function is missing a frontmatter title: {source}"
-            )
+            msg = f"Open WebUI Function is missing a frontmatter title: {source}"
+            raise ValueError(msg)
 
         specs.append(
             FunctionSpec(
@@ -75,7 +75,8 @@ def discover_function_specs(
         )
 
     if not specs:
-        raise ValueError(f"No Open WebUI Functions found in {functions_dir}")
+        msg = f"No Open WebUI Functions found in {functions_dir}"
+        raise ValueError(msg)
     return tuple(specs)
 
 
@@ -88,7 +89,8 @@ def sign_in(client: httpx.Client, email: str, password: str) -> None:
     data = response.json()
     token = data.get("token") if isinstance(data, dict) else None
     if not isinstance(token, str) or not token:
-        raise ValueError("Open WebUI sign-in response did not contain a token.")
+        msg = "Open WebUI sign-in response did not contain a token."
+        raise ValueError(msg)
     client.headers["Authorization"] = f"Bearer {token}"
 
 
@@ -100,7 +102,8 @@ def sync_functions(
     specs = discover_function_specs() if specs is None else specs
     exported = client.get("/api/v1/functions/export").raise_for_status().json()
     if not isinstance(exported, list):
-        raise ValueError("Open WebUI Functions export returned invalid data.")
+        msg = "Open WebUI Functions export returned invalid data."
+        raise TypeError(msg)
     existing_functions = {
         function["id"]: function
         for function in exported
@@ -168,7 +171,8 @@ def main() -> None:
             )
             sync_workspace_models(client, model_specs)
     except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
-        raise SystemExit(f"Open WebUI sync failed: {exc}") from exc
+        msg = f"Open WebUI sync failed: {exc}"
+        raise SystemExit(msg) from exc
 
     for function_id, action in function_results.items():
         print(f"{action.capitalize()} Function: {function_id}")
