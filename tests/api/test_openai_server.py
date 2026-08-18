@@ -36,7 +36,9 @@ async def test_bind_openai_api_uses_settings_prefix_by_default(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(openai_server.settings, "OPENAI_API_PREFIX", "/openai/v1")
+    monkeypatch.setattr(
+        openai_server, "settings", Settings(OPENAI_API_PREFIX="/openai/v1")
+    )
 
     app = _bind_test_app(graph_registry)
 
@@ -49,7 +51,9 @@ async def test_bind_openai_api_explicit_prefix_overrides_settings(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(openai_server.settings, "OPENAI_API_PREFIX", "/openai/v1")
+    monkeypatch.setattr(
+        openai_server, "settings", Settings(OPENAI_API_PREFIX="/openai/v1")
+    )
 
     app = _bind_test_app(graph_registry, prefix="/v1")
 
@@ -92,7 +96,9 @@ async def test_openai_api_docs_visibility_follows_settings(
     enabled: bool,
     expected_status: int,
 ) -> None:
-    monkeypatch.setattr(openai_server.settings, "OPENAI_API_DOCS_ENABLED", enabled)
+    monkeypatch.setattr(
+        openai_server, "settings", Settings(OPENAI_API_DOCS_ENABLED=enabled)
+    )
     app = _bind_test_app(graph_registry, prefix="/v1")
 
     responses = [
@@ -108,7 +114,9 @@ async def test_openai_api_schema_describes_mounted_api(
     graph_registry: GraphRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(openai_server.settings, "OPENAI_API_DOCS_ENABLED", True)
+    monkeypatch.setattr(
+        openai_server, "settings", Settings(OPENAI_API_DOCS_ENABLED=True)
+    )
     app = _bind_test_app(graph_registry, prefix="/v1")
 
     openapi_response = await _get(app, "/v1/openapi.json")

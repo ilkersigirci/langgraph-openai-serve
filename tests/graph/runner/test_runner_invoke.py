@@ -4,6 +4,7 @@ import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.types import CustomStreamPart
 
+from langgraph_openai_serve.core.settings import Settings
 from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -36,7 +37,10 @@ class RecordingCallback(BaseCallbackHandler):
 @pytest.fixture
 def mock_langfuse_callback(monkeypatch: pytest.MonkeyPatch) -> RecordingCallback:
     callback = RecordingCallback()
-    monkeypatch.setattr(graph_utils.settings, "ENABLE_LANGFUSE", True)
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "http://test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "test")
+    monkeypatch.setattr(graph_utils, "settings", Settings(ENABLE_LANGFUSE=True))
     monkeypatch.setattr(
         graph_utils,
         "get_langfuse_callback",
