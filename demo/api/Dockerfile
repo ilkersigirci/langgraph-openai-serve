@@ -27,7 +27,7 @@ RUN groupadd --gid "$PGID" app \
     && useradd --uid "$PUID" --gid "$PGID" --create-home \
         --shell /usr/sbin/nologin app
 
-CMD ["uvicorn", "lgos_demo_api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["lgos-demo-api"]
 
 FROM python AS dependencies
 

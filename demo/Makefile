@@ -58,13 +58,13 @@ run-api-local: run-api-a-local ## Run lgos-a locally
 
 run-api-a-local: ## Run lgos-a locally
 	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-setup
-	$(LOCAL_API_RUN) --env-file ../.env uvicorn lgos_demo_api.app:app \
-		--host 0.0.0.0 --port $(LGOS_A_PORT) --reload
+	DEMO_API_PORT=$(LGOS_A_PORT) \
+		$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api
 
 run-api-b-local: ## Run lgos-b locally
 	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-setup
-	$(LOCAL_API_RUN) --env-file ../.env uvicorn lgos_demo_api.app:app \
-		--host 0.0.0.0 --port $(LGOS_B_PORT) --reload
+	DEMO_API_PORT=$(LGOS_B_PORT) \
+		$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api
 
 run-chainlit-local: ## Run the Chainlit UI locally
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env lgos-chainlit-setup

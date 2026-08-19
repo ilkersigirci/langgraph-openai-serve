@@ -31,20 +31,23 @@ Examples:
 
 """
 
-import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
+from starlette.middleware import Middleware
+from starlette.routing import Mount
 
 from langgraph_openai_serve.api.chat import views as chat_views
 from langgraph_openai_serve.api.health import views as health_views
+from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.api.models import views as models_views
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
 from langgraph_openai_serve.core.version import get_version
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LanggraphOpenaiServe:
@@ -94,7 +97,6 @@ class LanggraphOpenaiServe:
         self.app: FastAPI = app
         self.checkpoint_scope = checkpoint_scope or (lambda _request: "default")
 
-        logger.info("Using provided GraphRegistry instance")
         self.graph_registry = graphs
 
         # Host integrations can inspect registered graphs without traversing the
@@ -103,11 +105,8 @@ class LanggraphOpenaiServe:
         self.app.state.checkpoint_scope = self.checkpoint_scope
 
         logger.info(
-            "Initialized LanggraphOpenaiServe with %d graphs",
-            len(self.graph_registry.registry),
-        )
-        logger.info(
-            "Available graphs: %s", ", ".join(self.graph_registry.get_graph_names())
+            "server.initialized",
+            extra={"graph_count": len(self.graph_registry.registry)},
         )
 
     def bind_openai_api(self, prefix: str | None = None) -> "LanggraphOpenaiServe":
@@ -139,8 +138,15 @@ class LanggraphOpenaiServe:
         openai_app.include_router(health_views.router)
         openai_app.include_router(models_views.router)
 
-        self.app.mount(prefix, openai_app, name="openai")
+        self.app.router.routes.append(
+            Mount(
+                prefix,
+                app=openai_app,
+                name="openai",
+                middleware=[Middleware(RequestContextMiddleware)],
+            )
+        )
 
-        logger.info("Bound OpenAI chat completion endpoints with prefix: %s", prefix)
+        logger.info("server.api_bound", extra={"prefix": prefix})
 
         return self

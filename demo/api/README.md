@@ -9,6 +9,9 @@ uv run --locked --env-file .env lgos-demo-api-setup
 uv run --locked --env-file .env lgos-demo-api
 ```
 
+The API writes JSON logs to stdout. LGOS log records include correlation fields
+such as `request_id`, `model`, `stream`, and `run_id` when available.
+
 Configuration uses the `DEMO_API_` prefix. For example,
 `DEMO_API_POSTGRES_URI` selects the checkpoint database.
 Set the package-owned `LGOS_ENABLE_LANGFUSE=true` and provide the `LANGFUSE_*`

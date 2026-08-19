@@ -1,6 +1,5 @@
 """OpenAI-compatible error response helpers."""
 
-import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -9,10 +8,12 @@ from fastapi.responses import JSONResponse
 from openai.types.shared import ErrorObject
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from langgraph_openai_serve.core.logging import get_logger
+
 if TYPE_CHECKING:
     from starlette.types import HTTPExceptionHandler
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OpenAIHTTPException(HTTPException):
@@ -60,10 +61,23 @@ def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
 
 
 async def openai_http_exception_handler(  # ruff: ignore[unused-async]
-    _request: Request,
+    request: Request,
     exc: StarletteHTTPException,
 ) -> JSONResponse:
     """Handle HTTP exceptions."""
+    if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+        cause = exc.__cause__ or exc
+        logger.error(
+            "http.request.failed",
+            extra={
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "status_code": exc.status_code,
+                "error_type": type(cause).__name__,
+            },
+            exc_info=(type(cause), cause, cause.__traceback__),
+        )
+
     if isinstance(exc, OpenAIHTTPException):
         error = exc.error
     else:
@@ -115,7 +129,6 @@ async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async]
     _exc: Exception,
 ) -> JSONResponse:
     """Handle unhandled exceptions."""
-    logger.error("Unhandled OpenAI-compatible API error")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=openai_error_payload(

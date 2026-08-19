@@ -49,6 +49,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
+| `DEMO_API_PORT` | `8000` | HTTP port used by the `lgos-demo-api` command |
 | `DEMO_API_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible base URL |
 | `DEMO_API_OPENAI_API_KEY` | `DUMMY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model |

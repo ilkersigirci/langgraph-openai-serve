@@ -1,7 +1,5 @@
 """Functions for building OpenAI model information."""
 
-import logging
-
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
     LangGraphModelSummaryExtension,
@@ -16,7 +14,6 @@ from langgraph_openai_serve.graph.client_settings import (
 )
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
-logger = logging.getLogger(__name__)
 MODEL_CREATED = 1743771509
 MODEL_OWNER = "langgraph-openai-serve"
 
@@ -44,7 +41,6 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
         for name, graph_config in graph_registry.registry.items()
     ]
 
-    logger.info("Retrieved %d available models", len(models))
     return ModelList(data=models)
 
 
@@ -59,7 +55,7 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
             defaults=client_settings_default_values(client_settings),
         )
 
-    details = ModelDetails(
+    return ModelDetails(
         id=model,
         created=MODEL_CREATED,
         owned_by=MODEL_OWNER,
@@ -72,5 +68,3 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
             client_settings=client_settings_details,
         ),
     )
-    logger.info("Retrieved model details for %s", model)
-    return details

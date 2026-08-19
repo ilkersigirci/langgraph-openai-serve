@@ -26,7 +26,7 @@ from lgos_demo_api.graphs.interruptible import (
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.loggers.setup import setup_logging
+from lgos_demo_api.logging import LOGGING_CONFIG
 from lgos_demo_api.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -43,14 +43,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app: The FastAPI application.
 
     """
-    logger.info("Starting DEMO LangGraph OpenAI compatible server")
+    logger.info("demo.server.starting")
 
     async with postgres_runtime(settings.POSTGRES_URI) as runtime:
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.interruptible_run_coordinator = runtime.run_coordinator
         yield
 
-    logger.info("Shutting down DEMO LangGraph OpenAI compatible server")
+    logger.info("demo.server.stopped")
 
 
 def create_custom_app() -> FastAPI:
@@ -61,8 +61,6 @@ def create_custom_app() -> FastAPI:
         A configured FastAPI application.
 
     """
-    setup_logging()
-
     app = FastAPI(
         title="Demo",
         version="0.0.1",
@@ -110,19 +108,17 @@ def create_custom_app() -> FastAPI:
     return app
 
 
-app = create_custom_app()
-
-
 def main() -> None:
-    """Run the demo API with development defaults."""
+    """Run the demo API with JSON logging."""
     import uvicorn
 
     uvicorn.run(
-        "lgos_demo_api.app:app",
+        "lgos_demo_api.app:create_custom_app",
+        factory=True,
         host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_config=None,
+        port=settings.PORT,
+        access_log=True,
+        log_config=LOGGING_CONFIG,
     )
 
 

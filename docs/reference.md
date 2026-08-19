@@ -3,7 +3,8 @@
 ## OpenAI-Compatible API
 
 Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
-`bind_openai_api(prefix=...)`.
+`bind_openai_api(prefix=...)`. Generic access logs are emitted by the
+deployment's ASGI server or ingress proxy.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

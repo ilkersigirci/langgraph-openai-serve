@@ -5,7 +5,6 @@ This module provides the FastAPI router for the models endpoint,
 implementing an OpenAI-compatible interface for model listing.
 """
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -20,8 +19,6 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/models", tags=["openai"])
 
 
@@ -30,10 +27,7 @@ def list_models(
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
 ) -> ModelList:
     """Get a list of available models."""
-    logger.info("Received request to list models")
-    models = models_service.get_models(graph_registry)
-    logger.info("Returning %d models", len(models.data))
-    return models
+    return models_service.get_models(graph_registry)
 
 
 @router.get(
@@ -45,7 +39,6 @@ def retrieve_model(
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
 ) -> ModelDetails:
     """Retrieve one registered graph as an OpenAI model."""
-    logger.info("Received request to retrieve model: %s", model)
     try:
         return models_service.get_model(model, graph_registry)
     except GraphNotFoundError as exc:

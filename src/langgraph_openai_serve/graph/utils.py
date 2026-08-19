@@ -1,6 +1,5 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
-import logging
 import sys
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -16,6 +15,7 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
 )
 from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -26,7 +26,7 @@ from langgraph_openai_serve.graph.interrupt import state as interrupt_state
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -119,9 +119,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             try:
                 await lease.__aexit__(*error_info)
             except Exception:
-                logger.exception(
-                    "Could not release a graph-run lease after preparation failed."
-                )
+                logger.exception("graph_run.preparation_cleanup_failed")
         raise
 
     return GraphRun(

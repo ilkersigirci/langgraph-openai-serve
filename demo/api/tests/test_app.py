@@ -1,5 +1,3 @@
-import importlib
-import logging.config
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import Mock
@@ -16,6 +14,7 @@ from langgraph_openai_serve.api.chat.schemas import (
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
+from lgos_demo_api import app as app_module
 from lgos_demo_api.checkpointer import PostgresRuntime
 from lgos_demo_api.graphs.simple import SimpleContext
 
@@ -34,11 +33,7 @@ CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 @pytest.fixture
-def demo_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> FastAPI:
-    monkeypatch.setattr(logging.config, "dictConfig", lambda _: None)
-    app_module = importlib.import_module("lgos_demo_api.app")
+def demo_app() -> FastAPI:
     return app_module.create_custom_app()
 
 
@@ -159,7 +154,6 @@ async def test_lifespan_installs_shared_interrupt_runtime(
     monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    app_module = importlib.import_module("lgos_demo_api.app")
     coordinator = InMemoryRunCoordinator()
 
     runtime = PostgresRuntime(

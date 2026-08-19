@@ -62,6 +62,13 @@ configuration, endpoints, Chainlit settings, and verified event behavior. Those
 assets belong to `demo/`, while the requirements above remain applicable to any
 LGOS deployment.
 
+## Request Correlation
+
+Forward `X-Request-ID` unchanged. LGOS does not inspect gateway-specific IDs or
+map their headers. The complete request-ID contract and its relationship to
+OpenTelemetry are documented in [Production Logging and Request
+Correlation](production-logging.md#lgos-responsibilities).
+
 ## LiteLLM
 
 LiteLLM's normal Chat Completions stream handler does not retain LGOS
