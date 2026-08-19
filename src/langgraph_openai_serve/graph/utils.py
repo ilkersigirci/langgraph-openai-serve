@@ -15,7 +15,7 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
 )
 from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
-from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.core.logging import get_log_context, get_logger
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -27,6 +27,7 @@ from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = get_logger(__name__)
+_RUN_NAME = "lgos.chat_completion"
 
 
 @dataclass
@@ -74,7 +75,10 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             graph=graph,
             inputs=await graph_config.build_input(request, lc_messages),
             context=await graph_config.build_context(request, graph),
-            runnable_config=build_runnable_config(graph_config.runtime_callbacks),
+            runnable_config=build_runnable_config(
+                graph_config.runtime_callbacks,
+                metadata=_runnable_metadata(model),
+            ),
             run_id=None,
         )
 
@@ -89,6 +93,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
     runnable_config = build_runnable_config(
         graph_config.runtime_callbacks,
         configurable={"thread_id": checkpoint_thread_id},
+        metadata=_runnable_metadata(model, run_id),
     )
     if runnable_config is None:  # The configurable thread always creates one.
         msg = "Interrupt run has no runnable configuration."
@@ -138,6 +143,8 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
 def build_runnable_config(
     callbacks: Callbacks,
     configurable: dict[str, Any] | None = None,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> RunnableConfig | None:
     """Build runnable config."""
     if settings.ENABLE_LANGFUSE:
@@ -160,5 +167,25 @@ def build_runnable_config(
         kwargs["callbacks"] = callbacks
     if configurable:
         kwargs["configurable"] = configurable
+    if kwargs:
+        kwargs["run_name"] = _RUN_NAME
+        if metadata:
+            kwargs["metadata"] = metadata
 
     return RunnableConfig(**kwargs) if kwargs else None
+
+
+def _runnable_metadata(
+    model: str,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Build non-sensitive metadata for callbacks and tracing."""
+    metadata: dict[str, Any] = {
+        "lgos.model": model,
+    }
+    request_id = get_log_context().get("request_id")
+    if isinstance(request_id, str):
+        metadata["lgos.request_id"] = request_id
+    if run_id is not None:
+        metadata["lgos.operation_id"] = run_id
+    return metadata

@@ -4,6 +4,7 @@ import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.types import CustomStreamPart
 
+from langgraph_openai_serve.core.logging import begin_log_context, reset_log_context
 from langgraph_openai_serve.core.settings import Settings
 from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -114,8 +115,47 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
     try:
         assert run.runnable_config is not None
         assert run.runnable_config["callbacks"] == [recording_callback]
+        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
+        assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
+        assert "run_id" not in run.runnable_config
         assert graph_config.runtime_callbacks == [recording_callback]
         assert runtime_callbacks == [recording_callback]
+    finally:
+        await run.aclose()
+
+
+async def test_runnable_config_contains_request_correlation_metadata(
+    make_request,
+) -> None:
+    recording_callback = RecordingCallback()
+    graph_config = GraphConfig(
+        graph=make_message_graph("hello"),
+        description="DUMMY",
+        runtime_callbacks=[recording_callback],
+    )
+    graph_registry = GraphRegistry(registry={"messages": graph_config})
+    request = make_request("messages")
+    token = begin_log_context("request-123")
+
+    try:
+        run = await prepare_run(
+            "messages",
+            request.messages,
+            graph_registry,
+            request,
+        )
+    finally:
+        reset_log_context(token)
+
+    try:
+        assert run.runnable_config is not None
+        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["metadata"] == {
+            "lgos.model": "messages",
+            "lgos.request_id": "request-123",
+        }
+        assert "run_id" not in run.runnable_config
     finally:
         await run.aclose()
 

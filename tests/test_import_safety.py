@@ -12,6 +12,8 @@ import subprocess  # ruff: ignore[suspicious-subprocess-import]
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_ENVIRONMENT_VARIABLES = (
     "LGOS_OPENAI_API_PREFIX",
@@ -80,3 +82,42 @@ def test_package_settings_still_read_process_environment(tmp_path: Path) -> None
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/openai/v1 True False"
+
+
+def test_langfuse_cloud_endpoint_is_optional(
+    monkeypatch,
+) -> None:
+    from langgraph_openai_serve.core import settings as settings_module
+
+    monkeypatch.setattr(
+        settings_module.importlib.util,
+        "find_spec",
+        lambda _name: object(),
+    )
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+
+    settings = settings_module.Settings(ENABLE_LANGFUSE=True)
+
+    assert settings.ENABLE_LANGFUSE is True
+
+
+def test_langfuse_credentials_cannot_be_blank(
+    monkeypatch,
+) -> None:
+    from langgraph_openai_serve.core import settings as settings_module
+
+    monkeypatch.setattr(
+        settings_module.importlib.util,
+        "find_spec",
+        lambda _name: object(),
+    )
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", " ")
+
+    with pytest.raises(
+        RuntimeError,
+        match="LANGFUSE_SECRET_KEY",
+    ):
+        settings_module.Settings(ENABLE_LANGFUSE=True)

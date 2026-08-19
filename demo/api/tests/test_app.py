@@ -179,3 +179,17 @@ async def test_lifespan_installs_shared_interrupt_runtime(
             pass
 
     runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
+
+
+def test_main_leaves_access_logging_to_the_deployment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uvicorn
+
+    run = Mock()
+    monkeypatch.setattr(uvicorn, "run", run)
+
+    app_module.main()
+
+    run.assert_called_once()
+    assert run.call_args.kwargs["access_log"] is False

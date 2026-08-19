@@ -60,11 +60,6 @@ LOGGING_CONFIG: dict[str, Any] = {
             "level": "INFO",
             "propagate": False,
         },
-        "uvicorn.access": {
-            "handlers": ["stdout"],
-            "level": "INFO",
-            "propagate": False,
-        },
     },
 }
 

@@ -62,11 +62,12 @@ class Settings(BaseSettings):
             raise RuntimeError(msg)
 
         required_env_vars = [
-            "LANGFUSE_BASE_URL",
             "LANGFUSE_PUBLIC_KEY",
             "LANGFUSE_SECRET_KEY",
         ]
-        missing_vars = [var for var in required_env_vars if os.getenv(var) is None]
+        missing_vars = [
+            var for var in required_env_vars if not os.getenv(var, "").strip()
+        ]
 
         if missing_vars:
             msg = (

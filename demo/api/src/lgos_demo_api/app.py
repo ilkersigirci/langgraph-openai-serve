@@ -70,9 +70,10 @@ def create_custom_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         # Local browser demos may use arbitrary origins; deployments must replace
-        # this wildcard with their trusted origins.
+        # this wildcard with their trusted origins. The demo has no cookie-based
+        # authentication, so wildcard origins do not need credentials enabled.
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -117,7 +118,7 @@ def main() -> None:
         factory=True,
         host="0.0.0.0",
         port=settings.PORT,
-        access_log=True,
+        access_log=False,
         log_config=LOGGING_CONFIG,
     )
 

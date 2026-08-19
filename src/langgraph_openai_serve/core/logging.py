@@ -36,6 +36,11 @@ def bind_log_context(
         _log_context.set({**current, **fields})
 
 
+def get_log_context() -> _LogContext:
+    """Return a copy of the active request context."""
+    return dict(_log_context.get() or {})
+
+
 def reset_log_context(token: Token[_LogContext | None]) -> None:
     """Restore the context that was active before a request started."""
     _log_context.reset(token)
