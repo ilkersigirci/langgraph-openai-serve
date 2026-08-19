@@ -1,0 +1,50 @@
+services:
+  lgos-bifrost:
+    container_name: lgos-bifrost
+    image: maximhq/bifrost:v1.6.7@sha256:bf2208978308477a9f667dfc04cef3153197aeaca8618befefbecde3ed3378b7
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      lgos-demo-api-a:
+        condition: service_healthy
+      lgos-demo-api-b:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    volumes:
+      - type: bind
+        source: ../volumes/bifrost
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../configs/bifrost/config.json
+        target: /app/data/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      APP_HOST: 0.0.0.0
+      LOG_LEVEL: info
+      LOG_STYLE: json
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

@@ -31,8 +31,8 @@ jobs:
 
       - name: Render published and development models
         run: |
-          docker compose -f compose.yaml config --quiet
-          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+          docker compose -f docker/compose/demo.yml config --quiet
+          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
 
   test:
     name: Test ${{ matrix.name }}

@@ -4,14 +4,15 @@ The Compose stack runs two LGOS API services behind one pinned Bifrost gateway.
 Both services use the same demo image and graph set today. They remain separate
 so the demo proves that independently deployed APIs, including APIs with
 different graph sets later, can share one proxy endpoint. The configuration at
-`demo/docker/bifrost/config.json` belongs to the demo, not the LGOS package.
+`demo/docker/configs/bifrost/config.json` belongs to the demo, not the LGOS
+package.
 
 ## Run The Gateway
 
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up --wait lgos-bifrost
+docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
 ```
 
 Bifrost exposes each service as a custom provider:

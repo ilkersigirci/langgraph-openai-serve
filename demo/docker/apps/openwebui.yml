@@ -1,0 +1,59 @@
+services:
+  lgos-openwebui:
+    container_name: lgos-openwebui
+    image: ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /app/backend/open_webui/static:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      lgos-bifrost:
+        condition: service_healthy
+    ports:
+      - "3003:8080"
+    volumes:
+      - type: bind
+        source: ../volumes/open-webui
+        target: /app/backend/data
+        bind:
+          create_host_path: false
+    environment:
+      ENABLE_PERSISTENT_CONFIG: false
+      WEBUI_NAME: LGOS-OpenWebUI
+      WEBUI_SECRET_KEY: ${DEMO_OPENWEBUI_SECRET_KEY:-lgos-demo-only-secret}
+      ENABLE_OLLAMA_API: false
+      ENABLE_FOLLOW_UP_GENERATION: false
+      ENABLE_TAGS_GENERATION: false
+      ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS: false
+      OFFLINE_MODE: true
+      HF_HUB_OFFLINE: 1
+      WEBUI_ADMIN_EMAIL: ${DEMO_OPENWEBUI_ADMIN_EMAIL:-lgos@example.com}
+      WEBUI_ADMIN_PASSWORD: ${DEMO_OPENWEBUI_ADMIN_PASSWORD:-lgos}
+      WEBUI_ADMIN_NAME: LGOS
+      OPENAI_API_BASE_URL: http://lgos-bifrost:8080/openai_passthrough/v1
+      OPENAI_CATALOG_BASE_URL: http://lgos-bifrost:8080/v1
+      OPENAI_API_KEY: ${DEMO_OPENWEBUI_API_KEY:-DUMMY}
+      WEBSOCKET_EVENT_CALLER_TIMEOUT: 30
+      ENABLE_OPENAI_API: false
+      ENABLE_IMAGE_GENERATION: false
+      RAG_EMBEDDING_ENGINE: openai
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12

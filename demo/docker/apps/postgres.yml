@@ -1,0 +1,39 @@
+services:
+  lgos-db:
+    container_name: lgos-db
+    image: postgres:18.4-alpine3.23
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 2G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    ports:
+      - "3001:5432"
+    volumes:
+      - type: bind
+        source: ../volumes/lgos-db
+        target: /var/lib/postgresql
+        bind:
+          create_host_path: false
+    environment:
+      POSTGRES_USER: lgos
+      POSTGRES_PASSWORD: lgos
+      POSTGRES_DB: lgos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lgos -d lgos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

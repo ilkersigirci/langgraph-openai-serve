@@ -11,13 +11,16 @@ The demo uses three independent uv projects rather than a uv workspace:
 | `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command |
 
 Published project-owned images use only their project directories as build
-contexts. The development override additionally supplies the parent LGOS
-checkout as a named context for the API's editable install. The Open WebUI
+contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
+definitions live in `docker/apps/`, while `docker/compose/development.yml` and
+`docker/compose/otel.yml` provide development and OpenTelemetry overlays.
+Shared runtime assets remain under `demo/docker/`. The development overlay
+additionally supplies the parent LGOS checkout as a named context for the API's
+editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
 command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
-Python environment, or shared lockfile. Shared Compose-only configuration lives
-under `demo/docker/`. The API package includes the compact Markdown corpus used
-by `lgos-rag`.
+Python environment, or shared lockfile. The API package includes the compact
+Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
 
@@ -41,7 +44,7 @@ directories. The checkout includes each empty service directory with a tracked
 
 === "Published images"
 
-    `compose.yaml` contains no local builds:
+    `docker/compose/demo.yml` contains no local builds:
 
     ```bash
     make compose
@@ -64,7 +67,7 @@ directories. The checkout includes each empty service directory with a tracked
     To watch for changes:
 
     ```bash
-    docker compose -f compose.yaml -f compose.dev.yaml watch
+    docker compose -f docker/compose/demo.yml -f docker/compose/development.yml watch
     ```
 
     Changes to either the demo API source or the parent LGOS package restart
@@ -107,7 +110,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Bifrost"
 
     ```bash
-    docker compose -f compose.yaml up --wait lgos-bifrost
+    docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
     ```
 
     Use `http://localhost:3000/v1` as the provider-qualified model catalog. Use
@@ -136,7 +139,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Open WebUI"
 
     ```bash
-    docker compose -f compose.yaml up --wait lgos-openwebui
+    docker compose -f docker/compose/demo.yml up --wait lgos-openwebui
     make sync-openwebui
     ```
 

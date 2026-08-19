@@ -34,7 +34,9 @@ The application or deployment configures:
 - stdout/stderr routing and collection;
 - retention, redaction, and access controls;
 - ASGI server or ingress access logs; and
-- OpenTelemetry instrumentation, metrics, traces, and OTLP export.
+- OpenTelemetry instrumentation, metrics, traces, and OTLP export. The demo's
+  optional [Production OpenTelemetry](production-otel.md) overlay shows one
+  Collector-based deployment pattern.
 
 For latency percentiles and distributed request timing, use the deployment's
 metrics and tracing system rather than adding a per-request application log.
@@ -51,8 +53,9 @@ demo disables Uvicorn access logs; enable access logging at the ASGI server or
 ingress layer that owns request timing and retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
-`stream`, and `run_id`. If OpenTelemetry is enabled, its `trace_id` and
-`span_id` fields can coexist with these application fields.
+`stream`, and `run_id`. If OpenTelemetry's Python logging instrumentation is
+enabled, its `otelTraceID` and `otelSpanID` fields can coexist with these
+application fields.
 
 ## Langfuse correlation
 

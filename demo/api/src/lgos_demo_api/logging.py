@@ -56,14 +56,17 @@ LOGGING_CONFIG: dict[str, Any] = {
     },
     "loggers": {
         "uvicorn": {
-            "handlers": ["stdout"],
+            # Let Uvicorn records reach the root handlers. This preserves the
+            # stdout JSON stream and lets OTel's root LoggingHandler export the
+            # same records when the OTel deployment overlay is enabled.
+            "handlers": [],
             "level": "INFO",
-            "propagate": False,
+            "propagate": True,
         },
     },
 }
 
 
 def configure_logging() -> None:
-    """Configure demo and server logs as JSON on stdout."""
+    """Configure demo and server logs as JSON on the stdout stream."""
     logging.config.dictConfig(LOGGING_CONFIG)

@@ -42,8 +42,10 @@ jobs:
       - name: Render published and development models
         working-directory: ${{ runner.temp }}/lgos-demo
         run: |
-          docker compose -f compose.yaml config --quiet
-          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+          docker compose -f docker/compose/demo.yml config --quiet
+          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
+          OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal \
+            docker compose -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
 
       - name: Check API Dockerfile
         run: docker buildx build --check demo/api
@@ -51,8 +53,8 @@ jobs:
       - name: Build editable API image
         run: >-
           docker compose
-          -f demo/compose.yaml
-          -f demo/compose.dev.yaml
+          -f demo/docker/compose/demo.yml
+          -f demo/docker/compose/development.yml
           build lgos-demo-api-a
 
       - name: Verify editable API packages

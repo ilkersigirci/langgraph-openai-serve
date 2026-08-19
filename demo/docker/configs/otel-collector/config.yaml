@@ -1,0 +1,66 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage:
+    directory: /var/lib/otelcol/file_storage
+    create_directory: true
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: ${env:OTEL_COLLECTOR_MEMORY_LIMIT_MIB}
+    spike_limit_mib: ${env:OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB}
+  resource/defaults:
+    attributes:
+      - key: service.namespace
+        value: ${env:OTEL_SERVICE_NAMESPACE}
+        action: insert
+      - key: deployment.environment.name
+        value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+        action: insert
+  batch:
+    timeout: 5s
+    send_batch_size: 8192
+
+exporters:
+  otlp_http/upstream:
+    endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
+    tls:
+      insecure: ${env:OTEL_COLLECTOR_GATEWAY_INSECURE}
+    headers:
+      Authorization: ${env:OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER}
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      queue_size: 20000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 1h
+
+service:
+  extensions:
+    - health_check
+    - file_storage
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/defaults, batch]
+      exporters: [otlp_http/upstream]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/defaults, batch]
+      exporters: [otlp_http/upstream]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/defaults, batch]
+      exporters: [otlp_http/upstream]

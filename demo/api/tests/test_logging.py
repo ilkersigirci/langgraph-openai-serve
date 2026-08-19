@@ -23,6 +23,7 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
                 "color_message": "stale ANSI message",
             },
         )
+        logging.getLogger("uvicorn.error").warning("server.event")
 
         try:
             raise RuntimeError("boom")
@@ -42,7 +43,7 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    record, error_record = map(json.loads, result.stdout.splitlines())
+    record, server_record, error_record = map(json.loads, result.stdout.splitlines())
     assert record["level"] == "info"
     assert record["logger"] == "langgraph_openai_serve.test"
     assert record["message"] == "test.event"
@@ -51,6 +52,8 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
     assert record["stream"] is False
     assert record["timestamp"]
     assert "color_message" not in record
+    assert server_record["logger"] == "uvicorn.error"
+    assert server_record["message"] == "server.event"
     assert error_record["level"] == "error"
     assert error_record["message"] == "http.request.failed"
     assert error_record["request_id"] == "request-456"

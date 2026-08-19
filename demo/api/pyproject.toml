@@ -14,10 +14,14 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.1.0,<4",
     "langgraph-openai-serve[tracing]>=0.10.1",
     "numpy>=2.4.6",
-    "psycopg[binary,pool]>=3.3.4,<4",
-    "pydantic>=2.11,<3",
-    "pydantic-settings>=2.9.0",
-    "structlog>=26.1.0,<27",
+    "opentelemetry-distro>=0.65b0,<0.66",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-httpx>=0.65b0",
+    "opentelemetry-instrumentation-logging>=0.65b0",
+    "opentelemetry-instrumentation-psycopg>=0.65b0",
+    "psycopg[binary,pool]>=3.3.4",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]

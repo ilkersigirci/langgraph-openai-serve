@@ -1,0 +1,97 @@
+# Optional OpenTelemetry deployment overlay.
+#
+# The upstream gateway is intentionally configured by environment rather than
+# bundled into this demo. Applications send OTLP to this local Collector, which
+# handles buffering and forwards signals to the remote gateway/backend over
+# OTLP/HTTP.
+
+x-lgos-otel-api-environment: &lgos-otel-api-environment
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  # Export stdlib logging records through the same OTLP pipeline as traces and
+  # metrics. The stdout handler remains available for container diagnostics.
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION: "true"
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_SERVICE_NAME: lgos-demo-api
+  OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
+  OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+  OTEL_TRACES_SAMPLER: parentbased_traceidratio
+  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
+
+services:
+  lgos-otel-collector:
+    container_name: lgos-otel-collector
+    image: otel/opentelemetry-collector-contrib:0.158.0@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
+    restart: ${RESTART_POLICY:-unless-stopped}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    expose:
+      - "4317"
+      - "4318"
+      - "13133"
+    volumes:
+      - type: bind
+        source: ../configs/otel-collector/config.yaml
+        target: /etc/otelcol/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../volumes/otel-collector
+        target: /var/lib/otelcol/file_storage
+        bind:
+          create_host_path: false
+    environment:
+      OTEL_COLLECTOR_GATEWAY_ENDPOINT: ${OTEL_COLLECTOR_GATEWAY_ENDPOINT:?Set OTEL_COLLECTOR_GATEWAY_ENDPOINT to the OTLP/HTTP gateway base URL}
+      OTEL_COLLECTOR_GATEWAY_INSECURE: ${OTEL_COLLECTOR_GATEWAY_INSECURE:-false}
+      OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER: ${OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER:-}
+      OTEL_COLLECTOR_MEMORY_LIMIT_MIB: ${OTEL_COLLECTOR_MEMORY_LIMIT_MIB:-256}
+      OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB: ${OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB:-64}
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
+      OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
+      interval: 5m
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+
+  lgos-demo-api-a:
+    environment:
+      <<: *lgos-otel-api-environment
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},service.instance.id=lgos-demo-api-a,service.version=${DEMO_IMAGE_TAG:-latest},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_healthy
+
+  lgos-demo-api-b:
+    environment:
+      <<: *lgos-otel-api-environment
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},service.instance.id=lgos-demo-api-b,service.version=${DEMO_IMAGE_TAG:-latest},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_healthy

@@ -1,5 +1,5 @@
 SHELL := /bin/sh
-COMPOSE := docker compose -f compose.yaml
+COMPOSE := docker compose -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 LGOS_CHAINLIT_PORT ?= 3002
 LGOS_A_PORT ?= 3004
@@ -8,7 +8,7 @@ LGOS_B_PORT ?= 3005
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
-	sync-openwebui compose compose-dev
+	sync-openwebui compose compose-dev compose-otel
 .DEFAULT_GOAL := help
 
 help: ## Show available commands
@@ -50,7 +50,9 @@ type-check-local: type-check-ui ## Run type checking for all standalone projects
 
 compose-config: ## Validate published and development Compose models
 	$(COMPOSE) config --quiet
-	$(COMPOSE) -f compose.dev.yaml config --quiet
+	$(COMPOSE) -f docker/compose/development.yml config --quiet
+	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
+		$(COMPOSE) -f docker/compose/otel.yml config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
 
@@ -90,4 +92,7 @@ compose: ## Run the stack from published images
 	$(COMPOSE) up
 
 compose-dev: ## Build the API and Chainlit images and run the stack
-	$(COMPOSE) -f compose.dev.yaml up --build
+	$(COMPOSE) -f docker/compose/development.yml up --build
+
+compose-otel: ## Run the published stack with the OpenTelemetry Collector overlay
+	$(COMPOSE) -f docker/compose/otel.yml up
