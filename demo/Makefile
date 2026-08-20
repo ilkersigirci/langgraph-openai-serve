@@ -1,14 +1,15 @@
 SHELL := /bin/sh
-COMPOSE := docker compose -f docker/compose/demo.yml
+COMPOSE := docker compose --env-file .env -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 LGOS_CHAINLIT_PORT ?= 3002
 LGOS_A_PORT ?= 3004
 LGOS_B_PORT ?= 3005
+UP_ARGS ?=
 
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
-	sync-openwebui compose compose-dev compose-otel
+	sync-openwebui compose compose-down compose-dev compose-otel
 .DEFAULT_GOAL := help
 
 help: ## Show available commands
@@ -52,7 +53,8 @@ compose-config: ## Validate published and development Compose models
 	$(COMPOSE) config --quiet
 	$(COMPOSE) -f docker/compose/development.yml config --quiet
 	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
-		$(COMPOSE) -f docker/compose/otel.yml config --quiet
+		$(COMPOSE) -f docker/compose/development.yml \
+		-f docker/compose/otel.yml config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
 
@@ -89,10 +91,14 @@ sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync
 
 compose: ## Run the stack from published images
-	$(COMPOSE) up
+	$(COMPOSE) up $(UP_ARGS)
+
+compose-down: ## Stop and remove any demo stack variant
+	$(COMPOSE) down --remove-orphans
 
 compose-dev: ## Build the API and Chainlit images and run the stack
-	$(COMPOSE) -f docker/compose/development.yml up --build
+	$(COMPOSE) -f docker/compose/development.yml up --build $(UP_ARGS)
 
-compose-otel: ## Run the published stack with the OpenTelemetry Collector overlay
-	$(COMPOSE) -f docker/compose/otel.yml up
+compose-otel: ## Build this checkout and run it with the OpenTelemetry Collector overlay
+	$(COMPOSE) -f docker/compose/development.yml \
+		-f docker/compose/otel.yml up --build $(UP_ARGS)

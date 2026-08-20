@@ -52,5 +52,27 @@
   },
   "config_store": {
     "enabled": false
-  }
+  },
+  "client": {
+    "header_filter_config": {
+      "allowlist": ["baggage", "traceparent", "tracestate"]
+    }
+  },
+  "plugins": [
+    {
+      "enabled": true,
+      "name": "otel",
+      "config": {
+        "service_name": "lgos-bifrost",
+        "collector_url": "http://lgos-otel-collector:4318/v1/traces",
+        "trace_type": "genai_extension",
+        "protocol": "http",
+        "disable_content_logging": true,
+        "plugin_span_filter": {
+          "mode": "exclude",
+          "plugins": ["compat", "logging", "otel", "telemetry"]
+        }
+      }
+    }
+  ]
 }

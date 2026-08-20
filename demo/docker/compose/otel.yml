@@ -10,11 +10,19 @@ networks:
     internal: true
   lgos-otel-egress:
 
-x-lgos-otel-api-environment: &lgos-otel-api-environment
+x-lgos-otel-environment: &lgos-otel-environment
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
   OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
   OTEL_EXPORTER_OTLP_INSECURE: "true"
   OTEL_TRACES_EXPORTER: otlp
+  OTEL_PROPAGATORS: tracecontext,baggage
+  OTEL_SEMCONV_STABILITY_OPT_IN: http
+  OTEL_TRACES_SAMPLER: parentbased_traceidratio
+  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+
+x-lgos-otel-api-environment: &lgos-otel-api-environment
+  <<: *lgos-otel-environment
   OTEL_METRICS_EXPORTER: otlp
   # Export stdlib logging records through the same OTLP pipeline as traces and
   # metrics. The stdout handler remains available for container diagnostics.
@@ -23,10 +31,12 @@ x-lgos-otel-api-environment: &lgos-otel-api-environment
   OTEL_PYTHON_LOG_CORRELATION: "true"
   OTEL_PYTHON_LOG_HANDLER_LEVEL: info
   OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /v1/health$
-  OTEL_SEMCONV_STABILITY_OPT_IN: http
   OTEL_SERVICE_NAME: lgos-demo-api
-  OTEL_TRACES_SAMPLER: parentbased_traceidratio
-  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
+
+x-lgos-otel-python-environment: &lgos-otel-python-environment
+  <<: *lgos-otel-environment
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
 
 services:
   lgos-otel-collector:
@@ -82,7 +92,6 @@ services:
       - lgos-otel-ingest
     environment:
       <<: *lgos-otel-api-environment
-      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
     command: ["opentelemetry-instrument", "lgos-demo-api"]
     restart: ${RESTART_POLICY:-unless-stopped}
     depends_on:
@@ -95,9 +104,54 @@ services:
       - lgos-otel-ingest
     environment:
       <<: *lgos-otel-api-environment
-      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
     command: ["opentelemetry-instrument", "lgos-demo-api"]
     restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-chainlit:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-python-environment
+      OTEL_SERVICE_NAME: lgos-chainlit
+      # Chainlit messages use one long-lived Socket.IO connection. Excluding
+      # that transport lets automatic client instrumentation form a trace per
+      # outbound request instead of grouping the whole chat session into one.
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$,/ws/socket[.]io
+      # Chainlit transitively installs GenAI instrumentors that record prompt
+      # content. HTTPX is sufficient for propagation and transport tracing.
+      OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: openai,openai_agents
+    command: ["opentelemetry-instrument", "lgos-chainlit"]
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-openwebui:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      ENABLE_OTEL: "true"
+      ENABLE_OTEL_TRACES: "true"
+      ENABLE_OTEL_METRICS: "false"
+      ENABLE_OTEL_LOGS: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_SERVICE_NAME: lgos-openwebui
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-bifrost:
+    networks:
+      - default
+      - lgos-otel-ingest
     depends_on:
       lgos-otel-collector:
         condition: service_started

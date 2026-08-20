@@ -5,8 +5,14 @@ an OpenTelemetry Collector. It keeps the application integration small:
 
 ```mermaid
 flowchart LR
-    proxy[Ingress or Traefik] --> api[LGOS API]
+    browser[Browser] --> proxy[Traefik]
+    proxy --> ui[Chainlit or Open WebUI]
+    ui --> proxy
+    proxy --> bifrost[Bifrost]
+    bifrost --> api[LGOS API]
     api -->|OTLP traces, metrics, and logs| collector[Local OTel Collector]
+    ui -->|OTLP traces| collector
+    bifrost -->|OTLP traces| collector
     collector -->|OTLP/HTTP| gateway[Host or platform Collector gateway]
     api -->|stdout JSON diagnostics| runtime[Container runtime]
     api -->|Langfuse native OTLP exporter| langfuse[Langfuse]
@@ -48,19 +54,12 @@ LAN/VPN source ranges. If that trust boundary changes, configure matching
 authentication at both the exporter and gateway; merely sending a header
 without gateway-side validation provides no security.
 
-Validate and start the published-image stack:
+Validate, build, and start the checkout-local stack:
 
 ```bash
 cd demo
-docker compose -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
+make compose-config
 make compose-otel
-```
-
-For a checkout-local image that includes the current API lockfile, use the
-development build overlay as well:
-
-```bash
-docker compose -f docker/compose/demo.yml -f docker/compose/development.yml -f docker/compose/otel.yml up --build
 ```
 
 Generate a request after the stack is healthy:
@@ -77,7 +76,15 @@ to inspect LangGraph and Langfuse observations.
 The overlay:
 
 - starts one `lgos-otel-collector` on separate ingest and egress networks;
-- wraps both API workers with the official `opentelemetry-instrument` launcher;
+- builds the API and Chainlit applications from the current checkout;
+- wraps both API workers and Chainlit with the official
+  `opentelemetry-instrument` launcher;
+- excludes Chainlit's long-lived Socket.IO transport from FastAPI server spans,
+  while HTTPX instrumentation traces outbound OpenAI-compatible calls;
+- disables Chainlit's transitively installed OpenAI instrumentors so the UI
+  does not duplicate prompt and response content in the system trace;
+- enables Open WebUI's native tracing and Bifrost's native OTel plugin;
+- disables Bifrost prompt and response content logging;
 - exports API traces, metrics, and standard-library logs to the local Collector
   over OTLP/gRPC;
 - forwards those signals from the local Collector to the configured gateway
@@ -95,6 +102,22 @@ The overlay:
 - exports the Collector's own operational metrics directly to the gateway so
   queue pressure, rejected data, and send failures can be monitored without a
   self-referential pipeline.
+
+The current Bifrost transport preserves an inbound W3C trace by forwarding its
+original `traceparent` to LGOS. Consequently, the Bifrost request span and LGOS
+server span can appear as siblings under the proxy span. They remain correlated
+in one trace, but this is not a direct Bifrost-to-LGOS parent relationship.
+
+Chainlit serves REST endpoints with FastAPI but delivers chat messages over one
+mounted Socket.IO connection. Tracing that connection as a server span would
+make unrelated prompts share a long-lived parent. The overlay therefore
+excludes `/ws/socket.io` from FastAPI instrumentation. The OpenAI client's
+auto-instrumented HTTPX request creates each prompt trace and injects the W3C
+context propagated through Traefik, Bifrost, and LGOS. Browser login, page-load,
+and WebSocket connection traces remain separate from prompt execution traces.
+The UI's transitive OpenAI instrumentors are disabled because they capture
+prompt and response bodies by default; Langfuse remains responsible for the
+intentional LangGraph-level observations.
 
 The API container health check uses `/v1/health`, and the overlay excludes that
 endpoint from FastAPI instrumentation so routine probes do not dominate HTTP
