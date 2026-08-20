@@ -7,16 +7,26 @@ import pytest
 from anyio import Event, create_task_group
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from langgraph.graph import StateGraph
 from starlette import status
 
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
-from langgraph_openai_serve.core.logging import bind_log_context, get_logger
+from langgraph_openai_serve.core.logging import (
+    bind_log_context,
+    get_log_context,
+    get_logger,
+)
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
+from tests.graph.support.schemas import MessageState
 
 _TEST_LOGGER = get_logger("langgraph_openai_serve.tests.request_context")
 _UUID4_VERSION = 4
+
+
+class _TestRequestError(Exception):
+    pass
 
 
 def _records(caplog, event: str):
@@ -50,11 +60,35 @@ async def test_unusable_request_id_is_replaced(client: AsyncClient) -> None:
     assert uuid.UUID(request_id).version == _UUID4_VERSION
 
 
+@pytest.mark.parametrize(
+    "headers",
+    [
+        [(b"x-request-id", b"request-\x85forged")],
+        [
+            (b"x-request-id", b"request-one"),
+            (b"x-request-id", b"request-two"),
+        ],
+    ],
+)
+async def test_unsafe_or_ambiguous_request_id_is_replaced(
+    client: AsyncClient,
+    headers,
+) -> None:
+    response = await client.get("/v1/models", headers=headers)
+    request_id = response.headers["x-request-id"]
+
+    assert uuid.UUID(request_id).version == _UUID4_VERSION
+
+
 async def test_request_context_is_added_to_lgos_logs(caplog) -> None:
     caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
 
     async def app(scope, _receive, send) -> None:
-        bind_log_context(model="test", stream=False)
+        bind_log_context(
+            model="test",
+            stream=False,
+            operation_id="operation-123",
+        )
         _TEST_LOGGER.info("test.request")
         await send(
             {
@@ -89,6 +123,7 @@ async def test_request_context_is_added_to_lgos_logs(caplog) -> None:
     assert record.request_id == "request-123"
     assert record.model == "test"
     assert record.stream is False
+    assert record.operation_id == "operation-123"
 
 
 async def test_escaping_exception_is_logged_and_reraised(caplog) -> None:
@@ -96,7 +131,7 @@ async def test_escaping_exception_is_logged_and_reraised(caplog) -> None:
     error_message = "boom"
 
     async def app(_scope, _receive, _send) -> None:
-        raise RuntimeError(error_message)
+        raise _TestRequestError(error_message)
 
     scope = {
         "type": "http",
@@ -105,15 +140,15 @@ async def test_escaping_exception_is_logged_and_reraised(caplog) -> None:
         "headers": [(b"x-request-id", b"failure-request")],
     }
 
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(_TestRequestError, match="boom"):
         await RequestContextMiddleware(app)(scope, dict, dict)
 
     records = _records(caplog, "http.request.failed")
     assert len(records) == 1
     assert records[0].request_id == "failure-request"
-    assert records[0].http_method == "GET"
-    assert records[0].http_path == "/failure"
-    assert records[0].error_type == "RuntimeError"
+    assert records[0].__dict__["http.request.method"] == "GET"
+    assert records[0].__dict__["url.path"] == "/failure"
+    assert records[0].__dict__["error.type"] == f"{__name__}._TestRequestError"
     assert records[0].exc_info is not None
 
     _TEST_LOGGER.info("test.after_failure")
@@ -158,7 +193,10 @@ async def test_handled_server_error_is_logged(
     records = _records(caplog, "http.request.failed")
     assert len(records) == 1
     assert records[0].request_id == "server-error"
-    assert records[0].status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert (
+        records[0].__dict__["http.response.status_code"]
+        == status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
     assert records[0].exc_info is not None
 
 
@@ -197,7 +235,59 @@ async def test_unhandled_error_response_has_request_id(
     records = _records(caplog, "http.request.failed")
     assert len(records) == 1
     assert records[0].request_id == "unhandled-error"
-    assert records[0].error_type == "RuntimeError"
+    assert records[0].__dict__["error.type"] == "RuntimeError"
+
+
+async def test_stream_failure_keeps_request_context_in_producer_task(
+    sqlite_checkpointer,
+    caplog,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="langgraph_openai_serve")
+    operation_id = str(uuid.uuid4())
+
+    async def fail(_state: MessageState) -> dict[str, object]:
+        msg = "stream failed"
+        raise RuntimeError(msg)
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("fail", fail)
+        .set_entry_point("fail")
+        .set_finish_point("fail")
+        .compile(checkpointer=sqlite_checkpointer)
+    )
+    registry = GraphRegistry(
+        registry={
+            "broken-stream": GraphConfig(
+                graph=graph,
+                description="Broken stream",
+                features={GraphFeature.INTERRUPTS},
+                run_coordinator=InMemoryRunCoordinator(),
+            )
+        }
+    )
+    app = LanggraphOpenaiServe(graphs=registry).bind_openai_api(prefix="/v1").app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            headers={"X-Request-ID": "stream-error"},
+            json={
+                "model": "broken-stream",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": True,
+                "metadata": {"langgraph_run_id": operation_id},
+            },
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    records = _records(caplog, "chat_completion.stream_failed")
+    assert len(records) == 1
+    assert records[0].request_id == "stream-error"
+    assert records[0].model == "broken-stream"
+    assert records[0].stream is True
+    assert records[0].operation_id == operation_id
 
 
 async def test_host_routes_are_not_wrapped_by_lgos_middleware(
@@ -281,3 +371,9 @@ def test_non_request_log_has_no_request_fields(caplog) -> None:
         record for record in caplog.records if record.getMessage() == "test.event"
     )
     assert not hasattr(record, "request_id")
+
+
+def test_binding_without_request_context_is_ignored() -> None:
+    bind_log_context(model="unscoped", stream=True, operation_id="unscoped")
+
+    assert get_log_context() == {}

@@ -20,10 +20,14 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
                 "request_id": "request-123",
                 "model": "simple-graph",
                 "stream": False,
-                "color_message": "stale ANSI message",
             },
         )
-        logging.getLogger("uvicorn.error").warning("server.event")
+        logging.getLogger("uvicorn.error").warning(
+            "server.event",
+            extra={"color_message": "stale ANSI message"},
+        )
+        logging.getLogger("noisy_dependency").setLevel(logging.DEBUG)
+        logging.getLogger("noisy_dependency").debug("dependency.debug")
 
         try:
             raise RuntimeError("boom")
@@ -54,6 +58,7 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
     assert "color_message" not in record
     assert server_record["logger"] == "uvicorn.error"
     assert server_record["message"] == "server.event"
+    assert "color_message" not in server_record
     assert error_record["level"] == "error"
     assert error_record["message"] == "http.request.failed"
     assert error_record["request_id"] == "request-456"

@@ -23,10 +23,11 @@ x-lgos-demo-api: &lgos-demo-api
     - path: ../../.env
       required: false
   environment:
+    DEMO_API_PORT: 8000
     DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
     LANGGRAPH_STRICT_MSGPACK: "true"
   healthcheck:
-    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/models', timeout=2)"]
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
     interval: 5s
     timeout: 5s
     retries: 10

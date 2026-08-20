@@ -102,7 +102,7 @@ async def create_chat_completion(
         stream=chat_request.stream,
     )
 
-    try:  # ruff: ignore[too-many-statements-in-try-clause]
+    try:
         run = await prepare_run(
             chat_request.model,
             chat_request.messages,
@@ -110,8 +110,6 @@ async def create_chat_completion(
             chat_request,
             checkpoint_scope=checkpoint_scope,
         )
-        if run.run_id is not None:
-            bind_log_context(run_id=run.run_id)
 
         if chat_request.stream:
             body = stream_owner.start(

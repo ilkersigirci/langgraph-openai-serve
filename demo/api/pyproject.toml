@@ -21,6 +21,8 @@ dependencies = [
     "opentelemetry-instrumentation-logging>=0.65b0",
     "opentelemetry-instrumentation-psycopg>=0.65b0",
     "psycopg[binary,pool]>=3.3.4",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.9.0",
     "structlog>=26.1.0",
 ]
 

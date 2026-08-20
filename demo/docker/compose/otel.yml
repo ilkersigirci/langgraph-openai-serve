@@ -5,6 +5,11 @@
 # handles buffering and forwards signals to the remote gateway/backend over
 # OTLP/HTTP.
 
+networks:
+  lgos-otel-ingest:
+    internal: true
+  lgos-otel-egress:
+
 x-lgos-otel-api-environment: &lgos-otel-api-environment
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
   OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
@@ -16,9 +21,10 @@ x-lgos-otel-api-environment: &lgos-otel-api-environment
   OTEL_LOGS_EXPORTER: otlp
   OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION: "true"
   OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOG_HANDLER_LEVEL: info
+  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /v1/health$
+  OTEL_SEMCONV_STABILITY_OPT_IN: http
   OTEL_SERVICE_NAME: lgos-demo-api
-  OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
-  OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
   OTEL_TRACES_SAMPLER: parentbased_traceidratio
   OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
 
@@ -41,6 +47,9 @@ services:
     pids_limit: 256
     cpus: "1.0"
     mem_limit: 1G
+    networks:
+      - lgos-otel-ingest
+      - lgos-otel-egress
     ulimits:
       nofile:
         soft: 4096
@@ -48,7 +57,6 @@ services:
     expose:
       - "4317"
       - "4318"
-      - "13133"
     volumes:
       - type: bind
         source: ../configs/otel-collector/config.yaml
@@ -64,34 +72,32 @@ services:
     environment:
       OTEL_COLLECTOR_GATEWAY_ENDPOINT: ${OTEL_COLLECTOR_GATEWAY_ENDPOINT:?Set OTEL_COLLECTOR_GATEWAY_ENDPOINT to the OTLP/HTTP gateway base URL}
       OTEL_COLLECTOR_GATEWAY_INSECURE: ${OTEL_COLLECTOR_GATEWAY_INSECURE:-false}
-      OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER: ${OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER:-}
-      OTEL_COLLECTOR_MEMORY_LIMIT_MIB: ${OTEL_COLLECTOR_MEMORY_LIMIT_MIB:-256}
-      OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB: ${OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB:-64}
       OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
       OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
-    healthcheck:
-      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
-      interval: 5m
-      timeout: 10s
-      start_period: 5s
-      retries: 3
+      GOMEMLIMIT: 800MiB
 
   lgos-demo-api-a:
+    networks:
+      - default
+      - lgos-otel-ingest
     environment:
       <<: *lgos-otel-api-environment
-      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},service.instance.id=lgos-demo-api-a,service.version=${DEMO_IMAGE_TAG:-latest},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
     command: ["opentelemetry-instrument", "lgos-demo-api"]
     restart: ${RESTART_POLICY:-unless-stopped}
     depends_on:
       lgos-otel-collector:
-        condition: service_healthy
+        condition: service_started
 
   lgos-demo-api-b:
+    networks:
+      - default
+      - lgos-otel-ingest
     environment:
       <<: *lgos-otel-api-environment
-      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},service.instance.id=lgos-demo-api-b,service.version=${DEMO_IMAGE_TAG:-latest},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
     command: ["opentelemetry-instrument", "lgos-demo-api"]
     restart: ${RESTART_POLICY:-unless-stopped}
     depends_on:
       lgos-otel-collector:
-        condition: service_healthy
+        condition: service_started

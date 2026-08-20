@@ -85,6 +85,18 @@ async def test_app_lists_exactly_the_documented_models(
         }
 
 
+async def test_cors_exposes_request_id(demo_app: FastAPI) -> None:
+    transport = ASGITransport(app=demo_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/v1/health",
+            headers={"Origin": "https://client.example"},
+        )
+
+    assert response.headers["access-control-expose-headers"] == "X-Request-ID"
+    assert response.headers["x-request-id"]
+
+
 async def test_simple_model_retrieval_exposes_runtime_settings(
     openai_client: AsyncOpenAI,
 ) -> None:

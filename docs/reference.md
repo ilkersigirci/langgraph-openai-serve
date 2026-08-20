@@ -122,12 +122,12 @@ For explicit construction, import
 application-created vendor handler through `runtime_callbacks`.
 
 When a callback is present, LGOS gives the graph run the stable name
-`lgos.chat_completion` and adds non-sensitive `RunnableConfig.metadata` fields
-for the request ID, registered graph model, and (for interrupt runs) operation
-ID.
-These are correlation metadata only: LGOS does not set LangChain's native
-tracer `run_id`, does not expose its internal checkpoint `thread_id`, and does
-not force a custom Langfuse trace ID. See [Production Logging and Request
+`lgos.chat_completion` and adds `RunnableConfig.metadata` fields for the
+request ID, registered graph model, and (for interrupt runs) operation ID.
+LangGraph also propagates primitive configurable values during execution, so
+callbacks on interrupt runs receive the derived checkpoint `thread_id`. LGOS
+does not set LangChain's native tracer `run_id` or force a custom Langfuse trace
+ID. See [Production Logging and Request
 Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
 The same `features` set drives runtime behavior and the versioned

@@ -64,9 +64,12 @@ LGOS deployment.
 
 ## Request Correlation
 
-Forward `X-Request-ID` unchanged. LGOS does not inspect gateway-specific IDs or
-map their headers. The complete request-ID contract and its relationship to
-OpenTelemetry are documented in [Production Logging and Request
+Forward a trusted gateway-generated `X-Request-ID` unchanged. At the first
+trusted edge, discard or replace a public client's value unless the deployment
+explicitly permits caller-controlled correlation data. LGOS validates only the
+header's shape; never use it for identity or authorization. The complete
+request-ID contract and its relationship to OpenTelemetry are documented in
+[Production Logging and Request
 Correlation](production-logging.md#lgos-responsibilities).
 
 ## LiteLLM

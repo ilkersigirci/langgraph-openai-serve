@@ -15,7 +15,11 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
 )
 from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
-from langgraph_openai_serve.core.logging import get_log_context, get_logger
+from langgraph_openai_serve.core.logging import (
+    bind_log_context,
+    get_log_context,
+    get_logger,
+)
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -85,6 +89,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
     resume = parse_resume_request(messages)
     requested_run_id = interrupt_state.get_run_id(request)
     run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
+    bind_log_context(operation_id=run_id)
     checkpoint_thread_id = interrupt_state.checkpoint_key(
         model,
         run_id,
@@ -178,9 +183,9 @@ def build_runnable_config(
 def _runnable_metadata(
     model: str,
     run_id: str | None = None,
-) -> dict[str, Any]:
-    """Build non-sensitive metadata for callbacks and tracing."""
-    metadata: dict[str, Any] = {
+) -> dict[str, str]:
+    """Build correlation metadata for callbacks and tracing."""
+    metadata = {
         "lgos.model": model,
     }
     request_id = get_log_context().get("request_id")

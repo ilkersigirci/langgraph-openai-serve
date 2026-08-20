@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from openai.types.shared import ErrorObject
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.core.logging import exception_type_name, get_logger
 
 if TYPE_CHECKING:
     from starlette.types import HTTPExceptionHandler
@@ -70,10 +70,10 @@ async def openai_http_exception_handler(  # ruff: ignore[unused-async]
         logger.error(
             "http.request.failed",
             extra={
-                "http_method": request.method,
-                "http_path": request.url.path,
-                "status_code": exc.status_code,
-                "error_type": type(cause).__name__,
+                "http.request.method": request.method,
+                "url.path": request.url.path,
+                "http.response.status_code": exc.status_code,
+                "error.type": exception_type_name(cause),
             },
             exc_info=(type(cause), cause, cause.__traceback__),
         )

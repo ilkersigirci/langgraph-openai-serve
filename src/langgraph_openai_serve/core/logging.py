@@ -21,17 +21,20 @@ def bind_log_context(
     *,
     model: str | None = None,
     stream: bool | None = None,
-    run_id: str | None = None,
+    operation_id: str | None = None,
 ) -> None:
-    """Add chat and graph fields without mutating the current context."""
-    current = _log_context.get() or {}
+    """Add fields to the active request context without mutating it."""
+    current = _log_context.get()
+    if current is None:
+        return
+
     fields: _LogContext = {}
     if model is not None:
         fields["model"] = model
     if stream is not None:
         fields["stream"] = stream
-    if run_id is not None:
-        fields["run_id"] = run_id
+    if operation_id is not None:
+        fields["operation_id"] = operation_id
     if fields:
         _log_context.set({**current, **fields})
 
@@ -44,6 +47,14 @@ def get_log_context() -> _LogContext:
 def reset_log_context(token: Token[_LogContext | None]) -> None:
     """Restore the context that was active before a request started."""
     _log_context.reset(token)
+
+
+def exception_type_name(exc: BaseException) -> str:
+    """Return the canonical OpenTelemetry error type for an exception."""
+    cls = type(exc)
+    if cls.__module__ == "builtins":
+        return cls.__qualname__
+    return f"{cls.__module__}.{cls.__qualname__}"
 
 
 class RequestContextFilter(logging.Filter):

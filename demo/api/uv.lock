@@ -1006,6 +1006,8 @@ dependencies = [
     { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-instrumentation-psycopg" },
     { name = "psycopg", extra = ["binary", "pool"] },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
     { name = "structlog" },
 ]
 
@@ -1042,6 +1044,8 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-logging", specifier = ">=0.65b0" },
     { name = "opentelemetry-instrumentation-psycopg", specifier = ">=0.65b0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.4" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "pydantic-settings", specifier = ">=2.9.0" },
     { name = "structlog", specifier = ">=26.1.0" },
 ]
 

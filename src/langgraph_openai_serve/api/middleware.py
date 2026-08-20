@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from langgraph_openai_serve.core.logging import (
     begin_log_context,
+    exception_type_name,
     get_logger,
     reset_log_context,
 )
@@ -17,8 +18,6 @@ from langgraph_openai_serve.core.logging import (
 logger = get_logger(__name__)
 _REQUEST_ID_HEADER = b"x-request-id"
 _MAX_REQUEST_ID_LENGTH = 128
-_MIN_PRINTABLE_CODEPOINT = 0x20
-_DELETE_CODEPOINT = 0x7F
 
 
 class RequestContextMiddleware:
@@ -51,7 +50,7 @@ class RequestContextMiddleware:
                 "http.request.failed",
                 extra={
                     **_request_fields(scope, status_code),
-                    "error_type": type(exc).__name__,
+                    "error.type": exception_type_name(exc),
                 },
             )
             raise
@@ -60,13 +59,15 @@ class RequestContextMiddleware:
 
 
 def _request_id_from_scope(scope: Scope) -> str:
-    for name, value in scope.get("headers", ()):
-        if name.lower() != _REQUEST_ID_HEADER:
-            continue
-        request_id = value.decode("latin-1").strip()
+    values = [
+        value
+        for name, value in scope.get("headers", ())
+        if name.lower() == _REQUEST_ID_HEADER
+    ]
+    if len(values) == 1:
+        request_id = values[0].decode("latin-1").strip()
         if _usable_request_id(request_id):
             return request_id
-        break
     return str(uuid.uuid4())
 
 
@@ -74,11 +75,8 @@ def _usable_request_id(request_id: str) -> bool:
     return (
         bool(request_id)
         and len(request_id) <= _MAX_REQUEST_ID_LENGTH
-        and all(
-            ord(character) >= _MIN_PRINTABLE_CODEPOINT
-            and ord(character) != _DELETE_CODEPOINT
-            for character in request_id
-        )
+        and request_id.isascii()
+        and request_id.isprintable()
     )
 
 
@@ -97,9 +95,9 @@ def _request_fields(
     status_code: int | None,
 ) -> dict[str, str | int]:
     fields: dict[str, str | int] = {
-        "http_method": scope["method"],
-        "http_path": scope["path"],
+        "http.request.method": scope["method"],
+        "url.path": scope["path"],
     }
     if status_code is not None:
-        fields["status_code"] = status_code
+        fields["http.response.status_code"] = status_code
     return fields

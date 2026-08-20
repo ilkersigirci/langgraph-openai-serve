@@ -10,9 +10,9 @@ uv run --locked --env-file .env lgos-demo-api
 ```
 
 The API writes JSON logs to stdout. LGOS log records include correlation fields
-such as `request_id`, `model`, `stream`, and `run_id` when available. The
-optional `docker/compose/otel.yml` deployment overlay also exports the same
-standard-library records as native OpenTelemetry logs over OTLP.
+such as `request_id`, `model`, `stream`, and `operation_id` when available. From
+`demo/`, the optional `docker/compose/otel.yml` deployment overlay also exports
+the same standard-library records as native OpenTelemetry logs over OTLP.
 
 Configuration uses the `DEMO_API_` prefix. For example,
 `DEMO_API_POSTGRES_URI` selects the checkpoint database.

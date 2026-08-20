@@ -1,9 +1,11 @@
 extensions:
-  health_check:
-    endpoint: 0.0.0.0:13133
   file_storage:
     directory: /var/lib/otelcol/file_storage
     create_directory: true
+    max_size: 268435456
+    compaction:
+      on_rebound: true
+      cleanup_on_start: true
 
 receivers:
   otlp:
@@ -16,8 +18,8 @@ receivers:
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: ${env:OTEL_COLLECTOR_MEMORY_LIMIT_MIB}
-    spike_limit_mib: ${env:OTEL_COLLECTOR_MEMORY_SPIKE_LIMIT_MIB}
+    limit_percentage: 80
+    spike_limit_percentage: 20
   resource/defaults:
     attributes:
       - key: service.namespace
@@ -26,21 +28,16 @@ processors:
       - key: deployment.environment.name
         value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
         action: insert
-  batch:
-    timeout: 5s
-    send_batch_size: 8192
+  batch: {}
 
 exporters:
   otlp_http/upstream:
     endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
     tls:
       insecure: ${env:OTEL_COLLECTOR_GATEWAY_INSECURE}
-    headers:
-      Authorization: ${env:OTEL_COLLECTOR_GATEWAY_AUTHORIZATION_HEADER}
     sending_queue:
       enabled: true
       storage: file_storage
-      queue_size: 20000
     retry_on_failure:
       enabled: true
       initial_interval: 5s
@@ -49,8 +46,24 @@ exporters:
 
 service:
   extensions:
-    - health_check
     - file_storage
+  telemetry:
+    resource:
+      attributes:
+        - name: service.name
+          value: lgos-otel-collector
+        - name: service.namespace
+          value: ${env:OTEL_SERVICE_NAMESPACE}
+        - name: deployment.environment.name
+          value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+    metrics:
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
+                compression: gzip
   pipelines:
     traces:
       receivers: [otlp]

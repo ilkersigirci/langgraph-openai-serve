@@ -4,17 +4,14 @@ import logging.config
 from typing import Any
 
 import structlog
-from structlog.typing import EventDict, WrappedLogger
 
 
-def _drop_uvicorn_color_message(
-    _logger: WrappedLogger,
-    _method_name: str,
-    event_dict: EventDict,
-) -> EventDict:
-    """Remove Uvicorn's redundant ANSI-formatted copy of the message."""
-    event_dict.pop("color_message", None)
-    return event_dict
+class _DropUvicornColorMessage(logging.Filter):
+    """Remove Uvicorn's redundant ANSI-formatted copy before any export."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.__dict__.pop("color_message", None)
+        return True
 
 
 _FOREIGN_PRE_CHAIN = [
@@ -25,7 +22,6 @@ _FOREIGN_PRE_CHAIN = [
 ]
 
 _JSON_PROCESSORS = [
-    _drop_uvicorn_color_message,
     structlog.processors.StackInfoRenderer(),
     structlog.processors.format_exc_info,
     structlog.processors.EventRenamer("message"),
@@ -36,6 +32,11 @@ _JSON_PROCESSORS = [
 LOGGING_CONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "drop_uvicorn_color_message": {
+            "()": _DropUvicornColorMessage,
+        }
+    },
     "formatters": {
         "json": {
             "()": structlog.stdlib.ProcessorFormatter,
@@ -47,19 +48,34 @@ LOGGING_CONFIG: dict[str, Any] = {
         "stdout": {
             "class": "logging.StreamHandler",
             "formatter": "json",
+            "level": "INFO",
             "stream": "ext://sys.stdout",
         }
     },
     "root": {
         "handlers": ["stdout"],
-        "level": "INFO",
+        "level": "WARNING",
     },
     "loggers": {
+        "langgraph_openai_serve": {
+            "level": "INFO",
+            "propagate": True,
+        },
+        "lgos_demo_api": {
+            "level": "INFO",
+            "propagate": True,
+        },
         "uvicorn": {
             # Let Uvicorn records reach the root handlers. This preserves the
             # stdout JSON stream and lets OTel's root LoggingHandler export the
             # same records when the OTel deployment overlay is enabled.
             "handlers": [],
+            "level": "INFO",
+            "propagate": True,
+        },
+        "uvicorn.error": {
+            "handlers": [],
+            "filters": ["drop_uvicorn_color_message"],
             "level": "INFO",
             "propagate": True,
         },
