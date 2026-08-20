@@ -96,6 +96,10 @@ The overlay:
   container limit;
 - enables parent-based trace sampling, configurable with
   `OTEL_TRACES_SAMPLE_RATE`;
+- requires the per-machine `OTEL_HOST_NAME` value and adds it to every signal;
+- removes FastAPI `send`/`receive` transport leaf spans before queueing; and
+- removes Langfuse/GenAI payload attributes from the general Grafana trace
+  pipeline while leaving Langfuse's direct exporter unchanged;
 - uses a persistent Collector sending queue under
   `demo/docker/volumes/otel-collector/`, with each queue database capped at
   256 MiB; and
@@ -166,6 +170,12 @@ adds fields such as `otelTraceID` and `otelSpanID` to the records, while the
 OpenTelemetry log record context carries the trace/span relationship.
 `OTEL_PYTHON_LOG_HANDLER_LEVEL=info` keeps the OTLP handler's severity floor
 aligned with the demo's stdout handler.
+
+The Collector removes streamed ASGI transport spans and payload attributes
+before the persistent queue. This keeps the Grafana trace tree useful and
+prevents a temporary gateway outage from placing prompt content on local queue
+storage. Langfuse's direct processor still receives its intentional observation
+payloads.
 
 OpenTelemetry currently marks Python logs as [Development
 status](https://opentelemetry.io/docs/languages/python/). This deployment opts

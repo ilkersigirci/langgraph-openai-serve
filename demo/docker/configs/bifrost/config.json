@@ -70,7 +70,13 @@
         "disable_content_logging": true,
         "plugin_span_filter": {
           "mode": "exclude",
-          "plugins": ["compat", "logging", "otel", "telemetry"]
+          "plugins": [
+            "compat",
+            "logging",
+            "model-catalog-resolver",
+            "otel",
+            "telemetry"
+          ]
         }
       }
     }

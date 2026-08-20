@@ -20,6 +20,26 @@ processors:
     check_interval: 1s
     limit_percentage: 80
     spike_limit_percentage: 20
+  # FastAPI's ASGI instrumentation creates one leaf span for every streamed
+  # response chunk. Keep the request span, but remove transport bookkeeping
+  # before it reaches the persistent queue and remote backend.
+  filter/asgi_transport:
+    error_mode: ignore
+    traces:
+      span:
+        - 'instrumentation_scope.name == "opentelemetry.instrumentation.fastapi" and IsMatch(name, " http (send|receive)$")'
+  # Langfuse and GenAI integrations intentionally keep payloads for Langfuse,
+  # but the general Grafana trace store only needs the graph shape and metadata.
+  attributes/redact_payload:
+    actions:
+      - key: langfuse.observation.input
+        action: delete
+      - key: langfuse.observation.output
+        action: delete
+      - key: gen_ai.input.messages
+        action: delete
+      - key: gen_ai.output.messages
+        action: delete
   resource/defaults:
     attributes:
       - key: service.namespace
@@ -27,6 +47,9 @@ processors:
         action: insert
       - key: deployment.environment.name
         value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+        action: insert
+      - key: host.name
+        value: ${env:OTEL_HOST_NAME}
         action: insert
   batch: {}
 
@@ -67,7 +90,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource/defaults, batch]
+      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, resource/defaults, batch]
       exporters: [otlp_http/upstream]
     metrics:
       receivers: [otlp]
