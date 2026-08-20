@@ -45,6 +45,7 @@ jobs:
           docker compose -f docker/compose/demo.yml config --quiet
           docker compose -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
           OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal \
+          OTEL_HOST_NAME=github-actions \
             docker compose -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
 
       - name: Check API Dockerfile

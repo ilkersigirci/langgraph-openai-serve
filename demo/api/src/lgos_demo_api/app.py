@@ -78,7 +78,6 @@ def create_custom_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Request-ID"],
     )
-
     graph_registry = GraphRegistry(
         registry={
             "citation-events": citation_graph_config,

@@ -55,7 +55,7 @@
   },
   "client": {
     "header_filter_config": {
-      "allowlist": ["baggage", "traceparent", "tracestate"]
+      "allowlist": ["traceparent", "tracestate"]
     }
   },
   "plugins": [
