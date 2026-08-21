@@ -66,17 +66,7 @@ async def openai_http_exception_handler(  # ruff: ignore[unused-async]
 ) -> JSONResponse:
     """Handle HTTP exceptions."""
     if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
-        cause = exc.__cause__ or exc
-        logger.error(
-            "http.request.failed",
-            extra={
-                "http.request.method": request.method,
-                "url.path": request.url.path,
-                "http.response.status_code": exc.status_code,
-                "error.type": exception_type_name(cause),
-            },
-            exc_info=(type(cause), cause, cause.__traceback__),
-        )
+        _log_server_error(request, exc.status_code, exc.__cause__ or exc)
 
     if isinstance(exc, OpenAIHTTPException):
         error = exc.error
@@ -125,10 +115,11 @@ async def openai_request_validation_exception_handler(  # ruff: ignore[unused-as
 
 
 async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async]
-    _request: Request,
-    _exc: Exception,
+    request: Request,
+    exc: Exception,
 ) -> JSONResponse:
     """Handle unhandled exceptions."""
+    _log_server_error(request, status.HTTP_500_INTERNAL_SERVER_ERROR, exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=openai_error_payload(
@@ -137,4 +128,21 @@ async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async]
                 type="server_error",
             )
         ),
+    )
+
+
+def _log_server_error(
+    request: Request,
+    status_code: int,
+    exc: BaseException,
+) -> None:
+    logger.error(
+        "http.request.failed",
+        extra={
+            "http.request.method": request.method,
+            "url.path": request.url.path,
+            "http.response.status_code": status_code,
+            "error.type": exception_type_name(exc),
+        },
+        exc_info=(type(exc), exc, exc.__traceback__),
     )

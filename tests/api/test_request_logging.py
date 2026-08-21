@@ -126,7 +126,7 @@ async def test_request_context_is_added_to_lgos_logs(caplog) -> None:
     assert record.operation_id == "operation-123"
 
 
-async def test_escaping_exception_is_logged_and_reraised(caplog) -> None:
+async def test_escaping_exception_is_reraised_and_context_is_reset(caplog) -> None:
     caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
     error_message = "boom"
 
@@ -142,14 +142,6 @@ async def test_escaping_exception_is_logged_and_reraised(caplog) -> None:
 
     with pytest.raises(_TestRequestError, match="boom"):
         await RequestContextMiddleware(app)(scope, dict, dict)
-
-    records = _records(caplog, "http.request.failed")
-    assert len(records) == 1
-    assert records[0].request_id == "failure-request"
-    assert records[0].__dict__["http.request.method"] == "GET"
-    assert records[0].__dict__["url.path"] == "/failure"
-    assert records[0].__dict__["error.type"] == f"{__name__}._TestRequestError"
-    assert records[0].exc_info is not None
 
     _TEST_LOGGER.info("test.after_failure")
     after_failure = next(

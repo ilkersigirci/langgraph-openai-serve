@@ -50,8 +50,7 @@ processors:
         action: insert
       - key: host.name
         value: ${env:OTEL_HOST_NAME}
-        action: insert
-  batch: {}
+        action: upsert
 
 exporters:
   otlp_http/upstream:
@@ -59,6 +58,7 @@ exporters:
     sending_queue:
       enabled: true
       storage: file_storage
+      batch: {}
     retry_on_failure:
       enabled: true
       initial_interval: 5s
@@ -77,6 +77,8 @@ service:
           value: ${env:OTEL_SERVICE_NAMESPACE}
         - name: deployment.environment.name
           value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+        - name: host.name
+          value: ${env:OTEL_HOST_NAME}
     metrics:
       readers:
         - periodic:
@@ -88,13 +90,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, resource/defaults, batch]
+      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, resource/defaults]
       exporters: [otlp_http/upstream]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, resource/defaults, batch]
+      processors: [memory_limiter, resource/defaults]
       exporters: [otlp_http/upstream]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, resource/defaults, batch]
+      processors: [memory_limiter, resource/defaults]
       exporters: [otlp_http/upstream]

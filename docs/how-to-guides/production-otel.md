@@ -107,7 +107,7 @@ The overlay:
 - removes FastAPI `send`/`receive` transport leaf spans before queueing; and
 - removes Langfuse/GenAI payload attributes from the general Grafana trace
   pipeline while leaving Langfuse's direct exporter unchanged;
-- uses a persistent Collector sending queue under
+- batches at the Collector export queue and persists that queue under
   `demo/docker/volumes/otel-collector/`, with each queue database capped at
   256 MiB; and
 - exports the Collector's own operational metrics directly to the gateway so
@@ -208,6 +208,12 @@ independently. See Langfuse's
 [existing OpenTelemetry setup](https://langfuse.com/faq/all/existing-otel-setup)
 for the shared-versus-isolated provider behavior.
 
+The overlay and Langfuse share the application's global tracer provider.
+Consequently, `OTEL_TRACES_SAMPLE_RATE` is applied before either span processor
+and also samples Langfuse observations. Use an isolated Langfuse provider only
+when independent sampling is required, accepting the separate trace hierarchy
+described in Langfuse's guidance.
+
 Langfuse's LangChain callback records chain and model inputs and outputs. With a
 shared application context, those observations can also carry correlation
 attributes into the Grafana trace. This overlay removes the known payload
@@ -219,8 +225,8 @@ enabling it on sensitive workloads.
 Do not add a Langfuse exporter to the Collector unless the deployment has a
 specific requirement to centralize that export. The native callback already
 owns Langfuse delivery; adding a second path can create duplicate observations
-and complicate sampling and billing. Langfuse also recommends reviewing
-[sensitive-data handling](https://opentelemetry.io/docs/security/handling-sensitive-data/)
+and complicate sampling and billing. Review OpenTelemetry's
+[sensitive-data guidance](https://opentelemetry.io/docs/security/handling-sensitive-data/)
 before exporting application attributes or payloads.
 
 ## What the overlay does not do
