@@ -24,6 +24,9 @@ x-lgos-otel-environment: &lgos-otel-environment
 x-lgos-otel-api-environment: &lgos-otel-api-environment
   <<: *lgos-otel-environment
   OTEL_METRICS_EXPORTER: otlp
+  # The demo has a host FastAPI app and a mounted LGOS FastAPI app. Instrument
+  # the mounted app explicitly so spans retain its endpoint route templates.
+  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: fastapi
   # Export stdlib logging records through the same OTLP pipeline as traces and
   # metrics. The stdout handler remains available for container diagnostics.
   OTEL_LOGS_EXPORTER: otlp
@@ -81,7 +84,6 @@ services:
           create_host_path: false
     environment:
       OTEL_COLLECTOR_GATEWAY_ENDPOINT: ${OTEL_COLLECTOR_GATEWAY_ENDPOINT:?Set OTEL_COLLECTOR_GATEWAY_ENDPOINT to the OTLP/HTTP gateway base URL}
-      OTEL_COLLECTOR_GATEWAY_INSECURE: ${OTEL_COLLECTOR_GATEWAY_INSECURE:-false}
       OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
       OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
       OTEL_HOST_NAME: ${OTEL_HOST_NAME:?Set OTEL_HOST_NAME to the physical host name}
@@ -135,15 +137,12 @@ services:
       - default
       - lgos-otel-ingest
     environment:
+      <<: *lgos-otel-environment
       ENABLE_OTEL: "true"
       ENABLE_OTEL_TRACES: "true"
       ENABLE_OTEL_METRICS: "false"
       ENABLE_OTEL_LOGS: "false"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
-      OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_PROPAGATORS: tracecontext
       OTEL_SERVICE_NAME: lgos-openwebui
-      OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
       OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
     depends_on:
       lgos-otel-collector:

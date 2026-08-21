@@ -33,6 +33,8 @@ and are documented under [Demo Settings and Commands](demo/reference.md).
 ## Public API
 
 Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
+After binding, `server.openai_app` exposes the mounted FastAPI application for
+host integrations such as manual middleware or telemetry instrumentation.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
 The registry must contain at least one graph. Pydantic rejects empty registries
 and model IDs that cannot be addressed as one URL path segment. Registry keys

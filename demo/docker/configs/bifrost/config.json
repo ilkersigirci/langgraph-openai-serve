@@ -53,11 +53,6 @@
   "config_store": {
     "enabled": false
   },
-  "client": {
-    "header_filter_config": {
-      "allowlist": ["traceparent", "tracestate"]
-    }
-  },
   "plugins": [
     {
       "enabled": true,

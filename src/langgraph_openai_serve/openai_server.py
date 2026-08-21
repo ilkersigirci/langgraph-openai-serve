@@ -61,6 +61,7 @@ class LanggraphOpenaiServe:
     Attributes:
         app: The host FastAPI application to mount the OpenAI API on.
         graph_registry: The populated GraphRegistry containing the graphs to serve.
+        openai_app: The mounted OpenAI-compatible FastAPI application.
 
     """
 
@@ -95,6 +96,7 @@ class LanggraphOpenaiServe:
                 version=get_version(),
             )
         self.app: FastAPI = app
+        self._openai_app: FastAPI | None = None
         self.checkpoint_scope = checkpoint_scope or (lambda _request: "default")
 
         self.graph_registry = graphs
@@ -108,6 +110,14 @@ class LanggraphOpenaiServe:
             "server.initialized",
             extra={"graph_count": len(self.graph_registry.registry)},
         )
+
+    @property
+    def openai_app(self) -> FastAPI:
+        """The mounted OpenAI-compatible FastAPI application."""
+        if self._openai_app is None:
+            msg = "OpenAI API is not bound. Call bind_openai_api() first."
+            raise RuntimeError(msg)
+        return self._openai_app
 
     def bind_openai_api(self, prefix: str | None = None) -> "LanggraphOpenaiServe":
         """
@@ -146,6 +156,7 @@ class LanggraphOpenaiServe:
                 middleware=[Middleware(RequestContextMiddleware)],
             )
         )
+        self._openai_app = openai_app
 
         logger.info("server.api_bound", extra={"prefix": prefix})
 

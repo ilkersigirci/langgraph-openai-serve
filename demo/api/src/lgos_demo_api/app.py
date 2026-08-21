@@ -27,6 +27,7 @@ from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.status_events import status_event_graph_config
 from lgos_demo_api.logging import LOGGING_CONFIG
+from lgos_demo_api.otel import instrument_fastapi_app
 from lgos_demo_api.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ def create_custom_app() -> FastAPI:
     )
 
     graph_serve.bind_openai_api()
+    instrument_fastapi_app(graph_serve.openai_app)
 
     return app
 

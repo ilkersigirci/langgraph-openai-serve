@@ -55,17 +55,15 @@ These settings apply when using `make compose-otel` or
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `OTEL_COLLECTOR_GATEWAY_ENDPOINT` | required | OTLP/HTTP base URL for the host or platform gateway |
-| `OTEL_COLLECTOR_GATEWAY_INSECURE` | `false` | Set the Collector exporter `tls.insecure` flag |
 | `OTEL_SERVICE_NAMESPACE` | `lgos` | Namespace default for application and Collector signals |
 | `OTEL_DEPLOYMENT_ENVIRONMENT` | `production` | Environment default for application and Collector signals |
 | `OTEL_HOST_NAME` | required | Stable host identity added by the local Collector |
 | `OTEL_TRACES_SAMPLE_RATE` | `1.0` | Parent-based sampling ratio for Python SDK services |
 
 The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
-`OTEL_HOST_NAME`; set them per machine in `.env`. Set
-`OTEL_COLLECTOR_GATEWAY_INSECURE=true` only when the gateway intentionally
-accepts a non-TLS OTLP/HTTP connection; leave it `false` for the normal HTTPS
-gateway endpoint.
+`OTEL_HOST_NAME`; set them per machine in `.env`. The endpoint URL scheme
+controls transport security: use `https://` for TLS and `http://` only when the
+gateway intentionally accepts cleartext OTLP/HTTP.
 
 ## Demo API Settings
 

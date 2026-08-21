@@ -40,7 +40,6 @@ gateway. Use the Traefik OTLP router rather than the Grafana UI URL:
 
 ```dotenv
 OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://grafana-rpc.example.com
-OTEL_COLLECTOR_GATEWAY_INSECURE=false
 ```
 
 The Collector appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` to this base
@@ -49,7 +48,9 @@ is available at `https://grafana.example.com`. This example relies on the
 gateway's trusted LAN/VPN boundary and does not configure authentication
 headers. If that boundary changes, add and validate matching authentication
 in both the exporter and gateway as part of that deployment; an unvalidated
-header does not provide security.
+header does not provide security. The endpoint scheme controls TLS: use
+`https://` for a TLS gateway and `http://` only for an intentionally cleartext
+connection.
 
 Validate and start the published-image stack:
 
@@ -78,13 +79,17 @@ The overlay:
 - runs the published API and Chainlit applications;
 - wraps both API workers and Chainlit with the official
   `opentelemetry-instrument` launcher;
+- disables automatic FastAPI instrumentation for the API workers and
+  instruments only the mounted OpenAI app so endpoint spans retain their route
+  templates without duplicate server spans;
 - excludes Chainlit's long-lived Socket.IO transport from FastAPI server spans,
   while HTTPX instrumentation traces outbound OpenAI-compatible calls;
 - disables Chainlit's transitively installed OpenAI instrumentors so the UI
   does not duplicate prompt and response content in the system trace;
-- enables Open WebUI's native tracing and connects the demo Bifrost
-  [OTel plugin](https://docs.getbifrost.ai/features/observability/otel) to the
-  local Collector;
+- enables Open WebUI's native tracing with the shared sampling, resource, HTTP
+  semantic-convention, and W3C propagation settings, and connects the demo
+  Bifrost [OTel plugin](https://docs.getbifrost.ai/features/observability/otel)
+  to the local Collector;
 - disables Bifrost prompt and response content logging;
 - exports API traces, metrics, and standard-library logs to the local Collector
   over OTLP/gRPC;
@@ -112,7 +117,9 @@ The overlay:
 The current Bifrost transport preserves an inbound W3C trace by forwarding its
 original `traceparent` to LGOS. Consequently, the Bifrost request span and LGOS
 server span can appear as siblings under the proxy span. They remain correlated
-in one trace, but this is not a direct Bifrost-to-LGOS parent relationship.
+in one trace, but this is not a direct Bifrost-to-LGOS parent relationship. The
+Bifrost OTel plugin owns this propagation; no client header allowlist is needed
+for W3C trace headers.
 
 Chainlit serves REST endpoints with FastAPI but delivers chat messages over one
 mounted Socket.IO connection. Tracing that connection as a server span would

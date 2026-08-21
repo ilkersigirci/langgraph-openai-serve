@@ -56,8 +56,6 @@ processors:
 exporters:
   otlp_http/upstream:
     endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
-    tls:
-      insecure: ${env:OTEL_COLLECTOR_GATEWAY_INSECURE}
     sending_queue:
       enabled: true
       storage: file_storage

@@ -83,6 +83,20 @@ def test_bind_openai_api_rejects_invalid_explicit_prefix(
         server.bind_openai_api(prefix="openai/v1")
 
 
+def test_openai_app_is_available_after_binding(
+    graph_registry: GraphRegistry,
+) -> None:
+    server = LanggraphOpenaiServe(graphs=graph_registry)
+
+    with pytest.raises(RuntimeError, match="OpenAI API is not bound"):
+        _ = server.openai_app
+
+    server.bind_openai_api()
+
+    assert isinstance(server.openai_app, FastAPI)
+    assert server.openai_app is not server.app
+
+
 @pytest.mark.parametrize(
     ("enabled", "expected_status"),
     [
