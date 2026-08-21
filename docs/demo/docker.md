@@ -42,6 +42,9 @@ Set `PUID` and `PGID` in `.env` to the numeric host identity that owns the bind
 directories. The checkout includes each empty service directory with a tracked
 `.gitkeep`; service-created contents remain ignored.
 
+Before using either OTEL mode, configure the [OpenTelemetry
+settings](reference.md#opentelemetry-settings).
+
 === "Published images"
 
     `docker/compose/demo.yml` contains no local builds:
@@ -51,7 +54,8 @@ directories. The checkout includes each empty service directory with a tracked
     ```
 
     `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
-    release tag for both project-owned demo images.
+    release tag for both project-owned demo images. To add the published OTEL
+    overlay, use `make compose-otel`.
 
 === "Build demo projects"
 
@@ -64,16 +68,13 @@ directories. The checkout includes each empty service directory with a tracked
     make compose-dev
     ```
 
-    To watch for changes:
+    To add the OTEL overlay while building the current checkout, use
+    `make compose-otel-dev`.
 
-    ```bash
-    docker compose -f docker/compose/demo.yml -f docker/compose/development.yml watch
-    ```
-
-    Changes to either the demo API source or the parent LGOS package restart
-    the API against their narrow, read-only bind mounts. Both packages are
-    installed editable in the development image. Dependency metadata and
-    lockfile changes rebuild the image.
+    The development overlay bind-mounts the demo API source and parent LGOS
+    package read-only. Restart or recreate the affected service after source
+    edits. Both packages are installed editable in the development image;
+    dependency metadata and lockfile changes require an image rebuild.
 
 === "Test this LGOS checkout without containers"
 

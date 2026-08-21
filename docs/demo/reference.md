@@ -31,6 +31,8 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
 | `make compose` | Run the stack with published project-owned images |
 | `make compose-dev` | Build local images; run the API and LGOS packages editable |
+| `make compose-otel` | Run published images with the OTEL overlay |
+| `make compose-otel-dev` | Build the checkout and run it with the OTEL overlay |
 | `make sync` | Synchronize all three projects from their lockfiles |
 | `make test` | Test all three projects from their lockfiles |
 | `make test-postgres` | Run the end-to-end interrupt test against PostgreSQL on port 3001 |
@@ -44,6 +46,26 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `DEMO_IMAGE_TAG` | `latest` | Tag selected for both project-owned demo images |
 | `PUID` | `1000` | Host user ID used by Compose services |
 | `PGID` | `1000` | Host group ID used by Compose services |
+
+## OpenTelemetry Settings
+
+These settings apply when using `make compose-otel` or
+`make compose-otel-dev`:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `OTEL_COLLECTOR_GATEWAY_ENDPOINT` | required | OTLP/HTTP base URL for the host or platform gateway |
+| `OTEL_COLLECTOR_GATEWAY_INSECURE` | `false` | Set the Collector exporter `tls.insecure` flag |
+| `OTEL_SERVICE_NAMESPACE` | `lgos` | Namespace default for application and Collector signals |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | `production` | Environment default for application and Collector signals |
+| `OTEL_HOST_NAME` | required | Stable host identity added by the local Collector |
+| `OTEL_TRACES_SAMPLE_RATE` | `1.0` | Parent-based sampling ratio for Python SDK services |
+
+The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
+`OTEL_HOST_NAME`; set them per machine in `.env`. Set
+`OTEL_COLLECTOR_GATEWAY_INSECURE=true` only when the gateway intentionally
+accepts a non-TLS OTLP/HTTP connection; leave it `false` for the normal HTTPS
+gateway endpoint.
 
 ## Demo API Settings
 

@@ -108,6 +108,16 @@ from their own lockfiles and run the API against the editable parent package:
 make compose-dev
 ```
 
+Run the published stack with the optional local OpenTelemetry Collector:
+
+```bash
+make compose-otel
+```
+
+For local source changes with the same overlay, use `make compose-otel-dev`.
+See the repository's production OpenTelemetry guide for the gateway contract
+and Grafana verification steps.
+
 Set `PUID` and `PGID` in `.env` to the host identity that owns
 `docker/volumes/`; the example values are `1000:1000`.
 

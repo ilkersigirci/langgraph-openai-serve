@@ -1,7 +1,7 @@
 # Production OpenTelemetry
 
 Use the optional `demo/docker/compose/otel.yml` overlay when the deployment owns
-an OpenTelemetry Collector. It keeps the application integration small:
+a local OpenTelemetry Collector. It keeps the application integration small:
 
 ```mermaid
 flowchart LR
@@ -15,16 +15,13 @@ flowchart LR
     bifrost -->|OTLP traces| collector
     collector -->|OTLP/HTTP| gateway[Host or platform Collector gateway]
     api -->|stdout JSON diagnostics| runtime[Container runtime]
-    api -->|Langfuse native OTLP exporter| langfuse[Langfuse]
+    api -->|LangGraph callback / native exporter| langfuse[Langfuse]
 ```
 
 The repository does not add a backend-specific exporter to the Collector. The
-Collector forwards standard OTLP signals to the gateway owned by the host
-deployment over OTLP/HTTP. Langfuse's existing LangChain callback remains
-responsible for Langfuse observations and uses the shared OpenTelemetry
-provider when one is already configured. The shared provider sends its spans
-through the Collector, while Langfuse's processor separately selects and
-exports Langfuse observations to Langfuse.
+Collector forwards the application's standard OTLP signals to the gateway
+owned by the host deployment over OTLP/HTTP. Langfuse remains a separate native
+export path for LangGraph observations.
 
 This follows the OpenTelemetry [Python instrumentation
 model](https://opentelemetry.io/docs/languages/python/instrumentation/): the
@@ -48,19 +45,21 @@ OTEL_COLLECTOR_GATEWAY_INSECURE=false
 
 The Collector appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` to this base
 URL. The remote Traefik OTLP/HTTP router handles those paths. The Grafana UI
-is available at `https://grafana.example.com`. This example does not send an
-authorization header because the inspected gateway is restricted to trusted
-LAN/VPN source ranges. If that trust boundary changes, configure matching
-authentication at both the exporter and gateway; merely sending a header
-without gateway-side validation provides no security.
+is available at `https://grafana.example.com`. This example relies on the
+gateway's trusted LAN/VPN boundary and does not configure authentication
+headers. If that boundary changes, add and validate matching authentication
+in both the exporter and gateway as part of that deployment; an unvalidated
+header does not provide security.
 
-Validate, build, and start the checkout-local stack:
+Validate and start the published-image stack:
 
 ```bash
 cd demo
 make compose-config
 make compose-otel
 ```
+
+For local source changes, use `make compose-otel-dev` instead.
 
 Generate a request after the stack is healthy:
 
@@ -76,14 +75,16 @@ to inspect LangGraph and Langfuse observations.
 The overlay:
 
 - starts one `lgos-otel-collector` on separate ingest and egress networks;
-- builds the API and Chainlit applications from the current checkout;
+- runs the published API and Chainlit applications;
 - wraps both API workers and Chainlit with the official
   `opentelemetry-instrument` launcher;
 - excludes Chainlit's long-lived Socket.IO transport from FastAPI server spans,
   while HTTPX instrumentation traces outbound OpenAI-compatible calls;
 - disables Chainlit's transitively installed OpenAI instrumentors so the UI
   does not duplicate prompt and response content in the system trace;
-- enables Open WebUI's native tracing and Bifrost's native OTel plugin;
+- enables Open WebUI's native tracing and connects the demo Bifrost
+  [OTel plugin](https://docs.getbifrost.ai/features/observability/otel) to the
+  local Collector;
 - disables Bifrost prompt and response content logging;
 - exports API traces, metrics, and standard-library logs to the local Collector
   over OTLP/gRPC;
@@ -96,7 +97,8 @@ The overlay:
   container limit;
 - enables parent-based trace sampling, configurable with
   `OTEL_TRACES_SAMPLE_RATE`;
-- requires the per-machine `OTEL_HOST_NAME` value and adds it to every signal;
+- requires the per-machine `OTEL_HOST_NAME` value and adds it to incoming
+  signals at the local Collector;
 - removes FastAPI `send`/`receive` transport leaf spans before queueing; and
 - removes Langfuse/GenAI payload attributes from the general Grafana trace
   pipeline while leaving Langfuse's direct exporter unchanged;
@@ -191,27 +193,26 @@ Request Correlation](production-logging.md) for the ownership boundaries.
 ## Langfuse
 
 When `LGOS_ENABLE_LANGFUSE=true`, the API's existing Langfuse callback creates
-Langfuse observations. Langfuse documents using a [shared global provider with
-its Langfuse span processor and an OTLP exporter](https://langfuse.com/faq/all/existing-otel-setup)
-when an application already uses OpenTelemetry. That is the behavior provided
-by this overlay: the shared provider sends application and Langfuse spans
-through the Collector, while the Langfuse span processor also exports only its
-Langfuse observations through the Langfuse endpoint. The same observation is
-not sent to Langfuse twice.
+Langfuse observations through Langfuse's native integration. The local
+Collector remains the OTLP path for Grafana telemetry; it is not configured as
+a Langfuse gateway. The application can share OpenTelemetry context for
+correlation, while the Langfuse processor sends its observations to Langfuse
+independently. See Langfuse's
+[existing OpenTelemetry setup](https://langfuse.com/faq/all/existing-otel-setup)
+for the shared-versus-isolated provider behavior.
 
 Langfuse's LangChain callback records chain and model inputs and outputs. With a
-shared provider, the general OTLP exporter also sends those span attributes to
-the Collector and its backend. Configure Langfuse
-[masking](https://langfuse.com/docs/observability/features/masking) and any
-Collector-side filtering for both destinations before enabling it on sensitive
-workloads. Use an isolated Langfuse tracer provider only when keeping these
-spans out of the general APM is more important than one continuous distributed
-trace.
+shared application context, those observations can also carry correlation
+attributes into the Grafana trace. This overlay removes the known payload
+attributes before Grafana export while leaving Langfuse's native observation
+payloads intact. Configure Langfuse
+[masking](https://langfuse.com/docs/observability/features/masking) before
+enabling it on sensitive workloads.
 
-Do not add a second Collector exporter to Langfuse unless the deployment has a
-specific requirement to centralize that export. If you do, remove the direct
-Langfuse exporter deliberately and verify sampling and billing; forwarding both
-paths creates duplicate observations. Langfuse also recommends reviewing
+Do not add a Langfuse exporter to the Collector unless the deployment has a
+specific requirement to centralize that export. The native callback already
+owns Langfuse delivery; adding a second path can create duplicate observations
+and complicate sampling and billing. Langfuse also recommends reviewing
 [sensitive-data handling](https://opentelemetry.io/docs/security/handling-sensitive-data/)
 before exporting application attributes or payloads.
 

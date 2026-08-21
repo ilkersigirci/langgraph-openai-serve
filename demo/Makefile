@@ -9,7 +9,7 @@ UP_ARGS ?=
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
-	sync-openwebui compose compose-down compose-dev compose-otel
+	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev
 .DEFAULT_GOAL := help
 
 help: ## Show available commands
@@ -49,10 +49,14 @@ type-check: type-check-ui ## Run type checking for all standalone projects
 type-check-local: type-check-ui ## Run type checking for all standalone projects with local API source
 	$(LOCAL_API_RUN) ty check src --extra-search-path ../../src
 
-compose-config: ## Validate published and development Compose models
+compose-config: ## Validate published, development, and OTEL Compose models
 	$(COMPOSE) config --quiet
 	$(COMPOSE) -f docker/compose/development.yml config --quiet
 	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
+	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
+		$(COMPOSE) -f docker/compose/otel.yml config --quiet
+	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
+	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
 		$(COMPOSE) -f docker/compose/development.yml \
 		-f docker/compose/otel.yml config --quiet
 
@@ -99,6 +103,9 @@ compose-down: ## Stop and remove any demo stack variant
 compose-dev: ## Build the API and Chainlit images and run the stack
 	$(COMPOSE) -f docker/compose/development.yml up --build $(UP_ARGS)
 
-compose-otel: ## Build this checkout and run it with the OpenTelemetry Collector overlay
+compose-otel: ## Run published images with the OpenTelemetry Collector overlay
+	$(COMPOSE) -f docker/compose/otel.yml up $(UP_ARGS)
+
+compose-otel-dev: ## Build this checkout and run it with the OpenTelemetry overlay
 	$(COMPOSE) -f docker/compose/development.yml \
 		-f docker/compose/otel.yml up --build $(UP_ARGS)
