@@ -1,0 +1,157 @@
+# Optional OpenTelemetry deployment overlay.
+#
+# The upstream gateway is intentionally configured by environment rather than
+# bundled into this demo. Applications send OTLP to this local Collector, which
+# handles buffering and forwards signals to the remote gateway/backend over
+# OTLP/HTTP.
+
+networks:
+  lgos-otel-ingest:
+    internal: true
+  lgos-otel-egress:
+
+x-lgos-otel-environment: &lgos-otel-environment
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://lgos-otel-collector:4317
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_PROPAGATORS: tracecontext
+  OTEL_SEMCONV_STABILITY_OPT_IN: http
+  OTEL_TRACES_SAMPLER: parentbased_traceidratio
+  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+
+x-lgos-otel-api-environment: &lgos-otel-api-environment
+  <<: *lgos-otel-environment
+  OTEL_METRICS_EXPORTER: otlp
+  # The demo has a host FastAPI app and a mounted LGOS FastAPI app. Instrument
+  # the mounted app explicitly so spans retain its endpoint route templates.
+  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: fastapi
+  # Export stdlib logging records through the same OTLP pipeline as traces and
+  # metrics. The stdout handler remains available for container diagnostics.
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION: "true"
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+  OTEL_PYTHON_LOG_HANDLER_LEVEL: info
+  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /v1/health$
+  OTEL_SERVICE_NAME: lgos-demo-api
+
+x-lgos-otel-python-environment: &lgos-otel-python-environment
+  <<: *lgos-otel-environment
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+
+services:
+  lgos-otel-collector:
+    container_name: lgos-otel-collector
+    image: otel/opentelemetry-collector-contrib:0.158.0@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
+    restart: ${RESTART_POLICY:-unless-stopped}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    networks:
+      - lgos-otel-ingest
+      - lgos-otel-egress
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    expose:
+      - "4317"
+      - "4318"
+    volumes:
+      - type: bind
+        source: ../configs/otel-collector/config.yaml
+        target: /etc/otelcol/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../volumes/otel-collector
+        target: /var/lib/otelcol/file_storage
+        bind:
+          create_host_path: false
+    environment:
+      OTEL_COLLECTOR_GATEWAY_ENDPOINT: ${OTEL_COLLECTOR_GATEWAY_ENDPOINT:?Set OTEL_COLLECTOR_GATEWAY_ENDPOINT to the OTLP/HTTP gateway base URL}
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
+      OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+      OTEL_HOST_NAME: ${OTEL_HOST_NAME:?Set OTEL_HOST_NAME to the physical host name}
+      GOMEMLIMIT: 800MiB
+
+  lgos-demo-api-a:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-api-environment
+    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-demo-api-b:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-api-environment
+    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-chainlit:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-python-environment
+      OTEL_SERVICE_NAME: lgos-chainlit
+      # Chainlit messages use one long-lived Socket.IO connection. Excluding
+      # that transport lets automatic client instrumentation form a trace per
+      # outbound request instead of grouping the whole chat session into one.
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$,/ws/socket[.]io
+      # Chainlit transitively installs GenAI instrumentors that record prompt
+      # content. HTTPX is sufficient for propagation and transport tracing.
+      OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: openai,openai_agents
+    command: ["opentelemetry-instrument", "lgos-chainlit"]
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-openwebui:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-environment
+      ENABLE_OTEL: "true"
+      ENABLE_OTEL_TRACES: "true"
+      ENABLE_OTEL_METRICS: "false"
+      ENABLE_OTEL_LOGS: "false"
+      OTEL_SERVICE_NAME: lgos-openwebui
+      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-bifrost:
+    networks:
+      - default
+      - lgos-otel-ingest
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started

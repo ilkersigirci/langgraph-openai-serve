@@ -377,7 +377,7 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
     ]
 
 
-async def test_create_completion_sends_no_long_lived_run_metadata(
+async def test_create_completion_sends_session_without_interrupt_run_metadata(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -388,6 +388,11 @@ async def test_create_completion_sends_no_long_lived_run_metadata(
         SimpleNamespace(get=lambda _: "interruptible"),
     )
     monkeypatch.setattr(hitl, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(
+        hitl,
+        "session_metadata",
+        lambda: {"session_id": "thread-123"},
+    )
     monkeypatch.setattr(hitl.openai_client.chat.completions, "create", create)
 
     await hitl.create_completion([{"role": "user", "content": "Hello"}])
@@ -396,6 +401,7 @@ async def test_create_completion_sends_no_long_lived_run_metadata(
         model="interruptible",
         messages=[{"role": "user", "content": "Hello"}],
         user="demo-user",
+        metadata={"session_id": "thread-123"},
     )
     assert hitl.openai_client.max_retries == 0
 

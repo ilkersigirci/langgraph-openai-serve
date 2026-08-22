@@ -3,7 +3,8 @@
 ## OpenAI-Compatible API
 
 Default prefix: `/v1`. Change it with `LGOS_OPENAI_API_PREFIX` or
-`bind_openai_api(prefix=...)`.
+`bind_openai_api(prefix=...)`. Generic access logs are emitted by the
+deployment's ASGI server or ingress proxy.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -32,6 +33,8 @@ and are documented under [Demo Settings and Commands](demo/reference.md).
 ## Public API
 
 Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
+After binding, `server.openai_app` exposes the mounted FastAPI application for
+host integrations such as manual middleware or telemetry instrumentation.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
 The registry must contain at least one graph. Pydantic rejects empty registries
 and model IDs that cannot be addressed as one URL path segment. Registry keys
@@ -106,18 +109,29 @@ export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
-`LANGFUSE_BASE_URL` can select a self-hosted instance or an explicit cloud
-endpoint. Langfuse's `CallbackHandler` owns its standard SDK configuration and
-error behavior. LGOS constructs it on the first graph run that needs runnable
-configuration, then reuses that process-wide handler. When enabled, the
-deployment-level toggle is authoritative: LGOS adds Langfuse alongside empty,
-list, or manager callbacks without altering the registered `GraphConfig` or
-caller-owned collection. To provide a custom Langfuse handler, leave the toggle
-off and pass that handler through `runtime_callbacks`.
+`LANGFUSE_BASE_URL` is optional; Langfuse Cloud is the default. Set it only for
+a different cloud region or a self-hosted instance. Langfuse's
+`CallbackHandler` owns its standard SDK configuration and error behavior. LGOS
+constructs it on the first graph run that needs runnable configuration, then
+reuses that process-wide handler. When enabled, the deployment-level toggle is
+authoritative: LGOS adds Langfuse alongside empty, list, or manager callbacks
+without altering the registered `GraphConfig` or caller-owned collection. To
+provide a custom Langfuse handler, leave the toggle off and pass that handler
+through `runtime_callbacks`.
 
 For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
 application-created vendor handler through `runtime_callbacks`.
+
+When a callback is present, LGOS gives the graph run the stable name
+`lgos.chat_completion` and adds `RunnableConfig.metadata` fields for the
+request ID, registered graph model, (for interrupt runs) operation ID, and (when
+the request supplies `metadata.session_id`) the Langfuse-recognized
+`langfuse_session_id`. LangGraph also propagates primitive configurable values
+during execution, so callbacks on interrupt runs receive the derived checkpoint
+`thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
+custom Langfuse trace ID. See [Production Logging and Request
+Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
 The same `features` set drives runtime behavior and the versioned
 `langgraph_openai_serve.features` extension returned by

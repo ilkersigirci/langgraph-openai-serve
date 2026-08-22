@@ -47,6 +47,7 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
         async for chunk in pipe.pipe(
             body={"messages": [{"role": "user", "content": "Hi"}]},
             __user__={"valves": pipe.UserValves(use_history=True)},
+            __metadata__={"chat_id": "chat-123"},
         )
     ]
 
@@ -59,7 +60,10 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
         model="simple-graph",
         extra_headers={"x-model-provider": "lgos-a"},
         messages=[{"role": "user", "content": "Hi"}],
-        metadata={"langgraph_runtime_settings": '{"use_history":true}'},
+        metadata={
+            "langgraph_runtime_settings": '{"use_history":true}',
+            "session_id": "chat-123",
+        },
         stream=True,
     )
     assert pipe._runtime_settings_metadata({"valves": pipe.UserValves()}) == {}
@@ -134,6 +138,7 @@ async def test_uservalves_simple_requires_advertised_runtime_settings(
         async for chunk in pipe.pipe(
             body={"messages": []},
             __user__={"valves": Pipe.UserValves(use_history=True)},
+            __metadata__={"chat_id": "chat-123"},
         )
     ]
 
@@ -142,7 +147,7 @@ async def test_uservalves_simple_requires_advertised_runtime_settings(
         model="simple-graph",
         extra_headers={"x-model-provider": "lgos-a"},
         messages=[],
-        metadata={},
+        metadata={"session_id": "chat-123"},
         stream=True,
     )
 

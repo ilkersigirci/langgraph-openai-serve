@@ -14,16 +14,16 @@ at the stream boundary.
 """
 
 import asyncio
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 
 from anyio import CancelScope, create_memory_object_stream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.utils import GraphRun
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class _StreamOwner:
@@ -111,9 +111,7 @@ class _StreamOwner:
         except Exception:
             if primary_error is None:
                 raise
-            logger.exception(
-                "Could not release a streaming graph-run lease during error cleanup."
-            )
+            logger.exception("chat_completion.stream_cleanup_failed")
 
     def _reset(self) -> None:
         if self._send_stream is not None:

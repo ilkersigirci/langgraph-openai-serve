@@ -1,5 +1,3 @@
-import importlib
-import logging.config
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import Mock
@@ -16,6 +14,7 @@ from langgraph_openai_serve.api.chat.schemas import (
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
+from lgos_demo_api import app as app_module
 from lgos_demo_api.checkpointer import PostgresRuntime
 from lgos_demo_api.graphs.simple import SimpleContext
 
@@ -34,11 +33,7 @@ CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 @pytest.fixture
-def demo_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> FastAPI:
-    monkeypatch.setattr(logging.config, "dictConfig", lambda _: None)
-    app_module = importlib.import_module("lgos_demo_api.app")
+def demo_app() -> FastAPI:
     return app_module.create_custom_app()
 
 
@@ -88,6 +83,18 @@ async def test_app_lists_exactly_the_documented_models(
             "description": descriptions[model_id],
             "features": ["client_events"],
         }
+
+
+async def test_cors_exposes_request_id(demo_app: FastAPI) -> None:
+    transport = ASGITransport(app=demo_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/v1/health",
+            headers={"Origin": "https://client.example"},
+        )
+
+    assert response.headers["access-control-expose-headers"] == "X-Request-ID"
+    assert response.headers["x-request-id"]
 
 
 async def test_simple_model_retrieval_exposes_runtime_settings(
@@ -159,7 +166,6 @@ async def test_lifespan_installs_shared_interrupt_runtime(
     monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    app_module = importlib.import_module("lgos_demo_api.app")
     coordinator = InMemoryRunCoordinator()
 
     runtime = PostgresRuntime(
@@ -185,3 +191,17 @@ async def test_lifespan_installs_shared_interrupt_runtime(
             pass
 
     runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
+
+
+def test_main_leaves_access_logging_to_the_deployment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import uvicorn
+
+    run = Mock()
+    monkeypatch.setattr(uvicorn, "run", run)
+
+    app_module.main()
+
+    run.assert_called_once()
+    assert run.call_args.kwargs["access_log"] is False

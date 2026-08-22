@@ -244,7 +244,10 @@ async def test_chat_sends_model_and_ephemeral_request_metadata() -> None:
         client=client,
         messages=messages,
         model_id="lgos-a/namespace/graph.with.dots",
-        runtime_metadata={"langgraph_runtime_settings": '{"mode":"detailed"}'},
+        request_metadata={
+            "langgraph_runtime_settings": '{"mode":"detailed"}',
+            "session_id": "chat-123",
+        },
         include_client_events=True,
     ) as response_stream:
         deltas = [
@@ -263,12 +266,13 @@ async def test_chat_sends_model_and_ephemeral_request_metadata() -> None:
         metadata={
             "langgraph_stream_events": "v1",
             "langgraph_runtime_settings": '{"mode":"detailed"}',
+            "session_id": "chat-123",
         },
     )
     stream_context.__aexit__.assert_awaited_once_with(None, None, None)
 
 
-def test_pipe_forwards_changed_chat_variables_as_runtime_settings() -> None:
+def test_pipe_maps_chat_and_variables_to_request_metadata() -> None:
     model = SimpleNamespace(
         model_extra={
             "langgraph_openai_serve": {
@@ -285,19 +289,21 @@ def test_pipe_forwards_changed_chat_variables_as_runtime_settings() -> None:
             }
         }
     )
-    metadata = generic._runtime_settings_metadata(
+    metadata = generic._request_metadata(
         model=model,
         metadata={
+            "chat_id": "chat-123",
             "chat_variables": {
                 "use_history": False,
                 "audience": "expert",
                 "stale": "ignored",
-            }
+            },
         },
     )
 
     assert metadata == {
         "langgraph_runtime_settings": '{"audience":"expert"}',
+        "session_id": "chat-123",
     }
 
 

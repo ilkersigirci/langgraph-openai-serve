@@ -18,9 +18,10 @@ dependency source.
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
-Shared Compose-only assets live under `docker/`; the Bifrost gateway
-configuration is at `docker/bifrost/config.json`. Compose runs the demo API
-image as two independently addressable services, `lgos-a` and `lgos-b`. They
+Compose service fragments live under `docker/apps/`, with entrypoints and
+overlays under `docker/compose/`. The Bifrost gateway configuration is at
+`docker/configs/bifrost/config.json`. Compose runs the demo API image as two
+independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs today so the stack can demonstrate routing multiple LGOS
 APIs through one Bifrost pass-through endpoint; either service can define a
 different graph set later. The dynamic clients discover provider-qualified
@@ -75,7 +76,7 @@ Chainlit migrations through their `pre_start` hooks.
 Start PostgreSQL for the local API and UI processes:
 
 ```bash
-docker compose -f compose.yaml up -d lgos-db
+docker compose -f docker/compose/demo.yml up -d lgos-db
 ```
 
 The local targets use the independently locked projects. The API additionally
@@ -106,6 +107,16 @@ from their own lockfiles and run the API against the editable parent package:
 ```bash
 make compose-dev
 ```
+
+Run the published stack with the optional local OpenTelemetry Collector:
+
+```bash
+make compose-otel
+```
+
+For local source changes with the same overlay, use `make compose-otel-dev`.
+See the repository's production OpenTelemetry guide for the gateway contract
+and Grafana verification steps.
 
 Set `PUID` and `PGID` in `.env` to the host identity that owns
 `docker/volumes/`; the example values are `1000:1000`.

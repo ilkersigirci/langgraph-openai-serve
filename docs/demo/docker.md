@@ -11,13 +11,16 @@ The demo uses three independent uv projects rather than a uv workspace:
 | `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command |
 
 Published project-owned images use only their project directories as build
-contexts. The development override additionally supplies the parent LGOS
-checkout as a named context for the API's editable install. The Open WebUI
+contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
+definitions live in `docker/apps/`, while `docker/compose/development.yml` and
+`docker/compose/otel.yml` provide development and OpenTelemetry overlays.
+Shared runtime assets remain under `demo/docker/`. The development overlay
+additionally supplies the parent LGOS checkout as a named context for the API's
+editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
 command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
-Python environment, or shared lockfile. Shared Compose-only configuration lives
-under `demo/docker/`. The API package includes the compact Markdown corpus used
-by `lgos-rag`.
+Python environment, or shared lockfile. The API package includes the compact
+Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
 
@@ -39,16 +42,20 @@ Set `PUID` and `PGID` in `.env` to the numeric host identity that owns the bind
 directories. The checkout includes each empty service directory with a tracked
 `.gitkeep`; service-created contents remain ignored.
 
+Before using either OTEL mode, configure the [OpenTelemetry
+settings](reference.md#opentelemetry-settings).
+
 === "Published images"
 
-    `compose.yaml` contains no local builds:
+    `docker/compose/demo.yml` contains no local builds:
 
     ```bash
     make compose
     ```
 
     `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
-    release tag for both project-owned demo images.
+    release tag for both project-owned demo images. To add the published OTEL
+    overlay, use `make compose-otel`.
 
 === "Build demo projects"
 
@@ -61,16 +68,13 @@ directories. The checkout includes each empty service directory with a tracked
     make compose-dev
     ```
 
-    To watch for changes:
+    To add the OTEL overlay while building the current checkout, use
+    `make compose-otel-dev`.
 
-    ```bash
-    docker compose -f compose.yaml -f compose.dev.yaml watch
-    ```
-
-    Changes to either the demo API source or the parent LGOS package restart
-    the API against their narrow, read-only bind mounts. Both packages are
-    installed editable in the development image. Dependency metadata and
-    lockfile changes rebuild the image.
+    The development overlay bind-mounts the demo API source and parent LGOS
+    package read-only. Restart or recreate the affected service after source
+    edits. Both packages are installed editable in the development image;
+    dependency metadata and lockfile changes require an image rebuild.
 
 === "Test this LGOS checkout without containers"
 
@@ -107,7 +111,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Bifrost"
 
     ```bash
-    docker compose -f compose.yaml up --wait lgos-bifrost
+    docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
     ```
 
     Use `http://localhost:3000/v1` as the provider-qualified model catalog. Use
@@ -136,7 +140,7 @@ directories. The checkout includes each empty service directory with a tracked
 === "Open WebUI"
 
     ```bash
-    docker compose -f compose.yaml up --wait lgos-openwebui
+    docker compose -f docker/compose/demo.yml up --wait lgos-openwebui
     make sync-openwebui
     ```
 

@@ -20,7 +20,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 ```bash title="Prepare the demo"
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up -d lgos-db
+docker compose -f docker/compose/demo.yml up -d lgos-db
 ```
 
 === "Test this checkout"

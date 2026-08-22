@@ -2,34 +2,34 @@ x-lgos-demo-api-development: &lgos-demo-api-development
   image: lgos-demo-api:development
   pull_policy: build
   build:
-    context: ./api
+    context: ../../api
     target: development
     additional_contexts:
-      lgos: ..
+      lgos: ../../..
     args:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
   volumes:
     - type: bind
-      source: ../src/langgraph_openai_serve
+      source: ../../../src/langgraph_openai_serve
       target: /workspace/langgraph-openai-serve/src/langgraph_openai_serve
       read_only: true
     - type: bind
-      source: ./api/src/lgos_demo_api
+      source: ../../api/src/lgos_demo_api
       target: /app/src/lgos_demo_api
       read_only: true
   develop:
     watch:
       - action: restart
-        path: ../src/langgraph_openai_serve
+        path: ../../../src/langgraph_openai_serve
       - action: rebuild
-        path: ../pyproject.toml
+        path: ../../../pyproject.toml
       - action: restart
-        path: ./api/src/lgos_demo_api
+        path: ../../api/src/lgos_demo_api
       - action: rebuild
-        path: ./api/pyproject.toml
+        path: ../../api/pyproject.toml
       - action: rebuild
-        path: ./api/uv.lock
+        path: ../../api/uv.lock
 
 services:
   lgos-demo-api-a:
@@ -42,15 +42,15 @@ services:
     image: lgos-chainlit:development
     pull_policy: build
     build:
-      context: ./ui/chainlit_ui
+      context: ../../ui/chainlit_ui
       args:
         PUID: ${PUID:-1000}
         PGID: ${PGID:-1000}
     develop:
       watch:
         - action: rebuild
-          path: ./ui/chainlit_ui/src
+          path: ../../ui/chainlit_ui/src
         - action: rebuild
-          path: ./ui/chainlit_ui/pyproject.toml
+          path: ../../ui/chainlit_ui/pyproject.toml
         - action: rebuild
-          path: ./ui/chainlit_ui/uv.lock
+          path: ../../ui/chainlit_ui/uv.lock

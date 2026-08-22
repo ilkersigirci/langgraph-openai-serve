@@ -1,7 +1,5 @@
 """Run LangGraph workflows behind the OpenAI-compatible chat API."""
 
-import logging
-import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -16,6 +14,7 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
 )
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt import (
@@ -30,7 +29,7 @@ from langgraph_openai_serve.graph.utils import (
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -77,15 +76,9 @@ async def run_langgraph(
         The graph output and custom events emitted during the invocation.
 
     """
-    logger.info("Running LangGraph model %s with %d messages", model, len(messages))
-    start_time = time.time()
-
     run = await prepare_run(model, messages, graph_registry, request)
 
-    invocation = await invoke_run(run)
-
-    logger.info("LangGraph completion generated in %.2fs", time.time() - start_time)
-    return invocation
+    return await invoke_run(run)
 
 
 async def invoke_run(run: GraphRun) -> LangGraphInvocation:
@@ -175,8 +168,6 @@ async def run_langgraph_stream(
         Assistant text chunks, custom events, or LangGraph interrupts.
 
     """
-    logger.info("Starting streaming LangGraph completion for model '%s'", model)
-
     run = await prepare_run(model, messages, graph_registry, request)
     run_stream = stream_run(run)
     async with aclosing(run_stream):
@@ -308,14 +299,14 @@ async def finalize_run(
         except Exception:
             if checkpoint_disposition != "unknown":
                 raise
-            logger.exception("Could not clean up an incomplete checkpoint thread.")
+            logger.exception("graph_run.checkpoint_cleanup_failed")
         finally:
             try:
                 await run.aclose()
             except Exception:
                 if checkpoint_disposition != "unknown":
                     raise
-                logger.exception("Could not release the graph run lease.")
+                logger.exception("graph_run.lease_release_failed")
 
 
 async def delete_checkpoint_thread(run: GraphRun) -> None:

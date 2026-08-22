@@ -20,7 +20,7 @@ from lgos_chainlit.lgos_protocol import (
     GraphFeature,
     model_description,
 )
-from lgos_chainlit.utils.chat import LIMITED_FUNCTIONALITY_MESSAGE
+from lgos_chainlit.utils.chat import LIMITED_FUNCTIONALITY_MESSAGE, session_metadata
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
@@ -93,6 +93,7 @@ async def on_message(_message: cl.Message) -> None:
 
     try:
         metadata = chat_settings_metadata()
+        metadata.update(session_metadata())
         if model_feature_enabled(GraphFeature.CLIENT_EVENTS):
             metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
         stream = await openai_client.chat.completions.create(

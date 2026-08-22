@@ -5,7 +5,6 @@ This module provides the FastAPI router for the chat completion endpoint,
 implementing an OpenAI-compatible interface.
 """
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -28,6 +27,7 @@ from langgraph_openai_serve.api.chat.utils.interrupts import (
 from langgraph_openai_serve.api.chat.utils.streaming import _StreamOwner
 from langgraph_openai_serve.api.models.deps import get_graph_registry_dependency
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
+from langgraph_openai_serve.core.logging import bind_log_context
 from langgraph_openai_serve.graph.client_settings import ClientSettingsValidationError
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfigurationError,
@@ -42,8 +42,6 @@ from langgraph_openai_serve.graph.interrupt.state import (
 )
 from langgraph_openai_serve.graph.utils import prepare_run
 from langgraph_openai_serve.utils.message import InvalidChatMessageError
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["openai"])
 _CLIENT_ERROR_TYPES = (
@@ -99,13 +97,12 @@ async def create_chat_completion(
         A chat completion response, either as a complete response or as a stream.
 
     """
-    logger.info(
-        "Received chat completion request for model: %s, stream: %s",
-        chat_request.model,
-        chat_request.stream,
+    bind_log_context(
+        model=chat_request.model,
+        stream=chat_request.stream,
     )
 
-    try:  # ruff: ignore[too-many-statements-in-try-clause]
+    try:
         run = await prepare_run(
             chat_request.model,
             chat_request.messages,
@@ -115,7 +112,6 @@ async def create_chat_completion(
         )
 
         if chat_request.stream:
-            logger.info("Streaming chat completion response")
             body = stream_owner.start(
                 chat_service.stream_completion(chat_request, run),
                 run,
@@ -125,7 +121,6 @@ async def create_chat_completion(
                 media_type="text/event-stream",
             )
 
-        logger.info("Generating non-streaming chat completion response")
         response = await chat_service.generate_completion(chat_request, run)
     except RunBusyError as e:
         raise OpenAIHTTPException(
@@ -163,5 +158,4 @@ async def create_chat_completion(
                 type="server_error",
             ),
         ) from e
-    logger.info("Returning non-streaming chat completion response")
     return response

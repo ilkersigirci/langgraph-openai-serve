@@ -1,6 +1,5 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
-import logging
 import sys
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -16,6 +15,11 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
 )
 from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
+from langgraph_openai_serve.core.logging import (
+    bind_log_context,
+    get_log_context,
+    get_logger,
+)
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -26,7 +30,10 @@ from langgraph_openai_serve.graph.interrupt import state as interrupt_state
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
 from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+_RUN_NAME = "lgos.chat_completion"
+_SESSION_ID_METADATA_KEY = "session_id"
+_LANGFUSE_SESSION_ID_METADATA_KEY = "langfuse_session_id"
 
 
 @dataclass
@@ -74,13 +81,17 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             graph=graph,
             inputs=await graph_config.build_input(request, lc_messages),
             context=await graph_config.build_context(request, graph),
-            runnable_config=build_runnable_config(graph_config.runtime_callbacks),
+            runnable_config=build_runnable_config(
+                graph_config.runtime_callbacks,
+                metadata=_runnable_metadata(request),
+            ),
             run_id=None,
         )
 
     resume = parse_resume_request(messages)
     requested_run_id = interrupt_state.get_run_id(request)
     run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
+    bind_log_context(operation_id=run_id)
     checkpoint_thread_id = interrupt_state.checkpoint_key(
         model,
         run_id,
@@ -89,6 +100,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
     runnable_config = build_runnable_config(
         graph_config.runtime_callbacks,
         configurable={"thread_id": checkpoint_thread_id},
+        metadata=_runnable_metadata(request, run_id),
     )
     if runnable_config is None:  # The configurable thread always creates one.
         msg = "Interrupt run has no runnable configuration."
@@ -119,9 +131,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             try:
                 await lease.__aexit__(*error_info)
             except Exception:
-                logger.exception(
-                    "Could not release a graph-run lease after preparation failed."
-                )
+                logger.exception("graph_run.preparation_cleanup_failed")
         raise
 
     return GraphRun(
@@ -140,6 +150,8 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
 def build_runnable_config(
     callbacks: Callbacks,
     configurable: dict[str, Any] | None = None,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> RunnableConfig | None:
     """Build runnable config."""
     if settings.ENABLE_LANGFUSE:
@@ -162,5 +174,28 @@ def build_runnable_config(
         kwargs["callbacks"] = callbacks
     if configurable:
         kwargs["configurable"] = configurable
+    if kwargs:
+        kwargs["run_name"] = _RUN_NAME
+        if metadata:
+            kwargs["metadata"] = metadata
 
     return RunnableConfig(**kwargs) if kwargs else None
+
+
+def _runnable_metadata(
+    request: ChatCompletionRequest,
+    run_id: str | None = None,
+) -> dict[str, str]:
+    """Build correlation metadata for callbacks and tracing."""
+    metadata = {
+        "lgos.model": request.model,
+    }
+    session_id = (request.metadata or {}).get(_SESSION_ID_METADATA_KEY)
+    if session_id:
+        metadata[_LANGFUSE_SESSION_ID_METADATA_KEY] = session_id
+    request_id = get_log_context().get("request_id")
+    if isinstance(request_id, str):
+        metadata["lgos.request_id"] = request_id
+    if run_id is not None:
+        metadata["lgos.operation_id"] = run_id
+    return metadata

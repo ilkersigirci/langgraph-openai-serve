@@ -21,7 +21,7 @@ Start the official Open WebUI image:
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f compose.yaml up --wait lgos-openwebui
+docker compose -f docker/compose/demo.yml up --wait lgos-openwebui
 ```
 
 Then run the independent synchronization project locally:
@@ -115,6 +115,12 @@ metadata, ignores names no longer present, removes values equal to current
 defaults, and sends only changes as
 `metadata.langgraph_runtime_settings`. LGOS performs the authoritative runtime
 validation.
+
+Both bundled Functions also map Open WebUI's stable `chat_id` to
+`metadata.session_id` on every completion. Langfuse can therefore group the
+chat's independent request traces into one session, while Open WebUI continues
+to own and resend the conversation history. Interrupt resumes reuse the same
+conversation value.
 
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model

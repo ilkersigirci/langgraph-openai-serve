@@ -62,6 +62,16 @@ configuration, endpoints, Chainlit settings, and verified event behavior. Those
 assets belong to `demo/`, while the requirements above remain applicable to any
 LGOS deployment.
 
+## Request Correlation
+
+Forward a trusted gateway-generated `X-Request-ID` unchanged. At the first
+trusted edge, discard or replace a public client's value unless the deployment
+explicitly permits caller-controlled correlation data. LGOS validates only the
+header's shape; never use it for identity or authorization. The complete
+request-ID contract and its relationship to OpenTelemetry are documented in
+[Production Logging and Request
+Correlation](production-logging.md#lgos-responsibilities).
+
 ## LiteLLM
 
 LiteLLM's normal Chat Completions stream handler does not retain LGOS

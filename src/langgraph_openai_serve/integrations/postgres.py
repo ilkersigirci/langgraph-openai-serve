@@ -1,6 +1,5 @@
 """PostgreSQL coordination for interrupt-enabled graph runs."""
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from hashlib import sha256
@@ -11,13 +10,14 @@ from anyio import CancelScope
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
 
 _TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock(%s) AS acquired"
 _UNLOCK_ADVISORY_LOCK_SQL = "SELECT pg_advisory_unlock(%s) AS released"
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PostgresRunCoordinator:
@@ -73,10 +73,7 @@ class PostgresRunCoordinator:
                     except Exception:
                         if body_error is None:
                             raise
-                        logger.exception(
-                            "Could not release a PostgreSQL graph-run lease; "
-                            "the unsafe session was discarded."
-                        )
+                        logger.exception("postgres.graph_run_lease_release_failed")
         finally:
             self._capacity.release()
 

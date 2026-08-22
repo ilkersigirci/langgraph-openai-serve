@@ -1,0 +1,62 @@
+x-lgos-demo-api: &lgos-demo-api
+  image: ghcr.io/ilkersigirci/lgos-demo-api:${DEMO_IMAGE_TAG:-latest}
+  pull_policy: always
+  restart: "no"
+  user: "${PUID:-1000}:${PGID:-1000}"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+    - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add: []
+  pids_limit: 256
+  cpus: "1.0"
+  mem_limit: 1G
+  ulimits:
+    nofile:
+      soft: 4096
+      hard: 8192
+  env_file:
+    - path: ../../.env
+      required: false
+  environment:
+    DEMO_API_PORT: 8000
+    DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
+    LANGGRAPH_STRICT_MSGPACK: "true"
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+
+services:
+  lgos-demo-api-a:
+    <<: *lgos-demo-api
+    container_name: lgos-demo-api-a
+    depends_on:
+      lgos-demo-api-setup:
+        condition: service_completed_successfully
+    ports:
+      - "3004:8000"
+
+  lgos-demo-api-b:
+    <<: *lgos-demo-api
+    container_name: lgos-demo-api-b
+    depends_on:
+      lgos-demo-api-setup:
+        condition: service_completed_successfully
+    ports:
+      - "3005:8000"
+
+  lgos-demo-api-setup:
+    <<: *lgos-demo-api
+    container_name: lgos-demo-api-setup
+    command: ["lgos-demo-api-setup"]
+    depends_on:
+      lgos-db:
+        condition: service_healthy
+    healthcheck:
+      disable: true

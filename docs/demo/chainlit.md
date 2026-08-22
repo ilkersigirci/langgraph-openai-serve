@@ -79,7 +79,11 @@ request that needs them. The underlying contract is documented in
 
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
-the same login identity.
+the same login identity. The adapter also sends Chainlit's stable thread ID as
+`metadata.session_id` on every completion, allowing Langfuse to group the
+thread's per-request traces into one session. The transcript remains owned and
+resent by Chainlit; this correlation value does not add server-side chat state
+to LGOS.
 
 === "Mock login (default)"
 

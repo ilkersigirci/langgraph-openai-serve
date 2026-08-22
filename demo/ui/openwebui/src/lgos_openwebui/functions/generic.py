@@ -2,7 +2,7 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.14
+version: 0.15
 """
 
 import json
@@ -42,6 +42,7 @@ INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 CLIENT_EVENTS_FEATURE = "client_events"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
+SESSION_ID_METADATA_KEY = "session_id"
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
@@ -148,7 +149,7 @@ class Pipe:
                 extension = _model_extension(model)
                 if extension is None:
                     await _emit_limited_functionality_warning(__event_emitter__)
-                runtime_metadata = _runtime_settings_metadata(
+                request_metadata = _request_metadata(
                     model=model,
                     metadata=openwebui_metadata,
                 )
@@ -161,7 +162,7 @@ class Pipe:
                         client=client,
                         messages=messages,  # ty: ignore[invalid-argument-type]
                         model_id=model_id,
-                        runtime_metadata=runtime_metadata,
+                        request_metadata=request_metadata,
                         include_client_events=include_client_events,
                     ) as stream:
                         async for delta in _content_deltas(
@@ -235,10 +236,10 @@ async def _chat(
     client: AsyncOpenAI,
     messages: list[ChatCompletionMessageParam],
     model_id: str,
-    runtime_metadata: dict[str, str] | None = None,
+    request_metadata: dict[str, str] | None = None,
     include_client_events: bool = False,
 ) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
-    metadata = dict(runtime_metadata or {})
+    metadata = dict(request_metadata or {})
     if include_client_events:
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
@@ -296,6 +297,18 @@ def _model_request(model_id: str) -> dict[str, Any]:
 
 
 #### Chat Settings ####
+
+
+def _request_metadata(
+    *,
+    model: Any,
+    metadata: dict[str, Any],
+) -> dict[str, str]:
+    request_metadata = _runtime_settings_metadata(model=model, metadata=metadata)
+    chat_id = metadata.get("chat_id")
+    if isinstance(chat_id, str) and chat_id:
+        request_metadata[SESSION_ID_METADATA_KEY] = chat_id
+    return request_metadata
 
 
 def _runtime_settings_metadata(

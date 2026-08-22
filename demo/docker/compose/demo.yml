@@ -1,0 +1,12 @@
+name: lgos-demo
+
+networks:
+  default:
+    name: lgos-network
+
+include:
+  - ../apps/postgres.yml
+  - ../apps/demo-api.yml
+  - ../apps/bifrost.yml
+  - ../apps/chainlit.yml
+  - ../apps/openwebui.yml

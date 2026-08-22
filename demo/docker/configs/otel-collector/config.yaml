@@ -1,0 +1,102 @@
+extensions:
+  file_storage:
+    directory: /var/lib/otelcol/file_storage
+    create_directory: true
+    max_size: 268435456
+    compaction:
+      on_rebound: true
+      cleanup_on_start: true
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  # FastAPI's ASGI instrumentation creates one leaf span for every streamed
+  # response chunk. Keep the request span, but remove transport bookkeeping
+  # before it reaches the persistent queue and remote backend.
+  filter/asgi_transport:
+    error_mode: ignore
+    traces:
+      span:
+        - 'instrumentation_scope.name == "opentelemetry.instrumentation.fastapi" and IsMatch(name, " http (send|receive)$")'
+  # Langfuse and GenAI integrations intentionally keep payloads for Langfuse,
+  # but the general Grafana trace store only needs the graph shape and metadata.
+  attributes/redact_payload:
+    actions:
+      - key: langfuse.observation.input
+        action: delete
+      - key: langfuse.observation.output
+        action: delete
+      - key: gen_ai.input.messages
+        action: delete
+      - key: gen_ai.output.messages
+        action: delete
+  resource/defaults:
+    attributes:
+      - key: service.namespace
+        value: ${env:OTEL_SERVICE_NAMESPACE}
+        action: insert
+      - key: deployment.environment.name
+        value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+        action: insert
+      - key: host.name
+        value: ${env:OTEL_HOST_NAME}
+        action: upsert
+
+exporters:
+  otlp_http/upstream:
+    endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      batch: {}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 1h
+
+service:
+  extensions:
+    - file_storage
+  telemetry:
+    resource:
+      attributes:
+        - name: service.name
+          value: lgos-otel-collector
+        - name: service.namespace
+          value: ${env:OTEL_SERVICE_NAMESPACE}
+        - name: deployment.environment.name
+          value: ${env:OTEL_DEPLOYMENT_ENVIRONMENT}
+        - name: host.name
+          value: ${env:OTEL_HOST_NAME}
+    metrics:
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: ${env:OTEL_COLLECTOR_GATEWAY_ENDPOINT}
+                compression: gzip
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, resource/defaults]
+      exporters: [otlp_http/upstream]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/defaults]
+      exporters: [otlp_http/upstream]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/defaults]
+      exporters: [otlp_http/upstream]

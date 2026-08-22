@@ -7,6 +7,8 @@ entry point.
 
 - Read `README.md` for project purpose and the shortest example.
 - Read `.agents/CODE_STYLE.md` before writing or modifying code.
+- Read `tests/README.md` before running or changing tests; it includes guidance
+  for async tests in restricted coding-agent sandboxes.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
 - Use `docs/demo/api.md` and `docs/demo/graphs.md` for demo runs and graph files.

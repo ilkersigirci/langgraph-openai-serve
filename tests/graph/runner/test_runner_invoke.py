@@ -4,6 +4,11 @@ import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.types import CustomStreamPart
 
+from langgraph_openai_serve.core.logging import (
+    begin_log_context,
+    get_log_context,
+    reset_log_context,
+)
 from langgraph_openai_serve.core.settings import Settings
 from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -29,9 +34,20 @@ class RecordingCallback(BaseCallbackHandler):
     def __init__(self) -> None:
         super().__init__()
         self.starts = 0
+        self.root_metadata: list[dict[str, object]] = []
 
     def on_chat_model_start(self, *args, **kwargs) -> None:
         self.starts += 1
+
+    def on_chain_start(
+        self,
+        *args,
+        parent_run_id=None,
+        metadata=None,
+        **kwargs,
+    ) -> None:
+        if parent_run_id is None:
+            self.root_metadata.append(dict(metadata or {}))
 
 
 @pytest.fixture
@@ -103,7 +119,10 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
         run_coordinator=InMemoryRunCoordinator(),
     )
     graph_registry = GraphRegistry(registry={"interruptible": graph_config})
-    request = make_request("interruptible")
+    request = make_request(
+        "interruptible",
+        metadata={"session_id": "conversation-123"},
+    )
 
     run = await prepare_run(
         "interruptible",
@@ -114,10 +133,127 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
     try:
         assert run.runnable_config is not None
         assert run.runnable_config["callbacks"] == [recording_callback]
+        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
+        assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
+        assert (
+            run.runnable_config["metadata"]["langfuse_session_id"] == "conversation-123"
+        )
+        assert "run_id" not in run.runnable_config
         assert graph_config.runtime_callbacks == [recording_callback]
         assert runtime_callbacks == [recording_callback]
     finally:
         await run.aclose()
+
+
+async def test_interrupt_callback_observes_native_checkpoint_metadata(
+    make_request,
+    sqlite_checkpointer,
+) -> None:
+    recording_callback = RecordingCallback()
+    graph_config = GraphConfig(
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+        runtime_callbacks=[recording_callback],
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    graph_registry = GraphRegistry(registry={"interruptible": graph_config})
+    request = make_request(
+        "interruptible",
+        metadata={"session_id": "conversation-123"},
+    )
+
+    await run_langgraph(
+        "interruptible",
+        request.messages,
+        graph_registry,
+        request,
+    )
+
+    assert recording_callback.root_metadata
+    metadata = recording_callback.root_metadata[0]
+    assert metadata["lgos.model"] == "interruptible"
+    assert metadata["lgos.operation_id"]
+    assert metadata["langfuse_session_id"] == "conversation-123"
+    assert metadata["thread_id"]
+    assert get_log_context() == {}
+
+
+async def test_runnable_config_contains_request_correlation_metadata(
+    make_request,
+) -> None:
+    recording_callback = RecordingCallback()
+    graph_config = GraphConfig(
+        graph=make_message_graph("hello"),
+        description="DUMMY",
+        runtime_callbacks=[recording_callback],
+    )
+    graph_registry = GraphRegistry(registry={"messages": graph_config})
+    request = make_request(
+        "messages",
+        metadata={
+            "session_id": "conversation-123",
+            "unrelated": "not callback metadata",
+        },
+    )
+    token = begin_log_context("request-123")
+
+    try:
+        run = await prepare_run(
+            "messages",
+            request.messages,
+            graph_registry,
+            request,
+        )
+    finally:
+        reset_log_context(token)
+
+    try:
+        assert run.runnable_config is not None
+        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["metadata"] == {
+            "lgos.model": "messages",
+            "lgos.request_id": "request-123",
+            "langfuse_session_id": "conversation-123",
+        }
+        assert "run_id" not in run.runnable_config
+    finally:
+        await run.aclose()
+
+
+async def test_operation_id_is_bound_before_interrupt_preparation_fails(
+    make_request,
+    sqlite_checkpointer,
+) -> None:
+    error_message = "context failed"
+
+    def fail_context(_request, _settings):
+        raise RuntimeError(error_message)
+
+    graph_config = GraphConfig(
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+        context_factory=fail_context,
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    graph_registry = GraphRegistry(registry={"interruptible": graph_config})
+    request = make_request("interruptible")
+    token = begin_log_context("request-123")
+
+    try:
+        with pytest.raises(RuntimeError, match=error_message):
+            await prepare_run(
+                "interruptible",
+                request.messages,
+                graph_registry,
+                request,
+            )
+
+        assert get_log_context()["operation_id"]
+    finally:
+        reset_log_context(token)
 
 
 async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:

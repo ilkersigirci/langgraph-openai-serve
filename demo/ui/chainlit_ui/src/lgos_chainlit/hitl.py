@@ -38,6 +38,7 @@ from lgos_chainlit.settings import settings
 from lgos_chainlit.utils.chat import (
     LIMITED_FUNCTIONALITY_MESSAGE,
     send_limited_functionality_warning,
+    session_metadata,
 )
 from lgos_chainlit.utils.clients import (
     model_request,
@@ -265,6 +266,7 @@ async def create_completion(
         **model_request(model_id or selected_model_id()),
         messages=messages,
         user=authenticated_user_identifier(),
+        metadata=session_metadata(),
     )
 
 

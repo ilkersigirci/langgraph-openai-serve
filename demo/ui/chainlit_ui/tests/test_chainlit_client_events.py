@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, call
 
 import pytest
@@ -111,6 +112,11 @@ async def test_message_handler_renders_public_client_events(
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
+        simple.cl,
+        "context",
+        SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
+    )
+    monkeypatch.setattr(
         clients.settings.OPENAI,
         "catalog_base_url",
         "https://gateway.example/v1",
@@ -125,7 +131,10 @@ async def test_message_handler_renders_public_client_events(
         messages=messages,
         stream=True,
         user="demo-user",
-        metadata={"langgraph_stream_events": "v1"},
+        metadata={
+            "session_id": "thread-123",
+            "langgraph_stream_events": "v1",
+        },
     )
     assert message_factory.call_args_list == [
         call(content=""),

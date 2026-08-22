@@ -127,6 +127,7 @@ The request keeps each concern in its standard OpenAI location:
 | Small graph-specific values | One `metadata.langgraph_runtime_settings` string containing a JSON object |
 | Graph selection | `model` |
 | Caller-selected interrupt operation ID | Optional `metadata.langgraph_run_id` UUID |
+| Conversation correlation | Optional `metadata.session_id` string |
 
 Only small graph-specific values belong to `ClientSettings`. A graph may expose
 controlled semantic choices such as intended audience, but not arbitrary system
@@ -135,16 +136,27 @@ messages.
 
 OpenAI metadata permits at most 16 string pairs, with keys up to 64 characters
 and values up to 512 characters. Public settings consume one pair; a
-caller-selected interrupt run consumes another. Clients use `json.dumps()` or
-`JSON.stringify()` to encode the complete settings string and omit values equal
-to the advertised defaults. The advertised JSON Schema describes the available
-settings; LGOS remains the validation authority. The descriptor's separate
-`defaults` object is the authoritative validated baseline; JSON Schema
-`default` keywords are annotations and may precede Pydantic field
-normalization. Native Chat Completions fields keep their standard semantics.
-Graphs that need identity, authorization, database clients, secrets, or other
-server-owned per-request context combine `client_settings` with
-`context_factory(request, settings)`.
+caller-selected interrupt run or conversation correlation value consumes
+another. Clients use `json.dumps()` or `JSON.stringify()` to encode the complete
+settings string and omit values equal to the advertised defaults. The
+advertised JSON Schema describes the available settings; LGOS remains the
+validation authority. The descriptor's separate `defaults` object is the
+authoritative validated baseline; JSON Schema `default` keywords are annotations
+and may precede Pydantic field normalization. Native Chat Completions fields
+keep their standard semantics. Graphs that need identity, authorization,
+database clients, secrets, or other server-owned per-request context combine
+`client_settings` with `context_factory(request, settings)`.
+
+`metadata.session_id` is an optional, UI-neutral correlation value. A client
+uses the same stable value for every Chat Completions request in one
+conversation. LGOS maps it to the Langfuse-recognized
+`RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
+trace, while Langfuse can group those traces in one
+[session](https://langfuse.com/docs/observability/features/sessions). It does
+not select checkpoint state or cause LGOS to retain conversation history.
+Clients targeting Langfuse should use an ASCII value shorter than 200
+characters. The value is distinct from the Chat Completions `user` field,
+`metadata.langgraph_run_id`, and per-request trace or request identifiers.
 
 ### Per-Request Resolution
 

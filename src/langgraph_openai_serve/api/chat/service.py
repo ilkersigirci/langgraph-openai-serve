@@ -1,7 +1,5 @@
 """Functions for generating chat completions."""
 
-import logging
-import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from typing import TYPE_CHECKING
@@ -19,6 +17,7 @@ from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
     chat_completion_response,
 )
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import (
@@ -31,15 +30,13 @@ from langgraph_openai_serve.graph.utils import GraphRun
 if TYPE_CHECKING:
     from langgraph.types import CustomStreamPart
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def generate_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> ChatCompletionResponse:
     """Generate a chat completion."""
-    start_time = time.time()
-
     invocation = await invoke_run(run)
     completion = invocation.output
     tokens_used = usage_for(completion, chat_request.messages)
@@ -54,20 +51,12 @@ async def generate_completion(
         else []
     )
 
-    response = chat_completion_response(
+    return chat_completion_response(
         model=chat_request.model,
         completion=completion,
         annotations=annotations,
         usage=tokens_used,
     )
-
-    logger.info(
-        "Chat completion finished in %.2fs. Total tokens: %d",
-        time.time() - start_time,
-        tokens_used["total_tokens"],
-    )
-
-    return response
 
 
 async def stream_completion(
@@ -80,7 +69,6 @@ async def stream_completion(
         String chunks representing Server-Sent Events.
 
     """
-    start_time = time.time()
     response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
     custom_events: list[CustomStreamPart] = []
     content_parts: list[str] = []
@@ -121,11 +109,7 @@ async def stream_completion(
         yield response_builder.finish("stop", annotations=annotations)
         yield response_builder.done()
 
-        logger.info(
-            "Streamed chat completion finished in %.2fs", time.time() - start_time
-        )
-
     except Exception:
-        logger.exception("Error streaming chat completion")
+        logger.exception("chat_completion.stream_failed")
         yield response_builder.error("Internal server error")
         yield response_builder.done()
