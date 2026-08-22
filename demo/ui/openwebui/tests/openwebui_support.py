@@ -57,7 +57,7 @@ class ScriptedChat:
     ) -> None:
         self._steps = steps
         self.calls: list[tuple[list[dict[str, Any]], str]] = []
-        self.runtime_metadata_calls: list[dict[str, str] | None] = []
+        self.request_metadata_calls: list[dict[str, str] | None] = []
         self.include_client_events_calls: list[bool] = []
 
     @asynccontextmanager
@@ -67,12 +67,12 @@ class ScriptedChat:
         client: Any,
         messages: list[dict[str, Any]],
         model_id: str,
-        runtime_metadata: dict[str, str] | None = None,
+        request_metadata: dict[str, str] | None = None,
         include_client_events: bool = False,
     ) -> AsyncIterator[ScriptedStream]:
         step_index = len(self.calls)
         self.calls.append((messages, model_id))
-        self.runtime_metadata_calls.append(runtime_metadata)
+        self.request_metadata_calls.append(request_metadata)
         self.include_client_events_calls.append(include_client_events)
         if step_index >= len(self._steps):
             msg = f"Unexpected chat call {step_index + 1}"

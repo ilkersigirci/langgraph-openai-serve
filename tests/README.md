@@ -57,6 +57,19 @@ Keep test setup explicit and assertions focused on observable behavior.
   `sleep_forever()` only when a task is intentionally waiting for cancellation;
   do not add timing sleeps to coordinate tests.
 
+### Restricted Sandbox Stalls
+
+Some coding-agent sandboxes deny `send()` on asyncio's internal Unix socketpair
+with `EPERM`. Executor and AnyIO worker completions then cannot wake the event
+loop, so LangChain callback or Chainlit ASGI tests may appear to hang in
+`selector.select()` while their worker thread is idle. If
+`pytest -o faulthandler_timeout=5` shows that pattern, stop the run and request
+user approval to rerun the exact test command through the agent tool's
+unsandboxed or escalated-execution mechanism. Explain that the sandbox blocks
+asyncio worker-thread wakeups. If approval is denied, report the environment
+limitation. Do not add sleeps, heartbeats, or production changes; an incidental
+timer only masks the environment failure.
+
 ## Test Shape
 
 - Name tests for the behavior and expected outcome.

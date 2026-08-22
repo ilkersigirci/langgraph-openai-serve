@@ -32,6 +32,8 @@ from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = get_logger(__name__)
 _RUN_NAME = "lgos.chat_completion"
+_SESSION_ID_METADATA_KEY = "session_id"
+_LANGFUSE_SESSION_ID_METADATA_KEY = "langfuse_session_id"
 
 
 @dataclass
@@ -81,7 +83,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             context=await graph_config.build_context(request, graph),
             runnable_config=build_runnable_config(
                 graph_config.runtime_callbacks,
-                metadata=_runnable_metadata(model),
+                metadata=_runnable_metadata(request),
             ),
             run_id=None,
         )
@@ -98,7 +100,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
     runnable_config = build_runnable_config(
         graph_config.runtime_callbacks,
         configurable={"thread_id": checkpoint_thread_id},
-        metadata=_runnable_metadata(model, run_id),
+        metadata=_runnable_metadata(request, run_id),
     )
     if runnable_config is None:  # The configurable thread always creates one.
         msg = "Interrupt run has no runnable configuration."
@@ -181,13 +183,16 @@ def build_runnable_config(
 
 
 def _runnable_metadata(
-    model: str,
+    request: ChatCompletionRequest,
     run_id: str | None = None,
 ) -> dict[str, str]:
     """Build correlation metadata for callbacks and tracing."""
     metadata = {
-        "lgos.model": model,
+        "lgos.model": request.model,
     }
+    session_id = (request.metadata or {}).get(_SESSION_ID_METADATA_KEY)
+    if session_id:
+        metadata[_LANGFUSE_SESSION_ID_METADATA_KEY] = session_id
     request_id = get_log_context().get("request_id")
     if isinstance(request_id, str):
         metadata["lgos.request_id"] = request_id

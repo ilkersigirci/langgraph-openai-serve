@@ -116,6 +116,12 @@ defaults, and sends only changes as
 `metadata.langgraph_runtime_settings`. LGOS performs the authoritative runtime
 validation.
 
+Both bundled Functions also map Open WebUI's stable `chat_id` to
+`metadata.session_id` on every completion. Langfuse can therefore group the
+chat's independent request traces into one session, while Open WebUI continues
+to own and resend the conversation history. Interrupt resumes reuse the same
+conversation value.
+
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
 selector changes, so rerun `make sync-openwebui` after an LGOS schema change.

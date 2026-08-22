@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
+SESSION_ID_METADATA_KEY = "session_id"
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"

@@ -2,7 +2,7 @@
 title: UserValves-Simple / simple-graph
 
 author: langgraph-openai-serve
-version: 0.5
+version: 0.6
 description: Static per-user settings for one fixed graph when dynamic per-chat settings are unnecessary.
 """
 
@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
+SESSION_ID_METADATA_KEY = "session_id"
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
@@ -66,6 +67,7 @@ class Pipe:
         body: dict[str, Any],
         __user__: dict[str, Any] | None = None,
         __event_emitter__: Any = None,
+        __metadata__: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
 
@@ -75,14 +77,18 @@ class Pipe:
                 extension = self._model_extension(model)
                 if extension is None:
                     await self._emit_limited_functionality_warning(__event_emitter__)
+                request_metadata = (
+                    self._runtime_settings_metadata(__user__)
+                    if self._supports_runtime_settings(extension)
+                    else {}
+                )
+                chat_id = (__metadata__ or {}).get("chat_id")
+                if isinstance(chat_id, str) and chat_id:
+                    request_metadata[SESSION_ID_METADATA_KEY] = chat_id
                 stream = await client.chat.completions.create(
                     **self._model_request(),
                     messages=messages,
-                    metadata=(
-                        self._runtime_settings_metadata(__user__)
-                        if self._supports_runtime_settings(extension)
-                        else {}
-                    ),
+                    metadata=request_metadata,
                     stream=True,
                 )
                 async for chunk in stream:

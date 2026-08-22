@@ -390,6 +390,10 @@ async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
         "langgraph_runtime_settings": '{"use_history":true}',
     }
     settings_metadata = Mock(return_value=runtime_metadata)
+    expected_request_metadata = {
+        **runtime_metadata,
+        "session_id": "chat-123",
+    }
 
     async def confirm(_: dict[str, Any]) -> bool:
         return True
@@ -402,16 +406,21 @@ async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
             body=body(USER_REQUEST),
             __event_call__=confirm,
             __metadata__={
+                "chat_id": "chat-123",
                 "chat_variables": {"use_history": True},
             },
         )
     )
 
     assert chunks == ["Approved."]
-    assert chat.runtime_metadata_calls == [runtime_metadata, runtime_metadata]
+    assert chat.request_metadata_calls == [
+        expected_request_metadata,
+        expected_request_metadata,
+    ]
     settings_metadata.assert_called_once_with(
         model=model(),
         metadata={
+            "chat_id": "chat-123",
             "chat_variables": {"use_history": True},
         },
     )

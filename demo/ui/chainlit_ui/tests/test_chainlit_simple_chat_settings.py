@@ -1,6 +1,7 @@
 """Chat-settings behavior of the simple Chainlit application."""
 
 import importlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
@@ -250,6 +251,11 @@ async def test_selected_settings_reach_the_openai_request(
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
+        simple.cl,
+        "context",
+        SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
+    )
+    monkeypatch.setattr(
         clients.settings.OPENAI,
         "catalog_base_url",
         "https://gateway.example/v1",
@@ -268,5 +274,6 @@ async def test_selected_settings_reach_the_openai_request(
             "langgraph_runtime_settings": (
                 '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
             ),
+            "session_id": "thread-123",
         },
     )

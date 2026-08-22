@@ -119,7 +119,10 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
         run_coordinator=InMemoryRunCoordinator(),
     )
     graph_registry = GraphRegistry(registry={"interruptible": graph_config})
-    request = make_request("interruptible")
+    request = make_request(
+        "interruptible",
+        metadata={"session_id": "conversation-123"},
+    )
 
     run = await prepare_run(
         "interruptible",
@@ -133,6 +136,9 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
         assert run.runnable_config["run_name"] == "lgos.chat_completion"
         assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
         assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
+        assert (
+            run.runnable_config["metadata"]["langfuse_session_id"] == "conversation-123"
+        )
         assert "run_id" not in run.runnable_config
         assert graph_config.runtime_callbacks == [recording_callback]
         assert runtime_callbacks == [recording_callback]
@@ -153,7 +159,10 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
         run_coordinator=InMemoryRunCoordinator(),
     )
     graph_registry = GraphRegistry(registry={"interruptible": graph_config})
-    request = make_request("interruptible")
+    request = make_request(
+        "interruptible",
+        metadata={"session_id": "conversation-123"},
+    )
 
     await run_langgraph(
         "interruptible",
@@ -166,6 +175,7 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
     metadata = recording_callback.root_metadata[0]
     assert metadata["lgos.model"] == "interruptible"
     assert metadata["lgos.operation_id"]
+    assert metadata["langfuse_session_id"] == "conversation-123"
     assert metadata["thread_id"]
     assert get_log_context() == {}
 
@@ -180,7 +190,13 @@ async def test_runnable_config_contains_request_correlation_metadata(
         runtime_callbacks=[recording_callback],
     )
     graph_registry = GraphRegistry(registry={"messages": graph_config})
-    request = make_request("messages")
+    request = make_request(
+        "messages",
+        metadata={
+            "session_id": "conversation-123",
+            "unrelated": "not callback metadata",
+        },
+    )
     token = begin_log_context("request-123")
 
     try:
@@ -199,6 +215,7 @@ async def test_runnable_config_contains_request_correlation_metadata(
         assert run.runnable_config["metadata"] == {
             "lgos.model": "messages",
             "lgos.request_id": "request-123",
+            "langfuse_session_id": "conversation-123",
         }
         assert "run_id" not in run.runnable_config
     finally:
