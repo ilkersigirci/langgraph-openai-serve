@@ -38,6 +38,9 @@ services:
   lgos-demo-api-b:
     <<: *lgos-demo-api-development
 
+  lgos-demo-api-setup:
+    <<: *lgos-demo-api-development
+
   lgos-chainlit:
     image: lgos-chainlit:development
     pull_policy: build
