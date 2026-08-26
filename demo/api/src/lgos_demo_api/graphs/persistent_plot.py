@@ -3,7 +3,6 @@
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from hashlib import sha256
 from typing import Annotated, Literal
 
@@ -85,9 +84,7 @@ class PersistentPlotState(BaseModel):
 class PersistentPlotContext:
     user_id: str | None
     session_id: str | None
-    settings: PersistentPlotSettings = dataclass_field(
-        default_factory=PersistentPlotSettings
-    )
+    settings: PersistentPlotSettings
 
 
 PersistentPlotGraph = CompiledStateGraph[

@@ -9,6 +9,7 @@ from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_str
 
 from lgos_demo_api.graphs.persistent_plot import (
     PersistentPlotContext,
+    PersistentPlotSettings,
     create_persistent_plot_graph,
     create_persistent_plot_graph_config,
 )
@@ -29,8 +30,13 @@ def _registry() -> GraphRegistry:
 
 async def test_plot_data_is_reused_only_in_the_same_thread() -> None:
     graph = create_persistent_plot_graph(InMemoryStore())
-    first_thread = PersistentPlotContext(user_id="user-1", session_id="thread-1")
-    second_thread = PersistentPlotContext(user_id="user-1", session_id="thread-2")
+    settings = PersistentPlotSettings()
+    first_thread = PersistentPlotContext(
+        user_id="user-1", session_id="thread-1", settings=settings
+    )
+    second_thread = PersistentPlotContext(
+        user_id="user-1", session_id="thread-2", settings=settings
+    )
 
     await graph.ainvoke(_state("Set Q3 to 250."), context=first_thread)
     remembered = await graph.ainvoke(

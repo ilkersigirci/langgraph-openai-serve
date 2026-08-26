@@ -30,7 +30,15 @@ hash of the OpenAI `user` and `metadata.session_id`. A different user or session
 produces a different namespace. The Store contains neither graph state nor chat
 history. Chart type, currency label, and legend visibility are request-scoped
 client settings and are not written to the Store. Ordinary chat history remains
-client-owned. The demo uses LGOS's default shared checkpoint scope, so
+client-owned. For example, the stored document remains compact:
+
+```json
+{"schema_version": 1, "q1": 120, "q2": 180, "q3": 25, "q4": 230}
+```
+
+Each graph call regenerates and streams the complete Plotly figure from this
+document. Chainlit separately persists the rendered element for thread resume.
+The demo uses LGOS's default shared checkpoint scope, so
 multi-tenant applications must derive that
 scope from authenticated server state. Operation identity, canonical replay,
 and retention rules are defined in
