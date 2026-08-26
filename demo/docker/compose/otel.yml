@@ -17,8 +17,8 @@ x-lgos-otel-environment: &lgos-otel-environment
   OTEL_TRACES_EXPORTER: otlp
   OTEL_PROPAGATORS: tracecontext
   OTEL_SEMCONV_STABILITY_OPT_IN: http
-  OTEL_TRACES_SAMPLER: parentbased_traceidratio
-  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLE_RATE:-1.0}
+  # Preserve complete distributed traces; sampling is disabled for this demo.
+  OTEL_TRACES_SAMPLER: always_on
   OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
 
 x-lgos-otel-api-environment: &lgos-otel-api-environment

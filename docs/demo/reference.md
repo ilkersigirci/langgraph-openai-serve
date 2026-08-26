@@ -58,7 +58,10 @@ These settings apply when using `make compose-otel` or
 | `OTEL_SERVICE_NAMESPACE` | `lgos` | Namespace default for application and Collector signals |
 | `OTEL_DEPLOYMENT_ENVIRONMENT` | `production` | Environment default for application and Collector signals |
 | `OTEL_HOST_NAME` | required | Stable host identity added by the local Collector |
-| `OTEL_TRACES_SAMPLE_RATE` | `1.0` | Parent-based sampling ratio for Python SDK services |
+
+The OTEL overlay uses the OpenTelemetry `always_on` sampler, so application
+traces are exported without SDK sampling. The remote Tempo retention policy
+controls how long those traces remain queryable.
 
 The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
 `OTEL_HOST_NAME`; set them per machine in `.env`. The endpoint URL scheme

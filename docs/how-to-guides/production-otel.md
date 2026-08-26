@@ -100,8 +100,8 @@ The overlay:
 - opts into stable HTTP semantic conventions;
 - aligns Go's memory limit and the Collector memory limiter with the 1 GiB
   container limit;
-- enables parent-based trace sampling, configurable with
-  `OTEL_TRACES_SAMPLE_RATE`;
+- uses the OpenTelemetry `always_on` sampler so the application exports complete
+  traces without SDK sampling;
 - requires the per-machine `OTEL_HOST_NAME` value and adds it to incoming
   signals at the local Collector;
 - removes FastAPI `send`/`receive` transport leaf spans before queueing; and
@@ -142,6 +142,17 @@ the dedicated ingest network. The overlay attaches the API replicas; attach
 other producers deliberately. It does not publish either port to the host. If
 an external Traefik instance must send signals to this Collector, attach it to
 the ingest network or send Traefik to the host's gateway instead.
+
+## Trace storage planning
+
+With the `always_on` sampler, the current Open WebUI sample averaged about
+61 KB per chat trace (roughly 140–165 spans). Budget approximately 100–150 MB
+per 1,000 chat traces in Tempo, or about 200 MB per 1,000 while allowing for
+compaction headroom. At that rate, 1,000 chats per day for 90 days needs roughly
+9–14 GB. This is an estimate; measure representative traces with Tempo's
+[`trace-summary` CLI](https://grafana.com/docs/tempo/latest/operations/tempo_cli/)
+and include the Parquet, bloom-filter, and compaction overhead described in
+the [block format](https://grafana.com/docs/tempo/latest/reference-tempo-architecture/block-format/).
 
 ## Verify in Grafana
 
@@ -209,10 +220,10 @@ independently. See Langfuse's
 for the shared-versus-isolated provider behavior.
 
 The overlay and Langfuse share the application's global tracer provider.
-Consequently, `OTEL_TRACES_SAMPLE_RATE` is applied before either span processor
-and also samples Langfuse observations. Use an isolated Langfuse provider only
-when independent sampling is required, accepting the separate trace hierarchy
-described in Langfuse's guidance.
+Consequently, the overlay's always-on sampler also samples Langfuse
+observations. Use an isolated Langfuse provider only when independent sampling
+is required, accepting the separate trace hierarchy described in Langfuse's
+guidance.
 
 Langfuse's LangChain callback records chain and model inputs and outputs. With a
 shared application context, those observations can also carry correlation
