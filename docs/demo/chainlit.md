@@ -180,8 +180,9 @@ independently.
 Select `lgos-b/persistent-plot` in Compose or `persistent-plot` locally and ask
 **Show the chart**, then **Set Q3 to 250**. The second request loads and updates
 the canonical document in the API's PostgreSQL store while Chainlit continues
-to own the visible conversation and native chart elements. **Reset the chart**
-restores revision 1. A different thread gets a separate chart document.
+to own the visible conversation and native chart elements. Ask **Which quarter
+is highest?** in a later turn to exercise a fresh graph call over the stored
+data. A different thread gets a separate chart document.
 
 Behind Bifrost, Chainlit discovers providers from the catalog URL and uses the
 raw pass-through URL for metadata-bearing model lists, detailed retrieval, and

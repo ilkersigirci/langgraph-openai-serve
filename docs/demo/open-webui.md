@@ -174,9 +174,10 @@ self-contained HTML/CSS chart using Open WebUI's persistent
 [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
 It loads no browser CDN and needs no same-origin iframe setting. Select
 `lgos-b/persistent-plot`, ask **Show the chart**, then **Set Q3 to 250** to
-exercise the PostgreSQL reload and update. **Reset the chart** restores revision
-1. A different chat gets a separate chart document. Other `progress` and
-artifact kinds remain ignored.
+exercise the PostgreSQL reload and update. Ask **Which quarter is highest?** in
+a later turn to exercise a fresh graph call over the stored data. A different
+chat gets a separate chart document. Other `progress` and artifact kinds remain
+ignored.
 
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already

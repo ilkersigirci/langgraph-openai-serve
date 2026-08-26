@@ -25,7 +25,7 @@ with the [demo API instructions](api.md#start-postgresql-and-the-api).
 ## Interrupt Runtime
 
 `interruptible-approval` is the only demo graph that persists API execution
-state. `persistent-plot` instead stores one revisioned chart document under a
+state. `persistent-plot` instead stores one chart document under a
 hash of the OpenAI `user` and `metadata.session_id`. A different user or session
 produces a different namespace. The Store contains neither graph state nor chat
 history; ordinary chat history remains client-owned. The demo uses LGOS's

@@ -37,7 +37,6 @@ class PlotDocument(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     schema_version: Literal[1] = 1
-    revision: int = Field(default=1, ge=1)
     q1: float = Field(default=120, ge=0)
     q2: float = Field(default=180, ge=0)
     q3: float = Field(default=150, ge=0)
@@ -78,7 +77,7 @@ PersistentPlotGraph = CompiledStateGraph[
 def _artifact(document: PlotDocument) -> PlotlyArtifact:
     values = [document.q1, document.q2, document.q3, document.q4]
     highest_index = values.index(max(values))
-    title = f"Quarterly revenue · revision {document.revision}"
+    title = "Quarterly revenue"
     summary = f"{QUARTERS[highest_index]} is highest at ${max(values):g}k."
     return PlotlyArtifact(
         id=ARTIFACT_KEY,
@@ -142,34 +141,24 @@ async def show_plot(
         else None
     )
     document = PlotDocument.model_validate(item.value) if item is not None else None
-    created = document is None
     document = document or PlotDocument()
-    changed = created
-    notes: list[str] = []
-
-    if "reset" in prompt:
-        document = PlotDocument()
-        changed = True
-        notes.append("I reset the chart to revision 1.")
+    changed = item is None
+    update_message: str | None = None
 
     update = _revenue_update(prompt)
     if update is not None:
         quarter, revenue = update
         if getattr(document, quarter) == revenue:
-            notes.append(f"{quarter.upper()} is already ${revenue:g}k.")
+            update_message = f"{quarter.upper()} is already ${revenue:g}k."
         else:
             document = PlotDocument.model_validate(
                 {
                     **document.model_dump(),
                     quarter: revenue,
-                    "revision": document.revision + 1,
                 }
             )
             changed = True
-            notes.append(
-                f"I set {quarter.upper()} to ${revenue:g}k in revision "
-                f"{document.revision}."
-            )
+            update_message = f"I set {quarter.upper()} to ${revenue:g}k."
 
     if thread_namespace is not None and changed:
         await store.aput(
@@ -187,16 +176,7 @@ async def show_plot(
         )
     )
 
-    if not notes:
-        if thread_namespace is None:
-            notes.append(
-                "This copy is not persisted because both user and session_id are required."
-            )
-        elif created:
-            notes.append("I created revision 1 for this chat.")
-        else:
-            notes.append(f"I loaded revision {document.revision} from this chat.")
-    answer = f"{artifact.title}: {artifact.summary} {' '.join(notes)}"
+    answer = " ".join(part for part in (update_message, artifact.summary) if part)
     model = GenericFakeChatModel(messages=iter([answer]))
     chunks: list[str] = []
     async for chunk in model.astream(state.messages):
