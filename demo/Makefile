@@ -9,6 +9,7 @@ UP_ARGS ?=
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
+	run-graphical-agents \
 	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev
 .DEFAULT_GOAL := help
 
@@ -90,6 +91,9 @@ run-api-b: ## Run the lgos-b container
 
 run-chainlit: ## Run the Chainlit container and its dependencies
 	$(COMPOSE) up lgos-chainlit
+
+run-graphical-agents: ## Build and run the Graphical Agents UI on port 3006
+	$(COMPOSE) up --build lgos-graphical-agents
 
 sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync

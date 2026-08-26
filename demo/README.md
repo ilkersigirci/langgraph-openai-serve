@@ -17,6 +17,7 @@ dependency source.
 | `api` | Example LangGraph API | `ghcr.io/ilkersigirci/lgos-demo-api` |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
+| `ui/graphical_agents` | Visual LangGraph project builder | Local Docker build |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. The Bifrost gateway configuration is at
@@ -61,6 +62,18 @@ Run Chainlit and its Compose dependencies on port 3002:
 make run-chainlit
 ```
 
+Build and run Graphical Agents on port 3006:
+
+```bash
+make run-graphical-agents
+```
+
+Its LGOS-specific `Publish to LGOS` action posts validated Graph IR to the
+browser-accessible endpoint configured by `DEMO_GRAPHICAL_AGENTS_PUBLISH_URL`.
+The UI remains usable for local design and project export when no publisher is
+configured. See `ui/graphical_agents/LGOS_INTEGRATION.md` for the request and
+response contract. Graphical Agents is vendored under its own AGPL-3.0 license.
+
 With Open WebUI running, synchronize the Functions and generated Workspace
 Models:
 
@@ -99,7 +112,8 @@ make compose
 ```
 
 The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
-3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
+3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, and Graphical
+Agents on 3006.
 
 From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:

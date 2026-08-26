@@ -57,3 +57,13 @@ services:
           path: ../../ui/chainlit_ui/pyproject.toml
         - action: rebuild
           path: ../../ui/chainlit_ui/uv.lock
+
+  lgos-graphical-agents:
+    develop:
+      watch:
+        - action: rebuild
+          path: ../../ui/graphical_agents/apps/web/src
+        - action: rebuild
+          path: ../../ui/graphical_agents/packages
+        - action: rebuild
+          path: ../../ui/graphical_agents/package-lock.json

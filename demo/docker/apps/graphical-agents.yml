@@ -1,0 +1,33 @@
+services:
+  lgos-graphical-agents:
+    container_name: lgos-graphical-agents
+    image: lgos-graphical-agents:development
+    pull_policy: build
+    build:
+      context: ../../ui/graphical_agents
+      args:
+        VITE_LGOS_PUBLISH_URL: ${DEMO_GRAPHICAL_AGENTS_PUBLISH_URL:-}
+    restart: "no"
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=101,gid=101,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 64
+    cpus: "0.5"
+    mem_limit: 128M
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+    ports:
+      - "${DEMO_GRAPHICAL_AGENTS_PORT:-3006}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

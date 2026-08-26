@@ -10,3 +10,4 @@ include:
   - ../apps/bifrost.yml
   - ../apps/chainlit.yml
   - ../apps/openwebui.yml
+  - ../apps/graphical-agents.yml
