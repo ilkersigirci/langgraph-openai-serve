@@ -8,7 +8,7 @@ from openai import OpenAIError
 from openai.types import Model
 from pydantic import ValidationError
 
-from lgos_chainlit.settings import Settings
+from lgos_chainlit.settings import ChainlitSettings, Settings
 from lgos_chainlit.utils import clients
 
 
@@ -34,6 +34,23 @@ def test_openai_endpoint_settings(
     assert configured.OPENAI.base_url == "https://gateway.example/v1"
     assert configured.OPENAI.catalog_base_url == "https://gateway.example/catalog/v1"
     assert configured.OPENAI.api_key == "api-key"
+
+
+def test_native_chainlit_settings_require_s3_element_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@db.example/app")
+    monkeypatch.setenv("CHAINLIT_AUTH_SECRET", "a-secure-test-signing-secret")
+    monkeypatch.setenv("BUCKET_NAME", "plots")
+    monkeypatch.setenv("APP_AWS_ACCESS_KEY", "access-key")
+    monkeypatch.setenv("APP_AWS_SECRET_KEY", "secret-key")
+    monkeypatch.setenv("APP_AWS_REGION", "eu-west-1")
+    monkeypatch.setenv("DEV_AWS_ENDPOINT", "https://s3.example.com")
+
+    configured = ChainlitSettings(_env_file=None)
+
+    assert configured.BUCKET_NAME == "plots"
+    assert configured.DEV_AWS_ENDPOINT == "https://s3.example.com"
 
 
 async def test_catalog_discovers_providers_and_preserves_model_metadata(

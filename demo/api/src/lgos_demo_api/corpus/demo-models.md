@@ -16,6 +16,8 @@ The demo API registers these graph names as OpenAI models:
 - `status-events` streams portable status updates for native client UI.
 - `custom-event-showcase` streams explicitly public progress and artifact
   events among ordinary assistant text.
+- `persistent-plot` edits a revisioned chart scoped to the current user and
+  chat.
 - `interruptible-approval` persists one atomic interrupt batch from parallel
   nested approval subgraphs and resumes it from standard OpenAI tool results.
 

@@ -17,4 +17,6 @@ uv run --env-file .env lgos-chainlit
 
 Application settings use the `DEMO_CHAINLIT_` prefix. Reusable helper settings
 use `CHAINLIT_UTILS_`; Chainlit's native `DATABASE_URL` and
-`CHAINLIT_AUTH_SECRET` variables remain unprefixed.
+`CHAINLIT_AUTH_SECRET` variables remain unprefixed. Plotly elements use
+Chainlit's native `BUCKET_NAME`, `APP_AWS_*`, and `DEV_AWS_ENDPOINT` S3
+settings so charts survive thread resume.

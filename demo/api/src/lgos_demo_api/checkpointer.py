@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph_openai_serve.integrations.postgres import PostgresRunCoordinator
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
@@ -23,6 +24,7 @@ class PostgresRuntime:
     """Process-local graph dependencies backed by one PostgreSQL pool."""
 
     checkpointer: AsyncPostgresSaver
+    store: AsyncPostgresStore
     run_coordinator: PostgresRunCoordinator
 
 
@@ -31,7 +33,7 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
     """Open one ready pool for checkpointing and run coordination.
 
     Yields:
-        Configured PostgresRuntime tuple.
+        Configured PostgreSQL-backed graph dependencies.
     """
     pool_context = cast(
         "PostgresPool",
@@ -51,6 +53,7 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
         await pool.wait()
         yield PostgresRuntime(
             checkpointer=AsyncPostgresSaver(pool),
+            store=AsyncPostgresStore(pool),
             run_coordinator=PostgresRunCoordinator(
                 pool,
                 max_concurrent_leases=_MAX_COORDINATION_LEASES,
@@ -59,9 +62,13 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
 
 
 async def setup_postgres_schema(postgres_uri: str) -> None:
-    """Initialize or migrate the checkpoint schema once before workers start."""
-    async with AsyncPostgresSaver.from_conn_string(postgres_uri) as checkpointer:
+    """Initialize LangGraph's PostgreSQL persistence schemas once."""
+    async with (
+        AsyncPostgresSaver.from_conn_string(postgres_uri) as checkpointer,
+        AsyncPostgresStore.from_conn_string(postgres_uri) as store,
+    ):
         await checkpointer.setup()
+        await store.setup()
 
 
 __all__ = [

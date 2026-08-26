@@ -81,9 +81,10 @@ Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
 `metadata.session_id` on every completion, allowing Langfuse to group the
-thread's per-request traces into one session. The transcript remains owned and
-resent by Chainlit; this correlation value does not add server-side chat state
-to LGOS.
+thread's per-request traces into one session. The `persistent-plot` demo also
+combines that value with the authenticated OpenAI `user` to scope its LangGraph
+chat document. The transcript remains owned and resent by Chainlit; no chat
+history is added to LGOS.
 
 === "Mock login (default)"
 
@@ -157,7 +158,13 @@ events render as one live-updating Chainlit
 [custom element](https://docs.chainlit.io/api-reference/elements/custom) per
 completion. The panel shows event type, namespace, progress, and artifact
 details, with a JSON fallback for other payload shapes. Its host message is
-excluded from model context. Unknown extension versions are ignored.
+excluded from model context. A versioned `kind=plotly` artifact instead renders
+with Chainlit's native
+[`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element.
+The official data layer stores its metadata in PostgreSQL and figure JSON in
+the configured S3-compatible bucket, allowing the native chart to return with
+the thread. The packaged botocore configuration uses Signature V4 and path-style
+addressing for S3-compatible endpoints. Unknown extension versions are ignored.
 
 To see native status rendering, select `lgos-a/status-events` in Compose or
 `status-events` in local-process mode, then ask **Prepare the media workflow.**
@@ -169,6 +176,12 @@ Select `lgos-b/custom-event-showcase` in Compose or `custom-event-showcase`
 locally, then ask **Build the compatibility report** to see the separate
 activity panel render progress and an artifact while assistant text streams
 independently.
+
+Select `lgos-b/persistent-plot` in Compose or `persistent-plot` locally and ask
+**Show the chart**, then **Set Q3 to 250**. The second request loads and updates
+the canonical document in the API's PostgreSQL store while Chainlit continues
+to own the visible conversation and native chart elements. **Reset the chart**
+restores revision 1. A different thread gets a separate chart document.
 
 Behind Bifrost, Chainlit discovers providers from the catalog URL and uses the
 raw pass-through URL for metadata-bearing model lists, detailed retrieval, and
@@ -214,6 +227,12 @@ Native Chainlit settings:
 | `DATABASE_URL` | required | PostgreSQL data-layer URL. |
 | `CHAINLIT_AUTH_SECRET` | required | Browser-session signing secret. |
 | `CHAINLIT_APP_ROOT` | `src/lgos_chainlit` | Tracked UI configuration and welcome Markdown. |
+| `BUCKET_NAME` | required | S3-compatible bucket for native elements. |
+| `APP_AWS_ACCESS_KEY` | required | S3 access key. |
+| `APP_AWS_SECRET_KEY` | required | S3 secret key. |
+| `APP_AWS_REGION` | required | S3 signing region. |
+| `DEV_AWS_ENDPOINT` | required | Custom S3-compatible endpoint URL. |
+| `STORAGE_EXPIRY_TIME` | `3600` | Lifetime in seconds for resumed element URLs. |
 | `CHAINLIT_URL` | request origin | External origin for OAuth callbacks. |
 | `OAUTH_GENERIC_CLIENT_ID` | required for `oauth` | OAuth client ID. |
 | `OAUTH_GENERIC_CLIENT_SECRET` | required for `oauth` | OAuth client secret. |
@@ -224,6 +243,11 @@ Native Chainlit settings:
 | `OAUTH_GENERIC_NAME` | `generic` | Provider ID used in the callback path. |
 | `OAUTH_GENERIC_USER_IDENTIFIER` | `email` | User identifier claim. |
 
+The element bucket must allow browser CORS `GET` and `HEAD` requests from the
+Chainlit origin. CORS only permits the cross-origin response; the object still
+requires Chainlit's time-limited presigned URL. See
+[Amazon S3's CORS guide](https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html).
+
 The demo requires Chainlit 2.11.1 or newer. Review Chainlit's migration guidance
 when updating it because the PostgreSQL schema is release-specific.
 
@@ -231,10 +255,10 @@ when updating it because the PostgreSQL schema is release-specific.
 
 - Use OAuth or another real callback; mock mode provides no access control or
   user isolation.
-- Keep OAuth and signing secrets outside source control.
+- Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
-- Configure session affinity for multiple UI workers and supported object
-  storage before enabling file uploads.
+- Configure session affinity for multiple UI workers. The demo keeps user file
+  uploads disabled but requires object storage for native Plotly persistence.
 - Run `lgos-chainlit-setup` before starting or replacing workers.
 
 See Chainlit's documentation for

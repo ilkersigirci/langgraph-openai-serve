@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from chainlit.utils import mount_chainlit
@@ -5,6 +6,10 @@ from fastapi import FastAPI
 
 from lgos_chainlit.settings import get_chainlit_settings, settings
 
+os.environ.setdefault(
+    "AWS_CONFIG_FILE",
+    Path(__file__).with_name("aws_config").as_posix(),
+)
 get_chainlit_settings()
 
 app = FastAPI()

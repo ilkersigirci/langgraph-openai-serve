@@ -59,6 +59,7 @@ class ScriptedChat:
         self.calls: list[tuple[list[dict[str, Any]], str]] = []
         self.request_metadata_calls: list[dict[str, str] | None] = []
         self.include_client_events_calls: list[bool] = []
+        self.user_id_calls: list[str | None] = []
 
     @asynccontextmanager
     async def __call__(
@@ -69,11 +70,13 @@ class ScriptedChat:
         model_id: str,
         request_metadata: dict[str, str] | None = None,
         include_client_events: bool = False,
+        user_id: str | None = None,
     ) -> AsyncIterator[ScriptedStream]:
         step_index = len(self.calls)
         self.calls.append((messages, model_id))
         self.request_metadata_calls.append(request_metadata)
         self.include_client_events_calls.append(include_client_events)
+        self.user_id_calls.append(user_id)
         if step_index >= len(self._steps):
             msg = f"Unexpected chat call {step_index + 1}"
             raise AssertionError(msg)

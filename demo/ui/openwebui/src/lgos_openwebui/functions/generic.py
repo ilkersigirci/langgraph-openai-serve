@@ -2,14 +2,16 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.15
+version: 0.16
 """
 
 import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from html import escape
+from math import isfinite
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI, OpenAIError
 from openai.lib.streaming.chat import (
@@ -27,7 +29,7 @@ from openai.types.chat import (
     ChatCompletionMessageToolCallParam,
     ChatCompletionToolMessageParam,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 # These values mirror the public LGOS wire contract. This standalone Open WebUI
 # Function must not import the server package:
@@ -59,6 +61,19 @@ PipeChunk = str | dict[str, Any]
 
 class SettingsTransportError(ValueError):
     """A Chat Variable value cannot be represented in OpenAI metadata."""
+
+
+class PlotlyArtifact(BaseModel):
+    """The supported LGOS Plotly artifact payload."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    schema_version: Literal[1]
+    id: str = Field(min_length=1)
+    kind: Literal["plotly"]
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    figure: dict[str, Any]
 
 
 class Pipe:
@@ -113,6 +128,7 @@ class Pipe:
         __event_call__: Any = None,
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
+        __user__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
         """
         Forward chat and complete each interrupt batch in one invocation.
@@ -164,6 +180,7 @@ class Pipe:
                         model_id=model_id,
                         request_metadata=request_metadata,
                         include_client_events=include_client_events,
+                        user_id=_user_id(__user__),
                     ) as stream:
                         async for delta in _content_deltas(
                             stream,
@@ -238,12 +255,15 @@ async def _chat(
     model_id: str,
     request_metadata: dict[str, str] | None = None,
     include_client_events: bool = False,
+    user_id: str | None = None,
 ) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
     metadata = dict(request_metadata or {})
     if include_client_events:
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
     request: dict[str, Any] = {**_model_request(model_id), "messages": messages}
+    if user_id is not None:
+        request["user"] = user_id
     if metadata:
         request["metadata"] = metadata
 
@@ -445,7 +465,7 @@ async def _content_deltas(
     stream: AsyncChatCompletionStream[Any],
     event_emitter: Any = None,
 ) -> AsyncIterator[str]:
-    """Yield text and emit portable status updates.
+    """Yield text and emit supported portable UI events.
 
     Yields:
         String chunks for the response.
@@ -454,23 +474,31 @@ async def _content_deltas(
         if isinstance(event, ContentDeltaEvent):
             yield event.delta
         elif isinstance(event, ChunkEvent) and event_emitter is not None:
-            status = _status_event(event.chunk)
-            if status is not None:
-                await event_emitter(status)
+            ui_event = _status_event(event.chunk) or _plotly_embed_event(event.chunk)
+            if ui_event is not None:
+                await event_emitter(ui_event)
 
 
-def _status_event(
+def _client_event_data(
     chunk: ChatCompletionChunk,
+    event_type: str,
 ) -> dict[str, Any] | None:
     extension = (chunk.model_extra or {}).get(LGOS_EXTENSION_KEY)
     if not isinstance(extension, dict) or extension.get("schema_version") != 1:
         return None
 
     event = extension.get("event")
-    if not isinstance(event, dict) or event.get("type") != "status":
+    if not isinstance(event, dict) or event.get("type") != event_type:
         return None
     data = event.get("data")
-    if not isinstance(data, dict):
+    return data if isinstance(data, dict) else None
+
+
+def _status_event(
+    chunk: ChatCompletionChunk,
+) -> dict[str, Any] | None:
+    data = _client_event_data(chunk, "status")
+    if data is None:
         return None
 
     description = data.get("description")
@@ -492,6 +520,92 @@ def _status_event(
             "hidden": hidden,
         },
     }
+
+
+#### PLOT ####
+
+
+def _plotly_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
+    data = _client_event_data(chunk, "artifact")
+    if data is None:
+        return None
+    try:
+        artifact = PlotlyArtifact.model_validate(data)
+    except ValidationError:
+        return None
+
+    html = _plotly_bar_html(artifact)
+    if html is None:
+        return None
+    return {"type": "embeds", "data": {"embeds": [html]}}
+
+
+def _plotly_bar_html(artifact: PlotlyArtifact) -> str | None:
+    traces = artifact.figure.get("data")
+    if not isinstance(traces, list) or not traces:
+        return None
+    trace = traces[0]
+    if not isinstance(trace, dict) or trace.get("type") != "bar":
+        return None
+
+    labels = trace.get("x")
+    raw_values = trace.get("y")
+    if (
+        not isinstance(labels, list)
+        or not isinstance(raw_values, list)
+        or not labels
+        or len(labels) != len(raw_values)
+        or not all(isinstance(label, str) for label in labels)
+    ):
+        return None
+
+    values: list[float] = []
+    for value in raw_values:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            or value < 0
+        ):
+            return None
+        values.append(float(value))
+
+    maximum = max(values) or 1
+    rows = "".join(
+        (
+            '<div class="row">'
+            f'<span class="label">{escape(label)}</span>'
+            '<span class="track">'
+            f'<span class="bar" style="width:{value / maximum * 100:.2f}%"></span>'
+            "</span>"
+            f'<span class="value">{value:g}</span>'
+            "</div>"
+        )
+        for label, value in zip(labels, values, strict=True)
+    )
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><style>
+:root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
+body {{ margin: 0; padding: 16px; color: CanvasText; background: Canvas; }}
+h2 {{ margin: 0 0 4px; font-size: 1.1rem; }}
+p {{ margin: 0 0 16px; color: GrayText; }}
+.row {{ display: grid; grid-template-columns: 3rem 1fr 3rem; gap: 10px; align-items: center; margin: 10px 0; }}
+.track {{ height: 18px; overflow: hidden; border-radius: 5px; background: color-mix(in srgb, CanvasText 12%, Canvas); }}
+.bar {{ display: block; height: 100%; border-radius: inherit; background: #6366f1; }}
+.value {{ text-align: right; font-variant-numeric: tabular-nums; }}
+</style></head><body>
+<h2>{escape(artifact.title)}</h2><p>{escape(artifact.summary)}</p>
+<div role="img" aria-label="{escape(artifact.title)}">{rows}</div>
+<script>
+const reportHeight = () => parent.postMessage({{type: 'iframe:height', height: document.documentElement.scrollHeight}}, '*');
+window.addEventListener('load', reportHeight);
+new ResizeObserver(reportHeight).observe(document.body);
+</script></body></html>"""
+
+
+def _user_id(user: dict[str, Any] | None) -> str | None:
+    user_id = (user or {}).get("id")
+    return user_id if isinstance(user_id, str) and user_id else None
 
 
 #### HITL ####
