@@ -247,7 +247,15 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
                         "title": "Quarterly revenue",
                         "summary": "Q4 is highest.",
                         "figure": {
-                            "data": [{"type": "bar", "x": ["Q1", "Q2"], "y": [1, 2]}]
+                            "data": [
+                                {
+                                    "type": "scatter",
+                                    "mode": "lines+markers",
+                                    "x": ["Q1", "Q2"],
+                                    "y": [1, 2],
+                                }
+                            ],
+                            "layout": {"showlegend": False},
                         },
                     },
                 },
@@ -259,8 +267,19 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
     assert plotly_factory.call_args.kwargs["name"] == "revenue"
     assert plotly_factory.call_args.kwargs["display"] == "inline"
     assert plotly_factory.call_args.kwargs["figure"].to_plotly_json()["data"] == [
-        {"type": "bar", "x": ["Q1", "Q2"], "y": [1, 2]}
+        {
+            "type": "scatter",
+            "mode": "lines+markers",
+            "x": ["Q1", "Q2"],
+            "y": [1, 2],
+        }
     ]
+    assert (
+        plotly_factory.call_args.kwargs["figure"].to_plotly_json()["layout"][
+            "showlegend"
+        ]
+        is False
+    )
     message_factory.assert_called_once_with(
         content="Quarterly revenue",
         elements=[element],

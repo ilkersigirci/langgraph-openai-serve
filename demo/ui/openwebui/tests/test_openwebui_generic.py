@@ -497,7 +497,18 @@ async def test_content_stream_emits_status_event() -> None:
     )
 
 
-async def test_content_stream_emits_persistent_plot_embed() -> None:
+@pytest.mark.parametrize(
+    ("trace_type", "show_legend", "chart_marker"),
+    [
+        ("bar", True, "width:100.00%"),
+        ("scatter", False, "<polyline"),
+    ],
+)
+async def test_content_stream_emits_persistent_plot_embed(
+    trace_type: str,
+    show_legend: bool,
+    chart_marker: str,
+) -> None:
     chunk = ChatCompletionChunk.model_validate(
         {
             "id": "chatcmpl-test",
@@ -517,7 +528,15 @@ async def test_content_stream_emits_persistent_plot_embed() -> None:
                         "title": "Quarterly <revenue>",
                         "summary": "Q4 is highest.",
                         "figure": {
-                            "data": [{"type": "bar", "x": ["Q1", "Q2"], "y": [1, 2]}]
+                            "data": [
+                                {
+                                    "type": trace_type,
+                                    "name": "Revenue",
+                                    "x": ["Q1", "Q2"],
+                                    "y": [1, 2],
+                                    "showlegend": show_legend,
+                                }
+                            ]
                         },
                     },
                 },
@@ -547,5 +566,6 @@ async def test_content_stream_emits_persistent_plot_embed() -> None:
     assert event["data"].keys() == {"embeds"}
     html = event["data"]["embeds"][0]
     assert "Quarterly &lt;revenue&gt;" in html
-    assert "width:100.00%" in html
+    assert chart_marker in html
+    assert ('<div class="legend">' in html) is show_legend
     assert "iframe:height" in html

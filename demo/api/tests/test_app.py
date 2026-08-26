@@ -77,7 +77,7 @@ async def test_app_lists_exactly_the_documented_models(
         "features": ["interrupts"],
     }
 
-    for model_id in ("custom-event-showcase", "persistent-plot", "status-events"):
+    for model_id in ("custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)
         extension = (model.model_extra or {})["langgraph_openai_serve"]
         assert extension == {
@@ -85,6 +85,18 @@ async def test_app_lists_exactly_the_documented_models(
             "description": descriptions[model_id],
             "features": ["client_events"],
         }
+
+    plot_model = await openai_client.models.retrieve("persistent-plot")
+    plot_extension = (plot_model.model_extra or {})["langgraph_openai_serve"]
+    assert plot_extension["features"] == ["client_events"]
+    assert plot_extension["client_settings"]["defaults"] == {
+        "chart_type": "bar",
+        "currency": "USD",
+        "show_legend": True,
+    }
+    assert plot_extension["client_settings"]["json_schema"]["properties"]["chart_type"][
+        "enum"
+    ] == ["bar", "line"]
 
 
 async def test_cors_exposes_request_id(demo_app: FastAPI) -> None:

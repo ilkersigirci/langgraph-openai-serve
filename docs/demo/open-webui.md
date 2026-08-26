@@ -176,8 +176,10 @@ It loads no browser CDN and needs no same-origin iframe setting. Select
 `lgos-b/persistent-plot`, ask **Show the chart**, then **Set Q3 to 250** to
 exercise the PostgreSQL reload and update. Ask **Which quarter is highest?** in
 a later turn to exercise a fresh graph call over the stored data. A different
-chat gets a separate chart document. Other `progress` and artifact kinds remain
-ignored.
+chat gets a separate chart document. Open WebUI exposes **Chart type**,
+**Currency**, and **Show legend** as Chat Variables and resends them with each
+request; those presentation choices are not stored with the chart data. Other
+`progress` and artifact kinds remain ignored.
 
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already

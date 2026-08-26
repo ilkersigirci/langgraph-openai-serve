@@ -182,7 +182,10 @@ Select `lgos-b/persistent-plot` in Compose or `persistent-plot` locally and ask
 the canonical document in the API's PostgreSQL store while Chainlit continues
 to own the visible conversation and native chart elements. Ask **Which quarter
 is highest?** in a later turn to exercise a fresh graph call over the stored
-data. A different thread gets a separate chart document.
+data. Chainlit discovers **Chart type**, **Currency**, and **Show legend** as
+native Chat Settings and resends them with each request; those presentation
+choices are not stored with the chart data. A different thread gets a separate
+chart document.
 
 Behind Bifrost, Chainlit discovers providers from the catalog URL and uses the
 raw pass-through URL for metadata-bearing model lists, detailed retrieval, and

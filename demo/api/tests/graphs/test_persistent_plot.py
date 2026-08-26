@@ -1,3 +1,4 @@
+import json
 from typing import Any, cast
 
 from langchain_core.messages import HumanMessage
@@ -58,6 +59,13 @@ async def test_plot_emits_a_portable_artifact(make_request) -> None:
         metadata={
             "session_id": "thread-1",
             "langgraph_stream_events": "v1",
+            "langgraph_runtime_settings": json.dumps(
+                {
+                    "chart_type": "line",
+                    "currency": "EUR",
+                    "show_legend": False,
+                }
+            ),
         },
     )
 
@@ -75,7 +83,11 @@ async def test_plot_emits_a_portable_artifact(make_request) -> None:
     assert len(events) == 1
     assert events[0]["type"] == "artifact"
     assert events[0]["data"]["kind"] == "plotly"
-    assert events[0]["data"]["figure"]["data"][0]["y"] == [120, 180, 150, 230]
+    figure = events[0]["data"]["figure"]
+    assert figure["data"][0]["type"] == "scatter"
+    assert figure["data"][0]["y"] == [120, 180, 150, 230]
+    assert figure["layout"]["showlegend"] is False
+    assert "€230k" in "".join(item for item in stream if isinstance(item, str))
 
 
 async def test_plot_supports_non_streaming_completions(make_request) -> None:

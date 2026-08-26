@@ -534,18 +534,18 @@ def _plotly_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
     except ValidationError:
         return None
 
-    html = _plotly_bar_html(artifact)
+    html = _plotly_html(artifact)
     if html is None:
         return None
     return {"type": "embeds", "data": {"embeds": [html]}}
 
 
-def _plotly_bar_html(artifact: PlotlyArtifact) -> str | None:
+def _plotly_html(artifact: PlotlyArtifact) -> str | None:
     traces = artifact.figure.get("data")
     if not isinstance(traces, list) or not traces:
         return None
     trace = traces[0]
-    if not isinstance(trace, dict) or trace.get("type") != "bar":
+    if not isinstance(trace, dict) or trace.get("type") not in ("bar", "scatter"):
         return None
 
     labels = trace.get("x")
@@ -571,17 +571,56 @@ def _plotly_bar_html(artifact: PlotlyArtifact) -> str | None:
         values.append(float(value))
 
     maximum = max(values) or 1
-    rows = "".join(
-        (
-            '<div class="row">'
-            f'<span class="label">{escape(label)}</span>'
-            '<span class="track">'
-            f'<span class="bar" style="width:{value / maximum * 100:.2f}%"></span>'
-            "</span>"
-            f'<span class="value">{value:g}</span>'
-            "</div>"
+    if trace["type"] == "bar":
+        rows = "".join(
+            (
+                '<div class="row">'
+                f'<span class="label">{escape(label)}</span>'
+                '<span class="track">'
+                f'<span class="bar" style="width:{value / maximum * 100:.2f}%"></span>'
+                "</span>"
+                f'<span class="value">{value:g}</span>'
+                "</div>"
+            )
+            for label, value in zip(labels, values, strict=True)
         )
-        for label, value in zip(labels, values, strict=True)
+        chart = f'<div class="bars">{rows}</div>'
+    else:
+        points = [
+            (
+                50 if len(values) == 1 else 5 + index / (len(values) - 1) * 90,
+                95 - value / maximum * 90,
+            )
+            for index, value in enumerate(values)
+        ]
+        polyline = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+        markers = "".join(
+            (
+                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.5">'
+                f"<title>{escape(label)}: {value:g}</title></circle>"
+            )
+            for (x, y), label, value in zip(points, labels, values, strict=True)
+        )
+        axis_labels = "".join(f"<span>{escape(label)}</span>" for label in labels)
+        chart = (
+            '<div class="line-chart">'
+            '<svg viewBox="0 0 100 100" role="img" '
+            f'aria-label="{escape(artifact.title)}">'
+            f'<polyline points="{polyline}" />{markers}</svg>'
+            f'<div class="axis-labels">{axis_labels}</div></div>'
+        )
+
+    layout = artifact.figure.get("layout")
+    layout_show_legend = (
+        layout.get("showlegend", True) if isinstance(layout, dict) else True
+    )
+    show_legend = trace.get("showlegend", layout_show_legend) is not False
+    trace_name = trace.get("name")
+    legend_name = trace_name if isinstance(trace_name, str) else "Series"
+    legend = (
+        f'<div class="legend"><span></span>{escape(legend_name)}</div>'
+        if show_legend
+        else ""
     )
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -589,13 +628,19 @@ def _plotly_bar_html(artifact: PlotlyArtifact) -> str | None:
 body {{ margin: 0; padding: 16px; color: CanvasText; background: Canvas; }}
 h2 {{ margin: 0 0 4px; font-size: 1.1rem; }}
 p {{ margin: 0 0 16px; color: GrayText; }}
+.legend {{ display: flex; align-items: center; gap: 6px; margin-bottom: 12px; font-size: .9rem; }}
+.legend span {{ width: 12px; height: 12px; border-radius: 3px; background: #6366f1; }}
 .row {{ display: grid; grid-template-columns: 3rem 1fr 3rem; gap: 10px; align-items: center; margin: 10px 0; }}
 .track {{ height: 18px; overflow: hidden; border-radius: 5px; background: color-mix(in srgb, CanvasText 12%, Canvas); }}
 .bar {{ display: block; height: 100%; border-radius: inherit; background: #6366f1; }}
 .value {{ text-align: right; font-variant-numeric: tabular-nums; }}
+.line-chart svg {{ display: block; width: 100%; height: 240px; overflow: visible; }}
+.line-chart polyline {{ fill: none; stroke: #6366f1; stroke-width: 2; vector-effect: non-scaling-stroke; }}
+.line-chart circle {{ fill: #6366f1; stroke: Canvas; stroke-width: 1; vector-effect: non-scaling-stroke; }}
+.axis-labels {{ display: flex; justify-content: space-between; font-size: .85rem; }}
 </style></head><body>
 <h2>{escape(artifact.title)}</h2><p>{escape(artifact.summary)}</p>
-<div role="img" aria-label="{escape(artifact.title)}">{rows}</div>
+{legend}<div role="img" aria-label="{escape(artifact.title)}">{chart}</div>
 <script>
 const reportHeight = () => parent.postMessage({{type: 'iframe:height', height: document.documentElement.scrollHeight}}, '*');
 window.addEventListener('load', reportHeight);

@@ -28,8 +28,10 @@ with the [demo API instructions](api.md#start-postgresql-and-the-api).
 state. `persistent-plot` instead stores one chart document under a
 hash of the OpenAI `user` and `metadata.session_id`. A different user or session
 produces a different namespace. The Store contains neither graph state nor chat
-history; ordinary chat history remains client-owned. The demo uses LGOS's
-default shared checkpoint scope, so multi-tenant applications must derive that
+history. Chart type, currency label, and legend visibility are request-scoped
+client settings and are not written to the Store. Ordinary chat history remains
+client-owned. The demo uses LGOS's default shared checkpoint scope, so
+multi-tenant applications must derive that
 scope from authenticated server state. Operation identity, canonical replay,
 and retention rules are defined in
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).

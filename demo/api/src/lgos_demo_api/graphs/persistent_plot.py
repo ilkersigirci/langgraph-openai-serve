@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from hashlib import sha256
 from typing import Annotated, Literal
 
@@ -43,6 +44,26 @@ class PlotDocument(BaseModel):
     q4: float = Field(default=230, ge=0)
 
 
+class PersistentPlotSettings(ClientSettings):
+    """Small presentation settings selected by the OpenAI client."""
+
+    chart_type: Literal["bar", "line"] = Field(
+        default="bar",
+        title="Chart type",
+        description="Render the stored values as a bar or line chart.",
+    )
+    currency: Literal["USD", "EUR"] = Field(
+        default="USD",
+        title="Currency",
+        description="Label the stored revenue values as USD or EUR.",
+    )
+    show_legend: bool = Field(
+        default=True,
+        title="Show legend",
+        description="Display the chart legend.",
+    )
+
+
 class PlotlyArtifact(BaseModel):
     """Versioned chart payload shared by the graph and UI adapters."""
 
@@ -64,6 +85,9 @@ class PersistentPlotState(BaseModel):
 class PersistentPlotContext:
     user_id: str | None
     session_id: str | None
+    settings: PersistentPlotSettings = dataclass_field(
+        default_factory=PersistentPlotSettings
+    )
 
 
 PersistentPlotGraph = CompiledStateGraph[
@@ -74,29 +98,43 @@ PersistentPlotGraph = CompiledStateGraph[
 ]
 
 
-def _artifact(document: PlotDocument) -> PlotlyArtifact:
+def _currency_symbol(currency: Literal["USD", "EUR"]) -> str:
+    return "$" if currency == "USD" else "€"
+
+
+def _artifact(
+    document: PlotDocument,
+    settings: PersistentPlotSettings,
+) -> PlotlyArtifact:
     values = [document.q1, document.q2, document.q3, document.q4]
     highest_index = values.index(max(values))
     title = "Quarterly revenue"
-    summary = f"{QUARTERS[highest_index]} is highest at ${max(values):g}k."
+    symbol = _currency_symbol(settings.currency)
+    summary = f"{QUARTERS[highest_index]} is highest at {symbol}{max(values):g}k."
+    trace: dict[str, JsonValue] = {
+        "type": "bar" if settings.chart_type == "bar" else "scatter",
+        "name": "Revenue",
+        "x": list(QUARTERS),
+        "y": values,
+        "marker": {"color": "#6366f1"},
+        "showlegend": settings.show_legend,
+    }
+    if settings.chart_type == "line":
+        trace["mode"] = "lines+markers"
+        trace["line"] = {"color": "#6366f1"}
     return PlotlyArtifact(
         id=ARTIFACT_KEY,
         title=title,
         summary=summary,
         figure={
-            "data": [
-                {
-                    "type": "bar",
-                    "name": "Revenue",
-                    "x": list(QUARTERS),
-                    "y": values,
-                    "marker": {"color": "#6366f1"},
-                }
-            ],
+            "data": [trace],
             "layout": {
                 "title": {"text": title},
                 "xaxis": {"title": {"text": "Quarter"}},
-                "yaxis": {"title": {"text": "Revenue ($k)"}},
+                "yaxis": {
+                    "title": {"text": f"Revenue ({settings.currency}, thousands)"}
+                },
+                "showlegend": settings.show_legend,
             },
         },
     )
@@ -148,8 +186,9 @@ async def show_plot(
     update = _revenue_update(prompt)
     if update is not None:
         quarter, revenue = update
+        symbol = _currency_symbol(runtime.context.settings.currency)
         if getattr(document, quarter) == revenue:
-            update_message = f"{quarter.upper()} is already ${revenue:g}k."
+            update_message = f"{quarter.upper()} is already {symbol}{revenue:g}k."
         else:
             document = PlotDocument.model_validate(
                 {
@@ -158,7 +197,7 @@ async def show_plot(
                 }
             )
             changed = True
-            update_message = f"I set {quarter.upper()} to ${revenue:g}k."
+            update_message = f"I set {quarter.upper()} to {symbol}{revenue:g}k."
 
     if thread_namespace is not None and changed:
         await store.aput(
@@ -167,7 +206,7 @@ async def show_plot(
             document.model_dump(mode="json"),
         )
 
-    artifact = _artifact(document)
+    artifact = _artifact(document, runtime.context.settings)
     get_stream_writer()(
         client_event(
             "artifact",
@@ -200,9 +239,15 @@ def context_factory(
     _client_settings: ClientSettings | None,
 ) -> PersistentPlotContext:
     session_id = (request.metadata or {}).get("session_id")
+    settings = (
+        _client_settings
+        if isinstance(_client_settings, PersistentPlotSettings)
+        else PersistentPlotSettings()
+    )
     return PersistentPlotContext(
         user_id=request.user,
         session_id=session_id or None,
+        settings=settings,
     )
 
 
@@ -223,12 +268,14 @@ def create_persistent_plot_graph_config(
         output_to_text=output_to_text,
         streamable_node_names=["show_plot"],
         features={GraphFeature.CLIENT_EVENTS},
+        client_settings=PersistentPlotSettings,
     )
 
 
 __all__ = [
     "ARTIFACT_KEY",
     "PersistentPlotContext",
+    "PersistentPlotSettings",
     "PlotDocument",
     "PlotlyArtifact",
     "create_persistent_plot_graph",
