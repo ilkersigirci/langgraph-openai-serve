@@ -83,6 +83,7 @@ async def test_pipe_lists_registered_models(
         api_key="DUMMY",
         timeout=45,
         max_retries=0,
+        default_headers={"User-Agent": "lgos-openwebui"},
     )
     client.models.list.assert_awaited_once_with()
     retrieve_model.assert_not_awaited()

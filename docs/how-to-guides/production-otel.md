@@ -104,7 +104,11 @@ The overlay:
   traces without SDK sampling;
 - requires the per-machine `OTEL_HOST_NAME` value and adds it to incoming
   signals at the local Collector;
-- removes FastAPI `send`/`receive` transport leaf spans before queueing; and
+- prevents OpenTelemetry's FastAPI/ASGI instrumentation from creating internal
+  `send`/`receive` spans;
+- identifies demo UI requests with standard `User-Agent` values, allowing
+  request tables to filter the API span's OpenTelemetry
+  `user_agent.original` attribute instead of joining UI and API span sets;
 - removes Langfuse/GenAI payload attributes from the general Grafana trace
   pipeline while leaving Langfuse's direct exporter unchanged;
 - batches at the Collector export queue and persists that queue under

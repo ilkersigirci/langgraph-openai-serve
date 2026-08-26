@@ -262,6 +262,7 @@ def _client(
         api_key=api_key,
         timeout=timeout,
         max_retries=0,
+        default_headers={"User-Agent": "lgos-openwebui"},
     )
 
 

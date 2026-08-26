@@ -13,6 +13,7 @@ openai_client = AsyncOpenAI(
     base_url=settings.OPENAI.base_url,
     api_key=settings.OPENAI.api_key,
     max_retries=0,
+    default_headers={"User-Agent": "lgos-chainlit"},
 )
 catalog_client = AsyncOpenAI(
     base_url=settings.OPENAI.catalog_base_url or settings.OPENAI.base_url,

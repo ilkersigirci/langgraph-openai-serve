@@ -31,6 +31,11 @@ def _configured_model() -> SimpleNamespace:
     )
 
 
+async def test_uservalves_simple_identifies_openwebui_for_telemetry() -> None:
+    async with Pipe()._client() as client:
+        assert client.default_headers["User-Agent"] == "lgos-openwebui"
+
+
 async def test_uservalves_simple_forwards_only_changed_user_valves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

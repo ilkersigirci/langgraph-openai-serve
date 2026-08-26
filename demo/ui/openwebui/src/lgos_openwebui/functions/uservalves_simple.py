@@ -112,6 +112,7 @@ class Pipe:
             base_url=self.valves.OPENAI_API_BASE_URL,
             api_key=self.valves.OPENAI_API_KEY,
             timeout=30,
+            default_headers={"User-Agent": "lgos-openwebui"},
         )
 
     async def _retrieve_model(self, client: AsyncOpenAI) -> Any:

@@ -149,6 +149,10 @@ async def test_standard_endpoint_preserves_listed_model_ids(
     }
 
 
+def test_chat_client_identifies_chainlit_for_telemetry() -> None:
+    assert clients.openai_client.default_headers["User-Agent"] == "lgos-chainlit"
+
+
 async def test_model_retrieval_rejects_a_non_model_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
