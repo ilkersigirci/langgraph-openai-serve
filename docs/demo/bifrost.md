@@ -91,9 +91,10 @@ Replace each key when its target application enforces authentication.
     request-based governance, transport retries, and observability remain
     available.
 
-    Usage-based token and cost controls require a standard upstream `usage`
-    object. LGOS does not currently emit usage in streaming chunks, so enforce
-    request limits independently of streaming token totals.
+    Usage-based token and cost controls require provider-reported token counts.
+    LGOS returns aggregated usage in complete responses and, when requested
+    with `stream_options.include_usage`, in the standard final streaming usage
+    chunk. Providers that do not report usage produce no usage object.
 
 Open WebUI's dynamic integration and Chainlit discover provider-qualified LGOS
 models from Bifrost's catalog, then add `x-model-provider` only for pass-through

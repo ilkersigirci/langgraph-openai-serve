@@ -82,7 +82,7 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-Try the citation custom-event graph:
+Try the citation graph:
 
 ```python
 response = client.chat.completions.create(
@@ -95,8 +95,7 @@ print(response.choices[0].message.annotations)
 ```
 
 The deterministic answer combines portable Markdown resources with structured
-citations. See [Citation Events](../reference.md#citation-events) for the graph
-helper and
+citations. See [Citations](../reference.md#citations) for the graph pattern and
 [Citation ownership](../explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 

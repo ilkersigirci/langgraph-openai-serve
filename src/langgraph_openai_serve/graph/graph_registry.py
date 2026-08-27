@@ -4,7 +4,7 @@ from types import MappingProxyType
 from typing import Annotated, Any
 
 from langchain_core.callbacks.base import Callbacks
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import (
@@ -36,7 +36,7 @@ ContextFactory = Callable[
     [ChatCompletionRequest, Any],
     Any | Awaitable[Any],
 ]
-OutputToText = Callable[[Any], str | Awaitable[str]]
+OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
 _INTERRUPT_CHECKPOINTER_METHODS = (
     "aget_tuple",
     "alist",
@@ -82,7 +82,7 @@ class GraphConfig(BaseModel):
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
-    output_to_text: OutputToText | None = None
+    output_to_message: OutputToMessage | None = None
     run_coordinator: RunCoordinator | None = None
 
     @field_validator("client_settings")
@@ -169,12 +169,26 @@ class GraphConfig(BaseModel):
         # coercion when it invokes the graph.
         return context
 
-    async def render_output(self, output: Any) -> str:
-        """Convert native graph output into assistant response text."""
-        if self.output_to_text is None:
-            messages = output["messages"]
-            return messages[-1].content if messages else ""
-        return await _maybe_await(self.output_to_text(output))
+    async def render_output(self, output: Any) -> AIMessage:
+        """Convert native graph output into the durable assistant message."""
+        if self.output_to_message is not None:
+            return await _maybe_await(self.output_to_message(output))
+
+        messages = (
+            output["messages"]
+            if isinstance(output, Mapping)
+            else getattr(output, "messages", None)
+        )
+        if messages is None:
+            msg = "Graph output must expose a messages field."
+            raise GraphConfigurationError(msg)
+        if not messages:
+            return AIMessage(content="")
+        message = messages[-1]
+        if not isinstance(message, AIMessage):
+            msg = "The final graph message must be an AIMessage."
+            raise GraphConfigurationError(msg)
+        return message
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,

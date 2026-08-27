@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
@@ -86,9 +86,14 @@ class ScriptedChat:
 
 
 async def collect_response(
-    pipe_response: AsyncIterator[str | dict[str, Any]],
+    pipe_response: Awaitable[
+        AsyncIterator[str | dict[str, Any]] | str | dict[str, Any]
+    ],
 ) -> list[str | dict[str, Any]]:
-    return [chunk async for chunk in pipe_response]
+    response = await pipe_response
+    if isinstance(response, str | dict):
+        return [response]
+    return [chunk async for chunk in response]
 
 
 async def run_interrupt_pipe(

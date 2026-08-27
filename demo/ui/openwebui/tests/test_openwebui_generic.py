@@ -351,7 +351,7 @@ async def test_pipe_streams_markdown_unchanged(
         pytest.param(False, id="non-streaming"),
     ],
 )
-async def test_pipe_forwards_annotations_only_when_streaming(
+async def test_pipe_honors_stream_mode_and_preserves_annotations(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
     stream: bool,
@@ -359,6 +359,9 @@ async def test_pipe_forwards_annotations_only_when_streaming(
     expected_completion = citation_response()
     chat = ScriptedChat(((MARKDOWN_RESPONSE,), expected_completion))
     monkeypatch.setattr(generic, "_chat", chat)
+    complete = AsyncMock(return_value=expected_completion)
+    monkeypatch.setattr(generic, "_chat_completion", complete)
+    emitter = AsyncMock()
 
     chunks = await collect_response(
         configured_pipe.pipe(
@@ -367,13 +370,15 @@ async def test_pipe_forwards_annotations_only_when_streaming(
                 model="generic.lgos-a/citation-events",
                 stream=stream,
             ),
+            __event_emitter__=emitter,
         )
     )
 
-    expected: list[str | dict[str, Any]] = [MARKDOWN_RESPONSE]
+    expected: list[str | dict[str, Any]]
     if stream:
         annotation = expected_completion.choices[0].message.annotations[0]
-        expected.append(
+        expected = [
+            MARKDOWN_RESPONSE,
             {
                 "choices": [
                     {
@@ -384,10 +389,34 @@ async def test_pipe_forwards_annotations_only_when_streaming(
                         "finish_reason": None,
                     }
                 ]
+            },
+        ]
+        assert len(chat.calls) == 1
+        complete.assert_not_awaited()
+        emitter.assert_not_awaited()
+    else:
+        expected = [expected_completion.model_dump(mode="json", exclude_none=True)]
+        assert chat.calls == []
+        complete.assert_awaited_once()
+        emitter.assert_awaited_once_with(
+            {
+                "type": "source",
+                "data": {
+                    "source": {
+                        "name": "Example source",
+                        "url": "https://example.com/source",
+                    },
+                    "document": ["Example source"],
+                    "metadata": [
+                        {
+                            "source": "https://example.com/source",
+                            "url": "https://example.com/source",
+                        }
+                    ],
+                },
             }
         )
     assert chunks == expected
-    assert chat.calls[0][1:] == ("lgos-a/citation-events",)
 
 
 @pytest.mark.parametrize(

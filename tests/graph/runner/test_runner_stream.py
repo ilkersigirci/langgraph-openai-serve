@@ -1,9 +1,7 @@
-import operator
-
 from anyio import Event, fail_after, sleep_forever
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessageChunk, HumanMessage
-from langgraph.constants import TAG_HIDDEN
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
 from langgraph.types import CustomStreamPart
 
@@ -30,8 +28,8 @@ async def stream_text(name: str, graph_registry: GraphRegistry, make_request) ->
         chat_request,
     )
     events = [event async for event in chunks]
-    assert all(isinstance(event, str) for event in events)
-    return "".join(events)
+    assert isinstance(events[-1], AIMessage)
+    return "".join(event for event in events if isinstance(event, str))
 
 
 async def test_nested_subgraph_streaming(
@@ -69,7 +67,7 @@ async def test_nested_subgraph_streaming(
                 request_to_input=lambda request, messages: {
                     "question": messages[-1].content
                 },
-                output_to_text=operator.itemgetter("answer"),
+                output_to_message=lambda output: AIMessage(content=output["answer"]),
                 streamable_node_names=["generate"],
             )
         },
@@ -78,12 +76,12 @@ async def test_nested_subgraph_streaming(
     assert await stream_text("nested", graph_registry, make_request) == "nested"
 
 
-async def test_stream_filters_nodes_hidden_tags_and_non_ai_messages(
+async def test_stream_filters_nodes_nostream_tags_and_non_ai_messages(
     make_request,
 ) -> None:
     draft_model = FakeListChatModel(responses=["draft"])
     hidden_model = FakeListChatModel(responses=["hidden"]).with_config(
-        tags=[TAG_HIDDEN]
+        tags=[TAG_NOSTREAM]
     )
     visible_model = FakeListChatModel(responses=["visible"])
 
@@ -171,6 +169,7 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
             "ns": ("research:task-id",),
             "data": payload,
         }
+        yield {"type": "values", "ns": (), "data": {"messages": []}}
 
     class Graph:
         def astream(self, *args, **kwargs):
@@ -181,6 +180,7 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",
+            output_to_message=lambda _output: AIMessage(content=""),
         ),
         graph=graph,
         inputs={},
@@ -194,5 +194,6 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
             type="custom",
             ns=("research:task-id",),
             data=payload,
-        )
+        ),
+        AIMessage(content=""),
     ]

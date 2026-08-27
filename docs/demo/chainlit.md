@@ -80,6 +80,12 @@ Completions remain available.
 *Runtime settings discovered from `lgos-a/simple-graph` and rendered as native
 Chainlit controls.*
 
+The same panel includes a Chainlit-owned **Stream response** switch for every
+profile. It defaults to enabled and controls the standard Chat Completions
+`stream` parameter; it is not included in `langgraph_runtime_settings`. With
+streaming disabled, Chainlit waits for the complete response and sends the
+answer once. Transient client events remain streaming-only.
+
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
 request that needs them. The underlying contract is documented in

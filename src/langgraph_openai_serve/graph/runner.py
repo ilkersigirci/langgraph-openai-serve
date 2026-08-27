@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from anyio import CancelScope
-from langchain_core.messages import AIMessageChunk
-from langgraph.constants import TAG_HIDDEN
-from langgraph.types import CustomStreamPart, StreamMode
+from langchain_core.messages import AIMessage, AIMessageChunk
+from langgraph.constants import TAG_NOSTREAM
+from langgraph.types import CustomStreamPart, GraphOutput, StreamMode
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
@@ -34,14 +34,15 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class LangGraphInvocation:
-    """A graph result together with custom events emitted during its run."""
+    """A durable graph result."""
 
     output: "LangGraphOutput"
-    custom_events: tuple[CustomStreamPart, ...]
 
 
-LangGraphOutput = str | interrupt_models.LangGraphInterruptBatch
-LangGraphStreamEvent = str | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
+LangGraphOutput = AIMessage | interrupt_models.LangGraphInterruptBatch
+LangGraphStreamEvent = (
+    str | AIMessage | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
+)
 
 _MISSING = object()
 _CheckpointDisposition = Literal["unknown", "preserve", "delete"]
@@ -64,7 +65,6 @@ async def run_langgraph(
     Examples:
         >>> invocation = await run_langgraph("my-model", messages, registry)
         >>> print(invocation.output)
-        >>> print(invocation.custom_events)
 
     Args:
         model: The name of the model to use, which also determines which graph to use.
@@ -73,7 +73,7 @@ async def run_langgraph(
         request: The complete chat completion request passed to graph adapters.
 
     Returns:
-        The graph output and custom events emitted during the invocation.
+        The durable graph output.
 
     """
     run = await prepare_run(model, messages, graph_registry, request)
@@ -82,7 +82,7 @@ async def run_langgraph(
 
 
 async def invoke_run(run: GraphRun) -> LangGraphInvocation:
-    """Invoke a graph and collect its custom events."""
+    """Invoke a graph and return only its durable result."""
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
@@ -91,55 +91,33 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                 msg = "Pending interrupt state disappeared before use."
                 raise RuntimeError(msg)
             checkpoint_disposition = "preserve"
-            return LangGraphInvocation(output=interrupt_batch, custom_events=())
+            return LangGraphInvocation(output=interrupt_batch)
 
-        stream_mode: list[StreamMode] = ["values", "custom"]
-
-        final_output: Any = _MISSING
-        custom_events: list[CustomStreamPart] = []
-        graph_stream = cast(
-            "AsyncGenerator[dict[str, Any], None]",
-            run.graph.astream(
+        result = cast(
+            "GraphOutput[Any]",
+            await run.graph.ainvoke(
                 run.inputs,
                 config=run.runnable_config,
                 context=run.context,
-                stream_mode=stream_mode,
                 output_keys=run.graph.output_channels,
-                **_astream_options(run),
+                **_invoke_options(run),
             ),
         )
-        async with aclosing(graph_stream):
-            async for event in graph_stream:
-                if event.get("type") == "custom":
-                    custom_events.append(cast("CustomStreamPart", event))
-                    continue
-
-                # Subgraph values share this stream, but only the root namespace is
-                # the registered graph's final output.
-                if event.get("type") == "values" and not event.get("ns"):
-                    final_output = event.get("data")
 
         if run.config.supports(GraphFeature.INTERRUPTS):
             interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
-                return LangGraphInvocation(
-                    output=interrupt_batch,
-                    custom_events=tuple(custom_events),
-                )
+                return LangGraphInvocation(output=interrupt_batch)
 
-        if final_output is _MISSING:
-            msg = "LangGraph invocation completed without a final value."
-            raise RuntimeError(msg)
-
-        rendered_output = await run.config.render_output(final_output)
+        rendered_output = _with_usage(
+            await run.config.render_output(result.value),
+            run,
+        )
         if run.config.supports(GraphFeature.INTERRUPTS):
             checkpoint_disposition = "delete"
 
-        return LangGraphInvocation(
-            output=rendered_output,
-            custom_events=tuple(custom_events),
-        )
+        return LangGraphInvocation(output=rendered_output)
     finally:
         await finalize_run(run, checkpoint_disposition)
 
@@ -196,7 +174,8 @@ async def stream_run(
             yield interrupt_batch
             return
 
-        stream_mode: list[StreamMode] = ["messages", "custom"]
+        stream_mode: list[StreamMode] = ["messages", "custom", "values"]
+        final_output: Any = _MISSING
 
         graph_stream = cast(
             "AsyncGenerator[dict[str, Any], None]",
@@ -214,6 +193,10 @@ async def stream_run(
                     yield cast("CustomStreamPart", event)
                     continue
 
+                if event.get("type") == "values" and not event.get("ns"):
+                    final_output = event.get("data")
+                    continue
+
                 if event.get("type") != "messages":
                     continue
 
@@ -226,8 +209,11 @@ async def stream_run(
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
                 yield interrupt_batch
+                return
             else:
                 checkpoint_disposition = "delete"
+
+        yield await _render_stream_output(final_output, run)
     finally:
         await finalize_run(run, checkpoint_disposition)
 
@@ -237,7 +223,7 @@ def text_from_message_event(event: dict, run: GraphRun) -> str | None:
     message, metadata = event["data"]
     if not isinstance(message, AIMessageChunk):
         return None
-    if TAG_HIDDEN in (metadata.get("tags") or []):
+    if TAG_NOSTREAM in (metadata.get("tags") or []):
         return None
     if metadata.get("langgraph_node") not in run.config.streamable_node_names:
         return None
@@ -246,26 +232,29 @@ def text_from_message_event(event: dict, run: GraphRun) -> str | None:
     return content or None
 
 
-def _astream_options(run: GraphRun) -> dict[str, Any]:
-    """Build the shared execution options for LangGraph event streams."""
-    options: dict[str, Any] = {"subgraphs": True, "version": "v2"}
+def _invoke_options(run: GraphRun) -> dict[str, Any]:
+    """Build shared LangGraph invocation options."""
+    options: dict[str, Any] = {"version": "v2"}
     if run.config.supports(GraphFeature.INTERRUPTS):
         options["durability"] = "exit"
     return options
 
 
-def usage_for(
-    output: LangGraphOutput,
-    messages: list[ChatCompletionRequestMessage],
-) -> dict[str, int]:
-    """Calculate token usage."""
-    prompt_tokens = sum(len((message.content or "").split()) for message in messages)
-    completion_tokens = len(output.split()) if isinstance(output, str) else 0
-    return {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens + completion_tokens,
-    }
+def _astream_options(run: GraphRun) -> dict[str, Any]:
+    """Build LangGraph streaming options."""
+    return {"subgraphs": True, **_invoke_options(run)}
+
+
+def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:
+    usage = run.usage_metadata()
+    return message.model_copy(update={"usage_metadata": usage}) if usage else message
+
+
+async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
+    if output is _MISSING:
+        msg = "LangGraph stream completed without a final value."
+        raise RuntimeError(msg)
+    return _with_usage(await run.config.render_output(output), run)
 
 
 async def _durable_interrupt_batch(

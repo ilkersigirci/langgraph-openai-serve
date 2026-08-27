@@ -23,7 +23,7 @@ flowchart TD
 
   route -->|"API, OpenAI, adapter, stream, or serve"| checks
   route -->|"other questions"| extract
-  api_summary --> output["output_to_text"]
+  api_summary --> output["output_to_message"]
   docs_summary --> output
   output --> response([OpenAI assistant text])
 ```

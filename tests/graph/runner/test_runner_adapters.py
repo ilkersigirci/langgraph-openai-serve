@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
@@ -49,9 +49,9 @@ async def test_typed_dict_schemas_and_native_context(
         .compile()
     )
 
-    async def output_to_text(output):
+    async def output_to_message(output):
         output_keys.append(set(output))
-        return output["answer"]
+        return AIMessage(content=output["answer"])
 
     graph_registry = GraphRegistry(
         registry={
@@ -63,7 +63,7 @@ async def test_typed_dict_schemas_and_native_context(
                     "ignored": True,
                 },
                 context_factory=lambda request, _settings: {"user_id": request.user},
-                output_to_text=output_to_text,
+                output_to_message=output_to_message,
             )
         },
     )
@@ -76,7 +76,7 @@ async def test_typed_dict_schemas_and_native_context(
         chat_request,
     )
 
-    assert invocation.output == "alice:answer"
+    assert invocation.output.text == "alice:answer"
     assert output_keys == [{"answer"}]
 
 
@@ -114,7 +114,7 @@ async def test_async_graph_factory_and_async_adapters(
                 description="DUMMY",
                 request_to_input=request_to_input,
                 context_factory=context_factory,
-                output_to_text=lambda output: output.answer,
+                output_to_message=lambda output: AIMessage(content=output.answer),
             )
         },
     )
@@ -127,4 +127,4 @@ async def test_async_graph_factory_and_async_adapters(
         chat_request,
     )
 
-    assert invocation.output == "question"
+    assert invocation.output.text == "question"

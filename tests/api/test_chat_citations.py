@@ -1,19 +1,19 @@
 import pytest
 from fastapi import FastAPI
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.messages.content import create_citation, create_text_block
 from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
-from langgraph.types import CustomStreamPart
 from openai import AsyncOpenAI
 
 from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
     LanggraphOpenaiServe,
-    citation_event,
     citation_slice,
 )
-from langgraph_openai_serve.api.chat.utils.events import annotation_from_custom_event
+from langgraph_openai_serve.api.chat.utils.responses import annotations_from_message
 from tests.graph.support.schemas import MessageState
 
 ANSWER = "Cited answer with source"
@@ -38,14 +38,27 @@ def citation_app() -> FastAPI:
 
     async def generate(state: MessageState):
         get_stream_writer()({"type": "progress", "data": {"percent": 50}})
-        get_stream_writer()(
-            citation_event(
-                url=SOURCE_URL,
-                title=SOURCE_TITLE,
-                span=SOURCE_SPAN,
-            )
-        )
-        return {"messages": [await model.ainvoke(state["messages"])]}
+        response = await model.ainvoke(state["messages"])
+        return {
+            "messages": [
+                AIMessage(
+                    content_blocks=[
+                        create_text_block(
+                            text=response.text,
+                            annotations=[
+                                create_citation(
+                                    url=SOURCE_URL,
+                                    title=SOURCE_TITLE,
+                                    start_index=SOURCE_SPAN[0],
+                                    end_index=SOURCE_SPAN[1] - 1,
+                                    cited_text=CITATION_TEXT,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            ]
+        }
 
     graph = (
         StateGraph(MessageState)
@@ -88,21 +101,6 @@ async def test_non_streaming_completion_uses_openai_inclusive_end_index(
     assert ANSWER[citation_slice(message.annotations[0], ANSWER)] == CITATION_TEXT
 
 
-@pytest.mark.parametrize(
-    "span",
-    [
-        pytest.param((-1, 1), id="negative-start"),
-        pytest.param((0, 0), id="empty"),
-        pytest.param((2, 1), id="reversed"),
-    ],
-)
-def test_citation_event_rejects_invalid_half_open_spans(
-    span: tuple[int, int],
-) -> None:
-    with pytest.raises(ValueError, match="valid non-empty"):
-        citation_event(url=SOURCE_URL, title=SOURCE_TITLE, span=span)
-
-
 async def test_streaming_completion_emits_annotations_on_final_delta(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -132,15 +130,70 @@ async def test_streaming_completion_emits_annotations_on_final_delta(
 
 
 def test_citation_must_refer_to_final_assistant_text() -> None:
-    event = CustomStreamPart(
-        type="custom",
-        ns=(),
-        data=citation_event(
-            url=SOURCE_URL,
-            title=SOURCE_TITLE,
-            span=(0, len(ANSWER) + 1),
-        ),
+    message = AIMessage(
+        content_blocks=[
+            create_text_block(
+                text=ANSWER,
+                annotations=[
+                    create_citation(
+                        url=SOURCE_URL,
+                        title=SOURCE_TITLE,
+                        start_index=0,
+                        end_index=len(ANSWER),
+                    )
+                ],
+            )
+        ]
     )
 
     with pytest.raises(ValueError, match="final assistant text"):
-        annotation_from_custom_event(event, ANSWER)
+        annotations_from_message(message)
+
+
+def test_citation_indices_are_offset_across_text_blocks() -> None:
+    prefix = "First block. "
+    cited_text = "Second"
+    message = AIMessage(
+        content_blocks=[
+            create_text_block(text=prefix),
+            create_text_block(
+                text=f"{cited_text} block.",
+                annotations=[
+                    create_citation(
+                        url=SOURCE_URL,
+                        title=SOURCE_TITLE,
+                        start_index=0,
+                        end_index=len(cited_text) - 1,
+                        cited_text=cited_text,
+                    )
+                ],
+            ),
+        ]
+    )
+
+    annotation = annotations_from_message(message)[0]
+
+    assert annotation.url_citation.start_index == len(prefix)
+    assert message.text[citation_slice(annotation, message.text)] == cited_text
+
+
+def test_citation_indices_must_match_cited_text() -> None:
+    message = AIMessage(
+        content_blocks=[
+            create_text_block(
+                text=ANSWER,
+                annotations=[
+                    create_citation(
+                        url=SOURCE_URL,
+                        title=SOURCE_TITLE,
+                        start_index=0,
+                        end_index=4,
+                        cited_text=CITATION_TEXT,
+                    )
+                ],
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="match cited_text"):
+        annotations_from_message(message)

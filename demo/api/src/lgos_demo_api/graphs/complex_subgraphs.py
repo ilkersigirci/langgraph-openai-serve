@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from pydantic import BaseModel
@@ -23,8 +23,8 @@ def request_to_input(
     return {"question": input_model.question}
 
 
-def output_to_text(output: Any) -> str:
-    return output.answer
+def output_to_message(output: Any) -> AIMessage:
+    return AIMessage(content=output.answer)
 
 
 def create_complex_subgraphs_graph_config() -> GraphConfig:
@@ -35,7 +35,7 @@ def create_complex_subgraphs_graph_config() -> GraphConfig:
             "Routes questions through specialist subgraphs and streams nested output."
         ),
         request_to_input=request_to_input,
-        output_to_text=output_to_text,
+        output_to_message=output_to_message,
         streamable_node_names=[
             "extract_keywords",
             "summarize_contract",

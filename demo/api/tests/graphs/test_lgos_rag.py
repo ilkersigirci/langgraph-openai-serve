@@ -103,7 +103,7 @@ async def _stream_text(request: ChatCompletionRequest) -> str:
             request,
         )
     ]
-    assert all(isinstance(event, str) for event in events)
+    assert isinstance(events[-1], AIMessage)
     return "".join(event for event in events if isinstance(event, str))
 
 

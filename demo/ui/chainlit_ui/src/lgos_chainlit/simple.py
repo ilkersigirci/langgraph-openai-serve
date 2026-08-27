@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from typing import cast
 
 import chainlit as cl
 from chainlit.types import ThreadDict
@@ -12,6 +13,8 @@ from chainlit_utils.chat import (
     send_ui_message,
     text_only_chat_messages,
 )
+from openai import AsyncStream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
@@ -25,6 +28,7 @@ from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
     model_feature_enabled,
+    streaming_enabled,
 )
 from lgos_chainlit.utils.client_events import ClientEventRenderer
 from lgos_chainlit.utils.clients import (
@@ -92,18 +96,26 @@ async def on_message(_message: cl.Message) -> None:
     stream = None
 
     try:
+        streaming = streaming_enabled()
         metadata = chat_settings_metadata()
         metadata.update(session_metadata())
-        if model_feature_enabled(GraphFeature.CLIENT_EVENTS):
+        if streaming and model_feature_enabled(GraphFeature.CLIENT_EVENTS):
             metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
-        stream = await openai_client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             **model_request(model),
             messages=messages,
-            stream=True,
+            stream=streaming,
             user=authenticated_user_identifier(),
             metadata=metadata,
         )
 
+        if not streaming:
+            completion = cast("ChatCompletion", response)
+            assistant_message.content = completion.choices[0].message.content or ""
+            await assistant_message.send()
+            return
+
+        stream = cast("AsyncStream[ChatCompletionChunk]", response)
         async for chunk in stream:
             await client_events.render(chunk)
             token = chunk.choices[0].delta.content or ""

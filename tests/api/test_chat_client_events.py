@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.config import get_stream_writer
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
 from openai import AsyncOpenAI
 
@@ -22,7 +23,10 @@ PROGRESS_DATA = {"completed": 2, "total": 5}
 
 
 def client_event_graph() -> Any:
-    model = FakeListChatModel(responses=["draft", "answer"])
+    draft_model = FakeListChatModel(responses=["draft"]).with_config(
+        tags=[TAG_NOSTREAM]
+    )
+    answer_model = FakeListChatModel(responses=["answer"])
 
     async def generate(state: MessageState):
         writer = get_stream_writer()
@@ -37,9 +41,9 @@ def client_event_graph() -> Any:
         )
 
         writer(status_event("Preparing answer"))
-        draft = await model.ainvoke(state["messages"])
+        draft = await draft_model.ainvoke(state["messages"])
         writer(client_event("progress", PROGRESS_DATA, namespace=("research",)))
-        answer = await model.ainvoke([*state["messages"], draft])
+        answer = await answer_model.ainvoke([*state["messages"], draft])
         writer(status_event("Answer ready", done=True))
         return {"messages": [answer]}
 
@@ -90,7 +94,7 @@ async def test_client_events_require_the_v1_opt_in(
         "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
     )
     assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == (
-        "draftanswer"
+        "answer"
     )
 
 
@@ -122,7 +126,6 @@ async def test_v1_stream_exposes_only_public_events_in_graph_order(
 
     assert timeline == [
         ("event", "status"),
-        ("text", "draft"),
         ("event", "progress"),
         ("text", "answer"),
         ("event", "status"),
@@ -173,6 +176,19 @@ async def test_v1_stream_exposes_only_public_events_in_graph_order(
         assert chunk.choices[0].delta.model_dump(exclude_none=True) == {}
         assert chunk.choices[0].finish_reason is None
     assert chunks[-1].choices[0].finish_reason == "stop"
+
+
+async def test_non_streaming_returns_only_the_durable_answer(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
+        model="client-events",
+        messages=[{"role": "user", "content": "Research this"}],
+        metadata=STREAM_EVENTS_METADATA,
+    )
+
+    assert response.choices[0].message.content == "answer"
+    assert "langgraph_openai_serve" not in (response.model_extra or {})
 
 
 async def test_client_events_require_the_graph_feature(

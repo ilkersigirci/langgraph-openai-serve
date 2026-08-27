@@ -62,7 +62,7 @@ async def test_routes_to_the_expected_specialist(
         request,
     )
 
-    assert result.output == expected
+    assert result.output.text == expected
 
 
 async def test_streams_the_selected_nested_subgraphs_in_order(make_request) -> None:

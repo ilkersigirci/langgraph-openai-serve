@@ -71,7 +71,7 @@ deliberately unreachable.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
   runtime context from server-owned values and optional validated public settings.
-- `output_to_text(output)`: custom graph output to assistant text.
+- `output_to_message(output)`: custom graph output to a durable `AIMessage`.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -320,34 +320,44 @@ See [Client stream events](explanation/openai-compatibility.md#client-stream-eve
 for the wire contract and [OpenAI clients](tutorials/openai-clients.md#client-stream-events)
 for consumption.
 
-## Citation Events
+## Citations
 
-Inside a graph node or tool, emit a citation with LangGraph's stream writer:
+Put citations on the final LangChain `AIMessage`:
 
 ```python
-from langgraph.config import get_stream_writer
-from langgraph_openai_serve import citation_event
+from langchain_core.messages import AIMessage
+from langchain_core.messages.content import create_citation, create_text_block
 
-get_stream_writer()(
-    citation_event(
-        url="https://example.com/source",
-        title="Example source",
-        span=(10, 14),
-    )
+message = AIMessage(
+    content=[
+        create_text_block(
+            text="Read the source.",
+            annotations=[
+                create_citation(
+                    url="https://example.com/source",
+                    title="Example source",
+                    start_index=9,
+                    end_index=14,
+                    cited_text="source",
+                )
+            ],
+        )
+    ]
 )
 ```
 
-`span` uses Python's half-open convention, so `text[10:14]` returns the cited
-text. LGOS converts it to OpenAI's inclusive `end_index` at the event boundary.
+LangChain citation indices refer to their containing text block. LGOS offsets
+them into the final response text and preserves OpenAI's inclusive `end_index`.
 Use `citation_slice(annotation, text)` to validate received indices and convert
-them back to a Python slice. Citation events must refer to the final rendered
-assistant text.
+them to a Python slice. LGOS maps native LangChain citations to completed
+`message.annotations`; the streaming compatibility extension is added to the
+final delta.
 
 See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
-The graph runner preserves LangGraph's native `CustomStreamPart` values,
-including their execution namespace. Other event types remain available to
-direct runner consumers through `langgraph_openai_serve.graph.runner`.
+The streaming graph runner preserves LangGraph's native `CustomStreamPart`
+values, including their execution namespace. Non-streaming invocation does not
+subscribe to or replay custom events.
 
 ::: langgraph_openai_serve

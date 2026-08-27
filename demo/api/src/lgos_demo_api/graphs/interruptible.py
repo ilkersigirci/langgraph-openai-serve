@@ -3,7 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -103,13 +103,13 @@ def request_to_input(
     return {"request": str(messages[-1].content or "")}
 
 
-def output_to_text(output: ApprovalState) -> str:
+def output_to_message(output: ApprovalState) -> AIMessage:
     decisions = {result["action"]: result["decision"] for result in output["approvals"]}
     lines = [f"Approval results for: {output['request']}"]
     lines.extend(
         f"- {spec.action}: {decisions[spec.action]}" for spec in APPROVAL_SPECS
     )
-    return "\n".join(lines)
+    return AIMessage(content="\n".join(lines))
 
 
 def create_interruptible_graph_config(
@@ -123,7 +123,7 @@ def create_interruptible_graph_config(
             "Requests one atomic approval batch from parallel nested graph steps."
         ),
         request_to_input=request_to_input,
-        output_to_text=output_to_text,
+        output_to_message=output_to_message,
         features={GraphFeature.INTERRUPTS},
         run_coordinator=run_coordinator,
     )
@@ -135,5 +135,5 @@ __all__ = [
     "create_approval_subgraph",
     "create_interruptible_graph",
     "create_interruptible_graph_config",
-    "output_to_text",
+    "output_to_message",
 ]

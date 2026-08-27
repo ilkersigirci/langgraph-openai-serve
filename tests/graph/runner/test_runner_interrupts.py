@@ -24,6 +24,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
+from langgraph.types import GraphOutput
 
 from langgraph_openai_serve.api.chat.utils.responses import response_message
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -217,7 +218,8 @@ async def test_thread_id_reaches_runnable_config(
 
     invocation = await run_langgraph("threaded", request.messages, registry, request)
 
-    assert invocation.output == "ok"
+    assert isinstance(invocation.output, AIMessage)
+    assert invocation.output.text == "ok"
     assert seen_thread_ids == [checkpoint_key("threaded", RUN_ID)]
 
 
@@ -225,7 +227,7 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    async def output_to_text(output):
+    async def output_to_message(output):
         msg = "interrupt output should not be rendered"
         raise AssertionError(msg)
 
@@ -234,7 +236,7 @@ async def test_interrupt_result_is_returned_before_output_rendering(
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 description="DUMMY",
-                output_to_text=output_to_text,
+                output_to_message=output_to_message,
                 features={GraphFeature.INTERRUPTS},
                 run_coordinator=InMemoryRunCoordinator(),
             )
@@ -256,7 +258,6 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     assert invocation.output.run_id == RUN_ID
     assert len(invocation.output.interrupts) == 1
     assert invocation.output.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
-    assert invocation.custom_events == ()
 
 
 async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
@@ -265,20 +266,16 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     class Graph:
         output_channels = ("__interrupt__",)
 
-        async def astream(self, *args, **kwargs):
-            yield {
-                "type": "values",
-                "ns": (),
-                "data": {"__interrupt__": ["not-enabled"]},
-            }
+        async def ainvoke(self, *args, **kwargs):
+            return GraphOutput(value={"__interrupt__": ["not-enabled"]})
 
-    async def output_to_text(output):
-        return output["__interrupt__"][0]
+    async def output_to_message(output):
+        return AIMessage(content=output["__interrupt__"][0])
 
     graph_config = GraphConfig(
         graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
         description="DUMMY",
-        output_to_text=output_to_text,
+        output_to_message=output_to_message,
     )
     run = GraphRun(
         config=graph_config,
@@ -291,8 +288,8 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
 
     invocation = await invoke_run(run)
 
-    assert invocation.output == "not-enabled"
-    assert invocation.custom_events == ()
+    assert isinstance(invocation.output, AIMessage)
+    assert invocation.output.text == "not-enabled"
 
 
 @pytest.mark.parametrize(
@@ -310,13 +307,20 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
 ) -> None:
     graph = make_parallel_interrupt_graph(sqlite_checkpointer)
     astream_options = []
+    ainvoke_options = []
     original_astream = graph.astream
+    original_ainvoke = graph.ainvoke
 
     def recording_astream(*args, **kwargs):
         astream_options.append(kwargs)
         return original_astream(*args, **kwargs)
 
+    async def recording_ainvoke(*args, **kwargs):
+        ainvoke_options.append(kwargs)
+        return await original_ainvoke(*args, **kwargs)
+
     monkeypatch.setattr(graph, "astream", recording_astream)
+    monkeypatch.setattr(graph, "ainvoke", recording_ainvoke)
     registry = GraphRegistry(
         registry={
             "parallel": GraphConfig(
@@ -324,7 +328,9 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
                 description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
                 request_to_input=lambda _request, _messages: {"answers": []},
-                output_to_text=lambda output: str(output["answers"]),
+                output_to_message=lambda output: AIMessage(
+                    content=str(output["answers"])
+                ),
                 run_coordinator=InMemoryRunCoordinator(),
             )
         }
@@ -362,8 +368,8 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
         "left",
         "right",
     }
-    assert len(astream_options) == 1
-    assert astream_options[0]["durability"] == "exit"
+    options = astream_options[0] if stream else ainvoke_options[0]
+    assert options["durability"] == "exit"
 
 
 async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
@@ -419,7 +425,8 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
             resume_request,
         )
 
-    assert completed.output == "resumed:approve"
+    assert isinstance(completed.output, AIMessage)
+    assert completed.output.text == "resumed:approve"
 
 
 async def test_interrupt_enabled_graph_requires_checkpointer() -> None:

@@ -24,7 +24,7 @@ flowchart LR
   openwebui["Open WebUI Pipe"]
   sdk["Standard OpenAI client"]
 
-  citations -->|"text + citation_event"| lgos
+  citations -->|"annotated AIMessage"| lgos
   statuses -->|"text + status_event"| lgos
   custom -->|"text + client_event"| lgos
 

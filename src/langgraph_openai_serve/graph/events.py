@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from openai.types.chat.chat_completion_message import Annotation, AnnotationURLCitation
+from openai.types.chat.chat_completion_message import Annotation
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 CLIENT_EVENT_SCHEMA_VERSION = 1
@@ -98,29 +98,6 @@ def client_event_extension(value: object) -> dict[str, object] | None:
     except ValidationError:
         return None
     return envelope.model_dump(mode="json", exclude={"type"})
-
-
-def citation_event(
-    *,
-    url: str,
-    title: str,
-    span: tuple[int, int],
-) -> dict[str, object]:
-    """Build an OpenAI URL citation from a Python-style half-open span."""
-    start, stop = span
-    if not 0 <= start < stop:
-        msg = "citation span must define a valid non-empty text range"
-        raise ValueError(msg)
-
-    return Annotation(
-        type="url_citation",
-        url_citation=AnnotationURLCitation(
-            url=url,
-            title=title,
-            start_index=start,
-            end_index=stop - 1,
-        ),
-    ).model_dump(mode="json")
 
 
 def citation_slice(annotation: Annotation, content: str) -> slice:

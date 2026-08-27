@@ -138,4 +138,4 @@ async def test_plot_supports_non_streaming_completions(make_request) -> None:
         request,
     )
 
-    assert invocation.output == "Q4 is highest at $230k."
+    assert invocation.output.text == "Q4 is highest at $230k."

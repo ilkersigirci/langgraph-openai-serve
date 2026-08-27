@@ -153,10 +153,11 @@ take their schemas only from LGOS.
 
 ## Streaming, Status, And Citations
 
-The general manifold Pipe streams assistant content unchanged, so Open WebUI
-renders Markdown links and images normally. For streaming requests it also
-forwards final OpenAI citation annotations without translating them.
-Non-streaming generator results remain plain text. The static example streams
+The general manifold Pipe honors Open WebUI's requested Chat Completions mode.
+Streaming requests yield assistant content and forward final OpenAI citation
+annotations without translating them. Non-streaming requests return the full
+Chat Completion object and translate its annotations to native Open WebUI source
+events. They do not replay status or artifact events. The static example streams
 assistant text only.
 
 The manifold Pipe opts into LGOS client stream events only when model retrieval

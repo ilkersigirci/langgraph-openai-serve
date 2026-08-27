@@ -192,6 +192,12 @@ event handling and [Request Cancellation](langgraph-integration.md#request-cance
 for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
+LGOS aggregates usage reported by LangChain model calls across the graph run.
+Complete responses include it in `usage`; streaming responses add the standard
+final empty-choices usage chunk only when the request sets
+`stream_options={"include_usage": true}`. When underlying providers report no
+usage, LGOS omits it rather than estimating tokens.
+
 ## Client Stream Events
 
 Passive application notifications are an opt-in, namespaced extension on an
@@ -262,6 +268,10 @@ Ordinary LangGraph custom data, malformed events, debug data, and non-JSON
 Python objects stay private. The v1 public event types are `status`, `progress`,
 and `artifact`.
 
+Client events are transient and streaming-only. A non-streaming request uses
+the graph's durable final result and never collects or replays status, progress,
+or artifact events, even when its metadata contains the stream-event opt-in.
+
 `status_event()` produces portable data with a user-facing `description` and
 the booleans `done` and `hidden`. The graph emits meaningful application status
 at the point where it knows what work is happening. LGOS does not infer status
@@ -299,9 +309,10 @@ OpenAI `url_citation` annotations are the canonical citation contract. Their
 URL, title, and text span associate a source with the answer. `end_index` is
 inclusive, matching OpenAI's last-character convention.
 
-LGOS returns `message.annotations` for non-streaming responses and
+Graphs attach LangChain citation annotations to their final `AIMessage`. LGOS
+returns them as `message.annotations` for non-streaming responses and
 `delta.annotations` on the final streaming chunk. It does not define a
-UI-specific source schema.
+UI-specific source schema or reconstruct citations from custom events.
 
 Portable resource presentation belongs in the assistant text, not in the
 annotation object. Graphs may return ordinary Markdown links and images in
@@ -518,4 +529,6 @@ for the underlying checkpoint model.
 - The supported surface focuses on chat completions, model listing/retrieval,
   health, and compatible tool-call flows.
 - Authentication is not enforced by default.
-- Token usage is approximate.
+- Token usage is present only when underlying LangChain model calls report it.
+  LGOS aggregates reported usage across the graph run and never estimates
+  missing counts.

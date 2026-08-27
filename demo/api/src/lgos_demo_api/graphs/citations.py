@@ -3,10 +3,10 @@
 from typing import Annotated, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage
-from langgraph.config import get_stream_writer
+from langchain_core.messages.content import create_citation, create_text_block
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import GraphConfig, citation_event
+from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 from pydantic import BaseModel
 
@@ -44,22 +44,30 @@ class CitationState(BaseModel):
 async def answer_with_citation(
     state: CitationState,
 ) -> dict[str, list[AIMessage]]:
-    """Stream Markdown content and emit standard citations for its sources."""
-    writer = get_stream_writer()
-    for title, url in CITATIONS:
-        title_start = ANSWER.index(title)
-        writer(
-            citation_event(
-                url=url,
-                title=title,
-                span=(title_start, title_start + len(title)),
-            )
-        )
+    """Stream Markdown content and return its citations on the final message."""
     answer = await stream_fake_chat_response(
         ANSWER,
         prompt=str(state.messages[-1].content or ""),
     )
-    return {"messages": [AIMessage(content=answer)]}
+    citations = []
+    for title, url in CITATIONS:
+        start = answer.index(title)
+        citations.append(
+            create_citation(
+                url=url,
+                title=title,
+                start_index=start,
+                end_index=start + len(title) - 1,
+                cited_text=title,
+            )
+        )
+    return {
+        "messages": [
+            AIMessage(
+                content_blocks=[create_text_block(text=answer, annotations=citations)]
+            )
+        ]
+    }
 
 
 workflow = StateGraph(CitationState)

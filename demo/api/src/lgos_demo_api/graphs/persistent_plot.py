@@ -265,10 +265,16 @@ def context_factory(
     )
 
 
-def output_to_text(output: object) -> str:
-    """Render the final graph state for a non-streaming completion."""
+def output_to_message(output: object) -> AIMessage:
+    """Return the final assistant message."""
     state = PersistentPlotState.model_validate(output)
-    return str(state.messages[-1].content) if state.messages else ""
+    if not state.messages:
+        return AIMessage(content="")
+    message = state.messages[-1]
+    if not isinstance(message, AIMessage):
+        msg = "Persistent plot output must end with an AIMessage."
+        raise ValueError(msg)
+    return message
 
 
 def create_persistent_plot_graph_config(
@@ -279,7 +285,7 @@ def create_persistent_plot_graph_config(
         graph=graph_factory,
         description="Edits a thread-scoped Plotly chart across stateless requests.",
         context_factory=context_factory,
-        output_to_text=output_to_text,
+        output_to_message=output_to_message,
         streamable_node_names=["show_plot"],
         features={GraphFeature.CLIENT_EVENTS},
         client_settings=PersistentPlotSettings,

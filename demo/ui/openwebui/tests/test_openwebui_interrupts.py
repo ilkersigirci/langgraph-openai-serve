@@ -88,6 +88,34 @@ async def test_pipe_resumes_confirmed_interrupt(
     assert (initial_model_id, resume_model_id) == (MODEL_ID, MODEL_ID)
 
 
+async def test_non_streaming_pipe_resumes_without_stream_events(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    final = completion("Approved.")
+    complete = AsyncMock(side_effect=[interrupt_response(), final])
+    monkeypatch.setattr(generic, "_chat_completion", complete)
+
+    async def confirm(_event: dict[str, Any]) -> bool:
+        return True
+
+    chunks = await collect_response(
+        configured_pipe.pipe(
+            body=body(USER_REQUEST, stream=False),
+            __event_call__=confirm,
+        )
+    )
+
+    assert chunks == [final.model_dump(mode="json", exclude_none=True)]
+    resume_messages = complete.await_args_list[1].kwargs["messages"]
+    assert resume_messages[0]["tool_calls"][0]["id"] == ("lg_interrupt_interrupt-1")
+    assert resume_messages[1] == {
+        "role": "tool",
+        "tool_call_id": "lg_interrupt_interrupt-1",
+        "content": '{"resume": "approve"}',
+    }
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [

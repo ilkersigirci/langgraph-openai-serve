@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import TypedDict
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig
@@ -63,8 +63,8 @@ def context_factory(
     return AppContext(user_id=request.user or "anonymous")
 
 
-def output_to_text(output: Output) -> str:
-    return output["answer"]
+def output_to_message(output: Output) -> AIMessage:
+    return AIMessage(content=output["answer"])
 
 
 custom_io_graph_config = GraphConfig(
@@ -74,5 +74,5 @@ custom_io_graph_config = GraphConfig(
     ),
     request_to_input=request_to_input,
     context_factory=context_factory,
-    output_to_text=output_to_text,
+    output_to_message=output_to_message,
 )

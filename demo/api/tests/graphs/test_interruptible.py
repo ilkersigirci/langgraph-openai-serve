@@ -5,7 +5,7 @@ from langgraph.types import Command
 from lgos_demo_api.graphs.interruptible import (
     APPROVAL_SPECS,
     create_interruptible_graph,
-    output_to_text,
+    output_to_message,
 )
 
 
@@ -40,7 +40,7 @@ async def test_nested_approvals_pause_and_resume_as_one_parallel_batch(
         ("Refund", "approve"),
         ("Customer notification", "reject"),
     }
-    assert output_to_text(resumed) == (
+    assert output_to_message(resumed).text == (
         f"Approval results for: {request}\n"
         "- Refund: approve\n"
         "- Customer notification: reject"
