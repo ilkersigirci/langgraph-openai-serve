@@ -1,9 +1,9 @@
 # Bifrost Gateway
 
 The Compose stack runs two LGOS API services behind one pinned Bifrost gateway.
-Both services use the same demo image and graph set today. They remain separate
-so the demo proves that independently deployed APIs, including APIs with
-different graph sets later, can share one proxy endpoint. The configuration at
+Both services use the same demo image and graph set. Their separate provider
+identities demonstrate how independently deployed APIs can share one proxy
+endpoint. The configuration at
 `demo/docker/configs/bifrost/config.json` belongs to the demo, not the LGOS
 package.
 
@@ -105,7 +105,5 @@ metadata, inference, and client events through both APIs with the OpenAI SDK.
 
 See Bifrost's
 [custom-provider documentation](https://docs.getbifrost.ai/providers/custom-providers),
-[pass-through contract](https://docs.getbifrost.ai/integrations/passthrough),
-and the pinned version's
-[provider-header routing](https://github.com/maximhq/bifrost/blob/df1644338ad98216cffa78231b6ca19e8e42e8f2/transports/bifrost-http/integrations/utils.go#L530-L535)
-for the gateway-owned behavior.
+and [pass-through contract](https://docs.getbifrost.ai/integrations/passthrough)
+for gateway-owned behavior.

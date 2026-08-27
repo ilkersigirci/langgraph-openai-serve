@@ -2,11 +2,15 @@
 
 The Docker demo puts two independently addressable LGOS API containers behind
 one Bifrost gateway. Chainlit and Open WebUI are OpenAI-compatible clients of
-that gateway; neither UI imports `langgraph-openai-serve`.
+that gateway; neither UI imports `langgraph-openai-serve`. See
+[Package Architecture](../explanation/architecture.md) for what happens inside
+each API process.
+
+## Request Path
 
 ```mermaid
 flowchart LR
-  user["Browser"]
+  user["Browser user"]
 
   subgraph clients["Demo clients"]
     direction TB
@@ -18,27 +22,20 @@ flowchart LR
 
   subgraph apis["LGOS demo APIs"]
     direction TB
-    api_a["lgos-demo-api-a<br/>provider: lgos-a"]
-    api_b["lgos-demo-api-b<br/>provider: lgos-b"]
+    api_a["API A<br/>FastAPI + LGOS + demo graphs"]
+    api_b["API B<br/>FastAPI + LGOS + demo graphs"]
   end
 
-  postgres[("PostgreSQL")]
   model["Upstream OpenAI-compatible model"]
-  langfuse["Langfuse<br/>(optional, external)"]
 
-  user --> chainlit
-  user --> openwebui
-  chainlit -->|"model catalog and OpenAI pass-through"| bifrost
-  openwebui -->|"model catalog and OpenAI pass-through"| bifrost
-  bifrost -->|"x-model-provider: lgos-a"| api_a
-  bifrost -->|"x-model-provider: lgos-b"| api_b
-  api_a -->|"graph model calls"| model
-  api_b -->|"graph model calls"| model
-  api_a -->|"checkpoints, store, and coordination"| postgres
-  api_b -->|"checkpoints, store, and coordination"| postgres
-  chainlit -->|"chat and element metadata"| postgres
-  api_a -.->|"LangGraph observations"| langfuse
-  api_b -.->|"LangGraph observations"| langfuse
+  user <--> chainlit
+  user <--> openwebui
+  chainlit <-->|"catalog and OpenAI traffic"| bifrost
+  openwebui <-->|"catalog and OpenAI traffic"| bifrost
+  bifrost <-->|"provider: lgos-a"| api_a
+  bifrost <-->|"provider: lgos-b"| api_b
+  api_a <-->|"when a graph calls a model"| model
+  api_b <-->|"when a graph calls a model"| model
 ```
 
 Bifrost exposes one provider-qualified model catalog. The UIs split a selected
@@ -49,56 +46,57 @@ preserving LGOS model metadata and streaming extensions.
 
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
 starts both healthy API containers, and then starts Bifrost and its UI clients.
-The diagram shows runtime traffic rather than those readiness dependencies.
+The diagram shows request traffic rather than those readiness dependencies.
 
-Both API containers currently run the same image and graph set, but Bifrost
-treats them as separate providers. They share PostgreSQL for durable LangGraph
-checkpoints, thread-scoped data, and cross-worker run coordination. Chainlit
-uses the same database for its own UI persistence; Open WebUI keeps its state
-in its bind-mounted data directory. When `LGOS_ENABLE_LANGFUSE=true`, each API
-adds the Langfuse callback to graph runs and exports observations directly to
-the configured Langfuse service. Langfuse is not a Compose service or a proxy
-in the request path.
+## State Ownership
 
-## OpenTelemetry Overlay
-
-The optional OpenTelemetry Compose overlay attaches the applications to a
-private telemetry network and starts one local Collector. The Grafana LGTM
-backend remains external to this demo deployment.
+The UIs own their conversations. The API stores only paused interrupt execution
+and explicit graph data; it does not copy either UI transcript into LGOS.
 
 ```mermaid
 flowchart LR
-  subgraph demo["Demo Compose deployment"]
+  subgraph clients["UI-owned state"]
     direction TB
-    chainlit_otel["Chainlit"]
-    openwebui_otel["Open WebUI"]
-    bifrost_otel["Bifrost"]
-    api_a_otel["LGOS API A"]
-    api_b_otel["LGOS API B"]
-    collector["Local OpenTelemetry Collector<br/>OTLP/gRPC :4317 · OTLP/HTTP :4318"]
-    chainlit_otel -->|"traces"| collector
-    openwebui_otel -->|"traces"| collector
-    bifrost_otel -->|"traces"| collector
-    api_a_otel -->|"traces, metrics, and logs"| collector
-    api_b_otel -->|"traces, metrics, and logs"| collector
+    chainlit["Chainlit"]
+    openwebui["Open WebUI"]
   end
 
-  subgraph external["External observability platform"]
-    direction LR
-    gateway["Host or platform<br/>OTLP/HTTP gateway"]
-    lgtm["Grafana LGTM backend<br/>logs · traces · metrics"]
-    gateway --> lgtm
+  subgraph api["LGOS API processes"]
+    direction TB
+    interrupts["LGOS interrupt handling"]
+    plot["persistent-plot graph"]
   end
 
-  collector -->|"buffer, retry, filter, and forward"| gateway
-  api_a_otel -.->|"separate native export"| langfuse["Langfuse"]
-  api_b_otel -.->|"separate native export"| langfuse
+  subgraph postgres["One PostgreSQL database"]
+    direction TB
+    chainlit_rows["Chainlit users, threads, and steps"]
+    checkpoints["LangGraph checkpoints"]
+    store["LangGraph Store documents"]
+    locks["PostgreSQL advisory locks"]
+  end
+
+  s3[("S3-compatible storage<br/>Chainlit element bodies")]
+  openwebui_data[("Open WebUI data volume<br/>transcripts and embeds")]
+
+  chainlit -->|"conversation and UI metadata"| chainlit_rows
+  chainlit -->|"element content"| s3
+  openwebui -->|"conversation and UI state"| openwebui_data
+  interrupts -->|"paused execution"| checkpoints
+  interrupts -->|"same-run coordination"| locks
+  plot -->|"thread-scoped chart document"| store
 ```
 
-The local Collector receives OTLP from the instrumented services, removes
-unwanted transport spans and sensitive payload attributes, adds deployment
-resource metadata, and forwards signals over OTLP/HTTP to the externally
-configured gateway. The external LGTM stack stores logs, traces, and metrics
-and exposes them through Grafana. Langfuse delivery remains a separate direct
-export from the API workers; the Collector does not forward observations to
-Langfuse.
+Both API containers run the same image and graph set, but Bifrost
+treats them as separate providers. They share PostgreSQL for durable LangGraph
+checkpoints, thread-scoped data, and cross-worker run coordination. Chainlit
+uses the same database for UI metadata and S3 for element bodies. Open WebUI
+keeps its state in its bind-mounted data directory. Detailed ownership and
+recovery behavior live in [Persistent Plot](graphs/persistent-plot.md) and
+[Interruptible Approval](graphs/interruptible-approval.md). When
+`LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
+and exports observations directly to the configured Langfuse service. Langfuse
+is not a Compose service or a proxy in the request path.
+
+The optional Compose overlay adds a separate telemetry path without changing
+request or state ownership. Its complete signal flow and operational boundary
+are documented in [Demo OpenTelemetry Overlay](opentelemetry.md).

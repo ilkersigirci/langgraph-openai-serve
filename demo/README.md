@@ -22,9 +22,9 @@ Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. The Bifrost gateway configuration is at
 `docker/configs/bifrost/config.json`. Compose runs the demo API image as two
 independently addressable services, `lgos-a` and `lgos-b`. They
-serve the same graphs today so the stack can demonstrate routing multiple LGOS
-APIs through one Bifrost pass-through endpoint; either service can define a
-different graph set later. The dynamic clients discover provider-qualified
+serve the same graphs under separate provider identities so the stack can
+demonstrate routing multiple LGOS APIs through one Bifrost pass-through
+endpoint. The dynamic clients discover provider-qualified
 models from Bifrost's catalog and use its OpenAI pass-through endpoint for
 detailed model metadata and chat.
 
@@ -68,8 +68,9 @@ Models:
 make sync-openwebui
 ```
 
-Compose starts each selected service's dependencies and applies the API and
-Chainlit migrations through their `pre_start` hooks.
+Compose starts each selected service's dependencies. One API setup job
+initializes the LangGraph checkpointer and Store schemas; Chainlit applies its
+own migrations through `pre_start`.
 
 ## Run local processes
 
@@ -115,8 +116,8 @@ make compose-otel
 ```
 
 For local source changes with the same overlay, use `make compose-otel-dev`.
-See the repository's production OpenTelemetry guide for the gateway contract
-and Grafana verification steps.
+See the repository's [demo OpenTelemetry guide](../docs/demo/opentelemetry.md)
+for signal ownership and the external gateway contract.
 
 Set `PUID` and `PGID` in `.env` to the host identity that owns
 `docker/volumes/`; the example values are `1000:1000`.

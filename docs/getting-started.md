@@ -105,6 +105,7 @@ authentication unless the host application adds it.
 
 ## Next Steps
 
+- [Understand the request path and state ownership](explanation/architecture.md)
 - [Register adapters, streaming nodes, settings, and interrupts](tutorials/custom-graphs.md)
 - [Connect Python and JavaScript OpenAI clients](tutorials/openai-clients.md)
 - [Add bearer-token authentication](how-to-guides/authentication.md)

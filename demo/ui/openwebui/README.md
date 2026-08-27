@@ -6,7 +6,7 @@ published as a container.
 
 ```bash
 cp .env.example .env
-uv run --env-file .env lgos-openwebui-sync
+uv run --locked --env-file .env lgos-openwebui-sync
 ```
 
 The command creates or updates the bundled Functions, discovers

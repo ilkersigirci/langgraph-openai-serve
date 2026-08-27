@@ -46,6 +46,8 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `DEMO_IMAGE_TAG` | `latest` | Tag selected for both project-owned demo images |
 | `PUID` | `1000` | Host user ID used by Compose services |
 | `PGID` | `1000` | Host group ID used by Compose services |
+| `DEMO_BIFROST_BASE_URL` | internal Compose URL | Optional external Bifrost origin used by both UI clients |
+| `DEMO_OPENWEBUI_SECRET_KEY` | demo-only value | Open WebUI application secret; replace it outside local demos |
 
 ## OpenTelemetry Settings
 
@@ -60,13 +62,16 @@ These settings apply when using `make compose-otel` or
 | `OTEL_HOST_NAME` | required | Stable host identity added by the local Collector |
 
 The OTEL overlay uses the OpenTelemetry `always_on` sampler, so application
-traces are exported without SDK sampling. The remote Tempo retention policy
-controls how long those traces remain queryable.
+traces are exported without SDK sampling. The selected remote backend owns
+retention.
 
 The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
 `OTEL_HOST_NAME`; set them per machine in `.env`. The endpoint URL scheme
 controls transport security: use `https://` for TLS and `http://` only when the
 gateway intentionally accepts cleartext OTLP/HTTP.
+
+Set `DEMO_BIFROST_BASE_URL` to the public Bifrost origin when UI inference
+should traverse an external proxy and participate in its distributed trace.
 
 ## Demo API Settings
 
@@ -77,7 +82,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_API_KEY` | `DUMMY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by `lgos-rag` |
-| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | Checkpoint database |
+| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | LangGraph checkpointer, Store, and run-coordination database |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
@@ -88,9 +93,8 @@ values or explicit constructor arguments.
 
 ## Open WebUI Sync Settings
 
-The typed
-[settings model](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/src/lgos_openwebui/settings.py)
-is the source of truth for these `DEMO_OPENWEBUI_` variables.
+The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model is the source
+of truth for these `DEMO_OPENWEBUI_` variables.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -102,5 +106,6 @@ is the source of truth for these `DEMO_OPENWEBUI_` variables.
 | `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | Gateway key used by both OpenAI clients |
 
 See [Chainlit settings](chainlit.md#settings-reference),
-[Open WebUI setup](open-webui.md#setup), and the [example graph catalog](graphs.md)
+[Open WebUI setup](open-webui.md#setup), and the
+[example graph catalog](graphs/index.md)
 for component-specific details.

@@ -26,11 +26,17 @@ client integrations, gateway configuration, and a complete Compose stack.
 
     [:octicons-arrow-right-24: Run the API](api.md)
 
+-   :material-family-tree:{ .lg .middle } __Understand the architecture__
+
+    See service ownership, request routing, and persistence boundaries.
+
+    [:octicons-arrow-right-24: Demo architecture](architecture.md)
+
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
     Compare schema adapters, RAG, citations, client events, subgraphs, and HITL.
 
-    [:octicons-arrow-right-24: Example graphs](graphs.md)
+    [:octicons-arrow-right-24: Example graphs](graphs/index.md)
 
 -   :material-docker:{ .lg .middle } __Run the complete stack__
 
@@ -58,6 +64,12 @@ client integrations, gateway configuration, and a complete Compose stack.
 
     [:octicons-arrow-right-24: Bifrost gateway](bifrost.md)
 
+-   :material-chart-timeline-variant:{ .lg .middle } __Observe the stack__
+
+    Add the optional Collector overlay without changing the LGOS package.
+
+    [:octicons-arrow-right-24: OpenTelemetry overlay](opentelemetry.md)
+
 </div>
 
 ## Components
@@ -69,6 +81,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker run coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
+| S3-compatible storage | Chainlit element bodies | External endpoint required by Chainlit |
 
 Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
 the OpenAI wire contract without importing the package. Their dynamic clients
@@ -98,7 +111,10 @@ The UI owns chat history. LGOS stores resumable interrupt state and explicit
 thread-scoped application data, not the transcript. PostgreSQL provides the
 checkpointer, LangGraph store, and cross-worker coordination, with no Redis
 service.
-See [Demo Graphs](graphs.md#interrupt-runtime) for the server lifecycle and
+See [Persistent Plot](graphs/persistent-plot.md#ownership-boundaries) for Store
+and UI ownership,
+[Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
+for the server lifecycle, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative replay and retention contract.
 

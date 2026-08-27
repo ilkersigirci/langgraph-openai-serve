@@ -253,7 +253,7 @@ structure do not become part of the public contract.
     delta is empty, while continuing to stream assistant text normally. Use a
     documented raw pass-through route when client events are required. See
     [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md#client-event-compatibility)
-    for verified Bifrost and LiteLLM behavior.
+    for the required gateway behavior and the demo's Bifrost configuration.
 
 Without the graph feature and exact `v1` opt-in, LGOS emits no event extensions.
 Even with both, only explicitly marked event envelopes in the shape produced by

@@ -12,14 +12,29 @@ docs_dir = "docs"
 nav = [
   { Home = "index.md" },
   { "Getting Started" = "getting-started.md" },
+  { "How It Works" = [
+    "explanation/index.md",
+    { "Architecture Overview" = "explanation/architecture.md" },
+    { "LangGraph Integration" = "explanation/langgraph-integration.md" },
+    { "OpenAI Compatibility" = "explanation/openai-compatibility.md" },
+  ]},
   { "Demo Stack" = [
     "demo/index.md",
+    { Architecture = "demo/architecture.md" },
     { "Run the Demo API" = "demo/api.md" },
-    { "Example Graphs" = "demo/graphs.md" },
+    { "Example Graphs" = [
+      "demo/graphs/index.md",
+      { "Events and Citations" = "demo/graphs/events-and-citations.md" },
+      { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
+      { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
+      { "Persistent Plot" = "demo/graphs/persistent-plot.md" },
+      { "Interruptible Approval" = "demo/graphs/interruptible-approval.md" },
+    ]},
     { "Docker Compose" = "demo/docker.md" },
     { "Chainlit Client" = "demo/chainlit.md" },
     { "Open WebUI Functions" = "demo/open-webui.md" },
     { "Bifrost Gateway" = "demo/bifrost.md" },
+    { "OpenTelemetry Overlay" = "demo/opentelemetry.md" },
     { "Settings and Commands" = "demo/reference.md" },
   ]},
   { Tutorials = [
@@ -32,14 +47,7 @@ nav = [
     { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
     { "Production Logging" = "how-to-guides/production-logging.md" },
-    { "Production OpenTelemetry" = "how-to-guides/production-otel.md" },
     { "OpenAI-Compatible Proxies" = "how-to-guides/openai-proxies.md" },
-  ]},
-  { Explanation = [
-    "explanation/index.md",
-    { "Architecture Overview" = "explanation/architecture.md" },
-    { "LangGraph Integration" = "explanation/langgraph-integration.md" },
-    { "OpenAI API Compatibility" = "explanation/openai-compatibility.md" },
   ]},
   { Reference = "reference.md" },
 ]

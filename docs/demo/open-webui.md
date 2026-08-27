@@ -7,12 +7,12 @@ The demo includes two Open WebUI Functions over LGOS APIs registered in Bifrost:
   for all registered graphs. It handles streaming, citations, and interrupt
   approval, and forwards graph-specific runtime settings.
 - `demo/ui/openwebui/src/lgos_openwebui/functions/uservalves_simple.py` keeps
-  the earlier static `UserValves` design as a small single-model example.
+  a static `UserValves` design as a small single-model example.
 
 The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
-projects its LGOS settings schema into native
-[Chat Variables](https://docs.openwebui.com/features/chat-conversations/chat-features/chat-params/#chat-variables).
+projects its LGOS settings schema into the pinned release's native Chat
+Variables form.
 
 ## Setup
 
@@ -53,9 +53,8 @@ whose names start with `_`. The filename stem is the Function ID, and the
 required Open WebUI frontmatter `title` is its display name. Function
 filenames must be lowercase Python identifiers.
 
-The typed
-[sync settings model](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/src/lgos_openwebui/settings.py)
-defines its environment names, defaults, and descriptions. The shared
+The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model defines its
+environment names, defaults, and descriptions. The shared
 `.env.example` configures the local sync command. Set secrets in the environment
 rather than passing them on the command line. Point the sync client and the
 Function valve below at the same deployment; their hostnames differ when one
@@ -110,6 +109,11 @@ LGOS model, then use the Chat Variables control beside the message input. Since
 LGOS supplies defaults for every setting, the form does not block the first
 message merely to confirm them.
 
+![Open WebUI Chat Variables showing conversation-history and audience controls](../static/runtime_settings_openwebui.png)
+
+*Runtime settings synchronized from `lgos-a/simple-graph` and rendered as
+native Open WebUI Chat Variables.*
+
 When a chat has values, the Pipe retrieves the selected model's current LGOS
 metadata, ignores names no longer present, removes values equal to current
 defaults, and sends only changes as
@@ -121,8 +125,10 @@ Both bundled Functions also map Open WebUI's stable `chat_id` to
 chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the
 opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot` uses
-both values to scope its chat document. Interrupt resumes reuse the same
-conversation value.
+both values to scope its chart document. Interrupt resumes reuse the same
+conversation value. See the
+[persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
+for the API Store and Open WebUI persistence boundaries.
 
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
@@ -141,17 +147,9 @@ take their schemas only from LGOS.
     The demo pins Open WebUI v0.11.0. The sync imports its native
     `meta.chat_variables_schema` model metadata directly instead of putting
     form declarations in a system prompt. This preserves JSON booleans and
-    ensures UI configuration never becomes graph prompt content. Recheck this
-    integration contract when changing the Open WebUI pin. The pinned source
-    keeps extra [Workspace Model metadata](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/backend/open_webui/models/models.py#L67-L76)
-    and reads the schema in the
-    [Chat Variables UI](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/src/lib/components/chat/Chat.svelte#L396-L405).
-    The pinned backend [keeps active base overrides and removes inactive
-    ones](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/backend/open_webui/utils/models.py#L157-L187),
-    while the [chat selector filters
-    `meta.hidden`](https://github.com/open-webui/open-webui/blob/f9590b8017199e56d5e953657e6498e3cef1d246/src/lib/components/chat/ModelSelector/Selector.svelte#L308-L321).
-    Disabling a hidden base would therefore break its generated Workspace
-    Model.
+    ensures UI configuration never becomes graph prompt content. This behavior
+    is version-specific; rerun the Open WebUI sync and model tests before
+    changing the image pin.
 
 ## Streaming, Status, And Citations
 
@@ -165,40 +163,31 @@ The manifold Pipe opts into LGOS client stream events only when model retrieval
 advertises `client_events`, and maps every portable status update to Open
 WebUI's native
 [`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
-Select `lgos-a/status-events` and ask **Prepare the media workflow.** Open WebUI
-saves each update in the assistant message's `statusHistory`; `done=False`
-displays an active shimmer, `done=True` stops it, and `hidden=True` keeps the
-history entry out of the current display. Persisted statuses survive a reload
-or closed tab. The Pipe maps the demo's versioned Plotly bar artifact to a
-self-contained HTML/CSS chart using Open WebUI's persistent
+Open WebUI saves each update in the assistant message's `statusHistory`;
+`done=False` displays an active shimmer, `done=True` stops it, and `hidden=True`
+keeps the history entry out of the current display. Persisted statuses survive
+a reload or closed tab. The Pipe renders the demo's versioned Plotly artifact
+with the official versioned Plotly.js CDN and Open WebUI's persistent
 [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
-It loads no browser CDN and needs no same-origin iframe setting. Select
-`lgos-b/persistent-plot`, ask **Show the chart**, then **Set Q3 to 250** to
-exercise the PostgreSQL reload and update. Ask **Which quarter is highest?** in
-a later turn to exercise a fresh graph call over the stored data. A different
-chat gets a separate chart document. Open WebUI exposes **Chart type**,
-**Currency**, and **Show legend** as Chat Variables and resends them with each
-request; those presentation choices are not stored with the chart data. Other
-`progress` and artifact kinds remain ignored.
+The browser needs access to `cdn.plot.ly`; no same-origin iframe setting is
+required. Other `progress` and artifact kinds remain ignored. Shared prompts
+and graph behavior are documented under
+[Events And Citations](graphs/events-and-citations.md#try-it) and
+[Persistent Plot](graphs/persistent-plot.md#try-it).
 
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already
 started the backend work. The passive status mapping keeps execution in the
 graph and avoids an unknown-tool or duplicate-execution path.
 
-The Pipe uses Bifrost's normalized `/v1/models` response only as its catalog.
-Detailed model retrieval and chat always use raw pass-through because a
-schema-normalizing route may discard LGOS metadata and extension-only chunks.
-See
+Proxy requirements are documented under
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
 ## Interrupt Approval
 
-Select `lgos-b/interruptible-approval` from the manifold Pipe and request a
-refund to try confirmation. Initial requests need no interrupt metadata. The
-demo graph produces two consecutive confirmations from parallel nested
-subgraphs: refund approval and customer-notification approval. The Pipe implements the
-[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay),
+The Pipe implements the
+[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay)
+for the [interruptible-approval graph](graphs/interruptible-approval.md),
 keeps only the current assistant/tool exchange in each resume request, and
 sends no partial batch. Compose bounds an unanswered Open WebUI confirmation to
 30 seconds with `WEBSOCKET_EVENT_CALLER_TIMEOUT`.

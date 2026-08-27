@@ -21,14 +21,13 @@ OpenAI-compatible `/v1` API.
 
     [:octicons-arrow-right-24: Getting started](getting-started.md)
 
--   :material-view-dashboard-outline:{ .lg .middle } __Explore the demo stack__
+-   :material-source-branch:{ .lg .middle } __Understand how it works__
 
     ---
 
-    Run the independent API, graphs, PostgreSQL, Chainlit, Open WebUI, and
-    Bifrost examples.
+    Follow a request through FastAPI, LGOS, LangGraph, and back to the client.
 
-    [:octicons-arrow-right-24: Demo capabilities](demo/index.md)
+    [:octicons-arrow-right-24: Architecture](explanation/architecture.md)
 
 -   :material-code-braces:{ .lg .middle } __Use your SDK__
 
@@ -48,13 +47,14 @@ OpenAI-compatible `/v1` API.
     [:octicons-arrow-right-24: Custom graphs](tutorials/custom-graphs.md)
     [:octicons-arrow-right-24: Runtime settings](how-to-guides/langgraph-runtime-settings.md)
 
--   :material-source-branch:{ .lg .middle } __Understand the contract__
+-   :material-view-dashboard-outline:{ .lg .middle } __Explore the demo stack__
 
     ---
 
-    See how OpenAI requests flow through FastAPI into LangGraph and back.
+    Run the independent API, graphs, PostgreSQL, Chainlit, Open WebUI, and
+    Bifrost examples.
 
-    [:octicons-arrow-right-24: Architecture](explanation/architecture.md)
+    [:octicons-arrow-right-24: Demo capabilities](demo/index.md)
 
 -   :material-transit-connection-horizontal:{ .lg .middle } __Use a gateway__
 

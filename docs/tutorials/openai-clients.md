@@ -13,7 +13,7 @@ provider-qualified IDs, then use pass-through for LGOS metadata and chat. The
 
 The basic examples below call that application's `echo` model. Examples named
 `my-graph`, `my-settings-graph`, or `research-graph` describe capabilities your
-registered graph must enable. The [demo graph catalog](../demo/graphs.md)
+registered graph must enable. The [demo graph catalog](../demo/graphs/index.md)
 provides runnable models for those advanced behaviors.
 
 ## Install A Client
