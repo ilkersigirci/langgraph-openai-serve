@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated, Literal
 
+from fastapi import status
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.config import get_stream_writer
@@ -21,6 +22,8 @@ from langgraph_openai_serve import (
     client_event,
 )
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.core.errors import OpenAIHTTPException
+from openai.types.shared import ErrorObject
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 ARTIFACT_KEY = "quarterly-revenue"
@@ -82,8 +85,8 @@ class PersistentPlotState(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class PersistentPlotContext:
-    user_id: str | None
-    session_id: str | None
+    user_id: str
+    session_id: str
     settings: PersistentPlotSettings
 
 
@@ -137,9 +140,7 @@ def _artifact(
     )
 
 
-def _thread_namespace(context: PersistentPlotContext) -> tuple[str, ...] | None:
-    if context.user_id is None or context.session_id is None:
-        return None
+def _thread_namespace(context: PersistentPlotContext) -> tuple[str, ...]:
     scope = sha256(f"{context.user_id}\0{context.session_id}".encode()).hexdigest()
     return ("demo", "persistent-plot", "threads", scope)
 
@@ -170,11 +171,7 @@ async def show_plot(
 
     prompt = _prompt(state)
     thread_namespace = _thread_namespace(runtime.context)
-    item = (
-        await store.aget(thread_namespace, ARTIFACT_KEY)
-        if thread_namespace is not None
-        else None
-    )
+    item = await store.aget(thread_namespace, ARTIFACT_KEY)
     document = PlotDocument.model_validate(item.value) if item is not None else None
     document = document or PlotDocument()
     changed = item is None
@@ -196,7 +193,7 @@ async def show_plot(
             changed = True
             update_message = f"I set {quarter.upper()} to {symbol}{revenue:g}k."
 
-    if thread_namespace is not None and changed:
+    if changed:
         await store.aput(
             thread_namespace,
             ARTIFACT_KEY,
@@ -236,6 +233,26 @@ def context_factory(
     _client_settings: ClientSettings | None,
 ) -> PersistentPlotContext:
     session_id = (request.metadata or {}).get("session_id")
+    if not request.user:
+        raise OpenAIHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=ErrorObject(
+                message="user is required for persistent plot storage.",
+                type="invalid_request_error",
+                param="user",
+                code="missing_persistence_scope",
+            ),
+        )
+    if not session_id:
+        raise OpenAIHTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=ErrorObject(
+                message="metadata.session_id is required for persistent plot storage.",
+                type="invalid_request_error",
+                param="metadata.session_id",
+                code="missing_persistence_scope",
+            ),
+        )
     settings = (
         _client_settings
         if isinstance(_client_settings, PersistentPlotSettings)
@@ -243,7 +260,7 @@ def context_factory(
     )
     return PersistentPlotContext(
         user_id=request.user,
-        session_id=session_id or None,
+        session_id=session_id,
         settings=settings,
     )
 

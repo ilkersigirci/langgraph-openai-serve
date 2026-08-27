@@ -1,6 +1,11 @@
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+from chainlit.data import get_data_layer
+from chainlit.data.chainlit_data_layer import ChainlitDataLayer
+from chainlit.data.storage_clients.s3 import S3StorageClient
 from chainlit.utils import mount_chainlit
 from fastapi import FastAPI
 
@@ -12,7 +17,27 @@ os.environ.setdefault(
 )
 get_chainlit_settings()
 
-app = FastAPI()
+
+async def _close_chainlit_data_layer() -> None:
+    data_layer = get_data_layer()
+    if not isinstance(data_layer, ChainlitDataLayer):
+        return
+    if isinstance(data_layer.storage_client, S3StorageClient):
+        # Chainlit 2.11.1 incorrectly awaits boto3's synchronous close method.
+        data_layer.storage_client.client.close()
+        data_layer.storage_client = None
+    await data_layer.close()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    try:
+        yield
+    finally:
+        await _close_chainlit_data_layer()
+
+
+app = FastAPI(lifespan=lifespan)
 
 CHAINLIT_UI_PATH = f"{settings.UI_FILE}.py"
 

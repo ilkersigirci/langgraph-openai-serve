@@ -18,7 +18,10 @@ cp .env.example .env
 uv run --directory ui/chainlit_ui --locked chainlit create-secret
 ```
 
-Put the generated value in `CHAINLIT_AUTH_SECRET`.
+Put the generated value in `CHAINLIT_AUTH_SECRET`. Chainlit also requires an
+existing S3-compatible bucket: replace the example `BUCKET_NAME`,
+`APP_AWS_ACCESS_KEY`, `APP_AWS_SECRET_KEY`, `APP_AWS_REGION`, and
+`DEV_AWS_ENDPOINT` values before starting the UI.
 
 === "Compose"
 

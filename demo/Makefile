@@ -26,10 +26,11 @@ test: ## Run all standalone project tests from their lockfiles
 	uv run --directory ui/openwebui --locked pytest
 
 DEMO_API_TEST_POSTGRES_URI ?= postgresql://lgos:lgos@localhost:3001/lgos
-test-postgres: ## Test interrupt restart and coordination against PostgreSQL
+test-postgres: ## Test demo persistence against PostgreSQL
 	DEMO_API_TEST_POSTGRES_URI=$(DEMO_API_TEST_POSTGRES_URI) \
 		$(LOCAL_API_RUN) pytest -m integration \
-		tests/integration/test_postgres_interrupt_runtime.py
+		tests/integration/test_postgres_interrupt_runtime.py \
+		tests/integration/test_postgres_persistent_plot.py
 
 lint: ## Check lint and formatting for all standalone projects
 	uv run --directory api --locked ruff check src tests

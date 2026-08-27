@@ -4,6 +4,9 @@ Standalone Chainlit client for an OpenAI-compatible LGOS endpoint. It
 intentionally does not install or import the `langgraph-openai-serve` Python
 package, demonstrating that UI logic needs only the OpenAI wire protocol.
 
+Before starting, replace the example signing secret and configure the required
+S3-compatible bucket and credentials in `.env`.
+
 The small set of LGOS-specific model-detail fields, metadata keys, and event
 schemas used by this client is declared locally in
 [`lgos_protocol.py`](src/lgos_chainlit/lgos_protocol.py). That file links every

@@ -1,15 +1,20 @@
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
+import pytest
 from langchain_core.messages import HumanMessage
 from langgraph.store.memory import InMemoryStore
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 
 from lgos_demo_api.graphs.persistent_plot import (
     PersistentPlotContext,
     PersistentPlotSettings,
+    context_factory,
     create_persistent_plot_graph,
     create_persistent_plot_graph_config,
 )
@@ -26,6 +31,29 @@ def _registry() -> GraphRegistry:
             "persistent-plot": create_persistent_plot_graph_config(lambda: graph),
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("user", "metadata", "param"),
+    [
+        (None, {"session_id": "thread-1"}, "user"),
+        ("user-1", None, "metadata.session_id"),
+    ],
+)
+def test_plot_requires_a_complete_persistence_scope(
+    make_request: Callable[..., ChatCompletionRequest],
+    user: str | None,
+    metadata: dict[str, str] | None,
+    param: str,
+) -> None:
+    request = make_request("persistent-plot", user=user, metadata=metadata)
+
+    with pytest.raises(OpenAIHTTPException) as exc_info:
+        context_factory(request, None)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.error.param == param
+    assert exc_info.value.error.code == "missing_persistence_scope"
 
 
 async def test_plot_data_is_reused_only_in_the_same_thread() -> None:
