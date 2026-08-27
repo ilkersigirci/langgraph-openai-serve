@@ -23,6 +23,12 @@ jobs:
     name: Validate isolated Compose project
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BUCKET_NAME: lgos-chainlit-ci
+      APP_AWS_ACCESS_KEY: test-access-key
+      APP_AWS_SECRET_KEY: test-secret-key
+      APP_AWS_REGION: eu-west-1
+      DEV_AWS_ENDPOINT: https://s3.example.com
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
