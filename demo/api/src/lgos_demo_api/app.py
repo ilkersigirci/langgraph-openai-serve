@@ -24,6 +24,10 @@ from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph_config,
 )
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
+from lgos_demo_api.graphs.persistent_plot import (
+    create_persistent_plot_graph,
+    create_persistent_plot_graph_config,
+)
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.status_events import status_event_graph_config
 from lgos_demo_api.logging import LOGGING_CONFIG
@@ -49,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with postgres_runtime(settings.POSTGRES_URI) as runtime:
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.interruptible_run_coordinator = runtime.run_coordinator
+        app.state.persistent_plot_graph = create_persistent_plot_graph(runtime.store)
         yield
 
     logger.info("demo.server.stopped")
@@ -89,6 +94,9 @@ def create_custom_app() -> FastAPI:
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
+            "persistent-plot": create_persistent_plot_graph_config(
+                lambda: app.state.persistent_plot_graph,
+            ),
             "interruptible-approval": create_interruptible_graph_config(
                 # We use lambdas here because app.state is populated asynchronously
                 # during the FastAPI lifespan event. Eagerly evaluating app.state

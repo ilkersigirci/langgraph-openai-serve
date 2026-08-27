@@ -13,19 +13,33 @@ demo model catalogs.
 | `complex-subgraphs` | Router-selected subgraphs and nested streamed output | None | None |
 | `status-events` | Portable status updates for native client UI | `client_events` | None |
 | `custom-event-showcase` | Public progress and artifact events interleaved with text | `client_events` | None |
+| `persistent-plot` | An editable thread-scoped chart | `client_events` | PostgreSQL store |
 | `interruptible-approval` | One checkpointed batch from parallel nested approval subgraphs | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | `simple-graph` | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | `lgos-rag` | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 
-The demo API opens its PostgreSQL checkpointer during application startup, so
+The demo API opens its PostgreSQL persistence runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](api.md#start-postgresql-and-the-api).
 
 ## Interrupt Runtime
 
 `interruptible-approval` is the only demo graph that persists API execution
-state; ordinary chat history remains client-owned. The demo uses LGOS's default
-shared checkpoint scope, so multi-tenant applications must instead derive that
+state. `persistent-plot` instead stores one chart document under a
+hash of the OpenAI `user` and `metadata.session_id`. A different user or session
+produces a different namespace. The Store contains neither graph state nor chat
+history. Chart type, currency label, and legend visibility are request-scoped
+client settings and are not written to the Store. Ordinary chat history remains
+client-owned. For example, the stored document remains compact:
+
+```json
+{"schema_version": 1, "q1": 120, "q2": 180, "q3": 25, "q4": 230}
+```
+
+Each graph call regenerates and streams the complete Plotly figure from this
+document. Chainlit separately persists the rendered element for thread resume.
+The demo uses LGOS's default shared checkpoint scope, so
+multi-tenant applications must derive that
 scope from authenticated server state. Operation identity, canonical replay,
 and retention rules are defined in
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts).
@@ -34,13 +48,18 @@ one approves the refund and the other approves notifying the customer. Their
 interrupts cross `/v1` as one atomic tool-call batch; clients answer the whole
 batch together without needing to understand the nested graph topology.
 
+The plot demo's `user` and `session_id` are caller-asserted correlation values,
+not an authorization boundary. A production application must derive the user
+scope from authenticated server state and define artifact retention.
+
 Each demo API process opens one PostgreSQL connection pool in its FastAPI
 lifespan, waits for the pool to become ready before serving, and closes it at
-shutdown. The checkpointer and same-run coordinator share that pool. The latter
+shutdown. The checkpointer, LangGraph store, and same-run coordinator share
+that pool. The latter
 holds a
 session-level [PostgreSQL advisory lock](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
 only while validating or advancing a request, never while awaiting human input.
-One of the pool's five connections is reserved for checkpoint I/O; exhausting
+One of the pool's five connections is reserved for persistence I/O; exhausting
 the other four coordination slots returns HTTP 409.
 
 The demo environment enables `LANGGRAPH_STRICT_MSGPACK=true`. This selects
@@ -55,8 +74,8 @@ pending runs and follow LangGraph's
 
     Use `custom-input-output-context`, `citation-events`,
     `advanced-mcp-tools`, `complex-subgraphs`, `status-events`,
-    `custom-event-showcase`, or `interruptible-approval` to explore the
-    transport without a real model API key.
+    `custom-event-showcase`, `persistent-plot`, or `interruptible-approval` to
+    explore the transport without a real model API key.
 
 ## Source Map
 
@@ -80,6 +99,8 @@ All graph code is owned by the independent `demo/api` project:
   updates.
 - `demo/api/src/lgos_demo_api/graphs/custom_events.py` emits explicitly public
   progress and artifact events.
+- `demo/api/src/lgos_demo_api/graphs/persistent_plot.py` edits a thread-scoped
+  chart document and emits the current chart on every call.
 - `demo/api/src/lgos_demo_api/graphs/interruptible.py` runs reusable nested
   approval steps as one checkpointed batch.
 - `demo/api/src/lgos_demo_api/graphs/citations.py` emits citation events that

@@ -101,7 +101,7 @@ settings](reference.md#opentelemetry-settings).
     Run each attached service in a separate terminal. Compose starts their
     shared PostgreSQL dependency automatically. Before either API starts,
     `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
-    checkpoint schema once. Both APIs use
+    LangGraph checkpoint and store schemas once. Both APIs use
     [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
     as their readiness dependency.
 
@@ -156,16 +156,20 @@ under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
 service runs as `PUID:PGID` with a read-only root filesystem, dropped
 capabilities, and explicit resource limits. Narrow tmpfs mounts hold required
 ephemeral writes. The one-shot API setup service initializes the LangGraph
-checkpoint schema before both API workers, while Chainlit's `pre_start` hook
+persistence schemas before both API workers, while Chainlit's `pre_start` hook
 applies its independent UI migrations.
 
-The API workers share PostgreSQL for both durable checkpoints and fail-fast
-same-run coordination. Session-level advisory locks prevent two workers from
-advancing the same interrupt run at once; a contended request fails instead of
-waiting. No Redis service is required. The lock is held only while an API
-request validates or advances the run, never while a human is deciding. A
-per-process capacity gate also fails fast when its four lease slots are full,
-leaving the fifth pool connection available for checkpoint I/O.
+Chainlit stores thread and element metadata in PostgreSQL, while its native S3
+client uploads Plotly figure JSON to the configured `BUCKET_NAME`. Resuming a
+thread obtains a fresh signed object URL from that client.
+
+The API workers share PostgreSQL for thread-scoped application data, durable
+checkpoints, and fail-fast same-run coordination. Session-level advisory locks
+prevent two workers from advancing the same interrupt run at once; a contended
+request fails instead of waiting. No Redis service is required. The lock is held
+only while an API request validates or advances the run, never while a human is
+deciding. A per-process capacity gate also fails fast when its four lease slots
+are full, leaving the fifth pool connection available for persistence I/O.
 
 Compose also forces `LANGGRAPH_STRICT_MSGPACK=true` for the APIs. Strict
 deserialization narrows which checkpoint object types LangGraph may
@@ -205,8 +209,9 @@ well.
 - Third-party services use pinned official images rather than being repackaged.
 - Health checks, the one-shot API setup service, and Chainlit's `pre_start` job
   establish service and schema readiness.
-- PostgreSQL provides both interrupt durability and cross-worker advisory
-  coordination; the graph API needs no second persistence service.
+- PostgreSQL provides the LangGraph store, interrupt durability, and
+  cross-worker advisory coordination; the graph API needs no second persistence
+  service.
 - Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and
   host-owned bind directories make operational assumptions visible.
 - The API, UIs, and gateway communicate only through their documented network

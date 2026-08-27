@@ -147,6 +147,19 @@ class StatusUpdate(BaseModel):
     hidden: bool = False
 
 
+class PlotlyArtifact(BaseModel):
+    """A versioned Plotly figure published as a portable artifact."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    schema_version: Literal[1]
+    id: str = Field(min_length=1)
+    kind: Literal["plotly"]
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    figure: dict[str, JsonValue]
+
+
 class ClientEventData(BaseModel):
     """A validated public event carried by an LGOS stream extension."""
 

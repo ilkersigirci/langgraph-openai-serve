@@ -217,3 +217,73 @@ async def test_renderer_maps_status_updates_to_chainlit_task_list(
     assert task_list.send.await_count == len(tasks)
     task_list.remove.assert_awaited_once_with()
     custom_element_factory.assert_not_called()
+
+
+async def test_renderer_maps_plotly_artifact_to_native_element(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_events = importlib.import_module("lgos_chainlit.utils.client_events")
+    renderer = client_events.ClientEventRenderer()
+    element = Mock()
+    plotly_factory = Mock(return_value=element)
+    message = Mock(metadata=None, send=AsyncMock())
+    message_factory = Mock(return_value=message)
+    custom_element_factory = Mock()
+    monkeypatch.setattr(client_events.cl, "Plotly", plotly_factory)
+    monkeypatch.setattr(client_events.cl, "Message", message_factory)
+    monkeypatch.setattr(client_events.cl, "CustomElement", custom_element_factory)
+
+    await renderer.render(
+        completion_chunk(
+            {
+                "schema_version": 1,
+                "event": {
+                    "type": "artifact",
+                    "namespace": ["plots"],
+                    "data": {
+                        "schema_version": 1,
+                        "id": "revenue",
+                        "kind": "plotly",
+                        "title": "Quarterly revenue",
+                        "summary": "Q4 is highest.",
+                        "figure": {
+                            "data": [
+                                {
+                                    "type": "scatter",
+                                    "mode": "lines+markers",
+                                    "x": ["Q1", "Q2"],
+                                    "y": [1, 2],
+                                }
+                            ],
+                            "layout": {"showlegend": False},
+                        },
+                    },
+                },
+            }
+        )
+    )
+
+    plotly_factory.assert_called_once()
+    assert plotly_factory.call_args.kwargs["name"] == "revenue"
+    assert plotly_factory.call_args.kwargs["display"] == "inline"
+    assert plotly_factory.call_args.kwargs["figure"].to_plotly_json()["data"] == [
+        {
+            "type": "scatter",
+            "mode": "lines+markers",
+            "x": ["Q1", "Q2"],
+            "y": [1, 2],
+        }
+    ]
+    assert (
+        plotly_factory.call_args.kwargs["figure"].to_plotly_json()["layout"][
+            "showlegend"
+        ]
+        is False
+    )
+    message_factory.assert_called_once_with(
+        content="Quarterly revenue",
+        elements=[element],
+    )
+    assert message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
+    message.send.assert_awaited_once_with()
+    custom_element_factory.assert_not_called()

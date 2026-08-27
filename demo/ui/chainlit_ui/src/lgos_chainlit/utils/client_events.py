@@ -3,11 +3,13 @@
 import chainlit as cl
 from chainlit_utils.chat import mark_model_context_excluded
 from openai.types.chat import ChatCompletionChunk
+from plotly import graph_objects as go
 from pydantic import ValidationError
 
 from lgos_chainlit.lgos_protocol import (
     LGOS_EXTENSION_KEY,
     ClientEventExtension,
+    PlotlyArtifact,
     StatusUpdate,
 )
 
@@ -35,6 +37,16 @@ def status_update(event: dict[str, object]) -> StatusUpdate | None:
         return None
 
 
+def plotly_artifact(event: dict[str, object]) -> PlotlyArtifact | None:
+    """Return a supported Plotly artifact."""
+    if event.get("type") != "artifact":
+        return None
+    try:
+        return PlotlyArtifact.model_validate(event.get("data"))
+    except ValidationError:
+        return None
+
+
 class ClientEventRenderer:
     """Render statuses as native tasks and other events as a timeline."""
 
@@ -52,6 +64,11 @@ class ClientEventRenderer:
         status = status_update(event)
         if status is not None:
             await self._render_status(status)
+            return
+
+        artifact = plotly_artifact(event)
+        if artifact is not None:
+            await self._render_plotly(artifact)
             return
 
         self._events.append(event)
@@ -102,3 +119,14 @@ class ClientEventRenderer:
         self._task_list.status = "Done" if status.done else "Running..."
         self._active_task = None if status.done else task
         await self._task_list.send()
+
+    @staticmethod
+    async def _render_plotly(artifact: PlotlyArtifact) -> None:
+        element = cl.Plotly(
+            name=artifact.id,
+            figure=go.Figure(artifact.figure),
+            display="inline",
+        )
+        message = cl.Message(content=artifact.title, elements=[element])
+        mark_model_context_excluded(message)
+        await message.send()

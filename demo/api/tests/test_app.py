@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionRequestMessage,
@@ -26,6 +27,7 @@ DOCUMENTED_MODEL_IDS = {
     "custom-input-output-context",
     "interruptible-approval",
     "lgos-rag",
+    "persistent-plot",
     "simple-graph",
     "status-events",
 }
@@ -83,6 +85,18 @@ async def test_app_lists_exactly_the_documented_models(
             "description": descriptions[model_id],
             "features": ["client_events"],
         }
+
+    plot_model = await openai_client.models.retrieve("persistent-plot")
+    plot_extension = (plot_model.model_extra or {})["langgraph_openai_serve"]
+    assert plot_extension["features"] == ["client_events"]
+    assert plot_extension["client_settings"]["defaults"] == {
+        "chart_type": "bar",
+        "currency": "USD",
+        "show_legend": True,
+    }
+    assert plot_extension["client_settings"]["json_schema"]["properties"]["chart_type"][
+        "enum"
+    ] == ["bar", "line"]
 
 
 async def test_cors_exposes_request_id(demo_app: FastAPI) -> None:
@@ -161,7 +175,7 @@ async def test_custom_io_demo_works_through_openai_client(
     )
 
 
-async def test_lifespan_installs_shared_interrupt_runtime(
+async def test_lifespan_installs_shared_postgres_runtime(
     demo_app: FastAPI,
     monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
@@ -170,6 +184,7 @@ async def test_lifespan_installs_shared_interrupt_runtime(
 
     runtime = PostgresRuntime(
         checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
+        store=InMemoryStore(),  # type: ignore[arg-type]
         run_coordinator=coordinator,  # type: ignore[arg-type]
     )
 
@@ -184,6 +199,7 @@ async def test_lifespan_installs_shared_interrupt_runtime(
     async with app_module.lifespan(demo_app):
         assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
         assert demo_app.state.interruptible_run_coordinator is coordinator
+        assert demo_app.state.persistent_plot_graph.store is runtime.store
 
         config = demo_app.state.graph_registry.get_graph("interruptible-approval")
         assert config.run_coordinator is not None

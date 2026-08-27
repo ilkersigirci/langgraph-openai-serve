@@ -90,6 +90,11 @@ class ChainlitSettings(BaseSettings):
 
     DATABASE_URL: PostgresDsn
     CHAINLIT_AUTH_SECRET: str
+    BUCKET_NAME: str
+    APP_AWS_ACCESS_KEY: str
+    APP_AWS_SECRET_KEY: str
+    APP_AWS_REGION: str
+    DEV_AWS_ENDPOINT: HttpUrlStr
     OAUTH_GENERIC_CLIENT_ID: str | None = None
     OAUTH_GENERIC_CLIENT_SECRET: str | None = None
     OAUTH_GENERIC_AUTH_URL: str | None = None
@@ -103,6 +108,20 @@ class ChainlitSettings(BaseSettings):
         """Reject a missing or example signing secret before Chainlit starts."""
         if _is_unconfigured(value):
             msg = "CHAINLIT_AUTH_SECRET must be configured."
+            raise ValueError(msg)
+        return value
+
+    @field_validator(
+        "BUCKET_NAME",
+        "APP_AWS_ACCESS_KEY",
+        "APP_AWS_SECRET_KEY",
+        "APP_AWS_REGION",
+    )
+    @classmethod
+    def validate_s3_setting(cls, value: str) -> str:
+        """Reject incomplete native Chainlit S3 configuration."""
+        if _is_unconfigured(value):
+            msg = "Chainlit S3 storage must be configured."
             raise ValueError(msg)
         return value
 

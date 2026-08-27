@@ -192,6 +192,23 @@ async def test_pipe_requests_client_events_only_when_advertised(
     assert chat.include_client_events_calls == [True]
 
 
+async def test_pipe_forwards_the_openwebui_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat = ScriptedChat((("ok",), completion("ok")))
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await collect_response(
+        Pipe().pipe(
+            body=body("hello"),
+            __user__={"id": "user-123"},
+        )
+    )
+
+    assert chunks == ["ok"]
+    assert chat.user_id_calls == ["user-123"]
+
+
 async def test_pipe_rejects_model_without_function_prefix() -> None:
     chunks = await collect_response(Pipe().pipe(body=body("hello", model="graph")))
 
@@ -250,6 +267,7 @@ async def test_chat_sends_model_and_ephemeral_request_metadata() -> None:
             "session_id": "chat-123",
         },
         include_client_events=True,
+        user_id="user-123",
     ) as response_stream:
         deltas = [
             event.delta
@@ -264,6 +282,7 @@ async def test_chat_sends_model_and_ephemeral_request_metadata() -> None:
         model="namespace/graph.with.dots",
         extra_headers={"x-model-provider": "lgos-a"},
         messages=messages,
+        user="user-123",
         metadata={
             "langgraph_stream_events": "v1",
             "langgraph_runtime_settings": '{"mode":"detailed"}',
@@ -476,3 +495,77 @@ async def test_content_stream_emits_status_event() -> None:
             },
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("trace_type", "show_legend", "chart_marker"),
+    [
+        ("bar", True, "width:100.00%"),
+        ("scatter", False, "<polyline"),
+    ],
+)
+async def test_content_stream_emits_persistent_plot_embed(
+    trace_type: str,
+    show_legend: bool,
+    chart_marker: str,
+) -> None:
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": UPSTREAM_MODEL_ID,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "event": {
+                    "type": "artifact",
+                    "namespace": ["plots"],
+                    "data": {
+                        "schema_version": 1,
+                        "id": "revenue",
+                        "kind": "plotly",
+                        "title": "Quarterly <revenue>",
+                        "summary": "Q4 is highest.",
+                        "figure": {
+                            "data": [
+                                {
+                                    "type": trace_type,
+                                    "name": "Revenue",
+                                    "x": ["Q1", "Q2"],
+                                    "y": [1, 2],
+                                    "showlegend": show_legend,
+                                }
+                            ]
+                        },
+                    },
+                },
+            },
+        }
+    )
+
+    async def stream():
+        yield ChunkEvent(
+            type="chunk",
+            chunk=chunk,
+            snapshot={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": UPSTREAM_MODEL_ID,
+                "choices": [],
+            },
+        )
+
+    emitter = AsyncMock()
+    deltas = [delta async for delta in generic._content_deltas(stream(), emitter)]
+
+    assert deltas == []
+    event = emitter.await_args.args[0]
+    assert event["type"] == "embeds"
+    assert event["data"].keys() == {"embeds"}
+    html = event["data"]["embeds"][0]
+    assert "Quarterly &lt;revenue&gt;" in html
+    assert chart_marker in html
+    assert ('<div class="legend">' in html) is show_legend
+    assert "iframe:height" in html
