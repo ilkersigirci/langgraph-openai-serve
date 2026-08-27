@@ -71,7 +71,8 @@ flowchart LR
 
 `LanggraphOpenaiServe` is the boundary between your FastAPI app and the
 OpenAI-compatible sub-application. It mounts the sub-application at the
-configured prefix and can add CORS middleware when requested.
+configured prefix. The host application owns middleware such as CORS,
+authentication, and telemetry.
 
 The mounted OpenAI app owns the public HTTP surface: model listing, chat
 completions, health checks, request validation, response schemas, and

@@ -139,9 +139,7 @@ production adapter.
     Keep the sequential, parallel, nested, stale-resume, and restart tests as
     an upgrade gate before widening the supported LangGraph range. See the
     official
-    [interrupt ordering rule](https://docs.langchain.com/oss/python/langgraph/interrupts#do-not-reorder-interrupt-calls-within-a-node)
-    and the pinned
-    [LangGraph 1.2.9 implementation](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/langgraph/langgraph/types.py).
+    [interrupt ordering rule](https://docs.langchain.com/oss/python/langgraph/interrupts#do-not-reorder-interrupt-calls-within-a-node).
 
 ### Paused Runs Across Deployments
 
@@ -162,68 +160,16 @@ See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.
 ## Request Cancellation
 
 For streaming chat completions (`stream=true`), LGOS ties graph iteration to the
-HTTP response lifetime. The route returns Starlette's ordinary
-`StreamingResponse`, while a request-scoped FastAPI `yield` dependency owns one
-`asyncio` producer task and the AnyIO memory channel feeding that response.
-Closing the client stream is detected by `StreamingResponse`, which ends the
-response. Dependency teardown then cancels and awaits the producer and closes
-the nested graph iterator. This uses the normal OpenAI streaming connection; it
-adds no custom cancellation route, header, or SSE event.
-
-!!! note "Why the producer remains an asyncio task"
-
-    This is an intentional compatibility boundary. AnyIO task groups use
-    [level cancellation](https://anyio.readthedocs.io/en/stable/cancellation.html#differences-between-asyncio-and-anyio-cancellation-semantics),
-    while LangGraph's stream teardown is asyncio-native and relies on edge
-    cancellation. LGOS therefore uses AnyIO for the memory channel and shielded
-    cleanup, but keeps producer cancellation on `asyncio.Task.cancel()`.
-
-!!! info "Why cancellation raises the dependency minimums"
-
-    LGOS requires `fastapi[standard]>=0.121.0` because stream ownership depends
-    on a request-scoped `yield` dependency remaining alive until after
-    `StreamingResponse` finishes. FastAPI restored post-response cleanup for
-    streaming dependencies in 0.118.0 and added explicit
-    `Depends(scope="request")` support in 0.121.0, making that the functional
-    compatibility floor.
-
-    FastAPI 0.135 introduced native SSE support. Its current implementation uses
-    a request-scoped producer, an AnyIO memory channel, and an ordinary
-    `StreamingResponse`. That implementation inspired LGOS's architecture and
-    confirms this lifecycle as a framework-supported pattern. LGOS cannot use it
-    directly because `/v1/chat/completions` must dynamically return either JSON
-    or pre-framed OpenAI SSE from the same route, so native SSE does not set the
-    functional minimum. See FastAPI's [SSE documentation](https://fastapi.tiangolo.com/tutorial/server-sent-events/)
-    and
-    [dependency lifecycle notes](https://fastapi.tiangolo.com/advanced/advanced-dependencies/#dependencies-with-yield-and-streamingresponse-technical-details).
-
-    LGOS also depends directly on `anyio>=4,<5` for its
-    [memory object stream](https://anyio.readthedocs.io/en/stable/streams.html#memory-object-streams)
-    and shielded
-    [cancellation scope](https://anyio.readthedocs.io/en/stable/cancellation.html#shielding).
-    The lower bound selects the AnyIO major version against which teardown is
-    implemented and tested; the upper bound prevents an unreviewed future major
-    release from changing cancellation or stream behavior underneath this
-    lifecycle. FastAPI continues to select its compatible Starlette version.
+HTTP response lifetime. A request-scoped FastAPI dependency owns the producer
+task and memory channel behind `StreamingResponse`. When the client disconnects,
+dependency cleanup cancels and awaits that producer, then closes the graph
+iterator. This uses the normal OpenAI streaming connection; LGOS adds no custom
+cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"
 
-    Asynchronous graph and model work stops at cancellation points. Synchronous,
-    CPU-bound, blocking, or cancellation-swallowing code may continue, and
-    blocked cleanup can delay request teardown. A proxy must propagate the
-    downstream disconnect to LGOS; a proxy that continues consuming the upstream
-    response also keeps the graph request alive. An upstream provider decides
-    whether closing its own connection stops remote generation or billing. This
-    request-scoped path does not cover `stream=false`.
-
-!!! note "Interrupt identity is not durable run cancellation"
-
-    An interrupt operation has a UUID so its paused state can be validated and
-    resumed. LGOS still has no cancellation route, queued-run record, or
-    addressable execution record for ordinary requests. Disconnect cancellation
-    also does not create a resumable LangGraph interrupt. By contrast,
-    [LangSmith Agent Server](https://docs.langchain.com/langsmith/agent-server)
-    persists queued and running work and provides an explicit
-    [run cancellation API](https://docs.langchain.com/langsmith/cancel-run) that
-    can preserve or roll back checkpoints. Use that runtime when cancellation
-    must remain available after the original HTTP request is gone.
+    Asynchronous work stops at cancellation points. Blocking code may continue,
+    and a proxy that keeps consuming the upstream response also keeps the graph
+    alive. The upstream model provider decides whether closing its connection
+    stops remote generation or billing. This path does not cover `stream=false`
+    and does not create a durable, addressable cancellation record.

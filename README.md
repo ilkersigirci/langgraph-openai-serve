@@ -111,6 +111,7 @@ values.
 
 - Documentation home: [docs/index.md](docs/index.md)
 - Package getting started: [docs/getting-started.md](docs/getting-started.md)
+- Architecture and state ownership: [docs/explanation/architecture.md](docs/explanation/architecture.md)
 - Self-contained demo stack: [docs/demo/index.md](docs/demo/index.md)
 - Runnable demo API: [docs/demo/api.md](docs/demo/api.md)
 - Demo graph catalog: [docs/demo/graphs/](docs/demo/graphs/index.md)

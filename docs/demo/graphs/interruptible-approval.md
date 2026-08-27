@@ -12,6 +12,8 @@ history or the application document used by
 and retention rules are defined in
 [OpenAI Compatibility](../../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
+Ask the graph to process a refund to trigger the approval batch.
+
 ## Interrupt Flow
 
 ```mermaid

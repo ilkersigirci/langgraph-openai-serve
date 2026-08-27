@@ -3,28 +3,32 @@ hide:
   - toc
 ---
 
-# Explanation
+# How It Works
 
-Understand the design decisions and boundaries behind LGOS.
+LGOS is an HTTP adapter around application-owned LangGraph graphs. Start with
+the architecture, then read only the detail needed for your task.
 
 <div class="grid cards" markdown>
 
--   :material-api:{ .lg .middle } __OpenAI compatibility__
-
-    The public client contract, supported behavior, and ownership boundaries.
-
-    [:octicons-arrow-right-24: Read the contract](openai-compatibility.md)
-
 -   :material-source-branch:{ .lg .middle } __Architecture__
 
-    The request path through FastAPI, graph registration, execution, and output.
+    The request path, package boundary, and ownership of conversation and graph
+    state.
 
-    [:octicons-arrow-right-24: Explore the architecture](architecture.md)
+    [:octicons-arrow-right-24: Start here](architecture.md)
 
 -   :material-swap-horizontal:{ .lg .middle } __LangGraph integration__
 
-    Graph registration, request adaptation, runner modes, and streaming.
+    How registration, adapters, the runner, streaming, interrupts, and
+    cancellation work internally.
 
-    [:octicons-arrow-right-24: Follow the integration](langgraph-integration.md)
+    [:octicons-arrow-right-24: Follow the execution](langgraph-integration.md)
+
+-   :material-api:{ .lg .middle } __OpenAI compatibility__
+
+    The precise client-facing contract for discovery, events, citations,
+    errors, and interrupt replay.
+
+    [:octicons-arrow-right-24: Read the contract](openai-compatibility.md)
 
 </div>

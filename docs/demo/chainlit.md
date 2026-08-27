@@ -47,9 +47,11 @@ for container endpoints.
 In direct mode, profile discovery reads each
 `langgraph_openai_serve.description` from the model list. In Bifrost mode, the
 catalog discovers providers and provider-qualified IDs, then one pass-through
-list request per discovered provider supplies the native model metadata. The
-demo API owns these required descriptions; Chainlit marks a model as **Limited
-functionality** when an endpoint omits or strips one.
+list request per provider supplies the native model metadata. Listing,
+retrieval, and chat use the same raw pass-through route and discovered
+`x-model-provider`; the adapter has no provider list. The demo API owns the
+descriptions. Chainlit keeps ordinary chat available but marks a model as
+**Limited functionality** when an endpoint omits or strips one.
 
 ## Runtime Settings
 
@@ -91,7 +93,7 @@ the same login identity. The adapter also sends Chainlit's stable thread ID as
 `metadata.session_id` on every completion, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
-chat document. The transcript remains owned and resent by Chainlit; no chat
+chart document. The transcript remains owned and resent by Chainlit; no chat
 history is added to LGOS. See the
 [persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
 for the API Store, Chainlit PostgreSQL, and S3 boundaries.
@@ -125,10 +127,9 @@ DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 Initial requests need no interrupt metadata. The HITL client implements the
 [canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
 it asks for every decision, sends no partial batch, and repeats when the graph
-pauses again. The bundled model demonstrates this with two consecutive dialogs
-from parallel nested subgraphs: refund approval and customer-notification
-approval. The client sees only one standard OpenAI tool-call batch and does not
-depend on the graph topology.
+pauses again. The client depends only on the standard tool-call batch, not the
+graph topology. See the shared
+[interrupt walkthrough](graphs/interruptible-approval.md).
 
 !!! note "Reconnect recovery and its boundary"
 
@@ -176,45 +177,12 @@ the configured S3-compatible bucket, allowing the native chart to return with
 the thread. The packaged botocore configuration uses Signature V4 and path-style
 addressing for S3-compatible endpoints. Unknown extension versions are ignored.
 
-To see native status rendering, select `lgos-a/status-events` in Compose or
-`status-events` in local-process mode, then ask **Prepare the media workflow.**
-Each new status completes the previous task, and the final `done=True` update
-marks the list done. The task list is live UI state and is not restored from
-persisted chat history.
-
-Select `lgos-b/custom-event-showcase` in Compose or `custom-event-showcase`
-locally, then ask **Build the compatibility report** to see the separate
-activity panel render progress and an artifact while assistant text streams
-independently.
-
-Select `lgos-b/persistent-plot` in Compose or `persistent-plot` locally and ask
-**Show the chart**, then **Set Q3 to 250**. The second request loads and updates
-the canonical document in the API's PostgreSQL store while Chainlit continues
-to own the visible conversation and native chart elements. Ask **Which quarter
-is highest?** in a later turn to exercise a fresh graph call over the stored
-data. Chainlit discovers **Chart type**, **Currency**, and **Show legend** as
-native Chat Settings and resends them with each request; those presentation
-choices are not stored with the chart data. A different thread gets a separate
-chart document.
-
-Behind Bifrost, Chainlit discovers providers from the catalog URL and uses the
-raw pass-through URL for metadata-bearing model lists, detailed retrieval, and
-inference. A schema-normalizing route may still stream the answer while
-stripping both capability metadata and event-only chunks; Chainlit displays the
-limited-mode warning when model retrieval reveals that condition. See
+Status task lists are live UI state and are not restored from persisted chat
+history. Shared prompts and graph behavior are documented under
+[Events And Citations](graphs/events-and-citations.md#try-it) and
+[Persistent Plot](graphs/persistent-plot.md#try-it). A schema-normalizing proxy
+may strip capability metadata and event-only chunks; see
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
-
-When a catalog URL is configured, the adapter keeps models owned by
-`langgraph-openai-serve`, discovers their providers, and sends the provider as
-`x-model-provider` for pass-through listing, retrieval, and chat. Its code has
-no provider list. The upstream model ID remains opaque, including any
-additional `/` characters.
-
-Without a catalog URL, Chainlit follows the standard OpenAI path: it lists once
-and reuses every returned model ID verbatim. Use that default for a direct LGOS
-API or another OpenAI-compatible endpoint. If the endpoint strips the LGOS
-model extension, the profile remains usable and Chainlit warns after it is
-selected. Chainlit never infers routing behavior from the base URL.
 
 ## Settings Reference
 

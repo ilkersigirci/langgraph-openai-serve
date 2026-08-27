@@ -14,7 +14,7 @@ demo maps each request to:
 ```text
 namespace = ("demo", "persistent-plot", "threads", sha256(user + "\0" + session_id))
 key       = "quarterly-revenue"
-value     = {"schema_version": 1, "q1": 120, "q2": 180, "q3": 250, "q4": 230}
+value     = {"schema_version": 1, "q1": 120, "q2": 180, "q3": 150, "q4": 230}
 ```
 
 Both the OpenAI `user` and `metadata.session_id` fields are required. Their hash
@@ -110,3 +110,10 @@ flowchart LR
 
 Chart type, currency, and legend visibility are request-scoped client settings.
 They are resent by the UI and never written to the canonical document.
+
+## Try It
+
+In one Chainlit thread or Open WebUI chat, send `Show the chart`, then
+`Set Q3 to 250`, then `Which quarter is highest?`. The second and third calls
+load the document written by the earlier invocation. Start another thread or
+chat to select a different Store namespace.

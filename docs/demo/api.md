@@ -53,7 +53,7 @@ docker compose -f docker/compose/demo.yml up -d lgos-db
 
 The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
 the same image as independently addressable `lgos-b` on port 3005; the two
-services intentionally expose the same graph set today.
+services expose the same graph set under separate provider identities.
 
 Inspect registered graphs:
 
@@ -164,10 +164,9 @@ interleaved with assistant text.
 
 The demo includes optional [Chainlit](chainlit.md) and
 [Open WebUI](open-webui.md) clients. The Compose stack routes both through the
-bundled [Bifrost gateway](bifrost.md). The dynamic clients use the gateway
-catalog for provider-qualified discovery and raw pass-through for LGOS model
-metadata and inference. The fixed-model Open WebUI example uses Bifrost
-pass-through without catalog discovery.
+bundled [Bifrost gateway](bifrost.md). See
+[Demo Architecture](architecture.md) for the shared request and ownership
+flows, then use each client guide for its adapter-specific behavior.
 
 ## Next Steps
 

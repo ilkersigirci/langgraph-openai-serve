@@ -114,17 +114,8 @@ settings](reference.md#opentelemetry-settings).
     docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
     ```
 
-    Use `http://localhost:3000/v1` as the provider-qualified model catalog. Use
-    `http://localhost:3000/openai_passthrough/v1` for detailed model retrieval
-    and inference, sending the selected model's provider prefix as
-    `x-model-provider`. Both dynamic UI integrations discover this routing
-    information from the catalog. Chainlit uses direct mode only when its
-    optional catalog URL is unset.
-
-    From the package repository, run `make test-bifrost` to verify both APIs,
-    detailed model metadata, inference, and client events through one SDK
-    client. See
-    [Bifrost Gateway](bifrost.md).
+    See [Bifrost Gateway](bifrost.md) for endpoints, routing, and the shared SDK
+    verification command.
 
 === "Chainlit"
 
@@ -150,7 +141,7 @@ settings](reference.md#opentelemetry-settings).
     the bundled Functions and generates Workspace Models from LGOS metadata. See the
     [Open WebUI Functions](open-webui.md).
 
-PostgreSQL is published on `localhost:3001`. PostgreSQL checkpoints, Bifrost
+PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
 state, and Open WebUI state use host bind mounts
 under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
 service runs as `PUID:PGID` with a read-only root filesystem, dropped
@@ -200,22 +191,6 @@ well.
     front of PostgreSQL, use session pooling or a direct coordinator connection;
     PgBouncer documents session advisory locks as unsupported in
     [transaction-pooling mode](https://www.pgbouncer.org/features.html#sql-feature-map-for-pooling-modes).
-
-## What The Stack Demonstrates
-
-- The API and Chainlit applications use their own lockfiles. The LGOS release
-  workflow injects its tagged wheel into the API image, while development uses
-  an editable parent checkout.
-- Third-party services use pinned official images rather than being repackaged.
-- Health checks, the one-shot API setup service, and Chainlit's `pre_start` job
-  establish service and schema readiness.
-- PostgreSQL provides the LangGraph store, interrupt durability, and
-  cross-worker advisory coordination; the graph API needs no second persistence
-  service.
-- Read-only roots, dropped capabilities, tmpfs mounts, resource limits, and
-  host-owned bind directories make operational assumptions visible.
-- The API, UIs, and gateway communicate only through their documented network
-  contracts.
 
 !!! warning "Demo images are examples"
 

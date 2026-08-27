@@ -86,7 +86,7 @@ flowchart LR
   plot -->|"thread-scoped chart document"| store
 ```
 
-Both API containers currently run the same image and graph set, but Bifrost
+Both API containers run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
 checkpoints, thread-scoped data, and cross-worker run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
@@ -97,31 +97,6 @@ recovery behavior live in [Persistent Plot](graphs/persistent-plot.md) and
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.
 
-## OpenTelemetry Overlay
-
-The optional Compose overlay sends application telemetry through one local
-Collector while keeping Langfuse on its separate native export path.
-
-```mermaid
-flowchart LR
-  subgraph demo["Demo Compose deployment"]
-    direction TB
-    clients_otel["Chainlit and Open WebUI"]
-    bifrost_otel["Bifrost"]
-    apis_otel["LGOS API A and B"]
-    collector["Local OpenTelemetry Collector"]
-
-    clients_otel -->|"traces"| collector
-    bifrost_otel -->|"traces"| collector
-    apis_otel -->|"traces, metrics, and logs"| collector
-  end
-
-  collector -->|"OTLP/HTTP"| gateway["External Collector gateway"]
-  gateway --> lgtm["Grafana LGTM"]
-  apis_otel -.->|"LangGraph observations"| langfuse_otel["Langfuse"]
-```
-
-The local Collector filters, enriches, and forwards standard OTLP signals; the
-external platform stores and displays them. Configuration and operational
-details live in
-[Production OpenTelemetry](../how-to-guides/production-otel.md).
+The optional Compose overlay adds a separate telemetry path without changing
+request or state ownership. Its complete signal flow and operational boundary
+are documented in [Demo OpenTelemetry Overlay](opentelemetry.md).

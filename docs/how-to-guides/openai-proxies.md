@@ -4,8 +4,8 @@ Use an OpenAI-compatible proxy for inference without an LGOS-specific adapter.
 The proxy requirements for model discovery, request metadata, and streaming
 disconnects are defined by the
 [OpenAI compatibility contract](../explanation/openai-compatibility.md).
-This page defines the gateway behavior an LGOS application needs and provides a
-LiteLLM pass-through example.
+This page defines the gateway behavior an LGOS application needs and points to
+the repository's tested Bifrost example.
 
 ## Requirements
 
@@ -71,30 +71,6 @@ header's shape; never use it for identity or authorization. The complete
 request-ID contract and its relationship to OpenTelemetry are documented in
 [Production Logging and Request
 Correlation](production-logging.md#lgos-responsibilities).
-
-## LiteLLM
-
-LiteLLM's normal Chat Completions stream handler does not retain LGOS
-event-only chunks. Configure one pass-through prefix that targets LGOS and
-includes every OpenAI subpath:
-
-```yaml
-general_settings:
-  pass_through_endpoints:
-    - path: "/lgos"
-      target: "http://lgos-api:8000"
-      include_subpath: true
-      methods: ["GET", "POST"]
-```
-
-Use `https://gateway.example/lgos/v1` as the client's only OpenAI base URL, with
-unprefixed LGOS model names. LiteLLM's custom pass-through streams
-upstream bytes directly; it also bypasses LiteLLM's normal response conversion
-and model routing for that endpoint. See LiteLLM's
-[custom pass-through documentation](https://docs.litellm.ai/docs/proxy/pass_through),
-[raw streaming handler](https://github.com/BerriAI/litellm/blob/dc9297d36f6b9ef0965ff365664c7696bc4131a8/litellm/proxy/pass_through_endpoints/streaming_handler.py#L52-L67),
-and
-[normal stream filtering](https://github.com/BerriAI/litellm/blob/dc9297d36f6b9ef0965ff365664c7696bc4131a8/litellm/litellm_core_utils/streaming_handler.py#L760-L807).
 
 ## Other Proxies
 

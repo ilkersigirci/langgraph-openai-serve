@@ -38,7 +38,7 @@ The application or deployment configures:
 - trusted request-ID policy, retention, redaction, and access controls;
 - ASGI server or ingress access logs; and
 - OpenTelemetry instrumentation, metrics, traces, and OTLP export. The demo's
-  optional [Production OpenTelemetry](production-otel.md) overlay shows one
+  optional [Demo OpenTelemetry](../demo/opentelemetry.md) overlay shows one
   Collector-based deployment pattern.
 
 For latency percentiles and distributed request timing, use the deployment's
@@ -54,11 +54,11 @@ not control retained telemetry.
 
 ## Application formatting
 
-Configure logging in the host application. The runnable demo's [JSON logging
-configuration](../../demo/api/src/lgos_demo_api/logging.py) shows how to format
-LGOS and Uvicorn server records together without changing the LGOS package. The
-demo disables Uvicorn access logs; enable access logging at the ASGI server or
-ingress layer that owns request timing and retention.
+Configure logging in the host application. The runnable demo's
+`demo/api/src/lgos_demo_api/logging.py` shows how to format LGOS and Uvicorn
+server records together without changing the LGOS package. The demo disables
+Uvicorn access logs; enable access logging at the ASGI server or ingress layer
+that owns request timing and retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
 `stream`, and `operation_id`. If OpenTelemetry's Python logging

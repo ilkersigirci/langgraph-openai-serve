@@ -64,6 +64,12 @@ client integrations, gateway configuration, and a complete Compose stack.
 
     [:octicons-arrow-right-24: Bifrost gateway](bifrost.md)
 
+-   :material-chart-timeline-variant:{ .lg .middle } __Observe the stack__
+
+    Add the optional Collector overlay without changing the LGOS package.
+
+    [:octicons-arrow-right-24: OpenTelemetry overlay](opentelemetry.md)
+
 </div>
 
 ## Components

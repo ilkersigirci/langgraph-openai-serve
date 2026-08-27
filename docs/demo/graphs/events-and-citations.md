@@ -46,6 +46,14 @@ shape, while passive status, progress, and artifact updates use LGOS's
 advertised `client_events` extension. A client that does not opt into or
 understand that extension can still consume the assistant text.
 
+## Try It
+
+| Model | Prompt |
+| --- | --- |
+| `citation-events` | `Show me a cited answer.` |
+| `status-events` | `Prepare the media workflow.` |
+| `custom-event-showcase` | `Build the compatibility report.` |
+
 See [Citation Ownership](../../explanation/openai-compatibility.md#citation-ownership)
 and [Client Events](../../explanation/openai-compatibility.md#client-stream-events)
 for the normative transport contract.

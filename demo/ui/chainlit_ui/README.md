@@ -14,8 +14,8 @@ declaration to its authoritative source in the main LGOS repository.
 
 ```bash
 cp .env.example .env
-uv run --env-file .env lgos-chainlit-setup
-uv run --env-file .env lgos-chainlit
+uv run --locked --env-file .env lgos-chainlit-setup
+uv run --locked --env-file .env lgos-chainlit
 ```
 
 Application settings use the `DEMO_CHAINLIT_` prefix. Reusable helper settings

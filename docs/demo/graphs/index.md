@@ -39,28 +39,10 @@ All graph code is owned by the independent `demo/api` project:
 
 - `demo/api/src/lgos_demo_api/app.py` registers graph names as OpenAI model
   names.
-- `demo/api/src/lgos_demo_api/graphs/simple.py` publishes safe runtime settings
-  for conversation history and intended audience.
-- `demo/api/src/lgos_demo_api/graphs/lgos_rag.py` implements agentic retrieval,
-  relevance grading, bounded rewriting, and grounded streamed answers.
-- `demo/api/src/lgos_demo_api/corpus/` contains the Markdown embedded in source
-  installs, wheels, and API images.
-- `demo/api/src/lgos_demo_api/graphs/custom_io.py` contains input, output, and
-  context adapters.
-- `demo/api/src/lgos_demo_api/graphs/advanced_mcp.py` constructs an agent from
-  an async factory and mock tool.
-- `demo/api/src/lgos_demo_api/graphs/complex_subgraphs.py` and
-  `graphs/subgraphs/` implement router-selected specialists.
-- `demo/api/src/lgos_demo_api/graphs/status_events.py` emits portable status
-  updates.
-- `demo/api/src/lgos_demo_api/graphs/custom_events.py` emits explicitly public
-  progress and artifact events.
-- `demo/api/src/lgos_demo_api/graphs/persistent_plot.py` edits a thread-scoped
-  chart document and emits the current chart on every call.
-- `demo/api/src/lgos_demo_api/graphs/interruptible.py` runs reusable nested
-  approval steps as one checkpointed batch.
-- `demo/api/src/lgos_demo_api/graphs/citations.py` emits citation events that
-  LGOS maps to OpenAI annotations.
+- `demo/api/src/lgos_demo_api/graphs/` contains every graph and adapter listed
+  above.
+- `demo/api/src/lgos_demo_api/corpus/` contains the Markdown packaged with the
+  `lgos-rag` example.
 
 Continue with [Run the Demo API](../api.md#call-a-graph) for request examples or
 [Chainlit](../chainlit.md) and [Open WebUI](../open-webui.md) for UI behavior.
