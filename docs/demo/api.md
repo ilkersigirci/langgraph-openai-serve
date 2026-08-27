@@ -64,7 +64,7 @@ curl http://localhost:3004/v1/models
 Each demo graph publishes its API-owned description in the lightweight
 `langgraph_openai_serve` list extension.
 
-The complete model and requirement matrix is in [Example Graphs](graphs.md).
+The complete model and requirement matrix is in [Example Graphs](graphs/index.md).
 
 ## Call A Graph
 

@@ -14,8 +14,16 @@ nav = [
   { "Getting Started" = "getting-started.md" },
   { "Demo Stack" = [
     "demo/index.md",
+    { Architecture = "demo/architecture.md" },
     { "Run the Demo API" = "demo/api.md" },
-    { "Example Graphs" = "demo/graphs.md" },
+    { "Example Graphs" = [
+      "demo/graphs/index.md",
+      { "Events and Citations" = "demo/graphs/events-and-citations.md" },
+      { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
+      { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
+      { "Persistent Plot" = "demo/graphs/persistent-plot.md" },
+      { "Interruptible Approval" = "demo/graphs/interruptible-approval.md" },
+    ]},
     { "Docker Compose" = "demo/docker.md" },
     { "Chainlit Client" = "demo/chainlit.md" },
     { "Open WebUI Functions" = "demo/open-webui.md" },

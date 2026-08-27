@@ -73,6 +73,11 @@ functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions arrive with the list response. Standard Chat
 Completions remain available.
 
+![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
+
+*Runtime settings discovered from `lgos-a/simple-graph` and rendered as native
+Chainlit controls.*
+
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
 request that needs them. The underlying contract is documented in
@@ -87,7 +92,9 @@ the same login identity. The adapter also sends Chainlit's stable thread ID as
 thread's per-request traces into one session. The `persistent-plot` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
 chat document. The transcript remains owned and resent by Chainlit; no chat
-history is added to LGOS.
+history is added to LGOS. See the
+[persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
+for the API Store, Chainlit PostgreSQL, and S3 boundaries.
 
 === "Mock login (default)"
 

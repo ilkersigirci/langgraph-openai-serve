@@ -23,6 +23,8 @@ flowchart LR
   end
 
   postgres[("PostgreSQL")]
+  s3[("S3-compatible object store")]
+  openwebui_data[("Open WebUI data volume")]
   model["Upstream OpenAI-compatible model"]
   langfuse["Langfuse<br/>(optional, external)"]
 
@@ -37,6 +39,8 @@ flowchart LR
   api_a -->|"checkpoints, store, and coordination"| postgres
   api_b -->|"checkpoints, store, and coordination"| postgres
   chainlit -->|"chat and element metadata"| postgres
+  chainlit -->|"element bodies"| s3
+  openwebui -->|"UI state"| openwebui_data
   api_a -.->|"LangGraph observations"| langfuse
   api_b -.->|"LangGraph observations"| langfuse
 ```
@@ -54,51 +58,37 @@ The diagram shows runtime traffic rather than those readiness dependencies.
 Both API containers currently run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
 checkpoints, thread-scoped data, and cross-worker run coordination. Chainlit
-uses the same database for its own UI persistence; Open WebUI keeps its state
-in its bind-mounted data directory. When `LGOS_ENABLE_LANGFUSE=true`, each API
-adds the Langfuse callback to graph runs and exports observations directly to
-the configured Langfuse service. Langfuse is not a Compose service or a proxy
-in the request path.
+uses the same database for UI metadata and S3 for element bodies. Open WebUI
+keeps its state in its bind-mounted data directory. When
+`LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
+and exports observations directly to the configured Langfuse service. Langfuse
+is not a Compose service or a proxy in the request path.
 
 ## OpenTelemetry Overlay
 
-The optional OpenTelemetry Compose overlay attaches the applications to a
-private telemetry network and starts one local Collector. The Grafana LGTM
-backend remains external to this demo deployment.
+The optional Compose overlay sends application telemetry through one local
+Collector while keeping Langfuse on its separate native export path.
 
 ```mermaid
 flowchart LR
   subgraph demo["Demo Compose deployment"]
     direction TB
-    chainlit_otel["Chainlit"]
-    openwebui_otel["Open WebUI"]
+    clients_otel["Chainlit and Open WebUI"]
     bifrost_otel["Bifrost"]
-    api_a_otel["LGOS API A"]
-    api_b_otel["LGOS API B"]
-    collector["Local OpenTelemetry Collector<br/>OTLP/gRPC :4317 · OTLP/HTTP :4318"]
-    chainlit_otel -->|"traces"| collector
-    openwebui_otel -->|"traces"| collector
+    apis_otel["LGOS API A and B"]
+    collector["Local OpenTelemetry Collector"]
+
+    clients_otel -->|"traces"| collector
     bifrost_otel -->|"traces"| collector
-    api_a_otel -->|"traces, metrics, and logs"| collector
-    api_b_otel -->|"traces, metrics, and logs"| collector
+    apis_otel -->|"traces, metrics, and logs"| collector
   end
 
-  subgraph external["External observability platform"]
-    direction LR
-    gateway["Host or platform<br/>OTLP/HTTP gateway"]
-    lgtm["Grafana LGTM backend<br/>logs · traces · metrics"]
-    gateway --> lgtm
-  end
-
-  collector -->|"buffer, retry, filter, and forward"| gateway
-  api_a_otel -.->|"separate native export"| langfuse["Langfuse"]
-  api_b_otel -.->|"separate native export"| langfuse
+  collector -->|"OTLP/HTTP"| gateway["External Collector gateway"]
+  gateway --> lgtm["Grafana LGTM"]
+  apis_otel -.->|"LangGraph observations"| langfuse_otel["Langfuse"]
 ```
 
-The local Collector receives OTLP from the instrumented services, removes
-unwanted transport spans and sensitive payload attributes, adds deployment
-resource metadata, and forwards signals over OTLP/HTTP to the externally
-configured gateway. The external LGTM stack stores logs, traces, and metrics
-and exposes them through Grafana. Langfuse delivery remains a separate direct
-export from the API workers; the Collector does not forward observations to
-Langfuse.
+The local Collector filters, enriches, and forwards standard OTLP signals; the
+external platform stores and displays them. Configuration and operational
+details live in
+[Production OpenTelemetry](../how-to-guides/production-otel.md).

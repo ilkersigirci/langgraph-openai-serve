@@ -110,6 +110,11 @@ LGOS model, then use the Chat Variables control beside the message input. Since
 LGOS supplies defaults for every setting, the form does not block the first
 message merely to confirm them.
 
+![Open WebUI Chat Variables showing conversation-history and audience controls](../static/runtime_settings_openwebui.png)
+
+*Runtime settings synchronized from `lgos-a/simple-graph` and rendered as
+native Open WebUI Chat Variables.*
+
 When a chat has values, the Pipe retrieves the selected model's current LGOS
 metadata, ignores names no longer present, removes values equal to current
 defaults, and sends only changes as
@@ -122,7 +127,9 @@ chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the
 opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot` uses
 both values to scope its chat document. Interrupt resumes reuse the same
-conversation value.
+conversation value. See the
+[persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
+for the API Store and Open WebUI persistence boundaries.
 
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
@@ -169,10 +176,11 @@ Select `lgos-a/status-events` and ask **Prepare the media workflow.** Open WebUI
 saves each update in the assistant message's `statusHistory`; `done=False`
 displays an active shimmer, `done=True` stops it, and `hidden=True` keeps the
 history entry out of the current display. Persisted statuses survive a reload
-or closed tab. The Pipe maps the demo's versioned Plotly bar artifact to a
-self-contained HTML/CSS chart using Open WebUI's persistent
+or closed tab. The Pipe renders the demo's versioned Plotly artifact with the
+official versioned Plotly.js CDN and Open WebUI's persistent
 [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
-It loads no browser CDN and needs no same-origin iframe setting. Select
+The browser needs access to `cdn.plot.ly`; no same-origin iframe setting is
+required. Select
 `lgos-b/persistent-plot`, ask **Show the chart**, then **Set Q3 to 250** to
 exercise the PostgreSQL reload and update. Ask **Which quarter is highest?** in
 a later turn to exercise a fresh graph call over the stored data. A different

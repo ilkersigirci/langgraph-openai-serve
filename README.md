@@ -113,7 +113,7 @@ values.
 - Package getting started: [docs/getting-started.md](docs/getting-started.md)
 - Self-contained demo stack: [docs/demo/index.md](docs/demo/index.md)
 - Runnable demo API: [docs/demo/api.md](docs/demo/api.md)
-- Demo graph catalog: [docs/demo/graphs.md](docs/demo/graphs.md)
+- Demo graph catalog: [docs/demo/graphs/](docs/demo/graphs/index.md)
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)

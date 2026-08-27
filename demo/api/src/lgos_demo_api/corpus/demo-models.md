@@ -23,5 +23,5 @@ The demo API registers these graph names as OpenAI models:
 
 `GET /v1/models` lists the registered names. Detailed retrieval of one model
 can additionally advertise versioned LGOS features and safe client settings.
-The [demo graph catalog](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/graphs.md)
+The [demo graph catalog](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/graphs/index.md)
 summarizes the models and their runtime requirements.

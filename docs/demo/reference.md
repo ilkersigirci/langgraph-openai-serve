@@ -102,5 +102,6 @@ is the source of truth for these `DEMO_OPENWEBUI_` variables.
 | `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | Gateway key used by both OpenAI clients |
 
 See [Chainlit settings](chainlit.md#settings-reference),
-[Open WebUI setup](open-webui.md#setup), and the [example graph catalog](graphs.md)
+[Open WebUI setup](open-webui.md#setup), and the
+[example graph catalog](graphs/index.md)
 for component-specific details.
