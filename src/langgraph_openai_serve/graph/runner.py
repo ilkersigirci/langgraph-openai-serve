@@ -242,7 +242,11 @@ def _invoke_options(run: GraphRun) -> dict[str, Any]:
 
 def _astream_options(run: GraphRun) -> dict[str, Any]:
     """Build LangGraph streaming options."""
-    return {"subgraphs": True, **_invoke_options(run)}
+    return {
+        "subgraphs": True,
+        "output_keys": run.graph.output_channels,
+        **_invoke_options(run),
+    }
 
 
 def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:

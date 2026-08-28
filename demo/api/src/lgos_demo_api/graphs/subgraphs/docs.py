@@ -1,5 +1,6 @@
 """Docs specialist subgraph for the complex demo."""
 
+from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
@@ -8,7 +9,7 @@ from lgos_demo_api.graphs.subgraphs.keyword import create_keyword_graph
 from lgos_demo_api.graphs.subgraphs.schemas import DocsState
 
 
-async def summarize_docs(state: DocsState) -> dict[str, str]:
+async def summarize_docs(state: DocsState) -> dict[str, list[AIMessage]]:
     keyword_list = ", ".join(state.keywords)
     check_list = "; ".join(state.checks)
     summary = (
@@ -16,8 +17,8 @@ async def summarize_docs(state: DocsState) -> dict[str, str]:
         "keyword subgraph shared the docs state channels"
     )
     prompt = "\n".join([state.normalized_question or state.question, check_list])
-    streamed_summary = await stream_fake_chat_response(f"{summary}\n", prompt)
-    return {"answer": streamed_summary.removesuffix("\n")}
+    streamed_summary = await stream_fake_chat_response(summary, prompt)
+    return {"messages": [AIMessage(content=streamed_summary)]}
 
 
 def create_docs_graph(

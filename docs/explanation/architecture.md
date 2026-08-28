@@ -30,7 +30,7 @@ flowchart LR
 
   client -->|"OpenAI request"| api
   host -.->|"mounts"| api
-  runner <-->|"graph.astream events"| app_graph
+  runner <-->|"graph.ainvoke / graph.astream"| app_graph
   render -->|"OpenAI response"| client
 ```
 
@@ -102,8 +102,9 @@ Endpoint paths and settings live in [Reference](../reference.md).
    runnable configuration.
 3. Interrupt preparation derives the scoped operation key, acquires its
    coordinator lease, and validates any resume against durable state.
-4. The runner consumes `graph.astream`, collecting a complete response or
-   forwarding eligible message and custom events to the SSE service.
+4. The runner calls `graph.ainvoke` for a complete response or consumes
+   `graph.astream` to forward eligible message and custom events to the SSE
+   service.
 5. After execution quiesces, pending interrupts become one durable OpenAI
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
 6. LGOS releases the lease and renders an OpenAI completion or SSE sequence.

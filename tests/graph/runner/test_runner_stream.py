@@ -119,6 +119,7 @@ async def test_stream_filters_nodes_nostream_tags_and_non_ai_messages(
 
 async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
     closed = Event()
+    stream_options = {}
 
     async def graph_events():
         try:
@@ -134,7 +135,10 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
             closed.set()
 
     class Graph:
+        output_channels = ("answer",)
+
         def astream(self, *args, **kwargs):
+            stream_options.update(kwargs)
             return graph_events()
 
     graph = Graph()
@@ -153,6 +157,7 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
 
     chunks = stream_run(run)
     assert await anext(chunks) == "token"
+    assert stream_options["output_keys"] == ("answer",)
 
     with fail_after(1):
         await chunks.aclose()
@@ -172,6 +177,8 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
         yield {"type": "values", "ns": (), "data": {"messages": []}}
 
     class Graph:
+        output_channels = ()
+
         def astream(self, *args, **kwargs):
             return graph_events()
 

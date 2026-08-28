@@ -77,7 +77,7 @@ async def test_app_lists_exactly_the_documented_models(
         "features": ["interrupts"],
     }
 
-    for model_id in ("custom-event-showcase", "status-events"):
+    for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)
         extension = (model.model_extra or {})["langgraph_openai_serve"]
         assert extension == {
@@ -173,6 +173,24 @@ async def test_custom_io_demo_works_through_openai_client(
     assert response.choices[0].message.content == (
         "demo-user asked: Show me custom schemas."
     )
+
+
+async def test_complex_subgraphs_preserve_streaming_parity(
+    openai_client: AsyncOpenAI,
+) -> None:
+    complete = await openai_client.chat.completions.create(
+        model="complex-subgraphs",
+        messages=[{"role": "user", "content": "Show nested subgraph routing docs."}],
+    )
+    stream = await openai_client.chat.completions.create(
+        model="complex-subgraphs",
+        messages=[{"role": "user", "content": "Show nested subgraph routing docs."}],
+        stream=True,
+    )
+
+    streamed = "".join([chunk.choices[0].delta.content or "" async for chunk in stream])
+
+    assert streamed == complete.choices[0].message.content
 
 
 async def test_lifespan_installs_shared_postgres_runtime(

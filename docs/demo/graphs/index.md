@@ -10,7 +10,7 @@ demo model catalogs.
 | `custom-input-output-context` | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
 | `advanced-mcp-tools` | Async graph factories and a mock MCP-style tool | None | None |
-| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs and nested streamed output | None | None |
+| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
 | [`custom-event-showcase`](events-and-citations.md) | Public progress and artifact events interleaved with text | `client_events` | None |
 | [`persistent-plot`](persistent-plot.md) | An editable thread-scoped chart | `client_events` | PostgreSQL store |

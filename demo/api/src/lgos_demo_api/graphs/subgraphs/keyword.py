@@ -1,13 +1,14 @@
 """Keyword grandchild subgraph for the complex demo."""
 
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
+from langgraph_openai_serve import status_event
 
 from lgos_demo_api.graphs.subgraphs.schemas import KeywordState
 
 
-async def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
+def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
     source_text = state.normalized_question or state.question
     normalized = source_text.lower()
     candidates = (
@@ -20,8 +21,13 @@ async def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
     )
     keywords = [candidate for candidate in candidates if candidate in normalized]
     selected_keywords = keywords or ["general"]
-    response = "Keyword subgraph: selected " + ", ".join(selected_keywords)
-    await stream_fake_chat_response(f"{response}\n", source_text)
+    get_stream_writer()(
+        status_event(
+            f"Selected keywords: {', '.join(selected_keywords)}",
+            done=True,
+            namespace=("docs", "keywords"),
+        )
+    )
     return {
         "keywords": selected_keywords,
         "checks": [

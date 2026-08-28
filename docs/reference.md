@@ -58,7 +58,8 @@ deliberately unreachable.
 - `description`: required human-readable model description advertised by model
   listing and retrieval.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
-  forwarded to clients.
+  forwarded as assistant text. If several nodes contribute, the graph's output
+  adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.

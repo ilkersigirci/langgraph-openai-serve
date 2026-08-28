@@ -16,6 +16,13 @@ Without adapters, graph input is `{"messages": langchain_messages}` and the
 last output message must be an `AIMessage`. The required description is
 published in LGOS model list and detail extensions for catalog UIs.
 
+### Message Ownership
+
+Return an `AIMessage` only from the node or subgraph that owns the final
+assistant turn. Internal workers should return structured state; status and
+progress should use custom events. `add_messages` preserves message history but
+does not enable streaming or combine multiple assistant messages.
+
 ## Custom Schemas
 
 Use adapters when your graph has native LangGraph input, output, or context
@@ -209,8 +216,13 @@ LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 ## Streaming
 
 When an OpenAI request sets `stream=True`, LGOS forwards only streamed
-`AIMessageChunk` values from `streamable_node_names`. Deterministic graphs that
-return a final dictionary should be called without `stream=True`.
+`AIMessageChunk` values from `streamable_node_names`. A graph with no eligible
+chunks still receives its final rendered `AIMessage` after execution, so a
+caller does not need a separate non-streaming code path.
+
+When several public nodes contribute text, return their completed messages through
+the graph's `messages` channel and make `output_to_message` render the same
+ordered content for a complete response.
 
 !!! tip "Choose streamable nodes deliberately"
 

@@ -38,6 +38,13 @@ Use `request_to_input`, `context_factory`, and `output_to_message` when the grap
 has custom input, output, or context schemas. Those adapters keep the public HTTP
 surface OpenAI-compatible while letting the graph stay idiomatic LangGraph.
 
+Graphs that use LangGraph's `MessagesState` (or a `messages` channel reduced by
+`add_messages`) explicitly decide which completed messages belong to their
+conversation state. Shared-key subgraphs can update that channel directly;
+private subgraphs must map selected results back in their wrapper. This state
+choice does not, by itself, select live token streaming or concatenate several
+messages into one OpenAI response.
+
 ### Context Versus Config
 
 LGOS keeps LangGraph's invocation channels separate:
@@ -105,7 +112,9 @@ durable.
 
     When `stream=true`, the route returns an SSE response backed by
     `stream_run()`. The runner consumes `messages`, `custom`, and `values`. Only
-    `AIMessageChunk` values from configured streamable nodes become text chunks.
+    `AIMessageChunk` values from configured streamable nodes become text chunks;
+    the list may include nodes in nested subgraphs. Returning a message through
+    the graph's `messages` state is not a live-streaming signal.
     The chat service immediately maps explicitly public `client_event()` and
     `status_event()` values into namespaced chunks when the request opts into v1
     events. The final root value supplies durable citations, tool calls, and
@@ -114,9 +123,12 @@ durable.
     events stay private.
 
 Internal model calls that must not reach `delta.content` use LangGraph's native
-`nostream` tag. `streamable_node_names` selects answer-producing nodes; the tag
-selects calls within those nodes. A graph cannot retract an intermediate draft
-after it has streamed it.
+`nostream` tag. `streamable_node_names` selects calls whose text is intended for
+the OpenAI assistant stream; the tag selects calls within those nodes. If
+multiple streamable nodes contribute to the assistant text, the graph's
+`output_to_message` adapter must render the same messages in the same order for
+`stream=false`. A graph cannot retract an intermediate draft after it has
+streamed it.
 
 Interrupt runs use exit durability and drain graph execution before exposing a
 durable tool-call batch. A `GraphConfig.run_coordinator` lease covers state

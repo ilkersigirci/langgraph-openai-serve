@@ -1,9 +1,7 @@
 """Demo graph that exercises nested LangGraph subgraphs."""
 
-from typing import Any
-
-from langchain_core.messages import AIMessage, BaseMessage
-from langgraph_openai_serve import GraphConfig
+from langchain_core.messages import BaseMessage
+from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from pydantic import BaseModel
 
@@ -23,10 +21,6 @@ def request_to_input(
     return {"question": input_model.question}
 
 
-def output_to_message(output: Any) -> AIMessage:
-    return AIMessage(content=output.answer)
-
-
 def create_complex_subgraphs_graph_config() -> GraphConfig:
     """Create the complex subgraphs demo config during app setup."""
     return GraphConfig(
@@ -35,9 +29,8 @@ def create_complex_subgraphs_graph_config() -> GraphConfig:
             "Routes questions through specialist subgraphs and streams nested output."
         ),
         request_to_input=request_to_input,
-        output_to_message=output_to_message,
+        features={GraphFeature.CLIENT_EVENTS},
         streamable_node_names=[
-            "extract_keywords",
             "summarize_contract",
             "summarize_docs",
         ],
