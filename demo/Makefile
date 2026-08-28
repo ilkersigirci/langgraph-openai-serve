@@ -27,10 +27,10 @@ test: ## Run all standalone project tests from their lockfiles
 	uv run --directory ui/openwebui --locked pytest
 
 marimo: ## Open the API notebooks as a marimo workspace
-	uv run --directory api marimo edit --no-token --host 0.0.0.0 --port 3006 notebooks
+	uv run --directory api marimo edit --no-token --host 0.0.0.0 --port 2718 notebooks
 
 marimo-local: ## Open the API notebooks with the local LGOS checkout
-	$(LOCAL_API_RUN) marimo edit --no-token --host 0.0.0.0 --port 3006 notebooks
+	$(LOCAL_API_RUN) marimo edit --no-token --host 0.0.0.0 --port 2718 notebooks
 
 DEMO_API_TEST_POSTGRES_URI ?= postgresql://lgos:lgos@localhost:3001/lgos
 test-postgres: ## Test demo persistence against PostgreSQL
