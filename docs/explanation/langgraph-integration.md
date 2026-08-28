@@ -50,7 +50,7 @@ messages into one OpenAI response.
 LGOS keeps LangGraph's invocation channels separate:
 
 ```python
-graph.astream(
+graph.ainvoke(  # use graph.astream(...) for streaming
     graph_input,
     context=runtime_context,
     config=runnable_config,

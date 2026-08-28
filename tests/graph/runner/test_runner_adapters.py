@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
-from langgraph_openai_serve.graph.runner import run_langgraph
+from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.schemas import (
     AnswerOutput,
     PydanticAnswerOutput,
@@ -128,3 +128,61 @@ async def test_async_graph_factory_and_async_adapters(
     )
 
     assert invocation.output.text == "question"
+
+
+async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> None:
+    output_keys = []
+
+    async def generate(state: QuestionState):
+        return {"answer": state["question"], "internal": "filtered"}
+
+    graph = (
+        StateGraph(
+            QuestionState,
+            input_schema=QuestionInput,
+            output_schema=AnswerOutput,
+        )
+        .add_node("generate", generate)
+        .set_entry_point("generate")
+        .set_finish_point("generate")
+        .compile()
+    )
+
+    async def output_to_message(output):
+        output_keys.append(set(output))
+        return AIMessage(content=output["answer"])
+
+    graph_registry = GraphRegistry(
+        registry={
+            "typed": GraphConfig(
+                graph=graph,
+                description="DUMMY",
+                request_to_input=lambda _request, messages: {
+                    "question": messages[-1].content
+                },
+                output_to_message=output_to_message,
+            )
+        },
+    )
+    chat_request = make_request("typed")
+
+    invocation = await run_langgraph(
+        "typed",
+        chat_request.messages,
+        graph_registry,
+        chat_request,
+    )
+    events = [
+        event
+        async for event in run_langgraph_stream(
+            "typed",
+            chat_request.messages,
+            graph_registry,
+            chat_request,
+        )
+    ]
+
+    assert invocation.output.text == "question"
+    assert isinstance(events[-1], AIMessage)
+    assert events[-1].text == "question"
+    assert output_keys == [{"answer"}, {"answer"}]

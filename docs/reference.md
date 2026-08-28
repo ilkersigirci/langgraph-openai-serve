@@ -88,7 +88,7 @@ Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
-| Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
+| Graph input | `graph.ainvoke(input, ...)` or `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
 | Interrupt run | server scope + model + optional `metadata.langgraph_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |

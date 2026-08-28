@@ -537,15 +537,29 @@ async def _emit_sources(response: ChatCompletion, event_emitter: Any) -> None:
     """Emit final annotations in Open WebUI's native source format."""
     if event_emitter is None or not response.choices:
         return
-    for annotation in response.choices[0].message.annotations or []:
+    message = response.choices[0].message
+    if not isinstance(message.content, str):
+        return
+
+    for annotation in message.annotations or []:
         citation = annotation.url_citation
+        start = citation.start_index
+        stop = citation.end_index + 1
+        if not 0 <= start < stop <= len(message.content):
+            continue
         await event_emitter(
             {
                 "type": "source",
                 "data": {
                     "source": {"name": citation.title, "url": citation.url},
-                    "document": [citation.title],
-                    "metadata": [{"source": citation.url, "url": citation.url}],
+                    "document": [message.content[start:stop]],
+                    "metadata": [
+                        {
+                            "source": citation.url,
+                            "name": citation.title,
+                            "url": citation.url,
+                        }
+                    ],
                 },
             }
         )

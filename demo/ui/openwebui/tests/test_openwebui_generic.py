@@ -406,10 +406,11 @@ async def test_pipe_honors_stream_mode_and_preserves_annotations(
                         "name": "Example source",
                         "url": "https://example.com/source",
                     },
-                    "document": ["Example source"],
+                    "document": ["source"],
                     "metadata": [
                         {
                             "source": "https://example.com/source",
+                            "name": "Example source",
                             "url": "https://example.com/source",
                         }
                     ],
