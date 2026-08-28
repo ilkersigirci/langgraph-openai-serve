@@ -1,0 +1,4 @@
+# Copy this file to .marimo.toml and fill in your local credentials.
+[ai.custom_providers.aigateway]
+api_key = "replace-with-your-api-key"
+base_url = "https://your-openai-compatible-gateway.example/v1"
