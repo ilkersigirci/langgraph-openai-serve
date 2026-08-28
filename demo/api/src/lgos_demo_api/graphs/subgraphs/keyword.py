@@ -21,6 +21,12 @@ def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
     )
     keywords = [candidate for candidate in candidates if candidate in normalized]
     selected_keywords = keywords or ["general"]
+    return {"keywords": selected_keywords}
+
+
+def prepare_keyword_context(state: KeywordState) -> dict[str, list[str]]:
+    """Prepare extracted keywords for the docs specialist."""
+    selected_keywords = state.keywords or ["general"]
     get_stream_writer()(
         status_event(
             f"Selected keywords: {', '.join(selected_keywords)}",
@@ -29,7 +35,6 @@ def extract_keywords(state: KeywordState) -> dict[str, list[str]]:
         )
     )
     return {
-        "keywords": selected_keywords,
         "checks": [
             "nested keyword subgraph selected "
             + ", ".join(f"`{keyword}`" for keyword in selected_keywords)
@@ -42,7 +47,9 @@ def create_keyword_graph() -> CompiledStateGraph:
     return (
         StateGraph(KeywordState)
         .add_node("extract_keywords", extract_keywords)
+        .add_node("prepare_keyword_context", prepare_keyword_context)
         .add_edge(START, "extract_keywords")
-        .add_edge("extract_keywords", END)
+        .add_edge("extract_keywords", "prepare_keyword_context")
+        .add_edge("prepare_keyword_context", END)
         .compile()
     )

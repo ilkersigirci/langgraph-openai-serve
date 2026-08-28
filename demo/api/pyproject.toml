@@ -32,6 +32,7 @@ lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
 
 [dependency-groups]
 dev = [
+    "marimo>=0.24.0",
     "ruff>=0.16.3",
     "ty>=0.0.72",
 ]

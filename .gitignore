@@ -266,6 +266,7 @@ cython_debug/
 ##### Custom ignores ####
 
 .agents/prompts
+demo/api/notebooks/__marimo__/
 .agents/progress
 /.ruff_cache/
 /public/

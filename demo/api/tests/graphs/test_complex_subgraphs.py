@@ -25,9 +25,16 @@ def _registry() -> GraphRegistry:
 
 
 async def test_keyword_extraction_falls_back_to_general() -> None:
-    result = await create_keyword_graph().ainvoke(
-        KeywordState(normalized_question="Hello.")
-    )
+    graph = create_keyword_graph()
+    graph_view = graph.get_graph()
+
+    assert "prepare_keyword_context" in graph_view.nodes
+    assert (
+        "extract_keywords",
+        "prepare_keyword_context",
+    ) in {(edge.source, edge.target) for edge in graph_view.edges}
+
+    result = await graph.ainvoke(KeywordState(normalized_question="Hello."))
 
     assert result["keywords"] == ["general"]
     assert result["checks"] == ["nested keyword subgraph selected `general`"]
