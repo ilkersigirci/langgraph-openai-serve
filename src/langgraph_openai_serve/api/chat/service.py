@@ -60,7 +60,7 @@ async def stream_completion(
         include_usage=include_usage,
     )
     final_message: AIMessage | None = None
-    emitted_text = False
+    text_parts: list[str] = []
     include_client_events = run.config.supports(
         GraphFeature.CLIENT_EVENTS
     ) and stream_events_requested(chat_request.metadata)
@@ -89,14 +89,14 @@ async def stream_completion(
                             yield response_builder.client_event(extension)
                     continue
 
-                emitted_text = True
+                text_parts.append(event)
                 yield response_builder.text(event)
 
         final_message = _require_final_message(final_message)
         for chunk in _final_chunks(
             response_builder,
             final_message,
-            emitted_text=emitted_text,
+            streamed_text="".join(text_parts) if text_parts else None,
             include_usage=include_usage,
         ):
             yield chunk
@@ -118,11 +118,16 @@ def _final_chunks(
     response_builder: ChatCompletionStreamResponseBuilder,
     message: AIMessage,
     *,
-    emitted_text: bool,
+    streamed_text: str | None,
     include_usage: bool,
 ) -> Iterator[str]:
-    if not emitted_text and message.text:
-        yield response_builder.text(str(message.text))
+    message_text = str(message.text)
+    if streamed_text is None:
+        if message_text:
+            yield response_builder.text(message_text)
+    elif streamed_text != message_text:
+        msg = "Streamed assistant text did not match the final assistant message."
+        raise RuntimeError(msg)
     finish_reason = "tool_calls" if message.tool_calls else "stop"
     if message.tool_calls:
         yield response_builder.tool_calls(message)

@@ -198,6 +198,19 @@ final empty-choices usage chunk only when the request sets
 `stream_options={"include_usage": true}`. When underlying providers report no
 usage, LGOS omits it rather than estimating tokens.
 
+### Assistant Text Parity
+
+The final rendered `AIMessage.text` is the canonical assistant text.
+Non-streaming returns it directly. Streaming emits eligible message chunks
+immediately and retains them until the final message arrives. It then
+concatenates the chunks and compares them with the final text. If no text
+streamed, LGOS emits the final text as a fallback; a mismatch instead produces
+a stream error without a normal finish chunk. This check covers one graph run,
+not two independent LLM executions. Transient client events are excluded.
+
+When multiple streamable nodes contribute text, the graph's
+`output_to_message` adapter must render their messages in the same order.
+
 ## Client Stream Events
 
 Passive application notifications are an opt-in, namespaced extension on an

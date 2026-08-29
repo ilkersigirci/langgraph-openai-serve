@@ -124,11 +124,10 @@ durable.
 
 Internal model calls that must not reach `delta.content` use LangGraph's native
 `nostream` tag. `streamable_node_names` selects calls whose text is intended for
-the OpenAI assistant stream; the tag selects calls within those nodes. If
-multiple streamable nodes contribute to the assistant text, the graph's
-`output_to_message` adapter must render the same messages in the same order for
-`stream=false`. A graph cannot retract an intermediate draft after it has
-streamed it.
+the OpenAI assistant stream; the tag selects calls within those nodes. Graph
+authors must follow the
+[assistant text parity contract](openai-compatibility.md#assistant-text-parity)
+because a graph cannot retract an intermediate draft after it has streamed it.
 
 Interrupt runs use exit durability and drain graph execution before exposing a
 durable tool-call batch. A `GraphConfig.run_coordinator` lease covers state
