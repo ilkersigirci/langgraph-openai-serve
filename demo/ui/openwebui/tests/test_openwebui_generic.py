@@ -351,7 +351,7 @@ async def test_pipe_streams_markdown_unchanged(
         pytest.param(False, id="non-streaming"),
     ],
 )
-async def test_pipe_honors_stream_mode_and_preserves_annotations(
+async def test_pipe_honors_stream_mode_and_emits_native_sources(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
     stream: bool,
@@ -374,50 +374,35 @@ async def test_pipe_honors_stream_mode_and_preserves_annotations(
         )
     )
 
-    expected: list[str | dict[str, Any]]
     if stream:
-        annotation = expected_completion.choices[0].message.annotations[0]
-        expected = [
-            MARKDOWN_RESPONSE,
-            {
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {
-                            "annotations": [annotation.model_dump(mode="json")],
-                        },
-                        "finish_reason": None,
-                    }
-                ]
-            },
-        ]
+        assert chunks == [MARKDOWN_RESPONSE]
         assert len(chat.calls) == 1
         complete.assert_not_awaited()
-        emitter.assert_not_awaited()
     else:
-        expected = [expected_completion.model_dump(mode="json", exclude_none=True)]
+        assert chunks == [
+            expected_completion.model_dump(mode="json", exclude_none=True)
+        ]
         assert chat.calls == []
         complete.assert_awaited_once()
-        emitter.assert_awaited_once_with(
-            {
-                "type": "source",
-                "data": {
-                    "source": {
+    emitter.assert_awaited_once_with(
+        {
+            "type": "source",
+            "data": {
+                "source": {
+                    "name": "Example source",
+                    "url": "https://example.com/source",
+                },
+                "document": ["source"],
+                "metadata": [
+                    {
+                        "source": "https://example.com/source",
                         "name": "Example source",
                         "url": "https://example.com/source",
-                    },
-                    "document": ["source"],
-                    "metadata": [
-                        {
-                            "source": "https://example.com/source",
-                            "name": "Example source",
-                            "url": "https://example.com/source",
-                        }
-                    ],
-                },
-            }
-        )
-    assert chunks == expected
+                    }
+                ],
+            },
+        }
+    )
 
 
 @pytest.mark.parametrize(

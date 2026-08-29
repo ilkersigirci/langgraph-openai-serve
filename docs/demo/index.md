@@ -95,7 +95,7 @@ LGOS model-detail extension.
 | Demo client | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
 | --- | --- | --- | --- | --- | --- |
 | Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Dedicated live approval adapter | Native status, Plotly, and live activity elements | Markdown content |
-| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Live approval through the Pipe | Native status and persisted chart embeds | Streaming annotations and Markdown |
+| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Live approval through the Pipe | Native status and persisted chart embeds | Native source events and Markdown |
 | Open WebUI static example | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.

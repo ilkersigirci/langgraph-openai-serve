@@ -217,11 +217,6 @@ class Pipe:
                         yield NO_CHOICES_MESSAGE
                         return
 
-                    for chunk in _completion_chunks(
-                        response,
-                    ):
-                        yield chunk
-
                     resume_messages, error = await _resume_messages(
                         response,
                         __event_call__,
@@ -230,6 +225,7 @@ class Pipe:
                         yield error
                         return
                     if resume_messages is None:
+                        await _emit_sources(response, __event_emitter__)
                         return
                     messages = resume_messages
         except SettingsTransportError as exc:
@@ -500,37 +496,6 @@ async def _emit_limited_functionality_warning(event_emitter: Any) -> None:
             },
         }
     )
-
-
-#### Streaming ####
-
-
-def _completion_chunks(
-    response: ChatCompletion,
-) -> list[PipeChunk]:
-    """Return completion-level chunks that follow streamed text."""
-    if not response.choices:
-        return [NO_CHOICES_MESSAGE]
-    annotations = response.choices[0].message.annotations
-    if not annotations:
-        return []
-
-    return [
-        {
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {
-                        "annotations": [
-                            annotation.model_dump(mode="json")
-                            for annotation in annotations
-                        ]
-                    },
-                    "finish_reason": None,
-                }
-            ]
-        }
-    ]
 
 
 async def _emit_sources(response: ChatCompletion, event_emitter: Any) -> None:
