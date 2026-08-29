@@ -69,7 +69,19 @@ Inspired by [Writing system software: code comments](https://antirez.com/news/12
   feature exists or when the behavior regresses; coverage without such a signal
   is not a goal.
 - For a bug fix, add a regression test that reproduces the specific failure.
-- Prefer one substantial behavior test over several shallow tests, and extend
-  the closest existing test module when practical.
+- Assert observable behavior at the narrowest stable public boundary. A
+  behavior-preserving refactor should not normally require test changes.
+- Avoid change-detector tests that mirror production logic, mock every
+  collaborator, or assert incidental call order and internal steps. Test an
+  interaction only when that interaction is itself a required contract.
+- Prefer realistic inputs and independently derived expected results. If a test
+  cannot distinguish correct from incorrect behavior, rewrite or delete it.
+- Prefer one focused test per behavior. Use parametrization for equivalent
+  cases, and do not split tests merely to increase test count or coverage.
+  Extend the closest existing test module when practical.
 - Test through public behavior where possible. Prefer injected dependencies
   over monkeypatching class internals.
+
+See Google's
+[change-detector test guidance](https://testing.googleblog.com/2015/01/testing-on-toilet-change-detector-tests.html)
+for the rationale.

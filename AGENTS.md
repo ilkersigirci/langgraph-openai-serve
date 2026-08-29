@@ -7,8 +7,10 @@ entry point.
 
 - Read `README.md` for project purpose and the shortest example.
 - Read `.agents/CODE_STYLE.md` before writing or modifying code.
-- Read `tests/README.md` before running or changing tests; it includes guidance
-  for async tests in restricted coding-agent sandboxes.
+- Read `tests/README.md` before running or changing any pytest suite. Its
+  guidance applies to `tests/`, `demo/api/tests/`,
+  `demo/ui/chainlit_ui/tests/`, and `demo/ui/openwebui/tests/`, including the
+  async-test guidance for restricted coding-agent sandboxes.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
 - Use `docs/demo/api.md` and `docs/demo/graphs/index.md` for demo runs and graph
@@ -23,7 +25,9 @@ entry point.
 
 - Preserve OpenAI client compatibility as the only ingestion contract.
 - Keep changes scoped to the affected package, demo, tests, or docs area.
-- Add or update focused tests for behavior changes.
+- Add or update focused behavior tests; do not add tests that merely mirror
+  implementation details or detect behavior-preserving refactors. See
+  `.agents/CODE_STYLE.md` for test-design guidance.
 - For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
   `openai.types.shared.ErrorObject`.
 - Check demo graph adapters before changing public graph APIs.
