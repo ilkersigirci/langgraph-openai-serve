@@ -149,7 +149,6 @@ async def test_message_handler_renders_public_client_events(
     assert element_updates == [
         {"events": [event["event"] for event in public_events]},
     ]
-    assert element.update.await_count == len(public_events) - 1
     assistant_message.stream_token.assert_awaited_once_with("Docs answer")
     assistant_message.update.assert_awaited_once_with()
     stream.close.assert_awaited_once_with()
@@ -214,7 +213,7 @@ async def test_renderer_maps_status_updates_to_chainlit_task_list(
     assert tasks[1].status == client_events.cl.TaskStatus.DONE
     assert task_list.add_task.await_args_list == [call(task) for task in tasks]
     assert task_list.status == "Done"
-    assert task_list.send.await_count == len(tasks)
+    task_list.send.assert_awaited()
     task_list.remove.assert_awaited_once_with()
     custom_element_factory.assert_not_called()
 

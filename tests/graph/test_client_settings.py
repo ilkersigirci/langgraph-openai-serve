@@ -74,7 +74,10 @@ def test_client_settings_own_the_public_contract_and_defaults() -> None:
     )
 
     assert graph_config.client_settings is PublicSettings
-    assert PublicSettings.defaults() == PublicSettings()
+    assert PublicSettings.defaults().model_dump(mode="json") == {
+        "enabled": True,
+        "day": "2026-07-17",
+    }
     assert PublicSettings.model_json_schema()["additionalProperties"] is False
 
 

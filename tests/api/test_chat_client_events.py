@@ -234,15 +234,19 @@ def test_status_event_builds_the_portable_status_shape() -> None:
         done=True,
         hidden=True,
         namespace=("media",),
-    ) == client_event(
-        "status",
-        {
-            "description": "Generating audio",
-            "done": True,
-            "hidden": True,
+    ) == {
+        "type": "langgraph_openai_serve.client_event",
+        "schema_version": 1,
+        "event": {
+            "type": "status",
+            "namespace": ["media"],
+            "data": {
+                "description": "Generating audio",
+                "done": True,
+                "hidden": True,
+            },
         },
-        namespace=("media",),
-    )
+    }
 
     with pytest.raises(ValueError, match="validation error"):
         status_event("")

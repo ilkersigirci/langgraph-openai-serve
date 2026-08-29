@@ -28,9 +28,31 @@ def _response(data: object) -> httpx.Response:
 
 def _client(exported: object, base_models: object = ()) -> Mock:
     client = Mock()
-    client.get.side_effect = [_response(exported), _response(base_models)]
+
+    def get(path: str) -> httpx.Response:
+        responses = {
+            "/api/v1/models/export": exported,
+            "/api/v1/models/base": base_models,
+        }
+        if path not in responses:
+            msg = f"Unexpected Open WebUI read: {path}"
+            raise AssertionError(msg)
+        return _response(responses[path])
+
+    client.get.side_effect = get
     client.post.return_value = _response({})
     return client
+
+
+def _assert_workspace_reads(client: Mock) -> None:
+    client.get.assert_has_calls(
+        [
+            call("/api/v1/models/export"),
+            call("/api/v1/models/base"),
+        ],
+        any_order=True,
+    )
+    assert client.get.call_count == 2
 
 
 def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
@@ -138,16 +160,20 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
         ),
     )
     catalog_client.models.list.assert_called_once_with()
-    assert passthrough_client.models.retrieve.call_args_list == [
-        call(
-            model="graph-a",
-            extra_headers={"x-model-provider": "lgos-a"},
-        ),
-        call(
-            model="graph-b",
-            extra_headers={"x-model-provider": "lgos-future"},
-        ),
-    ]
+    passthrough_client.models.retrieve.assert_has_calls(
+        [
+            call(
+                model="graph-a",
+                extra_headers={"x-model-provider": "lgos-a"},
+            ),
+            call(
+                model="graph-b",
+                extra_headers={"x-model-provider": "lgos-future"},
+            ),
+        ],
+        any_order=True,
+    )
+    assert passthrough_client.models.retrieve.call_count == 2
 
 
 def test_discover_workspace_models_keeps_limited_models_visible() -> None:
@@ -204,10 +230,7 @@ def test_sync_workspace_models_removes_generated_models_for_an_empty_catalog() -
 
     sync_workspace_models(client, ())
 
-    assert client.get.call_args_list == [
-        call("/api/v1/models/export"),
-        call("/api/v1/models/base"),
-    ]
+    _assert_workspace_reads(client)
     assert client.post.call_args_list == [
         call(
             "/api/v1/models/model/delete",
@@ -258,10 +281,7 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
 
     sync_workspace_models(client, (spec,))
 
-    assert client.get.call_args_list == [
-        call("/api/v1/models/export"),
-        call("/api/v1/models/base"),
-    ]
+    _assert_workspace_reads(client)
     client.post.assert_called_once()
     base, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert client.post.call_args.args == ("/api/v1/models/import",)
