@@ -166,10 +166,11 @@ graph topology. See the shared
 Clicking **Stop** closes the OpenAI stream. Partial assistant text remains
 visible but is excluded from later model context because it is incomplete.
 
-The UI renders Markdown links and images from assistant content. It does not
-consume structured OpenAI citation annotations. The bundled adapter opts into
-LGOS client stream events only when model retrieval advertises
-`client_events`. Portable status updates render as a native Chainlit
+The UI renders Markdown links, images, and inline citation markers from
+assistant content. It does not consume structured OpenAI citation annotations.
+The bundled adapter opts into LGOS client stream events only when model
+retrieval advertises `client_events`. Portable status updates render as a
+native Chainlit
 [`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist). Other
 events render as one live-updating Chainlit
 [custom element](https://docs.chainlit.io/api-reference/elements/custom) per

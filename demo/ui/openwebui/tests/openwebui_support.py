@@ -15,7 +15,7 @@ MODEL_ID = f"lgos-a/{UPSTREAM_MODEL_ID}"
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 STATE_TOKEN = "state-token-1"
 MARKDOWN_DELTAS = (
-    "Read the [source](https://example.com/source), ",
+    "Read the [source](https://example.com/source) [1], ",
     "view ![diagram](https://example.com/diagram.png), ",
     "and follow the [audio link](https://example.com/overview.mp3).",
 )

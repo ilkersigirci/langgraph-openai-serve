@@ -10,31 +10,36 @@ from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 from pydantic import BaseModel
 
-SOURCE_TITLE = "LangGraph streaming documentation"
-SOURCE_URL = "https://docs.langchain.com/oss/python/langgraph/streaming#custom-data"
-IMAGE_TITLE = "MDN grapefruit image example"
-IMAGE_URL = (
-    "https://interactive-examples.mdn.mozilla.net/media/cc0-images/"
-    "grapefruit-slice-332-332.jpg"
+CITATIONS = (
+    (
+        "LangGraph streaming documentation",
+        "https://docs.langchain.com/oss/python/langgraph/streaming#custom-data",
+    ),
+    (
+        "MDN grapefruit image example",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-images/"
+        "grapefruit-slice-332-332.jpg",
+    ),
+    (
+        "MDN audio example",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3",
+    ),
 )
-AUDIO_TITLE = "MDN audio example"
-AUDIO_URL = (
-    "https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3"
-)
+
+
+def _citation_link(index: int) -> str:
+    title, url = CITATIONS[index]
+    return f"[{title}]({url}) [{index + 1}]"
+
+
 ANSWER = f"""This response showcases portable resource presentation:
 
-- Read the [{SOURCE_TITLE}]({SOURCE_URL}).
-- View the [{IMAGE_TITLE}]({IMAGE_URL}) inline:
+- Read the {_citation_link(0)}.
+- View the {_citation_link(1)} inline:
 
-  ![A grapefruit slice]({IMAGE_URL})
+  ![A grapefruit slice]({CITATIONS[1][1]})
 
-- Keep audio portable as an [{AUDIO_TITLE}]({AUDIO_URL})."""
-
-CITATIONS = (
-    (SOURCE_TITLE, SOURCE_URL),
-    (IMAGE_TITLE, IMAGE_URL),
-    (AUDIO_TITLE, AUDIO_URL),
-)
+- Keep audio portable as an {_citation_link(2)}."""
 
 
 class CitationState(BaseModel):

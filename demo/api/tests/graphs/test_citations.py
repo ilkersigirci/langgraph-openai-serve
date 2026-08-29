@@ -57,6 +57,6 @@ async def test_streams_portable_markdown_with_anchored_citations(make_request) -
         )
         for annotation in annotations
     ] == [(title, title, url) for title, url in EXPECTED_CITATIONS]
-    assert "[LangGraph streaming documentation](" in answer
+    for index, (title, url) in enumerate(EXPECTED_CITATIONS, start=1):
+        assert f"[{title}]({url}) [{index}]" in answer
     assert "![A grapefruit slice](" in answer
-    assert "[MDN audio example](" in answer

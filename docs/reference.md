@@ -332,7 +332,7 @@ from langchain_core.messages.content import create_citation, create_text_block
 message = AIMessage(
     content=[
         create_text_block(
-            text="Read the source.",
+            text="Read the source [1].",
             annotations=[
                 create_citation(
                     url="https://example.com/source",
@@ -346,6 +346,10 @@ message = AIMessage(
     ]
 )
 ```
+
+Put visible inline citations in the assistant text. Structured annotations add
+machine-readable provenance; clients are not required to invent marker text
+from annotation indices.
 
 LangChain citation indices refer to their containing text block. LGOS offsets
 them into the final response text and preserves OpenAI's inclusive `end_index`.

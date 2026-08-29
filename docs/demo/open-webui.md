@@ -156,9 +156,10 @@ take their schemas only from LGOS.
 The general manifold Pipe honors Open WebUI's requested Chat Completions mode.
 Streaming requests yield assistant content, while non-streaming requests return
 the full Chat Completion object. In both modes, the Pipe translates final OpenAI
-citation annotations to native Open WebUI source events. Non-streaming requests
-do not replay status or artifact events. The static example streams assistant
-text only.
+citation annotations to native Open WebUI source events. Inline `[n]` markers
+come from the assistant content and resolve against those ordered sources.
+Non-streaming requests do not replay status or artifact events. The static
+example streams assistant text only.
 
 The manifold Pipe opts into LGOS client stream events only when model retrieval
 advertises `client_events`, and maps every portable status update to Open

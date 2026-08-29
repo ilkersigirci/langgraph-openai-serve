@@ -316,11 +316,12 @@ UI-specific source schema or reconstruct citations from custom events.
 
 Portable resource presentation belongs in the assistant text, not in the
 annotation object. Graphs may return ordinary Markdown links and images in
-`message.content`. When a graph also emits structured attribution, its
-`url_citation` remains limited to its standard URL, title, and text span. Audio
-and video resources should use ordinary Markdown links rather than UI-specific
-players. RAG graphs must preserve only resource URLs supplied by their retrieved
-context and must not invent or rewrite them.
+`message.content`, including visible inline citation markers. Annotations do not
+require clients to synthesize marker text. When a graph also emits structured
+attribution, its `url_citation` remains limited to its standard URL, title, and
+text span. Audio and video resources should use ordinary Markdown links rather
+than UI-specific players. RAG graphs must preserve only resource URLs supplied
+by their retrieved context and must not invent or rewrite them.
 
 Structured citations remain available to OpenAI clients that need
 machine-readable provenance. The `citation-events` demo showcases that optional
