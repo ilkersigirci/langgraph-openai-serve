@@ -13,6 +13,8 @@ The demo API registers these graph names as OpenAI models:
 - `advanced-mcp-tools` demonstrates an asynchronous graph factory and mock
   MCP-style tools.
 - `complex-subgraphs` demonstrates routing across nested specialist graphs.
+- `multi-node-streaming` combines streamed contributions from two sequential nodes
+  into one durable assistant message.
 - `status-events` streams portable status updates for native client UI.
 - `custom-event-showcase` streams explicitly public progress and artifact
   events among ordinary assistant text.

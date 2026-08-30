@@ -28,6 +28,7 @@ DOCUMENTED_MODEL_IDS = {
     "interruptible-approval",
     "lgos-rag",
     "persistent-plot",
+    "multi-node-streaming",
     "simple-graph",
     "status-events",
 }

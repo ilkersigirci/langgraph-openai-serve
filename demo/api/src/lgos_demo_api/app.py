@@ -24,6 +24,9 @@ from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph_config,
 )
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
+from lgos_demo_api.graphs.multi_node_streaming import (
+    multi_node_streaming_graph_config,
+)
 from lgos_demo_api.graphs.persistent_plot import (
     create_persistent_plot_graph,
     create_persistent_plot_graph_config,
@@ -92,6 +95,7 @@ def create_custom_app() -> FastAPI:
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": advanced_mcp_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
+            "multi-node-streaming": multi_node_streaming_graph_config,
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
             "persistent-plot": create_persistent_plot_graph_config(
