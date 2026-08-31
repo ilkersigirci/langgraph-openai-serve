@@ -218,7 +218,7 @@ async def test_renderer_maps_status_updates_to_chainlit_task_list(
     custom_element_factory.assert_not_called()
 
 
-async def test_renderer_maps_plotly_artifact_to_native_element(
+async def test_renderer_maps_chart_artifact_to_native_element(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client_events = importlib.import_module("lgos_chainlit.utils.client_events")
@@ -238,24 +238,19 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
                 "schema_version": 1,
                 "event": {
                     "type": "artifact",
-                    "namespace": ["plots"],
+                    "namespace": ["charts"],
                     "data": {
                         "schema_version": 1,
                         "id": "revenue",
-                        "kind": "plotly",
+                        "kind": "chart",
                         "title": "Quarterly revenue",
                         "summary": "Q4 is highest.",
-                        "figure": {
-                            "data": [
-                                {
-                                    "type": "scatter",
-                                    "mode": "lines+markers",
-                                    "x": ["Q1", "Q2"],
-                                    "y": [1, 2],
-                                }
-                            ],
-                            "layout": {"showlegend": False},
-                        },
+                        "chart_type": "line",
+                        "labels": ["Q1", "Q2"],
+                        "series": [{"name": "Revenue", "values": [1, 2]}],
+                        "x_axis_title": "Quarter",
+                        "y_axis_title": "Revenue (USD, thousands)",
+                        "show_legend": False,
                     },
                 },
             }
@@ -269,6 +264,8 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
         {
             "type": "scatter",
             "mode": "lines+markers",
+            "name": "Revenue",
+            "showlegend": False,
             "x": ["Q1", "Q2"],
             "y": [1, 2],
         }

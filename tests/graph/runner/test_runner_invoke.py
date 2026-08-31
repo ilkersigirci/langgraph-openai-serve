@@ -14,6 +14,7 @@ from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
+    GraphConfigurationError,
     GraphNotFoundError,
     GraphRegistry,
 )
@@ -258,6 +259,17 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
         assert get_log_context()["operation_id"]
     finally:
         reset_log_context(token)
+
+
+async def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
+    graph_config = GraphConfig(
+        graph=make_message_graph("hello"),
+        description="DUMMY",
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+
+    with pytest.raises(GraphConfigurationError, match="interrupt-enabled"):
+        await graph_config.resolve_graph()
 
 
 async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:

@@ -50,7 +50,7 @@ async def write_second_contribution(
 def assemble_answer(
     state: MultiNodeStreamingState,
 ) -> dict[str, list[AIMessage]]:
-    """Store the ordered contributions as one durable assistant turn."""
+    """Combine the ordered contributions into the final assistant turn."""
     return {"messages": [AIMessage(content="".join(state.answer_parts))]}
 
 

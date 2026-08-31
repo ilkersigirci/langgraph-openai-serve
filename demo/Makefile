@@ -37,7 +37,7 @@ test-postgres: ## Test demo persistence against PostgreSQL
 	DEMO_API_TEST_POSTGRES_URI=$(DEMO_API_TEST_POSTGRES_URI) \
 		$(LOCAL_API_RUN) pytest -m integration \
 		tests/integration/test_postgres_interrupt_runtime.py \
-		tests/integration/test_postgres_persistent_plot.py
+		tests/integration/test_postgres_persistent_plot_agent.py
 
 lint: ## Check lint and formatting for all standalone projects
 	uv run --directory api --locked ruff check src tests

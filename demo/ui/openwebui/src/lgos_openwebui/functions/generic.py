@@ -2,7 +2,7 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.16
+version: 0.18
 """
 
 import json
@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/events.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
@@ -63,17 +64,31 @@ class SettingsTransportError(ValueError):
     """A Chat Variable value cannot be represented in OpenAI metadata."""
 
 
-class PlotlyArtifact(BaseModel):
-    """The supported LGOS Plotly artifact payload."""
+class ChartSeries(BaseModel):
+    """One portable series in a chart artifact."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    name: str = Field(min_length=1)
+    values: list[float]
+
+
+class ChartArtifact(BaseModel):
+    """The supported LGOS chart artifact payload."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     schema_version: Literal[1]
     id: str = Field(min_length=1)
-    kind: Literal["plotly"]
+    kind: Literal["chart"]
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
-    figure: dict[str, Any]
+    chart_type: Literal["bar", "line"]
+    labels: list[str]
+    series: list[ChartSeries]
+    x_axis_title: str = Field(min_length=1)
+    y_axis_title: str = Field(min_length=1)
+    show_legend: bool
 
 
 class Pipe:
@@ -582,7 +597,7 @@ async def _content_deltas(
         if isinstance(event, ContentDeltaEvent):
             yield event.delta
         elif isinstance(event, ChunkEvent) and event_emitter is not None:
-            ui_event = _status_event(event.chunk) or _plotly_embed_event(event.chunk)
+            ui_event = _status_event(event.chunk) or _chart_embed_event(event.chunk)
             if ui_event is not None:
                 await event_emitter(ui_event)
 
@@ -630,28 +645,49 @@ def _status_event(
     }
 
 
-#### PLOT ####
+#### CHART ####
 
 
-def _plotly_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
+def _chart_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
     data = _client_event_data(chunk, "artifact")
     if data is None:
         return None
     try:
-        artifact = PlotlyArtifact.model_validate(data)
+        artifact = ChartArtifact.model_validate(data)
     except ValidationError:
         return None
 
-    html = _plotly_html(artifact)
+    html = _chart_html(artifact)
     if html is None:
         return None
-    return {"type": "embeds", "data": {"embeds": [html]}}
+    return {"type": "embeds", "data": {"embeds": [html], "replace": True}}
 
 
-def _plotly_html(artifact: PlotlyArtifact) -> str | None:
+def _chart_html(artifact: ChartArtifact) -> str | None:
+    trace_type = "bar" if artifact.chart_type == "bar" else "scatter"
+    data: list[dict[str, object]] = []
+    for series in artifact.series:
+        trace: dict[str, object] = {
+            "type": trace_type,
+            "name": series.name,
+            "x": artifact.labels,
+            "y": series.values,
+            "showlegend": artifact.show_legend,
+        }
+        if artifact.chart_type == "line":
+            trace["mode"] = "lines+markers"
+        data.append(trace)
     try:
         figure = json.dumps(
-            artifact.figure,
+            {
+                "data": data,
+                "layout": {
+                    "title": {"text": artifact.title},
+                    "xaxis": {"title": {"text": artifact.x_axis_title}},
+                    "yaxis": {"title": {"text": artifact.y_axis_title}},
+                    "showlegend": artifact.show_legend,
+                },
+            },
             allow_nan=False,
             ensure_ascii=True,
             separators=(",", ":"),
@@ -661,12 +697,18 @@ def _plotly_html(artifact: PlotlyArtifact) -> str | None:
 
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
-<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>
+<script src="https://cdn.plot.ly/plotly-4.0.0.min.js" charset="utf-8"></script>
 </head><body style="margin:0;padding:16px">
 <h2>{escape(artifact.title)}</h2><p>{escape(artifact.summary)}</p>
 <div id="plot"></div>
 <script>
 const figure = {figure};
+function reportHeight() {{
+  const height = document.documentElement.scrollHeight;
+  parent.postMessage({{type: "iframe:height", height}}, "*");
+}}
+window.addEventListener("load", reportHeight);
+new ResizeObserver(reportHeight).observe(document.body);
 Plotly.newPlot("plot", figure.data, figure.layout, {{responsive: true}});
 </script></body></html>"""
 

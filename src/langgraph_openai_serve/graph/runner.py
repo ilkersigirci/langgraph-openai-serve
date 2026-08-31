@@ -276,7 +276,7 @@ async def finalize_run(
     checkpoint_disposition: _CheckpointDisposition,
 ) -> None:
     """
-    Finalize checkpoint retention, then release the run lease.
+    Finalize checkpoint retention, then release any interrupt-run lease.
 
     Only state exposed as a resumable interrupt is preserved. Cleanup for an
     unclassified run is best-effort so it cannot mask the failure that prevented

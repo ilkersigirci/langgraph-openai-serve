@@ -61,7 +61,7 @@ class GraphRun:
     )
 
     async def aclose(self) -> None:
-        """Release this run's single-flight lease exactly once."""
+        """Release this run's interrupt lease exactly once, if present."""
         lease, self._lease = self._lease, None
         if lease is not None:
             await lease.__aexit__(None, None, None)
@@ -95,16 +95,19 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
 
     if not graph_config.supports(GraphFeature.INTERRUPTS):
         lc_messages = convert_to_lc_messages(messages)
+        inputs = await graph_config.build_input(request, lc_messages)
+        context = await graph_config.build_context(request, graph)
+        runnable_config = build_runnable_config(
+            graph_config.runtime_callbacks,
+            metadata=_runnable_metadata(request),
+            extra_callbacks=[usage_callback],
+        )
         return GraphRun(
             config=graph_config,
             graph=graph,
-            inputs=await graph_config.build_input(request, lc_messages),
-            context=await graph_config.build_context(request, graph),
-            runnable_config=build_runnable_config(
-                graph_config.runtime_callbacks,
-                metadata=_runnable_metadata(request),
-                extra_callbacks=[usage_callback],
-            ),
+            inputs=inputs,
+            context=context,
+            runnable_config=runnable_config,
             run_id=None,
             usage_callback=usage_callback,
         )
@@ -128,12 +131,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
         msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
-    coordinator = graph_config.run_coordinator
-    if coordinator is None:  # resolve_graph() reports this as configuration error.
-        msg = "Interrupt run has no coordinator."
-        raise RuntimeError(msg)
-    lease = coordinator(checkpoint_thread_id)
-    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
+    lease = await _acquire_lease(graph_config, checkpoint_thread_id)
 
     try:
         snapshot = await graph.aget_state(runnable_config, subgraphs=True)
@@ -168,6 +166,20 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
         usage_callback=usage_callback,
         _lease=lease,
     )
+
+
+async def _acquire_lease(
+    graph_config: GraphConfig,
+    key: str,
+) -> AbstractAsyncContextManager[None]:
+    coordinator = graph_config.run_coordinator
+    if coordinator is None:  # resolve_graph() reports this as configuration error.
+        msg = "Interrupt run has no coordinator."
+        raise RuntimeError(msg)
+
+    lease = coordinator(key)
+    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
+    return lease
 
 
 def build_runnable_config(

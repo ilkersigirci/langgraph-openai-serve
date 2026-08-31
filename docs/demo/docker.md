@@ -155,12 +155,13 @@ client uploads Plotly figure JSON to the configured `BUCKET_NAME`. Resuming a
 thread obtains a fresh signed object URL from that client.
 
 The API workers share PostgreSQL for thread-scoped application data, durable
-checkpoints, and fail-fast same-run coordination. Session-level advisory locks
+checkpoints, and fail-fast interrupt coordination. Session-level
+[advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
 prevent two workers from advancing the same interrupt run at once; a contended
-request fails instead of waiting. No Redis service is required. The lock is held
-only while an API request validates or advances the run, never while a human is
-deciding. A per-process capacity gate also fails fast when its four lease slots
-are full, leaving the fifth pool connection available for persistence I/O.
+request fails instead of waiting. No Redis service is required. The lock is
+held only while an API request executes the graph, never while a human is
+deciding. A per-process capacity gate preserves a pool connection for
+persistence I/O.
 
 Compose also forces `LANGGRAPH_STRICT_MSGPACK=true` for the APIs. Strict
 deserialization narrows which checkpoint object types LangGraph may
@@ -181,9 +182,9 @@ well.
     primary depends on the PostgreSQL replication policy.
 
     Budget connections across every API replica. Each demo API process has a
-    five-connection pool and permits at most four simultaneous advisory leases,
-    preserving one connection for checkpoint I/O. Psycopg recommends monitoring
-    pool statistics and sizing from observed workload; see its
+    five-connection pool and permits at most four simultaneous interrupt
+    leases, preserving one connection for checkpoint I/O. Psycopg recommends
+    monitoring pool statistics and sizing from observed workload; see its
     [pool guidance](https://www.psycopg.org/psycopg3/docs/advanced/pool.html#pool-connection-and-sizing).
 
     The coordinator uses session-level advisory locks and must retain one

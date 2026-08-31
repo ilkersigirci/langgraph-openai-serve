@@ -2,8 +2,20 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
+
+
+class MockToolCallingChatModel(FakeMessagesListChatModel):
+    """Deterministic model with the tool-binding surface used by create_agent."""
+
+    def bind_tools(
+        self, tools: list[BaseTool], **kwargs: Any
+    ) -> "MockToolCallingChatModel":  # ty: ignore[invalid-method-override]
+        return self
 
 
 @pytest.fixture
@@ -42,3 +54,13 @@ def make_request() -> Callable[..., ChatCompletionRequest]:
         )
 
     return _make_request
+
+
+@pytest.fixture
+def make_tool_calling_model() -> Callable[..., MockToolCallingChatModel]:
+    """Build a deterministic sequence model for agent tests."""
+
+    def _make(*responses: AIMessage) -> MockToolCallingChatModel:
+        return MockToolCallingChatModel(responses=list(responses))
+
+    return _make

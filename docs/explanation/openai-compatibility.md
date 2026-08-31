@@ -373,7 +373,7 @@ Malformed interrupt envelopes, a missing or duplicate tool result, and invalid
 caller-supplied run UUIDs return HTTP 400. A structurally complete exchange that
 does not match the durable pending set, or is stale or already completed,
 returns HTTP 409 with `code: "interrupt_state_conflict"`. A request that cannot
-acquire the active run lease returns HTTP 409 with `code: "run_busy"`.
+acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
 ## Tool Calls And Interrupts
 

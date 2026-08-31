@@ -80,7 +80,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
-| PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker run coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
+| PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Chainlit element bodies | External endpoint required by Chainlit |
 
 Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
@@ -109,10 +109,10 @@ that client behavior without importing LGOS. See
 
 The UI owns chat history. LGOS stores resumable interrupt state and explicit
 thread-scoped application data, not the transcript. PostgreSQL provides the
-checkpointer, LangGraph store, and cross-worker coordination, with no Redis
-service.
-See [Persistent Plot](graphs/persistent-plot.md#ownership-boundaries) for Store
-and UI ownership,
+checkpointer, LangGraph store, and cross-worker interrupt coordination, with no
+Redis service.
+See [Persistent Plot Agent](graphs/persistent-plot-agent.md#ownership-boundaries)
+for Store and UI ownership,
 [Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
 for the server lifecycle, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)

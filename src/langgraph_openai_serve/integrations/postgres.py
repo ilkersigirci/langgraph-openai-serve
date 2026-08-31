@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 class PostgresRunCoordinator:
     """
-    Coordinate runs with PostgreSQL session advisory locks.
+    Coordinate interrupt runs with PostgreSQL session advisory locks.
 
     The pool must return mapping rows, as required by ``AsyncPostgresSaver``
     when both components share one pool (for example, ``row_factory=dict_row``).
@@ -52,7 +52,7 @@ class PostgresRunCoordinator:
 
     @asynccontextmanager
     async def __call__(self, key: str, /) -> AsyncIterator[None]:
-        """Acquire Postgres advisory lease."""
+        """Acquire a PostgreSQL advisory lease for one interrupt run."""
         if not self._capacity.acquire(blocking=False):
             raise RunBusyError(key)
         try:

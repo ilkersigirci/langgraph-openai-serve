@@ -416,7 +416,7 @@ async def test_pipe_emits_status_event(
     )
 
 
-async def test_pipe_emits_persistent_plot_embed(
+async def test_pipe_emits_persistent_plot_agent_embed(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
 ) -> None:
@@ -425,23 +425,17 @@ async def test_pipe_emits_persistent_plot_embed(
         {
             "schema_version": 1,
             "id": "revenue",
-            "kind": "plotly",
-            "title": "Quarterly <revenue>",
+            "kind": "chart",
+            "title": "Quarterly <revenue></script>",
             "summary": "Q4 is highest.",
-            "figure": {
-                "data": [
-                    {
-                        "type": "bar",
-                        "name": "Revenue",
-                        "x": ["Q1", "Q2"],
-                        "y": [1, 2],
-                        "showlegend": False,
-                    }
-                ],
-                "layout": {"title": {"text": "</script>"}},
-            },
+            "chart_type": "bar",
+            "labels": ["Q1", "Q2"],
+            "series": [{"name": "Revenue", "values": [1, 2]}],
+            "x_axis_title": "Quarter",
+            "y_axis_title": "Revenue (USD, thousands)",
+            "show_legend": False,
         },
-        namespace=["plots"],
+        namespace=["charts"],
     )
     monkeypatch.setattr(
         generic,
@@ -457,10 +451,12 @@ async def test_pipe_emits_persistent_plot_embed(
     assert chunks == []
     event = emitter.await_args.args[0]
     assert event["type"] == "embeds"
-    assert event["data"].keys() == {"embeds"}
+    assert event["data"].keys() == {"embeds", "replace"}
+    assert event["data"]["replace"] is True
     html = event["data"]["embeds"][0]
     assert "Quarterly &lt;revenue&gt;" in html
-    assert "https://cdn.plot.ly/plotly-3.6.0.min.js" in html
+    assert "https://cdn.plot.ly/plotly-4.0.0.min.js" in html
     assert '"showlegend":false' in html
     assert "\\u003c/script>" in html
     assert 'Plotly.newPlot("plot", figure.data, figure.layout' in html
+    assert 'parent.postMessage({type: "iframe:height", height}, "*")' in html

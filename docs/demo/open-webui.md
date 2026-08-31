@@ -124,10 +124,10 @@ Both bundled Functions also map Open WebUI's stable `chat_id` to
 `metadata.session_id` on every completion. Langfuse can therefore group the
 chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the
-opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot` uses
+opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot-agent` uses
 both values to scope its chart document. Interrupt resumes reuse the same
 conversation value. See the
-[persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
+[persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)
 for the API Store and Open WebUI persistence boundaries.
 
 The Workspace Model schema is a generated projection, not a second
@@ -168,14 +168,17 @@ WebUI's native
 Open WebUI saves each update in the assistant message's `statusHistory`;
 `done=False` displays an active shimmer, `done=True` stops it, and `hidden=True`
 keeps the history entry out of the current display. Persisted statuses survive
-a reload or closed tab. The Pipe renders the demo's versioned Plotly artifact
-with the official versioned Plotly.js CDN and Open WebUI's persistent
+a reload or closed tab. The Pipe translates the demo's versioned semantic chart
+artifact to Plotly using the official versioned Plotly.js CDN, then sends Open
+WebUI's persistent
 [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
-The browser needs access to `cdn.plot.ly`; no same-origin iframe setting is
-required. Other `progress` and artifact kinds remain ignored. Shared prompts
-and graph behavior are documented under
+The embedded document reports its rendered height to Open WebUI so responsive
+charts are not clipped by the iframe's initial height. The browser needs access
+to `cdn.plot.ly`; no same-origin iframe setting is required. Other `progress`
+and artifact kinds remain ignored. Shared prompts and graph behavior are
+documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
-[Persistent Plot](graphs/persistent-plot.md#try-it).
+[Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it).
 
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already
@@ -204,9 +207,9 @@ sends no partial batch. Compose bounds an unanswered Open WebUI confirmation to
     visible chat history.
 
     A production Pipe must durably store the complete assistant tool-call
-    message and its result for every call before resuming. It must also own an
-    expiry policy for abandoned pending runs; the demo does not run a
-    checkpoint reaper.
+    message and its result for every call before resuming. See
+    [Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
+    for server-side checkpoint retention.
 
 See the core [citation contract](../explanation/openai-compatibility.md#citation-ownership)
 and [interrupt protocol](../explanation/openai-compatibility.md#tool-calls-and-interrupts)

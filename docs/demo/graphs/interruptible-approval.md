@@ -8,11 +8,21 @@ batch without understanding the graph topology.
 
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
-[`persistent-plot`](persistent-plot.md). Operation identity, canonical replay,
+[`persistent-plot-agent`](persistent-plot-agent.md). Operation identity, canonical replay,
 and retention rules are defined in
 [OpenAI Compatibility](../../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
-Ask the graph to process a refund to trigger the approval batch.
+## LangGraph Topology
+
+The native `xray` view shows the two parallel approval subgraph instances.
+
+```mermaid
+graph TD;
+	__start__ --> approval_0\3arequest_approval;
+	__start__ --> approval_1\3arequest_approval;
+	approval_0\3arequest_approval --> __end__;
+	approval_1\3arequest_approval --> __end__;
+```
 
 ## Interrupt Flow
 
@@ -42,24 +52,23 @@ sequenceDiagram
 
 ## PostgreSQL Runtime
 
-Each demo API process opens one PostgreSQL connection pool in its FastAPI
-lifespan, waits for the pool before serving, and closes it at shutdown. The
-checkpointer, LangGraph Store, and same-run coordinator share that pool.
-
-The coordinator holds a session-level
-[PostgreSQL advisory lock](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
-only while validating or advancing a request, never while awaiting human input.
-One of the pool's five connections is reserved for persistence I/O; exhausting
-the other four coordination slots returns HTTP 409.
+The graph receives its PostgreSQL checkpointer and run coordinator from the
+API's lifespan-managed runtime. The coordinator lease covers each initial or
+resume request, but ends when the graph pauses; no lease is held while the user
+decides.
 
 The demo uses LGOS's default shared checkpoint scope, so multi-tenant
 applications must derive that scope from authenticated server state.
 
-The environment also enables `LANGGRAPH_STRICT_MSGPACK=true`. This selects
-LangGraph's strict allowlist policy for checkpoint deserialization; it does not
-replace database access controls or integrity monitoring. See the upstream
-[LangGraph security advisory](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).
-
 The demo has no expiry worker. Production deployments must reap abandoned
 pending runs and follow LangGraph's
 [interrupt idempotency rules](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
+
+See [Docker Compose](../docker.md#demo-services) for schema setup, connection
+capacity, advisory-lock requirements, and strict checkpoint deserialization.
+
+## Try It
+
+Send `Refund order ORDER-123` in Chainlit or Open WebUI. The UI presents both
+approval questions together, sends both decisions in one resume request, and
+then renders the final refund and notification results.

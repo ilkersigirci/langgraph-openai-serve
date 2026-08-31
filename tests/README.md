@@ -125,9 +125,9 @@ timer only masks the environment failure.
 - Tests that intentionally verify missing checkpointer behavior should use an
   uncheckpointed graph factory so the failure setup is obvious.
 
-Real PostgreSQL tests use a unique caller-provided run UUID, close and recreate
-the runtime before resume, and delete that exact checkpoint thread in fixture
-teardown. Keep them excluded from default runs and invoke them through
+Real PostgreSQL tests use unique persistence scopes, close and recreate the
+runtime, and delete their exact checkpoints or Store documents in teardown.
+Keep them excluded from default runs and invoke them through
 `make -C demo test-postgres` so ordinary and parallel unit runs never share an
 external database.
 

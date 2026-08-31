@@ -38,7 +38,10 @@ def _():
     from lgos_demo_api.graphs.custom_io import custom_io_graph
     from lgos_demo_api.graphs.interruptible import create_interruptible_graph
     from lgos_demo_api.graphs.lgos_rag import lgos_rag
-    from lgos_demo_api.graphs.persistent_plot import create_persistent_plot_graph
+    from lgos_demo_api.graphs.multi_node_streaming import multi_node_streaming_graph
+    from lgos_demo_api.graphs.persistent_plot_agent import (
+        create_persistent_plot_agent,
+    )
     from lgos_demo_api.graphs.simple import simple_graph
     from lgos_demo_api.graphs.status_events import status_event_graph
     from lgos_demo_api.graphs.subgraphs.specialist_team import (
@@ -51,11 +54,12 @@ def _():
         advanced_mcp_graph,
         citation_graph,
         create_interruptible_graph,
-        create_persistent_plot_graph,
+        create_persistent_plot_agent,
         create_specialist_team_graph,
         custom_event_showcase_graph,
         custom_io_graph,
         lgos_rag,
+        multi_node_streaming_graph,
         simple_graph,
         status_event_graph,
     )
@@ -68,11 +72,12 @@ async def _(
     advanced_mcp_graph,
     citation_graph,
     create_interruptible_graph,
-    create_persistent_plot_graph,
+    create_persistent_plot_agent,
     create_specialist_team_graph,
     custom_event_showcase_graph,
     custom_io_graph,
     lgos_rag,
+    multi_node_streaming_graph,
     simple_graph,
     status_event_graph,
 ):
@@ -83,7 +88,8 @@ async def _(
         "complex-subgraphs": create_specialist_team_graph(),
         "status-events": status_event_graph,
         "custom-event-showcase": custom_event_showcase_graph,
-        "persistent-plot": create_persistent_plot_graph(InMemoryStore()),
+        "multi-node-streaming": multi_node_streaming_graph,
+        "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),
         "simple-graph": simple_graph,
         "lgos-rag": lgos_rag,
@@ -133,7 +139,7 @@ def _(graph_selector, graphs, mo):
     selected_name = graph_selector.value
     selected_graph = graphs[selected_name]
     _selected_graph_view = selected_graph.get_graph(xray=True)
-    _selected_diagram = _selected_graph_view.draw_mermaid()
+    _selected_diagram = _selected_graph_view.draw_mermaid(with_styles=False)
 
     mo.vstack(
         [

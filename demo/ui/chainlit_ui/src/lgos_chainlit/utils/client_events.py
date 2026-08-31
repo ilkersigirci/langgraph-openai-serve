@@ -8,8 +8,8 @@ from pydantic import ValidationError
 
 from lgos_chainlit.lgos_protocol import (
     LGOS_EXTENSION_KEY,
+    ChartArtifact,
     ClientEventExtension,
-    PlotlyArtifact,
     StatusUpdate,
 )
 
@@ -37,12 +37,12 @@ def status_update(event: dict[str, object]) -> StatusUpdate | None:
         return None
 
 
-def plotly_artifact(event: dict[str, object]) -> PlotlyArtifact | None:
-    """Return a supported Plotly artifact."""
+def chart_artifact(event: dict[str, object]) -> ChartArtifact | None:
+    """Return a supported chart artifact."""
     if event.get("type") != "artifact":
         return None
     try:
-        return PlotlyArtifact.model_validate(event.get("data"))
+        return ChartArtifact.model_validate(event.get("data"))
     except ValidationError:
         return None
 
@@ -66,9 +66,9 @@ class ClientEventRenderer:
             await self._render_status(status)
             return
 
-        artifact = plotly_artifact(event)
+        artifact = chart_artifact(event)
         if artifact is not None:
-            await self._render_plotly(artifact)
+            await self._render_chart(artifact)
             return
 
         self._events.append(event)
@@ -121,10 +121,31 @@ class ClientEventRenderer:
         await self._task_list.send()
 
     @staticmethod
-    async def _render_plotly(artifact: PlotlyArtifact) -> None:
+    async def _render_chart(artifact: ChartArtifact) -> None:
+        trace_type = "bar" if artifact.chart_type == "bar" else "scatter"
+        data: list[dict[str, object]] = []
+        for series in artifact.series:
+            trace: dict[str, object] = {
+                "type": trace_type,
+                "name": series.name,
+                "x": artifact.labels,
+                "y": series.values,
+                "showlegend": artifact.show_legend,
+            }
+            if artifact.chart_type == "line":
+                trace["mode"] = "lines+markers"
+            data.append(trace)
         element = cl.Plotly(
             name=artifact.id,
-            figure=go.Figure(artifact.figure),
+            figure=go.Figure(
+                data=data,
+                layout={
+                    "title": {"text": artifact.title},
+                    "xaxis": {"title": {"text": artifact.x_axis_title}},
+                    "yaxis": {"title": {"text": artifact.y_axis_title}},
+                    "showlegend": artifact.show_legend,
+                },
+            ),
             display="inline",
         )
         message = cl.Message(content=artifact.title, elements=[element])

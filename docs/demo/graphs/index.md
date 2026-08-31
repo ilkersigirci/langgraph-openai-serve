@@ -5,34 +5,27 @@ none is installed as a built-in model by the `langgraph-openai-serve` package.
 Each registration also supplies a short `GraphConfig.description` used by the
 demo model catalogs.
 
-| Model | Demonstrates | Graph feature | Extra runtime requirement |
+| Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
-| `custom-input-output-context` | Request, output, and typed runtime-context adapters | None | None |
+| [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
-| `advanced-mcp-tools` | Async graph factories and a mock MCP-style tool | None | None |
+| [`advanced-mcp-tools`](core-patterns.md#advanced-mcp-tools) | Async graph factories and a mock MCP-style tool | None | None |
 | [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
-| `multi-node-streaming` | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
+| [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
 | [`custom-event-showcase`](events-and-citations.md) | Public progress and artifact events interleaved with text | `client_events` | None |
-| [`persistent-plot`](persistent-plot.md) | An editable thread-scoped chart | `client_events` | PostgreSQL store |
+| [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | `client_events` | Upstream chat model and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | One checkpointed batch from parallel nested approval subgraphs | `interrupts` | PostgreSQL checkpointer and run coordinator |
-| `simple-graph` | Streamed model output and discoverable runtime settings | None | Upstream chat model |
+| [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 
-`persistent-plot` stores application data with a LangGraph Store.
+`persistent-plot-agent` stores application data with a LangGraph Store.
 `interruptible-approval` checkpoints graph execution. Neither mechanism makes
 LGOS the owner of UI conversation history.
-
-!!! tip "Start without provider credentials"
-
-    Use `custom-input-output-context`, `citation-events`,
-    `advanced-mcp-tools`, `complex-subgraphs`, `multi-node-streaming`, `status-events`,
-    `custom-event-showcase`, `persistent-plot`, or `interruptible-approval` to
-    explore the transport without a real model API key.
 
 ## Source Map
 

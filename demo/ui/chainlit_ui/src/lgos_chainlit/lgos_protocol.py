@@ -147,17 +147,31 @@ class StatusUpdate(BaseModel):
     hidden: bool = False
 
 
-class PlotlyArtifact(BaseModel):
-    """A versioned Plotly figure published as a portable artifact."""
+class ChartSeries(BaseModel):
+    """One portable series in a chart artifact."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    name: str = Field(min_length=1)
+    values: list[float]
+
+
+class ChartArtifact(BaseModel):
+    """A versioned chart snapshot published as a portable artifact."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     schema_version: Literal[1]
     id: str = Field(min_length=1)
-    kind: Literal["plotly"]
+    kind: Literal["chart"]
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
-    figure: dict[str, JsonValue]
+    chart_type: Literal["bar", "line"]
+    labels: list[str]
+    series: list[ChartSeries]
+    x_axis_title: str = Field(min_length=1)
+    y_axis_title: str = Field(min_length=1)
+    show_legend: bool
 
 
 class ClientEventData(BaseModel):

@@ -97,11 +97,11 @@ Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
 `metadata.session_id` on every completion, allowing Langfuse to group the
-thread's per-request traces into one session. The `persistent-plot` demo also
+thread's per-request traces into one session. The `persistent-plot-agent` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat
 history is added to LGOS. See the
-[persistent plot ownership flow](graphs/persistent-plot.md#ownership-boundaries)
+[persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)
 for the API Store, Chainlit PostgreSQL, and S3 boundaries.
 
 === "Mock login (default)"
@@ -157,9 +157,9 @@ graph topology. See the shared
     the worker loses the following response, replaying the older ledger fails
     safely as stale; the completed output or newer batch cannot be reconstructed
     from that old ledger. Applications requiring recovery across that window
-    need a durable result/pending-response handoff in their UI boundary. They
-    must also define retention for abandoned pending runs; the demo has no
-    expiry worker.
+    need a durable result/pending-response handoff in their UI boundary. See
+    [Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
+    for server-side checkpoint retention.
 
 ## Streaming, Events, And Citations
 
@@ -176,18 +176,20 @@ events render as one live-updating Chainlit
 [custom element](https://docs.chainlit.io/api-reference/elements/custom) per
 completion. The panel shows event type, namespace, progress, and artifact
 details, with a JSON fallback for other payload shapes. Its host message is
-excluded from model context. A versioned `kind=plotly` artifact instead renders
+excluded from model context. A versioned `kind=chart` artifact instead renders
 with Chainlit's native
 [`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element.
-The official data layer stores its metadata in PostgreSQL and figure JSON in
-the configured S3-compatible bucket, allowing the native chart to return with
-the thread. The packaged botocore configuration uses Signature V4 and path-style
-addressing for S3-compatible endpoints. Unknown extension versions are ignored.
+The adapter builds the Plotly figure from the event's small semantic payload;
+the graph does not stream Plotly JSON. The official data layer stores the
+element metadata in PostgreSQL and figure JSON in the configured S3-compatible
+bucket, allowing the native chart to return with the thread. The packaged
+botocore configuration uses Signature V4 and path-style addressing for
+S3-compatible endpoints. Unknown extension versions are ignored.
 
 Status task lists are live UI state and are not restored from persisted chat
 history. Shared prompts and graph behavior are documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
-[Persistent Plot](graphs/persistent-plot.md#try-it). A schema-normalizing proxy
+[Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it). A schema-normalizing proxy
 may strip capability metadata and event-only chunks; see
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 

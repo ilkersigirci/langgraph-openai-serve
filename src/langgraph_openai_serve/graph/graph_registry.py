@@ -100,6 +100,12 @@ class GraphConfig(BaseModel):
 
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""
+        if self.run_coordinator is not None and not self.supports(
+            GraphFeature.INTERRUPTS
+        ):
+            msg = "run_coordinator is only supported by interrupt-enabled graphs."
+            raise GraphConfigurationError(msg)
+
         if isinstance(self.graph, CompiledStateGraph):
             graph = self.graph
         else:

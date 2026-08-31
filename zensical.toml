@@ -24,10 +24,11 @@ nav = [
     { "Run the Demo API" = "demo/api.md" },
     { "Example Graphs" = [
       "demo/graphs/index.md",
+      { "Core Graph Patterns" = "demo/graphs/core-patterns.md" },
       { "Events and Citations" = "demo/graphs/events-and-citations.md" },
       { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
       { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
-      { "Persistent Plot" = "demo/graphs/persistent-plot.md" },
+      { "Persistent Plot Agent" = "demo/graphs/persistent-plot-agent.md" },
       { "Interruptible Approval" = "demo/graphs/interruptible-approval.md" },
     ]},
     { "Docker Compose" = "demo/docker.md" },

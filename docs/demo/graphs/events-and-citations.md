@@ -9,47 +9,49 @@ without turning UI notifications into tool calls.
 | `status-events` | Standard assistant text plus opt-in `status` events | Chainlit uses a `TaskList`; Open WebUI persists native status history |
 | `custom-event-showcase` | Assistant text interleaved with `progress` and `artifact` events | Chainlit renders its custom activity panel; Open WebUI ignores these unsupported kinds |
 
-```mermaid
-flowchart LR
-  citations["citation-events"]
-  statuses["status-events"]
-  custom["custom-event-showcase"]
-  lgos["LGOS Chat Completions adapter"]
+## LangGraph Topology
 
-  content["OpenAI delta.content"]
-  annotations["OpenAI url_citation annotations"]
-  events["Opt-in LGOS event chunks"]
+=== "citation-events"
 
-  chainlit["Chainlit adapter"]
-  openwebui["Open WebUI Pipe"]
-  sdk["Standard OpenAI client"]
+    ```mermaid
+    graph TD;
+		__start__ --> answer_with_citation;
+		answer_with_citation --> __end__;
+    ```
 
-  citations -->|"annotated AIMessage"| lgos
-  statuses -->|"text + status_event"| lgos
-  custom -->|"text + client_event"| lgos
+=== "status-events"
 
-  lgos --> content
-  lgos -->|"citation-events"| annotations
-  lgos -->|"status and custom events"| events
+    ```mermaid
+    graph TD;
+		__start__ --> prepare_media;
+		prepare_media --> __end__;
+    ```
 
-  content --> chainlit
-  content --> openwebui
-  content --> sdk
-  annotations -->|"translate in both modes"| openwebui
-  annotations --> sdk
-  events --> chainlit
-  events --> openwebui
-```
+=== "custom-event-showcase"
 
-Assistant text remains portable. It includes Markdown links and ordered `[n]`
-markers, while citations also use the standard OpenAI annotation shape. Passive
-status, progress, and artifact updates use LGOS's advertised `client_events`
-extension. A client that does not opt into or understand that extension can
-still consume the assistant text.
+    ```mermaid
+    graph TD;
+		__start__ --> build_compatibility_report;
+		build_compatibility_report --> __end__;
+    ```
 
-The Open WebUI Pipe translates final annotations to native source events. It
-does not forward LGOS annotation chunks to the UI. Open WebUI maps the markers
-already present in the content to those ordered sources.
+## Request Flow
+
+1. The client sends a standard Chat Completions request to one deterministic
+   graph.
+2. `citation-events` returns portable Markdown plus standard OpenAI
+   `url_citation` annotations.
+3. `status-events` and `custom-event-showcase` publish passive updates through
+   LangGraph's stream writer while returning ordinary assistant text.
+4. LGOS always transports the assistant text. It includes client-event chunks
+   only for streaming requests with
+   `metadata.langgraph_stream_events="v1"`.
+5. UI adapters render the fields and events they support. Other OpenAI clients
+   can ignore the optional output and keep the text.
+
+These graphs have no checkpointer or Store. Their graph state and event
+timeline last for one request; each UI separately owns its transcript and
+rendered status or activity history.
 
 ## Try It
 
