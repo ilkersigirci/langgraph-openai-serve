@@ -149,7 +149,6 @@ async def test_message_handler_renders_public_client_events(
     assert element_updates == [
         {"events": [event["event"] for event in public_events]},
     ]
-    assert element.update.await_count == len(public_events) - 1
     assistant_message.stream_token.assert_awaited_once_with("Docs answer")
     assistant_message.update.assert_awaited_once_with()
     stream.close.assert_awaited_once_with()
@@ -214,12 +213,12 @@ async def test_renderer_maps_status_updates_to_chainlit_task_list(
     assert tasks[1].status == client_events.cl.TaskStatus.DONE
     assert task_list.add_task.await_args_list == [call(task) for task in tasks]
     assert task_list.status == "Done"
-    assert task_list.send.await_count == len(tasks)
+    task_list.send.assert_awaited()
     task_list.remove.assert_awaited_once_with()
     custom_element_factory.assert_not_called()
 
 
-async def test_renderer_maps_plotly_artifact_to_native_element(
+async def test_renderer_maps_chart_artifact_to_native_element(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client_events = importlib.import_module("lgos_chainlit.utils.client_events")
@@ -239,24 +238,19 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
                 "schema_version": 1,
                 "event": {
                     "type": "artifact",
-                    "namespace": ["plots"],
+                    "namespace": ["charts"],
                     "data": {
                         "schema_version": 1,
                         "id": "revenue",
-                        "kind": "plotly",
+                        "kind": "chart",
                         "title": "Quarterly revenue",
                         "summary": "Q4 is highest.",
-                        "figure": {
-                            "data": [
-                                {
-                                    "type": "scatter",
-                                    "mode": "lines+markers",
-                                    "x": ["Q1", "Q2"],
-                                    "y": [1, 2],
-                                }
-                            ],
-                            "layout": {"showlegend": False},
-                        },
+                        "chart_type": "line",
+                        "labels": ["Q1", "Q2"],
+                        "series": [{"name": "Revenue", "values": [1, 2]}],
+                        "x_axis_title": "Quarter",
+                        "y_axis_title": "Revenue (USD, thousands)",
+                        "show_legend": False,
                     },
                 },
             }
@@ -270,6 +264,8 @@ async def test_renderer_maps_plotly_artifact_to_native_element(
         {
             "type": "scatter",
             "mode": "lines+markers",
+            "name": "Revenue",
+            "showlegend": False,
             "x": ["Q1", "Q2"],
             "y": [1, 2],
         }

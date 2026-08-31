@@ -158,7 +158,13 @@ def test_main_reads_demo_openwebui_environment(
     passthrough_client = Mock()
     passthrough_context = MagicMock()
     passthrough_context.__enter__.return_value = passthrough_client
-    openai_factory = Mock(side_effect=[catalog_context, passthrough_context])
+    openai_contexts = {
+        "https://bifrost.example/v1": catalog_context,
+        "https://bifrost.example/openai_passthrough/v1": passthrough_context,
+    }
+    openai_factory = Mock(
+        side_effect=lambda *, base_url, **_: openai_contexts[base_url]
+    )
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
     model_specs = (WorkspaceModelSpec(id="plain", fields=()),)
@@ -191,18 +197,22 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
-    assert openai_factory.call_args_list == [
-        call(
-            base_url="https://bifrost.example/v1",
-            api_key="api-key",
-            timeout=10,
-        ),
-        call(
-            base_url="https://bifrost.example/openai_passthrough/v1",
-            api_key="api-key",
-            timeout=10,
-        ),
-    ]
+    openai_factory.assert_has_calls(
+        [
+            call(
+                base_url="https://bifrost.example/v1",
+                api_key="api-key",
+                timeout=10,
+            ),
+            call(
+                base_url="https://bifrost.example/openai_passthrough/v1",
+                api_key="api-key",
+                timeout=10,
+            ),
+        ],
+        any_order=True,
+    )
+    assert openai_factory.call_count == 2
     discover_workspace_models_mock.assert_called_once_with(
         catalog_client,
         passthrough_client,

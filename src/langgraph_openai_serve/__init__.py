@@ -4,7 +4,6 @@ from importlib.metadata import version
 
 from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.events import (
-    citation_event,
     citation_slice,
     client_event,
     status_event,
@@ -24,7 +23,6 @@ __all__ = [
     "GraphFeature",
     "GraphRegistry",
     "LanggraphOpenaiServe",
-    "citation_event",
     "citation_slice",
     "client_event",
     "status_event",

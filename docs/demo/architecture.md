@@ -64,7 +64,7 @@ flowchart LR
   subgraph api["LGOS API processes"]
     direction TB
     interrupts["LGOS interrupt handling"]
-    plot["persistent-plot graph"]
+    plot["persistent-plot-agent graph"]
   end
 
   subgraph postgres["One PostgreSQL database"]
@@ -88,10 +88,10 @@ flowchart LR
 
 Both API containers run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
-checkpoints, thread-scoped data, and cross-worker run coordination. Chainlit
+checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
 keeps its state in its bind-mounted data directory. Detailed ownership and
-recovery behavior live in [Persistent Plot](graphs/persistent-plot.md) and
+recovery behavior live in [Persistent Plot Agent](graphs/persistent-plot-agent.md) and
 [Interruptible Approval](graphs/interruptible-approval.md). When
 `LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse

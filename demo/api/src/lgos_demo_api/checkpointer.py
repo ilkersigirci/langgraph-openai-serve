@@ -30,7 +30,7 @@ class PostgresRuntime:
 
 @asynccontextmanager
 async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
-    """Open one ready pool for checkpointing and run coordination.
+    """Open one ready pool for checkpoints, Store data, and interrupt coordination.
 
     Yields:
         Configured PostgreSQL-backed graph dependencies.

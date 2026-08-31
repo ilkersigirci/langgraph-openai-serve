@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from anyio import Event
 from fastapi import FastAPI
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -62,11 +63,11 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
     def empty_answers(_request: Any, _messages: Any) -> dict[str, list[str]]:
         return {"answers": []}
 
-    def render_answers(output: dict[str, list[str]]) -> str:
-        return ",".join(output["answers"])
+    def render_answers(output: dict[str, list[str]]) -> AIMessage:
+        return AIMessage(content=",".join(output["answers"]))
 
-    def render_sorted_answers(output: dict[str, list[str]]) -> str:
-        return ",".join(sorted(output["answers"]))
+    def render_sorted_answers(output: dict[str, list[str]]) -> AIMessage:
+        return AIMessage(content=",".join(sorted(output["answers"])))
 
     def interrupt_config(graph: Any, **kwargs: Any) -> GraphConfig:
         return GraphConfig(
@@ -85,17 +86,19 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
             PARALLEL_MODEL: interrupt_config(
                 make_parallel_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
-                output_to_text=render_sorted_answers,
+                output_to_message=render_sorted_answers,
             ),
             SEQUENTIAL_MODEL: interrupt_config(
                 make_sequential_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
-                output_to_text=render_answers,
+                output_to_message=render_answers,
             ),
             CONCURRENT_MODEL: interrupt_config(
                 concurrent_graph,
                 request_to_input=empty_answers,
-                output_to_text=lambda output: output["answers"][0],
+                output_to_message=lambda output: AIMessage(
+                    content=output["answers"][0]
+                ),
             ),
             INVALID_PAYLOAD_MODEL: interrupt_config(
                 make_interrupt_graph(
@@ -106,12 +109,12 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
             NESTED_MODEL: interrupt_config(
                 make_parallel_nested_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
-                output_to_text=render_sorted_answers,
+                output_to_message=render_sorted_answers,
             ),
             NESTED_SEQUENTIAL_MODEL: interrupt_config(
                 make_sequential_nested_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
-                output_to_text=render_answers,
+                output_to_message=render_answers,
             ),
         }
     )

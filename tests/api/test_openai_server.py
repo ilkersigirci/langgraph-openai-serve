@@ -140,6 +140,8 @@ async def test_openai_api_schema_describes_mounted_api(
     assert "/models" in schema["paths"]
     assert "/models/{model}" in schema["paths"]
     assert schema["servers"] == [{"url": "/v1"}]
+    stream_options = schema["components"]["schemas"]["ChatCompletionStreamOptions"]
+    assert set(stream_options["properties"]) == {"include_usage"}
 
 
 def test_openai_api_prefix_settings_normalizes_trailing_slash() -> None:

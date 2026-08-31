@@ -58,7 +58,8 @@ deliberately unreachable.
 - `description`: required human-readable model description advertised by model
   listing and retrieval.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
-  forwarded to clients.
+  forwarded as assistant text. If several nodes contribute, the graph's output
+  adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
@@ -66,12 +67,12 @@ deliberately unreachable.
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
 - `run_coordinator`: asynchronous single-flight coordination for interrupt
-  runs. It receives LGOS's internal run key, rejects an occupied key instead of
-  queueing it, and returns an async context manager.
+  runs. It rejects an occupied LGOS checkpoint key instead of queueing it and
+  returns an async context manager.
 - `request_to_input(request, messages)`: custom OpenAI request to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
   runtime context from server-owned values and optional validated public settings.
-- `output_to_text(output)`: custom graph output to assistant text.
+- `output_to_message(output)`: custom graph output to a durable `AIMessage`.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -87,7 +88,7 @@ Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
-| Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
+| Graph input | `graph.ainvoke(input, ...)` or `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
 | Interrupt run | server scope + model + optional `metadata.langgraph_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
@@ -210,24 +211,29 @@ Install `langgraph-openai-serve[postgres]` to use the public
 `langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator`. Use
 LangGraph's official
 [`AsyncPostgresSaver`](https://reference.langchain.com/python/langgraph.checkpoint.postgres/aio/AsyncPostgresSaver)
-for checkpoint storage; the LGOS adapter only supplies the cross-worker run
-lease that the saver does not own. Run the saver's `setup()` once before API
-workers start. A shared pool must follow the saver's upstream connection
-requirements: `autocommit=True`, `prepare_threshold=0`, and mapping rows.
+for checkpoints and
+[`AsyncPostgresStore`](https://reference.langchain.com/python/langgraph.store.postgres/aio/AsyncPostgresStore)
+for application data. The LGOS adapter supplies only the cross-worker
+interrupt-run lease; it does not replace either storage primitive. Run each
+configured storage adapter's `setup()` once before API workers start. A shared
+pool must follow the upstream connection requirements: `autocommit=True`,
+`prepare_threshold=0`, and mapping rows.
 
 `PostgresRunCoordinator(pool, max_concurrent_leases=...)` accepts an existing
 `psycopg_pool.AsyncConnectionPool` configured with mapping rows and the default
 `close_returns=False`; physical session closure is the safety fallback for an
-indeterminate lock operation. When the saver shares that pool, set the lease
-limit below the pool maximum so at least one connection remains available for
-checkpoint writes. Create one coordinator per process-owned pool so that this
-capacity limit is not accidentally multiplied. Session advisory locks require
-direct PostgreSQL connections or session-mode pooling; transaction-mode poolers
-cannot preserve the lease. Lock contention itself fails immediately through
-PostgreSQL's `pg_try_advisory_lock`; connection checkout still follows the
-pool's configured timeout. The
+indeterminate lock operation. When persistence adapters share that pool, set
+the lease limit below the pool maximum so at least one connection remains
+available for persistence I/O. Create one coordinator per process-owned pool
+so that this capacity limit is not accidentally multiplied. Session advisory
+locks require direct PostgreSQL connections or session-mode pooling;
+transaction-mode poolers cannot preserve the lease. Lock contention itself
+fails immediately through PostgreSQL's `pg_try_advisory_lock`; connection
+checkout still follows the pool's configured timeout. The
 [demo deployment](demo/docker.md#demo-services) uses one pool for both
-components and a separate one-shot schema setup process.
+storage adapters and interrupt coordination, plus a separate one-shot schema
+setup process. Busy interrupt leases fail before streaming begins with HTTP 409
+and `code: "run_busy"`.
 
 ## Client Stream Events
 
@@ -320,34 +326,48 @@ See [Client stream events](explanation/openai-compatibility.md#client-stream-eve
 for the wire contract and [OpenAI clients](tutorials/openai-clients.md#client-stream-events)
 for consumption.
 
-## Citation Events
+## Citations
 
-Inside a graph node or tool, emit a citation with LangGraph's stream writer:
+Put citations on the final LangChain `AIMessage`:
 
 ```python
-from langgraph.config import get_stream_writer
-from langgraph_openai_serve import citation_event
+from langchain_core.messages import AIMessage
+from langchain_core.messages.content import create_citation, create_text_block
 
-get_stream_writer()(
-    citation_event(
-        url="https://example.com/source",
-        title="Example source",
-        span=(10, 14),
-    )
+message = AIMessage(
+    content=[
+        create_text_block(
+            text="Read the source [1].",
+            annotations=[
+                create_citation(
+                    url="https://example.com/source",
+                    title="Example source",
+                    start_index=9,
+                    end_index=14,
+                    cited_text="source",
+                )
+            ],
+        )
+    ]
 )
 ```
 
-`span` uses Python's half-open convention, so `text[10:14]` returns the cited
-text. LGOS converts it to OpenAI's inclusive `end_index` at the event boundary.
+Put visible inline citations in the assistant text. Structured annotations add
+machine-readable provenance; clients are not required to invent marker text
+from annotation indices.
+
+LangChain citation indices refer to their containing text block. LGOS offsets
+them into the final response text and preserves OpenAI's inclusive `end_index`.
 Use `citation_slice(annotation, text)` to validate received indices and convert
-them back to a Python slice. Citation events must refer to the final rendered
-assistant text.
+them to a Python slice. LGOS maps native LangChain citations to completed
+`message.annotations`; the streaming compatibility extension is added to the
+final delta.
 
 See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.
 
-The graph runner preserves LangGraph's native `CustomStreamPart` values,
-including their execution namespace. Other event types remain available to
-direct runner consumers through `langgraph_openai_serve.graph.runner`.
+The streaming graph runner preserves LangGraph's native `CustomStreamPart`
+values, including their execution namespace. Non-streaming invocation does not
+subscribe to or replay custom events.
 
 ::: langgraph_openai_serve

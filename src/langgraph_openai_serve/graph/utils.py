@@ -1,12 +1,15 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
 import sys
+from collections.abc import Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from anyio import CancelScope
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
+from langchain_core.messages import UsageMetadata
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
@@ -48,16 +51,31 @@ class GraphRun:
     run_id: str | None
     checkpoint_thread_id: str | None = None
     should_execute: bool = True
+    usage_callback: UsageMetadataCallbackHandler = field(
+        default_factory=UsageMetadataCallbackHandler,
+        repr=False,
+    )
     _lease: AbstractAsyncContextManager[None] | None = field(
         default=None,
         repr=False,
     )
 
     async def aclose(self) -> None:
-        """Release this run's single-flight lease exactly once."""
+        """Release this run's interrupt lease exactly once, if present."""
         lease, self._lease = self._lease, None
         if lease is not None:
             await lease.__aexit__(None, None, None)
+
+    def usage_metadata(self) -> UsageMetadata | None:
+        """Return provider-reported usage aggregated across the graph run."""
+        usages = self.usage_callback.usage_metadata.values()
+        if not usages:
+            return None
+        return UsageMetadata(
+            input_tokens=sum(usage["input_tokens"] for usage in usages),
+            output_tokens=sum(usage["output_tokens"] for usage in usages),
+            total_tokens=sum(usage["total_tokens"] for usage in usages),
+        )
 
 
 async def prepare_run(  # ruff: ignore[too-many-locals]
@@ -73,19 +91,25 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
 
     request = request or ChatCompletionRequest(model=model, messages=messages)
     graph = await graph_config.resolve_graph()
+    usage_callback = UsageMetadataCallbackHandler()
 
     if not graph_config.supports(GraphFeature.INTERRUPTS):
         lc_messages = convert_to_lc_messages(messages)
+        inputs = await graph_config.build_input(request, lc_messages)
+        context = await graph_config.build_context(request, graph)
+        runnable_config = build_runnable_config(
+            graph_config.runtime_callbacks,
+            metadata=_runnable_metadata(request),
+            extra_callbacks=[usage_callback],
+        )
         return GraphRun(
             config=graph_config,
             graph=graph,
-            inputs=await graph_config.build_input(request, lc_messages),
-            context=await graph_config.build_context(request, graph),
-            runnable_config=build_runnable_config(
-                graph_config.runtime_callbacks,
-                metadata=_runnable_metadata(request),
-            ),
+            inputs=inputs,
+            context=context,
+            runnable_config=runnable_config,
             run_id=None,
+            usage_callback=usage_callback,
         )
 
     resume = parse_resume_request(messages)
@@ -101,17 +125,13 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
         graph_config.runtime_callbacks,
         configurable={"thread_id": checkpoint_thread_id},
         metadata=_runnable_metadata(request, run_id),
+        extra_callbacks=[usage_callback],
     )
     if runnable_config is None:  # The configurable thread always creates one.
         msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
-    coordinator = graph_config.run_coordinator
-    if coordinator is None:  # resolve_graph() reports this as configuration error.
-        msg = "Interrupt run has no coordinator."
-        raise RuntimeError(msg)
-    lease = coordinator(checkpoint_thread_id)
-    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
+    lease = await _acquire_lease(graph_config, checkpoint_thread_id)
 
     try:
         snapshot = await graph.aget_state(runnable_config, subgraphs=True)
@@ -143,8 +163,23 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
         run_id=run_id,
         checkpoint_thread_id=checkpoint_thread_id,
         should_execute=should_execute,
+        usage_callback=usage_callback,
         _lease=lease,
     )
+
+
+async def _acquire_lease(
+    graph_config: GraphConfig,
+    key: str,
+) -> AbstractAsyncContextManager[None]:
+    coordinator = graph_config.run_coordinator
+    if coordinator is None:  # resolve_graph() reports this as configuration error.
+        msg = "Interrupt run has no coordinator."
+        raise RuntimeError(msg)
+
+    lease = coordinator(key)
+    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
+    return lease
 
 
 def build_runnable_config(
@@ -152,8 +187,10 @@ def build_runnable_config(
     configurable: dict[str, Any] | None = None,
     *,
     metadata: dict[str, Any] | None = None,
+    extra_callbacks: Sequence[BaseCallbackHandler] = (),
 ) -> RunnableConfig | None:
     """Build runnable config."""
+    callbacks = _extend_callbacks(callbacks, extra_callbacks)
     if settings.ENABLE_LANGFUSE:
         # GraphConfig is shared across requests; add tracing without mutating its
         # callback collection or manager.
@@ -180,6 +217,24 @@ def build_runnable_config(
             kwargs["metadata"] = metadata
 
     return RunnableConfig(**kwargs) if kwargs else None
+
+
+def _extend_callbacks(
+    callbacks: Callbacks,
+    extra_callbacks: Sequence[BaseCallbackHandler],
+) -> Callbacks:
+    """Add request-owned handlers without mutating registered callbacks."""
+    if not extra_callbacks:
+        return callbacks
+    if callbacks is None:
+        return list(extra_callbacks)
+    if isinstance(callbacks, list):
+        return [*callbacks, *extra_callbacks]
+
+    callbacks = callbacks.copy()
+    for callback in extra_callbacks:
+        callbacks.add_handler(callback)
+    return callbacks
 
 
 def _runnable_metadata(

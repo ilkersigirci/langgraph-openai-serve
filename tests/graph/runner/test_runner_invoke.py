@@ -1,8 +1,8 @@
-import operator
-
 import pytest
-from langchain_core.callbacks import BaseCallbackHandler
-from langgraph.types import CustomStreamPart
+from langchain_core.callbacks import BaseCallbackHandler, UsageMetadataCallbackHandler
+from langchain_core.messages import AIMessage
+from langgraph.config import get_stream_writer
+from langgraph.graph import StateGraph
 
 from langgraph_openai_serve.core.logging import (
     begin_log_context,
@@ -14,6 +14,7 @@ from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
+    GraphConfigurationError,
     GraphNotFoundError,
     GraphRegistry,
 )
@@ -95,7 +96,7 @@ async def test_enabled_langfuse_is_added_to_graph_run(
         chat_request,
     )
 
-    assert invocation.output == "hello"
+    assert invocation.output.text == "hello"
     assert mock_langfuse_callback.starts == 1
 
     if recording_callback:
@@ -132,7 +133,11 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
     )
     try:
         assert run.runnable_config is not None
-        assert run.runnable_config["callbacks"] == [recording_callback]
+        assert run.runnable_config["callbacks"][0] is recording_callback
+        assert isinstance(
+            run.runnable_config["callbacks"][1],
+            UsageMetadataCallbackHandler,
+        )
         assert run.runnable_config["run_name"] == "lgos.chat_completion"
         assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
         assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
@@ -256,6 +261,17 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
         reset_log_context(token)
 
 
+async def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
+    graph_config = GraphConfig(
+        graph=make_message_graph("hello"),
+        description="DUMMY",
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+
+    with pytest.raises(GraphConfigurationError, match="interrupt-enabled"):
+        await graph_config.resolve_graph()
+
+
 async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
     chat_request = make_request("missing")
     graph_registry = GraphRegistry(
@@ -276,26 +292,24 @@ async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
         )
 
 
-async def test_invoke_run_collects_generic_custom_events() -> None:
+async def test_invoke_run_ignores_generic_custom_events() -> None:
     payload = {"type": "status", "data": {"message": "Searching"}}
 
-    async def graph_events():
-        yield {"type": "values", "ns": (), "data": {"answer": ""}}
-        yield {"type": "custom", "ns": (), "data": payload}
-        yield {"type": "values", "ns": (), "data": {"answer": "done"}}
+    async def answer(_state):
+        get_stream_writer()(payload)
+        return {"messages": [AIMessage(content="done")]}
 
-    class Graph:
-        output_channels = ("answer",)
-
-        def astream(self, *args, **kwargs):
-            return graph_events()
-
-    graph = Graph()
+    graph = (
+        StateGraph(dict)
+        .add_node("answer", answer)
+        .set_entry_point("answer")
+        .set_finish_point("answer")
+        .compile()
+    )
     run = GraphRun(
         config=GraphConfig(
-            graph=lambda: graph,
+            graph=graph,
             description="DUMMY",
-            output_to_text=operator.itemgetter("answer"),
         ),
         graph=graph,
         inputs={},
@@ -306,7 +320,4 @@ async def test_invoke_run_collects_generic_custom_events() -> None:
 
     invocation = await invoke_run(run)
 
-    assert invocation.output == "done"
-    assert invocation.custom_events == (
-        CustomStreamPart(type="custom", ns=(), data=payload),
-    )
+    assert invocation.output.text == "done"

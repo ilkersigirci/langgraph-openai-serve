@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
@@ -21,13 +22,11 @@ async def collect_contract_checks(state: ApiContractState) -> dict[str, Any]:
     return {"checks": checks}
 
 
-async def summarize_contract(state: ApiContractState) -> dict[str, str]:
+async def summarize_contract(state: ApiContractState) -> dict[str, list[AIMessage]]:
     summary = "API contract: " + "; ".join(state.checks)
     prompt = "\n".join(state.checks)
-    streamed_summary = await stream_fake_chat_response(f"{summary}\n", prompt)
-    return {
-        "answer": streamed_summary.removesuffix("\n"),
-    }
+    streamed_summary = await stream_fake_chat_response(summary, prompt)
+    return {"messages": [AIMessage(content=streamed_summary)]}
 
 
 def create_api_contract_graph() -> CompiledStateGraph:

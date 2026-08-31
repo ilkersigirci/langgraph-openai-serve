@@ -3,7 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from openai.lib.streaming.chat import ChunkEvent, ContentDeltaEvent
+from openai.lib.streaming.chat import ChunkEvent
 from openai.types.chat import ChatCompletionChunk
 
 from lgos_openwebui.functions import generic
@@ -57,12 +57,10 @@ async def test_pipe_lists_registered_models(
         ]
     )
     client_factory = Mock(return_value=client)
-    retrieve_model = AsyncMock()
     monkeypatch.setattr(
         "lgos_openwebui.functions.generic.AsyncOpenAI",
         client_factory,
     )
-    monkeypatch.setattr(generic, "_retrieve_model", retrieve_model)
 
     models = await pipe.pipes()
 
@@ -86,26 +84,7 @@ async def test_pipe_lists_registered_models(
         default_headers={"User-Agent": "lgos-openwebui"},
     )
     client.models.list.assert_awaited_once_with()
-    retrieve_model.assert_not_awaited()
     client.__aexit__.assert_awaited_once_with(None, None, None)
-
-
-async def test_pipe_preserves_dots_in_selected_model(
-    monkeypatch: pytest.MonkeyPatch,
-    configured_pipe: Pipe,
-) -> None:
-    chat = ScriptedChat((("ok",), completion("ok")))
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await collect_response(
-        configured_pipe.pipe(
-            body=body("hello", model="generic.lgos-a/graph.v2"),
-        )
-    )
-
-    assert chunks == ["ok"]
-    assert chat.calls == [([{"role": "user", "content": "hello"}], "lgos-a/graph.v2")]
-    assert chat.include_client_events_calls == [False]
 
 
 async def test_pipes_ignore_non_lgos_catalog_models(
@@ -125,8 +104,6 @@ async def test_pipes_ignore_non_lgos_catalog_models(
     client.__aenter__.return_value = client
     client.models.list.return_value = catalog
     monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
-    retrieve_model = AsyncMock()
-    monkeypatch.setattr(generic, "_retrieve_model", retrieve_model)
 
     models = await pipe.pipes()
 
@@ -136,11 +113,97 @@ async def test_pipes_ignore_non_lgos_catalog_models(
             "name": "Generic / lgos-future/graph-a",
         },
     ]
-    retrieve_model.assert_not_awaited()
-    assert generic._model_request("lgos-future/graph-a") == {
-        "model": "graph-a",
-        "extra_headers": {"x-model-provider": "lgos-future"},
-    }
+
+
+@pytest.mark.parametrize(
+    (
+        "model_id",
+        "model_details",
+        "metadata",
+        "user",
+        "expected_request",
+    ),
+    [
+        pytest.param(
+            "lgos-a/interruptible-approval",
+            model(),
+            None,
+            None,
+            {
+                "model": "interruptible-approval",
+                "extra_headers": {"x-model-provider": "lgos-a"},
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            id="minimal",
+        ),
+        pytest.param(
+            "lgos-a/namespace/graph.with.dots",
+            model(
+                features=["client_events"],
+                client_settings={
+                    "schema_version": 1,
+                    "defaults": {
+                        "use_history": False,
+                        "audience": "general",
+                    },
+                },
+            ),
+            {
+                "chat_id": "chat-123",
+                "chat_variables": {
+                    "use_history": False,
+                    "audience": "expert",
+                    "stale": "ignored",
+                },
+            },
+            {"id": "user-123"},
+            {
+                "model": "namespace/graph.with.dots",
+                "extra_headers": {"x-model-provider": "lgos-a"},
+                "messages": [{"role": "user", "content": "hello"}],
+                "user": "user-123",
+                "metadata": {
+                    "langgraph_stream_events": "v1",
+                    "langgraph_runtime_settings": '{"audience":"expert"}',
+                    "session_id": "chat-123",
+                },
+            },
+            id="ephemeral-options",
+        ),
+    ],
+)
+async def test_pipe_builds_the_openai_stream_request_from_public_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
+    model_details: SimpleNamespace,
+    metadata: dict[str, Any] | None,
+    user: dict[str, Any] | None,
+    expected_request: dict[str, Any],
+) -> None:
+    stream_context = AsyncMock()
+    stream_context.__aenter__.return_value = ScriptedStream(
+        ("ok",),
+        completion("ok"),
+    )
+    stream_factory = Mock(return_value=stream_context)
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.models.retrieve.return_value = model_details
+    client.chat.completions.stream = stream_factory
+    monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
+
+    chunks = await collect_response(
+        Pipe().pipe(
+            body=body("hello", model=f"generic.{model_id}"),
+            __metadata__=metadata,
+            __user__=user,
+        )
+    )
+
+    assert chunks == ["ok"]
+    stream_factory.assert_called_once_with(**expected_request)
+    stream_context.__aexit__.assert_awaited_once_with(None, None, None)
+    client.__aexit__.assert_awaited_once_with(None, None, None)
 
 
 async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
@@ -171,44 +234,6 @@ async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
     )
 
 
-async def test_pipe_requests_client_events_only_when_advertised(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat = ScriptedChat((("ok",), completion("ok")))
-    monkeypatch.setattr(generic, "_chat", chat)
-    monkeypatch.setattr(
-        generic,
-        "_retrieve_model",
-        AsyncMock(return_value=model(features=["client_events"])),
-    )
-
-    chunks = await collect_response(
-        Pipe().pipe(
-            body=body("hello"),
-        )
-    )
-
-    assert chunks == ["ok"]
-    assert chat.include_client_events_calls == [True]
-
-
-async def test_pipe_forwards_the_openwebui_user_id(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat = ScriptedChat((("ok",), completion("ok")))
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await collect_response(
-        Pipe().pipe(
-            body=body("hello"),
-            __user__={"id": "user-123"},
-        )
-    )
-
-    assert chunks == ["ok"]
-    assert chat.user_id_calls == ["user-123"]
-
-
 async def test_pipe_rejects_model_without_function_prefix() -> None:
     chunks = await collect_response(Pipe().pipe(body=body("hello", model="graph")))
 
@@ -225,108 +250,6 @@ async def test_pipe_requires_a_provider_qualified_bifrost_model() -> None:
     ]
 
 
-async def test_chat_omits_metadata_when_no_ephemeral_options_are_needed() -> None:
-    messages = [{"role": "user", "content": "hello"}]
-    stream = ScriptedStream(("ok",), completion("ok"))
-    stream_context = AsyncMock()
-    stream_context.__aenter__.return_value = stream
-    client = AsyncMock()
-    stream_factory = Mock(return_value=stream_context)
-    client.chat.completions.stream = stream_factory
-
-    async with generic._chat(
-        client=client,
-        messages=messages,
-        model_id="lgos-a/interruptible-approval",
-    ):
-        pass
-
-    stream_factory.assert_called_once_with(
-        model="interruptible-approval",
-        extra_headers={"x-model-provider": "lgos-a"},
-        messages=messages,
-    )
-
-
-async def test_chat_sends_model_and_ephemeral_request_metadata() -> None:
-    messages = [{"role": "user", "content": "hello"}]
-    expected_completion = completion("ok")
-    stream = ScriptedStream(("ok",), expected_completion)
-    stream_context = AsyncMock()
-    stream_context.__aenter__.return_value = stream
-    client = AsyncMock()
-    stream_factory = Mock(return_value=stream_context)
-    client.chat.completions.stream = stream_factory
-
-    async with generic._chat(
-        client=client,
-        messages=messages,
-        model_id="lgos-a/namespace/graph.with.dots",
-        request_metadata={
-            "langgraph_runtime_settings": '{"mode":"detailed"}',
-            "session_id": "chat-123",
-        },
-        include_client_events=True,
-        user_id="user-123",
-    ) as response_stream:
-        deltas = [
-            event.delta
-            async for event in response_stream
-            if isinstance(event, ContentDeltaEvent)
-        ]
-        response = await response_stream.get_final_completion()
-
-    assert response == expected_completion
-    assert deltas == ["ok"]
-    stream_factory.assert_called_once_with(
-        model="namespace/graph.with.dots",
-        extra_headers={"x-model-provider": "lgos-a"},
-        messages=messages,
-        user="user-123",
-        metadata={
-            "langgraph_stream_events": "v1",
-            "langgraph_runtime_settings": '{"mode":"detailed"}',
-            "session_id": "chat-123",
-        },
-    )
-    stream_context.__aexit__.assert_awaited_once_with(None, None, None)
-
-
-def test_pipe_maps_chat_and_variables_to_request_metadata() -> None:
-    model = SimpleNamespace(
-        model_extra={
-            "langgraph_openai_serve": {
-                "schema_version": 1,
-                "description": "DUMMY",
-                "features": [],
-                "client_settings": {
-                    "schema_version": 1,
-                    "defaults": {
-                        "use_history": False,
-                        "audience": "general",
-                    },
-                },
-            }
-        }
-    )
-    metadata = generic._request_metadata(
-        model=model,
-        metadata={
-            "chat_id": "chat-123",
-            "chat_variables": {
-                "use_history": False,
-                "audience": "expert",
-                "stale": "ignored",
-            },
-        },
-    )
-
-    assert metadata == {
-        "langgraph_runtime_settings": '{"audience":"expert"}',
-        "session_id": "chat-123",
-    }
-
-
 async def test_pipe_streams_markdown_unchanged(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
@@ -340,8 +263,46 @@ async def test_pipe_streams_markdown_unchanged(
         )
     )
 
-    assert chunks == list(MARKDOWN_DELTAS)
-    assert chat.calls[0][1:] == ("lgos-a/lgos-rag",)
+    assert all(isinstance(chunk, str) for chunk in chunks)
+    assert "".join(chunk for chunk in chunks if isinstance(chunk, str)) == (
+        MARKDOWN_RESPONSE
+    )
+
+
+def _client_event_chunk(
+    event_type: str,
+    data: dict[str, Any],
+    *,
+    namespace: list[str] | None = None,
+) -> ChunkEvent:
+    chunk = ChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": UPSTREAM_MODEL_ID,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+            "langgraph_openai_serve": {
+                "schema_version": 1,
+                "event": {
+                    "type": event_type,
+                    "namespace": namespace or [],
+                    "data": data,
+                },
+            },
+        }
+    )
+    return ChunkEvent(
+        type="chunk",
+        chunk=chunk,
+        snapshot={
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": UPSTREAM_MODEL_ID,
+            "choices": [],
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -351,7 +312,7 @@ async def test_pipe_streams_markdown_unchanged(
         pytest.param(False, id="non-streaming"),
     ],
 )
-async def test_pipe_forwards_annotations_only_when_streaming(
+async def test_pipe_honors_stream_mode_and_emits_native_sources(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
     stream: bool,
@@ -359,6 +320,9 @@ async def test_pipe_forwards_annotations_only_when_streaming(
     expected_completion = citation_response()
     chat = ScriptedChat(((MARKDOWN_RESPONSE,), expected_completion))
     monkeypatch.setattr(generic, "_chat", chat)
+    complete = AsyncMock(return_value=expected_completion)
+    monkeypatch.setattr(generic, "_chat_completion", complete)
+    emitter = AsyncMock()
 
     chunks = await collect_response(
         configured_pipe.pipe(
@@ -367,27 +331,39 @@ async def test_pipe_forwards_annotations_only_when_streaming(
                 model="generic.lgos-a/citation-events",
                 stream=stream,
             ),
+            __event_emitter__=emitter,
         )
     )
 
-    expected: list[str | dict[str, Any]] = [MARKDOWN_RESPONSE]
     if stream:
-        annotation = expected_completion.choices[0].message.annotations[0]
-        expected.append(
-            {
-                "choices": [
+        assert chunks == [MARKDOWN_RESPONSE]
+        assert len(chat.calls) == 1
+        complete.assert_not_awaited()
+    else:
+        assert chunks == [
+            expected_completion.model_dump(mode="json", exclude_none=True)
+        ]
+        assert chat.calls == []
+        complete.assert_awaited_once()
+    emitter.assert_awaited_once_with(
+        {
+            "type": "source",
+            "data": {
+                "source": {
+                    "name": "Example source",
+                    "url": "https://example.com/source",
+                },
+                "document": ["source"],
+                "metadata": [
                     {
-                        "index": 0,
-                        "delta": {
-                            "annotations": [annotation.model_dump(mode="json")],
-                        },
-                        "finish_reason": None,
+                        "source": "https://example.com/source",
+                        "name": "Example source",
+                        "url": "https://example.com/source",
                     }
-                ]
-            }
-        )
-    assert chunks == expected
-    assert chat.calls[0][1:] == ("lgos-a/citation-events",)
+                ],
+            },
+        }
+    )
 
 
 @pytest.mark.parametrize(
@@ -417,146 +393,70 @@ async def test_pipe_forwards_annotations_only_when_streaming(
         ),
     ],
 )
-def test_pipe_maps_status_event_to_openwebui_status(
+async def test_pipe_emits_status_event(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
     data: dict[str, Any],
     expected: dict[str, Any],
 ) -> None:
-    chunk = ChatCompletionChunk.model_validate(
-        {
-            "id": "chatcmpl-test",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": UPSTREAM_MODEL_ID,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-            "langgraph_openai_serve": {
-                "schema_version": 1,
-                "event": {
-                    "type": "status",
-                    "namespace": [],
-                    "data": data,
-                },
-            },
-        }
-    )
-
-    assert generic._status_event(chunk) == {
-        "type": "status",
-        "data": expected,
-    }
-
-
-async def test_content_stream_emits_status_event() -> None:
-    chunk = ChatCompletionChunk.model_validate(
-        {
-            "id": "chatcmpl-test",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": UPSTREAM_MODEL_ID,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-            "langgraph_openai_serve": {
-                "schema_version": 1,
-                "event": {
-                    "type": "status",
-                    "namespace": [],
-                    "data": {
-                        "description": "Calculating embeddings",
-                        "done": False,
-                        "hidden": False,
-                    },
-                },
-            },
-        }
-    )
-
-    async def stream():
-        yield ChunkEvent(
-            type="chunk",
-            chunk=chunk,
-            snapshot={
-                "id": "chatcmpl-test",
-                "object": "chat.completion",
-                "created": 0,
-                "model": UPSTREAM_MODEL_ID,
-                "choices": [],
-            },
-        )
-
+    chat = ScriptedChat(((_client_event_chunk("status", data),), completion()))
+    monkeypatch.setattr(generic, "_chat", chat)
     emitter = AsyncMock()
-    deltas = [delta async for delta in generic._content_deltas(stream(), emitter)]
 
-    assert deltas == []
+    chunks = await collect_response(
+        configured_pipe.pipe(body=body("hello"), __event_emitter__=emitter)
+    )
+
+    assert chunks == []
     emitter.assert_awaited_once_with(
         {
             "type": "status",
-            "data": {
-                "description": "Calculating embeddings",
-                "done": False,
-                "hidden": False,
-            },
+            "data": expected,
         }
     )
 
 
-async def test_content_stream_emits_persistent_plot_embed() -> None:
-    chunk = ChatCompletionChunk.model_validate(
+async def test_pipe_emits_persistent_plot_agent_embed(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    event = _client_event_chunk(
+        "artifact",
         {
-            "id": "chatcmpl-test",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": UPSTREAM_MODEL_ID,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-            "langgraph_openai_serve": {
-                "schema_version": 1,
-                "event": {
-                    "type": "artifact",
-                    "namespace": ["plots"],
-                    "data": {
-                        "schema_version": 1,
-                        "id": "revenue",
-                        "kind": "plotly",
-                        "title": "Quarterly <revenue>",
-                        "summary": "Q4 is highest.",
-                        "figure": {
-                            "data": [
-                                {
-                                    "type": "bar",
-                                    "name": "Revenue",
-                                    "x": ["Q1", "Q2"],
-                                    "y": [1, 2],
-                                    "showlegend": False,
-                                }
-                            ],
-                            "layout": {"title": {"text": "</script>"}},
-                        },
-                    },
-                },
-            },
-        }
+            "schema_version": 1,
+            "id": "revenue",
+            "kind": "chart",
+            "title": "Quarterly <revenue></script>",
+            "summary": "Q4 is highest.",
+            "chart_type": "bar",
+            "labels": ["Q1", "Q2"],
+            "series": [{"name": "Revenue", "values": [1, 2]}],
+            "x_axis_title": "Quarter",
+            "y_axis_title": "Revenue (USD, thousands)",
+            "show_legend": False,
+        },
+        namespace=["charts"],
+    )
+    monkeypatch.setattr(
+        generic,
+        "_chat",
+        ScriptedChat(((event,), completion())),
+    )
+    emitter = AsyncMock()
+
+    chunks = await collect_response(
+        configured_pipe.pipe(body=body("hello"), __event_emitter__=emitter)
     )
 
-    async def stream():
-        yield ChunkEvent(
-            type="chunk",
-            chunk=chunk,
-            snapshot={
-                "id": "chatcmpl-test",
-                "object": "chat.completion",
-                "created": 0,
-                "model": UPSTREAM_MODEL_ID,
-                "choices": [],
-            },
-        )
-
-    emitter = AsyncMock()
-    deltas = [delta async for delta in generic._content_deltas(stream(), emitter)]
-
-    assert deltas == []
+    assert chunks == []
     event = emitter.await_args.args[0]
     assert event["type"] == "embeds"
-    assert event["data"].keys() == {"embeds"}
+    assert event["data"].keys() == {"embeds", "replace"}
+    assert event["data"]["replace"] is True
     html = event["data"]["embeds"][0]
     assert "Quarterly &lt;revenue&gt;" in html
-    assert "https://cdn.plot.ly/plotly-3.6.0.min.js" in html
+    assert "https://cdn.plot.ly/plotly-4.0.0.min.js" in html
     assert '"showlegend":false' in html
     assert "\\u003c/script>" in html
     assert 'Plotly.newPlot("plot", figure.data, figure.layout' in html
+    assert 'parent.postMessage({type: "iframe:height", height}, "*")' in html

@@ -31,13 +31,44 @@ def _configured_model() -> SimpleNamespace:
     )
 
 
-async def test_uservalves_simple_identifies_openwebui_for_telemetry() -> None:
-    async with Pipe()._client() as client:
-        assert client.default_headers["User-Agent"] == "lgos-openwebui"
+async def test_uservalves_simple_identifies_openwebui_for_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = Pipe()
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.models.retrieve.return_value = _configured_model()
+    client.chat.completions.create.return_value = Stream()
+    client_factory = Mock(return_value=client)
+    monkeypatch.setattr(uservalves_simple, "AsyncOpenAI", client_factory)
+
+    chunks = [chunk async for chunk in pipe.pipe(body={"messages": []})]
+
+    assert chunks == ["Hello"]
+    client_factory.assert_called_once()
+    assert client_factory.call_args.kwargs["default_headers"] == {
+        "User-Agent": "lgos-openwebui"
+    }
 
 
+@pytest.mark.parametrize(
+    ("valve_overrides", "expected_metadata"),
+    [
+        pytest.param(
+            {"use_history": True},
+            {
+                "langgraph_runtime_settings": '{"use_history":true}',
+                "session_id": "chat-123",
+            },
+            id="changed",
+        ),
+        pytest.param({}, {"session_id": "chat-123"}, id="defaults"),
+    ],
+)
 async def test_uservalves_simple_forwards_only_changed_user_valves(
     monkeypatch: pytest.MonkeyPatch,
+    valve_overrides: dict[str, object],
+    expected_metadata: dict[str, str],
 ) -> None:
     pipe = Pipe()
     client = AsyncMock()
@@ -51,7 +82,7 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
         chunk
         async for chunk in pipe.pipe(
             body={"messages": [{"role": "user", "content": "Hi"}]},
-            __user__={"valves": pipe.UserValves(use_history=True)},
+            __user__={"valves": pipe.UserValves(**valve_overrides)},
             __metadata__={"chat_id": "chat-123"},
         )
     ]
@@ -65,13 +96,9 @@ async def test_uservalves_simple_forwards_only_changed_user_valves(
         model="simple-graph",
         extra_headers={"x-model-provider": "lgos-a"},
         messages=[{"role": "user", "content": "Hi"}],
-        metadata={
-            "langgraph_runtime_settings": '{"use_history":true}',
-            "session_id": "chat-123",
-        },
+        metadata=expected_metadata,
         stream=True,
     )
-    assert pipe._runtime_settings_metadata({"valves": pipe.UserValves()}) == {}
 
 
 async def test_uservalves_simple_uses_the_configured_model(
@@ -99,14 +126,6 @@ async def test_uservalves_simple_uses_the_configured_model(
         metadata={},
         stream=True,
     )
-
-
-def test_uservalves_simple_requires_a_provider_qualified_model() -> None:
-    pipe = Pipe()
-    pipe.valves.MODEL = "simple-graph"
-
-    with pytest.raises(ValueError, match="provider/model"):
-        pipe._model_request()
 
 
 async def test_uservalves_simple_reports_an_invalid_model() -> None:

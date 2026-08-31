@@ -44,13 +44,9 @@ async def test_registered_graphs_are_exposed_with_standard_model_fields(
     assert response.data[0].owned_by == "langgraph-openai-serve"
 
 
-async def test_model_description_is_exposed_by_list_and_retrieval(
+async def test_model_metadata_is_exposed_by_list_and_retrieval(
     openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
 ) -> None:
-    graph_config = bind_public_settings(graph_registry)
-    graph_config.features = {GraphFeature.CLIENT_EVENTS}
-
     listed = await openai_client.models.list()
     retrieved = await openai_client.models.retrieve("test")
 
@@ -58,10 +54,11 @@ async def test_model_description_is_exposed_by_list_and_retrieval(
         "schema_version": 1,
         "description": "DUMMY",
     }
-    detail_extension = (retrieved.model_extra or {})["langgraph_openai_serve"]
-    assert detail_extension["description"] == "DUMMY"
-    assert detail_extension["features"] == ["client_events"]
-    assert "client_settings" in detail_extension
+    assert (retrieved.model_extra or {})["langgraph_openai_serve"] == {
+        "schema_version": 1,
+        "description": "DUMMY",
+        "features": [],
+    }
 
 
 async def test_retrieved_model_exposes_public_schema_and_defaults(
@@ -84,18 +81,6 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
     assert client_settings["defaults"] == {
         "enabled": True,
         "mode": "brief",
-    }
-
-
-async def test_retrieved_model_always_exposes_the_lgos_extension(
-    openai_client: AsyncOpenAI,
-) -> None:
-    response = await openai_client.models.retrieve("test")
-
-    assert (response.model_extra or {})["langgraph_openai_serve"] == {
-        "schema_version": 1,
-        "description": "DUMMY",
-        "features": [],
     }
 
 

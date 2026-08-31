@@ -13,11 +13,13 @@ The demo API registers these graph names as OpenAI models:
 - `advanced-mcp-tools` demonstrates an asynchronous graph factory and mock
   MCP-style tools.
 - `complex-subgraphs` demonstrates routing across nested specialist graphs.
+- `multi-node-streaming` combines streamed contributions from two sequential
+  nodes into one final assistant message.
 - `status-events` streams portable status updates for native client UI.
 - `custom-event-showcase` streams explicitly public progress and artifact
   events among ordinary assistant text.
-- `persistent-plot` edits chart data scoped to the current user and chat, with
-  request-scoped presentation settings.
+- `persistent-plot-agent` uses a tool-calling agent to edit chart data scoped
+  to the current user and chat, with request-scoped presentation settings.
 - `interruptible-approval` persists one atomic interrupt batch from parallel
   nested approval subgraphs and resumes it from standard OpenAI tool results.
 

@@ -4,7 +4,8 @@ from typing import Any, cast
 
 import pytest
 from anyio import Event, fail_after, sleep_forever
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk
+from langgraph.types import GraphOutput
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
@@ -40,6 +41,13 @@ class CleanupGraph:
     def astream(self, *_args, **_kwargs) -> AsyncIterator[dict[str, Any]]:
         return self._events()
 
+    async def ainvoke(self, *_args, **_kwargs) -> GraphOutput[Any]:
+        output = None
+        async for event in self._events():
+            if event.get("type") == "values" and not event.get("ns"):
+                output = event["data"]
+        return GraphOutput(value=output)
+
     async def aget_state(self, *_args, **_kwargs):
         self.state_reads += 1
         return SimpleNamespace(interrupts=())
@@ -48,7 +56,7 @@ class CleanupGraph:
 def cleanup_run(
     graph: CleanupGraph,
     *,
-    output_to_text: Callable[[Any], Any] | None = None,
+    output_to_message: Callable[[Any], Any] | None = None,
     streamable_node_names: list[str] | None = None,
 ) -> GraphRun:
     return GraphRun(
@@ -56,7 +64,7 @@ def cleanup_run(
             graph=lambda: graph,
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
-            output_to_text=output_to_text,
+            output_to_message=output_to_message,
             streamable_node_names=streamable_node_names or [],
         ),
         graph=cast("Any", graph),
@@ -79,14 +87,14 @@ async def test_rendering_failure_deletes_without_replacing_error(
     async def events():
         yield {"type": "values", "ns": (), "data": {"answer": "done"}}
 
-    async def fail_rendering(_output: Any) -> str:
+    async def fail_rendering(_output: Any) -> AIMessage:
         msg = "rendering failed"
         raise ValueError(msg)
 
     graph = CleanupGraph(events, delete_error=delete_error)
 
     with pytest.raises(ValueError, match="rendering failed"):
-        await invoke_run(cleanup_run(graph, output_to_text=fail_rendering))
+        await invoke_run(cleanup_run(graph, output_to_message=fail_rendering))
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
     assert graph.state_reads == 1

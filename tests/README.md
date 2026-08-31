@@ -36,13 +36,16 @@ Keep test setup explicit and assertions focused on observable behavior.
 
 ## Fixtures
 
-- Use `conftest.py` for pytest fixtures only.
+- Reserve `conftest.py` for fixtures and pytest hooks or configuration. Put
+  importable builders, data, and assertion helpers in support modules.
 - `tests/conftest.py` owns app, client, and fresh in-memory SQLite saver
   fixtures shared by package tests.
 - Subdirectory `conftest.py` files may add local fixtures. Package graph tests
   import reusable builders from `tests.graph.support` modules.
 - Prefer explicit fixture arguments over autouse fixtures. Reserve autouse for
   test-root invariants such as the isolated Chainlit application directory.
+- Give each test only the fixtures it needs. Keep each state-changing resource
+  creation and its cleanup together in a yield fixture or context manager.
 
 ## Async Tests
 
@@ -74,7 +77,8 @@ timer only masks the environment failure.
 
 - Name tests for the behavior and expected outcome.
 - Keep arrange, act, and assert phases visible; hide only repeated plumbing.
-- Parametrize repeated input/output cases and give each case a meaningful ID.
+- Parametrize repeated input/output cases. Add explicit IDs when pytest's
+  generated IDs would be unclear.
 - Assert public results directly instead of duplicating implementation details.
 - Keep integration coverage for graph wiring, but unit-test edge cases at the
   narrowest stable boundary.
@@ -121,9 +125,9 @@ timer only masks the environment failure.
 - Tests that intentionally verify missing checkpointer behavior should use an
   uncheckpointed graph factory so the failure setup is obvious.
 
-Real PostgreSQL tests use a unique caller-provided run UUID, close and recreate
-the runtime before resume, and delete that exact checkpoint thread in fixture
-teardown. Keep them excluded from default runs and invoke them through
+Real PostgreSQL tests use unique persistence scopes, close and recreate the
+runtime, and delete their exact checkpoints or Store documents in teardown.
+Keep them excluded from default runs and invoke them through
 `make -C demo test-postgres` so ordinary and parallel unit runs never share an
 external database.
 

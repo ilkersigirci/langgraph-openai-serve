@@ -33,4 +33,4 @@ async def test_adapts_request_input_context_and_output(
         request,
     )
 
-    assert result.output == f"{expected_user} asked: Show me custom schemas."
+    assert result.output.text == f"{expected_user} asked: Show me custom schemas."

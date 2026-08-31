@@ -24,9 +24,12 @@ from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph_config,
 )
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
-from lgos_demo_api.graphs.persistent_plot import (
-    create_persistent_plot_graph,
-    create_persistent_plot_graph_config,
+from lgos_demo_api.graphs.multi_node_streaming import (
+    multi_node_streaming_graph_config,
+)
+from lgos_demo_api.graphs.persistent_plot_agent import (
+    create_persistent_plot_agent,
+    create_persistent_plot_agent_config,
 )
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.status_events import status_event_graph_config
@@ -52,8 +55,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     async with postgres_runtime(settings.POSTGRES_URI) as runtime:
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
-        app.state.interruptible_run_coordinator = runtime.run_coordinator
-        app.state.persistent_plot_graph = create_persistent_plot_graph(runtime.store)
+        app.state.run_coordinator = runtime.run_coordinator
+        app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         yield
 
     logger.info("demo.server.stopped")
@@ -92,10 +95,11 @@ def create_custom_app() -> FastAPI:
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": advanced_mcp_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
+            "multi-node-streaming": multi_node_streaming_graph_config,
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
-            "persistent-plot": create_persistent_plot_graph_config(
-                lambda: app.state.persistent_plot_graph,
+            "persistent-plot-agent": create_persistent_plot_agent_config(
+                lambda: app.state.persistent_plot_agent,
             ),
             "interruptible-approval": create_interruptible_graph_config(
                 # We use lambdas here because app.state is populated asynchronously
@@ -103,7 +107,7 @@ def create_custom_app() -> FastAPI:
                 # attributes at registry initialization time would raise an
                 # AttributeError since the lifespan has not executed yet.
                 lambda: app.state.interruptible_graph,
-                lambda key: app.state.interruptible_run_coordinator(key),
+                lambda key: app.state.run_coordinator(key),
             ),
         }
     )

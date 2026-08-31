@@ -18,8 +18,8 @@ The equivalent `pip` command is:
 pip install langgraph-openai-serve
 ```
 
-For interrupt-enabled deployments that use PostgreSQL for checkpointing and
-cross-worker run coordination, install the optional integration:
+For deployments that use PostgreSQL for LangGraph checkpoints, Store data, or
+cross-worker interrupt coordination, install the optional integration:
 
 ```bash
 uv add "langgraph-openai-serve[postgres]"

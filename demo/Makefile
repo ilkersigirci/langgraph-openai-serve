@@ -9,7 +9,8 @@ UP_ARGS ?=
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
 	run-api run-api-a run-api-b run-chainlit \
-	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev
+	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
+	marimo marimo-local
 .DEFAULT_GOAL := help
 
 help: ## Show available commands
@@ -25,12 +26,18 @@ test: ## Run all standalone project tests from their lockfiles
 	uv run --directory ui/chainlit_ui --locked pytest
 	uv run --directory ui/openwebui --locked pytest
 
+marimo: ## Open the API notebooks as a marimo workspace
+	uv run --directory api marimo edit --no-token --host 0.0.0.0 --port 2718 notebooks
+
+marimo-local: ## Open the API notebooks with the local LGOS checkout
+	$(LOCAL_API_RUN) marimo edit --no-token --host 0.0.0.0 --port 2718 notebooks
+
 DEMO_API_TEST_POSTGRES_URI ?= postgresql://lgos:lgos@localhost:3001/lgos
 test-postgres: ## Test demo persistence against PostgreSQL
 	DEMO_API_TEST_POSTGRES_URI=$(DEMO_API_TEST_POSTGRES_URI) \
 		$(LOCAL_API_RUN) pytest -m integration \
 		tests/integration/test_postgres_interrupt_runtime.py \
-		tests/integration/test_postgres_persistent_plot.py
+		tests/integration/test_postgres_persistent_plot_agent.py
 
 lint: ## Check lint and formatting for all standalone projects
 	uv run --directory api --locked ruff check src tests

@@ -1,6 +1,7 @@
+from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphConfig, GraphRegistry, citation_slice
+from langgraph_openai_serve.api.chat.utils.responses import annotations_from_message
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
-from openai.types.chat.chat_completion_message import Annotation
 
 from lgos_demo_api.graphs.citations import citation_graph
 
@@ -44,11 +45,9 @@ async def test_streams_portable_markdown_with_anchored_citations(make_request) -
     ]
 
     answer = "".join(event for event in events if isinstance(event, str))
-    annotations = [
-        Annotation.model_validate(event["data"])
-        for event in events
-        if not isinstance(event, str)
-    ]
+    final_message = events[-1]
+    assert isinstance(final_message, AIMessage)
+    annotations = annotations_from_message(final_message)
 
     assert [
         (
@@ -58,6 +57,6 @@ async def test_streams_portable_markdown_with_anchored_citations(make_request) -
         )
         for annotation in annotations
     ] == [(title, title, url) for title, url in EXPECTED_CITATIONS]
-    assert "[LangGraph streaming documentation](" in answer
+    for index, (title, url) in enumerate(EXPECTED_CITATIONS, start=1):
+        assert f"[{title}]({url}) [{index}]" in answer
     assert "![A grapefruit slice](" in answer
-    assert "[MDN audio example](" in answer

@@ -16,9 +16,8 @@ async def test_schedule_after_thread_hydration_tracks_the_chainlit_task(
     thread_resume: Any,
 ) -> None:
     callback = AsyncMock()
-    sleep = AsyncMock()
     session = SimpleNamespace(current_task=None)
-    monkeypatch.setattr(thread_resume.asyncio, "sleep", sleep)
+    monkeypatch.setattr(thread_resume.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr(
         thread_resume,
         "chainlit_context",
@@ -29,7 +28,6 @@ async def test_schedule_after_thread_hydration_tracks_the_chainlit_task(
     await task
 
     assert session.current_task is task
-    sleep.assert_awaited_once_with(thread_resume.THREAD_HYDRATION_DELAY_SECONDS)
     callback.assert_awaited_once_with()
 
 

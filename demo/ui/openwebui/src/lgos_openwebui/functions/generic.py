@@ -2,7 +2,7 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.16
+version: 0.18
 """
 
 import json
@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/events.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
@@ -56,23 +57,38 @@ LIMITED_FUNCTIONALITY_MESSAGE = (
     "and responses through unchanged."
 )
 PipeChunk = str | dict[str, Any]
+PipeResponse = AsyncIterator[PipeChunk] | dict[str, Any] | str
 
 
 class SettingsTransportError(ValueError):
     """A Chat Variable value cannot be represented in OpenAI metadata."""
 
 
-class PlotlyArtifact(BaseModel):
-    """The supported LGOS Plotly artifact payload."""
+class ChartSeries(BaseModel):
+    """One portable series in a chart artifact."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    name: str = Field(min_length=1)
+    values: list[float]
+
+
+class ChartArtifact(BaseModel):
+    """The supported LGOS chart artifact payload."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     schema_version: Literal[1]
     id: str = Field(min_length=1)
-    kind: Literal["plotly"]
+    kind: Literal["chart"]
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
-    figure: dict[str, Any]
+    chart_type: Literal["bar", "line"]
+    labels: list[str]
+    series: list[ChartSeries]
+    x_axis_title: str = Field(min_length=1)
+    y_axis_title: str = Field(min_length=1)
+    show_legend: bool
 
 
 class Pipe:
@@ -128,6 +144,31 @@ class Pipe:
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
+    ) -> PipeResponse:
+        """Use the same Chat Completions mode requested by Open WebUI."""
+        if body.get("stream") is True:
+            return self._stream(
+                body,
+                __event_call__=__event_call__,
+                __event_emitter__=__event_emitter__,
+                __metadata__=__metadata__,
+                __user__=__user__,
+            )
+        return await self._complete(
+            body,
+            __event_call__=__event_call__,
+            __event_emitter__=__event_emitter__,
+            __metadata__=__metadata__,
+            __user__=__user__,
+        )
+
+    async def _stream(
+        self,
+        body: dict[str, Any],
+        __event_call__: Any = None,
+        __event_emitter__: Any = None,
+        __metadata__: dict[str, Any] | None = None,
+        __user__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
         """
         Forward chat and complete each interrupt batch in one invocation.
@@ -142,7 +183,6 @@ class Pipe:
         """
         openwebui_metadata = __metadata__ or {}
         messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
-        forward_annotations = body.get("stream") is True
         base_url = self.valves.OPENAI_API_BASE_URL
         api_key = self.valves.OPENAI_API_KEY
         timeout = self.valves.OPENAI_API_TIMEOUT
@@ -175,7 +215,7 @@ class Pipe:
                 while True:
                     async with _chat(
                         client=client,
-                        messages=messages,  # ty: ignore[invalid-argument-type]
+                        messages=messages,
                         model_id=model_id,
                         request_metadata=request_metadata,
                         include_client_events=include_client_events,
@@ -192,53 +232,76 @@ class Pipe:
                         yield NO_CHOICES_MESSAGE
                         return
 
-                    assistant_message = response.choices[0].message
-                    for chunk in _completion_chunks(
+                    resume_messages, error = await _resume_messages(
                         response,
-                        forward_annotations=forward_annotations,
-                    ):
-                        yield chunk
-
-                    tool_calls = _interrupt_tool_calls(assistant_message)
-                    if tool_calls is None:
-                        yield "Open WebUI received an unsupported tool-call batch."
+                        __event_call__,
+                    )
+                    if error is not None:
+                        yield error
                         return
-                    if not tool_calls:
+                    if resume_messages is None:
+                        await _emit_sources(response, __event_emitter__)
                         return
-
-                    decisions = []
-                    for tool_call in tool_calls:
-                        decision, error = await _approval_decision(
-                            tool_call,
-                            __event_call__,
-                        )
-                        if error is not None:
-                            yield error
-                            return
-                        if decision is None:
-                            msg = "Decision cannot be None"
-                            raise RuntimeError(msg)
-                        decisions.append(decision)
-
-                    messages = [
-                        _assistant_tool_call_message(assistant_message),
-                        *[
-                            ChatCompletionToolMessageParam(
-                                role="tool",
-                                tool_call_id=tool_call.id,
-                                content=json.dumps({"resume": decision}),
-                            )
-                            for tool_call, decision in zip(
-                                tool_calls,
-                                decisions,
-                                strict=True,
-                            )
-                        ],
-                    ]
+                    messages = resume_messages
         except SettingsTransportError as exc:
             yield str(exc)
         except OpenAIError as exc:
             yield f"Error calling LangGraph API: {exc}"
+
+    async def _complete(
+        self,
+        body: dict[str, Any],
+        __event_call__: Any,
+        __event_emitter__: Any,
+        __metadata__: dict[str, Any] | None,
+        __user__: dict[str, Any] | None,
+    ) -> dict[str, Any] | str:
+        """Return one complete OpenAI response without replaying stream events."""
+        messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
+        try:
+            model_id = _model_id(body)
+            _model_request(model_id)
+        except ValueError as exc:
+            return str(exc)
+
+        try:
+            async with _client(
+                base_url=self.valves.OPENAI_API_BASE_URL,
+                api_key=self.valves.OPENAI_API_KEY,
+                timeout=self.valves.OPENAI_API_TIMEOUT,
+            ) as client:
+                model = await _retrieve_model(client, model_id)
+                if _model_extension(model) is None:
+                    await _emit_limited_functionality_warning(__event_emitter__)
+                request_metadata = _request_metadata(
+                    model=model,
+                    metadata=__metadata__ or {},
+                )
+                while True:
+                    response = await _chat_completion(
+                        client=client,
+                        messages=messages,
+                        model_id=model_id,
+                        request_metadata=request_metadata,
+                        user_id=_user_id(__user__),
+                    )
+                    if not response.choices:
+                        return NO_CHOICES_MESSAGE
+
+                    resume_messages, error = await _resume_messages(
+                        response,
+                        __event_call__,
+                    )
+                    if error is not None:
+                        return error
+                    if resume_messages is None:
+                        await _emit_sources(response, __event_emitter__)
+                        return response.model_dump(mode="json", exclude_none=True)
+                    messages = resume_messages
+        except SettingsTransportError as exc:
+            return str(exc)
+        except OpenAIError as exc:
+            return f"Error calling LangGraph API: {exc}"
 
 
 ##################### UTILITY FUNCTIONS ###################
@@ -260,14 +323,37 @@ async def _chat(
     if include_client_events:
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
+    request = _chat_request(model_id, messages, metadata, user_id)
+
+    async with client.chat.completions.stream(**request) as stream:
+        yield stream
+
+
+async def _chat_completion(
+    *,
+    client: AsyncOpenAI,
+    messages: list[ChatCompletionMessageParam],
+    model_id: str,
+    request_metadata: dict[str, str] | None = None,
+    user_id: str | None = None,
+) -> ChatCompletion:
+    """Create one non-streaming Chat Completion."""
+    request = _chat_request(model_id, messages, request_metadata, user_id)
+    return await client.chat.completions.create(**request)
+
+
+def _chat_request(
+    model_id: str,
+    messages: list[ChatCompletionMessageParam],
+    metadata: dict[str, str] | None,
+    user_id: str | None,
+) -> dict[str, Any]:
     request: dict[str, Any] = {**_model_request(model_id), "messages": messages}
     if user_id is not None:
         request["user"] = user_id
     if metadata:
         request["metadata"] = metadata
-
-    async with client.chat.completions.stream(**request) as stream:
-        yield stream
+    return request
 
 
 def _client(
@@ -427,37 +513,75 @@ async def _emit_limited_functionality_warning(event_emitter: Any) -> None:
     )
 
 
-#### Streaming ####
+async def _emit_sources(response: ChatCompletion, event_emitter: Any) -> None:
+    """Emit final annotations in Open WebUI's native source format."""
+    if event_emitter is None or not response.choices:
+        return
+    message = response.choices[0].message
+    if not isinstance(message.content, str):
+        return
+
+    for annotation in message.annotations or []:
+        citation = annotation.url_citation
+        start = citation.start_index
+        stop = citation.end_index + 1
+        if not 0 <= start < stop <= len(message.content):
+            continue
+        await event_emitter(
+            {
+                "type": "source",
+                "data": {
+                    "source": {"name": citation.title, "url": citation.url},
+                    "document": [message.content[start:stop]],
+                    "metadata": [
+                        {
+                            "source": citation.url,
+                            "name": citation.title,
+                            "url": citation.url,
+                        }
+                    ],
+                },
+            }
+        )
 
 
-def _completion_chunks(
+async def _resume_messages(
     response: ChatCompletion,
-    *,
-    forward_annotations: bool,
-) -> list[PipeChunk]:
-    """Return completion-level chunks that follow streamed text."""
+    event_call: Any,
+) -> tuple[list[ChatCompletionMessageParam] | None, str | None]:
+    """Build the next interrupt exchange, if the completion requested one."""
     if not response.choices:
-        return [NO_CHOICES_MESSAGE]
-    annotations = response.choices[0].message.annotations
-    if not forward_annotations or not annotations:
-        return []
+        return None, NO_CHOICES_MESSAGE
 
-    return [
-        {
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {
-                        "annotations": [
-                            annotation.model_dump(mode="json")
-                            for annotation in annotations
-                        ]
-                    },
-                    "finish_reason": None,
-                }
-            ]
-        }
+    assistant_message = response.choices[0].message
+    tool_calls = _interrupt_tool_calls(assistant_message)
+    if tool_calls is None:
+        return None, "Open WebUI received an unsupported tool-call batch."
+    if not tool_calls:
+        return None, None
+
+    decisions = []
+    for tool_call in tool_calls:
+        decision, error = await _approval_decision(tool_call, event_call)
+        if error is not None:
+            return None, error
+        if decision is None:
+            msg = "Decision cannot be None"
+            raise RuntimeError(msg)
+        decisions.append(decision)
+
+    messages: list[ChatCompletionMessageParam] = [
+        _assistant_tool_call_message(assistant_message),
+        *[
+            ChatCompletionToolMessageParam(
+                role="tool",
+                tool_call_id=tool_call.id,
+                content=json.dumps({"resume": decision}),
+            )
+            for tool_call, decision in zip(tool_calls, decisions, strict=True)
+        ],
     ]
+    return messages, None
 
 
 async def _content_deltas(
@@ -473,7 +597,7 @@ async def _content_deltas(
         if isinstance(event, ContentDeltaEvent):
             yield event.delta
         elif isinstance(event, ChunkEvent) and event_emitter is not None:
-            ui_event = _status_event(event.chunk) or _plotly_embed_event(event.chunk)
+            ui_event = _status_event(event.chunk) or _chart_embed_event(event.chunk)
             if ui_event is not None:
                 await event_emitter(ui_event)
 
@@ -521,28 +645,49 @@ def _status_event(
     }
 
 
-#### PLOT ####
+#### CHART ####
 
 
-def _plotly_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
+def _chart_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
     data = _client_event_data(chunk, "artifact")
     if data is None:
         return None
     try:
-        artifact = PlotlyArtifact.model_validate(data)
+        artifact = ChartArtifact.model_validate(data)
     except ValidationError:
         return None
 
-    html = _plotly_html(artifact)
+    html = _chart_html(artifact)
     if html is None:
         return None
-    return {"type": "embeds", "data": {"embeds": [html]}}
+    return {"type": "embeds", "data": {"embeds": [html], "replace": True}}
 
 
-def _plotly_html(artifact: PlotlyArtifact) -> str | None:
+def _chart_html(artifact: ChartArtifact) -> str | None:
+    trace_type = "bar" if artifact.chart_type == "bar" else "scatter"
+    data: list[dict[str, object]] = []
+    for series in artifact.series:
+        trace: dict[str, object] = {
+            "type": trace_type,
+            "name": series.name,
+            "x": artifact.labels,
+            "y": series.values,
+            "showlegend": artifact.show_legend,
+        }
+        if artifact.chart_type == "line":
+            trace["mode"] = "lines+markers"
+        data.append(trace)
     try:
         figure = json.dumps(
-            artifact.figure,
+            {
+                "data": data,
+                "layout": {
+                    "title": {"text": artifact.title},
+                    "xaxis": {"title": {"text": artifact.x_axis_title}},
+                    "yaxis": {"title": {"text": artifact.y_axis_title}},
+                    "showlegend": artifact.show_legend,
+                },
+            },
             allow_nan=False,
             ensure_ascii=True,
             separators=(",", ":"),
@@ -552,12 +697,18 @@ def _plotly_html(artifact: PlotlyArtifact) -> str | None:
 
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
-<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>
+<script src="https://cdn.plot.ly/plotly-4.0.0.min.js" charset="utf-8"></script>
 </head><body style="margin:0;padding:16px">
 <h2>{escape(artifact.title)}</h2><p>{escape(artifact.summary)}</p>
 <div id="plot"></div>
 <script>
 const figure = {figure};
+function reportHeight() {{
+  const height = document.documentElement.scrollHeight;
+  parent.postMessage({{type: "iframe:height", height}}, "*");
+}}
+window.addEventListener("load", reportHeight);
+new ResizeObserver(reportHeight).observe(document.body);
 Plotly.newPlot("plot", figure.data, figure.layout, {{responsive: true}});
 </script></body></html>"""
 

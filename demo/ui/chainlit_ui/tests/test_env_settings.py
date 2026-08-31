@@ -85,34 +85,37 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
             ]
         )
     )
-    passthrough_list = AsyncMock(
-        side_effect=[
-            SimpleNamespace(
-                data=[
-                    Model(
-                        id="graph-a",
-                        object="model",
-                        created=1,
-                        owned_by="langgraph-openai-serve",
-                        langgraph_openai_serve={
-                            "schema_version": 1,
-                            "description": "DUMMY",
-                        },
-                    )
-                ]
-            ),
-            SimpleNamespace(
-                data=[
-                    Model(
-                        id="graph-b",
-                        object="model",
-                        created=1,
-                        owned_by="langgraph-openai-serve",
-                    )
-                ]
-            ),
-        ]
-    )
+    provider_models = {
+        "lgos-a": SimpleNamespace(
+            data=[
+                Model(
+                    id="graph-a",
+                    object="model",
+                    created=1,
+                    owned_by="langgraph-openai-serve",
+                    langgraph_openai_serve={
+                        "schema_version": 1,
+                        "description": "DUMMY",
+                    },
+                )
+            ]
+        ),
+        "lgos-future": SimpleNamespace(
+            data=[
+                Model(
+                    id="graph-b",
+                    object="model",
+                    created=1,
+                    owned_by="langgraph-openai-serve",
+                )
+            ]
+        ),
+    }
+
+    def list_provider_models(*, extra_headers: dict[str, str]) -> SimpleNamespace:
+        return provider_models[extra_headers["x-model-provider"]]
+
+    passthrough_list = AsyncMock(side_effect=list_provider_models)
     monkeypatch.setattr(clients.catalog_client.models, "list", catalog_list)
     monkeypatch.setattr(clients.openai_client.models, "list", passthrough_list)
 
@@ -127,16 +130,14 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
         "description": "DUMMY",
     }
     catalog_list.assert_awaited_once_with()
-    assert passthrough_list.await_args_list == [
-        call(extra_headers={"x-model-provider": "lgos-a"}),
-        call(extra_headers={"x-model-provider": "lgos-future"}),
-    ]
-    assert clients.model_request("lgos-b/namespace/graph-b") == {
-        "model": "namespace/graph-b",
-        "extra_headers": {"x-model-provider": "lgos-b"},
-    }
-    with pytest.raises(ValueError, match="provider/model"):
-        clients.model_request("graph-b")
+    passthrough_list.assert_has_awaits(
+        [
+            call(extra_headers={"x-model-provider": "lgos-a"}),
+            call(extra_headers={"x-model-provider": "lgos-future"}),
+        ],
+        any_order=True,
+    )
+    assert passthrough_list.await_count == 2
 
 
 async def test_standard_endpoint_preserves_listed_model_ids(
@@ -164,6 +165,19 @@ async def test_standard_endpoint_preserves_listed_model_ids(
     assert clients.model_request("lgos-b/namespace/graph-b") == {
         "model": "lgos-b/namespace/graph-b"
     }
+
+
+def test_bifrost_model_request_requires_a_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        clients.settings.OPENAI,
+        "catalog_base_url",
+        "https://gateway.example/v1",
+    )
+
+    with pytest.raises(ValueError, match="provider/model"):
+        clients.model_request("graph-b")
 
 
 def test_chat_client_identifies_chainlit_for_telemetry() -> None:

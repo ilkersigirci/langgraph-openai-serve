@@ -4,6 +4,7 @@ import logging
 from collections.abc import Mapping
 
 import chainlit as cl
+from chainlit.input_widget import Switch
 from chainlit_utils.chat_settings import (
     serialize_settings,
     settings_widgets,
@@ -23,6 +24,7 @@ from lgos_chainlit.utils.clients import retrieve_model
 logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
+STREAMING_SETTING_ID = "lgos_chainlit_stream"
 
 
 async def configure_chat_settings() -> None:
@@ -30,10 +32,19 @@ async def configure_chat_settings() -> None:
     model_id = cl.user_session.get("chat_profile")
     saved = cl.user_session.get("chat_settings")
     candidates = dict(saved) if isinstance(saved, dict) else None
+    streaming = candidates.get(STREAMING_SETTING_ID) if candidates else None
+    widgets = [
+        Switch(
+            id=STREAMING_SETTING_ID,
+            label="Stream response",
+            description="Show the answer as it is generated.",
+            initial=streaming if type(streaming) is bool else True,
+        )
+    ]
     _store_runtime_settings_defaults(None)
     _store_model_features(None)
     if not isinstance(model_id, str) or not model_id:
-        await cl.ChatSettings([]).send()
+        await cl.ChatSettings(widgets).send()
         return
 
     try:
@@ -44,26 +55,28 @@ async def configure_chat_settings() -> None:
             model_id,
             exc_info=True,
         )
-        await cl.ChatSettings([]).refresh()
+        await cl.ChatSettings(widgets).refresh()
         await send_limited_functionality_warning()
         return
 
     extension = model_extension(model)
     if extension is None:
-        await cl.ChatSettings([]).send()
+        await cl.ChatSettings(widgets).send()
         await send_limited_functionality_warning()
         return
 
     _store_model_features(extension.features)
     client_settings = model_client_settings(model)
     if client_settings is None:
-        await cl.ChatSettings([]).send()
+        await cl.ChatSettings(widgets).send()
         return
 
-    widgets = settings_widgets(
-        client_settings.json_schema,
-        client_settings.defaults,
-        candidates,
+    widgets.extend(
+        settings_widgets(
+            client_settings.json_schema,
+            client_settings.defaults,
+            candidates,
+        )
     )
     await cl.ChatSettings(widgets).send()
     _store_runtime_settings_defaults(client_settings.defaults)
@@ -73,6 +86,13 @@ def model_feature_enabled(feature: GraphFeature) -> bool:
     """Return whether the selected model advertised a feature."""
     features = cl.user_session.get(MODEL_FEATURES_SESSION_KEY)
     return isinstance(features, list) and feature.value in features
+
+
+def streaming_enabled() -> bool:
+    """Return the Chainlit response-delivery preference."""
+    selected = cl.user_session.get("chat_settings")
+    value = selected.get(STREAMING_SETTING_ID) if isinstance(selected, dict) else None
+    return value if type(value) is bool else True
 
 
 def chat_settings_metadata() -> dict[str, str]:

@@ -1,20 +1,21 @@
 """Functions for generating chat completions."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
-from typing import TYPE_CHECKING
+
+from langchain_core.messages import AIMessage
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
 )
 from langgraph_openai_serve.api.chat.utils.events import (
-    annotation_from_custom_event,
     client_event_extension_from_custom_event,
     stream_events_requested,
 )
 from langgraph_openai_serve.api.chat.utils.responses import (
     ChatCompletionStreamResponseBuilder,
+    annotations_from_message,
     chat_completion_response,
 )
 from langgraph_openai_serve.core.logging import get_logger
@@ -23,12 +24,8 @@ from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
     stream_run,
-    usage_for,
 )
 from langgraph_openai_serve.graph.utils import GraphRun
-
-if TYPE_CHECKING:
-    from langgraph.types import CustomStreamPart
 
 logger = get_logger(__name__)
 
@@ -38,24 +35,9 @@ async def generate_completion(
 ) -> ChatCompletionResponse:
     """Generate a chat completion."""
     invocation = await invoke_run(run)
-    completion = invocation.output
-    tokens_used = usage_for(completion, chat_request.messages)
-    annotations = (
-        [
-            annotation
-            for event in invocation.custom_events
-            if (annotation := annotation_from_custom_event(event, completion))
-            is not None
-        ]
-        if isinstance(completion, str)
-        else []
-    )
-
     return chat_completion_response(
         model=chat_request.model,
-        completion=completion,
-        annotations=annotations,
-        usage=tokens_used,
+        completion=invocation.output,
     )
 
 
@@ -69,9 +51,16 @@ async def stream_completion(
         String chunks representing Server-Sent Events.
 
     """
-    response_builder = ChatCompletionStreamResponseBuilder(chat_request.model)
-    custom_events: list[CustomStreamPart] = []
-    content_parts: list[str] = []
+    include_usage = bool(
+        chat_request.stream_options is not None
+        and chat_request.stream_options.include_usage
+    )
+    response_builder = ChatCompletionStreamResponseBuilder(
+        chat_request.model,
+        include_usage=include_usage,
+    )
+    final_message: AIMessage | None = None
+    text_parts: list[str] = []
     include_client_events = run.config.supports(
         GraphFeature.CLIENT_EVENTS
     ) and stream_events_requested(chat_request.metadata)
@@ -89,27 +78,63 @@ async def stream_completion(
                     yield response_builder.done()
                     return
 
+                if isinstance(event, AIMessage):
+                    final_message = event
+                    continue
+
                 if not isinstance(event, str):
-                    custom_events.append(event)
                     if include_client_events:
                         extension = client_event_extension_from_custom_event(event)
                         if extension is not None:
                             yield response_builder.client_event(extension)
                     continue
 
-                content_parts.append(event)
+                text_parts.append(event)
                 yield response_builder.text(event)
 
-        content = "".join(content_parts)
-        annotations = [
-            annotation
-            for event in custom_events
-            if (annotation := annotation_from_custom_event(event, content)) is not None
-        ]
-        yield response_builder.finish("stop", annotations=annotations)
-        yield response_builder.done()
+        final_message = _require_final_message(final_message)
+        for chunk in _final_chunks(
+            response_builder,
+            final_message,
+            streamed_text="".join(text_parts) if text_parts else None,
+            include_usage=include_usage,
+        ):
+            yield chunk
 
     except Exception:
         logger.exception("chat_completion.stream_failed")
         yield response_builder.error("Internal server error")
         yield response_builder.done()
+
+
+def _require_final_message(message: AIMessage | None) -> AIMessage:
+    if message is None:
+        msg = "LangGraph stream completed without a final assistant message."
+        raise RuntimeError(msg)
+    return message
+
+
+def _final_chunks(
+    response_builder: ChatCompletionStreamResponseBuilder,
+    message: AIMessage,
+    *,
+    streamed_text: str | None,
+    include_usage: bool,
+) -> Iterator[str]:
+    message_text = str(message.text)
+    if streamed_text is None:
+        if message_text:
+            yield response_builder.text(message_text)
+    elif streamed_text != message_text:
+        msg = "Streamed assistant text did not match the final assistant message."
+        raise RuntimeError(msg)
+    finish_reason = "tool_calls" if message.tool_calls else "stop"
+    if message.tool_calls:
+        yield response_builder.tool_calls(message)
+    yield response_builder.finish(
+        finish_reason,
+        annotations=annotations_from_message(message),
+    )
+    if include_usage and message.usage_metadata is not None:
+        yield response_builder.usage(message.usage_metadata)
+    yield response_builder.done()

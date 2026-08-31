@@ -1,10 +1,10 @@
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 
-from openai.lib.streaming.chat import ContentDeltaEvent
+from openai.lib.streaming.chat import ChunkEvent, ContentDeltaEvent
 from openai.types.chat import ChatCompletion
 
 from lgos_openwebui.functions.generic import Pipe
@@ -15,7 +15,7 @@ MODEL_ID = f"lgos-a/{UPSTREAM_MODEL_ID}"
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 STATE_TOKEN = "state-token-1"
 MARKDOWN_DELTAS = (
-    "Read the [source](https://example.com/source), ",
+    "Read the [source](https://example.com/source) [1], ",
     "view ![diagram](https://example.com/diagram.png), ",
     "and follow the [audio link](https://example.com/overview.mp3).",
 )
@@ -29,22 +29,25 @@ INTERRUPT_PAYLOAD = {
 class ScriptedStream:
     def __init__(
         self,
-        deltas: Sequence[str],
+        events: Sequence[str | ChunkEvent],
         completion: ChatCompletion,
     ) -> None:
-        self._deltas = deltas
+        self._events = events
         self._completion = completion
 
-    async def __aiter__(self) -> AsyncIterator[ContentDeltaEvent]:
+    async def __aiter__(self) -> AsyncIterator[ContentDeltaEvent | ChunkEvent]:
         snapshot = ""
-        for delta in self._deltas:
-            snapshot += delta
-            yield ContentDeltaEvent(
-                type="content.delta",
-                delta=delta,
-                snapshot=snapshot,
-                parsed=None,
-            )
+        for event in self._events:
+            if isinstance(event, str):
+                snapshot += event
+                yield ContentDeltaEvent(
+                    type="content.delta",
+                    delta=event,
+                    snapshot=snapshot,
+                    parsed=None,
+                )
+            else:
+                yield event
 
     async def get_final_completion(self) -> ChatCompletion:
         return self._completion
@@ -53,13 +56,11 @@ class ScriptedStream:
 class ScriptedChat:
     def __init__(
         self,
-        *steps: tuple[Sequence[str], ChatCompletion],
+        *steps: tuple[Sequence[str | ChunkEvent], ChatCompletion],
     ) -> None:
         self._steps = steps
         self.calls: list[tuple[list[dict[str, Any]], str]] = []
         self.request_metadata_calls: list[dict[str, str] | None] = []
-        self.include_client_events_calls: list[bool] = []
-        self.user_id_calls: list[str | None] = []
 
     @asynccontextmanager
     async def __call__(
@@ -75,8 +76,6 @@ class ScriptedChat:
         step_index = len(self.calls)
         self.calls.append((messages, model_id))
         self.request_metadata_calls.append(request_metadata)
-        self.include_client_events_calls.append(include_client_events)
-        self.user_id_calls.append(user_id)
         if step_index >= len(self._steps):
             msg = f"Unexpected chat call {step_index + 1}"
             raise AssertionError(msg)
@@ -86,9 +85,14 @@ class ScriptedChat:
 
 
 async def collect_response(
-    pipe_response: AsyncIterator[str | dict[str, Any]],
+    pipe_response: Awaitable[
+        AsyncIterator[str | dict[str, Any]] | str | dict[str, Any]
+    ],
 ) -> list[str | dict[str, Any]]:
-    return [chunk async for chunk in pipe_response]
+    response = await pipe_response
+    if isinstance(response, str | dict):
+        return [response]
+    return [chunk async for chunk in response]
 
 
 async def run_interrupt_pipe(
@@ -138,14 +142,21 @@ def completion(
     )
 
 
-def model(*, features: list[str] | None = None) -> SimpleNamespace:
+def model(
+    *,
+    features: list[str] | None = None,
+    client_settings: dict[str, Any] | None = None,
+) -> SimpleNamespace:
+    extension: dict[str, Any] = {
+        "schema_version": 1,
+        "description": "DUMMY",
+        "features": features or [],
+    }
+    if client_settings is not None:
+        extension["client_settings"] = client_settings
     return SimpleNamespace(
         model_extra={
-            "langgraph_openai_serve": {
-                "schema_version": 1,
-                "description": "DUMMY",
-                "features": features or [],
-            }
+            "langgraph_openai_serve": extension,
         }
     )
 

@@ -1,6 +1,6 @@
 import json
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -62,7 +62,10 @@ async def test_pipe_resumes_confirmed_interrupt(
 
     chunks = await run_interrupt_pipe(configured_pipe, confirm)
 
-    assert chunks == list(answer_deltas)
+    assert all(isinstance(chunk, str) for chunk in chunks)
+    assert "".join(chunk for chunk in chunks if isinstance(chunk, str)) == "".join(
+        answer_deltas
+    )
     assert events == [
         {
             "type": "confirmation",
@@ -88,6 +91,34 @@ async def test_pipe_resumes_confirmed_interrupt(
     assert (initial_model_id, resume_model_id) == (MODEL_ID, MODEL_ID)
 
 
+async def test_non_streaming_pipe_resumes_without_stream_events(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    final = completion("Approved.")
+    complete = AsyncMock(side_effect=[interrupt_response(), final])
+    monkeypatch.setattr(generic, "_chat_completion", complete)
+
+    async def confirm(_event: dict[str, Any]) -> bool:
+        return True
+
+    chunks = await collect_response(
+        configured_pipe.pipe(
+            body=body(USER_REQUEST, stream=False),
+            __event_call__=confirm,
+        )
+    )
+
+    assert chunks == [final.model_dump(mode="json", exclude_none=True)]
+    resume_messages = complete.await_args_list[1].kwargs["messages"]
+    assert resume_messages[0]["tool_calls"][0]["id"] == ("lg_interrupt_interrupt-1")
+    assert resume_messages[1] == {
+        "role": "tool",
+        "tool_call_id": "lg_interrupt_interrupt-1",
+        "content": '{"resume": "approve"}',
+    }
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
@@ -102,42 +133,35 @@ async def test_pipe_resumes_confirmed_interrupt(
         pytest.param(None, "null", id="null"),
     ],
 )
-def test_approval_event_renders_every_json_payload(
+async def test_pipe_renders_every_json_payload_in_the_approval_event(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
     payload: object,
     message: str,
 ) -> None:
-    tool_call = (
-        completion(tool_calls=[interrupt_call("interrupt-1", payload)])
-        .choices[0]
-        .message.tool_calls[0]
+    chat = ScriptedChat(
+        ((), completion(tool_calls=[interrupt_call("interrupt-1", payload)]))
     )
+    events: list[dict[str, Any]] = []
 
-    assert generic._interrupt_payload(tool_call) == payload
-    assert generic._approval_event(tool_call) == {
-        "type": "confirmation",
-        "data": {
-            "title": "Approve this agent action?",
-            "message": message,
-        },
-    }
+    async def cancel(event: dict[str, Any]) -> None:
+        events.append(event)
 
+    monkeypatch.setattr(generic, "_chat", chat)
 
-def test_approval_event_rejects_a_missing_payload() -> None:
-    arguments = {
-        "run_id": RUN_ID,
-        "state_token": STATE_TOKEN,
-    }
-    tool_call = (
-        completion(
-            tool_calls=[
-                interrupt_call("interrupt-1", {}, arguments=arguments),
-            ]
-        )
-        .choices[0]
-        .message.tool_calls[0]
-    )
+    chunks = await run_interrupt_pipe(configured_pipe, cancel)
 
-    assert generic._approval_event(tool_call) is None
+    assert chunks == ["Open WebUI approval was cancelled or timed out."]
+    assert events == [
+        {
+            "type": "confirmation",
+            "data": {
+                "title": "Approve this agent action?",
+                "message": message,
+            },
+        }
+    ]
+    assert len(chat.calls) == 1
 
 
 async def test_pipe_collects_every_interrupt_and_resumes_once(
@@ -356,12 +380,23 @@ async def test_pipe_reports_unsupported_tool_call_batches(
     assert len(chat.calls) == 1
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        pytest.param([], id="not-an-object"),
+        pytest.param(
+            {"run_id": RUN_ID, "state_token": STATE_TOKEN},
+            id="missing-payload",
+        ),
+    ],
+)
 async def test_pipe_does_not_resume_a_malformed_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
+    arguments: object,
 ) -> None:
     chat = ScriptedChat(
-        ((), interrupt_response([])),
+        ((), interrupt_response(arguments)),
     )
     events: list[dict[str, Any]] = []
 
@@ -386,12 +421,8 @@ async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
         ((), interrupt_response()),
         (("Approved.",), completion("Approved.")),
     )
-    runtime_metadata = {
-        "langgraph_runtime_settings": '{"use_history":true}',
-    }
-    settings_metadata = Mock(return_value=runtime_metadata)
     expected_request_metadata = {
-        **runtime_metadata,
+        "langgraph_runtime_settings": '{"use_history":true}',
         "session_id": "chat-123",
     }
 
@@ -399,7 +430,18 @@ async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
         return True
 
     monkeypatch.setattr(generic, "_chat", chat)
-    monkeypatch.setattr(generic, "_runtime_settings_metadata", settings_metadata)
+    monkeypatch.setattr(
+        generic,
+        "_retrieve_model",
+        AsyncMock(
+            return_value=model(
+                client_settings={
+                    "schema_version": 1,
+                    "defaults": {"use_history": False},
+                }
+            )
+        ),
+    )
 
     chunks = await collect_response(
         configured_pipe.pipe(
@@ -417,10 +459,3 @@ async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
         expected_request_metadata,
         expected_request_metadata,
     ]
-    settings_metadata.assert_called_once_with(
-        model=model(),
-        metadata={
-            "chat_id": "chat-123",
-            "chat_variables": {"use_history": True},
-        },
-    )

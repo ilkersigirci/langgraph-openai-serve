@@ -1,4 +1,4 @@
-"""Nonblocking coordination for graph runs that share durable state."""
+"""Nonblocking coordination for interrupt-enabled graph runs."""
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -7,7 +7,7 @@ from typing import Protocol, runtime_checkable
 
 
 class RunBusyError(RuntimeError):
-    """Raised when a run cannot acquire its coordination lease."""
+    """Raised when an interrupt run cannot acquire its coordination lease."""
 
     def __init__(self, key: str) -> None:
         self.key = key
@@ -16,7 +16,7 @@ class RunBusyError(RuntimeError):
 
 @runtime_checkable
 class RunCoordinator(Protocol):
-    """Acquire a lease that rejects rather than queues an occupied run key."""
+    """Acquire a lease that rejects rather than queues an occupied interrupt run."""
 
     def __call__(
         self,
@@ -28,7 +28,7 @@ class RunCoordinator(Protocol):
 
 
 class InMemoryRunCoordinator:
-    """Coordinate runs within one process without waiting on occupied keys."""
+    """Coordinate interrupt runs within one process without waiting."""
 
     def __init__(self) -> None:
         self._active_keys: set[str] = set()

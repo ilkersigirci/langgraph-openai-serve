@@ -103,17 +103,28 @@ async def _stream_text(request: ChatCompletionRequest) -> str:
             request,
         )
     ]
-    assert all(isinstance(event, str) for event in events)
+    assert isinstance(events[-1], AIMessage)
     return "".join(event for event in events if isinstance(event, str))
 
 
-def test_formats_context_with_source_metadata_and_markdown() -> None:
+async def test_retrieval_tool_formats_source_metadata_and_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     markdown = (
         "Read the [guide](https://example.com/guide) and view "
         "![Diagram](https://example.com/diagram.png)."
     )
+    document = _source_document(markdown, "Reference")
 
-    context = lgos_rag_module._format_context([_source_document(markdown, "Reference")])
+    async def retrieve_documents(query: str) -> list[Document]:
+        assert query == "How do I use LGOS?"
+        return [document]
+
+    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
+
+    context = await lgos_rag_module.retrieve_lgos_rag.ainvoke(
+        {"query": "How do I use LGOS?"}
+    )
 
     assert context == (
         f"Title: Reference\nSource URL: https://example.com/reference\n{markdown}"

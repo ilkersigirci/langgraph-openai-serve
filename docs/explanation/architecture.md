@@ -30,7 +30,7 @@ flowchart LR
 
   client -->|"OpenAI request"| api
   host -.->|"mounts"| api
-  runner <-->|"graph.astream events"| app_graph
+  runner <-->|"graph.ainvoke / graph.astream"| app_graph
   render -->|"OpenAI response"| client
 ```
 
@@ -86,9 +86,9 @@ The runner is the only layer that calls LangGraph. It executes the prepared run
 and returns graph output or stream events for OpenAI response rendering.
 
 Interrupt-enabled graphs add a narrow durable boundary: an asynchronous
-checkpointer stores paused workflow state, while a run coordinator serializes
-inspection and execution for the same scope/model/run key across replicas.
-Application graphs may independently use a LangGraph Store for explicit data.
+checkpointer stores paused workflow state. A run coordinator serializes one
+interrupt run across replicas. Application graphs may independently use a
+LangGraph Store for explicit data.
 PostgreSQL can provide all three roles; Redis is not required by this design.
 The demo shares one PostgreSQL pool per API process among them.
 
@@ -100,13 +100,16 @@ Endpoint paths and settings live in [Reference](../reference.md).
    `GraphRegistry`.
 2. `GraphConfig` converts messages and builds graph input, runtime context, and
    runnable configuration.
-3. Interrupt preparation derives the scoped operation key, acquires its
-   coordinator lease, and validates any resume against durable state.
-4. The runner consumes `graph.astream`, collecting a complete response or
-   forwarding eligible message and custom events to the SSE service.
+3. For an interrupt graph, preparation derives the scoped operation key,
+   acquires its coordinator lease, and validates any resume against durable
+   state.
+4. The runner calls `graph.ainvoke` for a complete response or consumes
+   `graph.astream` to forward eligible message and custom events to the SSE
+   service.
 5. After execution quiesces, pending interrupts become one durable OpenAI
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
-6. LGOS releases the lease and renders an OpenAI completion or SSE sequence.
+6. LGOS releases any interrupt lease and renders an OpenAI completion or SSE
+   sequence.
 
 The tool-call assistant message is part of the client-owned chat ledger. A UI
 that supports reconnectable approvals persists that exact message and the

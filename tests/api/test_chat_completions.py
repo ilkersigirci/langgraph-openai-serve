@@ -5,23 +5,6 @@ from httpx import AsyncClient
 from openai import AsyncOpenAI, BadRequestError
 from starlette import status
 
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionRequestMessage,
-    ChatCompletionResponseMessage,
-    ChatCompletionStreamResponseDelta,
-    Role,
-)
-
-
-def test_chat_completion_schema_excludes_legacy_function_fields() -> None:
-    assert "functions" not in ChatCompletionRequest.model_fields
-    assert "function_call" not in ChatCompletionRequest.model_fields
-    assert "function_call" not in ChatCompletionRequestMessage.model_fields
-    assert "function_call" not in ChatCompletionResponseMessage.model_fields
-    assert "function_call" not in ChatCompletionStreamResponseDelta.model_fields
-    assert "function" not in {role.value for role in Role}
-
 
 async def test_non_streaming_completion_matches_openai_contract(
     openai_client: AsyncOpenAI,
@@ -38,11 +21,7 @@ async def test_non_streaming_completion_matches_openai_contract(
     assert choice.message.content == "hello"
     assert choice.finish_reason == "stop"
 
-    usage = response.usage
-    assert usage is not None
-    assert usage.prompt_tokens == 1
-    assert usage.completion_tokens == 1
-    assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
+    assert response.usage is None
 
 
 async def test_modern_function_tools_remain_supported(
@@ -85,13 +64,20 @@ async def test_streaming_completion_forwards_llm_chunks(
     assert chunks[0].object == "chat.completion.chunk"
     assert chunks[0].model == "test"
     assert chunks[0].choices[0].delta.role == "assistant"
-    content_deltas = [
-        chunk.choices[0].delta.content
-        for chunk in chunks
-        if chunk.choices[0].delta.content
-    ]
-    assert content_deltas == list("hello")
+    streamed_content = "".join(chunk.choices[0].delta.content or "" for chunk in chunks)
+    assert streamed_content == "hello"
     assert chunks[-1].choices[0].finish_reason == "stop"
+
+
+async def test_stream_options_require_streaming(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError, match="stream_options"):
+        await openai_client.chat.completions.create(
+            model="test",
+            messages=[{"role": "user", "content": "Hi"}],
+            stream_options={"include_usage": True},
+        )
 
 
 async def test_streaming_completion_uses_sse_wire_format(

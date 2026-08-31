@@ -121,7 +121,7 @@ jobs:
           verify-api-corpus: ${{ matrix.name == 'API' }}
 
   postgres:
-    name: Test PostgreSQL interrupt lifecycle
+    name: Test PostgreSQL persistence
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -151,10 +151,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: demo/api/uv.lock
 
-      - name: Test the complete interrupt lifecycle
+      - name: Test PostgreSQL persistence
         env:
           DEMO_API_TEST_POSTGRES_URI: postgresql://lgos:lgos@localhost:5432/lgos
         run: >-
           uv run --directory demo/api --locked --with-editable ../..
           pytest -m integration
           tests/integration/test_postgres_interrupt_runtime.py
+          tests/integration/test_postgres_persistent_plot_agent.py

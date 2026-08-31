@@ -35,7 +35,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make compose-otel-dev` | Build the checkout and run it with the OTEL overlay |
 | `make sync` | Synchronize all three projects from their lockfiles |
 | `make test` | Test all three projects from their lockfiles |
-| `make test-postgres` | Run the end-to-end interrupt test against PostgreSQL on port 3001 |
+| `make test-postgres` | Run the interrupt and Store persistence tests against PostgreSQL on port 3001 |
 | `make lint` | Check all three projects with Ruff |
 | `make check` | Run tests, lint, formatting checks, and Compose validation |
 
@@ -82,7 +82,7 @@ should traverse an external proxy and participate in its distributed trace.
 | `DEMO_API_OPENAI_API_KEY` | `DUMMY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by `lgos-rag` |
-| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | LangGraph checkpointer, Store, and run-coordination database |
+| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented

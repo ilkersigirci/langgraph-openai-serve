@@ -32,18 +32,25 @@ ReAct graph.
 The default graph contract is:
 
 - input: `{"messages": langchain_messages}`
-- output text: `result["messages"][-1].content`
+- output: the last `AIMessage` in `result["messages"]`
 
-Use `request_to_input`, `context_factory`, and `output_to_text` when the graph
+Use `request_to_input`, `context_factory`, and `output_to_message` when the graph
 has custom input, output, or context schemas. Those adapters keep the public HTTP
 surface OpenAI-compatible while letting the graph stay idiomatic LangGraph.
+
+Graphs that use LangGraph's `MessagesState` (or a `messages` channel reduced by
+`add_messages`) explicitly decide which completed messages belong to their
+conversation state. Shared-key subgraphs can update that channel directly;
+private subgraphs must map selected results back in their wrapper. This state
+choice does not, by itself, select live token streaming or concatenate several
+messages into one OpenAI response.
 
 ### Context Versus Config
 
 LGOS keeps LangGraph's invocation channels separate:
 
 ```python
-graph.astream(
+graph.ainvoke(  # use graph.astream(...) for streaming
     graph_input,
     context=runtime_context,
     config=runnable_config,
@@ -90,33 +97,37 @@ documentation for the underlying conventions.
 
 ## Runner Behavior
 
-The OpenAI response mode and the LangGraph execution interface are separate.
-Both paths call `graph.astream(..., version="v2")` so LGOS can process custom
-events and interrupts during execution. Consequently, `stream=false` does not
-mean LGOS calls `graph.ainvoke()`; it means LGOS consumes the internal events
-before returning one HTTP response.
+LGOS uses the LangGraph interface that matches the OpenAI response mode. Both
+paths use LangGraph's stable v2 output wrapper so interrupt handling remains
+durable.
 
 === "Complete response"
 
     When `stream` is omitted or `false`, the route awaits `invoke_run()`. The
-    runner consumes `values` and `custom` events and collects custom events from
-    all namespaces. It drains graph execution, then reads the durable checkpoint
-    head. If interrupt support is enabled and that state has pending interrupts,
-    it returns one complete interrupt batch; otherwise it renders the latest
-    root-namespace value. The chat service returns one OpenAI chat completion,
-    so no graph events reach the HTTP client incrementally.
+    runner calls `graph.ainvoke(version="v2")`. It does not subscribe to custom
+    events. After execution it reads durable pending state for interrupts;
+    otherwise it renders the returned value as the final `AIMessage`.
 
 === "SSE response"
 
     When `stream=true`, the route returns an SSE response backed by
-    `stream_run()`. The runner consumes `messages` and `custom` events. Only
-    `AIMessageChunk` values from configured streamable nodes become text chunks.
+    `stream_run()`. The runner consumes `messages`, `custom`, and `values`. Only
+    `AIMessageChunk` values from configured streamable nodes become text chunks;
+    the list may include nodes in nested subgraphs. Returning a message through
+    the graph's `messages` state is not a live-streaming signal.
     The chat service immediately maps explicitly public `client_event()` and
     `status_event()` values into namespaced chunks when the request opts into v1
-    events. It continues buffering citation events for final annotations. After
-    graph execution quiesces, it reads durable pending state and renders the
-    complete interrupt batch as indexed tool-call chunks. Unknown custom events
-    stay private.
+    events. The final root value supplies durable citations, tool calls, and
+    provider-reported usage. After execution quiesces, it reads durable pending
+    state and renders a complete interrupt batch when present. Unknown custom
+    events stay private.
+
+Internal model calls that must not reach `delta.content` use LangGraph's native
+`nostream` tag. `streamable_node_names` selects calls whose text is intended for
+the OpenAI assistant stream; the tag selects calls within those nodes. Graph
+authors must follow the
+[assistant text parity contract](openai-compatibility.md#assistant-text-parity)
+because a graph cannot retract an intermediate draft after it has streamed it.
 
 Interrupt runs use exit durability and drain graph execution before exposing a
 durable tool-call batch. A `GraphConfig.run_coordinator` lease covers state

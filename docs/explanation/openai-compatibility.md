@@ -192,6 +192,25 @@ event handling and [Request Cancellation](langgraph-integration.md#request-cance
 for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
+LGOS aggregates usage reported by LangChain model calls across the graph run.
+Complete responses include it in `usage`; streaming responses add the standard
+final empty-choices usage chunk only when the request sets
+`stream_options={"include_usage": true}`. When underlying providers report no
+usage, LGOS omits it rather than estimating tokens.
+
+### Assistant Text Parity
+
+The final rendered `AIMessage.text` is the canonical assistant text.
+Non-streaming returns it directly. Streaming emits eligible message chunks
+immediately and retains them until the final message arrives. It then
+concatenates the chunks and compares them with the final text. If no text
+streamed, LGOS emits the final text as a fallback; a mismatch instead produces
+a stream error without a normal finish chunk. This check covers one graph run,
+not two independent LLM executions. Transient client events are excluded.
+
+When multiple streamable nodes contribute text, the graph's
+`output_to_message` adapter must render their messages in the same order.
+
 ## Client Stream Events
 
 Passive application notifications are an opt-in, namespaced extension on an
@@ -262,6 +281,10 @@ Ordinary LangGraph custom data, malformed events, debug data, and non-JSON
 Python objects stay private. The v1 public event types are `status`, `progress`,
 and `artifact`.
 
+Client events are transient and streaming-only. A non-streaming request uses
+the graph's durable final result and never collects or replays status, progress,
+or artifact events, even when its metadata contains the stream-event opt-in.
+
 `status_event()` produces portable data with a user-facing `description` and
 the booleans `done` and `hidden`. The graph emits meaningful application status
 at the point where it knows what work is happening. LGOS does not infer status
@@ -299,17 +322,19 @@ OpenAI `url_citation` annotations are the canonical citation contract. Their
 URL, title, and text span associate a source with the answer. `end_index` is
 inclusive, matching OpenAI's last-character convention.
 
-LGOS returns `message.annotations` for non-streaming responses and
+Graphs attach LangChain citation annotations to their final `AIMessage`. LGOS
+returns them as `message.annotations` for non-streaming responses and
 `delta.annotations` on the final streaming chunk. It does not define a
-UI-specific source schema.
+UI-specific source schema or reconstruct citations from custom events.
 
 Portable resource presentation belongs in the assistant text, not in the
 annotation object. Graphs may return ordinary Markdown links and images in
-`message.content`. When a graph also emits structured attribution, its
-`url_citation` remains limited to its standard URL, title, and text span. Audio
-and video resources should use ordinary Markdown links rather than UI-specific
-players. RAG graphs must preserve only resource URLs supplied by their retrieved
-context and must not invent or rewrite them.
+`message.content`, including visible inline citation markers. Annotations do not
+require clients to synthesize marker text. When a graph also emits structured
+attribution, its `url_citation` remains limited to its standard URL, title, and
+text span. Audio and video resources should use ordinary Markdown links rather
+than UI-specific players. RAG graphs must preserve only resource URLs supplied
+by their retrieved context and must not invent or rewrite them.
 
 Structured citations remain available to OpenAI clients that need
 machine-readable provenance. The `citation-events` demo showcases that optional
@@ -348,7 +373,7 @@ Malformed interrupt envelopes, a missing or duplicate tool result, and invalid
 caller-supplied run UUIDs return HTTP 400. A structurally complete exchange that
 does not match the durable pending set, or is stale or already completed,
 returns HTTP 409 with `code: "interrupt_state_conflict"`. A request that cannot
-acquire the active run lease returns HTTP 409 with `code: "run_busy"`.
+acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
 ## Tool Calls And Interrupts
 
@@ -518,4 +543,6 @@ for the underlying checkpoint model.
 - The supported surface focuses on chat completions, model listing/retrieval,
   health, and compatible tool-call flows.
 - Authentication is not enforced by default.
-- Token usage is approximate.
+- Token usage is present only when underlying LangChain model calls report it.
+  LGOS aggregates reported usage across the graph run and never estimates
+  missing counts.

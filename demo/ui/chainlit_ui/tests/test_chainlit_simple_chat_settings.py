@@ -62,6 +62,7 @@ async def test_discovered_settings_are_published(
         {
             "chat_profile": "simple",
             "chat_settings": {
+                "lgos_chainlit_stream": False,
                 "use_history": False,
                 "mode": "detailed",
                 "assistant_name": "Guide",
@@ -80,6 +81,7 @@ async def test_discovered_settings_are_published(
         (type(widget).__name__, widget.id, widget.initial)
         for widget in factory.call_args.args[0]
     ] == [
+        ("Switch", "lgos_chainlit_stream", False),
         ("Switch", "use_history", False),
         ("Select", "mode", "detailed"),
         ("TextInput", "assistant_name", "Guide"),
@@ -156,7 +158,9 @@ async def test_model_retrieval_failure_disables_settings(
 
     await chat_settings.configure_chat_settings()
 
-    factory.assert_called_once_with([])
+    assert [widget.id for widget in factory.call_args.args[0]] == [
+        chat_settings.STREAMING_SETTING_ID
+    ]
     form.refresh.assert_awaited_once_with()
     warning.assert_awaited_once_with()
     assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
@@ -188,7 +192,9 @@ async def test_model_without_extension_warns_and_clears_settings(
 
     await chat_settings.configure_chat_settings()
 
-    factory.assert_called_once_with([])
+    assert [widget.id for widget in factory.call_args.args[0]] == [
+        chat_settings.STREAMING_SETTING_ID
+    ]
     form.send.assert_awaited_once_with()
     form.refresh.assert_not_awaited()
     warning.assert_awaited_once_with()
@@ -213,7 +219,9 @@ async def test_missing_profile_disables_settings_and_message(
     await simple.on_message(Mock())
 
     retrieve.assert_not_awaited()
-    factory.assert_called_once_with([])
+    assert [widget.id for widget in factory.call_args.args[0]] == [
+        chat_settings.STREAMING_SETTING_ID
+    ]
     form.send.assert_awaited_once_with()
     send_ui_message.assert_awaited_once_with(
         "Chat completion failed: no model profile is selected."
@@ -277,3 +285,63 @@ async def test_selected_settings_reach_the_openai_request(
             "session_id": "thread-123",
         },
     )
+
+
+async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_client_settings: ModelClientSettings,
+) -> None:
+    simple = importlib.import_module("lgos_chainlit.simple")
+    clients = importlib.import_module("lgos_chainlit.utils.clients")
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session(
+        {
+            "chat_profile": "lgos-a/simple",
+            "chat_settings": {
+                chat_settings.STREAMING_SETTING_ID: False,
+                "mode": "detailed",
+            },
+            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
+                runtime_client_settings.defaults
+            ),
+            chat_settings.MODEL_FEATURES_SESSION_KEY: ["client_events"],
+        }
+    )
+    messages = [{"role": "user", "content": "Hello"}]
+    completion = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Complete answer"))]
+    )
+    create = AsyncMock(return_value=completion)
+    assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
+    monkeypatch.setattr(simple.cl, "user_session", session)
+    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
+    monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
+    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(
+        simple.cl,
+        "context",
+        SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
+    )
+    monkeypatch.setattr(
+        clients.settings.OPENAI,
+        "catalog_base_url",
+        "https://gateway.example/v1",
+    )
+    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
+
+    await simple.on_message(Mock(content="Hello"))
+
+    create.assert_awaited_once_with(
+        model="simple",
+        extra_headers={"x-model-provider": "lgos-a"},
+        messages=messages,
+        stream=False,
+        user="demo-user",
+        metadata={
+            "langgraph_runtime_settings": '{"mode":"detailed"}',
+            "session_id": "thread-123",
+        },
+    )
+    assert assistant_message.content == "Complete answer"
+    assistant_message.send.assert_awaited_once_with()
+    assistant_message.update.assert_not_awaited()

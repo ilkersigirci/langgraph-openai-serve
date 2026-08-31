@@ -22,7 +22,7 @@ from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langgraph.constants import TAG_HIDDEN
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -303,7 +303,7 @@ async def generate_query_or_respond(
     question = state.question or _latest_human_text(state)
     decision = (
         await _retrieval_decider()
-        .with_config(tags=[TAG_HIDDEN])
+        .with_config(tags=[TAG_NOSTREAM])
         .ainvoke([SystemMessage(content=DECISION_PROMPT), *state.messages])
     )
     if decision.tool_calls:

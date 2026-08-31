@@ -12,9 +12,16 @@ GraphConfig(
 )
 ```
 
-Without adapters, graph input is `{"messages": langchain_messages}` and output
-text is read from `result["messages"][-1].content`. The required description is
+Without adapters, graph input is `{"messages": langchain_messages}` and the
+last output message must be an `AIMessage`. The required description is
 published in LGOS model list and detail extensions for catalog UIs.
+
+### Message Ownership
+
+Return an `AIMessage` only from the node or subgraph that owns the final
+assistant turn. Internal workers should return structured state; status and
+progress should use custom events. `add_messages` preserves message history but
+does not enable streaming or combine multiple assistant messages.
 
 ## Custom Schemas
 
@@ -27,14 +34,14 @@ GraphConfig(
     description="Answer questions with application context.",
     request_to_input=request_to_input,  # (2)!
     context_factory=context_factory,  # (3)!
-    output_to_text=output_to_text,  # (4)!
+    output_to_message=output_to_message,  # (4)!
 )
 ```
 
 1.  Keep the graph's native LangGraph schema.
 2.  Build graph input from the validated OpenAI request and converted messages.
 3.  Build optional LangGraph runtime context from the request and public settings.
-4.  Render the graph's native output as OpenAI assistant text.
+4.  Render the graph's native output as a durable LangChain `AIMessage`.
 
 See `demo/api/src/lgos_demo_api/graphs/custom_io.py` for the runnable version.
 
@@ -80,7 +87,7 @@ custom_graph = (
 Build that context from the validated OpenAI request at the adapter boundary:
 
 ```python title="Request to runtime context"
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 
 from langgraph_openai_serve import ClientSettings, GraphConfig
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
@@ -100,8 +107,8 @@ def context_factory(
     return AppContext(user_id=request.user or "anonymous")
 
 
-def output_to_text(output: State) -> str:
-    return output["answer"]
+def output_to_message(output: State) -> AIMessage:
+    return AIMessage(content=output["answer"])
 
 
 custom_graph_config = GraphConfig(
@@ -109,7 +116,7 @@ custom_graph_config = GraphConfig(
     description="Answer questions with application context.",
     request_to_input=request_to_input,
     context_factory=context_factory,
-    output_to_text=output_to_text,
+    output_to_message=output_to_message,
 )
 ```
 
@@ -209,8 +216,13 @@ LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 ## Streaming
 
 When an OpenAI request sets `stream=True`, LGOS forwards only streamed
-`AIMessageChunk` values from `streamable_node_names`. Deterministic graphs that
-return a final dictionary should be called without `stream=True`.
+`AIMessageChunk` values from `streamable_node_names`. A graph with no eligible
+chunks still receives its final rendered `AIMessage` after execution, so a
+caller does not need a separate non-streaming code path.
+
+When several public nodes contribute text, return their completed messages through
+the graph's `messages` channel and make `output_to_message` render the same
+ordered content for a complete response.
 
 !!! tip "Choose streamable nodes deliberately"
 

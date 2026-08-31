@@ -132,6 +132,7 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = 1.0
     n: int | None = 1
     stream: bool | None = False
+    stream_options: "ChatCompletionStreamOptions | None" = None
     stop: str | list[str] | None = None
     max_tokens: int | None = None
     presence_penalty: float | None = 0.0
@@ -157,6 +158,20 @@ class ChatCompletionRequest(BaseModel):
             },
             title=cls.__name__,
         )
+
+    @model_validator(mode="after")
+    def validate_stream_options(self) -> "ChatCompletionRequest":
+        """Allow stream options only for streaming requests."""
+        if self.stream_options is not None and not self.stream:
+            msg = "stream_options may only be set when stream is true"
+            raise ValueError(msg)
+        return self
+
+
+class ChatCompletionStreamOptions(BaseModel):
+    """Options that affect Chat Completions streaming."""
+
+    include_usage: bool | None = False
 
 
 class ChatCompletionResponseMessage(BaseModel):
@@ -235,3 +250,4 @@ class ChatCompletionStreamResponse(BaseModel):
     created: int
     model: str
     choices: list[ChatCompletionStreamResponseChoice]
+    usage: UsageInfo | None = None
