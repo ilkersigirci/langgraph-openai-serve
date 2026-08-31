@@ -51,12 +51,14 @@ Mermaid source with:
 diagram = graph.get_graph(xray=True).draw_mermaid(with_styles=False)
 ```
 
-Place the unchanged output in a `mermaid` fence under `LangGraph Topology`.
-Use one content tab per graph when a page documents several graphs. Refresh the
-diagram whenever nodes, edges, routing, or nested subgraphs change. The native
-topology does not replace the request flow: it shows compiled graph structure,
-while the request flow explains adapters, persistence, events, UIs, and cleanup
-that are not necessarily graph nodes.
+Place the output in a `mermaid` fence under `LangGraph Topology`. If generated
+node IDs do not render, replace only those IDs with Mermaid-safe aliases and
+preserve their qualified names as labels. Use one content tab per graph when a
+page documents several graphs. Refresh the diagram whenever nodes, edges,
+routing, or nested subgraphs change. The native topology does not replace the
+request flow: it shows compiled graph structure, while the request flow explains
+adapters, persistence, events, UIs, and cleanup that are not necessarily graph
+nodes.
 
 Cover the meaningful stages, which may include:
 
@@ -147,5 +149,5 @@ After editing:
 2. Search for inbound links to renamed headings and for stale terminology.
 3. Run `make doc-build` and resolve every strict-build issue.
 4. Run `git diff --check`.
-5. Preview changed Mermaid diagrams in the browser when practical, because the
-   strict build does not parse their syntax.
+5. Preview every changed Mermaid diagram in the browser and confirm it renders
+   correctly, because the strict build does not parse Mermaid syntax.

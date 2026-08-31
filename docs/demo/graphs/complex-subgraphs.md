@@ -12,20 +12,20 @@ The native `xray` view expands the specialist and keyword subgraphs.
 
 ```mermaid
 graph TD;
-	__start__ --> route_question;
-	route_question -.-> api_contract_graph\3acollect_contract_checks;
-	route_question -.-> docs_graph\3akeyword_graph\3aextract_keywords;
-	api_contract_graph\3asummarize_contract --> __end__;
-	docs_graph\3asummarize_docs --> __end__;
-	subgraph api_contract_graph
-	api_contract_graph\3acollect_contract_checks --> api_contract_graph\3asummarize_contract;
-	end
-	subgraph docs_graph
-	docs_graph\3akeyword_graph\3aprepare_keyword_context --> docs_graph\3asummarize_docs;
-	subgraph keyword_graph
-	docs_graph\3akeyword_graph\3aextract_keywords --> docs_graph\3akeyword_graph\3aprepare_keyword_context;
-	end
-	end
+  __start__ --> route_question;
+  route_question -.-> api_collect["api_contract_graph:collect_contract_checks"];
+  route_question -.-> docs_extract["docs_graph:keyword_graph:extract_keywords"];
+  api_summary["api_contract_graph:summarize_contract"] --> __end__;
+  docs_summary["docs_graph:summarize_docs"] --> __end__;
+  subgraph api_contract_graph
+    api_collect --> api_summary;
+  end
+  subgraph docs_graph
+    docs_prepare["docs_graph:keyword_graph:prepare_keyword_context"] --> docs_summary;
+    subgraph keyword_graph
+      docs_extract --> docs_prepare;
+    end
+  end
 ```
 
 ## Request Flow

@@ -18,10 +18,10 @@ The native `xray` view shows the two parallel approval subgraph instances.
 
 ```mermaid
 graph TD;
-	__start__ --> approval_0\3arequest_approval;
-	__start__ --> approval_1\3arequest_approval;
-	approval_0\3arequest_approval --> __end__;
-	approval_1\3arequest_approval --> __end__;
+  __start__ --> approval_0_request["approval_0:request_approval"];
+  __start__ --> approval_1_request["approval_1:request_approval"];
+  approval_0_request --> __end__;
+  approval_1_request --> __end__;
 ```
 
 ## Interrupt Flow
