@@ -30,6 +30,7 @@ DOCUMENTED_MODEL_IDS = {
     "persistent-plot-agent",
     "multi-node-streaming",
     "simple-graph",
+    "simple-graph-external-tools",
     "status-events",
 }
 CLIENT_SETTINGS_SCHEMA_VERSION = 1

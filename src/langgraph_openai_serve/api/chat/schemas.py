@@ -7,6 +7,7 @@ This module defines Pydantic models that match the OpenAI API request and respon
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
+from openai.types.chat import ChatCompletionContentPartParam
 from openai.types.chat.chat_completion_message import Annotation
 from pydantic import (
     BaseModel,
@@ -82,11 +83,14 @@ class ToolCall(BaseModel):
     function: ToolCallFunction
 
 
+ChatCompletionMessageContent = str | list[ChatCompletionContentPartParam]
+
+
 class ChatCompletionRequestMessage(BaseModel):
     """Model for a chat completion request message."""
 
     role: Role
-    content: str | None = None
+    content: ChatCompletionMessageContent | None = None
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None

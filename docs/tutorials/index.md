@@ -24,6 +24,12 @@ are documented separately under [Demo Stack](../demo/index.md).
 
     [:octicons-arrow-right-24: Connect a client](openai-clients.md)
 
+-   :material-console-line:{ .lg .middle } __Coding agents__
+
+    Use registered LGOS graphs from Codex, OpenCode, pi, and other agents.
+
+    [:octicons-arrow-right-24: Configure an agent](coding-agents.md)
+
 -   :material-graph-outline:{ .lg .middle } __Custom graphs__
 
     Register default and custom schemas, async factories, streaming, and HITL.

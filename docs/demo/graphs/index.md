@@ -17,6 +17,7 @@ demo model catalogs.
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | `client_events` | Upstream chat model and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
+| [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so

@@ -16,11 +16,22 @@ from langchain_core.output_parsers.openai_tools import (
     parse_tool_call,
 )
 
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequestMessage, Role
+from langgraph_openai_serve.api.chat.schemas import (
+    ChatCompletionMessageContent,
+    ChatCompletionRequestMessage,
+    Role,
+)
 
 
 class InvalidChatMessageError(ValueError):
     """Raised when a chat message is missing a role-specific required field."""
+
+
+def _langchain_content(
+    content: ChatCompletionMessageContent | None,
+) -> str | list[str | dict[Any, Any]]:
+    """Pass OpenAI content parts through LangChain's compatible message type."""
+    return cast("str | list[str | dict[Any, Any]]", content or "")
 
 
 def convert_to_lc_messages(
@@ -43,9 +54,13 @@ def convert_to_lc_messages(
     for m in messages:
         match m.role:
             case Role.SYSTEM:
-                lc_messages.append(SystemMessage(content=m.content or "", name=m.name))
+                lc_messages.append(
+                    SystemMessage(content=_langchain_content(m.content), name=m.name)
+                )
             case Role.USER:
-                lc_messages.append(HumanMessage(content=m.content or "", name=m.name))
+                lc_messages.append(
+                    HumanMessage(content=_langchain_content(m.content), name=m.name)
+                )
             case Role.ASSISTANT:
                 lc_messages.append(_assistant_message(m))
             case Role.TOOL:
@@ -54,7 +69,7 @@ def convert_to_lc_messages(
                     raise InvalidChatMessageError(msg)
                 lc_messages.append(
                     ToolMessage(
-                        content=m.content or "",
+                        content=_langchain_content(m.content),
                         name=m.name,
                         tool_call_id=m.tool_call_id,
                     )
@@ -116,7 +131,7 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
             tool_calls.append(cast("ToolCall", parsed_tool_call))
 
     return AIMessage(
-        content=message.content or "",
+        content=_langchain_content(message.content),
         name=message.name,
         additional_kwargs=additional_kwargs,
         tool_calls=tool_calls,

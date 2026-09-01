@@ -54,6 +54,16 @@ def test_supported_message_conversion(role, content, message_type, expected_cont
     assert result[0].name == "participant"
 
 
+def test_content_parts_are_preserved_for_langchain():
+    content = [{"type": "text", "text": "Hello"}]
+
+    result = convert_to_lc_messages(
+        [ChatCompletionRequestMessage(role=Role.USER, content=content)]
+    )
+
+    assert result[0].content == content
+
+
 def test_tool_call_round_trip_preserves_wire_fields_and_order():
     arguments = '{"city":"Istanbul","unit":"celsius"}'
     request_messages = [
