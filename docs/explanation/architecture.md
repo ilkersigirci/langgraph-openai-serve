@@ -112,7 +112,7 @@ Endpoint paths and settings live in [Reference](../reference.md).
    sequence.
 
 The tool-call assistant message is part of the client-owned chat ledger. A UI
-that supports reconnectable approvals persists that exact message and the
+that supports reconnectable interrupt input persists that exact message and the
 matching tool results; the backend does not become a general chat-history
 database.
 

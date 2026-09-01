@@ -5,17 +5,12 @@ import httpx
 import pytest
 
 from lgos_openwebui.workspace_models import (
+    PUBLIC_READ_GRANT,
     WorkspaceModelSpec,
     chat_variable_fields,
     discover_workspace_model_specs,
     sync_workspace_models,
 )
-
-PUBLIC_READ_GRANT = {
-    "principal_type": "user",
-    "principal_id": "*",
-    "permission": "read",
-}
 
 
 def _response(data: object) -> httpx.Response:

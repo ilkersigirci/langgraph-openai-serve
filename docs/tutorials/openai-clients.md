@@ -306,9 +306,9 @@ tool_calls = assistant.tool_calls or []
 if not tool_calls:
     raise RuntimeError("The graph completed without interrupting")
 
-# Render every pending call to the user, then collect one decision per call.
-decisions = {
-    tool_call.id: "approved" for tool_call in tool_calls
+# Render every pending call to the user, then collect one JSON value per call.
+responses = {
+    tool_call.id: "Check the delivery address first." for tool_call in tool_calls
 }
 
 assistant_message = {
@@ -322,7 +322,7 @@ tool_messages = [
     {
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": json.dumps({"resume": decisions[tool_call.id]}),
+        "content": json.dumps({"resume": responses[tool_call.id]}),
     }
     for tool_call in tool_calls
 ]
@@ -338,10 +338,10 @@ The resume request must replay the complete assistant `tool_calls` message,
 unchanged, followed by exactly one `tool` message for each call. Answer all
 parallel interrupts in one batch; do not resume a subset. For streaming, first
 assemble the complete assistant tool-call message from every delta and persist
-that canonical message before asking for decisions.
+that canonical message before asking for responses.
 
 The run ID comes from the tool arguments, making resume metadata optional; if
-resent, it must match. Runtime settings remain per-request. Dedicated approval
+resent, it must match. Runtime settings remain per-request. Dedicated interrupt
 clients should use `OpenAI(max_retries=0)` (or JavaScript `maxRetries: 0`)
 because a lost terminal response is not reconstructable from the deleted
 checkpoint.

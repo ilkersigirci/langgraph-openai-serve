@@ -14,7 +14,7 @@ from .chainlit_hitl_support import (
 )
 
 
-async def test_on_chat_end_cancels_the_live_approval_task(
+async def test_on_chat_end_cancels_the_live_interrupt_task(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -116,6 +116,54 @@ async def test_on_chat_resume_reopens_the_pending_interrupt_after_hydration(
     assert created_messages[0].content == "Resumed."
     assert [write[0] for write in writes] == ["send"]
     send_ui_message.assert_not_awaited()
+
+
+async def test_on_chat_resume_removes_stale_interrupt_elements(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    step = ledger_step([interrupt_call("interrupt-1", {"question": "Approve?"})])
+    stale_elements = [
+        {
+            "id": "stale-element-1",
+            "type": "custom",
+            "name": "InterruptReview",
+            "forId": step["id"],
+        },
+        {
+            "id": "stale-element-2",
+            "type": "custom",
+            "name": "InterruptReview",
+            "forId": step["id"],
+        },
+    ]
+    unrelated_element = {
+        "id": "unrelated-element",
+        "type": "custom",
+        "name": "OtherElement",
+        "forId": step["id"],
+    }
+    thread = {"steps": [step], "elements": [*stale_elements, unrelated_element]}
+    restored_message = recording_message(metadata=step["metadata"], writes=[])
+    restored_message.id = step["id"]
+    install_message_factory(monkeypatch, hitl, restored=restored_message)
+
+    removed_elements = [Mock(remove=AsyncMock()) for _ in stale_elements]
+    custom_element = Mock(from_dict=Mock(side_effect=removed_elements))
+    monkeypatch.setattr(hitl.cl, "CustomElement", custom_element)
+    schedule_replay = Mock()
+    monkeypatch.setattr(hitl, "schedule_after_thread_hydration", schedule_replay)
+
+    await hitl.on_chat_resume(thread)
+
+    assert thread["elements"] == [unrelated_element]
+    assert custom_element.from_dict.call_args_list == [
+        ((stale_elements[0],), {}),
+        ((stale_elements[1],), {}),
+    ]
+    for element in removed_elements:
+        element.remove.assert_awaited_once_with()
+    schedule_replay.assert_called_once()
 
 
 async def test_automatic_resume_ignores_a_superseded_ledger(

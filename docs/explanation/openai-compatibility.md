@@ -390,8 +390,8 @@ the [Chat Completions reference](https://developers.openai.com/api/reference/res
 
 Ordinary chats work in any client that implements the supported OpenAI Chat
 Completions surface. Interrupt graphs are also OpenAI-wire-compatible, but they
-require the client application to implement tool execution or human-approval
-semantics. A UI that only renders assistant text cannot complete an interrupt.
+require the client application to collect interrupt input and replay tool
+results. A UI that only renders assistant text cannot complete an interrupt.
 
 ### Operation Identity
 
@@ -434,7 +434,9 @@ Every pending LangGraph interrupt becomes an OpenAI function tool call named
   "run_id": "f654e904-1bd8-4fd6-a8bf-53a49ca25699",
   "state_token": "47ecb7c6f7b9...",
   "payload": {
-    "question": "Approve the refund?"
+    "question": "How should the refund be handled?",
+    "choices": ["approve", "reject"],
+    "allow_other": true
   }
 }
 ```
@@ -463,7 +465,7 @@ content containing a `resume` value:
           "type": "function",
           "function": {
             "name": "langgraph_interrupt",
-            "arguments": "{\"run_id\":\"f654e904-1bd8-4fd6-a8bf-53a49ca25699\",\"state_token\":\"47ecb7c6f7b9...\",\"payload\":{\"question\":\"Approve the refund?\"}}"
+            "arguments": "{\"run_id\":\"f654e904-1bd8-4fd6-a8bf-53a49ca25699\",\"state_token\":\"47ecb7c6f7b9...\",\"payload\":{\"question\":\"How should the refund be handled?\",\"choices\":[\"approve\",\"reject\"],\"allow_other\":true}}"
           }
         }
       ]
@@ -471,13 +473,13 @@ content containing a `resume` value:
     {
       "role": "tool",
       "tool_call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
-      "content": "{\"resume\":\"approved\"}"
+      "content": "{\"resume\":\"Verify the delivery address first.\"}"
     }
   ]
 }
 ```
 
-Parallel interrupts are one atomic approval batch: the assistant message must
+Parallel interrupts are one atomic interrupt batch: the assistant message must
 contain all pending calls, and the following messages must answer all of them.
 A client must not select one call, mix ordinary tool calls into that exchange,
 duplicate a result, or synthesize a partial replay. Streaming clients assemble
@@ -489,9 +491,9 @@ on a resume, but `metadata.langgraph_run_id`, when present, must match the UUID
 in every replayed call.
 
 The UI owns persistence of this canonical assistant/tool ledger. It must store
-the exact calls before soliciting approval so a reconnect can reproduce the
-same resume request. Persisting only rendered prompt text or only the user's
-decision is insufficient.
+the exact calls before soliciting input so a reconnect can reproduce the same
+resume request. Persisting only rendered prompt text or only the user's response
+is insufficient.
 
 ### Durable Validation And Recovery
 
@@ -521,17 +523,17 @@ An interrupted node restarts from its beginning when resumed. Any side effect
 before `interrupt()` can therefore run again; make it idempotent or move it
 after the interrupt. This is a LangGraph execution rule, documented in the
 official [interrupt guidance](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
-Moving work after approval avoids that normal interrupt replay, but it does not
-make an external side effect exactly once: a process can still fail after the
-effect succeeds and before its task result is durably recorded. Put external
-effects in durable tasks and give the downstream operation an idempotency key
-when duplicates are unacceptable; LangGraph's
+Moving work after `interrupt()` avoids replaying it when the node restarts, but
+it does not make an external side effect exactly once: a process can still fail
+after the effect succeeds and before its task result is durably recorded. Put
+external effects in durable tasks and give the downstream operation an
+idempotency key when duplicates are unacceptable; LangGraph's
 [idempotency guidance](https://docs.langchain.com/oss/python/langgraph/functional-api#idempotency)
 describes that remaining crash window. The coordinator prevents overlapping
 run execution, not crash-time exactly-once delivery.
 
 Pending runs abandoned by users remain checkpoint data. Production operators
-must define an expiry policy that accounts for the maximum approval window and
+must define an expiry policy that accounts for the maximum response window and
 deletes expired checkpoint threads through the checkpointer; do not treat
 ordinary database backups or retention as an active-run cleanup policy. See
 LangGraph's [persistence documentation](https://docs.langchain.com/oss/python/langgraph/persistence)

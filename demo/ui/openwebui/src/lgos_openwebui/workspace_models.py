@@ -281,7 +281,7 @@ def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
 
 
 def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
-    # Open WebUI v0.11 reads this native schema from Workspace Model metadata.
+    # Open WebUI reads this native schema from Workspace Model metadata.
     # Keeping it out of params.system prevents settings UI data from becoming
     # an LGOS system prompt.
     return {

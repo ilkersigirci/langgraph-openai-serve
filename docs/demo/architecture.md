@@ -92,7 +92,7 @@ checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
 keeps its state in its bind-mounted data directory. Detailed ownership and
 recovery behavior live in [Persistent Plot Agent](graphs/persistent-plot-agent.md) and
-[Interruptible Approval](graphs/interruptible-approval.md). When
+[Interruptible Human Review](graphs/interruptible-approval.md). When
 `LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.

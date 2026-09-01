@@ -4,7 +4,9 @@ from unittest.mock import MagicMock, Mock, call
 import httpx
 
 import lgos_openwebui.sync_functions as sync_functions_module
+from lgos_openwebui.bundle import bundle_function
 from lgos_openwebui.sync_functions import (
+    FUNCTIONS_DIR,
     FunctionSpec,
     discover_function_specs,
     sign_in,
@@ -52,6 +54,29 @@ def test_discover_function_specs_uses_filename_and_frontmatter(tmp_path: Path) -
             content=source.read_text(),
         ),
     )
+
+
+def test_bundle_function_is_frontmatter_first_and_executable() -> None:
+    content = bundle_function(FUNCTIONS_DIR / "generic")
+    namespace: dict[str, object] = {}
+
+    exec(compile(content, "<generic>", "exec"), namespace)
+
+    assert content.startswith('"""\ntitle: Generic\n')
+    assert "from .api import" not in content
+    assert "# ===== BEGIN contracts.py =====" in content
+    assert "# ===== BEGIN pipe.py =====" in content
+    assert "Pipe" in namespace
+
+
+def test_discover_function_specs_includes_directory_backed_functions() -> None:
+    specs = discover_function_specs()
+
+    generic = next(spec for spec in specs if spec.id == "generic")
+
+    assert generic.name == "Generic"
+    assert generic.content.startswith('"""\ntitle: Generic\n')
+    assert "# ===== BEGIN pipe.py =====" in generic.content
 
 
 def test_sync_functions_updates_existing_function_and_preserves_state() -> None:

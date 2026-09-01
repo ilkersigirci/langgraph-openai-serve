@@ -1,11 +1,13 @@
-# Open WebUI Functions
+# Open WebUI Integration
 
 The demo includes two Open WebUI Functions over LGOS APIs registered in Bifrost:
 
-- `demo/ui/openwebui/src/lgos_openwebui/functions/generic.py` is a
+- `demo/ui/openwebui/src/lgos_openwebui/functions/generic/` is the modular source
+  for a
   [manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
-  for all registered graphs. It handles streaming, citations, and interrupt
-  approval, and forwards graph-specific runtime settings.
+  for all registered graphs. It forwards standard Chat Completions chunks,
+  native tools, citations, and graph-specific runtime settings, and adapts LGOS
+  interrupts to Open WebUI's native question UI.
 - `demo/ui/openwebui/src/lgos_openwebui/functions/uservalves_simple.py` keeps
   a static `UserValves` design as a small single-model example.
 
@@ -34,7 +36,7 @@ The sync command signs in through `/api/v1/auths/signin`, creates or updates the
 bundled Functions, lists provider-qualified LGOS models from Bifrost's `/v1`
 catalog, retrieves detailed metadata through `/openai_passthrough/v1`, and
 bulk-imports each generated Workspace Model with an active, public, hidden
-override for its manifold base. Run it again after changing the Function,
+override for its manifold base. Run it again after changing a Function, the
 Bifrost provider catalog, or a graph's client settings schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
@@ -48,10 +50,14 @@ Workspace Models are public; later syncs preserve their access grants and
 active state. The sync owns the generated bases' hidden, public, and active
 state.
 
-The command discovers every top-level `.py` file in that directory except files
-whose names start with `_`. The filename stem is the Function ID, and the
-required Open WebUI frontmatter `title` is its display name. Function
-filenames must be lowercase Python identifiers.
+The command discovers every top-level `.py` file and directory-backed Function
+in that directory, except entries whose names start with `_`. A modular
+Function directory contains `function.py` for its frontmatter and entrypoint;
+the Generic Function's modules are flattened into one executable source string
+at sync time because Open WebUI stores each Function directly in its database.
+The filename stem or directory name is the Function ID, and the required Open
+WebUI frontmatter `title` is its display name. Function IDs must be lowercase
+Python identifiers.
 
 The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model defines its
 environment names, defaults, and descriptions. The shared
@@ -144,7 +150,7 @@ take their schemas only from LGOS.
 
 !!! note "Pinned Open WebUI contract"
 
-    The demo pins Open WebUI v0.11.0. The sync imports its native
+    The demo pins Open WebUI v0.11.3. The sync imports its native
     `meta.chat_variables_schema` model metadata directly instead of putting
     form declarations in a system prompt. This preserves JSON booleans and
     ensures UI configuration never becomes graph prompt content. This behavior
@@ -154,12 +160,18 @@ take their schemas only from LGOS.
 ## Streaming, Status, And Citations
 
 The general manifold Pipe honors Open WebUI's requested Chat Completions mode.
-Streaming requests yield assistant content, while non-streaming requests return
-the full Chat Completion object. In both modes, the Pipe translates final OpenAI
-citation annotations to native Open WebUI source events. Inline `[n]` markers
-come from the assistant content and resolve against those ordered sources.
-Non-streaming requests do not replay status or artifact events. The static
-example streams assistant text only.
+Streaming requests pass standard Chat Completion chunks through unchanged, and
+non-streaming requests return the full Chat Completion object. Open WebUI owns
+standard stream parsing, including assistant text, finish reasons, usage, tool
+calls, and citation annotations. Inline citation markers remain part of the
+assistant content. Non-streaming requests do not replay status or artifact
+events. The static example streams assistant text only.
+
+!!! note "Keep streaming enabled"
+
+    In Open WebUI v0.11.3, native citation sources, tool calls, and `ask_user`
+    use its streaming middleware. Non-streaming responses preserve
+    annotations and tool calls, but the UI does not render their native controls.
 
 The manifold Pipe opts into LGOS client stream events only when model retrieval
 advertises `client_events`, and maps every portable status update to Open
@@ -183,33 +195,54 @@ documented under
 The adapter deliberately does not turn status updates into OpenAI tool calls.
 Open WebUI treats a tool call as work it must execute, but LGOS has already
 started the backend work. The passive status mapping keeps execution in the
-graph and avoids an unknown-tool or duplicate-execution path.
+graph and avoids duplicate execution.
 
 Proxy requirements are documented under
 [proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
-## Interrupt Approval
+## Interrupt Input
 
-The Pipe implements the
-[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay)
-for the [interruptible-approval graph](graphs/interruptible-approval.md),
-keeps only the current assistant/tool exchange in each resume request, and
-sends no partial batch. Compose bounds an unanswered Open WebUI confirmation to
-30 seconds with `WEBSOCKET_EVENT_CALLER_TIMEOUT`.
+The Pipe translates each LGOS `langgraph_interrupt` batch into one built-in
+Open WebUI `ask_user` call. Open WebUI persists that pending call on the saved
+assistant message, so its native question card survives a page reload. The
+Pipe keeps the original LGOS calls in the opaque `ask_user` call ID; answering
+the card needs no adapter database or live socket callback.
 
-!!! warning "Approval recovery is live-only in this demo"
+The deliberately small UI profile is an object containing a non-empty
+`question`, two or three unique string `choices`, and optional boolean
+`allow_other`. When `allow_other` is true, Open WebUI adds its free-form
+**Other** input. This is a demo-client presentation convention, not an LGOS
+restriction: the LGOS interrupt protocol accepts any JSON resume value, while
+this adapter maps Open WebUI choices and free-form answers to strings.
 
-    Open WebUI persists its conversation, but this Function keeps the exact
-    assistant/tool resume ledger only inside the active Pipe invocation. If the
-    request is cancelled, the tab reloads, or the worker is lost before the
-    resume reaches LGOS, the confirmation fails within 30 seconds and the
-    PostgreSQL checkpoint remains pending. This demo cannot reconstruct it from
-    visible chat history.
+After the user answers, the Pipe decodes the original calls and performs the
+[canonical LGOS replay](../explanation/openai-compatibility.md#canonical-batch-replay):
+the exact assistant tool-call message, including `run_id` and `state_token`,
+followed by one `{"resume": ...}` result per interrupt. One native `ask_user`
+call can contain one to three questions, matching Open WebUI's built-in limit.
+LGOS itself remains generic and can expose larger atomic batches to clients that
+support them.
 
-    A production Pipe must durably store the complete assistant tool-call
-    message and its result for every call before resuming. See
-    [Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
-    for server-side checkpoint retention.
+!!! note "Saved chats restore pending input"
+
+    Open WebUI's built-in `ask_user` persistence requires a saved chat. Refreshing
+    the page restores the unanswered card; the LangGraph checkpoint remains
+    pending until the answer reaches LGOS. **Cancel** ends the Open WebUI turn
+    without resuming the graph, so its checkpoint remains pending. The demo has
+    no expiry worker; production deployments must reap abandoned runs.
+
+The refund demo offers **approve**, **reject**, and a custom response. Approval
+executes the simulated refund and notification, rejection stops the workflow,
+and custom text is returned as reviewer feedback without executing an action.
+
+The Pipe also forwards Open WebUI's native tool definitions, including
+`ask_user`, through the standard Chat Completions `tools` fields. A compatible
+model can therefore ask one to three multiple-choice questions with an optional
+free-form answer; Open WebUI owns the question UI, persistence, and continuation.
+
+LGOS still owns the pending graph checkpoint and its retention policy. See
+[Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
+for server-side checkpoint retention.
 
 See the core [citation contract](../explanation/openai-compatibility.md#citation-ownership)
 and [interrupt protocol](../explanation/openai-compatibility.md#tool-calls-and-interrupts)

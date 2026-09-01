@@ -108,7 +108,7 @@ async def set_chat_profiles(
 async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
     return [
         cl.Starter(
-            label="Approval",
+            label="Human review",
             message="Refund order ORDER-123 for the customer.",
         )
     ]
@@ -129,12 +129,13 @@ async def on_chat_end() -> None:
 
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
-    """Restore the latest durable ledger and reopen its approval prompt."""
+    """Restore the latest durable ledger and reopen its interrupt prompt."""
     mark_persisted_errors_excluded(thread)
     cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
     try:
         ledger = pending_interrupt_ledger(thread)
         if ledger is not None:
+            await remove_persisted_interrupt_elements(thread, ledger.message.id)
             cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
             schedule_after_thread_hydration(partial(reopen_pending_interrupt, ledger))
     except InvalidInterruptLedgerError:
@@ -144,7 +145,7 @@ async def on_chat_resume(thread: ThreadDict) -> None:
 
 
 async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
-    """Recreate the live approval actions from a durable interrupt ledger."""
+    """Recreate the live input controls from a durable interrupt ledger."""
     if cl.user_session.get(PENDING_LEDGER_SESSION_KEY) is not ledger:
         return
     task_started = False
@@ -190,7 +191,7 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
             mark_model_context_excluded(trigger_message)
             await trigger_message.update()
         await send_ui_message(
-            "Resolve the pending approval before starting another request."
+            "Resolve the pending interrupt before starting another request."
         )
         await resolve_interrupts(
             assistant_message=pending.assistant_message,
@@ -446,46 +447,106 @@ async def ask_for_resume(
         await send_ui_message("Received an unsupported interrupt payload.")
         return None
 
-    action_message = cl.AskActionMessage(
-        content=interrupt_prompt(payload),
-        actions=[
-            cl.Action(
-                name="approve",
-                label="Approve",
-                icon="check",
-                payload={"resume": "approve"},
-            ),
-            cl.Action(
-                name="reject",
-                label="Reject",
-                icon="x",
-                payload={"resume": "reject"},
-            ),
-        ],
+    choices = interrupt_choices(payload)
+    prompt = interrupt_prompt(payload)
+    element = cl.CustomElement(
+        name="InterruptReview",
+        display="inline",
+        props=interrupt_element_props(payload, choices),
+    )
+    element_message = cl.AskElementMessage(
+        content=prompt,
+        element=element,
         timeout=300,
     )
-    # Chainlit persists ask messages but not their live actions. Reusing the
-    # ledger step identity lets its resumed prompt receive a fresh ask without
-    # adding another persisted message on every reconnect.
-    reuse_persisted_step(action_message, ledger_message)
-    ledger_message.content = action_message.content
-    response = await action_message.send()
-    ledger_message.content = action_message.content
+    # Chainlit persists ask messages but not their live element controls. Reusing
+    # the ledger step identity lets a resumed prompt receive a fresh element
+    # without adding another persisted message on every reconnect.
+    reuse_persisted_step(element_message, ledger_message)
+    ledger_message.content = element_message.content
+    response = await element_message.send()
+    ledger_message.content = element_message.content
 
     if not response:
-        await send_ui_message("Approval timed out.")
+        await send_ui_message("Interrupt input timed out.")
         return None
 
-    response_payload = response.get("payload")
-    if not isinstance(response_payload, dict):
-        await send_ui_message("No approval decision was received.")
+    if not isinstance(response, dict) or response.get("submitted") is not True:
+        await send_ui_message("Interrupt was cancelled.")
         return None
 
-    decision = response_payload.get("resume")
-    if decision not in {"approve", "reject"}:
-        await send_ui_message("No approval decision was received.")
+    raw_decision = response.get("resume")
+    if not isinstance(raw_decision, str) or not raw_decision.strip():
+        await send_ui_message("No interrupt response was received.")
         return None
+
+    decision = raw_decision.strip()
+    if choices is not None:
+        values, allow_other = choices
+        if decision not in values and not allow_other:
+            await send_ui_message("No interrupt response was received.")
+            return None
     return decision
+
+
+def interrupt_element_props(
+    payload: object,
+    choices: tuple[list[str], bool] | None,
+) -> dict[str, object]:
+    if choices is None:
+        return {
+            "prompt": interrupt_prompt(payload),
+            "choices": [],
+            "allow_other": True,
+        }
+
+    values, allow_other = choices
+    return {
+        "prompt": interrupt_prompt(payload),
+        "choices": values,
+        "allow_other": allow_other,
+    }
+
+
+async def remove_persisted_interrupt_elements(
+    thread: ThreadDict,
+    step_id: str,
+) -> None:
+    """Remove stale live controls before Chainlit rehydrates a resumed thread."""
+    elements = thread.get("elements") or []
+    stale_elements = [
+        element
+        for element in elements
+        if (
+            element.get("id")
+            and element.get("type") == "custom"
+            and element.get("name") == "InterruptReview"
+            and element.get("forId") == step_id
+        )
+    ]
+    if not stale_elements:
+        return
+
+    stale_ids = {element["id"] for element in stale_elements}
+    thread["elements"] = [
+        element for element in elements if element.get("id") not in stale_ids
+    ]
+    for element_dict in stale_elements:
+        element = cl.CustomElement.from_dict(element_dict)
+        await element.remove()
+
+
+def interrupt_choices(payload: object) -> tuple[list[str], bool] | None:
+    if not isinstance(payload, dict):
+        return None
+    choices = payload.get("choices")
+    if (
+        not isinstance(choices, list)
+        or not choices
+        or any(not isinstance(choice, str) or not choice for choice in choices)
+    ):
+        return None
+    return cast(list[str], choices), payload.get("allow_other") is True
 
 
 def interrupt_tool_calls(
@@ -531,11 +592,17 @@ def interrupt_prompt(payload: object) -> str:
     if not isinstance(payload, dict):
         return _json_payload_text(payload)
 
-    lines = [str(payload.get("question") or "Approve this action?")]
+    lines = [str(payload.get("question") or "Human input required.")]
     if payload.get("request"):
         lines.append(f"Request: {payload['request']}")
-    elif set(payload) != {"question"}:
-        lines.append(_json_payload_text(payload))
+    else:
+        details = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"question", "choices", "allow_other"}
+        }
+        if details:
+            lines.append(_json_payload_text(details))
 
     return "\n\n".join(lines)
 

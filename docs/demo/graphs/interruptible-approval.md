@@ -1,10 +1,12 @@
-# Interruptible Approval
+# Interruptible Human Review
 
 `interruptible-approval` is the only demo graph that persists API execution
-state. The graph runs two instances of one approval subgraph in parallel: one
-approves the refund and the other approves notifying the customer. Their
-interrupts cross `/v1` as one atomic tool-call batch; clients answer the whole
-batch without understanding the graph topology.
+state. It is a deterministic production-pattern example: a refund rejection
+ends the workflow, while approval leads to simulated refund execution and an
+automatic customer notification. A custom response records reviewer feedback
+without executing either action. The interrupt crosses `/v1` as a standard tool
+call, so clients can collect the human response without understanding the graph
+topology.
 
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
@@ -14,14 +16,16 @@ and retention rules are defined in
 
 ## LangGraph Topology
 
-The native `xray` view shows the two parallel approval subgraph instances.
+The generated native graph view keeps human review before every simulated
+external effect.
 
 ```mermaid
 graph TD;
-  __start__ --> approval_0_request["approval_0:request_approval"];
-  __start__ --> approval_1_request["approval_1:request_approval"];
-  approval_0_request --> __end__;
-  approval_1_request --> __end__;
+  start["__start__"] --> review_refund;
+  execute_refund --> notify_customer;
+  review_refund -.-> finish["__end__"];
+  review_refund -.-> execute_refund;
+  notify_customer --> finish;
 ```
 
 ## Interrupt Flow
@@ -37,14 +41,17 @@ sequenceDiagram
   User->>UI: Request protected action
   UI->>API: Initial Chat Completion
   API->>Graph: Invoke under run coordinator
-  Graph->>DB: Save paused state
-  Graph-->>API: Parallel interrupts
-  API-->>UI: Atomic assistant tool_calls batch
-  UI->>User: Request every decision
-  User-->>UI: Approve or reject each call
-  UI->>API: Replay assistant batch and all tool results
-  API->>Graph: Resume under run coordinator
-  Graph->>DB: Load checkpoint
+  Graph->>DB: Save refund pause
+  Graph-->>UI: Refund review tool call via API
+  User-->>UI: Approve, reject, or enter feedback
+  UI->>API: Replay tool call and result
+  API->>Graph: Resume from checkpoint
+  alt Refund rejected or feedback supplied
+    Graph->>Graph: Skip protected actions
+  else Refund approved
+    Graph->>Graph: Execute refund idempotently
+    Graph->>Graph: Notify customer idempotently
+  end
   Graph-->>API: Terminal result
   API->>DB: Delete checkpoint
   API-->>UI: Final assistant response
@@ -55,7 +62,14 @@ sequenceDiagram
 The graph receives its PostgreSQL checkpointer and run coordinator from the
 API's lifespan-managed runtime. The coordinator lease covers each initial or
 resume request, but ends when the graph pauses; no lease is held while the user
-decides.
+decides. The integration test closes and recreates the runtime before resume to
+verify that the pause survives runtime replacement.
+
+`execute_refund` and `notify_customer` are intentionally deterministic
+simulations. In a real application, replace them with durable operations that
+supply a stable idempotency key to each downstream system. Keep external effects
+in nodes after the interrupt, and make those nodes idempotent because a crash
+can still replay them.
 
 The demo uses LGOS's default shared checkpoint scope, so multi-tenant
 applications must derive that scope from authenticated server state.
@@ -64,11 +78,17 @@ The demo has no expiry worker. Production deployments must reap abandoned
 pending runs and follow LangGraph's
 [interrupt idempotency rules](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
 
+The application must also authorize and audit the reviewing identity. Interrupt
+results are workflow input, not proof of authorization. Applications that must
+replay a lost terminal response also need their own result/idempotency store;
+LGOS deletes the checkpoint after terminal completion.
+
 See [Docker Compose](../docker.md#demo-services) for schema setup, connection
 capacity, advisory-lock requirements, and strict checkpoint deserialization.
 
 ## Try It
 
-Send `Refund order ORDER-123` in Chainlit or Open WebUI. The UI presents both
-approval questions together, sends both decisions in one resume request, and
-then renders the final refund and notification results.
+Send `Refund order ORDER-123` in Chainlit or Open WebUI. Rejecting the refund
+finishes without executing an action. Approving it simulates the refund and
+customer notification. Choosing the custom-response path records arbitrary
+reviewer feedback and also finishes without executing an action.

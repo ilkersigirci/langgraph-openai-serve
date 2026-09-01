@@ -1,7 +1,7 @@
 services:
   lgos-openwebui:
     container_name: lgos-openwebui
-    image: ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228
+    image: ghcr.io/open-webui/open-webui:v0.11.3@sha256:751b617714b91e4cfd0186a509c72480c858e012976103b09a30dad053c36175
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"
     read_only: true
@@ -48,7 +48,6 @@ services:
       OPENAI_API_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/openai_passthrough/v1
       OPENAI_CATALOG_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
       OPENAI_API_KEY: ${DEMO_OPENWEBUI_API_KEY:-DUMMY}
-      WEBSOCKET_EVENT_CALLER_TIMEOUT: 30
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false
       RAG_EMBEDDING_ENGINE: openai

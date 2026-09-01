@@ -253,7 +253,7 @@ async def test_next_message_reprompts_live_pending_ledger_without_new_run(
     ]
     assert text_only_chat_messages.call_count == 1
     send_ui_message.assert_awaited_once_with(
-        "Resolve the pending approval before starting another request."
+        "Resolve the pending interrupt before starting another request."
     )
     assert session[hitl.PENDING_LEDGER_SESSION_KEY] is None
     assert [write[0] for write in writes] == ["send", "update", "update", "send"]
