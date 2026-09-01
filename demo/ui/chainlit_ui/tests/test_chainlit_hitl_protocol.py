@@ -250,9 +250,14 @@ def test_interrupt_payload_rejects_a_missing_payload(
     [
         pytest.param(None, "Interrupt input timed out.", id="timeout"),
         pytest.param(
-            {"payload": {}},
+            {"submitted": False},
+            "Interrupt was cancelled.",
+            id="cancelled",
+        ),
+        pytest.param(
+            {"submitted": True},
             "No interrupt response was received.",
-            id="malformed-action-result",
+            id="missing-response",
         ),
     ],
 )
@@ -262,7 +267,12 @@ async def test_ask_for_resume_never_synthesizes_a_missing_response(
     response: dict[str, object] | None,
     message: str,
 ) -> None:
-    action_message = Mock(metadata=None, send=AsyncMock(return_value=response))
+    element = Mock()
+    element_message = Mock(
+        content="Approve?",
+        metadata=None,
+        send=AsyncMock(return_value=response),
+    )
     send_ui_message = AsyncMock()
     tool_call = (
         completion(
@@ -276,7 +286,12 @@ async def test_ask_for_resume_never_synthesizes_a_missing_response(
         .choices[0]
         .message.tool_calls[0]
     )
-    monkeypatch.setattr(hitl.cl, "AskActionMessage", Mock(return_value=action_message))
+    monkeypatch.setattr(hitl.cl, "CustomElement", Mock(return_value=element))
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskElementMessage",
+        Mock(return_value=element_message),
+    )
     monkeypatch.setattr(hitl, "send_ui_message", send_ui_message)
 
     resume = await hitl.ask_for_resume(
@@ -305,8 +320,9 @@ async def test_ask_for_resume_reuses_the_persisted_ledger_step(
         content="",
         metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
     )
-    action_message = Mock(
-        id="new-action-message",
+    element = Mock()
+    element_message = Mock(
+        id="new-element-message",
         parent_id=None,
         created_at=None,
         content="Approve?",
@@ -314,14 +330,19 @@ async def test_ask_for_resume_reuses_the_persisted_ledger_step(
     )
 
     async def send() -> dict[str, object]:
-        action_message.content = "**Selected:** Approve"
-        return {"payload": {"resume": "approve"}}
+        element_message.content = "Thanks for submitting"
+        return {"submitted": True, "resume": "approve"}
 
-    action_message.send = AsyncMock(side_effect=send)
+    element_message.send = AsyncMock(side_effect=send)
     monkeypatch.setattr(
         hitl.cl,
-        "AskActionMessage",
-        Mock(return_value=action_message),
+        "CustomElement",
+        Mock(return_value=element),
+    )
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskElementMessage",
+        Mock(return_value=element_message),
     )
     tool_call = (
         completion(
@@ -339,16 +360,16 @@ async def test_ask_for_resume_reuses_the_persisted_ledger_step(
     decision = await hitl.ask_for_resume(tool_call, ledger_message)
 
     assert decision == "approve"
-    assert action_message.id == ledger_message.id
-    assert action_message.parent_id == ledger_message.parent_id
-    assert action_message.created_at == ledger_message.created_at
-    assert action_message.metadata is ledger_message.metadata
-    assert action_message.persisted is True
-    assert ledger_message.content == "**Selected:** Approve"
-    action_message.send.assert_awaited_once_with()
+    assert element_message.id == ledger_message.id
+    assert element_message.parent_id == ledger_message.parent_id
+    assert element_message.created_at == ledger_message.created_at
+    assert element_message.metadata is ledger_message.metadata
+    assert element_message.persisted is True
+    assert ledger_message.content == "Thanks for submitting"
+    element_message.send.assert_awaited_once_with()
 
 
-async def test_reopened_actions_keep_one_message_id_across_refreshes(
+async def test_reopened_elements_keep_one_message_id_across_refreshes(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -359,9 +380,9 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
         content="Approve?",
         metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
     )
-    action_messages = [
+    element_messages = [
         Mock(
-            id=f"transient-action-{index}",
+            id=f"transient-element-{index}",
             parent_id=None,
             created_at=None,
             content="Approve?",
@@ -372,8 +393,13 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
     ]
     monkeypatch.setattr(
         hitl.cl,
-        "AskActionMessage",
-        Mock(side_effect=action_messages),
+        "CustomElement",
+        Mock(side_effect=[Mock(), Mock()]),
+    )
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskElementMessage",
+        Mock(side_effect=element_messages),
     )
     monkeypatch.setattr(hitl, "send_ui_message", AsyncMock())
     tool_call = (
@@ -392,13 +418,13 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
     await hitl.ask_for_resume(tool_call, ledger_message)
     await hitl.ask_for_resume(tool_call, ledger_message)
 
-    assert [message.id for message in action_messages] == [
+    assert [message.id for message in element_messages] == [
         ledger_message.id,
         ledger_message.id,
     ]
 
 
-async def test_ask_for_resume_collects_a_custom_response(
+async def test_ask_for_resume_collects_a_custom_response_in_the_same_element(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -409,19 +435,21 @@ async def test_ask_for_resume_collects_a_custom_response(
         content="",
         metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
     )
-    action_message = Mock(
+    element = Mock()
+    element_message = Mock(
         content="Review?",
         metadata=None,
-        send=AsyncMock(return_value={"payload": {"custom": True}}),
+        send=AsyncMock(
+            return_value={
+                "submitted": True,
+                "resume": "  Verify the address first.  ",
+            }
+        ),
     )
-    input_message = Mock(
-        content="Enter a custom response.",
-        metadata=None,
-        send=AsyncMock(return_value={"output": "  Verify the address first.  "}),
-    )
-    action_factory = Mock(return_value=action_message)
-    monkeypatch.setattr(hitl.cl, "AskActionMessage", action_factory)
-    monkeypatch.setattr(hitl.cl, "AskUserMessage", Mock(return_value=input_message))
+    element_factory = Mock(return_value=element)
+    ask_factory = Mock(return_value=element_message)
+    monkeypatch.setattr(hitl.cl, "CustomElement", element_factory)
+    monkeypatch.setattr(hitl.cl, "AskElementMessage", ask_factory)
     tool_call = (
         completion(
             tool_calls=[
@@ -442,24 +470,42 @@ async def test_ask_for_resume_collects_a_custom_response(
     response = await hitl.ask_for_resume(tool_call, ledger_message)
 
     assert response == "Verify the address first."
-    assert [action.label for action in action_factory.call_args.kwargs["actions"]] == [
-        "Approve",
-        "Reject",
-        "Custom response",
-    ]
-    assert input_message.id == ledger_message.id
+    assert element_factory.call_args.kwargs == {
+        "name": "InterruptReview",
+        "display": "inline",
+        "props": {
+            "prompt": "Review?",
+            "choices": ["approve", "reject"],
+            "allow_other": True,
+        },
+    }
+    assert ask_factory.call_args.kwargs == {
+        "content": "Review?",
+        "element": element,
+        "timeout": 300,
+    }
+    assert element_message.id == ledger_message.id
 
 
-async def test_ask_for_resume_uses_free_text_for_an_unstructured_payload(
+async def test_ask_for_resume_uses_the_element_text_field_for_an_unstructured_payload(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
-    input_message = Mock(
+    element = Mock()
+    element_message = Mock(
         content="What should happen next?",
         metadata=None,
-        send=AsyncMock(return_value={"output": "Continue carefully."}),
+        send=AsyncMock(
+            return_value={"submitted": True, "resume": "Continue carefully."}
+        ),
     )
-    monkeypatch.setattr(hitl.cl, "AskUserMessage", Mock(return_value=input_message))
+    element_factory = Mock(return_value=element)
+    monkeypatch.setattr(hitl.cl, "CustomElement", element_factory)
+    monkeypatch.setattr(
+        hitl.cl,
+        "AskElementMessage",
+        Mock(return_value=element_message),
+    )
     tool_call = (
         completion(
             tool_calls=[interrupt_call("interrupt-1", "What should happen next?")]
@@ -478,6 +524,11 @@ async def test_ask_for_resume_uses_free_text_for_an_unstructured_payload(
     response = await hitl.ask_for_resume(tool_call, ledger_message)
 
     assert response == "Continue carefully."
+    assert element_factory.call_args.kwargs["props"] == {
+        "prompt": "What should happen next?",
+        "choices": [],
+        "allow_other": True,
+    }
 
 
 async def test_create_completion_sends_session_without_interrupt_run_metadata(

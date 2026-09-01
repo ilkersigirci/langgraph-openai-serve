@@ -133,8 +133,11 @@ DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 Initial requests need no interrupt metadata. The HITL client implements the
 [canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
 it asks for every response, sends no partial batch, and repeats when the graph
-pauses again. The client depends only on the standard tool-call batch, not the
-graph topology. See the shared
+pauses again. Each response is shown with Chainlit's native
+[`AskElementMessage`](https://docs.chainlit.io/api-reference/ask/ask-for-element)
+and a small custom element. Choice buttons and the allowed free-text field submit
+one `{resume: ...}` value, so the client depends only on the standard tool-call
+batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md).
 
 !!! note "Reconnect recovery and its boundary"
@@ -143,11 +146,10 @@ graph topology. See the shared
     model-context-excluded Chainlit message that displays the current prompt.
     Its
     [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
-    hook restores the newest pending batch and reattaches its choices, including
-    **Custom response** when allowed, after the pinned Chainlit host hydrates the
-    displayed thread. Unstructured payloads use Chainlit's native free-text
-    input. Refreshing abandons only the old live prompt; it neither duplicates
-    the persisted message nor rejects or resumes the graph.
+    hook restores the newest pending batch and reattaches its custom review form,
+    including the free-text field when allowed, after the pinned Chainlit host
+    hydrates the displayed thread. Refreshing abandons only the old live prompt;
+    it neither duplicates the persisted message nor rejects or resumes the graph.
     Chainlit queues data-layer writes asynchronously, with no public flush API,
     so a process crash can still occur before that message reaches PostgreSQL.
     Once stored, cancellation, reload, or worker loss before the resume request

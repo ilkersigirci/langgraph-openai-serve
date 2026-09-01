@@ -59,7 +59,10 @@ async def test_text_only_chat_message_policy() -> None:
     excluded_messages = [
         chat.cl.Message(content="Partial assistant output"),
         chat.cl.Message(content="Chat completion failed: unavailable"),
-        chat.cl.AskActionMessage(content="Approve this action?", actions=[]),
+        chat.cl.AskElementMessage(
+            content="Approve this action?",
+            element=chat.cl.CustomElement(name="InterruptReview", props={}),
+        ),
         chat.cl.Message(content="Approval timed out."),
     ]
     for message in excluded_messages:

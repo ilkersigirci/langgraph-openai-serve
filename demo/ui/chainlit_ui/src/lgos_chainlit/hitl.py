@@ -135,6 +135,7 @@ async def on_chat_resume(thread: ThreadDict) -> None:
     try:
         ledger = pending_interrupt_ledger(thread)
         if ledger is not None:
+            await remove_persisted_interrupt_elements(thread, ledger.message.id)
             cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
             schedule_after_thread_hydration(partial(reopen_pending_interrupt, ledger))
     except InvalidInterruptLedgerError:
@@ -447,73 +448,92 @@ async def ask_for_resume(
         return None
 
     choices = interrupt_choices(payload)
-    if choices is None:
-        return await ask_for_text(interrupt_prompt(payload), ledger_message)
-
-    values, allow_other = choices
-    actions = [
-        cl.Action(
-            name=f"interrupt_choice_{index}",
-            label=value.capitalize(),
-            icon={"approve": "check", "reject": "x"}.get(value.lower()),
-            payload={"resume": value},
-        )
-        for index, value in enumerate(values)
-    ]
-    if allow_other:
-        actions.append(
-            cl.Action(
-                name="interrupt_custom_response",
-                label="Custom response",
-                icon="message-square",
-                payload={"custom": True},
-            )
-        )
-    action_message = cl.AskActionMessage(
-        content=interrupt_prompt(payload),
-        actions=actions,
+    prompt = interrupt_prompt(payload)
+    element = cl.CustomElement(
+        name="InterruptReview",
+        display="inline",
+        props=interrupt_element_props(payload, choices),
+    )
+    element_message = cl.AskElementMessage(
+        content=prompt,
+        element=element,
         timeout=300,
     )
-    # Chainlit persists ask messages but not their live actions. Reusing the
-    # ledger step identity lets its resumed prompt receive a fresh ask without
-    # adding another persisted message on every reconnect.
-    reuse_persisted_step(action_message, ledger_message)
-    ledger_message.content = action_message.content
-    response = await action_message.send()
-    ledger_message.content = action_message.content
+    # Chainlit persists ask messages but not their live element controls. Reusing
+    # the ledger step identity lets a resumed prompt receive a fresh element
+    # without adding another persisted message on every reconnect.
+    reuse_persisted_step(element_message, ledger_message)
+    ledger_message.content = element_message.content
+    response = await element_message.send()
+    ledger_message.content = element_message.content
 
     if not response:
         await send_ui_message("Interrupt input timed out.")
         return None
 
-    response_payload = response.get("payload")
-    if not isinstance(response_payload, dict):
+    if not isinstance(response, dict) or response.get("submitted") is not True:
+        await send_ui_message("Interrupt was cancelled.")
+        return None
+
+    raw_decision = response.get("resume")
+    if not isinstance(raw_decision, str) or not raw_decision.strip():
         await send_ui_message("No interrupt response was received.")
         return None
-    if response_payload.get("custom") is True:
-        return await ask_for_text("Enter a custom response.", ledger_message)
 
-    decision = response_payload.get("resume")
-    if decision not in values:
-        await send_ui_message("No interrupt response was received.")
-        return None
-    return cast(str, decision)
+    decision = raw_decision.strip()
+    if choices is not None:
+        values, allow_other = choices
+        if decision not in values and not allow_other:
+            await send_ui_message("No interrupt response was received.")
+            return None
+    return decision
 
 
-async def ask_for_text(prompt: str, ledger_message: cl.Message) -> str | None:
-    input_message = cl.AskUserMessage(content=prompt, timeout=300)
-    reuse_persisted_step(input_message, ledger_message)
-    ledger_message.content = input_message.content
-    response = await input_message.send()
-    ledger_message.content = input_message.content
-    if not response:
-        await send_ui_message("Interrupt input timed out.")
-        return None
-    output = response.get("output")
-    if not isinstance(output, str) or not output.strip():
-        await send_ui_message("No interrupt response was received.")
-        return None
-    return output.strip()
+def interrupt_element_props(
+    payload: object,
+    choices: tuple[list[str], bool] | None,
+) -> dict[str, object]:
+    if choices is None:
+        return {
+            "prompt": interrupt_prompt(payload),
+            "choices": [],
+            "allow_other": True,
+        }
+
+    values, allow_other = choices
+    return {
+        "prompt": interrupt_prompt(payload),
+        "choices": values,
+        "allow_other": allow_other,
+    }
+
+
+async def remove_persisted_interrupt_elements(
+    thread: ThreadDict,
+    step_id: str,
+) -> None:
+    """Remove stale live controls before Chainlit rehydrates a resumed thread."""
+    elements = thread.get("elements") or []
+    stale_elements = [
+        element
+        for element in elements
+        if (
+            element.get("id")
+            and element.get("type") == "custom"
+            and element.get("name") == "InterruptReview"
+            and element.get("forId") == step_id
+        )
+    ]
+    if not stale_elements:
+        return
+
+    stale_ids = {element["id"] for element in stale_elements}
+    thread["elements"] = [
+        element for element in elements if element.get("id") not in stale_ids
+    ]
+    for element_dict in stale_elements:
+        element = cl.CustomElement.from_dict(element_dict)
+        await element.remove()
 
 
 def interrupt_choices(payload: object) -> tuple[list[str], bool] | None:
@@ -575,8 +595,14 @@ def interrupt_prompt(payload: object) -> str:
     lines = [str(payload.get("question") or "Human input required.")]
     if payload.get("request"):
         lines.append(f"Request: {payload['request']}")
-    elif set(payload) != {"question"}:
-        lines.append(_json_payload_text(payload))
+    else:
+        details = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"question", "choices", "allow_other"}
+        }
+        if details:
+            lines.append(_json_payload_text(details))
 
     return "\n\n".join(lines)
 
