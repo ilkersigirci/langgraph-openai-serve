@@ -11,6 +11,8 @@ entry point.
   guidance applies to `tests/`, `demo/api/tests/`,
   `demo/ui/chainlit_ui/tests/`, and `demo/ui/openwebui/tests/`, including the
   async-test guidance for restricted coding-agent sandboxes.
+- Read `demo/AGENTS.md` before changing files under `demo/`; it documents the
+  self-contained demo projects and the modular OpenWebUI bundling contract.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
 - Use `docs/demo/api.md` and `docs/demo/graphs/index.md` for demo runs and graph
@@ -34,16 +36,6 @@ entry point.
   `openai.types.shared.ErrorObject`.
 - Check demo graph adapters before changing public graph APIs.
 
-## Chainlit Utilities
-
-- Keep the Chainlit demo pinned to the released `chainlit-utils` package from
-  PyPI; do not commit a local path source.
-- Agents may change the sibling `../chainlit-utils` repository when reusable
-  Chainlit behavior needs development. Test those unpublished changes in the
-  demo with `uv run --with-editable ../../../../chainlit-utils <command>` from
-  `demo/ui/chainlit_ui/`.
-- Keep using the editable overlay during joint development, then publish
-  `chainlit-utils` and update the demo's PyPI pin when the changes are released.
 
 ## Documentation Style
 

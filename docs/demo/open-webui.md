@@ -2,7 +2,8 @@
 
 The demo includes two Open WebUI Functions over LGOS APIs registered in Bifrost:
 
-- `demo/ui/openwebui/src/lgos_openwebui/functions/generic.py` is a
+- `demo/ui/openwebui/src/lgos_openwebui/functions/generic/` is the modular source
+  for a
   [manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
   for all registered graphs. It forwards standard Chat Completions chunks,
   native tools, citations, and graph-specific runtime settings, and adapts LGOS
@@ -49,10 +50,14 @@ Workspace Models are public; later syncs preserve their access grants and
 active state. The sync owns the generated bases' hidden, public, and active
 state.
 
-The command discovers every top-level `.py` file in that directory except files
-whose names start with `_`. The filename stem is the Function ID, and the
-required Open WebUI frontmatter `title` is its display name. Function
-filenames must be lowercase Python identifiers.
+The command discovers every top-level `.py` file and directory-backed Function
+in that directory, except entries whose names start with `_`. A modular
+Function directory contains `function.py` for its frontmatter and entrypoint;
+the Generic Function's modules are flattened into one executable source string
+at sync time because Open WebUI stores each Function directly in its database.
+The filename stem or directory name is the Function ID, and the required Open
+WebUI frontmatter `title` is its display name. Function IDs must be lowercase
+Python identifiers.
 
 The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model defines its
 environment names, defaults, and descriptions. The shared

@@ -6,6 +6,7 @@ import pytest
 
 from lgos_openwebui.functions import generic
 from lgos_openwebui.functions.generic import Pipe
+from lgos_openwebui.functions.generic import pipe as generic_pipe
 
 from .openwebui_support import (
     INTERRUPT_PAYLOAD,
@@ -26,7 +27,7 @@ async def _adapted_ask_user_call(
     *calls: dict[str, Any],
 ) -> dict[str, Any]:
     monkeypatch.setattr(
-        generic,
+        generic_pipe,
         "_chat",
         ScriptedChat(((), completion(tool_calls=list(calls)))),
     )
@@ -62,10 +63,10 @@ async def test_pipe_adapts_interrupt_to_persisted_ask_user(
 ) -> None:
     response = interrupt_response()
     if stream:
-        monkeypatch.setattr(generic, "_chat", ScriptedChat(((), response)))
+        monkeypatch.setattr(generic_pipe, "_chat", ScriptedChat(((), response)))
     else:
         monkeypatch.setattr(
-            generic, "_chat_completion", AsyncMock(return_value=response)
+            generic_pipe, "_chat_completion", AsyncMock(return_value=response)
         )
 
     chunks = await collect_response(
@@ -129,7 +130,7 @@ async def test_pipe_translates_persisted_answer_to_lgos_resume(
         _answer_message(ask_call, {"resume_0": answer}),
     ]
     chat = ScriptedChat((("Finished.",), completion("Finished.")))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     chunks = await collect_response(
         configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
@@ -181,7 +182,7 @@ async def test_pipe_rebuilds_complete_interrupt_batch_in_call_order(
         ),
     ]
     chat = ScriptedChat((("Applied.",), completion("Applied.")))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     await collect_response(
         configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
@@ -221,7 +222,7 @@ async def test_pipe_leaves_ordinary_ask_user_ledger_unchanged(
         {"role": "tool", "tool_call_id": "call-other", "content": "answer"},
     ]
     chat = ScriptedChat((("Done.",), completion("Done.")))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     await collect_response(
         configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
@@ -246,7 +247,7 @@ async def test_pipe_ignores_completed_interrupts_from_older_turns(
         {"role": "user", "content": "What happened next?"},
     ]
     chat = ScriptedChat((("Next answer.",), completion("Next answer.")))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     await collect_response(
         configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
@@ -380,7 +381,7 @@ async def test_pipe_rejects_payloads_unsupported_by_native_ask_user(
     detail: str,
 ) -> None:
     chat = ScriptedChat(((), completion(tool_calls=[interrupt_call("i", payload)])))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
 
@@ -393,7 +394,7 @@ async def test_pipe_rejects_more_than_three_interrupts(
 ) -> None:
     calls = [interrupt_call(str(index), INTERRUPT_PAYLOAD) for index in range(4)]
     chat = ScriptedChat(((), completion(tool_calls=calls)))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
 
@@ -429,7 +430,7 @@ async def test_pipe_leaves_model_generated_ask_user_call_unchanged(
         },
     }
     chat = ScriptedChat(((), completion(tool_calls=[ask_user_call])))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
 

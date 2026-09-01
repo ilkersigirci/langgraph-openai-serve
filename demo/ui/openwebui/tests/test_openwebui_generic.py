@@ -7,6 +7,8 @@ from openai.types.chat import ChatCompletionChunk
 
 from lgos_openwebui.functions import generic
 from lgos_openwebui.functions.generic import Pipe
+from lgos_openwebui.functions.generic import api as generic_api
+from lgos_openwebui.functions.generic import pipe as generic_pipe
 
 from .openwebui_support import (
     MARKDOWN_DELTAS,
@@ -68,7 +70,7 @@ async def test_pipe_lists_registered_models(
     )
     client_factory = Mock(return_value=client)
     monkeypatch.setattr(
-        "lgos_openwebui.functions.generic.AsyncOpenAI",
+        "lgos_openwebui.functions.generic.api.AsyncOpenAI",
         client_factory,
     )
 
@@ -199,7 +201,7 @@ async def test_pipe_builds_the_openai_stream_request_from_public_inputs(
     client.__aenter__.return_value = client
     client.models.retrieve.return_value = model_details
     client.chat.completions.create.return_value = stream
-    monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
+    monkeypatch.setattr(generic_api, "AsyncOpenAI", Mock(return_value=client))
 
     chunks = await collect_response(
         Pipe().pipe(
@@ -229,8 +231,8 @@ async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
     pipe = Pipe()
     chat = ScriptedChat((("ok",), completion("ok")))
     emitter = AsyncMock()
-    monkeypatch.setattr(generic, "_chat", chat)
-    monkeypatch.setattr(generic, "_retrieve_model", AsyncMock(return_value=None))
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_retrieve_model", AsyncMock(return_value=None))
 
     chunks = await collect_response(
         pipe.pipe(
@@ -307,7 +309,7 @@ async def test_pipe_preserves_standard_stream_chunks(
     )
     expected = [*content, finish, usage]
     chat = ScriptedChat((expected, completion()))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
 
     chunks = await collect_response(
         configured_pipe.pipe(
@@ -360,9 +362,9 @@ async def test_pipe_honors_stream_mode_and_preserves_native_annotations(
 ) -> None:
     expected_completion = citation_response()
     chat = ScriptedChat(((MARKDOWN_RESPONSE,), expected_completion))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
     complete = AsyncMock(return_value=expected_completion)
-    monkeypatch.setattr(generic, "_chat_completion", complete)
+    monkeypatch.setattr(generic_pipe, "_chat_completion", complete)
     emitter = AsyncMock()
 
     chunks = await collect_response(
@@ -433,7 +435,7 @@ async def test_pipe_emits_status_event(
     expected: dict[str, Any],
 ) -> None:
     chat = ScriptedChat(((_client_event_chunk("status", data),), completion()))
-    monkeypatch.setattr(generic, "_chat", chat)
+    monkeypatch.setattr(generic_pipe, "_chat", chat)
     emitter = AsyncMock()
 
     chunks = await collect_response(
@@ -471,7 +473,7 @@ async def test_pipe_emits_persistent_plot_agent_embed(
         namespace=["charts"],
     )
     monkeypatch.setattr(
-        generic,
+        generic_pipe,
         "_chat",
         ScriptedChat(((event,), completion())),
     )

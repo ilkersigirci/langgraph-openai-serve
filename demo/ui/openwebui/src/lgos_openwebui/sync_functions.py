@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 from openai import OpenAI, OpenAIError
 
+from .bundle import bundle_function
 from .settings import Settings
 from .workspace_models import (
     discover_workspace_model_specs,
@@ -43,16 +44,17 @@ def _frontmatter_title(content: str) -> str | None:
 def discover_function_specs(
     functions_dir: Path = FUNCTIONS_DIR,
 ) -> tuple[FunctionSpec, ...]:
-    """Build Function specs from Python filenames and Open WebUI frontmatter."""
+    """Build Function specs from source files and modular Function directories."""
     specs: list[FunctionSpec] = []
     sources = sorted(
         source
-        for source in functions_dir.glob("*.py")
+        for source in functions_dir.iterdir()
         if not source.name.startswith("_")
+        and (source.is_dir() or (source.is_file() and source.suffix == ".py"))
     )
 
     for source in sources:
-        function_id = source.stem
+        function_id = source.stem if source.is_file() else source.name
         if not function_id.isidentifier() or function_id != function_id.lower():
             msg = (
                 f"Open WebUI Function filename must be a lowercase Python identifier: "
@@ -60,7 +62,11 @@ def discover_function_specs(
             )
             raise ValueError(msg)
 
-        content = source.read_text(encoding="utf-8")
+        content = (
+            bundle_function(source)
+            if source.is_dir()
+            else source.read_text(encoding="utf-8")
+        )
         title = _frontmatter_title(content)
         if not title:
             msg = f"Open WebUI Function is missing a frontmatter title: {source}"
