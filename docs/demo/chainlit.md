@@ -140,6 +140,11 @@ one `{resume: ...}` value, so the client depends only on the standard tool-call
 batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md).
 
+![Chainlit human review form with approve, reject, and custom-response controls](../static/hitl_chainlit.png)
+
+*Chainlit renders the LangGraph interrupt as native choices with an optional
+custom response field.*
+
 !!! note "Reconnect recovery and its boundary"
 
     The adapter stores the exact assistant tool-call batch on the same

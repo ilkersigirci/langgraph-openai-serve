@@ -240,6 +240,11 @@ The Pipe also forwards Open WebUI's native tool definitions, including
 model can therefore ask one to three multiple-choice questions with an optional
 free-form answer; Open WebUI owns the question UI, persistence, and continuation.
 
+![Open WebUI native human input card for a LangGraph interrupt](../static/hitl_openwebui.png)
+
+*Open WebUI renders the interrupt as a native `ask_user` card with choices and
+an optional free-form answer.*
+
 LGOS still owns the pending graph checkpoint and its retention policy. See
 [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
 for server-side checkpoint retention.
