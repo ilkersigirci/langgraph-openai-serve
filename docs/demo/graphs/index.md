@@ -15,7 +15,7 @@ demo model catalogs.
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
 | [`custom-event-showcase`](events-and-citations.md) | Public progress and artifact events interleaved with text | `client_events` | None |
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | `client_events` | Upstream chat model and PostgreSQL store |
-| [`interruptible-approval`](interruptible-approval.md) | One checkpointed batch from parallel nested approval subgraphs | `interrupts` | PostgreSQL checkpointer and run coordinator |
+| [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
 

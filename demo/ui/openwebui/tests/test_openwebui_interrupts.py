@@ -9,9 +9,6 @@ from lgos_openwebui.functions.generic import Pipe
 
 from .openwebui_support import (
     INTERRUPT_PAYLOAD,
-    MODEL_ID,
-    RUN_ID,
-    STATE_TOKEN,
     USER_REQUEST,
     ScriptedChat,
     body,
@@ -19,443 +16,423 @@ from .openwebui_support import (
     completion,
     interrupt_call,
     interrupt_response,
-    model,
-    run_interrupt_pipe,
+    stream_chunk,
 )
 
 
-@pytest.mark.parametrize(
-    ("approved", "decision", "answer_deltas"),
-    [
-        pytest.param(
-            True,
-            "approve",
-            ("Approved agent action: ", USER_REQUEST),
-            id="approve",
-        ),
-        pytest.param(
-            False,
-            "reject",
-            (f"Rejected agent action: {USER_REQUEST}",),
-            id="reject",
-        ),
-    ],
-)
-async def test_pipe_resumes_confirmed_interrupt(
+async def _adapted_ask_user_call(
     monkeypatch: pytest.MonkeyPatch,
-    configured_pipe: Pipe,
-    approved: bool,
-    decision: str,
-    answer_deltas: tuple[str, ...],
-) -> None:
-    chat = ScriptedChat(
-        ((), interrupt_response()),
-        (answer_deltas, completion("".join(answer_deltas))),
+    pipe: Pipe,
+    *calls: dict[str, Any],
+) -> dict[str, Any]:
+    monkeypatch.setattr(
+        generic,
+        "_chat",
+        ScriptedChat(((), completion(tool_calls=list(calls)))),
     )
-    events: list[dict[str, Any]] = []
+    chunks = await collect_response(pipe.pipe(body=body(USER_REQUEST)))
+    chunk = chunks[0]
+    assert isinstance(chunk, dict)
+    return chunk["choices"][0]["delta"]["tool_calls"][0]
 
-    async def confirm(event: dict[str, Any]) -> bool:
-        events.append(event)
-        return approved
 
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await run_interrupt_pipe(configured_pipe, confirm)
-
-    assert all(isinstance(chunk, str) for chunk in chunks)
-    assert "".join(chunk for chunk in chunks if isinstance(chunk, str)) == "".join(
-        answer_deltas
-    )
-    assert events == [
-        {
-            "type": "confirmation",
-            "data": {"title": "Approve?", "message": USER_REQUEST},
-        }
-    ]
-    (
-        (initial_messages, initial_model_id),
-        (resume_messages, resume_model_id),
-    ) = chat.calls
-    assert initial_messages == [{"role": "user", "content": USER_REQUEST}]
-    assert resume_messages[0]["tool_calls"][0]["id"] == ("lg_interrupt_interrupt-1")
-    assert json.loads(resume_messages[0]["tool_calls"][0]["function"]["arguments"]) == {
-        "run_id": RUN_ID,
-        "state_token": STATE_TOKEN,
-        "payload": INTERRUPT_PAYLOAD,
-    }
-    assert resume_messages[1] == {
+def _answer_message(
+    ask_call: dict[str, Any],
+    answers: dict[str, Any],
+    *,
+    status: str = "answered",
+) -> dict[str, Any]:
+    return {
         "role": "tool",
-        "tool_call_id": "lg_interrupt_interrupt-1",
-        "content": json.dumps({"resume": decision}),
+        "tool_call_id": ask_call["id"],
+        "content": json.dumps({"status": status, "answers": answers}),
     }
-    assert (initial_model_id, resume_model_id) == (MODEL_ID, MODEL_ID)
 
 
-async def test_non_streaming_pipe_resumes_without_stream_events(
+def _option(index: int) -> dict[str, Any]:
+    return {"type": "option", "option_index": index}
+
+
+@pytest.mark.parametrize("stream", [True, False], ids=["stream", "complete"])
+async def test_pipe_adapts_interrupt_to_persisted_ask_user(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
+    *,
+    stream: bool,
 ) -> None:
-    final = completion("Approved.")
-    complete = AsyncMock(side_effect=[interrupt_response(), final])
-    monkeypatch.setattr(generic, "_chat_completion", complete)
-
-    async def confirm(_event: dict[str, Any]) -> bool:
-        return True
+    response = interrupt_response()
+    if stream:
+        monkeypatch.setattr(generic, "_chat", ScriptedChat(((), response)))
+    else:
+        monkeypatch.setattr(
+            generic, "_chat_completion", AsyncMock(return_value=response)
+        )
 
     chunks = await collect_response(
-        configured_pipe.pipe(
-            body=body(USER_REQUEST, stream=False),
-            __event_call__=confirm,
-        )
+        configured_pipe.pipe(body=body(USER_REQUEST, stream=stream))
     )
 
-    assert chunks == [final.model_dump(mode="json", exclude_none=True)]
-    resume_messages = complete.await_args_list[1].kwargs["messages"]
-    assert resume_messages[0]["tool_calls"][0]["id"] == ("lg_interrupt_interrupt-1")
-    assert resume_messages[1] == {
-        "role": "tool",
-        "tool_call_id": "lg_interrupt_interrupt-1",
-        "content": '{"resume": "approve"}',
+    first_chunk = chunks[0]
+    assert isinstance(first_chunk, dict)
+    choice = first_chunk["choices"][0]
+    message = choice["delta" if stream else "message"]
+    native_call = message["tool_calls"][0]
+    if stream:
+        assert native_call["index"] == 0
+    assert native_call["function"]["name"] == "ask_user"
+
+    arguments = json.loads(native_call["function"]["arguments"])
+    assert arguments["allow_other"] is True
+    question = arguments["questions"][0]
+    assert question["id"] == "resume_0"
+    assert question["question"].startswith("How should the refund be handled?")
+    assert json.loads(question["question"].split("\n\n", 1)[1]) == {
+        "action": "refund",
+        "request": USER_REQUEST,
     }
+    assert [option["label"] for option in question["options"]] == [
+        "approve",
+        "reject",
+    ]
+    last_chunk = chunks[-1]
+    assert isinstance(last_chunk, dict)
+    finish = last_chunk["choices"][0] if stream else choice
+    assert finish["finish_reason"] == "tool_calls"
 
 
 @pytest.mark.parametrize(
-    ("payload", "message"),
+    ("answer", "resume"),
     [
-        pytest.param("Approve transfer?", "Approve transfer?", id="string"),
+        pytest.param(_option(0), "approve", id="choice"),
         pytest.param(
-            ["transfer", {"amount": 42}],
-            '[\n  "transfer",\n  {\n    "amount": 42\n  }\n]',
-            id="list",
+            {"type": "other", "text": "  Error: check the address first.  "},
+            "Error: check the address first.",
+            id="custom-text",
         ),
-        pytest.param(42, "42", id="number"),
-        pytest.param(True, "true", id="boolean"),
-        pytest.param(None, "null", id="null"),
     ],
 )
-async def test_pipe_renders_every_json_payload_in_the_approval_event(
+async def test_pipe_translates_persisted_answer_to_lgos_resume(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
-    payload: object,
-    message: str,
+    answer: dict[str, Any],
+    resume: str,
 ) -> None:
-    chat = ScriptedChat(
-        ((), completion(tool_calls=[interrupt_call("interrupt-1", payload)]))
+    interrupt = interrupt_call("interrupt-1", INTERRUPT_PAYLOAD)
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        interrupt,
     )
-    events: list[dict[str, Any]] = []
-
-    async def cancel(event: dict[str, Any]) -> None:
-        events.append(event)
-
+    messages = [
+        {"role": "user", "content": USER_REQUEST},
+        {"role": "assistant", "content": "", "tool_calls": [ask_call]},
+        _answer_message(ask_call, {"resume_0": answer}),
+    ]
+    chat = ScriptedChat((("Finished.",), completion("Finished.")))
     monkeypatch.setattr(generic, "_chat", chat)
 
-    chunks = await run_interrupt_pipe(configured_pipe, cancel)
+    chunks = await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
+    )
 
-    assert chunks == ["Open WebUI approval was cancelled or timed out."]
-    assert events == [
-        {
-            "type": "confirmation",
-            "data": {
-                "title": "Approve this agent action?",
-                "message": message,
-            },
-        }
+    assert chunks == [
+        stream_chunk(content="Finished.").model_dump(
+            mode="json",
+            exclude_none=True,
+        )
     ]
-    assert len(chat.calls) == 1
+    assert chat.calls[0][0] == [
+        {"role": "assistant", "content": None, "tool_calls": [interrupt]},
+        {
+            "role": "tool",
+            "tool_call_id": interrupt["id"],
+            "content": json.dumps({"resume": resume}),
+        },
+    ]
 
 
-async def test_pipe_collects_every_interrupt_and_resumes_once(
+async def test_pipe_rebuilds_complete_interrupt_batch_in_call_order(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
 ) -> None:
-    first_call = interrupt_call(
+    first = interrupt_call(
         "interrupt-1",
-        {"question": "Approve refund?", "request": USER_REQUEST},
+        {**INTERRUPT_PAYLOAD, "question": "Review refund?"},
     )
-    second_call = interrupt_call(
+    second = interrupt_call(
         "interrupt-2",
         {
-            "question": "Approve notification?",
+            **INTERRUPT_PAYLOAD,
+            "question": "Review notification?",
             "request": "Email the customer",
         },
     )
-    interrupt_completion = completion(tool_calls=[first_call, second_call])
-    chat = ScriptedChat(
-        ((), interrupt_completion),
-        (("Applied.",), completion("Applied.")),
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        first,
+        second,
     )
-    events: list[dict[str, Any]] = []
-    answers = iter([True, False])
-
-    async def confirm(event: dict[str, Any]) -> bool:
-        events.append(event)
-        return next(answers)
-
+    messages = [
+        {"role": "assistant", "content": None, "tool_calls": [ask_call]},
+        _answer_message(
+            ask_call,
+            {"resume_1": _option(1), "resume_0": _option(0)},
+        ),
+    ]
+    chat = ScriptedChat((("Applied.",), completion("Applied.")))
     monkeypatch.setattr(generic, "_chat", chat)
 
-    chunks = await run_interrupt_pipe(configured_pipe, confirm)
+    await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
+    )
 
-    assert chunks == ["Applied."]
-    assert events == [
-        {
-            "type": "confirmation",
-            "data": {"title": "Approve refund?", "message": USER_REQUEST},
-        },
-        {
-            "type": "confirmation",
-            "data": {
-                "title": "Approve notification?",
-                "message": "Email the customer",
-            },
-        },
-    ]
-    assert len(chat.calls) == 2
-    resume_messages = chat.calls[1][0]
-    assert resume_messages[0] == {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [first_call, second_call],
-    }
-    assert resume_messages[1:] == [
+    assert chat.calls[0][0] == [
+        {"role": "assistant", "content": None, "tool_calls": [first, second]},
         {
             "role": "tool",
-            "tool_call_id": "lg_interrupt_interrupt-1",
-            "content": json.dumps({"resume": "approve"}),
+            "tool_call_id": first["id"],
+            "content": '{"resume": "approve"}',
         },
         {
             "role": "tool",
-            "tool_call_id": "lg_interrupt_interrupt-2",
-            "content": json.dumps({"resume": "reject"}),
+            "tool_call_id": second["id"],
+            "content": '{"resume": "reject"}',
         },
     ]
 
 
-async def test_pipe_keeps_the_ledger_across_interrupt_rounds(
+async def test_pipe_leaves_ordinary_ask_user_ledger_unchanged(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
 ) -> None:
-    first_call = interrupt_call("interrupt-1", {"question": "First?"})
-    second_call = interrupt_call(
-        "interrupt-2",
-        {"question": "Second?"},
-        state_token="state-token-2",
-    )
-    chat = ScriptedChat(
-        ((), completion(tool_calls=[first_call])),
-        ((), completion(tool_calls=[second_call])),
-        (("Done.",), completion("Done.")),
-    )
-    answers = iter([True, False])
-
-    async def confirm(_: dict[str, Any]) -> bool:
-        return next(answers)
-
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await run_interrupt_pipe(configured_pipe, confirm)
-
-    assert chunks == ["Done."]
-    assert len(chat.calls) == 3
-    first_ledger = chat.calls[1][0]
-    second_ledger = chat.calls[2][0]
-    assert [message["role"] for message in first_ledger] == ["assistant", "tool"]
-    assert [message["role"] for message in second_ledger] == ["assistant", "tool"]
-    assert first_ledger[0]["tool_calls"] == [first_call]
-    assert second_ledger[0]["tool_calls"] == [second_call]
-
-
-async def test_pipe_does_not_partially_resume_cancelled_batch(
-    monkeypatch: pytest.MonkeyPatch,
-    configured_pipe: Pipe,
-) -> None:
-    chat = ScriptedChat(
-        (
-            (),
-            completion(
-                tool_calls=[
-                    interrupt_call("interrupt-1", {"question": "First?"}),
-                    interrupt_call("interrupt-2", {"question": "Second?"}),
-                ]
-            ),
-        )
-    )
-    events: list[dict[str, Any]] = []
-
-    async def confirm(event: dict[str, Any]) -> bool | None:
-        events.append(event)
-        return None
-
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await run_interrupt_pipe(configured_pipe, confirm)
-
-    assert chunks == ["Open WebUI approval was cancelled or timed out."]
-    assert len(events) == 1
-    assert len(chat.calls) == 1
-
-
-async def test_pipe_reports_host_approval_failure_without_resuming_batch(
-    monkeypatch: pytest.MonkeyPatch,
-    configured_pipe: Pipe,
-) -> None:
-    chat = ScriptedChat(
-        (
-            (),
-            completion(
-                tool_calls=[
-                    interrupt_call("interrupt-1", {"question": "First?"}),
-                    interrupt_call("interrupt-2", {"question": "Second?"}),
-                ]
-            ),
-        )
-    )
-    event_call = AsyncMock(
-        return_value={
-            "error": "Event call timed out. The browser tab may be inactive or closed."
-        }
-    )
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await run_interrupt_pipe(configured_pipe, event_call)
-
-    assert chunks == [
-        "Open WebUI approval failed: Event call timed out. "
-        "The browser tab may be inactive or closed."
-    ]
-    event_call.assert_awaited_once_with(
+    messages: list[dict[str, Any]] = [
         {
-            "type": "confirmation",
-            "data": {
-                "title": "First?",
-                "message": json.dumps(
-                    {"question": "First?"},
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-            },
-        }
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-other",
+                    "type": "function",
+                    "function": {"name": "ask_user", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call-other", "content": "answer"},
+    ]
+    chat = ScriptedChat((("Done.",), completion("Done.")))
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
     )
-    assert len(chat.calls) == 1
+
+    assert chat.calls[0][0] == messages
 
 
-async def test_pipe_reports_empty_host_approval_exception_without_resuming_batch(
+async def test_pipe_ignores_completed_interrupts_from_older_turns(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
 ) -> None:
-    chat = ScriptedChat(((), interrupt_response()))
-    event_call = AsyncMock(side_effect=TimeoutError())
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        interrupt_call("interrupt-1", INTERRUPT_PAYLOAD),
+    )
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": [ask_call]},
+        _answer_message(ask_call, {"resume_0": _option(0)}),
+        {"role": "assistant", "content": "Finished."},
+        {"role": "user", "content": "What happened next?"},
+    ]
+    chat = ScriptedChat((("Next answer.",), completion("Next answer.")))
     monkeypatch.setattr(generic, "_chat", chat)
 
-    chunks = await run_interrupt_pipe(configured_pipe, event_call)
+    await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
+    )
+
+    assert chat.calls[0][0] == messages
+
+
+async def test_pipe_rejects_incomplete_persisted_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        interrupt_call("interrupt-1", INTERRUPT_PAYLOAD),
+    )
+    messages = [{"role": "assistant", "content": "", "tool_calls": [ask_call]}]
+
+    chunks = await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
+    )
 
     assert chunks == [
-        "Open WebUI approval failed: the confirmation session disconnected or timed out"
+        {"error": {"detail": "Open WebUI returned an incomplete interrupt batch."}}
     ]
-    event_call.assert_awaited_once()
-    assert len(chat.calls) == 1
 
 
-@pytest.mark.parametrize("mixed", [False, True], ids=["ordinary", "mixed"])
-async def test_pipe_reports_unsupported_tool_call_batches(
+async def test_pipe_rejects_invalid_answer(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
-    mixed: bool,
 ) -> None:
-    ordinary_call = {
-        "id": "call_other",
-        "type": "function",
-        "function": {"name": "other_tool", "arguments": "{}"},
-    }
-    tool_calls = [ordinary_call]
-    if mixed:
-        tool_calls.insert(0, interrupt_call("interrupt-1", INTERRUPT_PAYLOAD))
-    chat = ScriptedChat(((), completion(tool_calls=tool_calls)))
-    event_call = AsyncMock(return_value=True)
-    monkeypatch.setattr(generic, "_chat", chat)
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        interrupt_call("interrupt-1", INTERRUPT_PAYLOAD),
+    )
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": [ask_call]},
+        {
+            "role": "tool",
+            "tool_call_id": ask_call["id"],
+            "content": "unexpected",
+        },
+    ]
 
-    chunks = await run_interrupt_pipe(configured_pipe, event_call)
+    chunks = await collect_response(
+        configured_pipe.pipe(body={**body(USER_REQUEST), "messages": messages})
+    )
 
-    assert chunks == ["Open WebUI received an unsupported tool-call batch."]
-    event_call.assert_not_awaited()
-    assert len(chat.calls) == 1
+    assert chunks == [
+        {"error": {"detail": "Open WebUI returned an invalid interrupt answer."}}
+    ]
 
 
+@pytest.mark.parametrize("stream", [True, False], ids=["stream", "complete"])
 @pytest.mark.parametrize(
-    "arguments",
+    "content",
     [
-        pytest.param([], id="not-an-object"),
+        pytest.param(generic.ASK_USER_REJECTED_OUTPUT, id="rejected"),
         pytest.param(
-            {"run_id": RUN_ID, "state_token": STATE_TOKEN},
-            id="missing-payload",
+            json.dumps({"status": "cancelled", "answers": {}}),
+            id="timed-out",
         ),
     ],
 )
-async def test_pipe_does_not_resume_a_malformed_interrupt(
+async def test_pipe_ends_turn_without_resuming_cancelled_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
-    arguments: object,
+    content: str,
+    *,
+    stream: bool,
 ) -> None:
-    chat = ScriptedChat(
-        ((), interrupt_response(arguments)),
+    ask_call = await _adapted_ask_user_call(
+        monkeypatch,
+        configured_pipe,
+        interrupt_call("interrupt-1", INTERRUPT_PAYLOAD),
     )
-    events: list[dict[str, Any]] = []
-
-    async def confirm(event: dict[str, Any]) -> bool:
-        events.append(event)
-        return True
-
-    monkeypatch.setattr(generic, "_chat", chat)
-
-    chunks = await run_interrupt_pipe(configured_pipe, confirm)
-
-    assert chunks == ["Open WebUI received an unsupported interrupt payload."]
-    assert events == []
-    assert len(chat.calls) == 1
-
-
-async def test_pipe_passes_runtime_settings_to_initial_and_resume_requests(
-    monkeypatch: pytest.MonkeyPatch,
-    configured_pipe: Pipe,
-) -> None:
-    chat = ScriptedChat(
-        ((), interrupt_response()),
-        (("Approved.",), completion("Approved.")),
-    )
-    expected_request_metadata = {
-        "langgraph_runtime_settings": '{"use_history":true}',
-        "session_id": "chat-123",
-    }
-
-    async def confirm(_: dict[str, Any]) -> bool:
-        return True
-
-    monkeypatch.setattr(generic, "_chat", chat)
-    monkeypatch.setattr(
-        generic,
-        "_retrieve_model",
-        AsyncMock(
-            return_value=model(
-                client_settings={
-                    "schema_version": 1,
-                    "defaults": {"use_history": False},
-                }
-            )
-        ),
-    )
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": [ask_call]},
+        {"role": "tool", "tool_call_id": ask_call["id"], "content": content},
+    ]
 
     chunks = await collect_response(
         configured_pipe.pipe(
-            body=body(USER_REQUEST),
-            __event_call__=confirm,
-            __metadata__={
-                "chat_id": "chat-123",
-                "chat_variables": {"use_history": True},
-            },
+            body={**body(USER_REQUEST, stream=stream), "messages": messages}
         )
     )
 
-    assert chunks == ["Approved."]
-    assert chat.request_metadata_calls == [
-        expected_request_metadata,
-        expected_request_metadata,
+    assert len(chunks) == 1
+    assert isinstance(chunks[0], dict)
+    choice = chunks[0]["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    response = choice["delta" if stream else "message"]
+    assert response["content"] == generic.INTERRUPT_CANCELLED_MESSAGE
+
+
+@pytest.mark.parametrize(
+    ("payload", "detail"),
+    [
+        pytest.param(
+            "Question",
+            "Open WebUI requires an object interrupt payload.",
+            id="non-object",
+        ),
+        pytest.param(
+            {"choices": ["yes", "no"]},
+            "Open WebUI interrupt payload requires a question.",
+            id="missing-question",
+        ),
+        pytest.param(
+            {"question": "Proceed?", "choices": ["yes"]},
+            "Open WebUI interrupts require 2-3 unique string choices.",
+            id="too-few-choices",
+        ),
+        pytest.param(
+            {
+                "question": "Proceed?",
+                "choices": ["yes", "no"],
+                "context": "x" * 500,
+            },
+            "Open WebUI interrupt question exceeds 500 characters.",
+            id="rendered-question-too-long",
+        ),
+    ],
+)
+async def test_pipe_rejects_payloads_unsupported_by_native_ask_user(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+    payload: object,
+    detail: str,
+) -> None:
+    chat = ScriptedChat(((), completion(tool_calls=[interrupt_call("i", payload)])))
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
+
+    assert chunks == [{"error": {"detail": detail}}]
+
+
+async def test_pipe_rejects_more_than_three_interrupts(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    calls = [interrupt_call(str(index), INTERRUPT_PAYLOAD) for index in range(4)]
+    chat = ScriptedChat(((), completion(tool_calls=calls)))
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
+
+    assert chunks == [
+        {"error": {"detail": "Open WebUI supports at most 3 interrupts per batch."}}
     ]
+
+
+async def test_pipe_leaves_model_generated_ask_user_call_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_pipe: Pipe,
+) -> None:
+    ask_user_call = {
+        "id": "call-question",
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "arguments": json.dumps(
+                {
+                    "questions": [
+                        {
+                            "id": "format",
+                            "header": "Format",
+                            "question": "Which format should I use?",
+                            "options": [
+                                {"label": "Short", "description": "Be concise."},
+                                {"label": "Long", "description": "Add detail."},
+                            ],
+                        }
+                    ]
+                }
+            ),
+        },
+    }
+    chat = ScriptedChat(((), completion(tool_calls=[ask_user_call])))
+    monkeypatch.setattr(generic, "_chat", chat)
+
+    chunks = await collect_response(configured_pipe.pipe(body=body(USER_REQUEST)))
+
+    chunk = chunks[0]
+    assert isinstance(chunk, dict)
+    assert chunk["choices"][0]["delta"]["tool_calls"] == [{"index": 0, **ask_user_call}]

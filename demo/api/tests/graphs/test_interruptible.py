@@ -3,57 +3,104 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 
 from lgos_demo_api.graphs.interruptible import (
-    APPROVAL_SPECS,
     create_interruptible_graph,
     output_to_message,
 )
 
 
-async def test_nested_approvals_pause_and_resume_as_one_parallel_batch(
+async def test_approved_refund_executes_and_notifies_customer(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     request = "Refund order ORDER-123"
-    config = {"configurable": {"thread_id": "nested-approval-batch"}}
+    config = {"configurable": {"thread_id": "approved-refund"}}
 
     graph = create_interruptible_graph(sqlite_checkpointer)
-    interrupted = await graph.ainvoke({"request": request}, config=config)
-    interrupts = interrupted["__interrupt__"]
+    paused = await graph.ainvoke({"request": request}, config=config)
+    interrupts = paused["__interrupt__"]
 
-    assert len(interrupts) == 2
-    assert {item.value["question"] for item in interrupts} == {
-        spec.question for spec in APPROVAL_SPECS
+    assert len(interrupts) == 1
+    review = interrupts[0]
+    assert review.value == {
+        "action": "refund",
+        "question": "How should the refund be handled?",
+        "request": request,
+        "choices": ["approve", "reject"],
+        "allow_other": True,
     }
-    assert all(item.value["request"] == request for item in interrupts)
-    assert all(item.value["choices"] == ["approve", "reject"] for item in interrupts)
 
-    decisions = {
-        item.id: (
-            "approve" if item.value["question"] == "Approve the refund?" else "reject"
-        )
-        for item in interrupts
-    }
-    resumed = await graph.ainvoke(Command(resume=decisions), config=config)
+    completed = await graph.ainvoke(
+        Command(resume={review.id: "approve"}),
+        config=config,
+    )
 
-    assert {
-        (result["action"], result["decision"]) for result in resumed["approvals"]
-    } == {
-        ("Refund", "approve"),
-        ("Customer notification", "reject"),
-    }
-    assert output_to_message(resumed).text == (
-        f"Approval results for: {request}\n"
+    assert "__interrupt__" not in completed
+    assert completed["review_outcome"] == "approve"
+    assert completed["refund_executed"] is True
+    assert completed["customer_notified"] is True
+    assert output_to_message(completed).text == (
+        f"Review workflow for: {request}\n"
         "- Refund: approve\n"
-        "- Customer notification: reject"
+        "- Customer notification: sent\n"
+        "- Executed actions: Refund, Customer notification"
     )
 
 
-async def test_rejects_an_unknown_approval_decision(
+async def test_rejected_refund_skips_notification_and_execution(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    config = {"configurable": {"thread_id": "invalid-decision"}}
+    request = "Refund order ORDER-456"
+    config = {"configurable": {"thread_id": "rejected-refund"}}
+    graph = create_interruptible_graph(sqlite_checkpointer)
+    first_pause = await graph.ainvoke({"request": request}, config=config)
+    first_interrupt = first_pause["__interrupt__"][0]
+
+    completed = await graph.ainvoke(
+        Command(resume={first_interrupt.id: "reject"}),
+        config=config,
+    )
+
+    assert "__interrupt__" not in completed
+    assert completed["review_outcome"] == "reject"
+    assert "refund_executed" not in completed
+    assert "customer_notified" not in completed
+    assert output_to_message(completed).text == (
+        f"Review workflow for: {request}\n"
+        "- Refund: reject\n"
+        "- Customer notification: skipped\n"
+        "- Executed actions: none"
+    )
+
+
+async def test_custom_refund_feedback_is_preserved_without_execution(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    config = {"configurable": {"thread_id": "reviewer-feedback"}}
     graph = create_interruptible_graph(sqlite_checkpointer)
     interrupted = await graph.ainvoke({"request": "Refund"}, config=config)
-    decisions = {item.id: "maybe" for item in interrupted["__interrupt__"]}
+    feedback = "Please verify the delivery address first."
+    responses = {item.id: feedback for item in interrupted["__interrupt__"]}
 
-    with pytest.raises(ValueError, match=r"approve.*reject"):
-        await graph.ainvoke(Command(resume=decisions), config=config)
+    completed = await graph.ainvoke(Command(resume=responses), config=config)
+
+    assert completed["review_outcome"] == "feedback"
+    assert completed["reviewer_feedback"] == feedback
+    assert "refund_executed" not in completed
+    assert output_to_message(completed).text == (
+        "Review workflow for: Refund\n"
+        "- Refund: feedback\n"
+        "- Customer notification: skipped\n"
+        "- Executed actions: none\n"
+        f"- Reviewer feedback: {feedback}"
+    )
+
+
+async def test_rejects_an_empty_review_response(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    config = {"configurable": {"thread_id": "empty-response"}}
+    graph = create_interruptible_graph(sqlite_checkpointer)
+    interrupted = await graph.ainvoke({"request": "Refund"}, config=config)
+    responses = {item.id: "   " for item in interrupted["__interrupt__"]}
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        await graph.ainvoke(Command(resume=responses), config=config)

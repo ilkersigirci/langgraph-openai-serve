@@ -2,9 +2,10 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.18
+version: 0.25
 """
 
+import base64
 import json
 import os
 from collections.abc import AsyncIterator
@@ -12,21 +13,11 @@ from contextlib import asynccontextmanager
 from html import escape
 from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI, OpenAIError
-from openai.lib.streaming.chat import (
-    AsyncChatCompletionStream,
-    ChunkEvent,
-    ContentDeltaEvent,
-)
+from openai import AsyncOpenAI, AsyncStream, OpenAIError
 from openai.types.chat import (
     ChatCompletion,
-    ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
-    ChatCompletionMessage,
     ChatCompletionMessageParam,
-    ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCallParam,
-    ChatCompletionToolMessageParam,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -41,6 +32,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/events.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
+ASK_USER_TOOL_NAME = "ask_user"
+ASK_USER_CALL_ID_PREFIX = "lgos_ask_"
+ASK_USER_MAX_QUESTIONS = 3
+ASK_USER_QUESTION_MAX_LENGTH = 500
+ASK_USER_REJECTED_OUTPUT = "Error: tool call rejected by user."
+INTERRUPT_CANCELLED_MESSAGE = "Interrupt cancelled."
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 CLIENT_EVENTS_FEATURE = "client_events"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
@@ -50,18 +47,30 @@ STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
 STREAM_EVENTS_METADATA_VALUE = "v1"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 NO_CHOICES_MESSAGE = "LangGraph API returned no choices."
+CHAT_COMPLETION_REQUEST_FIELDS = (
+    "temperature",
+    "top_p",
+    "n",
+    "stop",
+    "max_tokens",
+    "presence_penalty",
+    "frequency_penalty",
+    "logit_bias",
+    "tools",
+    "tool_choice",
+)
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
     "langgraph_openai_serve model metadata. Runtime settings, client events, and "
     "interrupts may be unavailable. Configure the proxy to pass LGOS /v1 requests "
     "and responses through unchanged."
 )
-PipeChunk = str | dict[str, Any]
-PipeResponse = AsyncIterator[PipeChunk] | dict[str, Any] | str
+PipeChunk = dict[str, Any]
+PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 
 
-class SettingsTransportError(ValueError):
-    """A Chat Variable value cannot be represented in OpenAI metadata."""
+class InterruptCancelled(Exception):
+    """The user cancelled Open WebUI's native interrupt prompt."""
 
 
 class ChartSeries(BaseModel):
@@ -140,7 +149,6 @@ class Pipe:
     async def pipe(
         self,
         body: dict[str, Any],
-        __event_call__: Any = None,
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
@@ -149,14 +157,12 @@ class Pipe:
         if body.get("stream") is True:
             return self._stream(
                 body,
-                __event_call__=__event_call__,
                 __event_emitter__=__event_emitter__,
                 __metadata__=__metadata__,
                 __user__=__user__,
             )
         return await self._complete(
             body,
-            __event_call__=__event_call__,
             __event_emitter__=__event_emitter__,
             __metadata__=__metadata__,
             __user__=__user__,
@@ -165,24 +171,16 @@ class Pipe:
     async def _stream(
         self,
         body: dict[str, Any],
-        __event_call__: Any = None,
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
     ) -> AsyncIterator[PipeChunk]:
-        """
-        Forward chat and complete each interrupt batch in one invocation.
-
-        Open WebUI supplies the input ledger but this Function does not assume
-        an undocumented API for persisting raw assistant tool calls. The exact
-        assistant/tool exchange therefore remains local; cancellation leaves
-        the durable run paused and sends no partial resume.
+        """Forward chat, leaving tool execution and interaction to Open WebUI.
 
         Yields:
             PipeChunk objects for Open WebUI stream.
         """
         openwebui_metadata = __metadata__ or {}
-        messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
         base_url = self.valves.OPENAI_API_BASE_URL
         api_key = self.valves.OPENAI_API_KEY
         timeout = self.valves.OPENAI_API_TIMEOUT
@@ -190,8 +188,12 @@ class Pipe:
         try:
             model_id = _model_id(body)
             _model_request(model_id)
+            messages = _request_messages(body)
+        except InterruptCancelled:
+            yield _interrupt_cancelled_response(model_id, streaming=True)
+            return
         except ValueError as exc:
-            yield str(exc)
+            yield _error(str(exc))
             return
 
         try:
@@ -212,57 +214,47 @@ class Pipe:
                     extension,
                     CLIENT_EVENTS_FEATURE,
                 )
-                while True:
-                    async with _chat(
-                        client=client,
-                        messages=messages,
-                        model_id=model_id,
-                        request_metadata=request_metadata,
-                        include_client_events=include_client_events,
-                        user_id=_user_id(__user__),
-                    ) as stream:
-                        async for delta in _content_deltas(
-                            stream,
-                            __event_emitter__,
-                        ):
-                            yield delta
-                        response = await stream.get_final_completion()
+                async with _chat(
+                    client=client,
+                    messages=messages,
+                    model_id=model_id,
+                    request_metadata=request_metadata,
+                    include_client_events=include_client_events,
+                    user_id=_user_id(__user__),
+                    request_options=_request_options(body, stream=True),
+                ) as stream:
+                    async for chunk in stream:
+                        client_event = _client_event(chunk)
+                        if client_event is not None:
+                            ui_event = _status_event(
+                                client_event
+                            ) or _chart_embed_event(client_event)
+                            if __event_emitter__ is not None and ui_event is not None:
+                                await __event_emitter__(ui_event)
+                            continue
 
-                    if not response.choices:
-                        yield NO_CHOICES_MESSAGE
-                        return
-
-                    resume_messages, error = await _resume_messages(
-                        response,
-                        __event_call__,
-                    )
-                    if error is not None:
-                        yield error
-                        return
-                    if resume_messages is None:
-                        await _emit_sources(response, __event_emitter__)
-                        return
-                    messages = resume_messages
-        except SettingsTransportError as exc:
-            yield str(exc)
+                        yield _openwebui_chunk(chunk)
+        except ValueError as exc:
+            yield _error(str(exc))
         except OpenAIError as exc:
-            yield f"Error calling LangGraph API: {exc}"
+            yield _error(f"Error calling LangGraph API: {exc}")
 
     async def _complete(
         self,
         body: dict[str, Any],
-        __event_call__: Any,
         __event_emitter__: Any,
         __metadata__: dict[str, Any] | None,
         __user__: dict[str, Any] | None,
-    ) -> dict[str, Any] | str:
+    ) -> dict[str, Any]:
         """Return one complete OpenAI response without replaying stream events."""
-        messages = cast(list[ChatCompletionMessageParam], body.get("messages") or [])
         try:
             model_id = _model_id(body)
             _model_request(model_id)
+            messages = _request_messages(body)
+        except InterruptCancelled:
+            return _interrupt_cancelled_response(model_id, streaming=False)
         except ValueError as exc:
-            return str(exc)
+            return _error(str(exc))
 
         try:
             async with _client(
@@ -277,31 +269,22 @@ class Pipe:
                     model=model,
                     metadata=__metadata__ or {},
                 )
-                while True:
-                    response = await _chat_completion(
-                        client=client,
-                        messages=messages,
-                        model_id=model_id,
-                        request_metadata=request_metadata,
-                        user_id=_user_id(__user__),
-                    )
-                    if not response.choices:
-                        return NO_CHOICES_MESSAGE
+                response = await _chat_completion(
+                    client=client,
+                    messages=messages,
+                    model_id=model_id,
+                    request_metadata=request_metadata,
+                    user_id=_user_id(__user__),
+                    request_options=_request_options(body, stream=False),
+                )
+                if not response.choices:
+                    return _error(NO_CHOICES_MESSAGE)
 
-                    resume_messages, error = await _resume_messages(
-                        response,
-                        __event_call__,
-                    )
-                    if error is not None:
-                        return error
-                    if resume_messages is None:
-                        await _emit_sources(response, __event_emitter__)
-                        return response.model_dump(mode="json", exclude_none=True)
-                    messages = resume_messages
-        except SettingsTransportError as exc:
-            return str(exc)
+                return _openwebui_completion(response)
+        except ValueError as exc:
+            return _error(str(exc))
         except OpenAIError as exc:
-            return f"Error calling LangGraph API: {exc}"
+            return _error(f"Error calling LangGraph API: {exc}")
 
 
 ##################### UTILITY FUNCTIONS ###################
@@ -318,14 +301,18 @@ async def _chat(
     request_metadata: dict[str, str] | None = None,
     include_client_events: bool = False,
     user_id: str | None = None,
-) -> AsyncIterator[AsyncChatCompletionStream[Any]]:
+    request_options: dict[str, Any] | None = None,
+) -> AsyncIterator[AsyncStream[ChatCompletionChunk]]:
     metadata = dict(request_metadata or {})
     if include_client_events:
         metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
 
-    request = _chat_request(model_id, messages, metadata, user_id)
+    request = _chat_request(model_id, messages, metadata, user_id, request_options)
 
-    async with client.chat.completions.stream(**request) as stream:
+    async with await client.chat.completions.create(
+        **request,
+        stream=True,
+    ) as stream:
         yield stream
 
 
@@ -336,9 +323,16 @@ async def _chat_completion(
     model_id: str,
     request_metadata: dict[str, str] | None = None,
     user_id: str | None = None,
+    request_options: dict[str, Any] | None = None,
 ) -> ChatCompletion:
     """Create one non-streaming Chat Completion."""
-    request = _chat_request(model_id, messages, request_metadata, user_id)
+    request = _chat_request(
+        model_id,
+        messages,
+        request_metadata,
+        user_id,
+        request_options,
+    )
     return await client.chat.completions.create(**request)
 
 
@@ -347,13 +341,28 @@ def _chat_request(
     messages: list[ChatCompletionMessageParam],
     metadata: dict[str, str] | None,
     user_id: str | None,
+    request_options: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    request: dict[str, Any] = {**_model_request(model_id), "messages": messages}
+    request: dict[str, Any] = {
+        **_model_request(model_id),
+        "messages": messages,
+        **(request_options or {}),
+    }
     if user_id is not None:
         request["user"] = user_id
     if metadata:
         request["metadata"] = metadata
     return request
+
+
+def _request_options(body: dict[str, Any], *, stream: bool) -> dict[str, Any]:
+    """Forward only Chat Completions options supported by LGOS."""
+    fields = (
+        (*CHAT_COMPLETION_REQUEST_FIELDS, "stream_options")
+        if stream
+        else CHAT_COMPLETION_REQUEST_FIELDS
+    )
+    return {key: body[key] for key in fields if key in body}
 
 
 def _client(
@@ -375,7 +384,7 @@ def _model_id(body: dict[str, Any]) -> str:
     qualified_model_id = body.get("model")
     if not isinstance(qualified_model_id, str):
         msg = "Open WebUI did not provide a valid model ID."
-        raise TypeError(msg)
+        raise ValueError(msg)
 
     _, separator, model_id = qualified_model_id.partition(".")
     if not separator or not model_id:
@@ -450,10 +459,10 @@ def _runtime_settings_metadata(
         )
     except (TypeError, ValueError) as exc:
         msg = "The selected runtime settings cannot be encoded as JSON."
-        raise SettingsTransportError(msg) from exc
+        raise ValueError(msg) from exc
     if len(encoded) > OPENAI_METADATA_VALUE_MAX_LENGTH:
         msg = "The selected runtime settings exceed the OpenAI metadata value limit."
-        raise SettingsTransportError(msg)
+        raise ValueError(msg)
     return {RUNTIME_SETTINGS_METADATA_KEY: encoded}
 
 
@@ -513,114 +522,352 @@ async def _emit_limited_functionality_warning(event_emitter: Any) -> None:
     )
 
 
-async def _emit_sources(response: ChatCompletion, event_emitter: Any) -> None:
-    """Emit final annotations in Open WebUI's native source format."""
-    if event_emitter is None or not response.choices:
-        return
-    message = response.choices[0].message
-    if not isinstance(message.content, str):
-        return
+def _request_messages(body: dict[str, Any]) -> list[ChatCompletionMessageParam]:
+    """Translate a persisted Open WebUI answer into an LGOS resume."""
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return []
 
-    for annotation in message.annotations or []:
-        citation = annotation.url_citation
-        start = citation.start_index
-        stop = citation.end_index + 1
-        if not 0 <= start < stop <= len(message.content):
-            continue
-        await event_emitter(
+    resume_messages = _ask_user_to_resume(messages)
+    if resume_messages is not None:
+        return resume_messages
+    return cast(list[ChatCompletionMessageParam], messages)
+
+
+#### HITL ####
+
+
+def _ask_user_to_resume(messages: list[Any]) -> list[ChatCompletionMessageParam] | None:
+    """Restore the canonical LGOS batch from Open WebUI's persisted answer."""
+    if not messages:
+        return None
+
+    has_tool_result = (
+        len(messages) >= 2
+        and isinstance(messages[-1], dict)
+        and messages[-1].get("role") == "tool"
+    )
+    assistant = messages[-2] if has_tool_result else messages[-1]
+    if not isinstance(assistant, dict) or assistant.get("role") != "assistant":
+        return None
+
+    tool_calls = assistant.get("tool_calls")
+    if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+        return None
+    ask_call = tool_calls[0]
+    if not isinstance(ask_call, dict) or not isinstance(ask_call.get("function"), dict):
+        return None
+    call_id = ask_call.get("id")
+    if (
+        ask_call["function"].get("name") != ASK_USER_TOOL_NAME
+        or not isinstance(call_id, str)
+        or not call_id.startswith(ASK_USER_CALL_ID_PREFIX)
+    ):
+        return None
+    if not has_tool_result:
+        msg = "Open WebUI returned an incomplete interrupt batch."
+        raise ValueError(msg)
+
+    tool_result = cast(dict[str, Any], messages[-1])
+    if tool_result.get("tool_call_id") != call_id:
+        msg = "Open WebUI returned an incomplete interrupt batch."
+        raise ValueError(msg)
+
+    try:
+        encoded = call_id.removeprefix(ASK_USER_CALL_ID_PREFIX)
+        padding = "=" * (-len(encoded) % 4)
+        interrupt_calls = json.loads(base64.urlsafe_b64decode(encoded + padding))
+    except (TypeError, ValueError) as exc:
+        msg = "Open WebUI returned an invalid interrupt cursor."
+        raise ValueError(msg) from exc
+    if (
+        not isinstance(interrupt_calls, list)
+        or not 1 <= len(interrupt_calls) <= ASK_USER_MAX_QUESTIONS
+    ):
+        msg = "Open WebUI returned an invalid interrupt cursor."
+        raise ValueError(msg)
+
+    content = tool_result.get("content")
+    if content == ASK_USER_REJECTED_OUTPUT:
+        raise InterruptCancelled
+    try:
+        answer = json.loads(content) if isinstance(content, str) else None
+    except ValueError as exc:
+        msg = "Open WebUI returned an invalid interrupt answer."
+        raise ValueError(msg) from exc
+    if isinstance(answer, dict) and answer.get("status") == "cancelled":
+        raise InterruptCancelled
+    answers = answer.get("answers") if isinstance(answer, dict) else None
+    if (
+        not isinstance(answer, dict)
+        or answer.get("status") != "answered"
+        or not isinstance(answers, dict)
+    ):
+        msg = "Open WebUI returned an invalid interrupt answer."
+        raise ValueError(msg)
+
+    replay: list[dict[str, Any]] = [
+        {"role": "assistant", "content": None, "tool_calls": interrupt_calls}
+    ]
+    for index, interrupt_call in enumerate(interrupt_calls):
+        if (
+            not isinstance(interrupt_call, dict)
+            or not isinstance(interrupt_call.get("id"), str)
+            or not isinstance(interrupt_call.get("function"), dict)
+            or interrupt_call["function"].get("name") != INTERRUPT_TOOL_NAME
+        ):
+            msg = "Open WebUI returned an invalid interrupt cursor."
+            raise ValueError(msg)
+        payload = _interrupt_payload(interrupt_call)
+        replay.append(
             {
-                "type": "source",
-                "data": {
-                    "source": {"name": citation.title, "url": citation.url},
-                    "document": [message.content[start:stop]],
-                    "metadata": [
-                        {
-                            "source": citation.url,
-                            "name": citation.title,
-                            "url": citation.url,
-                        }
-                    ],
-                },
+                "role": "tool",
+                "tool_call_id": interrupt_call["id"],
+                "content": json.dumps(
+                    {
+                        "resume": _resume_value(
+                            answers.get(f"resume_{index}"),
+                            payload,
+                        )
+                    }
+                ),
             }
         )
+    return cast(list[ChatCompletionMessageParam], replay)
 
 
-async def _resume_messages(
-    response: ChatCompletion,
-    event_call: Any,
-) -> tuple[list[ChatCompletionMessageParam] | None, str | None]:
-    """Build the next interrupt exchange, if the completion requested one."""
-    if not response.choices:
-        return None, NO_CHOICES_MESSAGE
+def _openwebui_chunk(chunk: ChatCompletionChunk) -> PipeChunk:
+    value = chunk.model_dump(mode="json", exclude_none=True)
+    for choice in value.get("choices", []):
+        delta = choice.get("delta")
+        if isinstance(delta, dict):
+            _rewrite_interrupts(delta, streaming=True)
+    return value
 
-    assistant_message = response.choices[0].message
-    tool_calls = _interrupt_tool_calls(assistant_message)
-    if tool_calls is None:
-        return None, "Open WebUI received an unsupported tool-call batch."
-    if not tool_calls:
-        return None, None
 
-    decisions = []
-    for tool_call in tool_calls:
-        decision, error = await _approval_decision(tool_call, event_call)
-        if error is not None:
-            return None, error
-        if decision is None:
-            msg = "Decision cannot be None"
-            raise RuntimeError(msg)
-        decisions.append(decision)
+def _openwebui_completion(completion: ChatCompletion) -> PipeChunk:
+    value = completion.model_dump(mode="json", exclude_none=True)
+    for choice in value.get("choices", []):
+        message = choice.get("message")
+        if isinstance(message, dict):
+            _rewrite_interrupts(message)
+    return value
 
-    messages: list[ChatCompletionMessageParam] = [
-        _assistant_tool_call_message(assistant_message),
-        *[
-            ChatCompletionToolMessageParam(
-                role="tool",
-                tool_call_id=tool_call.id,
-                content=json.dumps({"resume": decision}),
-            )
-            for tool_call, decision in zip(tool_calls, decisions, strict=True)
-        ],
+
+def _rewrite_interrupts(message: dict[str, Any], *, streaming: bool = False) -> None:
+    tool_calls = message.get("tool_calls")
+    if not (
+        isinstance(tool_calls, list)
+        and tool_calls
+        and all(
+            isinstance(call, dict)
+            and isinstance(call.get("function"), dict)
+            and call["function"].get("name") == INTERRUPT_TOOL_NAME
+            for call in tool_calls
+        )
+    ):
+        return
+    message["tool_calls"] = [
+        _interrupts_to_ask_user(
+            cast(list[dict[str, Any]], tool_calls),
+            streaming=streaming,
+        )
     ]
-    return messages, None
 
 
-async def _content_deltas(
-    stream: AsyncChatCompletionStream[Any],
-    event_emitter: Any = None,
-) -> AsyncIterator[str]:
-    """Yield text and emit supported portable UI events.
+def _interrupts_to_ask_user(
+    calls: list[dict[str, Any]],
+    *,
+    streaming: bool = False,
+) -> dict[str, Any]:
+    """Present one atomic LGOS interrupt batch as one native question card."""
+    if len(calls) > ASK_USER_MAX_QUESTIONS:
+        msg = f"Open WebUI supports at most {ASK_USER_MAX_QUESTIONS} interrupts per batch."
+        raise ValueError(msg)
 
-    Yields:
-        String chunks for the response.
-    """
-    async for event in stream:
-        if isinstance(event, ContentDeltaEvent):
-            yield event.delta
-        elif isinstance(event, ChunkEvent) and event_emitter is not None:
-            ui_event = _status_event(event.chunk) or _chart_embed_event(event.chunk)
-            if ui_event is not None:
-                await event_emitter(ui_event)
+    interrupt_calls = []
+    questions = []
+    for index, call in enumerate(calls):
+        function = call.get("function")
+        call_id = call.get("id")
+        if (
+            not isinstance(call_id, str)
+            or not call_id
+            or not isinstance(function, dict)
+            or not isinstance(function.get("arguments"), str)
+        ):
+            msg = "LangGraph API returned invalid interrupt tool arguments."
+            raise ValueError(msg)
+        interrupt_call = {
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": INTERRUPT_TOOL_NAME,
+                "arguments": function["arguments"],
+            },
+        }
+        interrupt_calls.append(interrupt_call)
+        questions.append(_interrupt_question(_interrupt_payload(interrupt_call), index))
+
+    cursor = json.dumps(
+        interrupt_calls,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    result = {
+        "id": ASK_USER_CALL_ID_PREFIX
+        + base64.urlsafe_b64encode(cursor).decode().rstrip("="),
+        "type": "function",
+        "function": {
+            "name": ASK_USER_TOOL_NAME,
+            "arguments": json.dumps(
+                {
+                    "questions": questions,
+                    "allow_other": any(
+                        question["allow_other"] for question in questions
+                    ),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        },
+    }
+    if streaming:
+        result["index"] = 0
+    return result
 
 
-def _client_event_data(
-    chunk: ChatCompletionChunk,
-    event_type: str,
-) -> dict[str, Any] | None:
+def _interrupt_payload(tool_call: dict[str, Any]) -> object:
+    try:
+        arguments = json.loads(tool_call["function"]["arguments"])
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = "LangGraph API returned invalid interrupt tool arguments."
+        raise ValueError(msg) from exc
+    if not isinstance(arguments, dict) or "payload" not in arguments:
+        msg = "LangGraph API returned invalid interrupt tool arguments."
+        raise ValueError(msg)
+    return arguments["payload"]
+
+
+def _interrupt_question(payload: object, index: int) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        msg = "Open WebUI requires an object interrupt payload."
+        raise ValueError(msg)
+    question = payload.get("question")
+    choices = payload.get("choices")
+    allow_other = payload.get("allow_other", False)
+    if not isinstance(question, str) or not question.strip():
+        msg = "Open WebUI interrupt payload requires a question."
+        raise ValueError(msg)
+    if (
+        not isinstance(choices, list)
+        or not 2 <= len(choices) <= 3
+        or any(not isinstance(choice, str) or not choice.strip() for choice in choices)
+        or len(set(choices)) != len(choices)
+        or not isinstance(allow_other, bool)
+    ):
+        msg = "Open WebUI interrupts require 2-3 unique string choices."
+        raise ValueError(msg)
+
+    details = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"question", "choices", "allow_other"}
+    }
+    prompt = question.strip()
+    if details:
+        prompt = f"{prompt}\n\n{json.dumps(details, ensure_ascii=False, indent=2)}"
+    if len(prompt) > ASK_USER_QUESTION_MAX_LENGTH:
+        msg = (
+            "Open WebUI interrupt question exceeds "
+            f"{ASK_USER_QUESTION_MAX_LENGTH} characters."
+        )
+        raise ValueError(msg)
+    return {
+        "id": f"resume_{index}",
+        "header": "Human input",
+        "question": prompt,
+        "options": [
+            {
+                "label": choice,
+                "description": f"Resume with {choice!r}.",
+            }
+            for choice in choices
+        ],
+        "allow_other": allow_other,
+    }
+
+
+def _resume_value(answer: object, payload: object) -> str:
+    if not isinstance(answer, dict) or not isinstance(payload, dict):
+        msg = "Open WebUI returned an invalid interrupt answer."
+        raise ValueError(msg)
+    if answer.get("type") == "option":
+        index = answer.get("option_index")
+        choices = payload.get("choices")
+        if (
+            isinstance(index, int)
+            and not isinstance(index, bool)
+            and isinstance(choices, list)
+            and 0 <= index < len(choices)
+            and isinstance(choices[index], str)
+        ):
+            return choices[index]
+    elif answer.get("type") == "other" and payload.get("allow_other") is True:
+        text = answer.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    msg = "Open WebUI returned an invalid interrupt answer."
+    raise ValueError(msg)
+
+
+def _interrupt_cancelled_response(
+    model_id: str,
+    *,
+    streaming: bool,
+) -> dict[str, Any]:
+    message = {"role": "assistant", "content": INTERRUPT_CANCELLED_MESSAGE}
+    return {
+        "id": "chatcmpl-lgos-interrupt-cancelled",
+        "object": "chat.completion.chunk" if streaming else "chat.completion",
+        "created": 0,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta" if streaming else "message": message,
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+
+#### CUSTOM EVENTS ####
+
+
+def _client_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
     extension = (chunk.model_extra or {}).get(LGOS_EXTENSION_KEY)
     if not isinstance(extension, dict) or extension.get("schema_version") != 1:
         return None
 
     event = extension.get("event")
-    if not isinstance(event, dict) or event.get("type") != event_type:
+    return event if isinstance(event, dict) else None
+
+
+def _client_event_data(
+    event: dict[str, Any],
+    event_type: str,
+) -> dict[str, Any] | None:
+    if event.get("type") != event_type:
         return None
     data = event.get("data")
     return data if isinstance(data, dict) else None
 
 
 def _status_event(
-    chunk: ChatCompletionChunk,
+    event: dict[str, Any],
 ) -> dict[str, Any] | None:
-    data = _client_event_data(chunk, "status")
+    data = _client_event_data(event, "status")
     if data is None:
         return None
 
@@ -648,8 +895,8 @@ def _status_event(
 #### CHART ####
 
 
-def _chart_embed_event(chunk: ChatCompletionChunk) -> dict[str, Any] | None:
-    data = _client_event_data(chunk, "artifact")
+def _chart_embed_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    data = _client_event_data(event, "artifact")
     if data is None:
         return None
     try:
@@ -718,109 +965,5 @@ def _user_id(user: dict[str, Any] | None) -> str | None:
     return user_id if isinstance(user_id, str) and user_id else None
 
 
-#### HITL ####
-
-
-async def _approval_decision(
-    tool_call: ChatCompletionMessageToolCall,
-    event_call: Any,
-) -> tuple[str | None, str | None]:
-    if event_call is None:
-        return None, "Open WebUI approval modal is unavailable for this request."
-
-    event = _approval_event(tool_call)
-    if event is None:
-        return None, "Open WebUI received an unsupported interrupt payload."
-
-    try:
-        approval = await event_call(event)
-    except Exception as exc:
-        detail = str(exc).strip()
-        if not detail:
-            detail = "the confirmation session disconnected or timed out"
-        return None, f"Open WebUI approval failed: {detail}"
-    if isinstance(approval, dict) and approval.get("error"):
-        return None, f"Open WebUI approval failed: {approval['error']}"
-    if approval is True:
-        return "approve", None
-    if approval is False:
-        return "reject", None
-
-    return None, "Open WebUI approval was cancelled or timed out."
-
-
-def _interrupt_tool_calls(
-    message: ChatCompletionMessage,
-) -> list[ChatCompletionMessageToolCall] | None:
-    tool_calls = list(message.tool_calls or [])
-    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):  # ty: ignore[unresolved-attribute]
-        return None
-    return tool_calls  # ty: ignore[invalid-return-type]
-
-
-def _assistant_tool_call_message(
-    message: ChatCompletionMessage,
-) -> ChatCompletionAssistantMessageParam:
-    """Copy every tool call because their arguments are the resume cursor."""
-    return ChatCompletionAssistantMessageParam(
-        role=message.role,
-        content=message.content,
-        tool_calls=[
-            cast(
-                ChatCompletionMessageToolCallParam,
-                tool_call.model_dump(mode="json"),
-            )
-            for tool_call in message.tool_calls or []
-        ],
-    )
-
-
-def _approval_event(
-    tool_call: ChatCompletionMessageToolCall,
-) -> dict[str, Any] | None:
-    try:
-        payload = _interrupt_payload(tool_call)
-    except ValueError:
-        return None
-
-    if isinstance(payload, dict):
-        question = str(payload.get("question") or "Approve this agent action?")
-        request = str(
-            payload.get("request") or json.dumps(payload, ensure_ascii=False, indent=2)
-        )
-    else:
-        question = "Approve this agent action?"
-        request = _json_payload_text(payload)
-    return {
-        "type": "confirmation",
-        "data": {
-            "title": question,
-            "message": request,
-        },
-    }
-
-
-def _interrupt_payload(
-    tool_call: ChatCompletionMessageToolCall,
-) -> object:
-    try:
-        arguments = json.loads(tool_call.function.arguments)
-    except (TypeError, ValueError) as exc:
-        msg = "Interrupt tool arguments must be valid JSON."
-        raise ValueError(msg) from exc
-
-    if not isinstance(arguments, dict):
-        msg = "Interrupt tool arguments must be a JSON object."
-        raise ValueError(msg)
-
-    if "payload" not in arguments:
-        msg = "Interrupt tool arguments must contain a payload."
-        raise ValueError(msg)
-
-    return arguments["payload"]
-
-
-def _json_payload_text(payload: object) -> str:
-    if isinstance(payload, str) and payload:
-        return payload
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+def _error(detail: str) -> dict[str, Any]:
+    return {"error": {"detail": detail}}

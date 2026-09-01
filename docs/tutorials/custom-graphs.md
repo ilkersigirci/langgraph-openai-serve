@@ -275,7 +275,7 @@ from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
 GraphConfig(
     graph=interruptible_graph,
-    description="Request approval before performing an action.",
+    description="Collect human input before performing an action.",
     features={GraphFeature.INTERRUPTS},
     run_coordinator=InMemoryRunCoordinator(),
 )

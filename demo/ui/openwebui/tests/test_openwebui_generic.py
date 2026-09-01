@@ -3,7 +3,6 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from openai.lib.streaming.chat import ChunkEvent
 from openai.types.chat import ChatCompletionChunk
 
 from lgos_openwebui.functions import generic
@@ -20,7 +19,17 @@ from .openwebui_support import (
     collect_response,
     completion,
     model,
+    stream_chunk,
 )
+
+ASK_USER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": "Ask the user a question.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
 
 
 def test_api_key_valve_uses_password_input() -> None:
@@ -54,6 +63,7 @@ async def test_pipe_lists_registered_models(
                 id="lgos-b/lgos-rag",
                 owned_by="langgraph-openai-serve",
             ),
+            SimpleNamespace(id="openai/gpt-5", owned_by="openai"),
         ]
     )
     client_factory = Mock(return_value=client)
@@ -87,40 +97,13 @@ async def test_pipe_lists_registered_models(
     client.__aexit__.assert_awaited_once_with(None, None, None)
 
 
-async def test_pipes_ignore_non_lgos_catalog_models(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pipe = Pipe()
-    catalog = SimpleNamespace(
-        data=[
-            SimpleNamespace(
-                id="lgos-future/graph-a",
-                owned_by="langgraph-openai-serve",
-            ),
-            SimpleNamespace(id="openai/gpt-5", owned_by="openai"),
-        ]
-    )
-    client = AsyncMock()
-    client.__aenter__.return_value = client
-    client.models.list.return_value = catalog
-    monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
-
-    models = await pipe.pipes()
-
-    assert models == [
-        {
-            "id": "lgos-future/graph-a",
-            "name": "Generic / lgos-future/graph-a",
-        },
-    ]
-
-
 @pytest.mark.parametrize(
     (
         "model_id",
         "model_details",
         "metadata",
         "user",
+        "request_options",
         "expected_request",
     ),
     [
@@ -129,6 +112,7 @@ async def test_pipes_ignore_non_lgos_catalog_models(
             model(),
             None,
             None,
+            {},
             {
                 "model": "interruptible-approval",
                 "extra_headers": {"x-model-provider": "lgos-a"},
@@ -158,6 +142,20 @@ async def test_pipes_ignore_non_lgos_catalog_models(
             },
             {"id": "user-123"},
             {
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "n": 1,
+                "stop": ["DONE"],
+                "max_tokens": 100,
+                "presence_penalty": 0.1,
+                "frequency_penalty": 0.3,
+                "logit_bias": {"42": -1},
+                "tools": [ASK_USER_TOOL],
+                "tool_choice": "auto",
+                "stream_options": {"include_usage": True},
+                "response_format": {"type": "json_object"},
+            },
+            {
                 "model": "namespace/graph.with.dots",
                 "extra_headers": {"x-model-provider": "lgos-a"},
                 "messages": [{"role": "user", "content": "hello"}],
@@ -167,6 +165,17 @@ async def test_pipes_ignore_non_lgos_catalog_models(
                     "langgraph_runtime_settings": '{"audience":"expert"}',
                     "session_id": "chat-123",
                 },
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "n": 1,
+                "stop": ["DONE"],
+                "max_tokens": 100,
+                "presence_penalty": 0.1,
+                "frequency_penalty": 0.3,
+                "logit_bias": {"42": -1},
+                "tools": [ASK_USER_TOOL],
+                "tool_choice": "auto",
+                "stream_options": {"include_usage": True},
             },
             id="ephemeral-options",
         ),
@@ -178,31 +187,39 @@ async def test_pipe_builds_the_openai_stream_request_from_public_inputs(
     model_details: SimpleNamespace,
     metadata: dict[str, Any] | None,
     user: dict[str, Any] | None,
+    request_options: dict[str, Any],
     expected_request: dict[str, Any],
 ) -> None:
-    stream_context = AsyncMock()
-    stream_context.__aenter__.return_value = ScriptedStream(
+    stream = ScriptedStream(
         ("ok",),
         completion("ok"),
     )
-    stream_factory = Mock(return_value=stream_context)
+    stream.close = AsyncMock()
     client = AsyncMock()
     client.__aenter__.return_value = client
     client.models.retrieve.return_value = model_details
-    client.chat.completions.stream = stream_factory
+    client.chat.completions.create.return_value = stream
     monkeypatch.setattr(generic, "AsyncOpenAI", Mock(return_value=client))
 
     chunks = await collect_response(
         Pipe().pipe(
-            body=body("hello", model=f"generic.{model_id}"),
+            body={
+                **body("hello", model=f"generic.{model_id}"),
+                **request_options,
+            },
             __metadata__=metadata,
             __user__=user,
         )
     )
 
-    assert chunks == ["ok"]
-    stream_factory.assert_called_once_with(**expected_request)
-    stream_context.__aexit__.assert_awaited_once_with(None, None, None)
+    assert chunks == [
+        stream_chunk(content="ok").model_dump(mode="json", exclude_none=True)
+    ]
+    client.chat.completions.create.assert_awaited_once_with(
+        **expected_request,
+        stream=True,
+    )
+    stream.close.assert_awaited_once()
     client.__aexit__.assert_awaited_once_with(None, None, None)
 
 
@@ -222,7 +239,9 @@ async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
         )
     )
 
-    assert chunks == ["ok"]
+    assert chunks == [
+        stream_chunk(content="ok").model_dump(mode="json", exclude_none=True)
+    ]
     emitter.assert_awaited_once_with(
         {
             "type": "notification",
@@ -234,10 +253,21 @@ async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(
     )
 
 
-async def test_pipe_rejects_model_without_function_prefix() -> None:
-    chunks = await collect_response(Pipe().pipe(body=body("hello", model="graph")))
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        pytest.param("graph", id="missing-function-prefix"),
+        pytest.param(None, id="not-a-string"),
+    ],
+)
+async def test_pipe_rejects_invalid_model_id(model_id: object) -> None:
+    chunks = await collect_response(
+        Pipe().pipe(body={**body("hello"), "model": model_id})
+    )
 
-    assert chunks == ["Open WebUI did not provide a valid model ID."]
+    assert chunks == [
+        {"error": {"detail": "Open WebUI did not provide a valid model ID."}}
+    ]
 
 
 async def test_pipe_requires_a_provider_qualified_bifrost_model() -> None:
@@ -246,15 +276,37 @@ async def test_pipe_requires_a_provider_qualified_bifrost_model() -> None:
     )
 
     assert chunks == [
-        "Bifrost model ID must use the provider/model format: 'interruptible-approval'."
+        {
+            "error": {
+                "detail": "Bifrost model ID must use the provider/model format: "
+                "'interruptible-approval'."
+            }
+        }
     ]
 
 
-async def test_pipe_streams_markdown_unchanged(
+async def test_pipe_preserves_standard_stream_chunks(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
 ) -> None:
-    chat = ScriptedChat((MARKDOWN_DELTAS, completion(MARKDOWN_RESPONSE)))
+    content = [stream_chunk(content=delta) for delta in MARKDOWN_DELTAS]
+    finish = stream_chunk(finish_reason="stop")
+    usage = ChatCompletionChunk.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": UPSTREAM_MODEL_ID,
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 3,
+                "completion_tokens": 2,
+                "total_tokens": 5,
+            },
+        }
+    )
+    expected = [*content, finish, usage]
+    chat = ScriptedChat((expected, completion()))
     monkeypatch.setattr(generic, "_chat", chat)
 
     chunks = await collect_response(
@@ -263,10 +315,9 @@ async def test_pipe_streams_markdown_unchanged(
         )
     )
 
-    assert all(isinstance(chunk, str) for chunk in chunks)
-    assert "".join(chunk for chunk in chunks if isinstance(chunk, str)) == (
-        MARKDOWN_RESPONSE
-    )
+    assert chunks == [
+        chunk.model_dump(mode="json", exclude_none=True) for chunk in expected
+    ]
 
 
 def _client_event_chunk(
@@ -274,7 +325,7 @@ def _client_event_chunk(
     data: dict[str, Any],
     *,
     namespace: list[str] | None = None,
-) -> ChunkEvent:
+) -> ChatCompletionChunk:
     chunk = ChatCompletionChunk.model_validate(
         {
             "id": "chatcmpl-test",
@@ -292,17 +343,7 @@ def _client_event_chunk(
             },
         }
     )
-    return ChunkEvent(
-        type="chunk",
-        chunk=chunk,
-        snapshot={
-            "id": "chatcmpl-test",
-            "object": "chat.completion",
-            "created": 0,
-            "model": UPSTREAM_MODEL_ID,
-            "choices": [],
-        },
-    )
+    return chunk
 
 
 @pytest.mark.parametrize(
@@ -312,7 +353,7 @@ def _client_event_chunk(
         pytest.param(False, id="non-streaming"),
     ],
 )
-async def test_pipe_honors_stream_mode_and_emits_native_sources(
+async def test_pipe_honors_stream_mode_and_preserves_native_annotations(
     monkeypatch: pytest.MonkeyPatch,
     configured_pipe: Pipe,
     stream: bool,
@@ -336,7 +377,17 @@ async def test_pipe_honors_stream_mode_and_emits_native_sources(
     )
 
     if stream:
-        assert chunks == [MARKDOWN_RESPONSE]
+        assert chunks[0] == stream_chunk(content=MARKDOWN_RESPONSE).model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+        annotation_chunk = chunks[1]
+        assert isinstance(annotation_chunk, dict)
+        assert annotation_chunk["choices"][0]["finish_reason"] == "stop"
+        assert annotation_chunk["choices"][0]["delta"]["annotations"] == [
+            annotation.model_dump(mode="json", exclude_none=True)
+            for annotation in expected_completion.choices[0].message.annotations or []
+        ]
         assert len(chat.calls) == 1
         complete.assert_not_awaited()
     else:
@@ -345,25 +396,7 @@ async def test_pipe_honors_stream_mode_and_emits_native_sources(
         ]
         assert chat.calls == []
         complete.assert_awaited_once()
-    emitter.assert_awaited_once_with(
-        {
-            "type": "source",
-            "data": {
-                "source": {
-                    "name": "Example source",
-                    "url": "https://example.com/source",
-                },
-                "document": ["source"],
-                "metadata": [
-                    {
-                        "source": "https://example.com/source",
-                        "name": "Example source",
-                        "url": "https://example.com/source",
-                    }
-                ],
-            },
-        }
-    )
+    emitter.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -449,7 +482,9 @@ async def test_pipe_emits_persistent_plot_agent_embed(
     )
 
     assert chunks == []
-    event = emitter.await_args.args[0]
+    await_args = emitter.await_args
+    assert await_args is not None
+    event = await_args.args[0]
     assert event["type"] == "embeds"
     assert event["data"].keys() == {"embeds", "replace"}
     assert event["data"]["replace"] is True

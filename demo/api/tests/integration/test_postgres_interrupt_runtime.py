@@ -82,7 +82,7 @@ async def postgres_run_identity() -> AsyncIterator[tuple[str, str]]:
 async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
     postgres_run_identity: tuple[str, str],
 ) -> None:
-    """Pause through /v1, restart, reject a competing run, resume, and delete."""
+    """Resume after restart, reject overlap, and delete terminal state."""
     assert POSTGRES_URI is not None
     run_id, checkpoint_thread_id = postgres_run_identity
     public_request = "Refund order ORDER-PG"
@@ -99,26 +99,23 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
 
     assistant = paused.choices[0].message
     tool_calls = assistant.tool_calls or []
-    assert len(tool_calls) == 2
-    arguments = [json.loads(tool_call.function.arguments) for tool_call in tool_calls]
-    assert {item["run_id"] for item in arguments} == {run_id}
-    assert len({item["state_token"] for item in arguments}) == 1
+    assert len(tool_calls) == 1
+    arguments = json.loads(tool_calls[0].function.arguments)
+    assert arguments["run_id"] == run_id
+    assert arguments["payload"]["action"] == "refund"
     resume_messages = [
         assistant.model_dump(mode="json", exclude_none=True),
-        *[
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps({"resume": "approve"}),
-            }
-            for tool_call in tool_calls
-        ],
+        {
+            "role": "tool",
+            "tool_call_id": tool_calls[0].id,
+            "content": json.dumps({"resume": "approve"}),
+        },
     ]
 
     async with (
         postgres_runtime(POSTGRES_URI) as lock_runtime,
-        postgres_runtime(POSTGRES_URI) as restarted_runtime,
-        _openai_client(restarted_runtime) as client,
+        postgres_runtime(POSTGRES_URI) as first_resume_runtime,
+        _openai_client(first_resume_runtime) as client,
     ):
         async with lock_runtime.run_coordinator(checkpoint_thread_id):
             with pytest.raises(ConflictError) as exc_info:
@@ -134,9 +131,10 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
         )
 
         assert completed.choices[0].message.content == (
-            f"Approval results for: {public_request}\n"
+            f"Review workflow for: {public_request}\n"
             "- Refund: approve\n"
-            "- Customer notification: approve"
+            "- Customer notification: sent\n"
+            "- Executed actions: Refund, Customer notification"
         )
         config = {"configurable": {"thread_id": checkpoint_thread_id}}
-        assert await restarted_runtime.checkpointer.aget_tuple(config) is None
+        assert await first_resume_runtime.checkpointer.aget_tuple(config) is None

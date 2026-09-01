@@ -29,7 +29,7 @@ nav = [
       { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
       { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
       { "Persistent Plot Agent" = "demo/graphs/persistent-plot-agent.md" },
-      { "Interruptible Approval" = "demo/graphs/interruptible-approval.md" },
+      { "Interruptible Human Review" = "demo/graphs/interruptible-approval.md" },
     ]},
     { "Docker Compose" = "demo/docker.md" },
     { "Chainlit Client" = "demo/chainlit.md" },

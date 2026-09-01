@@ -108,7 +108,7 @@ async def set_chat_profiles(
 async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
     return [
         cl.Starter(
-            label="Approval",
+            label="Human review",
             message="Refund order ORDER-123 for the customer.",
         )
     ]
@@ -129,7 +129,7 @@ async def on_chat_end() -> None:
 
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
-    """Restore the latest durable ledger and reopen its approval prompt."""
+    """Restore the latest durable ledger and reopen its interrupt prompt."""
     mark_persisted_errors_excluded(thread)
     cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
     try:
@@ -144,7 +144,7 @@ async def on_chat_resume(thread: ThreadDict) -> None:
 
 
 async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
-    """Recreate the live approval actions from a durable interrupt ledger."""
+    """Recreate the live input controls from a durable interrupt ledger."""
     if cl.user_session.get(PENDING_LEDGER_SESSION_KEY) is not ledger:
         return
     task_started = False
@@ -190,7 +190,7 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
             mark_model_context_excluded(trigger_message)
             await trigger_message.update()
         await send_ui_message(
-            "Resolve the pending approval before starting another request."
+            "Resolve the pending interrupt before starting another request."
         )
         await resolve_interrupts(
             assistant_message=pending.assistant_message,
@@ -446,22 +446,32 @@ async def ask_for_resume(
         await send_ui_message("Received an unsupported interrupt payload.")
         return None
 
+    choices = interrupt_choices(payload)
+    if choices is None:
+        return await ask_for_text(interrupt_prompt(payload), ledger_message)
+
+    values, allow_other = choices
+    actions = [
+        cl.Action(
+            name=f"interrupt_choice_{index}",
+            label=value.capitalize(),
+            icon={"approve": "check", "reject": "x"}.get(value.lower()),
+            payload={"resume": value},
+        )
+        for index, value in enumerate(values)
+    ]
+    if allow_other:
+        actions.append(
+            cl.Action(
+                name="interrupt_custom_response",
+                label="Custom response",
+                icon="message-square",
+                payload={"custom": True},
+            )
+        )
     action_message = cl.AskActionMessage(
         content=interrupt_prompt(payload),
-        actions=[
-            cl.Action(
-                name="approve",
-                label="Approve",
-                icon="check",
-                payload={"resume": "approve"},
-            ),
-            cl.Action(
-                name="reject",
-                label="Reject",
-                icon="x",
-                payload={"resume": "reject"},
-            ),
-        ],
+        actions=actions,
         timeout=300,
     )
     # Chainlit persists ask messages but not their live actions. Reusing the
@@ -473,19 +483,50 @@ async def ask_for_resume(
     ledger_message.content = action_message.content
 
     if not response:
-        await send_ui_message("Approval timed out.")
+        await send_ui_message("Interrupt input timed out.")
         return None
 
     response_payload = response.get("payload")
     if not isinstance(response_payload, dict):
-        await send_ui_message("No approval decision was received.")
+        await send_ui_message("No interrupt response was received.")
         return None
+    if response_payload.get("custom") is True:
+        return await ask_for_text("Enter a custom response.", ledger_message)
 
     decision = response_payload.get("resume")
-    if decision not in {"approve", "reject"}:
-        await send_ui_message("No approval decision was received.")
+    if decision not in values:
+        await send_ui_message("No interrupt response was received.")
         return None
-    return decision
+    return cast(str, decision)
+
+
+async def ask_for_text(prompt: str, ledger_message: cl.Message) -> str | None:
+    input_message = cl.AskUserMessage(content=prompt, timeout=300)
+    reuse_persisted_step(input_message, ledger_message)
+    ledger_message.content = input_message.content
+    response = await input_message.send()
+    ledger_message.content = input_message.content
+    if not response:
+        await send_ui_message("Interrupt input timed out.")
+        return None
+    output = response.get("output")
+    if not isinstance(output, str) or not output.strip():
+        await send_ui_message("No interrupt response was received.")
+        return None
+    return output.strip()
+
+
+def interrupt_choices(payload: object) -> tuple[list[str], bool] | None:
+    if not isinstance(payload, dict):
+        return None
+    choices = payload.get("choices")
+    if (
+        not isinstance(choices, list)
+        or not choices
+        or any(not isinstance(choice, str) or not choice for choice in choices)
+    ):
+        return None
+    return cast(list[str], choices), payload.get("allow_other") is True
 
 
 def interrupt_tool_calls(
@@ -531,7 +572,7 @@ def interrupt_prompt(payload: object) -> str:
     if not isinstance(payload, dict):
         return _json_payload_text(payload)
 
-    lines = [str(payload.get("question") or "Approve this action?")]
+    lines = [str(payload.get("question") or "Human input required.")]
     if payload.get("request"):
         lines.append(f"Request: {payload['request']}")
     elif set(payload) != {"question"}:

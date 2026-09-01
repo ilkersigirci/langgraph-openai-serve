@@ -14,7 +14,7 @@ from .chainlit_hitl_support import (
 )
 
 
-async def test_on_chat_end_cancels_the_live_approval_task(
+async def test_on_chat_end_cancels_the_live_interrupt_task(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:

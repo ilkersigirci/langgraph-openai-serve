@@ -200,7 +200,7 @@ async def test_resolve_interrupts_reports_unsupported_tool_call_batches(
         ),
         pytest.param(
             {"amount": 42},
-            'Approve this action?\n\n{\n  "amount": 42\n}',
+            'Human input required.\n\n{\n  "amount": 42\n}',
             id="object-without-prompt-fields",
         ),
     ],
@@ -248,15 +248,15 @@ def test_interrupt_payload_rejects_a_missing_payload(
 @pytest.mark.parametrize(
     ("response", "message"),
     [
-        pytest.param(None, "Approval timed out.", id="timeout"),
+        pytest.param(None, "Interrupt input timed out.", id="timeout"),
         pytest.param(
             {"payload": {}},
-            "No approval decision was received.",
+            "No interrupt response was received.",
             id="malformed-action-result",
         ),
     ],
 )
-async def test_ask_for_resume_never_defaults_missing_decision_to_reject(
+async def test_ask_for_resume_never_synthesizes_a_missing_response(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
     response: dict[str, object] | None,
@@ -265,14 +265,21 @@ async def test_ask_for_resume_never_defaults_missing_decision_to_reject(
     action_message = Mock(metadata=None, send=AsyncMock(return_value=response))
     send_ui_message = AsyncMock()
     tool_call = (
-        completion(tool_calls=[interrupt_call("interrupt-1", {"question": "Approve?"})])
+        completion(
+            tool_calls=[
+                interrupt_call(
+                    "interrupt-1",
+                    {"question": "Approve?", "choices": ["approve", "reject"]},
+                )
+            ]
+        )
         .choices[0]
         .message.tool_calls[0]
     )
     monkeypatch.setattr(hitl.cl, "AskActionMessage", Mock(return_value=action_message))
     monkeypatch.setattr(hitl, "send_ui_message", send_ui_message)
 
-    decision = await hitl.ask_for_resume(
+    resume = await hitl.ask_for_resume(
         tool_call,
         Mock(
             id="persisted-ledger-message",
@@ -283,7 +290,7 @@ async def test_ask_for_resume_never_defaults_missing_decision_to_reject(
         ),
     )
 
-    assert decision is None
+    assert resume is None
     send_ui_message.assert_awaited_once_with(message)
 
 
@@ -317,7 +324,14 @@ async def test_ask_for_resume_reuses_the_persisted_ledger_step(
         Mock(return_value=action_message),
     )
     tool_call = (
-        completion(tool_calls=[interrupt_call("interrupt-1", {"question": "Approve?"})])
+        completion(
+            tool_calls=[
+                interrupt_call(
+                    "interrupt-1",
+                    {"question": "Approve?", "choices": ["approve", "reject"]},
+                )
+            ]
+        )
         .choices[0]
         .message.tool_calls[0]
     )
@@ -363,7 +377,14 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
     )
     monkeypatch.setattr(hitl, "send_ui_message", AsyncMock())
     tool_call = (
-        completion(tool_calls=[interrupt_call("interrupt-1", {"question": "Approve?"})])
+        completion(
+            tool_calls=[
+                interrupt_call(
+                    "interrupt-1",
+                    {"question": "Approve?", "choices": ["approve", "reject"]},
+                )
+            ]
+        )
         .choices[0]
         .message.tool_calls[0]
     )
@@ -375,6 +396,88 @@ async def test_reopened_actions_keep_one_message_id_across_refreshes(
         ledger_message.id,
         ledger_message.id,
     ]
+
+
+async def test_ask_for_resume_collects_a_custom_response(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    ledger_message = Mock(
+        id="persisted-ledger-message",
+        parent_id=None,
+        created_at="2026-08-10T12:00:00Z",
+        content="",
+        metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
+    )
+    action_message = Mock(
+        content="Review?",
+        metadata=None,
+        send=AsyncMock(return_value={"payload": {"custom": True}}),
+    )
+    input_message = Mock(
+        content="Enter a custom response.",
+        metadata=None,
+        send=AsyncMock(return_value={"output": "  Verify the address first.  "}),
+    )
+    action_factory = Mock(return_value=action_message)
+    monkeypatch.setattr(hitl.cl, "AskActionMessage", action_factory)
+    monkeypatch.setattr(hitl.cl, "AskUserMessage", Mock(return_value=input_message))
+    tool_call = (
+        completion(
+            tool_calls=[
+                interrupt_call(
+                    "interrupt-1",
+                    {
+                        "question": "Review?",
+                        "choices": ["approve", "reject"],
+                        "allow_other": True,
+                    },
+                )
+            ]
+        )
+        .choices[0]
+        .message.tool_calls[0]
+    )
+
+    response = await hitl.ask_for_resume(tool_call, ledger_message)
+
+    assert response == "Verify the address first."
+    assert [action.label for action in action_factory.call_args.kwargs["actions"]] == [
+        "Approve",
+        "Reject",
+        "Custom response",
+    ]
+    assert input_message.id == ledger_message.id
+
+
+async def test_ask_for_resume_uses_free_text_for_an_unstructured_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    input_message = Mock(
+        content="What should happen next?",
+        metadata=None,
+        send=AsyncMock(return_value={"output": "Continue carefully."}),
+    )
+    monkeypatch.setattr(hitl.cl, "AskUserMessage", Mock(return_value=input_message))
+    tool_call = (
+        completion(
+            tool_calls=[interrupt_call("interrupt-1", "What should happen next?")]
+        )
+        .choices[0]
+        .message.tool_calls[0]
+    )
+    ledger_message = Mock(
+        id="persisted-ledger-message",
+        parent_id=None,
+        created_at="2026-08-10T12:00:00Z",
+        content="",
+        metadata={"lgos_chainlit.hitl_interrupt_ledger": {"status": "pending"}},
+    )
+
+    response = await hitl.ask_for_resume(tool_call, ledger_message)
+
+    assert response == "Continue carefully."
 
 
 async def test_create_completion_sends_session_without_interrupt_run_metadata(

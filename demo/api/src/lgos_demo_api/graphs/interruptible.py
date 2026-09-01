@@ -1,7 +1,5 @@
-import operator
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Annotated, Literal, TypedDict
+from typing import Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -12,103 +10,92 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 
-ApprovalDecision = Literal["approve", "reject"]
+ReviewOutcome = Literal["approve", "reject", "feedback"]
 
 
-def merge_shared_request(current: str, update: str) -> str:
-    """Merge the identical request returned by parallel nested subgraphs."""
-    if not current:
-        return update
-    if current != update:
-        msg = "Parallel approval steps received different requests."
-        raise ValueError(msg)
-    return current
+class ReviewState(TypedDict, total=False):
+    request: str
+    review_outcome: ReviewOutcome
+    reviewer_feedback: str
+    refund_executed: bool
+    customer_notified: bool
 
 
-class ApprovalResult(TypedDict):
-    action: str
-    decision: ApprovalDecision
-
-
-class ApprovalState(TypedDict, total=False):
-    request: Annotated[str, merge_shared_request]
-    approvals: Annotated[list[ApprovalResult], operator.add]
-
-
-@dataclass(frozen=True)
-class ApprovalSpec:
-    action: str
-    question: str
-
-
-APPROVAL_SPECS = (
-    ApprovalSpec(action="Refund", question="Approve the refund?"),
-    ApprovalSpec(
-        action="Customer notification",
-        question="Approve notifying the customer?",
-    ),
-)
-
-
-def create_approval_subgraph(spec: ApprovalSpec) -> CompiledStateGraph:
-    """Create one reusable nested approval step."""
-
-    def request_approval(state: ApprovalState) -> dict[str, list[ApprovalResult]]:
-        decision = interrupt(
-            {
-                "question": spec.question,
-                "request": state["request"],
-                "choices": ["approve", "reject"],
-            }
-        )
-        normalized_decision = str(decision).strip().lower()
-        if normalized_decision not in {"approve", "reject"}:
-            msg = "Approval decision must be 'approve' or 'reject'."
-            raise ValueError(msg)
-
-        return {
-            "approvals": [
-                ApprovalResult(
-                    action=spec.action,
-                    decision=normalized_decision,
-                )
-            ]
+def review_refund(state: ReviewState) -> dict[str, str]:
+    response = interrupt(
+        {
+            "action": "refund",
+            "question": "How should the refund be handled?",
+            "request": state["request"],
+            "choices": ["approve", "reject"],
+            "allow_other": True,
         }
-
-    return (
-        StateGraph(ApprovalState)  # ty: ignore[invalid-argument-type]
-        .add_node("request_approval", request_approval)
-        .add_edge(START, "request_approval")
-        .add_edge("request_approval", END)
-        .compile()
     )
+    if not isinstance(response, str) or not (normalized := response.strip()):
+        msg = "Refund review response must be a non-empty string."
+        raise ValueError(msg)
+    decision = normalized.lower()
+    if decision in {"approve", "reject"}:
+        return {"review_outcome": decision}
+    return {
+        "review_outcome": "feedback",
+        "reviewer_feedback": normalized,
+    }
+
+
+def route_after_refund(
+    state: ReviewState,
+) -> Literal["execute_refund", "__end__"]:
+    if state["review_outcome"] == "approve":
+        return "execute_refund"
+    return "__end__"
+
+
+def execute_refund(state: ReviewState) -> dict[str, bool]:
+    return {"refund_executed": state["review_outcome"] == "approve"}
+
+
+def notify_customer(state: ReviewState) -> dict[str, bool]:
+    return {"customer_notified": state.get("refund_executed", False)}
 
 
 def create_interruptible_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> CompiledStateGraph:
-    graph = StateGraph(ApprovalState)  # ty: ignore[invalid-argument-type]
-    for index, spec in enumerate(APPROVAL_SPECS):
-        node_name = f"approval_{index}"
-        graph.add_node(node_name, create_approval_subgraph(spec))
-        graph.add_edge(START, node_name)
-        graph.add_edge(node_name, END)
+    graph = StateGraph(ReviewState)  # ty: ignore[invalid-argument-type]
+    graph.add_node("review_refund", review_refund)
+    graph.add_node("execute_refund", execute_refund)
+    graph.add_node("notify_customer", notify_customer)
+    graph.add_edge(START, "review_refund")
+    graph.add_conditional_edges("review_refund", route_after_refund)
+    graph.add_edge("execute_refund", "notify_customer")
+    graph.add_edge("notify_customer", END)
     return graph.compile(checkpointer=checkpointer)
 
 
 def request_to_input(
     _request: ChatCompletionRequest,
     messages: list[BaseMessage],
-) -> ApprovalState:
+) -> ReviewState:
     return {"request": str(messages[-1].content or "")}
 
 
-def output_to_message(output: ApprovalState) -> AIMessage:
-    decisions = {result["action"]: result["decision"] for result in output["approvals"]}
-    lines = [f"Approval results for: {output['request']}"]
-    lines.extend(
-        f"- {spec.action}: {decisions[spec.action]}" for spec in APPROVAL_SPECS
-    )
+def output_to_message(output: ReviewState) -> AIMessage:
+    refund_executed = output.get("refund_executed", False)
+    customer_notified = output.get("customer_notified", False)
+    executed_actions = []
+    if refund_executed:
+        executed_actions.append("Refund")
+    if customer_notified:
+        executed_actions.append("Customer notification")
+    lines = [
+        f"Review workflow for: {output['request']}",
+        f"- Refund: {output['review_outcome']}",
+        f"- Customer notification: {'sent' if customer_notified else 'skipped'}",
+        f"- Executed actions: {', '.join(executed_actions) or 'none'}",
+    ]
+    if feedback := output.get("reviewer_feedback"):
+        lines.append(f"- Reviewer feedback: {feedback}")
     return AIMessage(content="\n".join(lines))
 
 
@@ -120,7 +107,8 @@ def create_interruptible_graph_config(
     return GraphConfig(
         graph=graph_factory,
         description=(
-            "Requests one atomic approval batch from parallel nested graph steps."
+            "Demonstrates durable choice-or-text human review before protected "
+            "actions execute."
         ),
         request_to_input=request_to_input,
         output_to_message=output_to_message,
@@ -130,9 +118,7 @@ def create_interruptible_graph_config(
 
 
 __all__ = [
-    "APPROVAL_SPECS",
-    "ApprovalState",
-    "create_approval_subgraph",
+    "ReviewState",
     "create_interruptible_graph",
     "create_interruptible_graph_config",
     "output_to_message",

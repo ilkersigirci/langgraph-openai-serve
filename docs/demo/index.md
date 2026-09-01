@@ -77,7 +77,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
-| Chainlit | Persistent OpenAI client, login, settings UI, events, and approval UI | Independent uv project and `lgos-chainlit` image |
+| Chainlit | Persistent OpenAI client, login, settings UI, events, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
@@ -94,8 +94,8 @@ LGOS model-detail extension.
 
 | Demo client | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
 | --- | --- | --- | --- | --- | --- |
-| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Dedicated live approval adapter | Native status, Plotly, and live activity elements | Markdown content |
-| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Live approval through the Pipe | Native status and persisted chart embeds | Native source events and Markdown |
+| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status, Plotly, and live activity elements | Markdown content |
+| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted chart embeds | Native source events and Markdown |
 | Open WebUI static example | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
@@ -113,15 +113,16 @@ checkpointer, LangGraph store, and cross-worker interrupt coordination, with no
 Redis service.
 See [Persistent Plot Agent](graphs/persistent-plot-agent.md#ownership-boundaries)
 for Store and UI ownership,
-[Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
+[Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
 for the server lifecycle, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative replay and retention contract.
 
-Chainlit persists its pending tool-call ledger with a documented crash window;
-the Open WebUI adapter is live-request-only. Their exact recovery boundaries
-are documented on the [Chainlit](chainlit.md#interrupt-demo) and
-[Open WebUI](open-webui.md#interrupt-approval) pages.
+Chainlit persists its pending tool-call ledger with a documented crash window.
+Open WebUI persists its native `ask_user` card and opaque graph cursor on the
+assistant message. Their exact recovery boundaries are documented on the
+[Chainlit](chainlit.md#interrupt-demo) and
+[Open WebUI](open-webui.md#interrupt-input) pages.
 
 For exact commands and environment ownership, use
 [Demo Settings and Commands](reference.md). To build your own application,

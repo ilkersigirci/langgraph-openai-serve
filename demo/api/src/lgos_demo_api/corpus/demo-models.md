@@ -20,8 +20,8 @@ The demo API registers these graph names as OpenAI models:
   events among ordinary assistant text.
 - `persistent-plot-agent` uses a tool-calling agent to edit chart data scoped
   to the current user and chat, with request-scoped presentation settings.
-- `interruptible-approval` persists one atomic interrupt batch from parallel
-  nested approval subgraphs and resumes it from standard OpenAI tool results.
+- `interruptible-approval` accepts a preset choice or custom reviewer feedback
+  before protected actions, then resumes from a standard OpenAI tool result.
 
 `GET /v1/models` lists the registered names. Detailed retrieval of one model
 can additionally advertise versioned LGOS features and safe client settings.

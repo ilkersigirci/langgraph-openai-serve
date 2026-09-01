@@ -124,7 +124,7 @@ See [Authentication](../how-to-guides/authentication.md).
 
 ## Interrupt Demo
 
-Run the dedicated approval UI:
+Run the dedicated HITL UI:
 
 ```bash
 DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
@@ -132,7 +132,7 @@ DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 
 Initial requests need no interrupt metadata. The HITL client implements the
 [canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
-it asks for every decision, sends no partial batch, and repeats when the graph
+it asks for every response, sends no partial batch, and repeats when the graph
 pauses again. The client depends only on the standard tool-call batch, not the
 graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md).
@@ -140,13 +140,14 @@ graph topology. See the shared
 !!! note "Reconnect recovery and its boundary"
 
     The adapter stores the exact assistant tool-call batch on the same
-    model-context-excluded Chainlit message that displays the current approval.
+    model-context-excluded Chainlit message that displays the current prompt.
     Its
     [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
-    hook restores the newest pending batch and reattaches **Approve** and
-    **Reject** to that message after the pinned Chainlit host hydrates the
-    displayed thread. Refreshing abandons only the old live actions; it neither
-    duplicates the prompt nor rejects or resumes the graph.
+    hook restores the newest pending batch and reattaches its choices, including
+    **Custom response** when allowed, after the pinned Chainlit host hydrates the
+    displayed thread. Unstructured payloads use Chainlit's native free-text
+    input. Refreshing abandons only the old live prompt; it neither duplicates
+    the persisted message nor rejects or resumes the graph.
     Chainlit queues data-layer writes asynchronously, with no public flush API,
     so a process crash can still occur before that message reaches PostgreSQL.
     Once stored, cancellation, reload, or worker loss before the resume request
@@ -158,7 +159,7 @@ graph topology. See the shared
     safely as stale; the completed output or newer batch cannot be reconstructed
     from that old ledger. Applications requiring recovery across that window
     need a durable result/pending-response handoff in their UI boundary. See
-    [Interruptible Approval](graphs/interruptible-approval.md#postgresql-runtime)
+    [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
     for server-side checkpoint retention.
 
 ## Streaming, Events, And Citations
