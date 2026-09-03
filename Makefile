@@ -74,8 +74,9 @@ test-bifrost: ## Run the optional Bifrost proxy integration test
 test-demo: ## Test all demo projects against their locked dependencies
 	$(MAKE) -C $(DEMO_DIR) test
 
-test-demo-local: ## Test this checkout through the API plus both standalone UIs
+test-demo-local: ## Test this checkout through the API, Files API, and both UIs
 	uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. pytest
+	uv run --directory $(DEMO_DIR)/files_api --locked pytest
 	uv run --directory $(DEMO_DIR)/ui/chainlit_ui --locked pytest
 	uv run --directory $(DEMO_DIR)/ui/openwebui --locked pytest
 

@@ -26,6 +26,12 @@ client integrations, gateway configuration, and a complete Compose stack.
 
     [:octicons-arrow-right-24: Run the API](api.md)
 
+-   :material-file-upload-outline:{ .lg .middle } __Run the Files API__
+
+    Start the independent OpenAI Files service backed by S3-compatible storage.
+
+    [:octicons-arrow-right-24: Run the Files API](files-api.md)
+
 -   :material-family-tree:{ .lg .middle } __Understand the architecture__
 
     See service ownership, request routing, and persistence boundaries.
@@ -77,18 +83,20 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
+| Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent OpenAI client, login, settings UI, events, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
-| S3-compatible storage | Chainlit element bodies | External endpoint required by Chainlit |
+| S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
-Only the APIs import `langgraph-openai-serve`. Chainlit and Open WebUI exercise
-the OpenAI wire contract without importing the package. Their dynamic clients
-use Bifrost's catalog for provider-qualified discovery and raw pass-through for
-model details and chat. The fixed-model Open WebUI example uses Bifrost
-pass-through without catalog discovery. Pass-through preserves the required
-LGOS model-detail extension.
+Only the graph API project imports `langgraph-openai-serve`. The Files API
+implements its independent OpenAI Files contract without importing LGOS.
+Chainlit and Open WebUI exercise the graph API's OpenAI wire contract without
+importing the package. Their dynamic clients use Bifrost's catalog for
+provider-qualified discovery and raw pass-through for model details and chat.
+The fixed-model Open WebUI example uses Bifrost pass-through without catalog
+discovery. Pass-through preserves the required LGOS model-detail extension.
 
 ## Client Capabilities
 

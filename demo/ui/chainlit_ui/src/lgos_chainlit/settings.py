@@ -37,7 +37,7 @@ def _is_unconfigured(value: str | None) -> bool:
 
 
 class OpenAIEndpoint(BaseModel):
-    """A complete OpenAI-compatible endpoint and its credential."""
+    """OpenAI-compatible endpoints and their shared credential."""
 
     base_url: HttpUrlStr = Field(
         description="OpenAI-compatible base URL used for retrieval and chat."
@@ -47,6 +47,15 @@ class OpenAIEndpoint(BaseModel):
         description=(
             "Optional Bifrost catalog URL used for provider-qualified model discovery."
         ),
+    )
+    files_base_url: HttpUrlStr = Field(
+        default="http://localhost:3006/v1",
+        description="OpenAI Files API URL.",
+    )
+    files_provider: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Optional Bifrost provider dedicated to OpenAI Files requests.",
     )
     api_key: str = Field(
         min_length=1,

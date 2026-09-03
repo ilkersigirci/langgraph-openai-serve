@@ -25,6 +25,8 @@ services:
         condition: service_healthy
       lgos-demo-api-b:
         condition: service_healthy
+      lgos-files-api:
+        condition: service_healthy
     ports:
       - "3000:8080"
     volumes:

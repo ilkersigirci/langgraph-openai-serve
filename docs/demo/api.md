@@ -54,6 +54,9 @@ docker compose -f docker/compose/demo.yml up -d lgos-db
 The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
 the same image as independently addressable `lgos-b` on port 3005; the two
 services expose the same graph set under separate provider identities.
+The separate `lgos-files-api` project and image serve the central S3-backed
+Files API on port 3006. It is not mounted into either graph API; see its
+[run guide](files-api.md) and [settings](reference.md#files-api-settings).
 
 Inspect registered graphs:
 

@@ -31,6 +31,13 @@ application.
 
     [:octicons-arrow-right-24: Configure production logging](production-logging.md)
 
+-   :material-file-upload-outline:{ .lg .middle } __Accept file inputs__
+
+    Store opaque uploads in an external Files service and give graphs native
+    OpenAI `file_id` references.
+
+    [:octicons-arrow-right-24: Configure file inputs](file-inputs.md)
+
 -   :material-transit-connection-horizontal:{ .lg .middle } __Use a proxy__
 
     Preserve metadata, tool calls, discovery extensions, events, and streaming

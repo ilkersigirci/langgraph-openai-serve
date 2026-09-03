@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
 
 
 settings = Settings()

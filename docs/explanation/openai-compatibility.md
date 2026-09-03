@@ -184,6 +184,12 @@ adapters keep custom LangGraph schemas behind that public boundary. See
 [LangGraph Integration](langgraph-integration.md#adaptation) and
 [Custom Graphs](../tutorials/custom-graphs.md#custom-schemas).
 
+Native Chat Completions file content parts are preserved in the resulting
+LangChain message. LGOS does not expose Files routes or own file storage. A
+client uploads through an external OpenAI-compatible Files API and sends the
+returned `file_id` to a graph; the graph still owns file interpretation. See
+[Accept File Inputs](../how-to-guides/file-inputs.md).
+
 ## Streaming
 
 Streaming responses use OpenAI-compatible Server-Sent Events. See

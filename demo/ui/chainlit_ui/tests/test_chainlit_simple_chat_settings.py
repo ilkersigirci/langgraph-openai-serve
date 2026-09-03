@@ -228,6 +228,35 @@ async def test_missing_profile_disables_settings_and_message(
     )
 
 
+async def test_file_upload_failure_is_visible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    simple = importlib.import_module("lgos_chainlit.simple")
+    session = Session({"chat_profile": "lgos-a/file-input"})
+    send_ui_message = AsyncMock()
+    create = AsyncMock()
+    renderer = SimpleNamespace(close=AsyncMock())
+    monkeypatch.setattr(simple.cl, "user_session", session)
+    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=Mock(content="")))
+    monkeypatch.setattr(simple, "ClientEventRenderer", Mock(return_value=renderer))
+    monkeypatch.setattr(simple, "text_only_chat_messages", list)
+    monkeypatch.setattr(
+        simple,
+        "with_file_parts",
+        AsyncMock(side_effect=RuntimeError("upload unavailable")),
+    )
+    monkeypatch.setattr(simple, "send_ui_message", send_ui_message)
+    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
+
+    await simple.on_message(Mock(content="Summarize it."))
+
+    send_ui_message.assert_awaited_once_with(
+        "Chat completion failed: upload unavailable"
+    )
+    create.assert_not_awaited()
+    renderer.close.assert_awaited_once_with()
+
+
 async def test_selected_settings_reach_the_openai_request(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,

@@ -47,6 +47,8 @@ services:
       # Raw pass-through preserves LGOS metadata and extension-only stream chunks.
       DEMO_CHAINLIT_OPENAI__BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/openai_passthrough/v1
       DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
+      DEMO_CHAINLIT_OPENAI__FILES_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
+      DEMO_CHAINLIT_OPENAI__FILES_PROVIDER: lgos-files
       # DEMO_CHAINLIT_OPENAI__BASE_URL: http://lgos-bifrost:8080/openai/v1 # NOTE: For testing the limited functionality
       DEMO_CHAINLIT_OPENAI__API_KEY: DUMMY
       DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval

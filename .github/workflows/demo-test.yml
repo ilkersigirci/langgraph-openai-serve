@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      DEMO_API_FILES_BUCKET: lgos-files-api-ci
+      DEMO_API_FILES_S3_ENDPOINT: https://s3.example.com
+      DEMO_API_FILES_AWS_ACCESS_KEY_ID: test-files-access-key
+      DEMO_API_FILES_AWS_SECRET_ACCESS_KEY: test-files-secret-key
+      DEMO_API_FILES_AWS_DEFAULT_REGION: eu-west-1
       BUCKET_NAME: lgos-chainlit-ci
       APP_AWS_ACCESS_KEY: test-access-key
       APP_AWS_SECRET_KEY: test-secret-key
@@ -57,6 +62,9 @@ jobs:
 
       - name: Check API Dockerfile
         run: docker buildx build --check demo/api
+
+      - name: Check Files API Dockerfile
+        run: docker buildx build --check demo/files_api
 
       - name: Build editable API image
         run: >-
@@ -97,6 +105,8 @@ jobs:
         include:
           - name: API
             directory: api
+          - name: Files API
+            directory: files_api
           - name: Chainlit
             directory: ui/chainlit_ui
           - name: Open WebUI

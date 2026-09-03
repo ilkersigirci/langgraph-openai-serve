@@ -18,10 +18,11 @@ cp .env.example .env
 uv run --directory ui/chainlit_ui --locked chainlit create-secret
 ```
 
-Put the generated value in `CHAINLIT_AUTH_SECRET`. Chainlit also requires an
-existing S3-compatible bucket: replace the example `BUCKET_NAME`,
-`APP_AWS_ACCESS_KEY`, `APP_AWS_SECRET_KEY`, `APP_AWS_REGION`, and
-`DEV_AWS_ENDPOINT` values before starting the UI.
+Put the generated value in `CHAINLIT_AUTH_SECRET`. Configure Chainlit's native
+element storage with `BUCKET_NAME`, `APP_AWS_*`, and `DEV_AWS_ENDPOINT`.
+Separately configure the central Files API with `DEMO_API_FILES_BUCKET`,
+`DEMO_API_FILES_S3_ENDPOINT`, and `DEMO_API_FILES_AWS_*`. Replace every example
+value before starting the UI; neither service reads the other's S3 settings.
 
 === "Compose"
 
@@ -34,7 +35,13 @@ existing S3-compatible bucket: replace the example `BUCKET_NAME`,
     Start PostgreSQL and the API using
     [Run the Demo API](api.md#start-postgresql-and-the-api).
 
-    In another terminal from `demo/`:
+    Start the standalone Files service from a second terminal:
+
+    ```bash
+    make run-files-local
+    ```
+
+    Then start Chainlit from a third terminal:
 
     ```bash
     make run-chainlit-local
@@ -52,6 +59,27 @@ retrieval, and chat use the same raw pass-through route and discovered
 `x-model-provider`; the adapter has no provider list. The demo API owns the
 descriptions. Chainlit keeps ordinary chat available but marks a model as
 **Limited functionality** when an endpoint omits or strips one.
+
+## File Attachments
+
+The UI uploads every file attached to the current user message through
+`client.files.create(..., purpose="user_data")`. It then replaces the attachment
+with the returned native Chat Completions `file_id`.
+`DEMO_CHAINLIT_OPENAI__FILES_BASE_URL` selects the Files endpoint independently
+of chat and catalog endpoints. In Bifrost mode, Files requests also use the fixed
+`DEMO_CHAINLIT_OPENAI__FILES_PROVIDER`; chat requests continue to use the
+selected model provider. The demo therefore has one file namespace shared by
+both chat providers.
+
+The attachment button accepts up to five files of 10 MiB each per message.
+Select `lgos-a/file-input` (or the `lgos-b` equivalent) to process an
+attachment with the dedicated demo graph. General graphs such as
+`simple-graph` receive the native file part but do not resolve its central ID.
+
+Chainlit's native S3 persistence remains responsible for restoring UI elements.
+The OpenAI Files upload is the separate inference contract; the adapter does
+not wait for a Chainlit persistence URL or put one in `file_data`. See
+[Accept File Inputs](../how-to-guides/file-inputs.md).
 
 ## Runtime Settings
 
@@ -209,6 +237,8 @@ LGOS endpoint settings:
 | --- | --- | --- |
 | `DEMO_CHAINLIT_OPENAI__BASE_URL` | `http://localhost:3004/v1` | Endpoint used for retrieval and inference. Direct mode also lists from it. |
 | `DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL` | unset | Optional Bifrost model catalog endpoint; setting it enables provider-qualified pass-through routing. |
+| `DEMO_CHAINLIT_OPENAI__FILES_BASE_URL` | `http://localhost:3006/v1` | Files API endpoint, configured independently from the graph API. |
+| `DEMO_CHAINLIT_OPENAI__FILES_PROVIDER` | unset | Bifrost provider dedicated to normalized Files operations. Required for attachments in Bifrost mode. |
 | `DEMO_CHAINLIT_OPENAI__API_KEY` | `DUMMY` | OpenAI API or gateway key. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |

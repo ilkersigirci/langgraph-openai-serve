@@ -1,8 +1,9 @@
 # Demo Architecture
 
-The Docker demo puts two independently addressable LGOS API containers behind
-one Bifrost gateway. Chainlit and Open WebUI are OpenAI-compatible clients of
-that gateway; neither UI imports `langgraph-openai-serve`. See
+The Docker demo puts two independently addressable LGOS API containers and one
+logical central Files service behind Bifrost. Chainlit and Open WebUI are
+OpenAI-compatible clients of that gateway; neither UI imports
+`langgraph-openai-serve`. See
 [Package Architecture](../explanation/architecture.md) for what happens inside
 each API process.
 
@@ -26,6 +27,8 @@ flowchart LR
     api_b["API B<br/>FastAPI + LGOS + demo graphs"]
   end
 
+  files["Files service<br/>OpenAI Files API + S3 repository"]
+
   model["Upstream OpenAI-compatible model"]
 
   user <--> chainlit
@@ -34,6 +37,7 @@ flowchart LR
   openwebui <-->|"catalog and OpenAI traffic"| bifrost
   bifrost <-->|"provider: lgos-a"| api_a
   bifrost <-->|"provider: lgos-b"| api_b
+  bifrost <-->|"provider: lgos-files"| files
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
 ```
@@ -45,8 +49,10 @@ route. Bifrost then forwards the request to the matching API container while
 preserving LGOS model metadata and streaming extensions.
 
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
-starts both healthy API containers, and then starts Bifrost and its UI clients.
-The diagram shows request traffic rather than those readiness dependencies.
+starts both healthy graph APIs and the Files service, and then starts Bifrost
+and its UI clients. The diagram shows request traffic rather than those
+readiness dependencies. Compose runs one Files process for the demo; production
+deployments may run multiple stateless replicas over the same repository.
 
 ## State Ownership
 
@@ -75,11 +81,13 @@ flowchart LR
     locks["PostgreSQL advisory locks"]
   end
 
-  s3[("S3-compatible storage<br/>Chainlit element bodies")]
+  files_service["Central Files service"]
+  s3[("S3-compatible service<br/>separate UI and Files buckets")]
   openwebui_data[("Open WebUI data volume<br/>transcripts and embeds")]
 
   chainlit -->|"conversation and UI metadata"| chainlit_rows
   chainlit -->|"element content"| s3
+  files_service -->|"opaque inference files"| s3
   openwebui -->|"conversation and UI state"| openwebui_data
   interrupts -->|"paused execution"| checkpoints
   interrupts -->|"same-run coordination"| locks

@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# GitHub only discovers root workflows; shared implementation lives under demo/.
+name: Build Files API image
+
+on:
+  release:
+    types:
+      - published
+  pull_request:
+    paths:
+      - demo/files_api/**
+      - demo/.github/actions/build-image/**
+      - demo/.github/workflows/image-files-api.yml
+      - .github/workflows/demo-image-files-api.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    name: Validate Files API
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate image
+        uses: ./demo/.github/actions/build-image
+        with:
+          context: demo/files_api
+          repository: lgos-files-api
+          platforms: linux/amd64
+
+  publish:
+    if: github.event_name == 'release'
+    name: Publish Files API
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Publish image
+        uses: ./demo/.github/actions/build-image
+        with:
+          context: demo/files_api
+          repository: lgos-files-api
+          publish: true

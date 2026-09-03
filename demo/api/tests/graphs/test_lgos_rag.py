@@ -1,13 +1,14 @@
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
-from langgraph_openai_serve import GraphConfig, GraphRegistry
+from langgraph.types import CustomStreamPart
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
@@ -77,6 +78,7 @@ def _registry() -> GraphRegistry:
                     "generate_answer",
                     "answer_no_results",
                 ],
+                features={GraphFeature.CLIENT_EVENTS},
             )
         }
     )
@@ -93,8 +95,8 @@ def _source_document(content: str, name: str) -> Document:
     )
 
 
-async def _stream_text(request: ChatCompletionRequest) -> str:
-    events = [
+async def _stream(request: ChatCompletionRequest) -> list[object]:
+    events: list[object] = [
         event
         async for event in run_langgraph_stream(
             request.model,
@@ -104,7 +106,28 @@ async def _stream_text(request: ChatCompletionRequest) -> str:
         )
     ]
     assert isinstance(events[-1], AIMessage)
-    return "".join(event for event in events if isinstance(event, str))
+    return events
+
+
+def _public_event(value: object) -> dict[str, Any]:
+    part = cast(CustomStreamPart, value)
+    data = cast(dict[str, Any], part["data"])
+    return cast(dict[str, Any], data["event"])
+
+
+def _status_timeline(
+    stream: list[object],
+) -> list[tuple[list[str], str, bool]]:
+    return [
+        (
+            event["namespace"],
+            event["data"]["description"],
+            event["data"]["done"],
+        )
+        for item in stream
+        if isinstance(item, dict)
+        for event in [_public_event(item)]
+    ]
 
 
 async def test_retrieval_tool_formats_source_metadata_and_markdown(
@@ -240,11 +263,19 @@ async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
         ],
     )
 
-    streamed_answer = await _stream_text(request)
+    stream = await _stream(request)
+    streamed_answer = "".join(item for item in stream if isinstance(item, str))
 
     assert queries == [REWRITTEN_QUESTION]
     assert streamed_answer == ANSWER
     assert DECISION_PREAMBLE not in streamed_answer
+    assert _status_timeline(stream) == [
+        (["rag"], "Understanding your question", False),
+        (["rag"], "Searching the LGOS documentation", False),
+        (["rag"], "Checking the retrieved sources", False),
+        (["rag"], "Writing the answer", False),
+        (["rag"], "Answer ready", True),
+    ]
 
 
 async def test_direct_response_skips_retrieval(
@@ -271,7 +302,14 @@ async def test_direct_response_skips_retrieval(
         ],
     )
 
-    assert await _stream_text(request) == HISTORY_ANSWER
+    stream = await _stream(request)
+
+    assert "".join(item for item in stream if isinstance(item, str)) == HISTORY_ANSWER
+    assert _status_timeline(stream) == [
+        (["rag"], "Understanding your question", False),
+        (["rag"], "Preparing the response", False),
+        (["rag"], "Answer ready", True),
+    ]
 
 
 async def test_irrelevant_retrieval_rewrites_once_then_stops(
@@ -306,7 +344,18 @@ async def test_irrelevant_retrieval_rewrites_once_then_stops(
     _stub_chat_model(monkeypatch, refusal)
     request = make_request("lgos-rag", content="How do I call it?")
 
-    streamed_answer = await _stream_text(request)
+    stream = await _stream(request)
+    streamed_answer = "".join(item for item in stream if isinstance(item, str))
 
     assert queries == ["weak query", REWRITTEN_QUESTION]
     assert streamed_answer == refusal
+    assert _status_timeline(stream) == [
+        (["rag"], "Understanding your question", False),
+        (["rag"], "Searching the LGOS documentation", False),
+        (["rag"], "Checking the retrieved sources", False),
+        (["rag"], "Refining the search query", False),
+        (["rag"], "Searching the LGOS documentation", False),
+        (["rag"], "Checking the retrieved sources", False),
+        (["rag"], "No relevant sources found; preparing a response", False),
+        (["rag"], "Answer ready", True),
+    ]

@@ -20,6 +20,11 @@ checkpointer, Store, and interrupt coordination.
 Set the package-owned `LGOS_ENABLE_LANGFUSE=true` and provide the `LANGFUSE_*`
 credentials to enable LGOS's lazy tracing integration for every demo graph.
 
+The graph API does not expose Files routes or receive S3 credentials. Its
+`file-input` graph reads the independent [`files_api`](../files_api/) service
+through `DEMO_API_FILES_BASE_URL`, then sends inline file data to the configured
+OpenAI Responses API.
+
 The `lgos-rag` graph reads a compact Markdown corpus packaged under
 `src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
 external documentation checkout.

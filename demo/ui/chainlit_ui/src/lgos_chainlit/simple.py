@@ -36,6 +36,7 @@ from lgos_chainlit.utils.clients import (
     model_request,
     openai_client,
 )
+from lgos_chainlit.utils.files import with_file_parts
 
 register_auth_callback()
 
@@ -83,19 +84,19 @@ async def on_chat_resume(thread: ThreadDict) -> None:
 
 
 @cl.on_message
-async def on_message(_message: cl.Message) -> None:
+async def on_message(message: cl.Message) -> None:
     """Reply from chat context; Chainlit adds the user message before this hook."""
     model = cl.user_session.get("chat_profile")
     if not isinstance(model, str) or not model:
         await send_ui_message("Chat completion failed: no model profile is selected.")
         return
 
-    messages = text_only_chat_messages()
     assistant_message = cl.Message(content="")
     client_events = ClientEventRenderer()
     stream = None
 
     try:
+        messages = await with_file_parts(text_only_chat_messages(), message)
         streaming = streaming_enabled()
         metadata = chat_settings_metadata()
         metadata.update(session_metadata())

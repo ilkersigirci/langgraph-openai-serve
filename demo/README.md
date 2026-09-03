@@ -15,6 +15,7 @@ dependency source.
 | Project | Purpose | Deployment |
 | --- | --- | --- |
 | `api` | Example LangGraph API | `ghcr.io/ilkersigirci/lgos-demo-api` |
+| `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `ui/openwebui` | Open WebUI Function sync | Local uv command |
 
@@ -24,9 +25,11 @@ overlays under `docker/compose/`. The Bifrost gateway configuration is at
 independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs under separate provider identities so the stack can
 demonstrate routing multiple LGOS APIs through one Bifrost pass-through
-endpoint. The dynamic clients discover provider-qualified
+endpoint. The independent `lgos-files-api` image provides the shared S3-backed
+Files service. The dynamic clients discover provider-qualified
 models from Bifrost's catalog and use its OpenAI pass-through endpoint for
-detailed model metadata and chat.
+detailed model metadata and chat. Chainlit sends Files operations through the
+gateway's normalized OpenAI endpoint.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -53,6 +56,12 @@ Run the same published image as `lgos-b` on port 3005:
 
 ```bash
 make run-api-b
+```
+
+Run the central Files API on port 3006:
+
+```bash
+make run-files
 ```
 
 Run Chainlit and its Compose dependencies on port 3002:
@@ -86,6 +95,7 @@ overlays the parent LGOS checkout as an editable dependency:
 ```bash
 make run-api-local
 make run-api-b-local
+make run-files-local
 make run-chainlit-local
 ```
 
@@ -100,7 +110,8 @@ make compose
 ```
 
 The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
-3002, Open WebUI on 3003, `lgos-a` on 3004, and `lgos-b` on 3005.
+3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, and the Files API
+on 3006.
 
 From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:
@@ -125,7 +136,8 @@ Set `PUID` and `PGID` in `.env` to the host identity that owns
 ## Automation
 
 When this directory is copied to a repository root, its `.github/workflows`
-files test all three locked projects and build the API and Chainlit images. The
+files test all four locked projects and build the API, Files API, and Chainlit
+images. The
 LGOS source repository carries thin root workflow wrappers while the directory
 is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
@@ -135,7 +147,8 @@ Each workflow layout lets `setup-uv` discover the version requirement at its
 repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
 
 Pull requests validate changed image contexts without publishing. Creating a
-GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for both images.
+GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for all three
+images.
 In the LGOS repository, the API image includes a wheel built from the tagged
 checkout instead of waiting for PyPI.
 

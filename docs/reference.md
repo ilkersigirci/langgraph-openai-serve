@@ -52,6 +52,12 @@ deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
 
+Chat file content parts remain unchanged when converted to LangChain messages,
+so graphs receive native `file_id` values and decide whether to download,
+parse, or forward them. File upload and storage belong to an external OpenAI
+Files API, not the LGOS package. See [Accept File
+Inputs](how-to-guides/file-inputs.md).
+
 `GraphConfig` accepts:
 
 - `graph`: compiled graph, sync factory, or async factory.

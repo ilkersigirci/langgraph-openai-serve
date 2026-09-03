@@ -23,3 +23,9 @@ use `CHAINLIT_UTILS_`; Chainlit's native `DATABASE_URL` and
 `CHAINLIT_AUTH_SECRET` variables remain unprefixed. Plotly elements use
 Chainlit's native `BUCKET_NAME`, `APP_AWS_*`, and `DEV_AWS_ENDPOINT` S3
 settings so charts survive thread resume.
+
+User attachments are uploaded separately through the configured native OpenAI
+Files API. `DEMO_CHAINLIT_OPENAI__FILES_BASE_URL` can point directly to the
+standalone service or to a gateway. Bifrost mode uses one configured Files
+provider regardless of the selected chat model; the returned `file_id` reaches
+the graph as a Chat Completions content part.

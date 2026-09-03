@@ -24,13 +24,13 @@ edit_message = false
 allow_thread_sharing = false
 favorites = false
 
-# User file uploads stay disabled. Native Plotly elements still use the
-# configured S3 storage client so they can be restored with a thread.
+# Chainlit exposes incoming files as message elements; the adapter copies them
+# through the configured OpenAI Files API before starting the graph run.
 [features.spontaneous_file_upload]
-enabled = false
-accept = []
-max_files = 0
-max_size_mb = 0
+enabled = true
+accept = ["*/*"]
+max_files = 5
+max_size_mb = 10
 
 [features.audio]
 enabled = false

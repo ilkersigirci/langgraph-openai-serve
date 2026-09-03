@@ -15,6 +15,8 @@ gateway so that it:
 - forwards Chat Completions request metadata without changing string values;
 - preserves assistant tool calls and matching `tool` messages for interrupt
   resume;
+- routes standard Files operations through one storage boundary independent of
+  chat-provider selection and preserves Chat Completions file content parts;
 - propagates downstream disconnects to the upstream streaming request;
 - preserves `langgraph_openai_serve` on model retrieval;
 - preserves extension-only stream chunks; and

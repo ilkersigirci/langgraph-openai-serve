@@ -19,6 +19,7 @@ from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
+from lgos_demo_api.graphs.file_input import file_input_graph_config
 from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph,
     create_interruptible_graph_config,
@@ -93,6 +94,7 @@ def create_custom_app() -> FastAPI:
     graph_registry = GraphRegistry(
         registry={
             "citation-events": citation_graph_config,
+            "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,
             "lgos-rag": lgos_rag_graph_config,
             "custom-input-output-context": custom_io_graph_config,

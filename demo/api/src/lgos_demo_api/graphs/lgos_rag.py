@@ -22,11 +22,12 @@ from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langgraph.config import get_stream_writer
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 from pydantic import BaseModel, Field, SecretStr
 
 from lgos_demo_api.settings import settings
@@ -40,6 +41,7 @@ CHUNK_SIZE = 1_200
 CHUNK_OVERLAP = 200
 RETRIEVAL_LIMIT = 4
 MAX_REWRITES = 1
+RAG_STATUS_NAMESPACE = ("rag",)
 
 DECISION_PROMPT = """You are the LGOS documentation assistant.
 For every factual question about langgraph-openai-serve (LGOS), call the
@@ -296,10 +298,23 @@ def _retrieved_documents(state: LgosRagState) -> list[Document]:
     return artifact
 
 
+def _emit_status(description: str, *, done: bool = False) -> None:
+    """Publish one user-facing phase of the RAG workflow."""
+    get_stream_writer()(
+        status_event(
+            description,
+            done=done,
+            namespace=RAG_STATUS_NAMESPACE,
+        )
+    )
+
+
 async def generate_query_or_respond(
     state: LgosRagState,
 ) -> dict[str, Any]:
     """Choose between a direct response and documentation retrieval."""
+    if state.rewrite_count == 0:
+        _emit_status("Understanding your question")
     question = state.question or _latest_human_text(state)
     decision = (
         await _retrieval_decider()
@@ -307,11 +322,14 @@ async def generate_query_or_respond(
         .ainvoke([SystemMessage(content=DECISION_PROMPT), *state.messages])
     )
     if decision.tool_calls:
+        _emit_status("Searching the LGOS documentation")
         response = decision
     else:
+        _emit_status("Preparing the response")
         response = await _chat_model().ainvoke(
             [SystemMessage(content=DIRECT_RESPONSE_PROMPT), *state.messages],
         )
+        _emit_status("Answer ready", done=True)
     return {"messages": [response], "question": question}
 
 
@@ -319,6 +337,7 @@ async def grade_documents(
     state: LgosRagState,
 ) -> Literal["generate_answer", "rewrite_question", "answer_no_results"]:
     """Route relevant context to generation and retry irrelevant retrievals."""
+    _emit_status("Checking the retrieved sources")
     tool_message = _last_tool_message(state)
     prompt = GRADE_PROMPT.format(
         query=_retrieval_query(state),
@@ -339,6 +358,7 @@ async def rewrite_question(
     state: LgosRagState,
 ) -> dict[str, Any]:
     """Rewrite an unsuccessful retrieval query before trying again."""
+    _emit_status("Refining the search query")
     query = _retrieval_query(state)
     response = await _internal_chat_model().ainvoke(
         [HumanMessage(content=REWRITE_PROMPT.format(query=query))],
@@ -354,6 +374,7 @@ async def generate_answer(
     state: LgosRagState,
 ) -> dict[str, list[AIMessage]]:
     """Generate a grounded answer with direct Markdown source links."""
+    _emit_status("Writing the answer")
     documents = _retrieved_documents(state)
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -372,6 +393,7 @@ async def generate_answer(
             "context": _format_context(documents),
         },
     )
+    _emit_status("Answer ready", done=True)
     return {"messages": [AIMessage(content=answer)]}
 
 
@@ -379,6 +401,7 @@ async def answer_no_results(
     state: LgosRagState,
 ) -> dict[str, list[AIMessage]]:
     """Return a grounded refusal after bounded retrieval retries."""
+    _emit_status("No relevant sources found; preparing a response")
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", NO_RESULTS_PROMPT),
@@ -388,6 +411,7 @@ async def answer_no_results(
     answer = await (prompt | _chat_model() | StrOutputParser()).ainvoke(
         {"question": _original_question(state)},
     )
+    _emit_status("Answer ready", done=True)
     return {"messages": [AIMessage(content=answer)]}
 
 
@@ -428,6 +452,7 @@ lgos_rag_graph_config = GraphConfig(
         "generate_answer",
         "answer_no_results",
     ],
+    features={GraphFeature.CLIENT_EVENTS},
 )
 
 __all__ = ["lgos_rag", "lgos_rag_graph_config"]

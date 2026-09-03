@@ -1,3 +1,22 @@
+x-lgos-package-environment: &lgos-package-environment
+  LGOS_OPENAI_API_DOCS_ENABLED: ${LGOS_OPENAI_API_DOCS_ENABLED:-true}
+
+x-lgos-demo-api-environment: &lgos-demo-api-environment
+  <<: *lgos-package-environment
+  DEMO_API_PORT: 8000
+  DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
+  DEMO_API_OPENAI_BASE_URL: ${DEMO_API_OPENAI_BASE_URL:-https://api.openai.com/v1}
+  DEMO_API_OPENAI_API_KEY: ${DEMO_API_OPENAI_API_KEY:-DUMMY}
+  DEMO_API_OPENAI_MODEL: ${DEMO_API_OPENAI_MODEL:-gpt-5.4-mini}
+  DEMO_API_OPENAI_EMBEDDING_MODEL: ${DEMO_API_OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+  DEMO_API_FILES_BASE_URL: http://lgos-files-api:8000/v1
+  LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  LGOS_ENABLE_LANGFUSE: ${LGOS_ENABLE_LANGFUSE:-false}
+  LGOS_OPENAI_API_PREFIX: ${LGOS_OPENAI_API_PREFIX:-/v1}
+  LANGGRAPH_STRICT_MSGPACK: "true"
+
 x-lgos-demo-api: &lgos-demo-api
   image: ghcr.io/ilkersigirci/lgos-demo-api:${DEMO_IMAGE_TAG:-latest}
   pull_policy: always
@@ -19,13 +38,8 @@ x-lgos-demo-api: &lgos-demo-api
     nofile:
       soft: 4096
       hard: 8192
-  env_file:
-    - path: ../../.env
-      required: false
   environment:
-    DEMO_API_PORT: 8000
-    DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
-    LANGGRAPH_STRICT_MSGPACK: "true"
+    <<: *lgos-demo-api-environment
   healthcheck:
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
     interval: 5s
