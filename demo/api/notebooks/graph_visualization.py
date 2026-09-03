@@ -43,6 +43,7 @@ def _():
         create_persistent_plot_agent,
     )
     from lgos_demo_api.graphs.simple import simple_graph
+    from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
     from lgos_demo_api.graphs.status_events import status_event_graph
     from lgos_demo_api.graphs.subgraphs.specialist_team import (
         create_specialist_team_graph,
@@ -61,6 +62,7 @@ def _():
         lgos_rag,
         multi_node_streaming_graph,
         simple_graph,
+        simple_external_tools_graph,
         status_event_graph,
     )
 
@@ -79,6 +81,7 @@ async def _(
     lgos_rag,
     multi_node_streaming_graph,
     simple_graph,
+    simple_external_tools_graph,
     status_event_graph,
 ):
     graphs = {
@@ -92,6 +95,7 @@ async def _(
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),
         "simple-graph": simple_graph,
+        "simple-graph-external-tools": simple_external_tools_graph,
         "lgos-rag": lgos_rag,
     }
     return (graphs,)

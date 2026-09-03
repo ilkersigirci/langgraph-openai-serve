@@ -1,6 +1,6 @@
 # Core Graph Patterns
 
-Four small graphs isolate the basic ways an OpenAI request can drive a
+Five small graphs isolate the basic ways an OpenAI request can drive a
 LangGraph. They keep persistence, client events, and interrupts out of the way
 so each adapter or streaming behavior is visible on its own.
 
@@ -10,6 +10,7 @@ so each adapter or streaming behavior is visible on its own.
 | `advanced-mcp-tools` | An async graph factory that loads MCP-style tools before building an agent |
 | `multi-node-streaming` | Ordered text streamed by more than one graph node |
 | `simple-graph` | A real chat model controlled by discoverable runtime settings |
+| `simple-graph-external-tools` | A chat model that receives and returns client-owned function tools |
 
 ## LangGraph Topology
 
@@ -42,6 +43,14 @@ so each adapter or streaming behavior is visible on its own.
     ```
 
 === "simple-graph"
+
+    ```mermaid
+    graph TD;
+		__start__ --> generate;
+		generate --> __end__;
+    ```
+
+=== "simple-graph-external-tools"
 
     ```mermaid
     graph TD;
@@ -100,13 +109,25 @@ when the client includes it in the current request. See
 [Runtime Settings](../../how-to-guides/langgraph-runtime-settings.md) for the
 shared discovery and metadata transport.
 
+### simple-graph-external-tools
+
+This graph keeps the tool loop on the client side. `request_to_input` carries the
+validated `tools` and `tool_choice` fields into graph state. `generate` binds
+those definitions to the upstream chat model and returns its `AIMessage`.
+
+The graph does not execute a tool or discard history. A client sends the returned
+assistant `tool_calls`, executes them, and sends the matching `tool` messages in
+the next request. This makes the graph suitable for a Responses-to-Chat gateway
+used by clients such as Codex, provided the gateway converts the tool shapes and
+streaming events correctly.
+
 ## State And Output
 
 None of these graphs uses a checkpointer or LangGraph Store, so graph state ends
-with the request. All four return standard OpenAI assistant text and emit no
-LGOS client events. `multi-node-streaming` and `simple-graph` identify their
-answer-producing nodes for incremental text streaming; the other two focus on
-adapter and factory behavior rather than token timing.
+with the request. All five return standard OpenAI assistant messages and emit no
+LGOS client events. `multi-node-streaming`, `simple-graph`, and the
+external-tools graph identify their answer-producing nodes for incremental text
+streaming and standard Chat Completions tool-call output.
 
 ## Try It
 
@@ -116,3 +137,4 @@ adapter and factory behavior rather than token timing.
 | `advanced-mcp-tools` | `What is the weather in Istanbul?` | None |
 | `multi-node-streaming` | `Build one answer from two nodes.` | None |
 | `simple-graph` | `Explain what this demo does.` | Select an audience in the UI |
+| `simple-graph-external-tools` | `Use the supplied function tool when needed.` | Client supplies `tools` |

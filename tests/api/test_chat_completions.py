@@ -24,6 +24,22 @@ async def test_non_streaming_completion_matches_openai_contract(
     assert response.usage is None
 
 
+async def test_message_content_parts_are_accepted(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
+        model="test",
+        messages=[
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Hi"}],
+            }
+        ],
+    )
+
+    assert response.choices[0].message.content == "hello"
+
+
 async def test_modern_function_tools_remain_supported(
     openai_client: AsyncOpenAI,
 ) -> None:

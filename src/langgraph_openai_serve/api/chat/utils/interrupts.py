@@ -225,8 +225,13 @@ def _parse_tool_results(
             msg = "Interrupt resume tool_call_id values must be unique."
             raise InvalidResumeRequestError(msg)
 
+        content = message.content
+        if not isinstance(content, str):
+            msg = 'Interrupt resume tool content must be JSON like {"resume": "..."}'
+            raise InvalidResumeRequestError(msg)
+
         try:
-            payload = _load_json(message.content or "")
+            payload = _load_json(content)
         except (TypeError, ValueError) as exc:
             msg = 'Interrupt resume tool content must be JSON like {"resume": "..."}'
             raise InvalidResumeRequestError(msg) from exc

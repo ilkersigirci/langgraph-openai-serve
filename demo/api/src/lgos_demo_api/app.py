@@ -32,6 +32,9 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     create_persistent_plot_agent_config,
 )
 from lgos_demo_api.graphs.simple import simple_graph_config
+from lgos_demo_api.graphs.simple_external_tools import (
+    simple_external_tools_graph_config,
+)
 from lgos_demo_api.graphs.status_events import status_event_graph_config
 from lgos_demo_api.logging import LOGGING_CONFIG
 from lgos_demo_api.otel import instrument_fastapi_app
@@ -101,6 +104,7 @@ def create_custom_app() -> FastAPI:
             "persistent-plot-agent": create_persistent_plot_agent_config(
                 lambda: app.state.persistent_plot_agent,
             ),
+            "simple-graph-external-tools": simple_external_tools_graph_config,
             "interruptible-approval": create_interruptible_graph_config(
                 # We use lambdas here because app.state is populated asynchronously
                 # during the FastAPI lifespan event. Eagerly evaluating app.state

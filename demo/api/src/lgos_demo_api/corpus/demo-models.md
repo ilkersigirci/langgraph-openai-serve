@@ -4,6 +4,8 @@ The demo API registers these graph names as OpenAI models:
 
 - `simple-graph` demonstrates conversation-history and audience runtime
   settings.
+- `simple-graph-external-tools` forwards client-provided tool definitions to the
+  chat model and returns tool calls for the client to execute.
 - `citation-events` emits structured OpenAI URL citations alongside portable
   Markdown links.
 - `lgos-rag` retrieves from this packaged Markdown corpus, grades relevance,
