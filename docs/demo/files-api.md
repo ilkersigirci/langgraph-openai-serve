@@ -27,9 +27,10 @@ The OpenAI base URL is `http://localhost:3006/v1`; health is available at
 `http://localhost:3006/health`.
 
 The service supports upload, list, retrieve, content, and delete operations for
-`purpose="user_data"`. Chainlit may call it directly or send Files requests
-through Bifrost's dedicated `lgos-files` provider. The `file-input` graph uses
-the same service to resolve an incoming `file_id`.
+`purpose="user_data"`. Chainlit and generated Open WebUI models may call it
+directly or send Files requests through Bifrost's dedicated `lgos-files`
+provider. The `file-input` graph uses the same service to resolve an incoming
+`file_id`.
 
 ## Use A Custom Repository
 
@@ -53,7 +54,8 @@ LGOS or LangGraph is required.
 Only this service receives the `DEMO_API_FILES_AWS_*` credentials and bucket
 configuration. LGOS API replicas receive only the Files base URL needed by a
 graph that resolves IDs. Chainlit's native element-storage credentials remain
-separate.
+separate, and Open WebUI retains its native raw upload copy in its own data
+volume.
 
 The demo is a deliberately small reference implementation. Before exposing it
 to untrusted clients, add authentication, tenant isolation, upload limits,

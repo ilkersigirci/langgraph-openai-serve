@@ -100,11 +100,11 @@ discovery. Pass-through preserves the required LGOS model-detail extension.
 
 ## Client Capabilities
 
-| Demo client | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
-| --- | --- | --- | --- | --- | --- |
-| Chainlit | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status, Plotly, and live activity elements | Markdown content |
-| Open WebUI generated models | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted chart embeds | Native source events and Markdown |
-| Open WebUI static example | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
+| Demo client | File input | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status, Plotly, and live activity elements | Markdown content |
+| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted chart embeds | Native source events and Markdown |
+| Open WebUI static example | Not implemented | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
 An interrupt still uses standard OpenAI `tool_calls`, but a client application

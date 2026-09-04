@@ -8,7 +8,7 @@ from typing import Annotated
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import GraphConfig, GraphFeature
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseInputContentParam
 from pydantic import BaseModel
@@ -122,6 +122,7 @@ file_input_graph = workflow.compile()
 file_input_graph_config = GraphConfig(
     graph=file_input_graph,
     description="Analyzes attached files with the OpenAI Responses API.",
+    features={GraphFeature.FILE_INPUTS},
 )
 
 __all__ = ["file_input_graph", "file_input_graph_config"]

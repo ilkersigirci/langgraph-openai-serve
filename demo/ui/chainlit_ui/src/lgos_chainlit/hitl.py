@@ -45,7 +45,7 @@ from lgos_chainlit.utils.clients import (
     openai_client,
     retrieve_model,
 )
-from lgos_chainlit.utils.files import with_file_parts
+from lgos_chainlit.utils.files import file_upload_overrides, with_file_parts
 from lgos_chainlit.utils.thread_resume import (
     reuse_persisted_step,
     schedule_after_thread_hydration,
@@ -101,6 +101,7 @@ async def set_chat_profiles(
                 if extension is not None
                 else LIMITED_FUNCTIONALITY_MESSAGE
             ),
+            config_overrides=file_upload_overrides(model),
         )
     ]
 

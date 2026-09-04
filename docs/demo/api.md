@@ -64,8 +64,8 @@ Inspect registered graphs:
 curl http://localhost:3004/v1/models
 ```
 
-Each demo graph publishes its API-owned description in the lightweight
-`langgraph_openai_serve` list extension.
+Each demo graph publishes its API-owned description and feature names in the
+lightweight `langgraph_openai_serve` list extension.
 
 The complete model and requirement matrix is in [Example Graphs](graphs/index.md).
 

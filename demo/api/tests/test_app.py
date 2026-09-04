@@ -71,6 +71,11 @@ async def test_app_lists_exactly_the_documented_models(
         for model in response.data
     }
     assert all(description.strip() for description in descriptions.values())
+    features = {
+        model.id: (model.model_extra or {})["langgraph_openai_serve"]["features"]
+        for model in response.data
+    }
+    assert features["file-input"] == ["file_inputs"]
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]

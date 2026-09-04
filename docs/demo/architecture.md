@@ -48,6 +48,9 @@ send the native graph name through Bifrost's raw `/openai_passthrough/v1`
 route. Bifrost then forwards the request to the matching API container while
 preserving LGOS model metadata and streaming extensions.
 
+Both dynamic UIs upload inference attachments through Bifrost's dedicated
+`lgos-files` provider before sending the returned `file_id` to a graph.
+
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
 starts both healthy graph APIs and the Files service, and then starts Bifrost
 and its UI clients. The diagram shows request traffic rather than those
@@ -83,7 +86,7 @@ flowchart LR
 
   files_service["Central Files service"]
   s3[("S3-compatible service<br/>separate UI and Files buckets")]
-  openwebui_data[("Open WebUI data volume<br/>transcripts and embeds")]
+  openwebui_data[("Open WebUI data volume<br/>transcripts, raw uploads, and embeds")]
 
   chainlit -->|"conversation and UI metadata"| chainlit_rows
   chainlit -->|"element content"| s3
@@ -98,9 +101,11 @@ Both API containers run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
 checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
-keeps its state in its bind-mounted data directory. Detailed ownership and
-recovery behavior live in [Persistent Plot Agent](graphs/persistent-plot-agent.md) and
-[Interruptible Human Review](graphs/interruptible-approval.md). When
+keeps its state and native raw-upload copy in its bind-mounted data directory;
+the central Files service owns the separate inference copy. Detailed ownership
+and recovery behavior live in
+[Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
+Human Review](graphs/interruptible-approval.md). When
 `LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.

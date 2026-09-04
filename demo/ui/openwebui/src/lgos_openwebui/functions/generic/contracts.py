@@ -24,6 +24,7 @@ ASK_USER_REJECTED_OUTPUT = "Error: tool call rejected by user."
 INTERRUPT_CANCELLED_MESSAGE = "Interrupt cancelled."
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 CLIENT_EVENTS_FEATURE = "client_events"
+FILE_INPUTS_FEATURE = "file_inputs"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 SESSION_ID_METADATA_KEY = "session_id"
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
@@ -45,9 +46,9 @@ CHAT_COMPLETION_REQUEST_FIELDS = (
 )
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "langgraph_openai_serve model metadata. Runtime settings, client events, and "
-    "interrupts may be unavailable. Configure the proxy to pass LGOS /v1 requests "
-    "and responses through unchanged."
+    "langgraph_openai_serve model metadata. Runtime settings, file inputs, client "
+    "events, and interrupts may be unavailable. Configure the proxy to pass LGOS "
+    "/v1 requests and responses through unchanged."
 )
 PipeChunk = dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk

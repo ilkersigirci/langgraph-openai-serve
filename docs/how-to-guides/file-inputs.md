@@ -5,6 +5,11 @@ opaque bytes with `purpose="user_data"`, receive a stable `file_id`, and include
 that ID in a native Chat Completions file content part. LGOS preserves the part;
 the graph decides how to resolve and interpret it.
 
+Graphs that resolve these IDs declare `GraphFeature.FILE_INPUTS`. Clients can
+then offer attachment controls only for graphs that accept them; ordinary
+graphs continue to receive standard chat messages without pretending they can
+interpret an external file namespace.
+
 ## Deploy One File Boundary
 
 LGOS deliberately does not expose Files routes or hold file-storage

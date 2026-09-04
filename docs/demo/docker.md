@@ -9,7 +9,7 @@ The demo uses four independent uv projects rather than a uv workspace:
 | `demo/api` | `demo/api/uv.lock` | `ghcr.io/ilkersigirci/lgos-demo-api` |
 | `demo/files_api` | `demo/files_api/uv.lock` | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command |
+| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command and upload-policy mount |
 
 Published project-owned images use only their project directories as build
 contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
@@ -19,9 +19,10 @@ Shared runtime assets remain under `demo/docker/`. The development overlay
 additionally supplies the parent LGOS checkout as a named context for the API's
 editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
-command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
-Python environment, or shared lockfile. The API package includes the compact
-Markdown corpus used by `lgos-rag`.
+command local. Compose also mounts its small raw-upload policy into that image;
+it does not build a project-owned Open WebUI image. There is no demo-wide
+`pyproject.toml`, uv workspace, shared Python environment, or shared lockfile.
+The API package includes the compact Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
 
@@ -150,17 +151,18 @@ settings](reference.md#opentelemetry-settings).
     Open WebUI: `http://localhost:3003`
 
     Compose runs the official Open WebUI image. The local sync command updates
-    the bundled Functions and generates Workspace Models from LGOS metadata. See the
-    [Open WebUI Functions](open-webui.md).
+    the bundled Functions and generates Workspace Models from LGOS metadata.
+    The Compose service also mounts the temporary raw-upload policy described
+    under [Open WebUI file input](open-webui.md#file-input).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
-state, and Open WebUI state use host bind mounts
-under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
-service runs as `PUID:PGID` with a read-only root filesystem, dropped
-capabilities, and explicit resource limits. Narrow tmpfs mounts hold required
-ephemeral writes. The one-shot API setup service initializes the LangGraph
-persistence schemas before both API workers, while Chainlit's `pre_start` hook
-applies its independent UI migrations.
+state, and Open WebUI state—including its native raw file copies—use host bind
+mounts under `demo/docker/volumes/`; the Compose model declares no named
+volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
+dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
+required ephemeral writes. The one-shot API setup service initializes the
+LangGraph persistence schemas before both API workers, while Chainlit's
+`pre_start` hook applies its independent UI migrations.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads Plotly figure JSON to the configured `BUCKET_NAME`. Resuming a

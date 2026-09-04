@@ -51,14 +51,14 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
-In direct mode, profile discovery reads each
-`langgraph_openai_serve.description` from the model list. In Bifrost mode, the
-catalog discovers providers and provider-qualified IDs, then one pass-through
-list request per provider supplies the native model metadata. Listing,
-retrieval, and chat use the same raw pass-through route and discovered
-`x-model-provider`; the adapter has no provider list. The demo API owns the
-descriptions. Chainlit keeps ordinary chat available but marks a model as
-**Limited functionality** when an endpoint omits or strips one.
+In direct mode, profile discovery reads each graph's description and features
+from the model list. In Bifrost mode, the catalog discovers providers and
+provider-qualified IDs, then one pass-through list request per provider supplies
+the native model metadata. Listing, retrieval, and chat use the same raw
+pass-through route and discovered `x-model-provider`; the adapter has no
+provider list. The demo API owns the descriptions and capabilities. Chainlit
+keeps ordinary chat available but marks a model as **Limited functionality**
+when an endpoint omits or strips them.
 
 ## File Attachments
 
@@ -71,10 +71,23 @@ of chat and catalog endpoints. In Bifrost mode, Files requests also use the fixe
 selected model provider. The demo therefore has one file namespace shared by
 both chat providers.
 
-The attachment button accepts up to five files of 10 MiB each per message.
-Select `lgos-a/file-input` (or the `lgos-b` equivalent) to process an
-attachment with the dedicated demo graph. General graphs such as
-`simple-graph` receive the native file part but do not resolve its central ID.
+The attachment button appears only for profiles that advertise `file_inputs`
+and accepts up to five files of 10 MiB each per message. Select
+`lgos-a/file-input` (or the `lgos-b` equivalent) to process an attachment with
+the dedicated demo graph. If a direct API caller sends a native file part to a
+general graph such as `simple-graph`, LGOS preserves it, but that graph does not
+resolve its central ID.
+
+!!! note "Chainlit 2.11.1 upload validation"
+
+    Chainlit applies profile overrides to the browser and WebSocket session,
+    but its pinned [`/project/file` validator](https://github.com/Chainlit/chainlit/blob/2.11.1/backend/chainlit/server.py#L1649-L1661)
+    reads the global setting. The demo therefore leaves that route globally
+    enabled, hides the attachment control through native
+    [`ChatProfile.config_overrides`](https://docs.chainlit.io/api-reference/chat-profiles),
+    and checks the effective session profile before uploading to the central
+    Files API. Remove this workaround once Chainlit's upload route validates
+    against the effective session configuration.
 
 Chainlit's native S3 persistence remains responsible for restoring UI elements.
 The OpenAI Files upload is the separate inference contract; the adapter does
@@ -100,8 +113,8 @@ not interpret general JSON Schema constraints. LGOS remains the validation
 authority. If the required LGOS model extension is unavailable, Chainlit hides
 the controls, uses server defaults, and shows a transient **Limited
 functionality** warning after selection. Profile discovery itself stays
-list-only because descriptions arrive with the list response. Standard Chat
-Completions remain available.
+list-only because descriptions and features arrive with the list response.
+Standard Chat Completions remain available.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
 

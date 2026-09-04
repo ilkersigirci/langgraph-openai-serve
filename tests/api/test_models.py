@@ -53,6 +53,7 @@ async def test_model_metadata_is_exposed_by_list_and_retrieval(
     assert (listed.data[0].model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
         "description": "DUMMY",
+        "features": [],
     }
     assert (retrieved.model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
@@ -91,16 +92,22 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     graph_registry.get_graph("test").features = {
         GraphFeature.INTERRUPTS,
         GraphFeature.CLIENT_EVENTS,
+        GraphFeature.FILE_INPUTS,
     }
 
     response = await openai_client.models.retrieve("test")
+    listed = await openai_client.models.list()
 
     extension = (response.model_extra or {})["langgraph_openai_serve"]
-    assert extension == {
+    expected_extension = {
         "schema_version": 1,
         "description": "DUMMY",
-        "features": ["client_events", "interrupts"],
+        "features": ["client_events", "file_inputs", "interrupts"],
     }
+    assert extension == expected_extension
+    assert (listed.data[0].model_extra or {})["langgraph_openai_serve"] == (
+        expected_extension
+    )
 
 
 async def test_model_retrieval_reuses_the_registration_schema(

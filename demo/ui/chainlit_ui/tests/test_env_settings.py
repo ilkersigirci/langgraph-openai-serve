@@ -109,6 +109,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
                     langgraph_openai_serve={
                         "schema_version": 1,
                         "description": "DUMMY",
+                        "features": [],
                     },
                 )
             ]
@@ -141,6 +142,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
     assert (models[0].model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
         "description": "DUMMY",
+        "features": [],
     }
     catalog_list.assert_awaited_once_with()
     passthrough_list.assert_has_awaits(

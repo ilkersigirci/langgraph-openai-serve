@@ -36,7 +36,7 @@ from lgos_chainlit.utils.clients import (
     model_request,
     openai_client,
 )
-from lgos_chainlit.utils.files import with_file_parts
+from lgos_chainlit.utils.files import file_upload_overrides, with_file_parts
 
 register_auth_callback()
 
@@ -51,6 +51,7 @@ async def set_chat_profiles(
             markdown_description=(
                 model_description(model) or LIMITED_FUNCTIONALITY_MESSAGE
             ),
+            config_overrides=file_upload_overrides(model),
         )
         for model in await list_models()
     ]

@@ -24,8 +24,9 @@ edit_message = false
 allow_thread_sharing = false
 favorites = false
 
-# Chainlit exposes incoming files as message elements; the adapter copies them
-# through the configured OpenAI Files API before starting the graph run.
+# Chainlit 2.11.1 validates its upload route against this global value. Chat
+# profiles still override the browser control, and the adapter checks the
+# effective session profile before copying a file to the OpenAI Files API.
 [features.spontaneous_file_upload]
 enabled = true
 accept = ["*/*"]

@@ -6,6 +6,7 @@ from pathlib import Path
 GENERIC_BUNDLE = (
     "contracts.py",
     "api.py",
+    "files.py",
     "metadata.py",
     "events.py",
     "interrupts.py",

@@ -6,8 +6,13 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 from langchain_core.messages import HumanMessage
+from langgraph_openai_serve import GraphFeature
 
 from lgos_demo_api.graphs import file_input as file_input_module
+
+
+def test_graph_advertises_file_inputs() -> None:
+    assert file_input_module.file_input_graph_config.supports(GraphFeature.FILE_INPUTS)
 
 
 async def test_file_ids_are_resolved_and_sent_as_responses_inputs(

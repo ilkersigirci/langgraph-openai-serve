@@ -35,7 +35,11 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
             created=MODEL_CREATED,
             owned_by=MODEL_OWNER,
             langgraph_openai_serve=LangGraphModelSummaryExtension(
-                description=graph_config.description
+                description=graph_config.description,
+                features=sorted(
+                    graph_config.features,
+                    key=lambda feature: feature.value,
+                ),
             ),
         )
         for name, graph_config in graph_registry.registry.items()

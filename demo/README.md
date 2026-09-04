@@ -17,7 +17,7 @@ dependency source.
 | `api` | Example LangGraph API | `ghcr.io/ilkersigirci/lgos-demo-api` |
 | `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `ui/openwebui` | Open WebUI Function sync | Local uv command |
+| `ui/openwebui` | Open WebUI Function sync and raw-upload policy | Local uv command and official-image bind mount |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. The Bifrost gateway configuration is at
@@ -28,8 +28,8 @@ demonstrate routing multiple LGOS APIs through one Bifrost pass-through
 endpoint. The independent `lgos-files-api` image provides the shared S3-backed
 Files service. The dynamic clients discover provider-qualified
 models from Bifrost's catalog and use its OpenAI pass-through endpoint for
-detailed model metadata and chat. Chainlit sends Files operations through the
-gateway's normalized OpenAI endpoint.
+detailed model metadata and chat. Chainlit and the generated Open WebUI models
+send Files operations through the gateway's normalized OpenAI endpoint.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a

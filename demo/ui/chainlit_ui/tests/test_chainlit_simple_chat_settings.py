@@ -93,7 +93,7 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
-async def test_chat_profiles_use_list_only_discovery(
+async def test_chat_profiles_use_list_capabilities_for_file_uploads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
@@ -111,6 +111,7 @@ async def test_chat_profiles_use_list_only_discovery(
                         langgraph_openai_serve={
                             "schema_version": 1,
                             "description": "DUMMY",
+                            "features": ["file_inputs"],
                         },
                     ),
                     model_without_extension("proxy-model"),
@@ -128,6 +129,10 @@ async def test_chat_profiles_use_list_only_discovery(
         "DUMMY",
         simple.LIMITED_FUNCTIONALITY_MESSAGE,
     ]
+    assert [
+        profile.config_overrides.features.spontaneous_file_upload.enabled
+        for profile in profiles
+    ] == [True, False]
     retrieve.assert_not_awaited()
 
 

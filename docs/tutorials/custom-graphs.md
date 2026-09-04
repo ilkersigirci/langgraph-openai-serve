@@ -13,8 +13,8 @@ GraphConfig(
 ```
 
 Without adapters, graph input is `{"messages": langchain_messages}` and the
-last output message must be an `AIMessage`. The required description is
-published in LGOS model list and detail extensions for catalog UIs.
+last output message must be an `AIMessage`. The required description and graph
+features are published in LGOS model list and detail extensions for catalog UIs.
 
 ### Message Ownership
 

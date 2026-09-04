@@ -13,6 +13,27 @@ from lgos_chainlit.utils import clients
 from lgos_chainlit.utils import files as file_utils
 
 
+def set_profile_file_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    enabled: bool,
+) -> None:
+    """Set the effective Chainlit profile configuration for an upload test."""
+    monkeypatch.setattr(
+        file_utils,
+        "chainlit_context",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                config=SimpleNamespace(
+                    features=SimpleNamespace(
+                        spontaneous_file_upload=SimpleNamespace(enabled=enabled)
+                    )
+                )
+            )
+        ),
+    )
+
+
 def test_packaged_chainlit_config_enables_file_attachments() -> None:
     config_path = Path(file_utils.__file__).parents[1] / ".chainlit" / "config.toml"
 
@@ -34,6 +55,7 @@ async def test_current_attachments_become_openai_file_parts(
     path = tmp_path / "chainlit-upload"
     path.write_bytes(b"file content")
     create = AsyncMock(return_value=SimpleNamespace(id="file-123"))
+    set_profile_file_upload(monkeypatch, enabled=True)
     monkeypatch.setattr(clients.files_client.files, "create", create)
     monkeypatch.setattr(clients.settings.OPENAI, "files_provider", "lgos-files")
     message = SimpleNamespace(
@@ -93,6 +115,7 @@ async def test_file_only_message_still_reaches_chat(
 ) -> None:
     path = tmp_path / "payload.bin"
     path.write_bytes(b"payload")
+    set_profile_file_upload(monkeypatch, enabled=True)
     monkeypatch.setattr(
         clients.files_client.files,
         "create",
@@ -121,3 +144,25 @@ async def test_file_only_message_still_reaches_chat(
             ],
         }
     ]
+
+
+async def test_unsupported_profile_rejects_before_central_upload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "payload.bin"
+    path.write_bytes(b"payload")
+    create = AsyncMock()
+    set_profile_file_upload(monkeypatch, enabled=False)
+    monkeypatch.setattr(clients.files_client.files, "create", create)
+
+    with pytest.raises(
+        ValueError,
+        match="The selected graph does not support file inputs",
+    ):
+        await file_utils.with_file_parts(
+            [],
+            SimpleNamespace(elements=[SimpleNamespace(path=str(path))]),
+        )
+
+    create.assert_not_awaited()

@@ -28,7 +28,11 @@ def test_chainlit_accepts_model_detail_extension() -> None:
         owned_by="langgraph-openai-serve",
         langgraph_openai_serve=LangGraphModelExtension(
             description="DUMMY",
-            features=[GraphFeature.CLIENT_EVENTS, GraphFeature.INTERRUPTS],
+            features=[
+                GraphFeature.CLIENT_EVENTS,
+                GraphFeature.FILE_INPUTS,
+                GraphFeature.INTERRUPTS,
+            ],
             client_settings=ModelClientSettings(
                 json_schema={"type": "object", "additionalProperties": False},
                 defaults={},

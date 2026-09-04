@@ -65,6 +65,7 @@ def test_bundle_function_is_frontmatter_first_and_executable() -> None:
     assert content.startswith('"""\ntitle: Generic\n')
     assert "from .api import" not in content
     assert "# ===== BEGIN contracts.py =====" in content
+    assert "# ===== BEGIN files.py =====" in content
     assert "# ===== BEGIN pipe.py =====" in content
     assert "Pipe" in namespace
 
