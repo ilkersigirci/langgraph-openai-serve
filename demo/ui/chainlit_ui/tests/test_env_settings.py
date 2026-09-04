@@ -27,13 +27,26 @@ def test_openai_endpoint_settings(
         "DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL",
         "https://gateway.example/catalog/v1",
     )
+    monkeypatch.setenv(
+        "DEMO_CHAINLIT_OPENAI__FILES_BASE_URL",
+        "https://files.example/v1",
+    )
     monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__API_KEY", "api-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__FILES_PROVIDER", "lgos-files")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI.base_url == "https://gateway.example/v1"
     assert configured.OPENAI.catalog_base_url == "https://gateway.example/catalog/v1"
+    assert configured.OPENAI.files_base_url == "https://files.example/v1"
+    assert configured.OPENAI.files_provider == "lgos-files"
     assert configured.OPENAI.api_key == "api-key"
+
+
+def test_files_endpoint_defaults_to_the_standalone_service() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.OPENAI.files_base_url == "http://localhost:3006/v1"
 
 
 def test_native_chainlit_settings_require_s3_element_storage(
@@ -96,6 +109,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
                     langgraph_openai_serve={
                         "schema_version": 1,
                         "description": "DUMMY",
+                        "features": [],
                     },
                 )
             ]
@@ -128,6 +142,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
     assert (models[0].model_extra or {})["langgraph_openai_serve"] == {
         "schema_version": 1,
         "description": "DUMMY",
+        "features": [],
     }
     catalog_list.assert_awaited_once_with()
     passthrough_list.assert_has_awaits(

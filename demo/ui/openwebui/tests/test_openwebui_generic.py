@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -223,6 +224,181 @@ async def test_pipe_builds_the_openai_stream_request_from_public_inputs(
     )
     stream.close.assert_awaited_once()
     client.__aexit__.assert_awaited_once_with(None, None, None)
+
+
+async def test_pipe_uploads_only_current_message_files_and_forwards_their_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    historical_path = tmp_path / "historical.pdf"
+    historical_path.write_bytes(b"historical content")
+    report_path = tmp_path / "report.pdf"
+    report_path.write_bytes(b"report content")
+    data_path = tmp_path / "data.csv"
+    data_path.write_bytes(b"header\nvalue")
+
+    upload_ids = iter(("file-report", "file-image", "file-data"))
+    uploaded_content: list[bytes] = []
+
+    async def create_file(**kwargs: Any) -> SimpleNamespace:
+        uploaded_content.append(kwargs["file"][1].read())
+        return SimpleNamespace(id=next(upload_ids))
+
+    files_client = AsyncMock()
+    files_client.__aenter__.return_value = files_client
+    files_client.files.create.side_effect = create_file
+
+    stream = ScriptedStream(("ok",), completion("ok"))
+    stream.close = AsyncMock()
+    chat_client = AsyncMock()
+    chat_client.__aenter__.return_value = chat_client
+    chat_client.models.retrieve.return_value = model(features=["file_inputs"])
+    chat_client.chat.completions.create.return_value = stream
+
+    pipe = Pipe()
+    pipe.valves.OPENAI_FILES_BASE_URL = "https://files.example/v1"
+    client_factory = Mock(
+        side_effect=lambda *, base_url, **_: (
+            files_client if base_url == "https://files.example/v1" else chat_client
+        )
+    )
+    monkeypatch.setattr(generic_api, "AsyncOpenAI", client_factory)
+
+    chunks = await collect_response(
+        pipe.pipe(
+            body={
+                **body("Summarize it."),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Summarize it."},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "data:image/jpeg;base64,aW1hZ2U="},
+                            },
+                        ],
+                    }
+                ],
+            },
+            __metadata__={
+                "user_message": {
+                    "id": "message-current",
+                    "files": [
+                        {"id": "openwebui-report", "type": "file"},
+                        {
+                            "id": "openwebui-image",
+                            "type": "file",
+                            "name": "photo.jpg",
+                            "content_type": "image/jpeg",
+                        },
+                        {"id": "openwebui-data", "type": "file"},
+                    ],
+                }
+            },
+            __files__=[
+                {
+                    "id": "openwebui-historical",
+                    "type": "file",
+                    "file": {
+                        "path": str(historical_path),
+                        "filename": "historical.pdf",
+                        "meta": {"content_type": "application/pdf"},
+                    },
+                    "name": "historical.pdf",
+                },
+                {
+                    "id": "openwebui-report",
+                    "type": "file",
+                    "file": {
+                        "path": str(report_path),
+                        "filename": "report.pdf",
+                        "meta": {"content_type": "application/pdf"},
+                    },
+                    "name": "report.pdf",
+                },
+                {
+                    "id": "openwebui-data",
+                    "type": "file",
+                    "file": {
+                        "path": str(data_path),
+                        "filename": "data.csv",
+                        "meta": {"content_type": "text/csv"},
+                    },
+                    "name": "data.csv",
+                },
+            ],
+        )
+    )
+
+    assert chunks == [
+        stream_chunk(content="ok").model_dump(mode="json", exclude_none=True)
+    ]
+    assert files_client.files.create.await_count == 3
+    uploads = [call.kwargs for call in files_client.files.create.await_args_list]
+    assert [upload["purpose"] for upload in uploads] == [
+        "user_data",
+        "user_data",
+        "user_data",
+    ]
+    assert [upload["extra_query"] for upload in uploads] == [
+        {"provider": "lgos-files"},
+        {"provider": "lgos-files"},
+        {"provider": "lgos-files"},
+    ]
+    assert [
+        (filename, content.closed, content_type)
+        for filename, content, content_type in (upload["file"] for upload in uploads)
+    ] == [
+        ("report.pdf", True, "application/pdf"),
+        ("photo.jpg", True, "image/jpeg"),
+        ("data.csv", True, "text/csv"),
+    ]
+    assert uploaded_content == [b"report content", b"image", b"header\nvalue"]
+    chat_client.chat.completions.create.assert_awaited_once_with(
+        model="interruptible-approval",
+        extra_headers={"x-model-provider": "lgos-a"},
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Summarize it."},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64,aW1hZ2U="},
+                    },
+                    {"type": "file", "file": {"file_id": "file-report"}},
+                    {"type": "file", "file": {"file_id": "file-image"}},
+                    {"type": "file", "file": {"file_id": "file-data"}},
+                ],
+            }
+        ],
+        stream=True,
+    )
+
+
+async def test_pipe_rejects_files_before_upload_for_an_unsupported_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.models.retrieve.return_value = model()
+    monkeypatch.setattr(generic_api, "AsyncOpenAI", Mock(return_value=client))
+
+    chunks = await collect_response(
+        Pipe().pipe(
+            body=body("Summarize it."),
+            __metadata__={
+                "user_message": {"files": [{"id": "openwebui-report", "type": "file"}]}
+            },
+        )
+    )
+
+    assert chunks == [
+        {"error": {"detail": "The selected model does not support file inputs."}}
+    ]
+    client.files.create.assert_not_awaited()
+    client.chat.completions.create.assert_not_awaited()
 
 
 async def test_pipe_warns_when_the_endpoint_strips_lgos_metadata(

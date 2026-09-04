@@ -20,6 +20,16 @@ catalog_client = AsyncOpenAI(
     api_key=settings.OPENAI.api_key,
     max_retries=0,
 )
+files_client = AsyncOpenAI(
+    base_url=settings.OPENAI.files_base_url,
+    api_key=settings.OPENAI.api_key,
+    max_retries=0,
+)
+
+
+def files_request() -> tuple[AsyncOpenAI, str | None]:
+    """Return the configured Files client and optional gateway provider."""
+    return files_client, settings.OPENAI.files_provider
 
 
 async def retrieve_model(model_id: str) -> Model:

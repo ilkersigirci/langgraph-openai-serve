@@ -8,7 +8,7 @@ deployment's ASGI server or ingress proxy.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List registered graph models with LGOS descriptions. |
+| `GET` | `/v1/models` | List registered graph models with LGOS descriptions and features. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
@@ -52,6 +52,12 @@ deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
 
+Chat file content parts remain unchanged when converted to LangChain messages,
+so graphs receive native `file_id` values and decide whether to download,
+parse, or forward them. File upload and storage belong to an external OpenAI
+Files API, not the LGOS package. See [Accept File
+Inputs](how-to-guides/file-inputs.md).
+
 `GraphConfig` accepts:
 
 - `graph`: compiled graph, sync factory, or async factory.
@@ -60,7 +66,8 @@ deliberately unreachable.
 - `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
   forwarded as assistant text. If several nodes contribute, the graph's output
   adapter must render the same ordered content for complete responses.
-- `features`: `GraphFeature` values that enable optional server behavior.
+- `features`: `GraphFeature` values that enable optional server behavior or
+  advertise a graph input capability.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
@@ -135,10 +142,11 @@ custom Langfuse trace ID. See [Production Logging and Request
 Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
 The same `features` set drives runtime behavior and the versioned
-`langgraph_openai_serve.features` extension returned by
-`GET /v1/models/{model}`. `GraphFeature.CLIENT_EVENTS` enables and advertises
-public client-event chunks. `GraphFeature.INTERRUPTS` enables and advertises
-the interrupt/resume flow.
+`langgraph_openai_serve.features` extension returned by model listing and
+retrieval. `GraphFeature.CLIENT_EVENTS` enables and advertises public
+client-event chunks. `GraphFeature.FILE_INPUTS` advertises that the graph
+resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
+advertises the interrupt/resume flow.
 
 ### Runtime Settings
 

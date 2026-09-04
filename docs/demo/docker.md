@@ -2,13 +2,14 @@
 
 ## Self-Contained Demo Layout
 
-The demo uses three independent uv projects rather than a uv workspace:
+The demo uses four independent uv projects rather than a uv workspace:
 
 | Project | Lockfile | Deployment |
 | --- | --- | --- |
 | `demo/api` | `demo/api/uv.lock` | `ghcr.io/ilkersigirci/lgos-demo-api` |
+| `demo/files_api` | `demo/files_api/uv.lock` | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command |
+| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command and upload-policy mount |
 
 Published project-owned images use only their project directories as build
 contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
@@ -18,9 +19,10 @@ Shared runtime assets remain under `demo/docker/`. The development overlay
 additionally supplies the parent LGOS checkout as a named context for the API's
 editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
-command local. There is no demo-wide `pyproject.toml`, uv workspace, shared
-Python environment, or shared lockfile. The API package includes the compact
-Markdown corpus used by `lgos-rag`.
+command local. Compose also mounts its small raw-upload policy into that image;
+it does not build a project-owned Open WebUI image. There is no demo-wide
+`pyproject.toml`, uv workspace, shared Python environment, or shared lockfile.
+The API package includes the compact Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
 
@@ -54,15 +56,15 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
-    release tag for both project-owned demo images. To add the published OTEL
+    release tag for all project-owned demo images. To add the published OTEL
     overlay, use `make compose-otel`.
 
 === "Build demo projects"
 
     Apply the explicit development model from the LGOS repository checkout.
-    The API and Chainlit services build locally from their Dockerfiles and
-    lockfiles. The API image installs the parent LGOS checkout as an editable
-    package:
+    The API, Files API, and Chainlit services build locally from their
+    Dockerfiles and lockfiles. Only the API image installs the parent LGOS
+    checkout as an editable package:
 
     ```bash
     make compose-dev
@@ -71,10 +73,10 @@ settings](reference.md#opentelemetry-settings).
     To add the OTEL overlay while building the current checkout, use
     `make compose-otel-dev`.
 
-    The development overlay bind-mounts the demo API source and parent LGOS
-    package read-only. Restart or recreate the affected service after source
-    edits. Both packages are installed editable in the development image;
-    dependency metadata and lockfile changes require an image rebuild.
+    The development overlay bind-mounts the Python application sources and the
+    parent LGOS package read-only. Restart or recreate the affected service
+    after source edits. Dependency metadata and lockfile changes require an
+    image rebuild.
 
 === "Test this LGOS checkout without containers"
 
@@ -91,15 +93,15 @@ settings](reference.md#opentelemetry-settings).
 
 ## Demo Services
 
-=== "APIs"
+=== "Graph APIs"
 
     ```bash
     make run-api
     make run-api-b
     ```
 
-    Run each attached service in a separate terminal. Compose starts their
-    shared PostgreSQL dependency automatically. Before either API starts,
+    Run each attached service in a separate terminal. Compose starts the shared
+    PostgreSQL dependency automatically. Before either graph API starts,
     `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
     LangGraph checkpoint and store schemas once. Both APIs use
     [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
@@ -107,6 +109,17 @@ settings](reference.md#opentelemetry-settings).
 
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
+
+=== "Files API"
+
+    ```bash
+    make run-files
+    ```
+
+    The independently packaged service connects directly to its configured
+    S3-compatible store. It neither starts PostgreSQL nor imports LGOS.
+
+    - central Files API: `http://localhost:3006/v1`
 
 === "Bifrost"
 
@@ -138,21 +151,24 @@ settings](reference.md#opentelemetry-settings).
     Open WebUI: `http://localhost:3003`
 
     Compose runs the official Open WebUI image. The local sync command updates
-    the bundled Functions and generates Workspace Models from LGOS metadata. See the
-    [Open WebUI Functions](open-webui.md).
+    the bundled Functions and generates Workspace Models from LGOS metadata.
+    The Compose service also mounts the temporary raw-upload policy described
+    under [Open WebUI file input](open-webui.md#file-input).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
-state, and Open WebUI state use host bind mounts
-under `demo/docker/volumes/`; the Compose model declares no named volumes. Every
-service runs as `PUID:PGID` with a read-only root filesystem, dropped
-capabilities, and explicit resource limits. Narrow tmpfs mounts hold required
-ephemeral writes. The one-shot API setup service initializes the LangGraph
-persistence schemas before both API workers, while Chainlit's `pre_start` hook
-applies its independent UI migrations.
+state, and Open WebUI state—including its native raw file copies—use host bind
+mounts under `demo/docker/volumes/`; the Compose model declares no named
+volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
+dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
+required ephemeral writes. The one-shot API setup service initializes the
+LangGraph persistence schemas before both API workers, while Chainlit's
+`pre_start` hook applies its independent UI migrations.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads Plotly figure JSON to the configured `BUCKET_NAME`. Resuming a
-thread obtains a fresh signed object URL from that client.
+thread obtains a fresh signed object URL from that client. The central Files API
+uses only its separate `DEMO_API_FILES_BUCKET`, `DEMO_API_FILES_S3_ENDPOINT`,
+and `DEMO_API_FILES_AWS_*` settings. The two S3 configurations are independent.
 
 The API workers share PostgreSQL for thread-scoped application data, durable
 checkpoints, and fail-fast interrupt coordination. Session-level

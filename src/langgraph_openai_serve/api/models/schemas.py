@@ -23,12 +23,12 @@ class LangGraphModelSummaryExtension(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
+    features: list[GraphFeature]
 
 
 class LangGraphModelExtension(LangGraphModelSummaryExtension):
     """Versioned LangGraph OpenAI Serve model-detail extension."""
 
-    features: list[GraphFeature]
     client_settings: ModelClientSettings | None = None
 
 

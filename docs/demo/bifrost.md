@@ -21,6 +21,7 @@ Bifrost exposes each service as a custom provider:
 | --- | --- | --- |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
+| `lgos-files` | `lgos-files-api:8000` | Files only |
 
 Use Bifrost's normalized OpenAI endpoint as the shared model catalog and its raw
 pass-through endpoint for detailed model metadata and inference:
@@ -71,14 +72,25 @@ preserve the LGOS model extension. Both dynamic UI integrations therefore use
 it only for discovery. Metadata-bearing model listing, detailed retrieval, and
 chat use pass-through.
 
+The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
+`file_list`, `file_retrieve`, `file_content`, and `file_delete` operations.
+Normalized Files operations are disabled on the chat providers. A client sends
+`provider=lgos-files` as a query parameter for Files operations, then sends the
+returned native `file_id` to either chat provider. Bifrost does not store the
+bytes or replace the ID with an S3 URL.
+
+Bifrost routes Files and Batch operations through the same key pool, so the
+provider's key sets `use_for_batch_api: true`. Despite the field name, Files
+uploads fail before reaching the upstream service when no key is opted into
+that pool.
+
 ## Configuration Boundary
 
-Both Bifrost custom providers use `openai` as their base provider and enable
-model listing, Chat Completions, and streaming and non-streaming pass-through.
-Chat Completions keep the normalized route useful for the limited-functionality
-demonstration; pass-through preserves the complete LGOS protocol. Their
-upstream base URLs omit `/v1`, and private-network access is enabled for the
-Compose network.
+All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
+`lgos-b` enable model listing, Chat Completions, and streaming and non-streaming
+pass-through. `lgos-files` enables only Files operations and targets the
+standalone S3-backed demo Files service. Upstream base URLs omit `/v1`, and
+private-network access is enabled for the Compose network.
 
 The demo uses `DUMMY` upstream keys because LGOS authentication is not enabled.
 Replace each key when its target application enforces authentication.
@@ -101,8 +113,9 @@ models from Bifrost's catalog, then add `x-model-provider` only for pass-through
 requests. Neither contains a provider list. The fixed-model Open WebUI example
 uses pass-through without catalog discovery. Chainlit omits its optional catalog
 URL when it runs directly against one LGOS API. From the package checkout, run
-`make test-bifrost` after starting the gateway to verify model listing, LGOS
-metadata, inference, and client events through both APIs with the OpenAI SDK.
+`make test-bifrost` after starting the gateway to verify one uploaded file ID,
+model listing, LGOS metadata, inference through both chat providers, and client
+events with the OpenAI SDK.
 
 See Bifrost's
 [custom-provider documentation](https://docs.getbifrost.ai/providers/custom-providers),

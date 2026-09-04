@@ -85,6 +85,9 @@ Use the [runtime settings guide](how-to-guides/langgraph-runtime-settings.md)
 to publish safe per-request graph settings, the
 [authentication guide](how-to-guides/authentication.md) to add bearer tokens,
 and the [proxy guide](how-to-guides/openai-proxies.md) to preserve the contract
-through a gateway. See the package [reference](reference.md) for endpoints,
+through a gateway. Use [file inputs](how-to-guides/file-inputs.md) to store
+uploads in an external Files service and pass native `file_id` references to
+graphs. See
+the package [reference](reference.md) for endpoints,
 settings, events, and public classes. Demo-owned models, settings, and commands
 have their own [reference](demo/reference.md).

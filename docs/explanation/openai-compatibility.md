@@ -25,8 +25,8 @@ The implemented endpoints are listed in [Reference](../reference.md).
 
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
-feature and runtime-settings discovery in a namespaced, versioned extension
-on the standard model-retrieval response:
+feature discovery in a namespaced, versioned extension on model-list and
+model-retrieval responses. Runtime-settings discovery remains detail-only:
 
 ```json
 {
@@ -70,7 +70,7 @@ The standard OpenAI Model object has no description field. The required
 responses. It is API-owned presentation text; clients decide how to render it.
 
 `GraphConfig.features` is the single source of truth: the runner uses it to
-enable behavior and `GET /v1/models/{model}` serializes it for discovery.
+enable behavior, while model listing and retrieval serialize it for discovery.
 `GraphConfig.client_settings` is an explicit, allowlisted public Pydantic model;
 LGOS never publishes a graph's internal LangGraph context schema automatically.
 Additive features do not require an outer schema-version change. The nested
@@ -80,12 +80,13 @@ versions they do not understand.
 | Feature | Enabled behavior |
 | --- | --- |
 | `client_events` | The server may emit opted-in public client-event chunks. |
+| `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
-`langgraph_openai_serve` object with only `schema_version` and `description`.
-Features and client-settings schemas remain detail-only.
+`langgraph_openai_serve` object with `schema_version`, `description`, and
+`features`. Client-settings schemas remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
 `langgraph_openai_serve` extension, even when its feature list is empty and it
 has no client settings. A UI reads catalog descriptions from the list and
@@ -113,9 +114,9 @@ configurations are documented under
     `langgraph_openai_serve` metadata on model retrieval means the configured
     endpoint is not preserving the LGOS contract. A UI may continue ordinary
     Chat Completions, but it must visibly label the model or chat as **Limited
-    functionality** and must not assume runtime settings, client events, or
-    interrupts are available. A normalized routing catalog cannot remove this
-    requirement.
+    functionality** and must not assume runtime settings, file inputs, client
+    events, or interrupts are available. A normalized routing catalog cannot
+    remove this requirement.
 
 ## Runtime Settings
 
@@ -183,6 +184,12 @@ Incoming OpenAI messages are converted to LangChain messages. `GraphConfig`
 adapters keep custom LangGraph schemas behind that public boundary. See
 [LangGraph Integration](langgraph-integration.md#adaptation) and
 [Custom Graphs](../tutorials/custom-graphs.md#custom-schemas).
+
+Native Chat Completions file content parts are preserved in the resulting
+LangChain message. LGOS does not expose Files routes or own file storage. A
+client uploads through an external OpenAI-compatible Files API and sends the
+returned `file_id` to a graph; the graph still owns file interpretation. See
+[Accept File Inputs](../how-to-guides/file-inputs.md).
 
 ## Streaming
 

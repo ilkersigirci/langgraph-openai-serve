@@ -9,6 +9,7 @@ demo model catalogs.
 | --- | --- | --- | --- |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
+| [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`advanced-mcp-tools`](core-patterns.md#advanced-mcp-tools) | Async graph factories and a mock MCP-style tool | None | None |
 | [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |

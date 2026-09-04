@@ -107,6 +107,12 @@ LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 The default base URL is `{host}/v1`. Registered graph names become OpenAI `model`
 values.
 
+LGOS preserves native Chat Completions file content parts, including opaque
+`file_id` values, but does not own file upload or storage. Deploy one Files API
+for the graph services that share a file namespace, or use a gateway-native
+Files provider. The standalone S3-backed [demo Files
+API](demo/files_api/README.md) is a small reference deployment.
+
 ## Docs
 
 - Documentation home: [docs/index.md](docs/index.md)

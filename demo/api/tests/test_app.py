@@ -25,6 +25,7 @@ DOCUMENTED_MODEL_IDS = {
     "complex-subgraphs",
     "custom-event-showcase",
     "custom-input-output-context",
+    "file-input",
     "interruptible-approval",
     "lgos-rag",
     "persistent-plot-agent",
@@ -70,6 +71,11 @@ async def test_app_lists_exactly_the_documented_models(
         for model in response.data
     }
     assert all(description.strip() for description in descriptions.values())
+    features = {
+        model.id: (model.model_extra or {})["langgraph_openai_serve"]["features"]
+        for model in response.data
+    }
+    assert features["file-input"] == ["file_inputs"]
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]
@@ -175,6 +181,17 @@ async def test_custom_io_demo_works_through_openai_client(
     assert response.choices[0].message.content == (
         "demo-user asked: Show me custom schemas."
     )
+
+
+async def test_file_input_demo_prompts_for_an_attachment(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
+        model="file-input",
+        messages=[{"role": "user", "content": "Summarize my file."}],
+    )
+
+    assert response.choices[0].message.content == "Attach a file and try again."
 
 
 async def test_complex_subgraphs_preserve_streaming_parity(

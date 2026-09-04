@@ -75,10 +75,11 @@ WebUI's
 `UserValves-Simple / simple-graph` remains available as the static alternative.
 
 Configure `OPENAI_API_BASE_URL`, `OPENAI_CATALOG_BASE_URL`, `OPENAI_API_KEY`,
-and `OPENAI_API_TIMEOUT` in the generic Function's admin valves. The Pydantic
-valve model in the Function is the source of truth for their defaults and
-descriptions. The Function lists the Bifrost catalog once, keeps models owned by
-`langgraph-openai-serve`, and exposes Bifrost's existing `provider/model` IDs.
+`OPENAI_API_TIMEOUT`, `OPENAI_FILES_BASE_URL`, and `OPENAI_FILES_PROVIDER` in
+the generic Function's admin valves. The Pydantic valve model in the Function
+is the source of truth for their defaults and descriptions. The Function lists
+the Bifrost catalog once, keeps models owned by `langgraph-openai-serve`, and
+exposes Bifrost's existing `provider/model` IDs.
 For detailed retrieval and inference, it removes the provider prefix from the
 model and sends it as `x-model-provider` through Bifrost pass-through. The
 static UserValves Function accepts one provider-qualified `MODEL` and uses the
@@ -90,6 +91,59 @@ detailed LGOS metadata after a model is selected for chat, when settings and
 capability checks need it. The sync command performs the same detailed
 retrieval before it generates Workspace Models and their Chat Variables.
 
+## File Input
+
+Generated models enable Open WebUI's native file-upload control only when the
+graph advertises `file_inputs`. Select `lgos-a/file-input` (or the `lgos-b`
+equivalent) to process an attachment. The Generic Function receives non-image
+attachments through Open WebUI's documented
+[`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
+argument and images through their base64 `image_url` content parts. In the
+pinned release, `__metadata__["user_message"]` identifies the message that
+started this turn. Because `__files__` also includes files from earlier turns,
+the Function intersects it with that current message, uploads each current
+attachment's original bytes with `purpose="user_data"`, and appends the returned
+OpenAI `file_id` to the message. It never reuploads historical chat attachments
+or moves them to the latest message. Images also keep Open WebUI's native
+`image_url` representation.
+
+If a request nevertheless attaches a file to a graph without `file_inputs`, the
+Function rejects it before uploading. This prevents central Files IDs from being
+forwarded to an unrelated downstream model, where the ID has no meaning.
+
+Compose sends file uploads through Bifrost's `/v1` endpoint with the dedicated
+`lgos-files` provider. To bypass Bifrost, set `OPENAI_FILES_BASE_URL` to the
+standalone Files API `/v1` endpoint and leave `OPENAI_FILES_PROVIDER` empty.
+This endpoint is independent from `OPENAI_API_BASE_URL`, which remains the
+graph chat and metadata endpoint.
+
+The Compose service mounts a small ASGI wrapper that forces `process=false` on
+Open WebUI's native file-upload endpoint. Open WebUI therefore stores the
+original bytes without extracting or embedding their content before the Pipe
+runs. The generated Workspace Model also disables chat-time file-context
+retrieval and its built-in file tools while preserving other built-in tools,
+including `ask_user`.
+
+Open WebUI still owns its raw upload copy because its native attachment UI
+requires an Open WebUI file record. The central Files API is the only processing
+source of truth and owns the separate inference copy referenced by `file_id`.
+The policy applies to every file uploaded through this demo Open WebUI instance,
+not only to generated LGOS models.
+
+!!! note "Temporary upstream workaround"
+
+    Open WebUI v0.11.3 always requests processing for non-image chat uploads,
+    before a Pipe or Filter can run. The wrapper exists only to change that
+    upload request to `process=false`; a Filter can control later retrieval but
+    cannot prevent the earlier extraction.
+
+    Remove `upload_policy.py`, its Compose mount, and the custom Uvicorn command
+    when the pinned Open WebUI release provides native per-model control for raw
+    uploads. See the related
+    [upstream issue](https://github.com/open-webui/open-webui/issues/12228) and
+    the
+    [unmerged File Processing capability PR](https://github.com/open-webui/open-webui/pull/27627).
+
 ## Limited Functionality
 
 Every generated model remains visible when its pass-through detail response
@@ -98,7 +152,7 @@ say **Limited functionality**. At chat time both bundled Pipes also emit an Open
 WebUI
 [`notification`](https://docs.openwebui.com/features/extensibility/plugin/development/events/#notification)
 with warning severity. Standard assistant text may still work; runtime settings,
-client events, and interrupts are not assumed.
+file inputs, client events, and interrupts are not assumed.
 
 ## Runtime Settings
 

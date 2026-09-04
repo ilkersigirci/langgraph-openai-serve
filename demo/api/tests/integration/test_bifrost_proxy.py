@@ -41,53 +41,90 @@ async def test_bifrost_catalog_and_passthrough_preserve_lgos() -> None:
         }
         assert {"lgos-a/simple-graph", "lgos-b/simple-graph"} <= model_ids
 
+        files_query = {"provider": "lgos-files"}
+        uploaded = await catalog.files.create(
+            file=("attachment.bin", b"demo attachment"),
+            purpose="user_data",
+            extra_query=files_query,
+        )
+        content = await catalog.files.content(
+            uploaded.id,
+            extra_query=files_query,
+        )
+        assert await content.aread() == b"demo attachment"
+
         providers = sorted({model_id.split("/", 1)[0] for model_id in model_ids})
-        for provider in providers:
-            extra_headers = {"x-model-provider": provider}
-            models = {
-                model.id
-                for model in (
-                    await passthrough.models.list(extra_headers=extra_headers)
-                ).data
-            }
-            assert "simple-graph" in models
+        try:
+            for provider in providers:
+                extra_headers = {"x-model-provider": provider}
+                models = {
+                    model.id
+                    for model in (
+                        await passthrough.models.list(extra_headers=extra_headers)
+                    ).data
+                }
+                assert "simple-graph" in models
 
-            model = await passthrough.models.retrieve(
-                "simple-graph",
-                extra_headers=extra_headers,
-            )
-            extension = (model.model_extra or {})["langgraph_openai_serve"]
-            assert extension["client_settings"]["schema_version"] == 1
+                model = await passthrough.models.retrieve(
+                    "simple-graph",
+                    extra_headers=extra_headers,
+                )
+                extension = (model.model_extra or {})["langgraph_openai_serve"]
+                assert extension["client_settings"]["schema_version"] == 1
 
-            event_model = await passthrough.models.retrieve(
-                "custom-event-showcase",
-                extra_headers=extra_headers,
-            )
-            event_extension = (event_model.model_extra or {})["langgraph_openai_serve"]
-            assert "client_events" in event_extension["features"]
+                event_model = await passthrough.models.retrieve(
+                    "custom-event-showcase",
+                    extra_headers=extra_headers,
+                )
+                event_extension = (event_model.model_extra or {})[
+                    "langgraph_openai_serve"
+                ]
+                assert "client_events" in event_extension["features"]
 
-            response = await passthrough.chat.completions.create(
-                model="custom-input-output-context",
-                messages=[{"role": "user", "content": "Show me custom schemas."}],
-                user="demo-user",
-                extra_headers=extra_headers,
-            )
-            assert response.choices[0].message.content == (
-                "demo-user asked: Show me custom schemas."
-            )
+                response = await passthrough.chat.completions.create(
+                    model="custom-input-output-context",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Use this file."},
+                                {
+                                    "type": "file",
+                                    "file": {"file_id": uploaded.id},
+                                },
+                            ],
+                        }
+                    ],
+                    user="demo-user",
+                    extra_headers=extra_headers,
+                )
+                assert uploaded.id in (response.choices[0].message.content or "")
 
-            stream = await passthrough.chat.completions.create(
-                model="custom-event-showcase",
-                messages=[{"role": "user", "content": "Build the report."}],
-                metadata={"langgraph_stream_events": "v1"},
-                stream=True,
-                extra_headers=extra_headers,
-            )
-            event_types = []
-            async for chunk in stream:
-                extension = (chunk.model_extra or {}).get("langgraph_openai_serve", {})
-                event = extension.get("event", {})
-                if event_type := event.get("type"):
-                    event_types.append(event_type)
+                stream = await passthrough.chat.completions.create(
+                    model="custom-event-showcase",
+                    messages=[{"role": "user", "content": "Build the report."}],
+                    metadata={"langgraph_stream_events": "v1"},
+                    stream=True,
+                    extra_headers=extra_headers,
+                )
+                event_types = []
+                async for chunk in stream:
+                    extension = (chunk.model_extra or {}).get(
+                        "langgraph_openai_serve", {}
+                    )
+                    event = extension.get("event", {})
+                    if event_type := event.get("type"):
+                        event_types.append(event_type)
 
-            assert event_types == ["progress", "progress", "progress", "artifact"]
+                assert event_types == [
+                    "progress",
+                    "progress",
+                    "progress",
+                    "artifact",
+                ]
+        finally:
+            deleted = await catalog.files.delete(
+                uploaded.id,
+                extra_query=files_query,
+            )
+            assert deleted.deleted is True

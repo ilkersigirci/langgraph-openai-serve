@@ -31,6 +31,29 @@ x-lgos-demo-api-development: &lgos-demo-api-development
       - action: rebuild
         path: ../../api/uv.lock
 
+x-lgos-files-api-development: &lgos-files-api-development
+  image: lgos-files-api:development
+  pull_policy: build
+  build:
+    context: ../../files_api
+    target: development
+    args:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+  volumes:
+    - type: bind
+      source: ../../files_api/src/lgos_files_api
+      target: /app/src/lgos_files_api
+      read_only: true
+  develop:
+    watch:
+      - action: restart
+        path: ../../files_api/src/lgos_files_api
+      - action: rebuild
+        path: ../../files_api/pyproject.toml
+      - action: rebuild
+        path: ../../files_api/uv.lock
+
 services:
   lgos-demo-api-a:
     <<: *lgos-demo-api-development
@@ -40,6 +63,9 @@ services:
 
   lgos-demo-api-setup:
     <<: *lgos-demo-api-development
+
+  lgos-files-api:
+    <<: *lgos-files-api-development
 
   lgos-chainlit:
     image: lgos-chainlit:development

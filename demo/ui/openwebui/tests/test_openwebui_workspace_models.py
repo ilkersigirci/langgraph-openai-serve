@@ -119,7 +119,7 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
             "langgraph_openai_serve": {
                 "schema_version": 1,
                 "description": "  DUMMY  ",
-                "features": [],
+                "features": ["file_inputs"],
             }
         }
     )
@@ -147,11 +147,13 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
             id="lgos-a/graph-a",
             fields=(),
             description="DUMMY",
+            supports_file_inputs=True,
         ),
         WorkspaceModelSpec(
             id="lgos-future/graph-b",
             fields=(),
             description="DUMMY",
+            supports_file_inputs=True,
         ),
     )
     catalog_client.models.list.assert_called_once_with()
@@ -264,6 +266,7 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
     spec = WorkspaceModelSpec(
         id="simple-graph",
         description="DUMMY",
+        supports_file_inputs=True,
         fields=(
             {
                 "key": "use_history",
@@ -294,6 +297,11 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
     assert wrapper["access_grants"] == [PUBLIC_READ_GRANT]
     assert wrapper["meta"]["description"] == "DUMMY"
     assert wrapper["meta"]["chat_variables_schema"] == {"fields": list(spec.fields)}
+    assert wrapper["meta"]["capabilities"] == {
+        "file_upload": True,
+        "file_context": False,
+    }
+    assert wrapper["meta"]["builtinTools"] == {"files": False}
 
 
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:
@@ -305,6 +313,7 @@ def test_limited_workspace_model_has_a_warning_and_description_fallback() -> Non
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert "Limited functionality" in wrapper["name"]
     assert "Limited functionality" in wrapper["meta"]["description"]
+    assert wrapper["meta"]["capabilities"]["file_upload"] is False
 
 
 def test_sync_workspace_models_leaves_existing_wrapper_state_to_openwebui() -> None:

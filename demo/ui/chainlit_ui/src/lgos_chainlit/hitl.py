@@ -45,6 +45,7 @@ from lgos_chainlit.utils.clients import (
     openai_client,
     retrieve_model,
 )
+from lgos_chainlit.utils.files import file_upload_overrides, with_file_parts
 from lgos_chainlit.utils.thread_resume import (
     reuse_persisted_step,
     schedule_after_thread_hydration,
@@ -100,6 +101,7 @@ async def set_chat_profiles(
                 if extension is not None
                 else LIMITED_FUNCTIONALITY_MESSAGE
             ),
+            config_overrides=file_upload_overrides(model),
         )
     ]
 
@@ -201,6 +203,8 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
         return
 
     messages = text_only_chat_messages()
+    if trigger_message is not None:
+        messages = await with_file_parts(messages, trigger_message)
     model_id = selected_model_id()
 
     response = await create_completion(messages, model_id=model_id)

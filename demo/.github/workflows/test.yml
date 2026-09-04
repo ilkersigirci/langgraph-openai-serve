@@ -31,6 +31,7 @@ jobs:
 
       - name: Render all Compose models
         run: |
+          cp .env.example .env
           export OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal
           export OTEL_HOST_NAME=github-actions
           docker compose -f docker/compose/demo.yml config --quiet
@@ -48,6 +49,8 @@ jobs:
         include:
           - name: API
             directory: api
+          - name: Files API
+            directory: files_api
           - name: Chainlit
             directory: ui/chainlit_ui
           - name: Open WebUI

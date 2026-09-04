@@ -48,6 +48,31 @@
           "passthrough_stream": true
         }
       }
+    },
+    "lgos-files": {
+      "keys": [
+        {
+          "name": "lgos-files",
+          "value": "DUMMY",
+          "models": ["*"],
+          "weight": 1.0,
+          "use_for_batch_api": true
+        }
+      ],
+      "network_config": {
+        "base_url": "http://lgos-files-api:8000",
+        "allow_private_network": true
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "file_upload": true,
+          "file_list": true,
+          "file_retrieve": true,
+          "file_delete": true,
+          "file_content": true
+        }
+      }
     }
   },
   "config_store": {

@@ -52,6 +52,7 @@ class GraphFeature(StrEnum):
     """Features advertised for an LGOS model."""
 
     CLIENT_EVENTS = "client_events"
+    FILE_INPUTS = "file_inputs"
     INTERRUPTS = "interrupts"
 
 

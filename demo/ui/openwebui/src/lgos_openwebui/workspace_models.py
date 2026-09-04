@@ -8,6 +8,7 @@ import httpx
 from openai import OpenAI, OpenAIError
 
 LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+FILE_INPUTS_FEATURE = "file_inputs"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERIC_FUNCTION_ID = "generic"
@@ -21,9 +22,9 @@ PUBLIC_READ_GRANT = {
 }
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "langgraph_openai_serve model metadata. Runtime settings, client events, and "
-    "interrupts may be unavailable. Configure the proxy to pass LGOS /v1 requests "
-    "and responses through unchanged."
+    "langgraph_openai_serve model metadata. Runtime settings, file inputs, client "
+    "events, and interrupts may be unavailable. Configure the proxy to pass LGOS "
+    "/v1 requests and responses through unchanged."
 )
 
 
@@ -34,6 +35,7 @@ class WorkspaceModelSpec:
     id: str
     fields: tuple[dict[str, Any], ...]
     description: str | None = None
+    supports_file_inputs: bool = False
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
@@ -108,6 +110,10 @@ def discover_workspace_model_specs(
                 fields=fields or (),
                 description=(
                     extension["description"].strip() if extension is not None else None
+                ),
+                supports_file_inputs=(
+                    extension is not None
+                    and FILE_INPUTS_FEATURE in extension["features"]
                 ),
             )
         )
@@ -291,6 +297,11 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         "meta": {
             "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
             CHAT_VARIABLES_META_KEY: {"fields": list(spec.fields)},
+            "capabilities": {
+                "file_upload": spec.supports_file_inputs,
+                "file_context": False,
+            },
+            "builtinTools": {"files": False},
         },
         "params": {},
     }

@@ -21,20 +21,28 @@ x-lgos-otel-environment: &lgos-otel-environment
   OTEL_TRACES_SAMPLER: always_on
   OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
 
-x-lgos-otel-api-environment: &lgos-otel-api-environment
+x-lgos-otel-fastapi-environment: &lgos-otel-fastapi-environment
   <<: *lgos-otel-environment
   OTEL_METRICS_EXPORTER: otlp
-  # The demo has a host FastAPI app and a mounted LGOS FastAPI app. Instrument
-  # the mounted app explicitly so spans retain its endpoint route templates.
-  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: fastapi
   # Export stdlib logging records through the same OTLP pipeline as traces and
   # metrics. The stdout handler remains available for container diagnostics.
   OTEL_LOGS_EXPORTER: otlp
   OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION: "true"
   OTEL_PYTHON_LOG_CORRELATION: "true"
   OTEL_PYTHON_LOG_HANDLER_LEVEL: info
+
+x-lgos-otel-api-environment: &lgos-otel-api-environment
+  <<: *lgos-otel-fastapi-environment
+  # The demo has a host FastAPI app and a mounted LGOS FastAPI app. Instrument
+  # the mounted app explicitly so spans retain its endpoint route templates.
+  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: fastapi
   OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /v1/health$
   OTEL_SERVICE_NAME: lgos-demo-api
+
+x-lgos-otel-files-environment: &lgos-otel-files-environment
+  <<: *lgos-otel-fastapi-environment
+  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
+  OTEL_SERVICE_NAME: lgos-files-api
 
 x-lgos-otel-python-environment: &lgos-otel-python-environment
   <<: *lgos-otel-environment
@@ -108,6 +116,18 @@ services:
     environment:
       <<: *lgos-otel-api-environment
     command: ["opentelemetry-instrument", "lgos-demo-api"]
+    restart: ${RESTART_POLICY:-unless-stopped}
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-files-api:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-files-environment
+    command: ["opentelemetry-instrument", "lgos-files-api"]
     restart: ${RESTART_POLICY:-unless-stopped}
     depends_on:
       lgos-otel-collector:

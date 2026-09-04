@@ -14,6 +14,42 @@ from .chainlit_hitl_support import (
 )
 
 
+async def test_handle_message_includes_current_file_parts(
+    monkeypatch: pytest.MonkeyPatch,
+    hitl: Any,
+) -> None:
+    text_messages = [{"role": "user", "content": "Review this."}]
+    messages_with_file = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Review this."},
+                {"type": "file", "file": {"file_id": "file-123"}},
+            ],
+        }
+    ]
+    trigger_message = Mock()
+    with_file_parts = AsyncMock(return_value=messages_with_file)
+    create_completion = AsyncMock(return_value=completion("Done."))
+    install_message_factory(monkeypatch, hitl)
+    monkeypatch.setattr(
+        hitl,
+        "text_only_chat_messages",
+        Mock(return_value=text_messages),
+    )
+    monkeypatch.setattr(hitl, "with_file_parts", with_file_parts)
+    monkeypatch.setattr(hitl, "create_completion", create_completion)
+    monkeypatch.setattr(hitl, "selected_model_id", Mock(return_value="lgos-a/hitl"))
+
+    await hitl.handle_message(trigger_message)
+
+    with_file_parts.assert_awaited_once_with(text_messages, trigger_message)
+    create_completion.assert_awaited_once_with(
+        messages_with_file,
+        model_id="lgos-a/hitl",
+    )
+
+
 async def test_handle_message_resumes_all_interrupts_once(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,

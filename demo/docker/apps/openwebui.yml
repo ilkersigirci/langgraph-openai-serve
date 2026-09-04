@@ -24,6 +24,22 @@ services:
     depends_on:
       lgos-bifrost:
         condition: service_healthy
+    command:
+      - python
+      - -m
+      - uvicorn
+      - lgos_openwebui_upload_policy:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --forwarded-allow-ips
+      - "*"
+      - --workers
+      - "1"
+      - --ws-per-message-deflate
+      - "true"
     ports:
       - "3003:8080"
     volumes:
@@ -32,6 +48,10 @@ services:
         target: /app/backend/data
         bind:
           create_host_path: false
+      - type: bind
+        source: ../../ui/openwebui/src/lgos_openwebui/upload_policy.py
+        target: /app/backend/lgos_openwebui_upload_policy.py
+        read_only: true
     environment:
       ENABLE_PERSISTENT_CONFIG: false
       WEBUI_NAME: LGOS-OpenWebUI
@@ -48,6 +68,8 @@ services:
       WEBUI_ADMIN_NAME: LGOS
       OPENAI_API_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/openai_passthrough/v1
       OPENAI_CATALOG_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
+      OPENAI_FILES_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
+      OPENAI_FILES_PROVIDER: lgos-files
       OPENAI_API_KEY: ${DEMO_OPENWEBUI_API_KEY:-DUMMY}
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false

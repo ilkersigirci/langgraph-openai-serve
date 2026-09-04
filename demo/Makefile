@@ -1,14 +1,17 @@
 SHELL := /bin/sh
 COMPOSE := docker compose --env-file .env -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
+FILES_RUN := uv run --directory files_api --locked
 LGOS_CHAINLIT_PORT ?= 3002
 LGOS_A_PORT ?= 3004
 LGOS_B_PORT ?= 3005
+LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
 
 .PHONY: help sync test test-postgres lint check compose-config \
-	run-api-local run-api-a-local run-api-b-local run-chainlit-local \
-	run-api run-api-a run-api-b run-chainlit \
+	run-api-local run-api-a-local run-api-b-local run-files-local \
+	run-chainlit-local \
+	run-api run-api-a run-api-b run-files run-chainlit \
 	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
 	marimo marimo-local
 .DEFAULT_GOAL := help
@@ -16,13 +19,15 @@ UP_ARGS ?=
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-sync: ## Synchronize all three projects from their lockfiles
+sync: ## Synchronize all four projects from their lockfiles
 	uv --directory api sync --locked
+	uv --directory files_api sync --locked
 	uv --directory ui/chainlit_ui sync --locked
 	uv --directory ui/openwebui sync --locked
 
 test: ## Run all standalone project tests from their lockfiles
 	$(LOCAL_API_RUN) pytest
+	$(FILES_RUN) pytest
 	uv run --directory ui/chainlit_ui --locked pytest
 	uv run --directory ui/openwebui --locked pytest
 
@@ -42,6 +47,8 @@ test-postgres: ## Test demo persistence against PostgreSQL
 lint: ## Check lint and formatting for all standalone projects
 	uv run --directory api --locked ruff check src tests
 	uv run --directory api --locked ruff format --check src tests
+	$(FILES_RUN) ruff check src tests
+	$(FILES_RUN) ruff format --check src tests
 	uv run --directory ui/chainlit_ui --locked ruff check src tests
 	uv run --directory ui/chainlit_ui --locked ruff format --check src tests
 	uv run --directory ui/openwebui --locked ruff check src tests
@@ -53,8 +60,10 @@ type-check-ui: ## Run type checking for the UI projects
 
 type-check: type-check-ui ## Run type checking for all standalone projects
 	uv run --directory api --locked ty check src
+	$(FILES_RUN) ty check src
 
 type-check-local: type-check-ui ## Run type checking for all standalone projects with local API source
+	$(FILES_RUN) ty check src
 	$(LOCAL_API_RUN) ty check src --extra-search-path ../../src
 
 compose-config: ## Validate published, development, and OTEL Compose models
@@ -82,6 +91,10 @@ run-api-b-local: ## Run lgos-b locally
 	DEMO_API_PORT=$(LGOS_B_PORT) \
 		$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api
 
+run-files-local: ## Run the OpenAI Files service from this checkout
+	DEMO_API_FILES_PORT=$(LGOS_FILES_PORT) \
+		$(FILES_RUN) --env-file ../.env lgos-files-api
+
 run-chainlit-local: ## Run the Chainlit UI locally
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env lgos-chainlit-setup
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env \
@@ -96,6 +109,9 @@ run-api-a: ## Run the lgos-a container
 run-api-b: ## Run the lgos-b container
 	$(COMPOSE) up lgos-demo-api-b
 
+run-files: ## Run the central OpenAI Files container
+	$(COMPOSE) up lgos-files-api
+
 run-chainlit: ## Run the Chainlit container and its dependencies
 	$(COMPOSE) up lgos-chainlit
 
@@ -108,7 +124,7 @@ compose: ## Run the stack from published images
 compose-down: ## Stop and remove any demo stack variant
 	$(COMPOSE) down --remove-orphans
 
-compose-dev: ## Build the API and Chainlit images and run the stack
+compose-dev: ## Build the Python application images and run the stack
 	$(COMPOSE) -f docker/compose/development.yml up --build $(UP_ARGS)
 
 compose-otel: ## Run published images with the OpenTelemetry Collector overlay

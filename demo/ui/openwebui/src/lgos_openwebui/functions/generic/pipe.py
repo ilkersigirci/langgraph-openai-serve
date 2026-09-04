@@ -18,12 +18,14 @@ from .api import (
 )
 from .contracts import (
     CLIENT_EVENTS_FEATURE,
+    FILE_INPUTS_FEATURE,
     NO_CHOICES_MESSAGE,
     InterruptCancelled,
     PipeChunk,
     PipeResponse,
 )
 from .events import _chart_embed_event, _client_event, _status_event
+from .files import _with_file_parts
 from .interrupts import (
     _interrupt_cancelled_response,
     _openwebui_chunk,
@@ -65,6 +67,17 @@ class Pipe:
             gt=0,
             description="OpenAI-compatible request timeout in seconds.",
         )
+        OPENAI_FILES_BASE_URL: str = Field(
+            default=os.environ.get(
+                "OPENAI_FILES_BASE_URL",
+                "http://lgos-bifrost:8080/v1",
+            ),
+            description="OpenAI-compatible base URL used to upload files.",
+        )
+        OPENAI_FILES_PROVIDER: str = Field(
+            default=os.environ.get("OPENAI_FILES_PROVIDER", "lgos-files"),
+            description="Optional gateway provider used for Files API requests.",
+        )
 
     def __init__(self) -> None:
         self.valves = self.Valves()
@@ -91,6 +104,7 @@ class Pipe:
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
+        __files__: list[dict[str, Any]] | None = None,
     ) -> PipeResponse:
         """Use the same Chat Completions mode requested by Open WebUI."""
         if body.get("stream") is True:
@@ -99,12 +113,14 @@ class Pipe:
                 __event_emitter__=__event_emitter__,
                 __metadata__=__metadata__,
                 __user__=__user__,
+                __files__=__files__,
             )
         return await self._complete(
             body,
             __event_emitter__=__event_emitter__,
             __metadata__=__metadata__,
             __user__=__user__,
+            __files__=__files__,
         )
 
     async def _stream(
@@ -113,6 +129,7 @@ class Pipe:
         __event_emitter__: Any = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
+        __files__: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[PipeChunk]:
         """Forward chat, leaving tool execution and interaction to Open WebUI.
 
@@ -145,6 +162,16 @@ class Pipe:
                 extension = _model_extension(model)
                 if extension is None:
                     await _emit_limited_functionality_warning(__event_emitter__)
+                messages = await _with_file_parts(
+                    messages,
+                    __files__,
+                    openwebui_metadata,
+                    base_url=self.valves.OPENAI_FILES_BASE_URL,
+                    api_key=api_key,
+                    timeout=timeout,
+                    provider=self.valves.OPENAI_FILES_PROVIDER,
+                    supported=_extension_supports(extension, FILE_INPUTS_FEATURE),
+                )
                 request_metadata = _request_metadata(
                     model=model,
                     metadata=openwebui_metadata,
@@ -176,7 +203,7 @@ class Pipe:
         except ValueError as exc:
             yield _error(str(exc))
         except OpenAIError as exc:
-            yield _error(f"Error calling LangGraph API: {exc}")
+            yield _error(f"Error calling OpenAI-compatible API: {exc}")
 
     async def _complete(
         self,
@@ -184,6 +211,7 @@ class Pipe:
         __event_emitter__: Any,
         __metadata__: dict[str, Any] | None,
         __user__: dict[str, Any] | None,
+        __files__: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         """Return one complete OpenAI response without replaying stream events."""
         try:
@@ -202,8 +230,19 @@ class Pipe:
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 model = await _retrieve_model(client, model_id)
-                if _model_extension(model) is None:
+                extension = _model_extension(model)
+                if extension is None:
                     await _emit_limited_functionality_warning(__event_emitter__)
+                messages = await _with_file_parts(
+                    messages,
+                    __files__,
+                    __metadata__,
+                    base_url=self.valves.OPENAI_FILES_BASE_URL,
+                    api_key=self.valves.OPENAI_API_KEY,
+                    timeout=self.valves.OPENAI_API_TIMEOUT,
+                    provider=self.valves.OPENAI_FILES_PROVIDER,
+                    supported=_extension_supports(extension, FILE_INPUTS_FEATURE),
+                )
                 request_metadata = _request_metadata(
                     model=model,
                     metadata=__metadata__ or {},
@@ -223,7 +262,7 @@ class Pipe:
         except ValueError as exc:
             return _error(str(exc))
         except OpenAIError as exc:
-            return _error(f"Error calling LangGraph API: {exc}")
+            return _error(f"Error calling OpenAI-compatible API: {exc}")
 
 
 def _user_id(user: dict[str, Any] | None) -> str | None:

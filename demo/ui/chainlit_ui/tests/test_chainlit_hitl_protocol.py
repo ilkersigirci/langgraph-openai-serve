@@ -121,6 +121,9 @@ async def test_chat_profile_keeps_the_provider_qualified_model(
 
     assert [profile.name for profile in profiles] == ["lgos-b/interruptible"]
     assert profiles[0].markdown_description == "DUMMY"
+    assert (
+        profiles[0].config_overrides.features.spontaneous_file_upload.enabled is False
+    )
 
 
 async def test_chat_profile_rejects_a_valid_non_interrupt_model(
