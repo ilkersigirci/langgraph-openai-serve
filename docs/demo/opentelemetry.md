@@ -83,6 +83,30 @@ the mounted FastAPI application so spans retain LGOS route templates without
 duplicate host-application spans. W3C trace context connects requests across
 the UI, proxy, gateway, and API when every hop preserves `traceparent`.
 
+Bifrost's managed Responses route forwards `traceparent`, `tracestate`, and
+`user-agent` through the explicit client header allowlist in
+`demo/docker/configs/bifrost/config.json`. The API receives `lgos-chainlit` or
+`lgos-openwebui` as the user agent, which allows dashboards to distinguish the
+originating UI.
+
+Use these values when querying Responses telemetry for `lgos-demo-api`:
+
+| Signal | Attribute or span name |
+| --- | --- |
+| HTTP request metrics | `http.route=/responses` (`http_route` in Prometheus) |
+| API request span | `POST /responses` |
+| Graph execution span | `lgos.graph_run` |
+| UI identity on the API span | `user_agent.original` |
+| Conversation correlation | `session.id`, supplied through `metadata.session_id` |
+
+Graph spans and session attributes come from the optional Langfuse callback;
+HTTP spans and metrics come from FastAPI instrumentation.
+
+The mounted API's route template omits `/v1`; the actual request URL remains
+`/v1/responses`. The `/v1/models` diagnostic above verifies export, but does not
+populate Responses request panels. Send a message from either UI to verify
+those panels and conversation links.
+
 The API also keeps structured JSON logs on stdout. Enabling OTLP logs adds a
 second delivery path for those standard-library records; it does not remove
 container diagnostics. `X-Request-ID`, the LGOS interrupt operation ID, and

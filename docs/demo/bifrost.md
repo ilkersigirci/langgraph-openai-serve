@@ -74,7 +74,7 @@ The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
 `file_list`, `file_retrieve`, `file_content`, and `file_delete` operations.
 Normalized Files operations are disabled on the graph providers. A client sends
 `provider=lgos-files` as a query parameter for Files operations, then sends the
-returned native `file_id` to either chat provider. Bifrost does not store the
+returned native `file_id` to either graph provider. Bifrost does not store the
 bytes or replace the ID with an S3 URL.
 
 Bifrost routes Files and Batch operations through the same key pool, so the
@@ -85,18 +85,21 @@ that pool.
 ## Configuration Boundary
 
 All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
-`lgos-b` enable model listing, Responses, Chat Completions, and their streaming
-variants. Chat remains available for direct compatibility demonstrations; the
-maintained UIs use Responses exclusively. `lgos-files` enables only Files
+`lgos-b` enable model listing, native Responses and streaming, and pass-through
+for catalog detail and protocol-reference tests. `lgos-files` enables only Files
 operations and targets the standalone S3-backed demo Files service. Upstream
 base URLs omit `/v1`, and private-network access is enabled for the Compose
 network.
 
 Enable both `responses` and `responses_stream` explicitly under each graph
 provider's `allowed_requests`. Bifrost loads this configuration at startup, so
-restart the service after changing it. If native Responses is disabled while
-Chat remains enabled, Bifrost can fall back to a Responses-to-Chat conversion;
-that synthesized stream does not prove native `phase` preservation.
+restart the service after changing it. The graph providers do not enable Chat
+Completions or Responses-to-Chat fallback.
+
+The client header allowlist forwards `traceparent`, `tracestate`, and
+`user-agent` through managed Responses requests. This preserves distributed
+trace context and the originating UI's identity at LGOS. See the
+[OpenTelemetry guide](opentelemetry.md#signal-ownership).
 
 The demo uses `DUMMY` upstream keys because LGOS authentication is not enabled.
 Replace each key when its target application enforces authentication.
@@ -105,8 +108,7 @@ Replace each key when its target application enforces authentication.
 
 Usage-based token and cost controls require provider-reported token counts.
 LGOS returns aggregated usage on a completed Response, including the terminal
-streaming Response. Direct Chat streams use `stream_options.include_usage`.
-Providers that do not report usage produce no usage object.
+streaming Response. Providers that do not report usage produce no usage object.
 
 Open WebUI and Chainlit use Bifrost native Responses when
 `OPENAI_GATEWAY_TYPE=bifrost`, discover provider-qualified models from its

@@ -1,5 +1,10 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
+  "client": {
+    "header_filter_config": {
+      "allowlist": ["traceparent", "tracestate", "user-agent"]
+    }
+  },
   "providers": {
     "lgos-a": {
       "keys": [
@@ -18,8 +23,6 @@
         "base_provider_type": "openai",
         "allowed_requests": {
           "list_models": true,
-          "chat_completion": true,
-          "chat_completion_stream": true,
           "responses": true,
           "responses_stream": true,
           "passthrough": true,
@@ -44,8 +47,6 @@
         "base_provider_type": "openai",
         "allowed_requests": {
           "list_models": true,
-          "chat_completion": true,
-          "chat_completion_stream": true,
           "responses": true,
           "responses_stream": true,
           "passthrough": true,
