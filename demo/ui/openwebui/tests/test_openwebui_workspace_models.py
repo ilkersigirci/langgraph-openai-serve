@@ -113,7 +113,7 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
     assert chat_variable_fields(SimpleNamespace(model_extra={})) is None
 
 
-def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> None:
+def test_discover_workspace_models_uses_bifrost_catalog_and_native_api() -> None:
     configured = SimpleNamespace(
         model_extra={
             "langgraph_openai_serve": {
@@ -137,10 +137,14 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
             SimpleNamespace(id="openai/gpt-5", owned_by="openai"),
         ]
     )
-    passthrough_client = Mock()
-    passthrough_client.models.retrieve.return_value = configured
+    api_client = Mock()
+    api_client.models.retrieve.return_value = configured
 
-    specs = discover_workspace_model_specs(catalog_client, passthrough_client)
+    specs = discover_workspace_model_specs(
+        catalog_client,
+        api_client,
+        provider_routing=True,
+    )
 
     assert specs == (
         WorkspaceModelSpec(
@@ -157,7 +161,7 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
         ),
     )
     catalog_client.models.list.assert_called_once_with()
-    passthrough_client.models.retrieve.assert_has_calls(
+    api_client.models.retrieve.assert_has_calls(
         [
             call(
                 model="graph-a",
@@ -170,7 +174,7 @@ def test_discover_workspace_models_uses_bifrost_catalog_and_passthrough() -> Non
         ],
         any_order=True,
     )
-    assert passthrough_client.models.retrieve.call_count == 2
+    assert api_client.models.retrieve.call_count == 2
 
 
 def test_discover_workspace_models_keeps_limited_models_visible() -> None:
@@ -183,8 +187,8 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
             )
         ]
     )
-    passthrough_client = Mock()
-    passthrough_client.models.retrieve.return_value = SimpleNamespace(
+    api_client = Mock()
+    api_client.models.retrieve.return_value = SimpleNamespace(
         model_extra={
             "langgraph_openai_serve": {
                 "schema_version": 1,
@@ -193,9 +197,70 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
         }
     )
 
-    specs = discover_workspace_model_specs(catalog_client, passthrough_client)
+    specs = discover_workspace_model_specs(
+        catalog_client,
+        api_client,
+        provider_routing=True,
+    )
 
     assert specs == (WorkspaceModelSpec(id="lgos-a/proxy-model", fields=()),)
+
+
+def test_discover_workspace_models_merges_litellm_passthrough_catalogs() -> None:
+    catalog_client = Mock()
+    catalog_client.base_url = "https://gateway.example/v1/"
+    catalog_clients = {}
+    for model_prefix in ("lgos-a", "lgos-b"):
+        model = SimpleNamespace(
+            id="simple-graph",
+            owned_by="langgraph-openai-serve",
+            model_extra={
+                "langgraph_openai_serve": {
+                    "schema_version": 1,
+                    "description": f"LiteLLM {model_prefix} graph",
+                    "features": ["file_inputs"],
+                }
+            },
+        )
+        current_catalog = Mock()
+        current_catalog.models.list.return_value = SimpleNamespace(data=[model])
+        current_catalog.models.retrieve.return_value = model
+        catalog_clients[f"https://gateway.example/v1/{model_prefix}"] = current_catalog
+    catalog_client.with_options.side_effect = lambda *, base_url: catalog_clients[
+        base_url
+    ]
+    api_client = Mock()
+
+    specs = discover_workspace_model_specs(
+        catalog_client,
+        api_client,
+        provider_routing=False,
+        model_prefixes=("lgos-a", "lgos-b"),
+    )
+
+    assert specs == (
+        WorkspaceModelSpec(
+            id="lgos-a/simple-graph",
+            fields=(),
+            description="LiteLLM lgos-a graph",
+            supports_file_inputs=True,
+        ),
+        WorkspaceModelSpec(
+            id="lgos-b/simple-graph",
+            fields=(),
+            description="LiteLLM lgos-b graph",
+            supports_file_inputs=True,
+        ),
+    )
+    catalog_client.with_options.assert_has_calls(
+        [
+            call(base_url="https://gateway.example/v1/lgos-a"),
+            call(base_url="https://gateway.example/v1/lgos-b"),
+        ]
+    )
+    for current_catalog in catalog_clients.values():
+        current_catalog.models.retrieve.assert_called_once_with(model="simple-graph")
+    api_client.models.retrieve.assert_not_called()
 
 
 def test_workspace_model_spec_rejects_oversized_openwebui_ids() -> None:
@@ -314,6 +379,30 @@ def test_limited_workspace_model_has_a_warning_and_description_fallback() -> Non
     assert "Limited functionality" in wrapper["name"]
     assert "Limited functionality" in wrapper["meta"]["description"]
     assert wrapper["meta"]["capabilities"]["file_upload"] is False
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_simple_uservalves_model_reuses_pipe_without_chat_variable_controls(
+    existing: bool,
+) -> None:
+    client = _client([{"id": "lgos.uservalves_simple"}] if existing else [])
+    spec = WorkspaceModelSpec(
+        id="lgos-a/simple-graph",
+        description="Simple graph",
+        fields=({"key": "use_history", "type": "checkbox", "default": False},),
+    )
+
+    sync_workspace_models(client, (spec,))
+
+    base, dynamic, static = client.post.call_args.kwargs["json"]["models"]
+    assert static["id"] == "lgos.uservalves_simple"
+    assert static["base_model_id"] == dynamic["base_model_id"] == base["id"]
+    assert static["meta"]["filterIds"] == ["uservalves_simple"]
+    assert static["meta"]["chat_variables_schema"] == {"fields": []}
+    assert "filterIds" not in dynamic["meta"]
+    assert dynamic["meta"]["chat_variables_schema"]["fields"] == list(spec.fields)
+    assert ("access_grants" in static) is not existing
+    assert "is_active" not in static
 
 
 def test_sync_workspace_models_leaves_existing_wrapper_state_to_openwebui() -> None:

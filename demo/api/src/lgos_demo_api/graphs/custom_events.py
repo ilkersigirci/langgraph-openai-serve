@@ -1,4 +1,4 @@
-"""Deterministic graph showcasing public custom stream events."""
+"""Deterministic graph showcasing direct Chat custom stream events."""
 
 import asyncio
 from typing import Annotated, Sequence
@@ -102,7 +102,7 @@ custom_event_showcase_graph = workflow.compile()
 custom_event_showcase_graph_config = GraphConfig(
     graph=custom_event_showcase_graph,
     description=(
-        "Streams public progress and artifact events alongside assistant text."
+        "Streams direct Chat progress and artifact events alongside assistant text."
     ),
     streamable_node_names=["build_compatibility_report"],
     features={GraphFeature.CLIENT_EVENTS},

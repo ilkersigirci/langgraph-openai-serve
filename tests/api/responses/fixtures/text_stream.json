@@ -1,0 +1,316 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_fixture_stream",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "in_progress",
+      "background": false,
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "metadata": {}
+    }
+  },
+  {
+    "type": "response.in_progress",
+    "sequence_number": 1,
+    "response": {
+      "id": "resp_fixture_stream",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "in_progress",
+      "background": false,
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "metadata": {}
+    }
+  },
+  {
+    "type": "response.output_item.added",
+    "sequence_number": 2,
+    "output_index": 0,
+    "item": {
+      "id": "msg_fixture_commentary",
+      "type": "message",
+      "status": "in_progress",
+      "phase": "commentary",
+      "role": "assistant",
+      "content": []
+    }
+  },
+  {
+    "type": "response.content_part.added",
+    "sequence_number": 3,
+    "output_index": 0,
+    "item_id": "msg_fixture_commentary",
+    "content_index": 0,
+    "part": {
+      "type": "output_text",
+      "annotations": [],
+      "logprobs": [],
+      "text": ""
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "sequence_number": 4,
+    "output_index": 0,
+    "item_id": "msg_fixture_commentary",
+    "content_index": 0,
+    "delta": "Checking inputs.",
+    "logprobs": []
+  },
+  {
+    "type": "response.output_text.done",
+    "sequence_number": 5,
+    "output_index": 0,
+    "item_id": "msg_fixture_commentary",
+    "content_index": 0,
+    "text": "Checking inputs.",
+    "logprobs": []
+  },
+  {
+    "type": "response.content_part.done",
+    "sequence_number": 6,
+    "output_index": 0,
+    "item_id": "msg_fixture_commentary",
+    "content_index": 0,
+    "part": {
+      "type": "output_text",
+      "annotations": [],
+      "logprobs": [],
+      "text": "Checking inputs."
+    }
+  },
+  {
+    "type": "response.output_item.done",
+    "sequence_number": 7,
+    "output_index": 0,
+    "item": {
+      "id": "msg_fixture_commentary",
+      "type": "message",
+      "status": "completed",
+      "phase": "commentary",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "Checking inputs."
+        }
+      ]
+    }
+  },
+  {
+    "type": "response.output_item.added",
+    "sequence_number": 8,
+    "output_index": 1,
+    "item": {
+      "id": "msg_fixture_stream_final",
+      "type": "message",
+      "status": "in_progress",
+      "phase": "final_answer",
+      "role": "assistant",
+      "content": []
+    }
+  },
+  {
+    "type": "response.content_part.added",
+    "sequence_number": 9,
+    "output_index": 1,
+    "item_id": "msg_fixture_stream_final",
+    "content_index": 0,
+    "part": {
+      "type": "output_text",
+      "annotations": [],
+      "logprobs": [],
+      "text": ""
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "sequence_number": 10,
+    "output_index": 1,
+    "item_id": "msg_fixture_stream_final",
+    "content_index": 0,
+    "delta": "Fixture answer.",
+    "logprobs": []
+  },
+  {
+    "type": "response.output_text.done",
+    "sequence_number": 11,
+    "output_index": 1,
+    "item_id": "msg_fixture_stream_final",
+    "content_index": 0,
+    "text": "Fixture answer.",
+    "logprobs": []
+  },
+  {
+    "type": "response.content_part.done",
+    "sequence_number": 12,
+    "output_index": 1,
+    "item_id": "msg_fixture_stream_final",
+    "content_index": 0,
+    "part": {
+      "type": "output_text",
+      "annotations": [],
+      "logprobs": [],
+      "text": "Fixture answer."
+    }
+  },
+  {
+    "type": "response.output_item.done",
+    "sequence_number": 13,
+    "output_index": 1,
+    "item": {
+      "id": "msg_fixture_stream_final",
+      "type": "message",
+      "status": "completed",
+      "phase": "final_answer",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "Fixture answer."
+        }
+      ]
+    }
+  },
+  {
+    "type": "response.completed",
+    "sequence_number": 14,
+    "response": {
+      "id": "resp_fixture_stream",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "completed",
+      "background": false,
+      "completed_at": 1788451200,
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [
+        {
+          "id": "msg_fixture_commentary",
+          "type": "message",
+          "status": "completed",
+          "phase": "commentary",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "annotations": [],
+              "logprobs": [],
+              "text": "Checking inputs."
+            }
+          ]
+        },
+        {
+          "id": "msg_fixture_stream_final",
+          "type": "message",
+          "status": "completed",
+          "phase": "final_answer",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "annotations": [],
+              "logprobs": [],
+              "text": "Fixture answer."
+            }
+          ]
+        }
+      ],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": {
+        "input_tokens": 5,
+        "input_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "output_tokens": 6,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 11
+      },
+      "user": null,
+      "metadata": {}
+    }
+  }
+]

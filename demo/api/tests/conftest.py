@@ -6,7 +6,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
@@ -31,8 +31,8 @@ async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
 
 
 @pytest.fixture
-def make_request() -> Callable[..., ChatCompletionRequest]:
-    """Build OpenAI chat requests used by graph tests."""
+def make_request() -> Callable[..., ResponseCreateRequest]:
+    """Build Responses requests used by demo graph tests."""
 
     def _make_request(
         model: str,
@@ -41,13 +41,13 @@ def make_request() -> Callable[..., ChatCompletionRequest]:
         user: str | None = None,
         metadata: dict[str, str] | None = None,
         messages: list[dict[str, Any]] | None = None,
-    ) -> ChatCompletionRequest:
-        return ChatCompletionRequest(
+    ) -> ResponseCreateRequest:
+        return ResponseCreateRequest(
             model=model,
-            messages=(
+            input=(
                 messages
                 if messages is not None
-                else [{"role": Role.USER, "content": content}]
+                else [{"role": "user", "content": content}]
             ),
             user=user,
             metadata=metadata,

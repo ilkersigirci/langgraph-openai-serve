@@ -20,6 +20,7 @@ from tests.graph.support.schemas import MessageState
 
 STREAM_EVENTS_METADATA = {"langgraph_stream_events": "v1"}
 PROGRESS_DATA = {"completed": 2, "total": 5}
+ARTIFACT_DATA = {"id": "report-1", "kind": "report"}
 
 
 def client_event_graph() -> Any:
@@ -44,6 +45,7 @@ def client_event_graph() -> Any:
         draft = await draft_model.ainvoke(state["messages"])
         writer(client_event("progress", PROGRESS_DATA, namespace=("research",)))
         answer = await answer_model.ainvoke([*state["messages"], draft])
+        writer(client_event("artifact", ARTIFACT_DATA, namespace=("research",)))
         writer(status_event("Answer ready", done=True))
         return {"messages": [answer]}
 
@@ -128,6 +130,7 @@ async def test_v1_stream_exposes_only_public_events_in_graph_order(
         ("event", "status"),
         ("event", "progress"),
         ("text", "answer"),
+        ("event", "artifact"),
         ("event", "status"),
     ]
     assert extensions == [
@@ -149,6 +152,14 @@ async def test_v1_stream_exposes_only_public_events_in_graph_order(
                 "type": "progress",
                 "namespace": ["research"],
                 "data": PROGRESS_DATA,
+            },
+        },
+        {
+            "schema_version": 1,
+            "event": {
+                "type": "artifact",
+                "namespace": ["research"],
+                "data": ARTIFACT_DATA,
             },
         },
         {

@@ -1,11 +1,24 @@
 # Demo Architecture
 
-The Docker demo puts two independently addressable LGOS API containers and one
-logical central Files service behind Bifrost. Chainlit and Open WebUI are
-OpenAI-compatible clients of that gateway; neither UI imports
+The Docker demo runs two independently addressable LGOS API containers and one
+logical central Files service. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects a
+first-class OpenAI-compatible edge for both Chainlit and Open WebUI. LiteLLM
+uses managed Responses and Bifrost uses native Responses. Both use normal
+Files routing and reserve pass-through for detailed model catalogs. No UI
+connects directly to an upstream container, and neither UI imports
 `langgraph-openai-serve`. See
 [Package Architecture](../explanation/architecture.md) for what happens inside
 each API process.
+
+!!! warning "Managed gateway normalization boundaries"
+
+    Bifrost v2.0.0 native Responses preserves the tested standard fields, file
+    input, commentary, and `phase`; normalized model detail and error metadata
+    remain lossy. Its raw pass-through route passes the complete direct
+    contract suite. LiteLLM 1.99.1 managed wildcard routing synthesizes streams
+    and rewrites error metadata. The UIs exercise the selected gateway's
+    managed/native inference path; only model-detail lookup uses a lossless
+    pass-through. See [Bifrost Gateway](bifrost.md).
 
 ## Request Path
 
@@ -20,6 +33,9 @@ flowchart LR
   end
 
   bifrost["Bifrost gateway"]
+  litellm["LiteLLM 1.99.1<br/>managed inference + pass-through catalogs"]
+  gateway["OPENAI_GATEWAY_TYPE<br/>selects one gateway"]
+  sdk["OpenAI SDK test"]
 
   subgraph apis["LGOS demo APIs"]
     direction TB
@@ -33,27 +49,39 @@ flowchart LR
 
   user <--> chainlit
   user <--> openwebui
-  chainlit <-->|"catalog and OpenAI traffic"| bifrost
-  openwebui <-->|"catalog and OpenAI traffic"| bifrost
+  chainlit <-->|"OpenAI API"| gateway
+  openwebui <-->|"OpenAI API"| gateway
+  gateway <-.->|"bifrost"| bifrost
+  gateway <-.->|"litellm"| litellm
+  sdk <-->|"catalog + native/raw Responses"| bifrost
+  sdk <-->|"Responses"| litellm
   bifrost <-->|"provider: lgos-a"| api_a
   bifrost <-->|"provider: lgos-b"| api_b
   bifrost <-->|"provider: lgos-files"| files
+  litellm <-->|"managed + catalog detail"| api_a
+  litellm <-->|"managed + catalog detail"| api_b
+  litellm <-->|"provider: litellm_proxy"| files
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
 ```
 
-Bifrost exposes one provider-qualified model catalog. The UIs split a selected
-ID such as `lgos-a/simple-graph`, put the provider in `x-model-provider`, and
-send the native graph name through Bifrost's raw `/openai_passthrough/v1`
-route. Bifrost then forwards the request to the matching API container while
-preserving LGOS model metadata and streaming extensions.
+With LiteLLM selected, the UIs merge the explicit `lgos-a` and `lgos-b`
+catalog pass-throughs, qualify graph IDs, and send Responses through managed
+routing. With Bifrost selected, they discover provider-qualified IDs through
+its aggregate catalog, use raw pass-through only for model detail, and send
+Responses through native routing with `x-model-provider`. Both choices upload
+attachments through normal gateway Files routing before sending the returned
+`file_id` to a graph. This preserves descriptions and runtime capabilities
+without allowing UI inference to bypass the gateway's normal data plane.
 
-Both dynamic UIs upload inference attachments through Bifrost's dedicated
-`lgos-files` provider before sending the returned `file_id` to a graph.
+LiteLLM wildcard aliases cover arbitrary graph names; exact `status-events`
+entries prove native stream preservation because 1.99.1 otherwise synthesizes
+streams for wildcard model names. Raw gateway routes remain available for
+protocol-reference tests, but the UI clients do not use them for Responses.
 
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
-starts both healthy graph APIs and the Files service, and then starts Bifrost
-and its UI clients. The diagram shows request traffic rather than those
+starts both healthy graph APIs and the Files service, and then starts Bifrost,
+LiteLLM, and the UI clients. The diagram shows request traffic rather than those
 readiness dependencies. Compose runs one Files process for the demo; production
 deployments may run multiple stateless replicas over the same repository.
 

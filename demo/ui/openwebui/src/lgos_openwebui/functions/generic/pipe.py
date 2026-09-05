@@ -1,64 +1,61 @@
-"""Open WebUI manifold Pipe entrypoint for registered LGOS models."""
+"""Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAIError
+from openai.types.responses import Response, ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 
 from .api import (
-    _chat,
-    _chat_completion,
+    _catalog_base_url,
     _client,
     _list_model_ids,
     _model_id,
     _model_request,
-    _request_options,
 )
 from .contracts import (
-    CLIENT_EVENTS_FEATURE,
-    FILE_INPUTS_FEATURE,
-    NO_CHOICES_MESSAGE,
+    DISPLAY_FILE_TOOL_NAME,
+    INTERRUPT_CANCELLED_MESSAGE,
+    INTERRUPT_TOOL_NAME,
     InterruptCancelled,
     PipeChunk,
     PipeResponse,
 )
-from .events import _chart_embed_event, _client_event, _status_event
-from .files import _with_file_parts
+from .files import _handle_display_file, _with_response_file_parts
+from .gateway import GatewayConfig, GatewayType, gateway_config
 from .interrupts import (
-    _interrupt_cancelled_response,
-    _openwebui_chunk,
-    _openwebui_completion,
-    _request_messages,
+    _ask_user_to_resume,
+    _openwebui_interrupt_chunk,
+    _openwebui_interrupt_completion,
 )
-from .metadata import (
-    _emit_limited_functionality_warning,
-    _extension_supports,
-    _model_extension,
-    _request_metadata,
-    _retrieve_model,
+from .metadata import _request_metadata
+from .responses import (
+    _emit_response_sources,
+    _openwebui_text_chunk,
+    _responses_continuation,
+    _responses_final_text,
+    _responses_function_calls,
+    _responses_input,
+    _responses_request,
 )
 
 
 class Pipe:
     class Valves(BaseModel):
-        OPENAI_API_BASE_URL: str = Field(
-            default=os.environ.get(
-                "OPENAI_API_BASE_URL",
-                "http://lgos-bifrost:8080/openai_passthrough/v1",
+        OPENAI_GATEWAY_TYPE: GatewayType = Field(
+            default=cast(
+                "GatewayType", os.environ.get("OPENAI_GATEWAY_TYPE", "litellm")
             ),
-            description="OpenAI-compatible base URL used for retrieval and chat.",
+            description="Gateway used for all OpenAI requests.",
         )
-        OPENAI_CATALOG_BASE_URL: str = Field(
-            default=os.environ.get(
-                "OPENAI_CATALOG_BASE_URL",
-                "http://lgos-bifrost:8080/v1",
-            ),
-            description="OpenAI-compatible base URL used to list the model catalog.",
+        OPENAI_GATEWAY_BASE_URL: str | None = Field(
+            default=os.environ.get("OPENAI_GATEWAY_BASE_URL") or None,
+            description="Optional gateway root override.",
         )
         OPENAI_API_KEY: str = Field(
-            default=os.environ.get("OPENAI_API_KEY", "DUMMY"),
+            default=os.environ.get("OPENAI_API_KEY", "sk-lgos-litellm-demo"),
             description="API key sent to the configured OpenAI-compatible endpoints.",
             json_schema_extra={"input": {"type": "password"}},
         )
@@ -67,36 +64,38 @@ class Pipe:
             gt=0,
             description="OpenAI-compatible request timeout in seconds.",
         )
-        OPENAI_FILES_BASE_URL: str = Field(
-            default=os.environ.get(
-                "OPENAI_FILES_BASE_URL",
-                "http://lgos-bifrost:8080/v1",
-            ),
-            description="OpenAI-compatible base URL used to upload files.",
-        )
-        OPENAI_FILES_PROVIDER: str = Field(
-            default=os.environ.get("OPENAI_FILES_PROVIDER", "lgos-files"),
-            description="Optional gateway provider used for Files API requests.",
-        )
 
     def __init__(self) -> None:
         self.valves = self.Valves()
 
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model to Open WebUI."""
-        async with _client(
-            base_url=self.valves.OPENAI_CATALOG_BASE_URL,
-            api_key=self.valves.OPENAI_API_KEY,
-            timeout=self.valves.OPENAI_API_TIMEOUT,
-        ) as client:
-            model_ids = await _list_model_ids(client)
-            return [
-                {
-                    "id": model_id,
-                    "name": f"Generic / {model_id}",
-                }
-                for model_id in model_ids
-            ]
+        model_ids = []
+        gateway = self._gateway()
+        model_prefixes = gateway.model_prefixes
+        catalogs = (
+            tuple(
+                (
+                    _catalog_base_url(gateway.catalog_detail_base_url, model_prefix),
+                    model_prefix,
+                )
+                for model_prefix in model_prefixes
+            )
+            if model_prefixes
+            else ((gateway.catalog_base_url, None),)
+        )
+        for base_url, model_prefix in catalogs:
+            async with _client(
+                base_url=base_url,
+                api_key=self.valves.OPENAI_API_KEY,
+                timeout=self.valves.OPENAI_API_TIMEOUT,
+            ) as client:
+                model_ids.extend(
+                    await _list_model_ids(client, model_prefix=model_prefix)
+                )
+        return [
+            {"id": model_id, "name": f"Generic / {model_id}"} for model_id in model_ids
+        ]
 
     async def pipe(
         self,
@@ -105,8 +104,9 @@ class Pipe:
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
         __files__: list[dict[str, Any]] | None = None,
+        __request__: Any = None,
     ) -> PipeResponse:
-        """Use the same Chat Completions mode requested by Open WebUI."""
+        """Run the selected graph through OpenAI Responses."""
         if body.get("stream") is True:
             return self._stream(
                 body,
@@ -114,6 +114,7 @@ class Pipe:
                 __metadata__=__metadata__,
                 __user__=__user__,
                 __files__=__files__,
+                __request__=__request__,
             )
         return await self._complete(
             body,
@@ -121,6 +122,7 @@ class Pipe:
             __metadata__=__metadata__,
             __user__=__user__,
             __files__=__files__,
+            __request__=__request__,
         )
 
     async def _stream(
@@ -130,80 +132,97 @@ class Pipe:
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
         __files__: list[dict[str, Any]] | None = None,
+        __request__: Any = None,
     ) -> AsyncIterator[PipeChunk]:
-        """Forward chat, leaving tool execution and interaction to Open WebUI.
-
-        Yields:
-            PipeChunk objects for Open WebUI stream.
-        """
-        openwebui_metadata = __metadata__ or {}
-        base_url = self.valves.OPENAI_API_BASE_URL
-        api_key = self.valves.OPENAI_API_KEY
-        timeout = self.valves.OPENAI_API_TIMEOUT
-
+        """Yield Open WebUI chunks while the SDK owns Response accumulation."""
         try:
-            model_id = _model_id(body)
-            _model_request(model_id)
-            messages = _request_messages(body)
+            model_id, input_items = await self._request_input(
+                body, __metadata__, __files__
+            )
         except InterruptCancelled:
-            yield _interrupt_cancelled_response(model_id, streaming=True)
+            yield INTERRUPT_CANCELLED_MESSAGE
             return
         except ValueError as exc:
             yield _error(str(exc))
             return
 
         try:
+            gateway = self._gateway()
+            request = _responses_request(
+                model_id,
+                input_items,
+                _request_metadata(__metadata__ or {}),
+                _user_id(__user__),
+                provider_routing=gateway.provider_routing,
+                model_prefixes=gateway.model_prefixes,
+            )
             async with _client(
-                base_url=base_url,
-                api_key=api_key,
-                timeout=timeout,
+                base_url=gateway.responses_base_url,
+                api_key=self.valves.OPENAI_API_KEY,
+                timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
-                model = await _retrieve_model(client, model_id)
-                extension = _model_extension(model)
-                if extension is None:
-                    await _emit_limited_functionality_warning(__event_emitter__)
-                messages = await _with_file_parts(
-                    messages,
-                    __files__,
-                    openwebui_metadata,
-                    base_url=self.valves.OPENAI_FILES_BASE_URL,
-                    api_key=api_key,
-                    timeout=timeout,
-                    provider=self.valves.OPENAI_FILES_PROVIDER,
-                    supported=_extension_supports(extension, FILE_INPUTS_FEATURE),
-                )
-                request_metadata = _request_metadata(
-                    model=model,
-                    metadata=openwebui_metadata,
-                )
-                include_client_events = _extension_supports(
-                    extension,
-                    CLIENT_EVENTS_FEATURE,
-                )
-                async with _chat(
-                    client=client,
-                    messages=messages,
-                    model_id=model_id,
-                    request_metadata=request_metadata,
-                    include_client_events=include_client_events,
-                    user_id=_user_id(__user__),
-                    request_options=_request_options(body, stream=True),
-                ) as stream:
-                    async for chunk in stream:
-                        client_event = _client_event(chunk)
-                        if client_event is not None:
-                            ui_event = _status_event(
-                                client_event
-                            ) or _chart_embed_event(client_event)
-                            if __event_emitter__ is not None and ui_event is not None:
-                                await __event_emitter__(ui_event)
-                            continue
+                while True:
+                    final_text_streamed = False
+                    phases: dict[int, str | None] = {}
+                    async with client.responses.stream(**request) as stream:
+                        async for event in stream:
+                            if event.type == "response.output_item.added":
+                                if event.item.type == "message":
+                                    phases[event.output_index] = event.item.phase
+                            elif (
+                                event.type == "response.output_text.delta"
+                                and phases.get(event.output_index) != "commentary"
+                            ):
+                                final_text_streamed = True
+                                yield _openwebui_text_chunk(model_id, event.delta)
+                            elif (
+                                event.type == "response.output_text.done"
+                                and phases.get(event.output_index) == "commentary"
+                                and __event_emitter__ is not None
+                                and event.text
+                            ):
+                                await __event_emitter__(
+                                    {
+                                        "type": "status",
+                                        "data": {
+                                            "description": event.text,
+                                            "done": True,
+                                        },
+                                    }
+                                )
+                        response = cast("Response", await stream.get_final_response())
 
-                        yield _openwebui_chunk(chunk)
-        except ValueError as exc:
-            yield _error(str(exc))
-        except OpenAIError as exc:
-            yield _error(f"Error calling OpenAI-compatible API: {exc}")
+                    _raise_for_response(response)
+                    await _emit_response_sources(response, __event_emitter__)
+                    calls = _responses_function_calls(response)
+                    if not calls:
+                        if not final_text_streamed:
+                            yield _openwebui_text_chunk(
+                                model_id, _responses_final_text(response)
+                            )
+                        return
+                    if _all_calls(calls, INTERRUPT_TOOL_NAME):
+                        yield _openwebui_interrupt_chunk(model_id, calls)
+                        return
+                    if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
+                        raise ValueError(
+                            "LangGraph API returned a mixed function-call batch."
+                        )
+                    outputs = [
+                        await _handle_display_file(
+                            call,
+                            __event_emitter__,
+                            __request__,
+                            files_base_url=gateway.files_base_url,
+                            api_key=self.valves.OPENAI_API_KEY,
+                            timeout=self.valves.OPENAI_API_TIMEOUT,
+                            provider=gateway.files_provider,
+                        )
+                        for call in calls
+                    ]
+                    request["input"].extend(_responses_continuation(response, outputs))
+        except (ValueError, RuntimeError, OpenAIError) as exc:
+            yield _error(f"Responses request failed: {exc}")
 
     async def _complete(
         self,
@@ -212,57 +231,109 @@ class Pipe:
         __metadata__: dict[str, Any] | None,
         __user__: dict[str, Any] | None,
         __files__: list[dict[str, Any]] | None,
-    ) -> dict[str, Any]:
-        """Return one complete OpenAI response without replaying stream events."""
+        __request__: Any,
+    ) -> PipeChunk:
+        """Return native Pipe text or an ask-user call from Responses output."""
+        answer_parts: list[str] = []
         try:
-            model_id = _model_id(body)
-            _model_request(model_id)
-            messages = _request_messages(body)
+            model_id, input_items = await self._request_input(
+                body, __metadata__, __files__
+            )
         except InterruptCancelled:
-            return _interrupt_cancelled_response(model_id, streaming=False)
+            return INTERRUPT_CANCELLED_MESSAGE
         except ValueError as exc:
             return _error(str(exc))
 
         try:
+            gateway = self._gateway()
+            request = _responses_request(
+                model_id,
+                input_items,
+                _request_metadata(__metadata__ or {}),
+                _user_id(__user__),
+                provider_routing=gateway.provider_routing,
+                model_prefixes=gateway.model_prefixes,
+            )
             async with _client(
-                base_url=self.valves.OPENAI_API_BASE_URL,
+                base_url=gateway.responses_base_url,
                 api_key=self.valves.OPENAI_API_KEY,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
-                model = await _retrieve_model(client, model_id)
-                extension = _model_extension(model)
-                if extension is None:
-                    await _emit_limited_functionality_warning(__event_emitter__)
-                messages = await _with_file_parts(
-                    messages,
-                    __files__,
-                    __metadata__,
-                    base_url=self.valves.OPENAI_FILES_BASE_URL,
-                    api_key=self.valves.OPENAI_API_KEY,
-                    timeout=self.valves.OPENAI_API_TIMEOUT,
-                    provider=self.valves.OPENAI_FILES_PROVIDER,
-                    supported=_extension_supports(extension, FILE_INPUTS_FEATURE),
-                )
-                request_metadata = _request_metadata(
-                    model=model,
-                    metadata=__metadata__ or {},
-                )
-                response = await _chat_completion(
-                    client=client,
-                    messages=messages,
-                    model_id=model_id,
-                    request_metadata=request_metadata,
-                    user_id=_user_id(__user__),
-                    request_options=_request_options(body, stream=False),
-                )
-                if not response.choices:
-                    return _error(NO_CHOICES_MESSAGE)
+                while True:
+                    response = await client.responses.create(**request)
+                    _raise_for_response(response)
+                    await _emit_response_sources(response, __event_emitter__)
+                    answer_parts.append(_responses_final_text(response))
+                    calls = _responses_function_calls(response)
+                    if not calls:
+                        return "".join(answer_parts)
+                    if _all_calls(calls, INTERRUPT_TOOL_NAME):
+                        return _openwebui_interrupt_completion(model_id, calls)
+                    if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
+                        raise ValueError(
+                            "LangGraph API returned a mixed function-call batch."
+                        )
+                    outputs = [
+                        await _handle_display_file(
+                            call,
+                            __event_emitter__,
+                            __request__,
+                            files_base_url=gateway.files_base_url,
+                            api_key=self.valves.OPENAI_API_KEY,
+                            timeout=self.valves.OPENAI_API_TIMEOUT,
+                            provider=gateway.files_provider,
+                        )
+                        for call in calls
+                    ]
+                    request["input"].extend(_responses_continuation(response, outputs))
+        except (ValueError, RuntimeError, OpenAIError) as exc:
+            return _error(f"Responses request failed: {exc}")
 
-                return _openwebui_completion(response)
-        except ValueError as exc:
-            return _error(str(exc))
-        except OpenAIError as exc:
-            return _error(f"Error calling OpenAI-compatible API: {exc}")
+    async def _request_input(
+        self,
+        body: dict[str, Any],
+        metadata: dict[str, Any] | None,
+        files: list[dict[str, Any]] | None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        model_id = _model_id(body)
+        gateway = self._gateway()
+        _model_request(
+            model_id,
+            provider_routing=gateway.provider_routing,
+            model_prefixes=gateway.model_prefixes,
+        )
+        raw_messages = body.get("messages")
+        messages = raw_messages if isinstance(raw_messages, list) else []
+        if resume := _ask_user_to_resume(messages):
+            return model_id, resume
+        messages = await _with_response_file_parts(
+            messages,
+            files,
+            metadata,
+            base_url=gateway.files_base_url,
+            api_key=self.valves.OPENAI_API_KEY,
+            timeout=self.valves.OPENAI_API_TIMEOUT,
+            provider=gateway.files_provider,
+        )
+        return model_id, _responses_input(messages)
+
+    def _gateway(self) -> GatewayConfig:
+        return gateway_config(
+            self.valves.OPENAI_GATEWAY_TYPE,
+            self.valves.OPENAI_GATEWAY_BASE_URL,
+            local=False,
+        )
+
+
+def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:
+    return bool(calls) and all(call.name == name for call in calls)
+
+
+def _raise_for_response(response: Response) -> None:
+    if response.status == "completed":
+        return
+    detail = response.error
+    raise RuntimeError(detail.message if detail is not None else "Response failed.")
 
 
 def _user_id(user: dict[str, Any] | None) -> str | None:

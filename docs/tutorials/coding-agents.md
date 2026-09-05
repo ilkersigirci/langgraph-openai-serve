@@ -1,61 +1,56 @@
 # Coding Agents
 
-Coding agents can use any registered LGOS graph as an OpenAI-compatible
-`model`. The agent owns the tools: it sends tool definitions, receives tool
-calls, executes them locally, and sends the matching `tool` messages on the
-next turn.
+A coding agent can use a registered LGOS graph when the agent's OpenAI wire
+requests stay inside LGOS's supported Responses or Chat Completions subset. The
+agent owns client tools: it sends function definitions, receives calls, executes
+them locally, and returns matching outputs.
 
-The demo [`simple-graph-external-tools`](../demo/graphs/core-patterns.md#simple-graph-external-tools)
+The demo
+[`simple-graph-external-tools`](../demo/graphs/core-patterns.md#simple-graph-external-tools)
 is the smallest tool-enabled graph. It forwards client-provided tools to the
-upstream chat model and does not execute them.
+upstream model and does not execute them.
 
 ## Endpoint And Model
 
-Use the exact model ID returned by `GET /v1/models`:
+Connect directly to LGOS and use the exact model ID from `GET /v1/models`:
 
-| Connection | Base URL | Model ID |
-| --- | --- | --- |
-| Direct LGOS | `https://lgos.example.com/v1` | `simple-graph-external-tools` |
-| Bifrost catalog | `https://bifrost.example.com/v1` | `lgos-a/simple-graph-external-tools` |
+| Base URL | Model ID |
+| --- | --- |
+| `https://lgos.example.com/v1` | `simple-graph-external-tools` |
 
-Bifrost adds the provider prefix to its catalog IDs. Replace `lgos-a` with the
-provider that owns the selected LGOS deployment. See the
-[Bifrost demo](../demo/bifrost.md) for the catalog and pass-through boundary.
+An optional gateway may use a provider-qualified routing ID, but it must pass
+the native contract tests in the [proxy guide](../how-to-guides/openai-proxies.md).
+The pinned Bifrost demo's native Responses route preserves the tested data-plane
+contract, including `phase`; its normalized model-detail and error metadata
+remain lossy. The raw OpenAI pass-through route passes the complete tested
+subset.
 
-=== "Codex"
+## Client Compatibility
 
-    Codex uses the Responses API. LGOS uses Chat Completions, so put a
-    Responses-to-Chat gateway such as Bifrost in front of it. Use the
-    gateway's normal `/v1` route; a raw pass-through would forward the
-    Responses request unchanged to LGOS.
+LGOS implements a deliberately bounded Responses surface. A client that always
+sends hosted tools, reasoning configuration, `include`, prompt-cache options,
+`previous_response_id`, or another unsupported field will receive an explicit
+OpenAI `invalid_request_error`. Do not place a Responses-to-Chat translator in
+front of LGOS to hide that mismatch.
 
-    Based on Codex's [custom provider configuration](https://learn.chatgpt.com/docs/config-file/config-advanced):
+Codex custom providers use the Responses wire API. Direct Codex compatibility
+has not been verified against LGOS's bounded subset, and Codex can configure
+Responses controls that LGOS does not accept. The configuration shape is
+documented by
+[Codex custom model providers](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers);
+add a runnable example here only after a direct integration test passes without
+request rewriting.
 
-    ```toml
-    # ~/.codex/config.toml
-    model = "lgos-a/simple-graph-external-tools"
-    model_provider = "lgos_bifrost"
-
-    [model_providers.lgos_bifrost]
-    name = "LGOS via Bifrost"
-    base_url = "https://bifrost.example.com/v1"
-    wire_api = "responses"
-    requires_openai_auth = false
-    ```
-
-    ```bash
-    codex --model lgos-a/simple-graph-external-tools
-    ```
-
-    For an authenticated gateway, add `env_key = "BIFROST_API_KEY"` and
-    export that variable. For an unauthenticated gateway, omit `env_key`; no
-    environment variable is needed.
+The examples below intentionally exercise the direct Chat compatibility route.
+They are demonstrations for clients whose provider adapters use Chat
+Completions; the maintained Chainlit and Open WebUI demos remain
+Responses-only.
 
 === "OpenCode"
 
-    OpenCode can call the Chat Completions route directly. Add a custom
-    provider to `opencode.json` using its
-    [OpenAI-compatible provider](https://opencode.ai/docs/providers):
+    OpenCode's official provider guide assigns
+    `@ai-sdk/openai-compatible` to `/v1/chat/completions` providers. Add a
+    direct LGOS provider to `opencode.json`:
 
     ```json
     {
@@ -63,12 +58,13 @@ provider that owns the selected LGOS deployment. See the
       "provider": {
         "lgos": {
           "npm": "@ai-sdk/openai-compatible",
-          "name": "LGOS via Bifrost",
+          "name": "Direct LGOS",
           "options": {
-            "baseURL": "https://bifrost.example.com/v1"
+            "baseURL": "https://lgos.example.com/v1",
+            "apiKey": "DUMMY"
           },
           "models": {
-            "lgos-a/simple-graph-external-tools": {
+            "simple-graph-external-tools": {
               "name": "LGOS external tools"
             }
           }
@@ -77,25 +73,27 @@ provider that owns the selected LGOS deployment. See the
     }
     ```
 
-    Start OpenCode, run `/models`, and select `LGOS external tools`. For a
-    direct LGOS URL, use the bare model ID `simple-graph-external-tools`.
+    Start OpenCode, run `/models`, and select `LGOS external tools`. See
+    OpenCode's [custom provider documentation](https://opencode.ai/docs/providers/#custom-provider).
 
 === "pi"
 
-    pi uses `~/.pi/agent/models.json`. Its
-    [OpenAI Completions provider](https://pi.dev/docs/latest/models) is the
-    Chat Completions integration:
+    pi supports both OpenAI APIs. This compatibility example selects its
+    `openai-completions` adapter in `~/.pi/agent/models.json`:
 
     ```json
     {
       "providers": {
         "lgos": {
-          "baseUrl": "https://bifrost.example.com/v1",
+          "baseUrl": "https://lgos.example.com/v1",
           "api": "openai-completions",
           "apiKey": "DUMMY",
+          "compat": {
+            "supportsReasoningEffort": false
+          },
           "models": [
             {
-              "id": "lgos-a/simple-graph-external-tools",
+              "id": "simple-graph-external-tools",
               "name": "LGOS external tools"
             }
           ]
@@ -105,15 +103,17 @@ provider that owns the selected LGOS deployment. See the
     ```
 
     ```bash
-    pi --provider lgos --model lgos-a/simple-graph-external-tools
+    pi --provider lgos --model simple-graph-external-tools
     ```
 
-    `DUMMY` only makes the keyless model appear in pi's model selector; the
-    unauthenticated gateway does not need an API key. Use `$BIFROST_API_KEY`
-    instead when the gateway requires authentication.
+    `DUMMY` makes a keyless development model appear in pi's selector. Use a
+    real deployment credential when the LGOS host enforces authentication. See
+    pi's [custom model documentation](https://pi.dev/docs/latest/models).
 
 ## Other Agents
 
-For any agent that supports OpenAI Chat Completions, configure its base URL as
-`https://lgos.example.com/v1` (or the Bifrost `/v1` route) and use the model ID
-from the model catalog. No LGOS-specific SDK or agent plugin is required.
+For a Responses client, compare its emitted request with the exact
+[supported subset](../explanation/openai-compatibility.md#supported-responses-subset)
+and verify streaming plus function continuation before adopting it. For a Chat
+Completions client, use the direct base URL and registered graph name. No
+LGOS-specific SDK or agent plugin is required.

@@ -1,8 +1,7 @@
 """Public events emitted by LangGraph nodes and tools."""
 
-from typing import Literal
+from typing import Literal, TypedDict
 
-from openai.types.chat.chat_completion_message import Annotation
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 CLIENT_EVENT_SCHEMA_VERSION = 1
@@ -47,6 +46,14 @@ class _StatusEventData(BaseModel):
         default=False,
         description="Whether clients should hide the status.",
     )
+
+
+class StatusEventData(TypedDict):
+    """Validated public fields used to render one status event."""
+
+    description: str
+    done: bool
+    hidden: bool
 
 
 def client_event(
@@ -100,12 +107,14 @@ def client_event_extension(value: object) -> dict[str, object] | None:
     return envelope.model_dump(mode="json", exclude={"type"})
 
 
-def citation_slice(annotation: Annotation, content: str) -> slice:
-    """Convert an OpenAI inclusive citation span to a validated Python slice."""
-    citation = annotation.url_citation
-    start = citation.start_index
-    stop = citation.end_index + 1
-    if not 0 <= start < stop <= len(content):
-        msg = "citation indices must refer to the final assistant text"
-        raise ValueError(msg)
-    return slice(start, stop)
+def status_event_data(extension: dict[str, object]) -> StatusEventData | None:
+    """Validate the payload of an extracted public status extension."""
+    event = extension.get("event")
+    if not isinstance(event, dict) or event.get("type") != "status":
+        return None
+
+    try:
+        data = _StatusEventData.model_validate(event.get("data"))
+    except ValidationError:
+        return None
+    return StatusEventData(**data.model_dump(mode="json"))

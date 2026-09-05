@@ -37,7 +37,7 @@ def _latest_human_message(messages: Sequence[BaseMessage]) -> HumanMessage | Non
 
 
 def _file_ids(message: HumanMessage) -> list[str]:
-    """Read native Chat Completions file parts from the latest user message."""
+    """Read protocol-neutral normalized file parts from the latest user message."""
     if not isinstance(message.content, list):
         return []
 

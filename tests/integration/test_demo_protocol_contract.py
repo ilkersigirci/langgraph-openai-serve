@@ -1,5 +1,6 @@
 """Verify standalone clients against representative LGOS wire payloads."""
 
+import json
 from pathlib import Path
 from runpy import run_path
 
@@ -7,11 +8,6 @@ from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
     ModelClientSettings,
     ModelDetails,
-)
-from langgraph_openai_serve.graph.events import (
-    client_event,
-    client_event_extension,
-    status_event,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 
@@ -46,31 +42,14 @@ def test_chainlit_accepts_model_detail_extension() -> None:
     assert parsed.model_dump(mode="json") == extension
 
 
-def test_chainlit_accepts_client_event_payload() -> None:
-    extension = client_event_extension(
-        client_event(
-            "progress",
-            {"completed": 1, "total": 2},
-            namespace=("retrieval",),
-        )
-    )
-    assert extension is not None
+def test_bifrost_graph_providers_allow_native_responses() -> None:
+    config_path = REPOSITORY_ROOT / "demo/docker/configs/bifrost/config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    parsed = CHAINLIT_PROTOCOL["ClientEventExtension"].model_validate(extension)
+    for provider_name in ("lgos-a", "lgos-b"):
+        allowed_requests = config["providers"][provider_name]["custom_provider_config"][
+            "allowed_requests"
+        ]
 
-    assert parsed.model_dump(mode="json") == extension
-
-
-def test_chainlit_accepts_status_event_payload() -> None:
-    extension = client_event_extension(status_event("Generating audio"))
-    assert extension is not None
-
-    parsed = CHAINLIT_PROTOCOL["StatusUpdate"].model_validate(
-        extension["event"]["data"]
-    )
-
-    assert parsed.model_dump(mode="json") == {
-        "description": "Generating audio",
-        "done": False,
-        "hidden": False,
-    }
+        assert allowed_requests["responses"] is True
+        assert allowed_requests["responses_stream"] is True

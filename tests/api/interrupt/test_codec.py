@@ -5,11 +5,9 @@ import json
 import pytest
 
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequestMessage
-from langgraph_openai_serve.api.chat.utils.interrupts import (
-    InvalidResumeRequestError,
-    interrupt_arguments,
-    parse_resume_request,
-)
+from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
+from langgraph_openai_serve.graph.interrupt.codec import interrupt_arguments
+from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 STATE_TOKEN = "state-token-1"

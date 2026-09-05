@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from openai import AsyncOpenAI, ConflictError
+from openai.types.responses import ResponseFunctionToolCall
 
 from lgos_demo_api.checkpointer import (
     PostgresRuntime,
@@ -91,24 +92,26 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
         postgres_runtime(POSTGRES_URI) as initial_runtime,
         _openai_client(initial_runtime) as client,
     ):
-        paused = await client.chat.completions.create(
+        paused = await client.responses.create(
+            store=False,
             model=MODEL,
-            messages=[{"role": "user", "content": public_request}],
+            input=[{"role": "user", "content": public_request}],
             metadata={"langgraph_run_id": run_id},
         )
 
-    assistant = paused.choices[0].message
-    tool_calls = assistant.tool_calls or []
+    tool_calls = [
+        item for item in paused.output if isinstance(item, ResponseFunctionToolCall)
+    ]
     assert len(tool_calls) == 1
-    arguments = json.loads(tool_calls[0].function.arguments)
+    arguments = json.loads(tool_calls[0].arguments)
     assert arguments["run_id"] == run_id
     assert arguments["payload"]["action"] == "refund"
-    resume_messages = [
-        assistant.model_dump(mode="json", exclude_none=True),
+    resume_items = [
+        *(item.model_dump(mode="json", exclude_none=True) for item in paused.output),
         {
-            "role": "tool",
-            "tool_call_id": tool_calls[0].id,
-            "content": json.dumps({"resume": "approve"}),
+            "type": "function_call_output",
+            "call_id": tool_calls[0].call_id,
+            "output": json.dumps({"resume": "approve"}),
         },
     ]
 
@@ -119,18 +122,20 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
     ):
         async with lock_runtime.run_coordinator(checkpoint_thread_id):
             with pytest.raises(ConflictError) as exc_info:
-                await client.chat.completions.create(
+                await client.responses.create(
+                    store=False,
                     model=MODEL,
-                    messages=resume_messages,
+                    input=resume_items,
                 )
             assert exc_info.value.code == "run_busy"
 
-        completed = await client.chat.completions.create(
+        completed = await client.responses.create(
+            store=False,
             model=MODEL,
-            messages=resume_messages,
+            input=resume_items,
         )
 
-        assert completed.choices[0].message.content == (
+        assert completed.output_text == (
             f"Review workflow for: {public_request}\n"
             "- Refund: approve\n"
             "- Customer notification: sent\n"

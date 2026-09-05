@@ -1,95 +1,10 @@
-"""OpenAI-compatible client and Chat Completions helpers."""
+"""OpenAI-compatible client and model-catalog helpers."""
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Any
 
-from openai import AsyncOpenAI, AsyncStream
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    ChatCompletionMessageParam,
-)
+from openai import AsyncOpenAI
 
-from .contracts import (
-    CHAT_COMPLETION_REQUEST_FIELDS,
-    LGOS_MODEL_OWNER,
-    STREAM_EVENTS_METADATA_KEY,
-    STREAM_EVENTS_METADATA_VALUE,
-)
-
-
-@asynccontextmanager
-async def _chat(
-    *,
-    client: AsyncOpenAI,
-    messages: list[ChatCompletionMessageParam],
-    model_id: str,
-    request_metadata: dict[str, str] | None = None,
-    include_client_events: bool = False,
-    user_id: str | None = None,
-    request_options: dict[str, Any] | None = None,
-) -> AsyncIterator[AsyncStream[ChatCompletionChunk]]:
-    metadata = dict(request_metadata or {})
-    if include_client_events:
-        metadata[STREAM_EVENTS_METADATA_KEY] = STREAM_EVENTS_METADATA_VALUE
-
-    request = _chat_request(model_id, messages, metadata, user_id, request_options)
-
-    async with await client.chat.completions.create(
-        **request,
-        stream=True,
-    ) as stream:
-        yield stream
-
-
-async def _chat_completion(
-    *,
-    client: AsyncOpenAI,
-    messages: list[ChatCompletionMessageParam],
-    model_id: str,
-    request_metadata: dict[str, str] | None = None,
-    user_id: str | None = None,
-    request_options: dict[str, Any] | None = None,
-) -> ChatCompletion:
-    """Create one non-streaming Chat Completion."""
-    request = _chat_request(
-        model_id,
-        messages,
-        request_metadata,
-        user_id,
-        request_options,
-    )
-    return await client.chat.completions.create(**request)
-
-
-def _chat_request(
-    model_id: str,
-    messages: list[ChatCompletionMessageParam],
-    metadata: dict[str, str] | None,
-    user_id: str | None,
-    request_options: dict[str, Any] | None,
-) -> dict[str, Any]:
-    request: dict[str, Any] = {
-        **_model_request(model_id),
-        "messages": messages,
-        **(request_options or {}),
-    }
-    if user_id is not None:
-        request["user"] = user_id
-    if metadata:
-        request["metadata"] = metadata
-    return request
-
-
-def _request_options(body: dict[str, Any], *, stream: bool) -> dict[str, Any]:
-    """Forward only Chat Completions options supported by LGOS."""
-    fields = (
-        (*CHAT_COMPLETION_REQUEST_FIELDS, "stream_options")
-        if stream
-        else CHAT_COMPLETION_REQUEST_FIELDS
-    )
-    return {key: body[key] for key in fields if key in body}
+from .contracts import LGOS_MODEL_OWNER
 
 
 def _client(
@@ -121,12 +36,35 @@ def _model_id(body: dict[str, Any]) -> str:
     return model_id
 
 
-async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
+async def _list_model_ids(
+    client: AsyncOpenAI,
+    *,
+    model_prefix: str | None = None,
+) -> list[str]:
     models = await client.models.list()
-    return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]
+    model_ids = [
+        model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER
+    ]
+    if model_prefix is None:
+        return model_ids
+    return [_managed_model_id(model_id, (model_prefix,)) for model_id in model_ids]
 
 
-def _model_request(model_id: str) -> dict[str, Any]:
+def _model_request(
+    model_id: str,
+    *,
+    provider_routing: bool,
+    model_prefixes: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    if not model_id:
+        msg = "OpenAI model ID is missing."
+        raise ValueError(msg)
+    if model_prefixes:
+        return {"model": _managed_model_id(model_id, model_prefixes)}
+    if not provider_routing:
+        msg = "Gateway model routing is not configured."
+        raise ValueError(msg)
+
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
         msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
@@ -136,3 +74,18 @@ def _model_request(model_id: str) -> dict[str, Any]:
         "model": upstream_model,
         "extra_headers": {"x-model-provider": provider},
     }
+
+
+def _catalog_base_url(catalog_root: str, model_prefix: str) -> str:
+    return f"{catalog_root.rstrip('/')}/{model_prefix}"
+
+
+def _managed_model_id(model_id: str, model_prefixes: tuple[str, ...]) -> str:
+    provider, separator, upstream_model = model_id.partition("/")
+    if not separator:
+        return f"{model_prefixes[0]}/{model_id}"
+    if provider not in model_prefixes or not upstream_model:
+        expected = ", ".join(f"{prefix}/model" for prefix in model_prefixes)
+        msg = f"LiteLLM model ID must use one of [{expected}]: {model_id!r}."
+        raise ValueError(msg)
+    return model_id

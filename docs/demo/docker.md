@@ -20,7 +20,8 @@ additionally supplies the parent LGOS checkout as a named context for the API's
 editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
 command local. Compose also mounts its small raw-upload policy into that image;
-it does not build a project-owned Open WebUI image. There is no demo-wide
+it does not build a project-owned Open WebUI image. The two gateway fragments
+use pinned upstream Bifrost and LiteLLM images. There is no demo-wide
 `pyproject.toml`, uv workspace, shared Python environment, or shared lockfile.
 The API package includes the compact Markdown corpus used by `lgos-rag`.
 
@@ -124,11 +125,77 @@ settings](reference.md#opentelemetry-settings).
 === "Bifrost"
 
     ```bash
-    docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
+    make run-bifrost
     ```
 
-    See [Bifrost Gateway](bifrost.md) for endpoints, routing, and the shared SDK
-    verification command.
+    The UIs use native `/openai/v1/responses`, normal `/v1` Files routing, and
+    raw pass-through only for provider-specific catalog detail. See [Bifrost
+    Gateway](bifrost.md) for endpoints, routing, and the shared SDK verification
+    command.
+
+=== "LiteLLM"
+
+    ```bash
+    make run-litellm
+    ```
+
+    LiteLLM 1.99.1 is one of the two first-class UI entry points. The UIs split
+    catalog detail from normal inference and Files routing:
+
+    - API A pass-through: `http://localhost:3007/v1/lgos-a`
+    - API B pass-through: `http://localhost:3007/v1/lgos-b`
+    - managed Files: `http://localhost:3007/v1`
+    - managed routing: `http://localhost:3007/v1`
+    - LiteLLM Admin UI: `http://localhost:3007/ui/`
+
+    Chainlit and Open WebUI send Responses and Files to managed routing and
+    merge both authenticated catalog pass-throughs. Each graph keeps its
+    `lgos-a/` or `lgos-b/` prefix before inference. The proxy therefore retains
+    normal model routing while each API remains the source of its descriptions
+    and LGOS capability metadata and the Files service remains the owner of
+    file bytes.
+    Neither UI connects to an upstream service directly.
+    `DEMO_LITELLM_MASTER_KEY` protects all four routes; replace its demo-only
+    default in any shared deployment. For the local Admin UI, sign in as
+    `admin`; unless `UI_PASSWORD` is set separately, the password is the value
+    of `DEMO_LITELLM_MASTER_KEY` (`sk-lgos-litellm-demo` by default).
+
+    The managed-routing surface uses LiteLLM's documented
+    [wildcard routing](https://docs.litellm.ai/docs/wildcard_routing) to retain
+    the graph-name suffix and its native
+    [Responses endpoint](https://docs.litellm.ai/docs/response_api). Select an
+    API with a provider-qualified model, such as
+    `lgos-a/custom-input-output-context` or
+    `lgos-b/custom-input-output-context`. The shared demo PostgreSQL service
+    keeps LiteLLM's Admin UI and gateway-management records in its own
+    `litellm` schema; graph execution state remains owned by LGOS. LiteLLM's
+    standard `files_settings` route uses `provider=litellm_proxy` to isolate
+    upload, retrieval, content, and deletion from the graph deployments.
+
+    LiteLLM 1.99.1 still synthesizes a final-only stream for graph names reached
+    only through a wildcard. The exact `status-events` entries set its supported
+    `model_info.supports_native_streaming` capability and provide the native
+    event-lifecycle fixture. Managed routing otherwise passes the tested Files
+    lifecycle, file-ID input, and function continuation, while its rewritten
+    standard error metadata remains a strict expected failure. Some successful
+    managed streaming requests also trigger an upstream background success-log
+    `AttributeError` after the client response completes; do not treat managed
+    LiteLLM usage logging as verified by this suite.
+
+    The smaller official `litellm-gateway` image starts a reduced data-plane
+    app that removes arbitrary configured routes and does not include the
+    migration runtime needed by the Admin UI. The demo therefore uses the full
+    official LiteLLM image and proxy CLI so database migrations run and
+    authenticated catalog `pass_through_endpoints` remain available; no custom LiteLLM
+    code or plugin is installed.
+
+    With the service healthy, run the focused OpenAI SDK check from the
+    repository root. It tests managed routing, the catalog-to-inference
+    flow, and the complete pass-through contract:
+
+    ```bash
+    make test-litellm
+    ```
 
 === "Chainlit"
 
@@ -165,10 +232,11 @@ LangGraph persistence schemas before both API workers, while Chainlit's
 `pre_start` hook applies its independent UI migrations.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
-client uploads Plotly figure JSON to the configured `BUCKET_NAME`. Resuming a
-thread obtains a fresh signed object URL from that client. The central Files API
-uses only its separate `DEMO_API_FILES_BUCKET`, `DEMO_API_FILES_S3_ENDPOINT`,
-and `DEMO_API_FILES_AWS_*` settings. The two S3 configurations are independent.
+client uploads generated file elements to the configured `BUCKET_NAME`.
+Resuming a thread obtains a fresh signed object URL from that client. The
+central Files API uses only its separate `DEMO_API_FILES_BUCKET`,
+`DEMO_API_FILES_S3_ENDPOINT`, and `DEMO_API_FILES_AWS_*` settings. The two S3
+configurations are independent.
 
 The API workers share PostgreSQL for thread-scoped application data, durable
 checkpoints, and fail-fast interrupt coordination. Session-level

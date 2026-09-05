@@ -36,19 +36,24 @@ identifier as `metadata.session_id`.
 ```mermaid
 sequenceDiagram
   participant UI as Chainlit / Open WebUI
-  participant LGOS as LGOS /v1
+  participant LGOS as LGOS /v1/responses
   participant Agent as Agent and tools
   participant Store as AsyncPostgresStore
+  participant Files as OpenAI Files API
 
-  UI->>LGOS: messages + user + session_id
+  UI->>LGOS: input + display_file tool + user + session_id
   LGOS->>LGOS: validate settings and build request context
   LGOS->>Agent: messages + request context
   Agent->>Store: aget chart document
   alt update requested and values changed
     Agent->>Store: aput complete document once
   end
-  Agent-->>LGOS: semantic chart event + assistant text
-  LGOS-->>UI: OpenAI response or stream
+  Agent->>Files: upload Plotly JSON
+  Agent-->>LGOS: display_file(file_id, ...) function call
+  LGOS-->>UI: standard Response function_call item
+  UI->>Files: download Plotly JSON
+  UI->>LGOS: replay call + function_call_output
+  LGOS-->>UI: final answer
 ```
 
 For each request:
@@ -61,8 +66,18 @@ For each request:
    schema defaults without writing them.
 4. An update batches every requested assignment, validates the complete
    document, and calls `store.aput()` once only when a value changed.
-5. The tool publishes the resulting chart and returns the current values to the
-   model, which produces the ordinary assistant answer.
+5. When the request offers the client-owned `display_file` function, the tool
+   serializes the figure with Plotly, uploads the `.plotly.json` file through
+   the OpenAI Files API, and returns a deterministic function call containing
+   its `file_id` and `application/vnd.plotly.v1+json` media type.
+6. The UI downloads and persists the interactive chart with its native UI API, then
+   replays the complete function-call item followed by a small
+   `function_call_output`. The graph returns the final assistant answer.
+
+When `display_file` is unavailable or disabled by `tool_choice`, the graph
+skips rendering and upload and returns its text result. File transport is thus
+an advertised client capability, not a hidden requirement for reading or
+updating the stored values.
 
 For example, `Which quarter is highest?` reads without writing. `Set Q1 to 200
 and Q3 to 250` reads once and writes one updated document. The current tool
@@ -101,31 +116,28 @@ for the native namespace, key, and value model.
 
 ## UI Rendering
 
-Both tools emit a small, versioned `kind=chart` client event containing labels,
-series, titles, and presentation settings. The graph does not emit a serialized
-Plotly figure:
+The graph uses standard Responses function calls and the Files API. The file
+contains native Plotly figure JSON; the function arguments contain only its
+reference and display metadata. Each UI downloads the same file.
 
-- Chainlit converts the event to its native
-  [`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element;
-  see [Chainlit streaming and events](../chainlit.md#streaming-events-and-citations).
-- Open WebUI converts it to Plotly.js and sends its native persistent
-  [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds);
-  see [Open WebUI streaming and events](../open-webui.md#streaming-status-and-citations).
+Chainlit reconstructs the figure with `plotly.io.from_json` and persists a native
+[`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element.
+Open WebUI renders the JSON with browser-side `Plotly.newPlot` and persists the
+HTML through its native [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
+See the [Chainlit](../chainlit.md) and
+[Open WebUI](../open-webui.md) guides for rendering details.
+Those UI records are presentation snapshots; the Store remains the source of
+canonical revenue values.
 
-Those UI-native records are rendered copies, not replacements for the
-canonical Store document.
-
-Rich chart rendering requires a streaming request that opts into
-`metadata.langgraph_stream_events="v1"`. The assistant answer remains standard
-streamed OpenAI text. A non-streaming request still reads or updates the Store,
-but returns only the assistant answer.
+The small tool output acknowledges display only; it does not echo bytes or
+canonical revenue data into the model
+transcript. Both streaming and non-streaming Responses requests use the same
+function-call continuation contract.
 
 This boundary generalizes beyond charts:
 
 - Keep canonical application data in the graph's Store.
-- Inline a small, versioned semantic view when it is cheap to transport.
-- For a large or binary artifact, emit an opaque ID or authorized expiring URL
-  instead of the body.
+- Upload large or binary presentation files and pass their opaque Files API ID.
 - Let each UI persist its own rendered message or element.
 
 The UIs should not read LangGraph's PostgreSQL tables directly. Direct reads

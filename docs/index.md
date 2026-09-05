@@ -51,8 +51,8 @@ OpenAI-compatible `/v1` API.
 
     ---
 
-    Run the independent API, graphs, PostgreSQL, Chainlit, Open WebUI, and
-    Bifrost examples.
+    Run the independent API, graphs, PostgreSQL, Chainlit, Open WebUI, Files,
+    and selectable LiteLLM or Bifrost gateway.
 
     [:octicons-arrow-right-24: Demo capabilities](demo/index.md)
 
@@ -60,8 +60,8 @@ OpenAI-compatible `/v1` API.
 
     ---
 
-    Preserve metadata, discovery, tool calls, and streaming behavior through an
-    OpenAI-compatible proxy.
+    Preserve native Responses items, metadata, Files operations, and streaming
+    behavior through an OpenAI-compatible proxy.
 
     [:octicons-arrow-right-24: Proxy guide](how-to-guides/openai-proxies.md)
 

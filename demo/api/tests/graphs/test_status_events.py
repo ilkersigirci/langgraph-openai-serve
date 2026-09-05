@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import status_events
@@ -26,14 +27,10 @@ async def test_graph_streams_portable_status_updates(
         registry={"status-events": status_events.status_event_graph_config}
     )
 
+    graph_request, messages, _ = decode_responses_request(request)
+
     stream = [
-        item
-        async for item in run_langgraph_stream(
-            request.model,
-            request.messages,
-            registry,
-            request,
-        )
+        item async for item in run_langgraph_stream(graph_request, messages, registry)
     ]
     events = [_public_event(item) for item in stream if isinstance(item, dict)]
 

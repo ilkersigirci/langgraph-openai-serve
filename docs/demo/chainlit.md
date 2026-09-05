@@ -5,8 +5,17 @@ routes or change the server contract.
 
 The Chainlit project intentionally does not install or import the
 `langgraph-openai-serve` Python package. It demonstrates that a UI integration
-needs only the OpenAI wire contract. Its local declarations cover only the LGOS
-response extensions it consumes and link to their authoritative source files.
+needs only the OpenAI wire contract. Its local declarations cover only LGOS
+model metadata and link to their authoritative source files.
+
+!!! info "Select one first-class gateway"
+
+    Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
+    uses managed Responses; Bifrost uses native Responses. Files also use the
+    selected gateway's normal route. Pass-through is limited to catalog detail
+    so LGOS descriptions and settings survive gateway normalization. Chainlit
+    never connects directly to the LGOS or Files containers and remains
+    Responses-only.
 
 ## Run The UI
 
@@ -32,16 +41,22 @@ value before starting the UI; neither service reads the other's S3 settings.
 
 === "Local processes"
 
-    Start PostgreSQL and the API using
-    [Run the Demo API](api.md#start-postgresql-and-the-api).
+    Start the selected gateway and its API and Files dependencies from one
+    terminal:
 
-    Start the standalone Files service from a second terminal:
+    === "LiteLLM"
 
-    ```bash
-    make run-files-local
-    ```
+        ```bash
+        make run-litellm
+        ```
 
-    Then start Chainlit from a third terminal:
+    === "Bifrost"
+
+        ```bash
+        make run-bifrost
+        ```
+
+    Then start Chainlit from a second terminal:
 
     ```bash
     make run-chainlit-local
@@ -51,30 +66,41 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
-In direct mode, profile discovery reads each graph's description and features
-from the model list. In Bifrost mode, the catalog discovers providers and
-provider-qualified IDs, then one pass-through list request per provider supplies
-the native model metadata. Listing, retrieval, and chat use the same raw
-pass-through route and discovered `x-model-provider`; the adapter has no
-provider list. The demo API owns the descriptions and capabilities. Chainlit
-keeps ordinary chat available but marks a model as **Limited functionality**
-when an endpoint omits or strips them.
+With LiteLLM selected, profile discovery reads each graph's description and
+features from the `lgos-a` and `lgos-b` catalog pass-throughs, keeps the
+corresponding prefix, and sends the qualified model to managed
+`/v1/responses`. With Bifrost selected, aggregate discovery finds each
+provider, catalog detail uses `/openai_passthrough/v1` with
+`x-model-provider`, and inference uses native `/openai/v1/responses` with the
+same provider header. The demo API owns the descriptions and capabilities.
+Chainlit keeps the Responses model usable for plain text but marks it as
+**Limited functionality** when an endpoint omits or strips them.
+
+LiteLLM's managed `/v1/models` response contains only the standard model
+fields, so it is not the UI catalog. The pass-through base URL forwards
+`GET /models` and `GET /models/{model}` to LGOS unchanged; Chainlit therefore
+receives `GraphConfig.description`, features, and detailed client-settings
+schemas while all network traffic still terminates at LiteLLM.
+
+The gateway selector owns routing; users configure only the gateway type and
+optional root URL.
 
 ## File Attachments
 
 The UI uploads every file attached to the current user message through
 `client.files.create(..., purpose="user_data")`. It then replaces the attachment
-with the returned native Chat Completions `file_id`.
-`DEMO_CHAINLIT_OPENAI__FILES_BASE_URL` selects the Files endpoint independently
-of chat and catalog endpoints. In Bifrost mode, Files requests also use the fixed
-`DEMO_CHAINLIT_OPENAI__FILES_PROVIDER`; chat requests continue to use the
+with a native Responses `input_file` part containing the returned `file_id`.
+Files requests use the selected gateway's normal `/v1` route. Bifrost assigns
+them to its fixed `lgos-files` provider, while LiteLLM assigns them to its
+configured `litellm_proxy` Files provider. Responses continue to use the
 selected model provider. The demo therefore has one file namespace shared by
-both chat providers.
+both inference providers.
 
 The attachment button appears only for profiles that advertise `file_inputs`
 and accepts up to five files of 10 MiB each per message. Select
-`lgos-a/file-input` (or the `lgos-b` equivalent) to process an attachment with
-the dedicated demo graph. If a direct API caller sends a native file part to a
+`file-input` to process an attachment with the dedicated demo graph. Selecting
+Bifrost instead exposes `lgos-a/file-input` and its `lgos-b` equivalent.
+If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
 resolve its central ID.
 
@@ -92,7 +118,7 @@ resolve its central ID.
 Chainlit's native S3 persistence remains responsible for restoring UI elements.
 The OpenAI Files upload is the separate inference contract; the adapter does
 not wait for a Chainlit persistence URL or put one in `file_data`. See
-[Accept File Inputs](../how-to-guides/file-inputs.md).
+[Accept And Display Files](../how-to-guides/file-inputs.md).
 
 ## Runtime Settings
 
@@ -104,7 +130,7 @@ After a profile is selected, Chainlit:
 3. Restores saved values that still match the supported widget type or choice.
 4. Compares the selected values with the advertised defaults.
 5. Sends changed values as JSON text in
-   `metadata.langgraph_runtime_settings` on every completion.
+   `metadata.langgraph_runtime_settings` on every Responses request.
 
 Booleans become switches, inline string enums become selects, and strings
 become text inputs. Other schema shapes are not rendered. The adapter checks
@@ -114,7 +140,6 @@ authority. If the required LGOS model extension is unavailable, Chainlit hides
 the controls, uses server defaults, and shows a transient **Limited
 functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
-Standard Chat Completions remain available.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
 
@@ -122,10 +147,10 @@ Standard Chat Completions remain available.
 Chainlit controls.*
 
 The same panel includes a Chainlit-owned **Stream response** switch for every
-profile. It defaults to enabled and controls the standard Chat Completions
-`stream` parameter; it is not included in `langgraph_runtime_settings`. With
+profile. It defaults to enabled and selects `responses.stream` or
+`responses.create`; it is not included in `langgraph_runtime_settings`. With
 streaming disabled, Chainlit waits for the complete response and sends the
-answer once. Transient client events remain streaming-only.
+answer once.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
@@ -137,7 +162,7 @@ request that needs them. The underlying contract is documented in
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
-`metadata.session_id` on every completion, allowing Langfuse to group the
+`metadata.session_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat
@@ -188,7 +213,7 @@ custom response field.*
 
 !!! note "Reconnect recovery and its boundary"
 
-    The adapter stores the exact assistant tool-call batch on the same
+    The adapter stores the exact Responses function-call batch on the same
     model-context-excluded Chainlit message that displays the current prompt.
     Its
     [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
@@ -212,51 +237,57 @@ custom response field.*
 
 ## Streaming, Events, And Citations
 
-Clicking **Stop** closes the OpenAI stream. Partial assistant text remains
-visible but is excluded from later model context because it is incomplete.
+Both bundled Chainlit clients use OpenAI Responses. In the general client's
+streaming mode, the SDK stream manager owns event accumulation and supplies
+the terminal `Response`; the adapter streams
+answer text into the assistant message. Messages without the optional `phase`
+field are also treated as answers. It maps completed
+`phase="commentary"` items to a native
+[`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist), completing
+each prior task when the next status arrives and completing the list when the
+full response succeeds. Clicking **Stop** marks the active task as failed and
+closes the Responses stream; incomplete assistant text remains visible but is
+excluded from later model context. Both streaming and non-streaming requests
+require a completed Response before displaying files or accepting a successful
+turn. Failed interrupt resumes leave the saved pending ledger intact.
+
+Transcript replay labels assistant answers as `final_answer` and preserves
+explicit phase values, following OpenAI's
+[assistant phase guidance](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter).
+
+The persistent plot graph returns a standard `display_file` function call.
+Chainlit downloads the Plotly JSON through the OpenAI Files API, reconstructs
+the figure with `plotly.io.from_json`, and persists a native
+[`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element with
+interactive hover, zoom, and legend controls. It returns the matching
+`function_call_output` before requesting the final answer. Image files still
+use the native `Image` element.
+Each continuation retains the original input, including instructions and file
+references, then appends the complete Response output and matching tool results.
+Streaming and non-streaming modes retain final-answer text from every call in
+that exchange and exclude commentary from the answer.
+The official data layer stores the element in the configured S3-compatible
+bucket, so it returns with the thread.
 
 The UI renders Markdown links, images, and inline citation markers from
-assistant content. It does not consume structured OpenAI citation annotations.
-The bundled adapter opts into LGOS client stream events only when model
-retrieval advertises `client_events`. Portable status updates render as a
-native Chainlit
-[`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist). Other
-events render as one live-updating Chainlit
-[custom element](https://docs.chainlit.io/api-reference/elements/custom) per
-completion. The panel shows event type, namespace, progress, and artifact
-details, with a JSON fallback for other payload shapes. Its host message is
-excluded from model context. A versioned `kind=chart` artifact instead renders
-with Chainlit's native
-[`Plotly`](https://docs.chainlit.io/api-reference/elements/plotly) element.
-The adapter builds the Plotly figure from the event's small semantic payload;
-the graph does not stream Plotly JSON. The official data layer stores the
-element metadata in PostgreSQL and figure JSON in the configured S3-compatible
-bucket, allowing the native chart to return with the thread. The packaged
-botocore configuration uses Signature V4 and path-style addressing for
-S3-compatible endpoints. Unknown extension versions are ignored.
-
-Status task lists are live UI state and are not restored from persisted chat
-history. Shared prompts and graph behavior are documented under
+assistant content. Shared prompts and graph behavior are documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
 [Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it). A schema-normalizing proxy
-may strip capability metadata and event-only chunks; see
-[proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
+must preserve standard Responses items and events.
 
 ## Settings Reference
 
-LGOS endpoint settings:
+Gateway settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `DEMO_CHAINLIT_OPENAI__BASE_URL` | `http://localhost:3004/v1` | Endpoint used for retrieval and inference. Direct mode also lists from it. |
-| `DEMO_CHAINLIT_OPENAI__CATALOG_BASE_URL` | unset | Optional Bifrost model catalog endpoint; setting it enables provider-qualified pass-through routing. |
-| `DEMO_CHAINLIT_OPENAI__FILES_BASE_URL` | `http://localhost:3006/v1` | Files API endpoint, configured independently from the graph API. |
-| `DEMO_CHAINLIT_OPENAI__FILES_PROVIDER` | unset | Bifrost provider dedicated to normalized Files operations. Required for attachments in Bifrost mode. |
-| `DEMO_CHAINLIT_OPENAI__API_KEY` | `DUMMY` | OpenAI API or gateway key. |
+| `OPENAI_GATEWAY_TYPE` | `litellm` | Gateway used by both demo UIs: `litellm` or `bifrost`. |
+| `DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL` | selected local gateway | Optional gateway-root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost. |
+| `DEMO_CHAINLIT_OPENAI__API_KEY` | `sk-lgos-litellm-demo` | Gateway key; replace the demo value outside local use. |
 | `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login: `mock` or `oauth`. |
-| `CHAINLIT_UTILS_MIGRATIONS_TABLE` | `_lgos_chainlit_schema_migrations` | Migration ledger retained for existing demo databases. |
+| `CHAINLIT_UTILS_MIGRATIONS_TABLE` | `_lgos_chainlit_schema_migrations` | Chainlit-utils schema migration ledger. |
 | `CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY` | `lgos_chainlit.exclude_from_model_context` | Persisted metadata key for UI-only messages. |
 
 See the bundled [Bifrost gateway](bifrost.md) for the Compose endpoint and
@@ -299,8 +330,8 @@ when updating it because the PostgreSQL schema is release-specific.
   user isolation.
 - Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
-- Configure session affinity for multiple UI workers. The demo keeps user file
-  uploads disabled but requires object storage for native Plotly persistence.
+- Configure session affinity for multiple UI workers and object storage for
+  native file and chart persistence. File-capable profiles enable attachments.
 - Run `lgos-chainlit-setup` before starting or replacing workers.
 
 See Chainlit's documentation for

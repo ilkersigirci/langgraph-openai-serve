@@ -1,16 +1,13 @@
 """
-Tie LangGraph stream production to a FastAPI request's lifetime.
+Tie OpenAI stream production to a FastAPI request's lifetime.
 
 Starlette owns response consumption, not the nested graph producer, so a client
-disconnect may leave graph and provider work running. The request dependency
-creates a ``_StreamOwner``; the route passes ``start()``'s receive stream to
-``StreamingResponse``, and dependency cleanup cancels the producer and releases
-its ``GraphRun``.
+disconnect may otherwise leave graph and provider work running. Chat and
+Responses use this shared request owner with separate protocol generators.
 
-AnyIO still provides the channel and cleanup shield, but its task-group level
-cancellation can repeatedly interrupt LangGraph's asyncio-native teardown. The
-producer therefore remains an ``asyncio.Task`` so cancellation is delivered once
-at the stream boundary.
+AnyIO provides the backpressured channel and cleanup shield. The producer stays
+an ``asyncio.Task`` so cancellation reaches LangGraph's asyncio-native teardown
+once at the stream boundary.
 """
 
 import asyncio
@@ -60,7 +57,7 @@ class _StreamOwner:
         self._run = run
         self._send_stream = send_stream
         self._receive_stream = receive_stream
-        self._producer = asyncio.create_task(produce(), name="chat-completion-stream")
+        self._producer = asyncio.create_task(produce(), name="openai-response-stream")
         return receive_stream
 
     async def aclose(self) -> None:
@@ -111,7 +108,7 @@ class _StreamOwner:
         except Exception:
             if primary_error is None:
                 raise
-            logger.exception("chat_completion.stream_cleanup_failed")
+            logger.exception("openai.stream_cleanup_failed")
 
     def _reset(self) -> None:
         if self._send_stream is not None:
@@ -122,3 +119,6 @@ class _StreamOwner:
         self._run = None
         self._send_stream = None
         self._receive_stream = None
+
+
+__all__ = ["_StreamOwner"]

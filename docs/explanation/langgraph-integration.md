@@ -1,7 +1,7 @@
 # LangGraph Integration
 
 A registered graph name becomes the OpenAI `model` value clients pass to
-`/v1/chat/completions`.
+`/v1/responses` or `/v1/chat/completions`.
 
 ## Registration
 
@@ -115,14 +115,14 @@ durable.
     `AIMessageChunk` values from configured streamable nodes become text chunks;
     the list may include nodes in nested subgraphs. Returning a message through
     the graph's `messages` state is not a live-streaming signal.
-    The chat service immediately maps explicitly public `client_event()` and
-    `status_event()` values into namespaced chunks when the request opts into v1
-    events. The final root value supplies durable citations, tool calls, and
-    provider-reported usage. After execution quiesces, it reads durable pending
-    state and renders a complete interrupt batch when present. Unknown custom
-    events stay private.
+    The protocol adapter maps explicitly public `status_event()` values to
+    standard Responses commentary messages, or to namespaced Chat chunks for a
+    direct Chat client that opts into v1 events. The final root value supplies
+    durable citations, tool calls, and provider-reported usage. After execution
+    quiesces, it reads durable pending state and renders a complete interrupt
+    batch when present. Unknown custom events stay private.
 
-Internal model calls that must not reach `delta.content` use LangGraph's native
+Internal model calls that must not reach the assistant text stream use LangGraph's native
 `nostream` tag. `streamable_node_names` selects calls whose text is intended for
 the OpenAI assistant stream; the tag selects calls within those nodes. Graph
 authors must follow the
@@ -168,14 +168,31 @@ application context to describe the long-running work in user-facing language.
 
 See [Custom Graphs](../tutorials/custom-graphs.md) for runnable examples.
 
+### Direct Runner Calls
+
+Python callers use `run_langgraph(request, messages, registry)` or
+`run_langgraph_stream(request, messages, registry)` from
+`langgraph_openai_serve.graph.runner`. Both accept a protocol-neutral
+`GraphRequest` and a list of LangChain `BaseMessage` values. HTTP request decoding
+belongs to the corresponding API adapter; the graph runner imports neither API's
+request types.
+
+When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
+Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation
+and every resume. The helpers delegate to the same `prepare_run()`, `invoke_run()`,
+and `stream_run()` used by both HTTP routes.
+
+The demo's `api/notebooks/graph_runner.py` compares direct execution with
+Responses SDK calls. Open it with `make -C demo marimo-local`.
+
 ## Request Cancellation
 
-For streaming chat completions (`stream=true`), LGOS ties graph iteration to the
-HTTP response lifetime. A request-scoped FastAPI dependency owns the producer
-task and memory channel behind `StreamingResponse`. When the client disconnects,
-dependency cleanup cancels and awaits that producer, then closes the graph
-iterator. This uses the normal OpenAI streaming connection; LGOS adds no custom
-cancellation route, header, or SSE event.
+For streaming Responses and Chat Completions (`stream=true`), LGOS ties graph
+iteration to the HTTP response lifetime. A request-scoped FastAPI dependency
+owns the producer task and memory channel behind `StreamingResponse`. When the
+client disconnects, dependency cleanup cancels and awaits that producer, then
+closes the graph iterator. This uses the normal OpenAI streaming connection;
+LGOS adds no custom cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"
 

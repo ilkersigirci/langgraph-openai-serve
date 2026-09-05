@@ -9,15 +9,10 @@ from typing import Any, cast
 from anyio import CancelScope
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
-from langchain_core.messages import UsageMetadata
+from langchain_core.messages import BaseMessage, UsageMetadata
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionRequestMessage,
-)
-from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
 from langgraph_openai_serve.core.logging import (
     bind_log_context,
     get_log_context,
@@ -30,11 +25,12 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import state as interrupt_state
+from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
-from langgraph_openai_serve.utils.message import convert_to_lc_messages
 
 logger = get_logger(__name__)
-_RUN_NAME = "lgos.chat_completion"
+_RUN_NAME = "lgos.graph_run"
 _SESSION_ID_METADATA_KEY = "session_id"
 _LANGFUSE_SESSION_ID_METADATA_KEY = "langfuse_session_id"
 
@@ -78,24 +74,22 @@ class GraphRun:
         )
 
 
-async def prepare_run(  # ruff: ignore[too-many-locals]
-    model: str,
-    messages: list[ChatCompletionRequestMessage],
+async def prepare_run(
+    request: GraphRequest,
+    messages: list[BaseMessage],
     graph_registry: GraphRegistry,
-    request: ChatCompletionRequest | None,
     *,
+    resume: InterruptResume | None = None,
     checkpoint_scope: str = "default",
 ) -> GraphRun:
     """Prepare a graph run."""
-    graph_config = graph_registry.get_graph(model)
+    graph_config = graph_registry.get_graph(request.model)
 
-    request = request or ChatCompletionRequest(model=model, messages=messages)
     graph = await graph_config.resolve_graph()
     usage_callback = UsageMetadataCallbackHandler()
 
     if not graph_config.supports(GraphFeature.INTERRUPTS):
-        lc_messages = convert_to_lc_messages(messages)
-        inputs = await graph_config.build_input(request, lc_messages)
+        inputs = await graph_config.build_input(request, messages)
         context = await graph_config.build_context(request, graph)
         runnable_config = build_runnable_config(
             graph_config.runtime_callbacks,
@@ -112,12 +106,11 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             usage_callback=usage_callback,
         )
 
-    resume = parse_resume_request(messages)
     requested_run_id = interrupt_state.get_run_id(request)
     run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
     bind_log_context(operation_id=run_id)
     checkpoint_thread_id = interrupt_state.checkpoint_key(
-        model,
+        request.model,
         run_id,
         scope=interrupt_state.normalize_checkpoint_scope(checkpoint_scope),
     )
@@ -141,6 +134,7 @@ async def prepare_run(  # ruff: ignore[too-many-locals]
             request,
             snapshot,
             resume,
+            messages=messages,
         )
         context = (
             await graph_config.build_context(request, graph) if should_execute else None
@@ -238,14 +232,14 @@ def _extend_callbacks(
 
 
 def _runnable_metadata(
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     run_id: str | None = None,
 ) -> dict[str, str]:
     """Build correlation metadata for callbacks and tracing."""
     metadata = {
         "lgos.model": request.model,
     }
-    session_id = (request.metadata or {}).get(_SESSION_ID_METADATA_KEY)
+    session_id = request.metadata.get(_SESSION_ID_METADATA_KEY)
     if session_id:
         metadata[_LANGFUSE_SESSION_ID_METADATA_KEY] = session_id
     request_id = get_log_context().get("request_id")

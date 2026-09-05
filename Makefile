@@ -7,7 +7,7 @@ PRECOMMIT_FILE_PATHS=$(PACKAGE)/__init__.py
 DEMO_DIR=demo
 
 .PHONY: help install test test-demo test-demo-local check-demo clean build-sdist build-wheel publish pre-commit format lint
-.PHONY: test-bifrost
+.PHONY: test-direct-responses test-bifrost test-litellm
 .DEFAULT_GOAL=help
 
 help:
@@ -63,13 +63,45 @@ test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
 
-test-bifrost: DEMO_TEST_BIFROST_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
+test-direct-responses: DEMO_TEST_DIRECT_BASE_URLS ?= http://localhost:3004/v1,http://localhost:3005/v1
+test-direct-responses: DEMO_TEST_FILES_BASE_URL ?= http://localhost:3006/v1
+test-direct-responses: ## Run the optional live direct Responses integration tests
+	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_DIRECT_BASE_URLS) \
+		DEMO_TEST_FILES_BASE_URL=$(DEMO_TEST_FILES_BASE_URL) \
+		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
+		pytest -m integration tests/integration/test_direct_responses.py
+
+test-bifrost: DEMO_TEST_BIFROST_BASE_URL ?= http://localhost:3000/openai/v1
 test-bifrost: DEMO_TEST_BIFROST_CATALOG_BASE_URL ?= http://localhost:3000/v1
-test-bifrost: ## Run the optional Bifrost proxy integration test
+test-bifrost: DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL ?= http://localhost:3000/openai_passthrough/v1
+test-bifrost: ## Run the Bifrost normalized and pass-through integration tests
 	DEMO_TEST_BIFROST_BASE_URL=$(DEMO_TEST_BIFROST_BASE_URL) \
 		DEMO_TEST_BIFROST_CATALOG_BASE_URL=$(DEMO_TEST_BIFROST_CATALOG_BASE_URL) \
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
 		pytest -m integration tests/integration/test_bifrost_proxy.py
+	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL) \
+		DEMO_TEST_FILES_BASE_URL=$(DEMO_TEST_BIFROST_CATALOG_BASE_URL) \
+		DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a \
+		DEMO_TEST_FILES_PROVIDER=lgos-files \
+		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
+		pytest -m integration tests/integration/test_direct_responses.py
+
+test-litellm: DEMO_TEST_LITELLM_BASE_URL ?= http://localhost:3007/v1
+test-litellm: DEMO_TEST_LITELLM_CATALOG_BASE_URL ?= http://localhost:3007/v1
+test-litellm: DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS ?= http://localhost:3007/v1/lgos-a,http://localhost:3007/v1/lgos-b
+test-litellm: DEMO_TEST_LITELLM_FILES_BASE_URL ?= http://localhost:3007/v1/lgos-files
+test-litellm: DEMO_TEST_LITELLM_API_KEY ?= sk-lgos-litellm-demo
+test-litellm: ## Run LiteLLM managed-routing and catalog pass-through integration tests
+	DEMO_TEST_LITELLM_BASE_URL=$(DEMO_TEST_LITELLM_BASE_URL) \
+		DEMO_TEST_LITELLM_CATALOG_BASE_URL=$(DEMO_TEST_LITELLM_CATALOG_BASE_URL) \
+		DEMO_TEST_LITELLM_API_KEY=$(DEMO_TEST_LITELLM_API_KEY) \
+		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
+		pytest -m integration tests/integration/test_litellm_proxy.py
+	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS) \
+		DEMO_TEST_FILES_BASE_URL=$(DEMO_TEST_LITELLM_FILES_BASE_URL) \
+		DEMO_TEST_OPENAI_API_KEY=$(DEMO_TEST_LITELLM_API_KEY) \
+		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
+		pytest -m integration tests/integration/test_direct_responses.py
 
 test-demo: ## Test all demo projects against their locked dependencies
 	$(MAKE) -C $(DEMO_DIR) test

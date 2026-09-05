@@ -13,6 +13,7 @@ CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERIC_FUNCTION_ID = "generic"
 WORKSPACE_MODEL_PREFIX = "lgos."
+USERVALVES_MODEL_ID = "lgos.uservalves_simple"
 OPENWEBUI_MODEL_ID_MAX_LENGTH = 256
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 PUBLIC_READ_GRANT = {
@@ -22,9 +23,8 @@ PUBLIC_READ_GRANT = {
 }
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "langgraph_openai_serve model metadata. Runtime settings, file inputs, client "
-    "events, and interrupts may be unavailable. Configure the proxy to pass LGOS "
-    "/v1 requests and responses through unchanged."
+    "langgraph_openai_serve model metadata. Runtime settings, file inputs, and "
+    "interrupt profile checks may be unavailable."
 )
 
 
@@ -93,34 +93,69 @@ def _chat_variable_fields(
 
 def discover_workspace_model_specs(
     catalog_client: OpenAI,
-    passthrough_client: OpenAI,
+    catalog_detail_client: OpenAI,
+    *,
+    provider_routing: bool,
+    model_prefixes: tuple[str, ...] = (),
 ) -> tuple[WorkspaceModelSpec, ...]:
-    """Build Workspace Models from Bifrost catalog and pass-through metadata."""
+    """Build Workspace Models from the configured OpenAI model endpoints."""
     specs = []
-    for model_id in _list_model_ids(catalog_client):
-        try:
-            model = passthrough_client.models.retrieve(**_model_request(model_id))
-        except OpenAIError:
-            model = None
-        extension = _model_extension(model)
-        fields = _chat_variable_fields(extension)
-        specs.append(
-            WorkspaceModelSpec(
-                id=model_id,
-                fields=fields or (),
-                description=(
-                    extension["description"].strip() if extension is not None else None
-                ),
-                supports_file_inputs=(
-                    extension is not None
-                    and FILE_INPUTS_FEATURE in extension["features"]
+    catalogs = (
+        tuple(
+            (
+                model_prefix,
+                catalog_client.with_options(
+                    base_url=_catalog_base_url(
+                        str(catalog_client.base_url), model_prefix
+                    )
                 ),
             )
+            for model_prefix in model_prefixes
         )
+        if model_prefixes
+        else ((None, catalog_client),)
+    )
+    for model_prefix, current_catalog_client in catalogs:
+        for catalog_model_id in _list_model_ids(current_catalog_client):
+            model_id = (
+                f"{model_prefix}/{catalog_model_id}"
+                if model_prefix is not None
+                else catalog_model_id
+            )
+            try:
+                if model_prefix is not None:
+                    model = current_catalog_client.models.retrieve(
+                        model=catalog_model_id
+                    )
+                else:
+                    model = catalog_detail_client.models.retrieve(
+                        **_model_request(model_id, provider_routing=provider_routing)
+                    )
+            except OpenAIError:
+                model = None
+            extension = _model_extension(model)
+            fields = _chat_variable_fields(extension)
+            specs.append(
+                WorkspaceModelSpec(
+                    id=model_id,
+                    fields=fields or (),
+                    description=(
+                        extension["description"].strip()
+                        if extension is not None
+                        else None
+                    ),
+                    supports_file_inputs=(
+                        extension is not None
+                        and FILE_INPUTS_FEATURE in extension["features"]
+                    ),
+                )
+            )
     return tuple(sorted(specs, key=lambda spec: spec.id))
 
 
-def _list_model_ids(client: OpenAI) -> list[str]:
+def _list_model_ids(
+    client: OpenAI,
+) -> list[str]:
     return [
         model.id
         for model in client.models.list().data
@@ -128,7 +163,14 @@ def _list_model_ids(client: OpenAI) -> list[str]:
     ]
 
 
-def _model_request(model_id: str) -> dict[str, Any]:
+def _model_request(model_id: str, *, provider_routing: bool) -> dict[str, Any]:
+    if not model_id:
+        msg = "OpenAI model ID is missing."
+        raise ValueError(msg)
+    if not provider_routing:
+        msg = "Gateway model routing is not configured."
+        raise ValueError(msg)
+
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
         msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
@@ -138,6 +180,10 @@ def _model_request(model_id: str) -> dict[str, Any]:
         "model": upstream_model,
         "extra_headers": {"x-model-provider": provider},
     }
+
+
+def _catalog_base_url(catalog_root: str, model_prefix: str) -> str:
+    return f"{catalog_root.rstrip('/')}/{model_prefix}"
 
 
 def sync_workspace_models(
@@ -158,7 +204,6 @@ def sync_workspace_models(
         for model in workspace_models
         if isinstance(model, dict) and isinstance(model.get("id"), str)
     }
-    desired_workspace_model_ids = {spec.workspace_model_id for spec in specs}
     desired_base_model_ids = {spec.base_model_id for spec in specs}
     generated_workspace_model_ids = {
         model["id"]
@@ -181,11 +226,27 @@ def sync_workspace_models(
     payloads = []
     for spec in specs:
         payloads.append(_hidden_base_model_payload(spec))
-        workspace_model = _workspace_model_payload(spec)
+        payloads.append(_workspace_model_payload(spec))
+        if spec.id == "lgos-a/simple-graph" and not spec.limited:
+            simple_model = _workspace_model_payload(spec)
+            simple_model.update(
+                id=USERVALVES_MODEL_ID,
+                name="UserValves Simple / simple-graph",
+            )
+            simple_model["meta"].update(
+                description="Static per-user history and audience settings.",
+                chat_variables_schema={"fields": []},
+                filterIds=["uservalves_simple"],
+            )
+            payloads.append(simple_model)
+
+    desired_workspace_model_ids = {
+        model["id"] for model in payloads if model["base_model_id"] is not None
+    }
+    for workspace_model in payloads:
         # Open WebUI preserves existing grants when imports omit this field.
-        if spec.workspace_model_id not in existing_model_ids:
+        if workspace_model["id"] not in existing_model_ids:
             workspace_model["access_grants"] = [PUBLIC_READ_GRANT]
-        payloads.append(workspace_model)
 
     if payloads:
         client.post(

@@ -1,6 +1,6 @@
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler, UsageMetadataCallbackHandler
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
 
@@ -87,13 +87,10 @@ async def test_enabled_langfuse_is_added_to_graph_run(
             "messages": graph_config,
         },
     )
-    chat_request = make_request("messages")
+    request = make_request("messages")
 
     invocation = await run_langgraph(
-        "messages",
-        chat_request.messages,
-        graph_registry,
-        chat_request,
+        request, [HumanMessage(content="question")], graph_registry
     )
 
     assert invocation.output.text == "hello"
@@ -126,10 +123,9 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
     )
 
     run = await prepare_run(
-        "interruptible",
-        request.messages,
-        graph_registry,
         request,
+        [HumanMessage(content="question")],
+        graph_registry,
     )
     try:
         assert run.runnable_config is not None
@@ -138,7 +134,7 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
             run.runnable_config["callbacks"][1],
             UsageMetadataCallbackHandler,
         )
-        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["run_name"] == "lgos.graph_run"
         assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
         assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
         assert (
@@ -169,12 +165,7 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
         metadata={"session_id": "conversation-123"},
     )
 
-    await run_langgraph(
-        "interruptible",
-        request.messages,
-        graph_registry,
-        request,
-    )
+    await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
 
     assert recording_callback.root_metadata
     metadata = recording_callback.root_metadata[0]
@@ -206,17 +197,16 @@ async def test_runnable_config_contains_request_correlation_metadata(
 
     try:
         run = await prepare_run(
-            "messages",
-            request.messages,
-            graph_registry,
             request,
+            [HumanMessage(content="question")],
+            graph_registry,
         )
     finally:
         reset_log_context(token)
 
     try:
         assert run.runnable_config is not None
-        assert run.runnable_config["run_name"] == "lgos.chat_completion"
+        assert run.runnable_config["run_name"] == "lgos.graph_run"
         assert run.runnable_config["metadata"] == {
             "lgos.model": "messages",
             "lgos.request_id": "request-123",
@@ -250,10 +240,9 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
     try:
         with pytest.raises(RuntimeError, match=error_message):
             await prepare_run(
-                "interruptible",
-                request.messages,
-                graph_registry,
                 request,
+                [HumanMessage(content="question")],
+                graph_registry,
             )
 
         assert get_log_context()["operation_id"]
@@ -273,7 +262,7 @@ async def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
 
 
 async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
-    chat_request = make_request("missing")
+    request = make_request("missing")
     graph_registry = GraphRegistry(
         registry={
             "known": GraphConfig(
@@ -284,12 +273,7 @@ async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
     )
 
     with pytest.raises(GraphNotFoundError, match="Graph 'missing' not found"):
-        await run_langgraph(
-            "missing",
-            chat_request.messages,
-            graph_registry,
-            chat_request,
-        )
+        await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
 
 
 async def test_invoke_run_ignores_generic_custom_events() -> None:

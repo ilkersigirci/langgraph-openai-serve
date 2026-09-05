@@ -27,7 +27,8 @@ def _(mo):
 @app.cell
 def _():
     from langgraph_openai_serve import GraphRegistry
-    from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+    from langgraph_openai_serve.api.responses.request import decode_responses_request
+    from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
     from langgraph_openai_serve.graph.runner import (
         run_langgraph,
         run_langgraph_stream,
@@ -36,9 +37,10 @@ def _():
     from lgos_demo_api.graphs.citations import citation_graph_config
 
     MODEL = "citation-events"
-    request = ChatCompletionRequest(
+    request = ResponseCreateRequest(
         model=MODEL,
-        messages=[{"role": "user", "content": "Show me a cited answer."}],
+        input="Show me a cited answer.",
+        store=False,
     )
     request_options = request.model_dump(
         mode="json",
@@ -57,6 +59,7 @@ def _():
     return (
         MODEL,
         check_parity,
+        decode_responses_request,
         graph_registry,
         request,
         request_options,
@@ -75,26 +78,21 @@ def _(mo):
 
 @app.cell
 async def _(
-    MODEL,
+    decode_responses_request,
     check_parity,
     graph_registry,
     request,
     run_langgraph,
     run_langgraph_stream,
 ):
-    _complete = await run_langgraph(
-        MODEL,
-        request.messages,
-        graph_registry,
-        request,
-    )
+    _request, _messages, _ = decode_responses_request(request)
+    _complete = await run_langgraph(_request, _messages, graph_registry)
     _events = [
         event
         async for event in run_langgraph_stream(
-            MODEL,
-            request.messages,
+            _request,
+            _messages,
             graph_registry,
-            request,
         )
     ]
 
@@ -123,20 +121,20 @@ async def _(check_parity, request_options):
         base_url="http://localhost:3004/v1",
         api_key="DUMMY",
     ) as _client:
-        _complete = await _client.chat.completions.create(**request_options)
-        _stream = await _client.chat.completions.create(
+        _complete = await _client.responses.create(**request_options)
+        _stream = await _client.responses.create(
             **request_options,
             stream=True,
         )
         _streamed_text = "".join(
             [
-                chunk.choices[0].delta.content or ""
-                async for chunk in _stream
-                if chunk.choices
+                event.delta
+                async for event in _stream
+                if event.type == "response.output_text.delta"
             ]
         )
 
-    openai_text = _complete.choices[0].message.content or ""
+    openai_text = _complete.output_text
     openai_result = check_parity("OpenAI client", openai_text, _streamed_text)
     return openai_result, openai_text
 

@@ -12,8 +12,7 @@ from pydantic import (
     ValidationError,
 )
 
-from langgraph_openai_serve import ClientSettings, GraphConfig
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
 from langgraph_openai_serve.graph.client_settings import (
     RUNTIME_SETTINGS_METADATA_KEY,
     ClientSettingsValidationError,
@@ -56,13 +55,15 @@ def make_context_graph(context_schema):
 def make_request(
     *,
     settings: str | None = None,
-) -> ChatCompletionRequest:
-    return ChatCompletionRequest(
+    user: str | None = None,
+) -> GraphRequest:
+    return GraphRequest(
         model="test",
-        messages=[{"role": "user", "content": "Hello"}],
-        metadata=(
-            {RUNTIME_SETTINGS_METADATA_KEY: settings} if settings is not None else None
-        ),
+        metadata={RUNTIME_SETTINGS_METADATA_KEY: settings} if settings else {},
+        user=user,
+        tools=(),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
 
 
@@ -220,8 +221,7 @@ async def test_context_factory_composes_public_and_server_context() -> None:
         client_settings=PublicSettings,
         context_factory=context_factory,
     )
-    request = make_request(settings='{"enabled":false}')
-    request.user = "alice"
+    request = make_request(settings='{"enabled":false}', user="alice")
 
     context = await graph_config.build_context(request, graph)
 

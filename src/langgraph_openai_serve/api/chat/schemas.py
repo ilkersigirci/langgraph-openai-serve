@@ -5,30 +5,23 @@ This module defines Pydantic models that match the OpenAI API request and respon
 """
 
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from openai.types.chat import ChatCompletionContentPartParam
 from openai.types.chat.chat_completion_message import Annotation
 from pydantic import (
     BaseModel,
     Field,
-    StringConstraints,
+    JsonValue,
     ValidationError,
     model_validator,
 )
 
-OPENAI_METADATA_MAX_PAIRS = 16
-OPENAI_METADATA_KEY_MAX_LENGTH = 64
-OPENAI_METADATA_VALUE_MAX_LENGTH = 512
-
-MetadataKey = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=OPENAI_METADATA_KEY_MAX_LENGTH),
-]
-MetadataValue = Annotated[
-    str,
-    StringConstraints(max_length=OPENAI_METADATA_VALUE_MAX_LENGTH),
-]
+from langgraph_openai_serve.api.metadata import (
+    OPENAI_METADATA_MAX_PAIRS,
+    MetadataKey,
+    MetadataValue,
+)
 
 
 def _reject_legacy_fields(
@@ -111,7 +104,8 @@ class FunctionDefinition(BaseModel):
 
     name: str
     description: str | None = None
-    parameters: dict[str, Any] | None = None
+    parameters: dict[str, JsonValue] | None = None
+    strict: bool | None = None
 
 
 class ToolFunction(BaseModel):
@@ -125,6 +119,22 @@ class Tool(BaseModel):
 
     type: Literal["function"] = "function"
     function: FunctionDefinition
+
+
+class NamedToolChoiceFunction(BaseModel):
+    """Function selected by a named Chat Completions tool choice."""
+
+    name: str
+
+
+class NamedToolChoice(BaseModel):
+    """Named function tool choice accepted by Chat Completions."""
+
+    type: Literal["function"] = "function"
+    function: NamedToolChoiceFunction
+
+
+ChatToolChoice = Literal["none", "auto", "required"] | NamedToolChoice
 
 
 class ChatCompletionRequest(BaseModel):
@@ -144,7 +154,8 @@ class ChatCompletionRequest(BaseModel):
     logit_bias: dict[str, float] | None = None
     user: str | None = None
     tools: list[Tool] | None = None
-    tool_choice: Any | None = None
+    tool_choice: ChatToolChoice | None = None
+    parallel_tool_calls: bool | None = None
     metadata: dict[MetadataKey, MetadataValue] | None = Field(
         default=None,
         max_length=OPENAI_METADATA_MAX_PAIRS,
