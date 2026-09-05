@@ -28,7 +28,6 @@ from lgos_chainlit.utils.files import (
     with_response_file_parts,
 )
 from lgos_chainlit.utils.responses import (
-    DISPLAY_FILE_TOOL,
     CommentaryTaskList,
     continuation_input,
     display_file,
@@ -36,6 +35,7 @@ from lgos_chainlit.utils.responses import (
     function_calls,
     raise_for_response,
     response_input,
+    response_tools,
 )
 
 register_auth_callback()
@@ -125,7 +125,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     extra_headers=extra_headers,
                     input=cast("ResponseInputParam", input_items),
                     store=False,
-                    tools=[DISPLAY_FILE_TOOL],
+                    tools=response_tools(upstream_model),
                     user=user,
                     metadata=metadata,
                 )
@@ -178,7 +178,7 @@ async def _stream_response(
         extra_headers=extra_headers,
         input=cast("ResponseInputParam", input_items),
         store=False,
-        tools=[DISPLAY_FILE_TOOL],
+        tools=response_tools(model),
         user=user,
         metadata=metadata,
     ) as stream:

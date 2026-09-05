@@ -39,6 +39,7 @@ class GraphRequest:
     tools: tuple[ClientFunctionTool, ...]
     tool_choice: ClientToolChoice | None
     parallel_tool_calls: bool | None
+    hosted_tools: tuple[str, ...] = ()
 
 
 __all__ = [

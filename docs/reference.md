@@ -29,7 +29,7 @@ support tools and interrupts.
 
 LGOS does not persist Responses. Omitted `store` and `store=false` are accepted;
 `store=true`, `previous_response_id`, `conversation`, and background mode are
-rejected. The route also rejects hosted tools, structured output, image/audio
+rejected. The route also rejects OpenAI-hosted tools, structured output, image/audio
 input, URL or inline file input, result-content lists, reasoning and generation
 controls, `include`, stream options, service tiers, reusable prompts,
 prompt-cache controls, and truncation. Unknown fields are not silently ignored.
@@ -87,6 +87,8 @@ belong to an external OpenAI Files API, not the LGOS package. See
   adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior or
   advertise a graph input capability.
+- `hosted_tools`: allowlisted `lgos_...` tool identifiers accepted by Responses;
+  the graph owns their schemas and execution. See [hosted tools](explanation/openai-compatibility.md#hosted-tools).
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
@@ -116,7 +118,9 @@ creates. Graphs should access context from an injected `Runtime[Context]`.
 Graph adapters receive an immutable, protocol-neutral `GraphRequest` from either
 API's decoder. It exposes
 only the shared `model`, `metadata`, `user`, normalized function `tools`,
-`tool_choice`, and `parallel_tool_calls` values. Raw OpenAI transport models are
+`tool_choice`, `parallel_tool_calls`, and `hosted_tools` values.
+`hosted_tools` is a tuple of selected LGOS identifiers, separate from function
+`tools`; Chat requests leave it empty. Raw OpenAI transport models are
 not part of the graph-adapter interface.
 
 Runtime context is separate from `RunnableConfig`:

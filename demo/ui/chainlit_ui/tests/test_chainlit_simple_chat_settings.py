@@ -11,6 +11,7 @@ from openai.types.responses import Response, ResponseOutputMessage, ResponseOutp
 
 from lgos_chainlit.gateway import gateway_config
 from lgos_chainlit.lgos_protocol import ModelClientSettings
+from lgos_chainlit.utils.responses import DISPLAY_FILE_TOOL
 
 
 class Session:
@@ -324,7 +325,7 @@ async def test_selected_settings_reach_the_openai_request(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[simple.DISPLAY_FILE_TOOL],
+        tools=[DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
             "langgraph_runtime_settings": (
@@ -383,7 +384,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[simple.DISPLAY_FILE_TOOL],
+        tools=[DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
             "langgraph_runtime_settings": '{"mode":"detailed"}',

@@ -904,3 +904,17 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
+)
+def test_hosted_tool_request_enables_server_execution(model: str) -> None:
+    from lgos_openwebui.functions.generic.responses import (
+        _responses_request,
+    )
+
+    request = _responses_request(
+        model, [], None, None, provider_routing=False, model_prefixes=("lgos", "lgos-a")
+    )
+    assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

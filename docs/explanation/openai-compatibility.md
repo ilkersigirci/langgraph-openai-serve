@@ -213,8 +213,8 @@ not claim every field in the upstream OpenAI API.
 | `stream` | Supported with typed Responses SSE events. |
 | `store` | Omitted and false mean false; true is rejected. |
 | `text.format.type="text"` | Supported. |
-| `input_image`, `input_file.file_url`, `input_file.file_data` | Rejected. LGOS does not fetch URLs or accept inline file data. |
-| structured output, hosted tools, MCP tools, custom tools, image/audio items | Rejected. Only plain text and function tools are implemented. |
+| `tools=[{"type": "custom", "name": "lgos_..."}]` | LGOS hosted-tool selector; selected graph must declare each identifier. Shorthand `{"type": "lgos_..."}` is also accepted. |
+| structured output, OpenAI-hosted tools, MCP tools, image/audio items | Rejected. |
 | `previous_response_id`, `conversation`, `background: true` | Rejected because LGOS has no Responses persistence or background lifecycle. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
 
@@ -437,6 +437,37 @@ tool results. A UI that only renders assistant text cannot complete an
 interrupt. The maintained demo UIs implement the Responses form; direct Chat
 compatibility clients may use the equivalent Chat tool-message form.
 
+### Hosted Tools
+
+Responses accepts LGOS hosted-tool selectors matching the OpenAI custom tool shape,
+such as `tools=[{"type": "custom", "name": "lgos_current_time"}]` (as well as
+shorthand `tools=[{"type": "lgos_current_time"}]`). Function schemas and
+execution remain server-owned.
+
+A graph declares its supported identifiers in `GraphConfig.hosted_tools` and
+reads the selected identifiers from `GraphRequest.hosted_tools`. Identifiers
+must match `lgos_[a-z][a-z0-9_]*`. Unknown or unavailable selectors return HTTP
+400 with the offending `tools.N.name` parameter before execution or streaming.
+The package validates selection; the graph binds and executes its own tools
+using its native agent implementation. Internal calls do not become client-owned
+`function_call` items. Responses echoes the selectors as standard `CustomTool`
+objects in `tools`.
+
+Responses accepts the selector directly in the standard `tools` parameter:
+
+```python
+response = client.responses.create(
+    model="hosted-tool",
+    input="What time is it in Istanbul?",
+    tools=[{"type": "custom", "name": "lgos_current_time"}],
+    store=False,
+)
+```
+
+Because `custom` is a standard OpenAI Responses tool type, proxies such as
+Bifrost preserve this selection across normalized `/openai/v1` routes as well
+as passthrough routes. See the [hosted-tool demo](../demo/graphs/hosted-tool.md).
+
 ### Files And `display_file`
 
 Portable generated files use the standard Files API plus a client-owned
@@ -596,7 +627,7 @@ for the underlying checkpoint model.
 
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
 - Responses is stateless and implements the explicit subset above; response
-  storage, Conversations, previous-response chaining, background work, hosted
+  storage, Conversations, previous-response chaining, background work, OpenAI-hosted
   tools, structured output, and unconsumed generation controls are rejected.
 - Chat Completions remains a direct compatibility surface, while maintained
   demo UIs use Responses for every graph.

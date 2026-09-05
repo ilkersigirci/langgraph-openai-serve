@@ -424,3 +424,15 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
+)
+def test_hosted_tool_request_enables_server_execution(model: str) -> None:
+    assert responses.response_tools(model) == [
+        {"type": "custom", "name": "lgos_current_time"}
+    ]
+    assert responses.response_tools("lgos-a/simple-graph") == [
+        responses.DISPLAY_FILE_TOOL
+    ]

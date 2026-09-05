@@ -313,3 +313,87 @@ async def test_function_call_stream_matches_golden_lifecycle(
     assert [item.id for item in events[-1].response.output] == [
         event.item.id for event in done
     ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "tool_selector",
+    [
+        {"type": "custom", "name": "lgos_clock"},
+        {"type": "lgos_clock"},
+    ],
+)
+async def test_hosted_selector_reaches_graph_without_a_function_schema(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    stream: bool,
+    tool_selector: dict[str, str],
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture(
+        request: GraphRequest, messages: list[BaseMessage]
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    config = graph_registry.get_graph("test")
+    config.hosted_tools = {"lgos_clock"}
+    config.request_to_input = capture
+    response = await openai_client.responses.create(
+        model="test",
+        input="Time?",
+        stream=stream,
+        tools=[
+            tool_selector,
+            {"type": "function", "name": "client_tool"},
+        ],
+    )
+    if stream:
+        events = [event async for event in response]
+        response = next(
+            event.response for event in events if event.type == "response.completed"
+        )
+    assert received[0].hosted_tools == ("lgos_clock",)
+    assert [tool.name for tool in received[0].tools] == ["client_tool"]
+    assert response.tools[0].type == "custom"
+    assert response.tools[0].name == "lgos_clock"
+    assert response.tools[1].name == "client_tool"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_unregistered_hosted_tool_is_rejected_before_execution(
+    openai_client: AsyncOpenAI, stream: bool
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.responses.create(
+            model="test",
+            input="Time?",
+            stream=stream,
+            tools=[{"type": "custom", "name": "lgos_unknown"}],
+        )
+    assert exc_info.value.response.json()["error"]["param"] == "tools.0.name"
+
+
+async def test_hosted_tool_rejects_client_supplied_parameters(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.responses.create(
+            model="test",
+            input="Time?",
+            tools=[{"type": "custom", "name": "lgos_clock", "parameters": {}}],
+        )
+    assert exc_info.value.response.json()["error"]["param"] == "tools.0.parameters"
+
+
+async def test_custom_tool_with_invalid_name_is_rejected(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.responses.create(
+            model="test",
+            input="Time?",
+            tools=[{"type": "custom", "name": "not_an_lgos_tool"}],
+        )
+    assert exc_info.value.response.json()["error"]["param"] == "tools.0.name"

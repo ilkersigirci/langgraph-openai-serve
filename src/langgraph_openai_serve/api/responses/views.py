@@ -17,6 +17,7 @@ from langgraph_openai_serve.api.responses.messages import InvalidResponsesInputE
 from langgraph_openai_serve.api.responses.request import (
     UnsupportedResponsesRequestError,
     decode_responses_request,
+    validate_hosted_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
@@ -49,6 +50,10 @@ async def create_response(
     with graph_errors(input_param="input"):
         try:
             graph_request, messages, resume = decode_responses_request(response_request)
+            validate_hosted_tools(
+                response_request,
+                graph_registry.get_graph(response_request.model).hosted_tools,
+            )
         except (UnsupportedResponsesRequestError, InvalidResponsesInputError) as exc:
             raise OpenAIHTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

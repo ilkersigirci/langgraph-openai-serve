@@ -28,6 +28,7 @@ DOCUMENTED_MODEL_IDS = {
     "persistent-plot-agent",
     "multi-node-streaming",
     "simple-graph",
+    "hosted-tool",
     "simple-graph-external-tools",
     "status-events",
 }
@@ -269,3 +270,68 @@ def test_main_leaves_access_logging_to_the_deployment(
 
     run.assert_called_once()
     assert run.call_args.kwargs["access_log"] is False
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_hosted_tool_runs_on_lgos(
+    openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, stream: bool
+) -> None:
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    from lgos_demo_api.graphs import hosted_tool
+
+    class TimeModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            assert [tool.name for tool in tools] == ["get_current_time"]
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            if isinstance(messages[-1], ToolMessage):
+                assert messages[-1].name == "get_current_time"
+                self.responses = [AIMessage(content=messages[-1].content)]
+                self.i = 0
+            return super()._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+    model = TimeModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "get_current_time",
+                        "args": {"timezone": "Europe/Istanbul"},
+                        "id": "call_time",
+                    }
+                ],
+            )
+        ]
+    )
+    monkeypatch.setattr(hosted_tool, "ChatOpenAI", lambda **kwargs: model)
+    response = await openai_client.responses.create(
+        model="hosted-tool",
+        input="What time is it in Istanbul?",
+        store=False,
+        tools=[{"type": "custom", "name": "lgos_current_time"}],
+        stream=stream,
+    )
+    if stream:
+        events = [event async for event in response]
+        response = next(
+            event.response for event in events if event.type == "response.completed"
+        )
+        assert (
+            "".join(
+                event.delta
+                for event in events
+                if event.type == "response.output_text.delta"
+            )
+            == response.output_text
+        )
+    assert response.output_text.startswith("Europe/Istanbul: ")
+    assert response.output_text.endswith("+03:00")
+    assert all(item.type == "message" for item in response.output)

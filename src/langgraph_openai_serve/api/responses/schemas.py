@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
 
 from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
@@ -132,6 +132,32 @@ class ResponseFunctionTool(_ResponsesRequestModel):
     strict: bool | None = None
 
 
+class ResponseHostedTool(_ResponsesRequestModel):
+    """Select a graph-owned LGOS tool without supplying its function schema."""
+
+    type: Literal["custom"] = "custom"
+    name: Annotated[str, Field(pattern=r"^lgos_[a-z][a-z0-9_]*$")]
+    description: str | None = None
+
+
+def _parse_tool(value: object) -> ResponseFunctionTool | ResponseHostedTool:
+    if isinstance(value, (ResponseFunctionTool, ResponseHostedTool)):
+        return value
+    if isinstance(value, dict):
+        if value.get("type") == "custom":
+            return ResponseHostedTool.model_validate(value)
+        if str(value.get("type", "")).startswith("lgos_"):
+            return ResponseHostedTool.model_validate(
+                {"type": "custom", "name": value["type"]}
+            )
+    return ResponseFunctionTool.model_validate(value)
+
+
+ResponseTool: TypeAlias = Annotated[
+    ResponseFunctionTool | ResponseHostedTool, BeforeValidator(_parse_tool)
+]
+
+
 class ResponseNamedToolChoice(_ResponsesRequestModel):
     """Require one named function tool."""
 
@@ -169,7 +195,7 @@ class ResponseCreateRequest(_ResponsesRequestModel):
     store: bool | None = False
     stream: bool | None = False
     text: ResponseTextConfig | None = None
-    tools: list[ResponseFunctionTool] | None = None
+    tools: list[ResponseTool] | None = None
     tool_choice: ResponseToolChoice | None = None
     parallel_tool_calls: bool | None = None
     user: str | None = None

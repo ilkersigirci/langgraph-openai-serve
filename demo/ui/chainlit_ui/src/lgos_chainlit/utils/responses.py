@@ -10,6 +10,7 @@ from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
+    ToolParam,
 )
 from plotly import io as pio
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -40,6 +41,13 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
+
+
+def response_tools(model: str) -> list[ToolParam]:
+    """Supply hosted selectors or function tools for the selected model."""
+    if model.rsplit("/", 1)[-1] == "hosted-tool":
+        return [{"type": "custom", "name": "lgos_current_time"}]
+    return [DISPLAY_FILE_TOOL]
 
 
 class CommentaryTaskList:

@@ -29,6 +29,13 @@ DISPLAY_FILE_TOOL = {
 }
 
 
+def _response_tools(model: str) -> list[dict[str, Any]]:
+    """Supply hosted selectors or function tools for the selected model."""
+    if model.rsplit("/", 1)[-1] == "hosted-tool":
+        return [{"type": "custom", "name": "lgos_current_time"}]
+    return [DISPLAY_FILE_TOOL]
+
+
 def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
     """Keep text inside JSON: the Pipe host treats raw data: strings as SSE."""
     return ChatCompletionChunk(
@@ -93,7 +100,7 @@ def _responses_request(
         ),
         "input": input_items,
         "store": False,
-        "tools": [DISPLAY_FILE_TOOL],
+        "tools": _response_tools(model_id),
     }
     if metadata:
         request["metadata"] = metadata

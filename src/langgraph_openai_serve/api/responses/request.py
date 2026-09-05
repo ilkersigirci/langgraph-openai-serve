@@ -6,6 +6,8 @@ from langgraph_openai_serve.api.responses.interrupts import parse_responses_resu
 from langgraph_openai_serve.api.responses.messages import convert_responses_input
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseCreateRequest,
+    ResponseFunctionTool,
+    ResponseHostedTool,
     ResponseToolChoice,
 )
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
@@ -45,6 +47,12 @@ def decode_responses_request(
                     strict=tool.strict,
                 )
                 for tool in request.tools or ()
+                if isinstance(tool, ResponseFunctionTool)
+            ),
+            hosted_tools=tuple(
+                tool.name
+                for tool in request.tools or ()
+                if isinstance(tool, ResponseHostedTool)
             ),
             tool_choice=_decode_tool_choice(request.tool_choice),
             parallel_tool_calls=request.parallel_tool_calls,
@@ -55,6 +63,14 @@ def decode_responses_request(
         ),
         parse_responses_resume(request.input),
     )
+
+
+def validate_hosted_tools(request: ResponseCreateRequest, supported: set[str]) -> None:
+    """Reject unavailable hosted tools before graph execution or SSE starts."""
+    for index, tool in enumerate(request.tools or ()):
+        if isinstance(tool, ResponseHostedTool) and tool.name not in supported:
+            message = f"Hosted tool '{tool.name}' is not supported by model '{request.model}'."
+            raise UnsupportedResponsesRequestError(message, param=f"tools.{index}.name")
 
 
 def _decode_tool_choice(
