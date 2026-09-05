@@ -215,7 +215,7 @@ Variables and sends them as
 validation.
 
 The shared Pipe maps Open WebUI's stable `chat_id` to
-`metadata.session_id` on every completion, including the UserValves example.
+`metadata.session_id` on every Responses request, including the UserValves example.
 Langfuse can therefore group the
 chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the
@@ -245,10 +245,14 @@ The general manifold Pipe uses OpenAI Responses for every model. The SDK stream
 manager owns event accumulation and supplies the terminal `Response`; the Pipe
 adapts final-answer deltas to Open WebUI's native stream interface and maps
 completed commentary messages to native status history. It translates standard
-final-answer URL annotations into persistent native source events, with each
-cited span as the source excerpt. Non-streaming requests select only
-`phase="final_answer"` output. Inline citation markers remain part of assistant
-content.
+answer URL annotations from the completed Response into persistent native
+source events, with each cited span as the source excerpt. The SDK owns the
+complete annotation objects; the Pipe does not rebuild them from deltas.
+Both modes exclude commentary and accept answer messages without the optional
+`phase` field. Transcript replay labels assistant answers as `final_answer` and
+preserves explicit phase values, following OpenAI's
+[assistant phase guidance](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter).
+Inline citation markers remain part of assistant content.
 
 !!! note "Keep streaming enabled"
 
@@ -271,8 +275,14 @@ still use authenticated Open WebUI file storage and the native `files` event. Ea
 and file references, then appends complete Response output items and matching
 tool results. Final-answer text from every call is retained in both modes.
 
-The Pipe's returned Chat-shaped dictionaries belong to Open WebUI's internal
-rendering interface; upstream inference always uses Responses.
+The Pipe returns plain text for non-streaming answers and uses the OpenAI SDK's
+typed chunk schema for streamed text. Open WebUI JSON-encodes these chunks, so
+literal text such as `data: [DONE]` cannot be mistaken for a stream event.
+Open WebUI owns stream termination. The native `ask_user` bridge also uses the
+host's tool-call dictionaries to persist question cards and replay answers.
+These shapes belong to the UI boundary; inference uses Responses exclusively.
+See the pinned
+[Pipe host](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/functions.py).
 Shared prompts and graph behavior are documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
 [Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it).

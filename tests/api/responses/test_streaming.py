@@ -305,6 +305,7 @@ async def test_streamed_final_text_mismatch_ends_in_failed_response(
     assert events[-2].message == "Internal server error"
     failed = events[-1].response
     assert failed.status == "failed"
+    assert failed.completed_at is None
     assert failed.error is not None
     assert failed.error.code == "server_error"
 

@@ -82,9 +82,8 @@ fields, so it is not the UI catalog. The pass-through base URL forwards
 receives `GraphConfig.description`, features, and detailed client-settings
 schemas while all network traffic still terminates at LiteLLM.
 
-This is the same catalog/inference client split used by the earlier Chat
-Completions integration. The gateway selector owns its small routing
-difference; users configure only the gateway type and optional root URL.
+The gateway selector owns routing; users configure only the gateway type and
+optional root URL.
 
 ## File Attachments
 
@@ -131,7 +130,7 @@ After a profile is selected, Chainlit:
 3. Restores saved values that still match the supported widget type or choice.
 4. Compares the selected values with the advertised defaults.
 5. Sends changed values as JSON text in
-   `metadata.langgraph_runtime_settings` on every completion.
+   `metadata.langgraph_runtime_settings` on every Responses request.
 
 Booleans become switches, inline string enums become selects, and strings
 become text inputs. Other schema shapes are not rendered. The adapter checks
@@ -141,8 +140,6 @@ authority. If the required LGOS model extension is unavailable, Chainlit hides
 the controls, uses server defaults, and shows a transient **Limited
 functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
-Chat Completions remain available to direct compatibility clients, but the
-maintained Chainlit clients do not switch back to that transport.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
 
@@ -165,7 +162,7 @@ request that needs them. The underlying contract is documented in
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
-`metadata.session_id` on every completion, allowing Langfuse to group the
+`metadata.session_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat
@@ -243,13 +240,20 @@ custom response field.*
 Both bundled Chainlit clients use OpenAI Responses. In the general client's
 streaming mode, the SDK stream manager owns event accumulation and supplies
 the terminal `Response`; the adapter streams
-only `phase="final_answer"` text into the assistant message. It maps completed
+answer text into the assistant message. Messages without the optional `phase`
+field are also treated as answers. It maps completed
 `phase="commentary"` items to a native
 [`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist), completing
 each prior task when the next status arrives and completing the list when the
 full response succeeds. Clicking **Stop** marks the active task as failed and
 closes the Responses stream; incomplete assistant text remains visible but is
-excluded from later model context.
+excluded from later model context. Both streaming and non-streaming requests
+require a completed Response before displaying files or accepting a successful
+turn. Failed interrupt resumes leave the saved pending ledger intact.
+
+Transcript replay labels assistant answers as `final_answer` and preserves
+explicit phase values, following OpenAI's
+[assistant phase guidance](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter).
 
 The persistent plot graph returns a standard `display_file` function call.
 Chainlit downloads the Plotly JSON through the OpenAI Files API, reconstructs
@@ -326,8 +330,8 @@ when updating it because the PostgreSQL schema is release-specific.
   user isolation.
 - Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
-- Configure session affinity for multiple UI workers. The demo keeps user file
-  uploads disabled but requires object storage for native image persistence.
+- Configure session affinity for multiple UI workers and object storage for
+  native file and chart persistence. File-capable profiles enable attachments.
 - Run `lgos-chainlit-setup` before starting or replacing workers.
 
 See Chainlit's documentation for

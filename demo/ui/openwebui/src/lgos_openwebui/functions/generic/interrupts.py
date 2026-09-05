@@ -12,7 +12,6 @@ from .contracts import (
     ASK_USER_QUESTION_MAX_LENGTH,
     ASK_USER_REJECTED_OUTPUT,
     ASK_USER_TOOL_NAME,
-    INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
     InterruptCancelled,
 )
@@ -285,24 +284,3 @@ def _resume_value(answer: object, payload: object) -> str:
             return text.strip()
     msg = "Open WebUI returned an invalid interrupt answer."
     raise ValueError(msg)
-
-
-def _interrupt_cancelled_response(
-    model_id: str,
-    *,
-    streaming: bool,
-) -> dict[str, Any]:
-    message = {"role": "assistant", "content": INTERRUPT_CANCELLED_MESSAGE}
-    return {
-        "id": "chatcmpl-lgos-interrupt-cancelled",
-        "object": "chat.completion.chunk" if streaming else "chat.completion",
-        "created": 0,
-        "model": model_id,
-        "choices": [
-            {
-                "index": 0,
-                "delta" if streaming else "message": message,
-                "finish_reason": "stop",
-            }
-        ],
-    }

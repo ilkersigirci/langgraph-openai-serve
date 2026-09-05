@@ -92,7 +92,10 @@ def response_input(messages: Sequence[Mapping[str, object]]) -> list[dict[str, A
         content = message.get("content")
         if role not in {"user", "assistant", "system"} or not isinstance(content, str):
             continue
-        items.append({"role": role, "content": content})
+        item = {"role": role, "content": content}
+        if role == "assistant":
+            item["phase"] = message.get("phase") or "final_answer"
+        items.append(item)
     return items
 
 
@@ -100,10 +103,18 @@ def final_answer(response: Response) -> str:
     """Return durable final-answer text without concatenating commentary."""
     parts = []
     for item in response.output:
-        if item.type != "message" or item.phase != "final_answer":
+        if item.type != "message" or item.phase == "commentary":
             continue
         parts.extend(part.text for part in item.content if part.type == "output_text")
     return "".join(parts)
+
+
+def raise_for_response(response: Response) -> None:
+    """Only completed Responses may be rendered or continued as successful."""
+    if response.status == "completed":
+        return
+    detail = response.error
+    raise RuntimeError(detail.message if detail is not None else "Response failed.")
 
 
 def function_calls(response: Response) -> list[ResponseFunctionToolCall]:

@@ -49,6 +49,7 @@ from lgos_chainlit.utils.responses import (
     continuation_input,
     final_answer,
     function_calls,
+    raise_for_response,
     response_input,
 )
 from lgos_chainlit.utils.thread_resume import (
@@ -288,16 +289,15 @@ async def create_response(
     *,
     model_id: str | None = None,
 ) -> Response:
-    return cast(
-        "Response",
-        await openai_client.responses.create(
-            **model_request(model_id or selected_model_id()),
-            input=cast("ResponseInputParam", input_items),
-            store=False,
-            user=authenticated_user_identifier(),
-            metadata=session_metadata(),
-        ),
+    response = await openai_client.responses.create(
+        **model_request(model_id or selected_model_id()),
+        input=cast("ResponseInputParam", input_items),
+        store=False,
+        user=authenticated_user_identifier(),
+        metadata=session_metadata(),
     )
+    raise_for_response(response)
+    return response
 
 
 def selected_model_id() -> str:
@@ -562,9 +562,7 @@ def interrupt_tool_calls(
     response: Response,
 ) -> list[ResponseFunctionToolCall] | None:
     tool_calls = function_calls(response)
-    if len(tool_calls) != len(
-        [item for item in response.output if item.type == "function_call"]
-    ) or any(tool_call.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
+    if any(tool_call.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):
         return None
     return tool_calls
 

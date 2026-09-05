@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -27,6 +28,7 @@ from lgos_openwebui.functions.generic.interrupts import (
     _ask_user_to_resume,
     _interrupts_to_ask_user,
 )
+from lgos_openwebui.functions.generic.responses import _responses_input
 from lgos_openwebui.functions.uservalves_simple import Filter
 
 MODEL_ID = "interruptible-approval"
@@ -92,10 +94,10 @@ def body(*, stream: bool) -> dict[str, object]:
 
 
 async def collect(
-    value: Awaitable[AsyncIterator[dict[str, Any]] | dict[str, Any]],
-) -> list[dict[str, Any]]:
+    value: Awaitable[AsyncIterator[str | dict[str, Any]] | str | dict[str, Any]],
+) -> list[str | dict[str, Any]]:
     result = await value
-    if isinstance(result, dict):
+    if isinstance(result, (str, dict)):
         return [result]
     return [item async for item in result]
 
@@ -221,10 +223,45 @@ async def test_deployed_bundle_runs_responses_inference(
 
     result = await module.Pipe().pipe(body(stream=False))
 
-    assert result["choices"][0]["message"]["content"] == "Bundle answer."
+    assert result == "Bundle answer."
     request = create.await_args.kwargs
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
+
+
+@pytest.mark.parametrize("deltas", [False, True])
+async def test_bundled_stream_keeps_sse_looking_text_as_content(
+    monkeypatch: pytest.MonkeyPatch, deltas: bool
+) -> None:
+    chunks = ["data: [DONE]", '\n\ndata: {"error":"example"}', "\nStill text."]
+    answer = "".join(chunks)
+    events = (
+        [
+            SimpleNamespace(
+                type="response.output_text.delta", output_index=0, delta=text
+            )
+            for text in chunks
+        ]
+        if deltas
+        else []
+    )
+
+    @asynccontextmanager
+    async def scripted_stream(**_: object) -> AsyncIterator[FakeResponseStream]:
+        yield FakeResponseStream(events, final_response(answer))
+
+    source = bundle_function(Path(generic_pipe.__file__).parent)
+    module = ModuleType("bundled_generic")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(compile(source, "<generic>", "exec"), module.__dict__)
+    module._client = lambda **_: FakeClient(stream=scripted_stream)
+
+    output = await collect(module.Pipe().pipe(body(stream=True)))
+
+    # The host JSON-encodes objects; raw strings beginning with data: bypass it.
+    decoded = [ChatCompletionChunk.model_validate(chunk) for chunk in output]
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in decoded) == answer
+    assert all(chunk.choices[0].finish_reason is None for chunk in decoded)
 
 
 async def test_non_streaming_request_uses_responses_and_final_answer_only(
@@ -240,7 +277,7 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
         __user__={"id": "user-123"},
     )
 
-    assert result["choices"][0]["message"]["content"] == "Approved."
+    assert result == "Approved."
     request = create.await_args.kwargs
     assert request["model"] == "lgos-a/interruptible-approval"
     assert "extra_headers" not in request
@@ -277,7 +314,7 @@ async def test_uservalves_reach_responses_through_shared_pipe(
         filtered, __metadata__=metadata, __user__={"id": "user-123"}
     )
 
-    assert result["choices"][0]["message"]["content"] == "Hello."
+    assert result == "Hello."
     request = create.await_args.kwargs
     assert request["model"] == "lgos-a/simple-graph"
     assert request["metadata"]["session_id"] == "thread-123"
@@ -313,15 +350,17 @@ async def test_bifrost_request_uses_native_responses_route(
         __user__={"id": "user-123"},
     )
 
-    assert result["choices"][0]["message"]["content"] == "Approved."
+    assert result == "Approved."
     assert base_urls == ["https://bifrost.example/openai/v1"]
     request = create.await_args.kwargs
     assert request["model"] == "interruptible-approval"
     assert request["extra_headers"] == {"x-model-provider": "lgos-a"}
 
 
+@pytest.mark.parametrize("phase", [None, "final_answer"])
 async def test_stream_uses_sdk_final_response_and_excludes_commentary(
     monkeypatch: pytest.MonkeyPatch,
+    phase: str | None,
 ) -> None:
     commentary = SimpleNamespace(
         type="response.output_item.added",
@@ -336,7 +375,7 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
     final_added = SimpleNamespace(
         type="response.output_item.added",
         output_index=1,
-        item=SimpleNamespace(type="message", phase="final_answer"),
+        item=SimpleNamespace(type="message", phase=phase),
     )
     final_delta = SimpleNamespace(
         type="response.output_text.delta",
@@ -361,8 +400,8 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         )
     )
 
+    assert len(chunks) == 1
     assert chunks[0]["choices"][0]["delta"]["content"] == "Approved."
-    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
     emit.assert_awaited_once_with(
         {
             "type": "status",
@@ -371,8 +410,10 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
     )
 
 
-async def test_stream_maps_final_answer_annotations_to_persistent_sources(
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_response_maps_final_answer_annotations_to_persistent_sources(
     monkeypatch: pytest.MonkeyPatch,
+    streaming: bool,
 ) -> None:
     text = "🌍 Café source"
     cited_text = "source"
@@ -393,39 +434,29 @@ async def test_stream_maps_final_answer_annotations_to_persistent_sources(
         output_index=0,
         delta=text,
     )
-    annotation_added = SimpleNamespace(
-        type="response.output_text.annotation.added",
-        output_index=0,
-        content_index=0,
-        annotation_index=0,
-        annotation=annotation.model_dump(mode="json"),
-    )
-    final_done = SimpleNamespace(
-        type="response.output_text.done",
-        output_index=0,
-        content_index=0,
-        text=text,
-    )
-    stream = FakeResponseStream(
-        [final_added, final_delta, annotation_added, final_done],
-        final_response(text),
-    )
+    completed = final_response(text)
+    completed.output[0].content[0].annotations = [annotation]
+    stream = FakeResponseStream([final_added, final_delta], completed)
 
     @asynccontextmanager
     async def scripted_stream(**_: object) -> AsyncIterator[FakeResponseStream]:
         yield stream
 
     emit = AsyncMock()
-    install_client(monkeypatch, stream=scripted_stream)
+    install_client(
+        monkeypatch, stream=scripted_stream, create=AsyncMock(return_value=completed)
+    )
 
     chunks = await collect(
         generic_pipe.Pipe().pipe(
-            body(stream=True),
+            body(stream=streaming),
             __event_emitter__=emit,
         )
     )
 
-    assert chunks[0]["choices"][0]["delta"]["content"] == text
+    assert (
+        chunks[0]["choices"][0]["delta"]["content"] if streaming else chunks[0]
+    ) == text
     emit.assert_awaited_once_with(
         {
             "type": "source",
@@ -529,7 +560,7 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
     text = (
         "".join(chunk["choices"][0]["delta"]["content"] for chunk in result)
         if streaming
-        else result[0]["choices"][0]["message"]["content"]
+        else result[0]
     )
     assert text == "Here is the chart. Chart ready."
     assert requests[0]["input"] == request_body["messages"]
@@ -833,3 +864,43 @@ async def test_interrupt_response_becomes_native_ask_user_call(
     tool_call = result["choices"][0]["message"]["tool_calls"][0]
     assert tool_call["function"]["name"] == "ask_user"
     assert result["choices"][0]["finish_reason"] == "tool_calls"
+
+
+@pytest.mark.parametrize("phase", [None, "final_answer"])
+async def test_non_streaming_answer_allows_optional_phase(monkeypatch, phase):
+    completed = final_response("Answer")
+    completed.output[0].phase = phase
+    commentary = final_response("Working").output[0]
+    commentary.phase = "commentary"
+    completed.output.insert(0, commentary)
+    install_client(monkeypatch, create=AsyncMock(return_value=completed))
+
+    assert await generic_pipe.Pipe().pipe(body(stream=False)) == "Answer"
+
+
+def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
+    messages = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "assistant", "content": "Working", "phase": "commentary"},
+        {"role": "assistant", "content": "Answer"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Read this"},
+                {"type": "input_file", "file_id": "file-123"},
+            ],
+        },
+    ]
+
+    assert _responses_input(messages) == [
+        messages[0],
+        messages[1],
+        {"role": "assistant", "content": "Answer", "phase": "final_answer"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "Read this"},
+                {"type": "input_file", "file_id": "file-123"},
+            ],
+        },
+    ]

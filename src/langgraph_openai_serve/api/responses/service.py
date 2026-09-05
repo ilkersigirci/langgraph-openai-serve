@@ -188,9 +188,7 @@ def response_object(
             "created_at": context.created_at,
             "status": status,
             "background": False,
-            "completed_at": (
-                context.created_at if status in {"completed", "failed"} else None
-            ),
+            "completed_at": context.created_at if status == "completed" else None,
             "error": error,
             "incomplete_details": None,
             "instructions": request.instructions,

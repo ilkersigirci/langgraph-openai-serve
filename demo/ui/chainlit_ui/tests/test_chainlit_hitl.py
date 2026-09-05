@@ -275,3 +275,24 @@ def test_invalid_persisted_call_is_rejected(hitl: Any) -> None:
                 "function_calls": [{"type": "function_call"}],
             }
         )
+
+
+async def test_failed_response_keeps_pending_interrupt_ledger(monkeypatch, hitl):
+    calls = [interrupt_call("one", {"question": "Approve?"})]
+    created, writes = install_chainlit(monkeypatch, hitl)
+    failed = response()
+    failed.status = "failed"
+    failed.error = SimpleNamespace(message="Resume failed")
+    monkeypatch.setattr(
+        hitl.openai_client.responses, "create", AsyncMock(return_value=failed)
+    )
+    monkeypatch.setattr(hitl, "model_request", lambda _: {"model": "hitl"})
+    monkeypatch.setattr(hitl, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(hitl, "session_metadata", dict)
+    monkeypatch.setattr(hitl, "ask_for_resume", AsyncMock(return_value="approve"))
+
+    with pytest.raises(RuntimeError, match="Resume failed"):
+        await hitl.resolve_interrupts(response_calls=calls, model_id="hitl")
+
+    assert writes[-1][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]["status"] == "pending"
+    assert len(created) == 1

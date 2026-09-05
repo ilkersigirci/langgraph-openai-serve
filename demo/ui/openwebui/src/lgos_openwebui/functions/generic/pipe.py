@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from openai import OpenAIError
 from openai.types.responses import Response, ResponseFunctionToolCall
-from openai.types.responses.response_output_text import AnnotationURLCitation
 from pydantic import BaseModel, Field
 
 from .api import (
@@ -18,6 +17,7 @@ from .api import (
 )
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
+    INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
     InterruptCancelled,
     PipeChunk,
@@ -27,22 +27,18 @@ from .files import _handle_display_file, _with_response_file_parts
 from .gateway import GatewayConfig, GatewayType, gateway_config
 from .interrupts import (
     _ask_user_to_resume,
-    _interrupt_cancelled_response,
     _openwebui_interrupt_chunk,
     _openwebui_interrupt_completion,
 )
 from .metadata import _request_metadata
 from .responses import (
-    _openwebui_finish_chunk,
-    _openwebui_source_event,
+    _emit_response_sources,
     _openwebui_text_chunk,
-    _openwebui_text_completion,
     _responses_continuation,
     _responses_final_text,
     _responses_function_calls,
     _responses_input,
     _responses_request,
-    _responses_url_annotation,
 )
 
 
@@ -139,13 +135,12 @@ class Pipe:
         __request__: Any = None,
     ) -> AsyncIterator[PipeChunk]:
         """Yield Open WebUI chunks while the SDK owns Response accumulation."""
-        model_id = "unknown"
         try:
             model_id, input_items = await self._request_input(
                 body, __metadata__, __files__
             )
         except InterruptCancelled:
-            yield _interrupt_cancelled_response(model_id, streaming=True)
+            yield INTERRUPT_CANCELLED_MESSAGE
             return
         except ValueError as exc:
             yield _error(str(exc))
@@ -169,26 +164,14 @@ class Pipe:
                 while True:
                     final_text_streamed = False
                     phases: dict[int, str | None] = {}
-                    annotations: dict[
-                        tuple[int, int], dict[int, AnnotationURLCitation]
-                    ] = {}
                     async with client.responses.stream(**request) as stream:
                         async for event in stream:
                             if event.type == "response.output_item.added":
                                 if event.item.type == "message":
                                     phases[event.output_index] = event.item.phase
                             elif (
-                                event.type == "response.output_text.annotation.added"
-                                and phases.get(event.output_index) == "final_answer"
-                            ):
-                                annotation = _responses_url_annotation(event.annotation)
-                                if annotation is not None:
-                                    annotations.setdefault(
-                                        (event.output_index, event.content_index), {}
-                                    )[event.annotation_index] = annotation
-                            elif (
                                 event.type == "response.output_text.delta"
-                                and phases.get(event.output_index) == "final_answer"
+                                and phases.get(event.output_index) != "commentary"
                             ):
                                 final_text_streamed = True
                                 yield _openwebui_text_chunk(model_id, event.delta)
@@ -207,30 +190,16 @@ class Pipe:
                                         },
                                     }
                                 )
-                            elif (
-                                event.type == "response.output_text.done"
-                                and phases.get(event.output_index) == "final_answer"
-                                and __event_emitter__ is not None
-                            ):
-                                part_annotations = annotations.pop(
-                                    (event.output_index, event.content_index), {}
-                                )
-                                for annotation_index in sorted(part_annotations):
-                                    source_event = _openwebui_source_event(
-                                        part_annotations[annotation_index], event.text
-                                    )
-                                    if source_event is not None:
-                                        await __event_emitter__(source_event)
                         response = cast("Response", await stream.get_final_response())
 
                     _raise_for_response(response)
+                    await _emit_response_sources(response, __event_emitter__)
                     calls = _responses_function_calls(response)
                     if not calls:
                         if not final_text_streamed:
                             yield _openwebui_text_chunk(
                                 model_id, _responses_final_text(response)
                             )
-                        yield _openwebui_finish_chunk(model_id)
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
                         yield _openwebui_interrupt_chunk(model_id, calls)
@@ -263,16 +232,15 @@ class Pipe:
         __user__: dict[str, Any] | None,
         __files__: list[dict[str, Any]] | None,
         __request__: Any,
-    ) -> dict[str, Any]:
-        """Return one Open WebUI completion from a completed Response."""
-        model_id = "unknown"
+    ) -> PipeChunk:
+        """Return native Pipe text or an ask-user call from Responses output."""
         answer_parts: list[str] = []
         try:
             model_id, input_items = await self._request_input(
                 body, __metadata__, __files__
             )
         except InterruptCancelled:
-            return _interrupt_cancelled_response(model_id, streaming=False)
+            return INTERRUPT_CANCELLED_MESSAGE
         except ValueError as exc:
             return _error(str(exc))
 
@@ -294,12 +262,11 @@ class Pipe:
                 while True:
                     response = await client.responses.create(**request)
                     _raise_for_response(response)
+                    await _emit_response_sources(response, __event_emitter__)
                     answer_parts.append(_responses_final_text(response))
                     calls = _responses_function_calls(response)
                     if not calls:
-                        return _openwebui_text_completion(
-                            model_id, "".join(answer_parts)
-                        )
+                        return "".join(answer_parts)
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
                         return _openwebui_interrupt_completion(model_id, calls)
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):

@@ -34,6 +34,7 @@ from lgos_chainlit.utils.responses import (
     display_file,
     final_answer,
     function_calls,
+    raise_for_response,
     response_input,
 )
 
@@ -129,6 +130,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     metadata=metadata,
                 )
 
+            raise_for_response(response)
             calls = function_calls(response)
             if not streaming:
                 assistant_message.content += final_answer(response)
@@ -188,7 +190,7 @@ async def _stream_response(
                 continue
             if event.type == "response.output_text.delta":
                 phase = phases.get(event.output_index)
-                if phase == "final_answer":
+                if phase != "commentary":
                     await assistant_message.stream_token(event.delta)
                 continue
             if event.type == "response.output_text.done":
@@ -197,8 +199,4 @@ async def _stream_response(
                 continue
         completed = await stream.get_final_response()
 
-    if completed.status != "completed":
-        detail = completed.error
-        msg = detail.message if detail is not None else "Response failed."
-        raise RuntimeError(msg)
     return cast("Response", completed)

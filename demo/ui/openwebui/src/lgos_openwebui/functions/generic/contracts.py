@@ -27,7 +27,7 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 SESSION_ID_METADATA_KEY = "session_id"
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
-PipeChunk = dict[str, Any]
+PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 
 

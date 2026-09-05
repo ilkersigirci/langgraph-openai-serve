@@ -20,7 +20,7 @@ from lgos_chainlit.utils import responses
 
 
 def _response(*output: object) -> Response:
-    return Response.model_construct(output=list(output))
+    return Response.model_construct(status="completed", output=list(output))
 
 
 def _display_call() -> ResponseFunctionToolCall:
@@ -38,7 +38,8 @@ def _display_call() -> ResponseFunctionToolCall:
     )
 
 
-def test_final_answer_excludes_commentary() -> None:
+@pytest.mark.parametrize("phase", [None, "final_answer"])
+def test_final_answer_excludes_commentary(phase: str | None) -> None:
     commentary = ResponseOutputMessage(
         id="msg_commentary",
         content=[
@@ -67,7 +68,7 @@ def test_final_answer_excludes_commentary() -> None:
         role="assistant",
         status="completed",
         type="message",
-        phase="final_answer",
+        phase=phase,
     )
 
     assert responses.final_answer(_response(commentary, final)) == "Chart ready."
@@ -105,8 +106,10 @@ async def test_commentary_is_rendered_as_a_native_task_list(
     assert task_list.send.await_count == 4
 
 
+@pytest.mark.parametrize("phase", [None, "final_answer"])
 async def test_response_stream_routes_commentary_to_the_task_list(
     monkeypatch: pytest.MonkeyPatch,
+    phase: str | None,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     completed = Response.model_construct(status="completed", output=[])
@@ -134,7 +137,7 @@ async def test_response_stream_routes_commentary_to_the_task_list(
         SimpleNamespace(
             type="response.output_item.added",
             output_index=1,
-            item=SimpleNamespace(type="message", phase="final_answer"),
+            item=SimpleNamespace(type="message", phase=phase),
         ),
         SimpleNamespace(
             type="response.output_text.delta",
@@ -376,3 +379,48 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
         output,
     ]
+
+
+def test_transcript_labels_answers_and_preserves_explicit_phase():
+    messages = [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Working", "phase": "commentary"},
+        {"role": "assistant", "content": "Answer"},
+    ]
+
+    assert responses.response_input(messages) == [
+        *messages[:3],
+        {"role": "assistant", "content": "Answer", "phase": "final_answer"},
+    ]
+
+
+async def test_non_streaming_failure_does_not_display_files_or_send_success(
+    monkeypatch,
+):
+    simple = importlib.import_module("lgos_chainlit.simple")
+    failed = _response(_display_call())
+    failed.status = "failed"
+    failed.error = SimpleNamespace(message="Graph failed")
+    assistant = Mock(content="", send=AsyncMock())
+    error = AsyncMock()
+    display = AsyncMock()
+    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(simple, "text_only_chat_messages", list)
+    monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
+    monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
+    monkeypatch.setattr(simple, "chat_settings_metadata", dict)
+    monkeypatch.setattr(simple, "session_metadata", dict)
+    monkeypatch.setattr(simple, "model_request", lambda _: {"model": "plot"})
+    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(
+        simple.openai_client.responses, "create", AsyncMock(return_value=failed)
+    )
+    monkeypatch.setattr(simple, "display_file", display)
+    monkeypatch.setattr(simple, "send_ui_message", error)
+
+    await simple._response_message(Mock(), "plot")
+
+    error.assert_awaited_once_with("Response failed: Graph failed")
+    assistant.send.assert_not_awaited()
+    display.assert_not_awaited()

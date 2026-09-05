@@ -2,13 +2,18 @@
 
 from typing import Any
 
+from openai.types.chat.chat_completion_chunk import (
+    ChatCompletionChunk,
+    Choice,
+    ChoiceDelta,
+)
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from .api import _model_request
 from .contracts import DISPLAY_FILE_TOOL_NAME, DisplayFileArguments
@@ -24,6 +29,19 @@ DISPLAY_FILE_TOOL = {
 }
 
 
+def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
+    """Keep text inside JSON: the Pipe host treats raw data: strings as SSE."""
+    return ChatCompletionChunk(
+        id="chatcmpl-lgos-responses",
+        object="chat.completion.chunk",
+        created=0,
+        model=model_id,
+        choices=[
+            Choice(index=0, delta=ChoiceDelta(content=content), finish_reason=None)
+        ],
+    ).model_dump(exclude_none=True)
+
+
 def _responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Open WebUI's text/file transcript into Responses items."""
     items = []
@@ -32,8 +50,11 @@ def _responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         content = message.get("content")
         if role not in {"user", "assistant", "system", "developer"}:
             continue
+        message_fields = {"role": role}
+        if role == "assistant":
+            message_fields["phase"] = message.get("phase") or "final_answer"
         if isinstance(content, str):
-            items.append({"role": role, "content": content})
+            items.append({**message_fields, "content": content})
             continue
         if not isinstance(content, list):
             continue
@@ -50,12 +71,8 @@ def _responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 file_id = part.get("file_id")
                 if isinstance(file_id, str) and file_id:
                     parts.append({"type": "input_file", "file_id": file_id})
-            elif part.get("type") == "file" and isinstance(part.get("file"), dict):
-                file_id = part["file"].get("file_id")
-                if isinstance(file_id, str) and file_id:
-                    parts.append({"type": "input_file", "file_id": file_id})
         if parts:
-            items.append({"role": role, "content": parts})
+            items.append({**message_fields, "content": parts})
     return items
 
 
@@ -89,7 +106,7 @@ def _responses_final_text(response: Response) -> str:
     """Select only durable final-answer messages."""
     parts = []
     for item in response.output:
-        if item.type != "message" or item.phase != "final_answer":
+        if item.type != "message" or item.phase == "commentary":
             continue
         parts.extend(part.text for part in item.content if part.type == "output_text")
     return "".join(parts)
@@ -114,12 +131,21 @@ def _responses_continuation(
     ]
 
 
-def _responses_url_annotation(value: object) -> AnnotationURLCitation | None:
-    """Validate the SDK event's deliberately untyped annotation payload."""
-    try:
-        return AnnotationURLCitation.model_validate(value)
-    except ValidationError:
-        return None
+async def _emit_response_sources(response: Response, event_emitter: Any) -> None:
+    """Use complete, typed annotations instead of accumulating citation deltas."""
+    if event_emitter is None:
+        return
+    for item in response.output:
+        if item.type != "message" or item.phase == "commentary":
+            continue
+        for part in item.content:
+            if part.type != "output_text":
+                continue
+            for annotation in part.annotations:
+                if annotation.type == "url_citation":
+                    event = _openwebui_source_event(annotation, part.text)
+                    if event is not None:
+                        await event_emitter(event)
 
 
 def _openwebui_source_event(
@@ -145,43 +171,4 @@ def _openwebui_source_event(
                 }
             ],
         },
-    }
-
-
-def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
-    """Encode text for Open WebUI's Pipe interface, after Responses inference."""
-    return {
-        "id": "chatcmpl-lgos-responses",
-        "object": "chat.completion.chunk",
-        "created": 0,
-        "model": model_id,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"content": content},
-                "finish_reason": None,
-            }
-        ],
-    }
-
-
-def _openwebui_finish_chunk(model_id: str) -> dict[str, Any]:
-    value = _openwebui_text_chunk(model_id, "")
-    value["choices"][0]["finish_reason"] = "stop"
-    return value
-
-
-def _openwebui_text_completion(model_id: str, content: str) -> dict[str, Any]:
-    return {
-        "id": "chatcmpl-lgos-responses",
-        "object": "chat.completion",
-        "created": 0,
-        "model": model_id,
-        "choices": [
-            {
-                "index": 0,
-                "finish_reason": "stop",
-                "message": {"role": "assistant", "content": content},
-            }
-        ],
     }
