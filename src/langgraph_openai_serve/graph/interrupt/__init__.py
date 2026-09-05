@@ -5,10 +5,14 @@ from langgraph_openai_serve.graph.interrupt.coordination import (
     RunBusyError,
     RunCoordinator,
 )
-from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.interrupt.models import (
+    InterruptResume,
+    LangGraphInterruptBatch,
+)
 
 __all__ = [
     "InMemoryRunCoordinator",
+    "InterruptResume",
     "LangGraphInterruptBatch",
     "RunBusyError",
     "RunCoordinator",

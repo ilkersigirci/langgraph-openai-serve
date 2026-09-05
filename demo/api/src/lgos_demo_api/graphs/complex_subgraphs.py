@@ -1,8 +1,7 @@
 """Demo graph that exercises nested LangGraph subgraphs."""
 
 from langchain_core.messages import BaseMessage
-from langgraph_openai_serve import GraphConfig, GraphFeature
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
 from pydantic import BaseModel
 
 from lgos_demo_api.graphs.subgraphs.specialist_team import create_specialist_team_graph
@@ -13,7 +12,7 @@ class QuestionInput(BaseModel):
 
 
 def request_to_input(
-    _request: ChatCompletionRequest,
+    _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> dict[str, str]:
     last_message = messages[-1]

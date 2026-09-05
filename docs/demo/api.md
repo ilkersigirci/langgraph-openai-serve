@@ -76,25 +76,27 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 
-response = client.chat.completions.create(
+response = client.responses.create(
     model="custom-input-output-context",
-    messages=[{"role": "user", "content": "Show me the custom adapter."}],
+    input="Show me the custom adapter.",
+    store=False,
     user="demo-user",
 )
 
-print(response.choices[0].message.content)
+print(response.output_text)
 ```
 
 Try the citation graph:
 
 ```python
-response = client.chat.completions.create(
+response = client.responses.create(
     model="citation-events",
-    messages=[{"role": "user", "content": "Show me a cited answer."}],
+    input="Show me a cited answer.",
+    store=False,
 )
 
-print(response.choices[0].message.content)
-print(response.choices[0].message.annotations)
+print(response.output_text)
+print(response.output[0].content[0].annotations)
 ```
 
 See [Events And Citations](graphs/events-and-citations.md) for this graph's
@@ -106,14 +108,16 @@ Ask the RAG graph about the packaged LGOS overview and demo documentation with
 real-time token streaming:
 
 ```python
-stream = client.chat.completions.create(
+stream = client.responses.create(
     model="lgos-rag",
-    messages=[{"role": "user", "content": "How does LGOS streaming work?"}],
+    input="How does LGOS streaming work?",
+    store=False,
     stream=True,
 )
 
-for chunk in stream:
-    print(chunk.choices[0].delta.content or "", end="", flush=True)
+for event in stream:
+    if event.type == "response.output_text.delta":
+        print(event.delta, end="", flush=True)
 ```
 
 See [LGOS RAG](graphs/lgos-rag.md) for its retrieval flow, bounded rewrite, and
@@ -122,35 +126,30 @@ process-local index lifetime.
 Try the async mock MCP graph:
 
 ```python
-response = client.chat.completions.create(
+response = client.responses.create(
     model="advanced-mcp-tools",
-    messages=[{"role": "user", "content": "What is the weather in Istanbul?"}],
+    input="What is the weather in Istanbul?",
+    store=False,
 )
 ```
 
 Try the deterministic status-event showcase:
 
 ```python
-stream = client.chat.completions.create(
+stream = client.responses.create(
     model="status-events",
-    messages=[
-        {
-            "role": "user",
-            "content": "Prepare the media workflow.",
-        }
-    ],
+    input="Prepare the media workflow.",
+    store=False,
     stream=True,
     user="demo-user",
-    metadata={"langgraph_stream_events": "v1"},
 )
 
-for chunk in stream:
-    extension = (chunk.model_extra or {}).get("langgraph_openai_serve")
-    if isinstance(extension, dict):
-        print("Event:", extension["event"])
-
-    if text := chunk.choices[0].delta.content:
-        print(text, end="", flush=True)
+phases = {}
+for event in stream:
+    if event.type == "response.output_item.added" and event.item.type == "message":
+        phases[event.output_index] = event.item.phase
+    elif event.type == "response.output_text.done":
+        print(f"{phases[event.output_index]}: {event.text}")
 ```
 
 See [Events And Citations](graphs/events-and-citations.md) for the status and
@@ -160,7 +159,8 @@ custom-event flows and their client behavior.
 
 The demo includes optional [Chainlit](chainlit.md) and
 [Open WebUI](open-webui.md) clients. The Compose stack routes both through the
-bundled [Bifrost gateway](bifrost.md). See
+LiteLLM or [Bifrost gateway](bifrost.md) selected by
+`OPENAI_GATEWAY_TYPE`, never directly to an API or Files container. See
 [Demo Architecture](architecture.md) for the shared request and ownership
 flows, then use each client guide for its adapter-specific behavior.
 

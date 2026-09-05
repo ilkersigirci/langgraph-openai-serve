@@ -1,3 +1,5 @@
+"""Convert Chat Completions messages into LangChain messages."""
+
 import json
 from typing import Any, cast
 

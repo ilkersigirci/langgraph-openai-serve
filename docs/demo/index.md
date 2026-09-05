@@ -40,7 +40,8 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
-    Compare schema adapters, RAG, citations, client events, subgraphs, and HITL.
+    Compare schema adapters, RAG, citations, direct Chat events, file output,
+    subgraphs, and HITL.
 
     [:octicons-arrow-right-24: Example graphs](graphs/index.md)
 
@@ -53,22 +54,29 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-message-processing-outline:{ .lg .middle } __Use Chainlit__
 
-    Model discovery, Chat Settings, persistence, login, streaming, and HITL.
+    Responses, model discovery, Chat Settings, persistence, login, and HITL.
 
     [:octicons-arrow-right-24: Use Chainlit](chainlit.md)
 
 -   :material-chat-outline:{ .lg .middle } __Use Open WebUI__
 
-    A general manifold Pipe plus a dedicated `simple-graph` UserValve demo.
+    A Responses manifold Pipe with generated graph-specific Workspace Models.
 
     [:octicons-arrow-right-24: Use Open WebUI](open-webui.md)
 
 -   :material-transit-connection-horizontal:{ .lg .middle } __Route through Bifrost__
 
-    Route two independently addressable LGOS APIs through one raw OpenAI
-    pass-through endpoint.
+    Select the native UI inference path and inspect its pinned compatibility
+    boundary.
 
     [:octicons-arrow-right-24: Bifrost gateway](bifrost.md)
+
+-   :material-gateway:{ .lg .middle } __Use the LiteLLM edge__
+
+    Select the managed UI inference route, catalog-detail pass-through, and
+    compatibility tests.
+
+    [:octicons-arrow-right-24: LiteLLM in Compose](docker.md)
 
 -   :material-chart-timeline-variant:{ .lg .middle } __Observe the stack__
 
@@ -84,33 +92,44 @@ client integrations, gateway configuration, and a complete Compose stack.
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
-| Chainlit | Persistent OpenAI client, login, settings UI, events, and HITL UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Dynamic generated models plus a static UserValves example | Independent uv project; Open WebUI uses its official image |
-| Bifrost | Shared model catalog plus provider-selected raw pass-through | Compose configuration with the official image |
+| Chainlit | Persistent Responses client, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
+| Open WebUI | Responses manifold plus dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
+| Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
+| LiteLLM | Selectable managed UI inference edge plus catalog-detail pass-through | Pinned official image and Compose configuration |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
 Only the graph API project imports `langgraph-openai-serve`. The Files API
 implements its independent OpenAI Files contract without importing LGOS.
 Chainlit and Open WebUI exercise the graph API's OpenAI wire contract without
-importing the package. Their dynamic clients use Bifrost's catalog for
-provider-qualified discovery and raw pass-through for model details and chat.
-The fixed-model Open WebUI example uses Bifrost pass-through without catalog
-discovery. Pass-through preserves the required LGOS model-detail extension.
+importing the package. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects their
+shared edge. Responses and Files use its normal managed/native routes; only
+catalog detail uses pass-through to preserve LGOS extensions.
+
+!!! warning "Pinned managed-routing limitations"
+
+    Bifrost v2.0.0 native Responses preserves the tested `phase`, commentary,
+    file-input, and continuation contracts; only normalized model-detail and
+    error metadata remain strict expected failures. Its raw pass-through route
+    passes the direct contract suite. LiteLLM 1.99.1 managed wildcard routing
+    synthesizes the upstream stream and rewrites standard error metadata.
+    Pass-through routes remain the lossless protocol references. The UIs use
+    the selected gateway's normal inference route and accept that route's
+    documented limitations; see [Docker Compose](docker.md) and [Bifrost
+    Gateway](bifrost.md) for the precise boundaries.
 
 ## Client Capabilities
 
-| Demo client | File input | Missing LGOS metadata | Runtime settings | Interrupts | Client events | Citations |
+| Demo client | File input | Missing LGOS metadata | Runtime settings | Interrupts | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status, Plotly, and live activity elements | Markdown content |
-| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted chart embeds | Native source events and Markdown |
-| Open WebUI static example | Not implemented | Warning notification | Fixed `simple-graph` UserValves | None | Not requested | Assistant text only |
+| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status and persisted image elements | Markdown content |
+| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted file events | Native source events and Markdown |
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
-An interrupt still uses standard OpenAI `tool_calls`, but a client application
+An interrupt uses standard Responses function calls, but a client application
 must recognize `langgraph_interrupt`, collect human answers, and replay the
-canonical assistant/tool exchange. The Chainlit and Open WebUI adapters show
-that client behavior without importing LGOS. See
+canonical `function_call`/`function_call_output` exchange. The Chainlit and
+Open WebUI adapters show that client behavior without importing LGOS. See
 [OpenAI Clients](../tutorials/openai-clients.md).
 
 ## Persistence Boundary

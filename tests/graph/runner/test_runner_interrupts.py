@@ -1,4 +1,3 @@
-import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,7 +12,7 @@ from anyio import (
     sleep_forever,
 )
 from anyio.lowlevel import checkpoint
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -26,7 +25,6 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.types import GraphOutput
 
-from langgraph_openai_serve.api.chat.utils.responses import response_message
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
@@ -35,6 +33,7 @@ from langgraph_openai_serve.graph.graph_registry import (
 )
 from langgraph_openai_serve.graph.interrupt import (
     InMemoryRunCoordinator,
+    InterruptResume,
     LangGraphInterruptBatch,
 )
 from langgraph_openai_serve.graph.interrupt.state import (
@@ -154,10 +153,9 @@ async def test_cancelled_preparation_finishes_lease_release(
     async def run_preparation() -> None:
         try:
             await prepare_run(
-                "interruptible",
-                request.messages,
-                registry,
                 request,
+                [HumanMessage(content="question")],
+                registry,
             )
         except get_cancelled_exc_class():
             cancellation_propagated.set()
@@ -216,7 +214,9 @@ async def test_thread_id_reaches_runnable_config(
         metadata={RUN_METADATA_KEY: RUN_ID},
     )
 
-    invocation = await run_langgraph("threaded", request.messages, registry, request)
+    invocation = await run_langgraph(
+        request, [HumanMessage(content="question")], registry
+    )
 
     assert isinstance(invocation.output, AIMessage)
     assert invocation.output.text == "ok"
@@ -248,10 +248,7 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     )
 
     invocation = await run_langgraph(
-        "interruptible",
-        request.messages,
-        registry,
-        request,
+        request, [HumanMessage(content="question")], registry
     )
 
     assert isinstance(invocation.output, LangGraphInterruptBatch)
@@ -344,20 +341,14 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
         outputs = [
             event
             async for event in run_langgraph_stream(
-                "parallel",
-                request.messages,
-                registry,
-                request,
+                request, [HumanMessage(content="question")], registry
             )
         ]
         assert len(outputs) == 1
         output = outputs[0]
     else:
         invocation = await run_langgraph(
-            "parallel",
-            request.messages,
-            registry,
-            request,
+            request, [HumanMessage(content="question")], registry
         )
         output = invocation.output
 
@@ -396,33 +387,22 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
     )
     async with AsyncSqliteSaver.from_conn_string(str(database_path)) as saver:
         paused = await run_langgraph(
-            "interruptible",
-            initial_request.messages,
-            registry(saver),
-            initial_request,
+            initial_request, [HumanMessage(content="question")], registry(saver)
         )
 
     assert isinstance(paused.output, LangGraphInterruptBatch)
-    assistant, _finish_reason = response_message(paused.output)
-    tool_call = (assistant.tool_calls or [])[0]
-    resume_request = make_request(
-        "interruptible",
-        messages=[
-            assistant.model_dump(mode="json", exclude_none=True),
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps({"resume": "approve"}),
-            },
-        ],
+    resume = InterruptResume(
+        run_id=paused.output.run_id,
+        state_token=paused.output.state_token,
+        values={paused.output.interrupts[0].id: "approve"},
     )
 
     async with AsyncSqliteSaver.from_conn_string(str(database_path)) as saver:
         completed = await run_langgraph(
-            "interruptible",
-            resume_request.messages,
+            make_request("interruptible"),
+            [],
             registry(saver),
-            resume_request,
+            resume=resume,
         )
 
     assert isinstance(completed.output, AIMessage)

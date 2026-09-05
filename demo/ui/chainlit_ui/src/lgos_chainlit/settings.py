@@ -14,6 +14,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from lgos_chainlit.gateway import GatewayType
+
 AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
 HttpUrlStr = Annotated[
     str,
@@ -39,23 +41,12 @@ def _is_unconfigured(value: str | None) -> bool:
 class OpenAIEndpoint(BaseModel):
     """OpenAI-compatible endpoints and their shared credential."""
 
-    base_url: HttpUrlStr = Field(
-        description="OpenAI-compatible base URL used for retrieval and chat."
-    )
-    catalog_base_url: HttpUrlStr | None = Field(
+    gateway_base_url: HttpUrlStr | None = Field(
         default=None,
         description=(
-            "Optional Bifrost catalog URL used for provider-qualified model discovery."
+            "Optional gateway root override. The demo selects the local root from "
+            "OPENAI_GATEWAY_TYPE when this is unset."
         ),
-    )
-    files_base_url: HttpUrlStr = Field(
-        default="http://localhost:3006/v1",
-        description="OpenAI Files API URL.",
-    )
-    files_provider: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Optional Bifrost provider dedicated to OpenAI Files requests.",
     )
     api_key: str = Field(
         min_length=1,
@@ -75,10 +66,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    OPENAI: OpenAIEndpoint = OpenAIEndpoint(
-        base_url="http://localhost:3004/v1",
-        api_key="DUMMY",
+    OPENAI_GATEWAY_TYPE: GatewayType = Field(
+        default="litellm",
+        validation_alias="OPENAI_GATEWAY_TYPE",
+        description="OpenAI gateway used by every Chainlit OpenAI client.",
     )
+    OPENAI: OpenAIEndpoint = OpenAIEndpoint(api_key="sk-lgos-litellm-demo")
     HITL_MODEL: str = "interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"

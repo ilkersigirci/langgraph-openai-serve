@@ -1,3 +1,5 @@
+"""Chat-specific message decoding at the API boundary."""
+
 import pytest
 from langchain_core.messages import (
     AIMessage,
@@ -6,15 +8,15 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
+from langgraph_openai_serve.api.chat.messages import (
+    InvalidChatMessageError,
+    convert_to_lc_messages,
+)
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequestMessage,
     Role,
     ToolCall as RequestToolCall,
     ToolCallFunction,
-)
-from langgraph_openai_serve.utils.message import (
-    InvalidChatMessageError,
-    convert_to_lc_messages,
 )
 
 

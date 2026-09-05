@@ -62,13 +62,14 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
-response = client.chat.completions.create(
+response = client.responses.create(
     model="custom-input-output-context",
-    messages=[{"role": "user", "content": "Show me custom schemas."}],
+    input="Show me custom schemas.",
+    store=False,
     user="demo-user",
 )
 
-print(response.choices[0].message.content)
+print(response.output_text)
 ```
 
 Use `curl http://localhost:8000/v1/models` only as a diagnostic to inspect the
@@ -79,9 +80,14 @@ self-contained demo project or its lockfile. The demo publishes independent API
 and Chainlit images and uses official images for third-party services such as
 Open WebUI. See the [demo Docker Compose guide](docs/demo/docker.md).
 
-The demo also includes a PostgreSQL-persistent Chainlit client. It uses a
-shared mock login by default, with PocketID OAuth available as an opt-in mode.
-See the [Chainlit demo](docs/demo/chainlit.md).
+The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`
+setting place either gateway in front of both maintained UI clients. Chainlit
+and Open WebUI use normal managed/native Responses and Files routes, plus a
+catalog-detail pass-through for rich model metadata, so neither UI connects
+directly to an LGOS service. The
+PostgreSQL-persistent Chainlit client uses a shared mock login by default, with
+PocketID OAuth available as an opt-in mode. See the
+[Chainlit demo](docs/demo/chainlit.md).
 
 ## Use In FastAPI
 
@@ -107,11 +113,12 @@ LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
 The default base URL is `{host}/v1`. Registered graph names become OpenAI `model`
 values.
 
-LGOS preserves native Chat Completions file content parts, including opaque
-`file_id` values, but does not own file upload or storage. Deploy one Files API
-for the graph services that share a file namespace, or use a gateway-native
-Files provider. The standalone S3-backed [demo Files
-API](demo/files_api/README.md) is a small reference deployment.
+LGOS accepts native Responses `input_file` parts with opaque `file_id` values,
+but does not own file upload or storage. Deploy one Files API for the graph
+services that share a file namespace, or use a gateway-native Files provider.
+The standalone S3-backed [demo Files API](demo/files_api/README.md) is a small
+reference deployment. Chat Completions remains available for direct
+compatibility clients; the maintained demo UIs use Responses exclusively.
 
 ## Docs
 

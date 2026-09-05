@@ -12,7 +12,8 @@ Keep test setup explicit and assertions focused on observable behavior.
   checkout into the demo API test run.
 - Live demo integration tests are excluded from default pytest runs. Start the
   required services and use the dedicated root target, such as
-  `make test-bifrost`, to select the `integration` marker explicitly.
+  `make test-bifrost` or `make test-litellm`, to select the `integration`
+  marker explicitly.
 - `tests/integration/test_demo_*` guards copied wire declarations and the
   distribution boundary without making demo runtime code import the parent
   package checkout.
@@ -88,9 +89,14 @@ timer only masks the environment failure.
 ## Runner And API Tests
 
 - Runner tests should exercise graph execution behavior directly through
-  `run_langgraph` or `run_langgraph_stream`.
+  `run_langgraph` or `run_langgraph_stream`, passing a `GraphRequest`, native
+  LangChain messages, and an explicit `InterruptResume` when needed. Keep HTTP
+  request decoding in API tests.
 - API tests should exercise HTTP/OpenAI-client behavior through the FastAPI or
   OpenAI client fixtures.
+- Responses golden SSE fixtures define the text, function-call, and failure
+  lifecycles checked against the real endpoint. Run gateway checks through the
+  live demo integration suites.
 - Use `AsyncOpenAI` over HTTPX's ASGI transport for OpenAI contract tests. Use
   the raw HTTP client only for wire-format and host-application assertions.
 - If the same graph shape is needed in both layers, define it once in
@@ -113,11 +119,12 @@ timer only masks the environment failure.
   idempotency should pass a non-nil UUID as
   `metadata.langgraph_run_id`; invalid or reused UUID cases should remain
   separate assertions.
-- Resume helpers must copy the complete assistant message with all original
-  `tool_calls`, then append exactly one JSON `{"resume": ...}` tool result for
-  every call. Parallel interrupts must be answered together and matched by
-  `tool_call_id`; never synthesize only the visible payload or select the first
-  call.
+- Resume helpers must preserve the complete protocol output: the Chat assistant
+  message with all original `tool_calls`, or every Responses `function_call`
+  item. Append exactly one JSON `{"resume": ...}` result for every call, using
+  the protocol's matching `tool_call_id` or `call_id`. Parallel interrupts must
+  be answered together; never synthesize only the visible payload or select the
+  first call.
 - Cover the durable lifecycle at the API boundary: an initial retry with the
   same caller run UUID re-emits the pending batch, stale or repeated resumes
   return a conflict without re-executing work, concurrent resumes are
@@ -135,6 +142,7 @@ external database.
 
 - Graphs that emit client events must declare
   `features={GraphFeature.CLIENT_EVENTS}`.
-- Streaming requests must also opt in with
+- Streaming Responses requests expose visible statuses as commentary without a
+  metadata opt-in. Direct Chat streaming requests must opt in with
   `metadata.langgraph_stream_events="v1"`; test the feature declaration and
-  request opt-in as independent gates.
+  Chat request opt-in as independent gates.

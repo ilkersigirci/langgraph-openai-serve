@@ -3,7 +3,6 @@
 import json
 import time
 import uuid
-from typing import TYPE_CHECKING, cast
 
 from langchain_core.messages import AIMessage, UsageMetadata
 from langgraph.types import Interrupt
@@ -24,18 +23,15 @@ from langgraph_openai_serve.api.chat.schemas import (
     ToolCallFunction,
     UsageInfo,
 )
-from langgraph_openai_serve.api.chat.utils.interrupts import (
+from langgraph_openai_serve.core.errors import openai_error_payload
+from langgraph_openai_serve.graph.citations import citations_from_message
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.interrupt.codec import (
     INTERRUPT_TOOL_NAME,
     interrupt_arguments,
     interrupt_tool_call_id,
 )
-from langgraph_openai_serve.core.errors import openai_error_payload
-from langgraph_openai_serve.graph.events import citation_slice
-from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import LangGraphOutput
-
-if TYPE_CHECKING:
-    from langchain_core.messages.content import Citation
 
 
 def chat_completion_response(
@@ -111,38 +107,19 @@ def tool_calls_from_message(message: AIMessage) -> list[ToolCall]:
 
 
 def annotations_from_message(message: AIMessage) -> list[Annotation]:
-    """Convert native LangChain citations to OpenAI URL annotations."""
-    annotations = []
-    text_offset = 0
-    for block in message.content_blocks:
-        if block["type"] != "text":
-            continue
-        for citation in block.get("annotations", []):
-            if citation.get("type") != "citation":
-                continue
-            citation = cast("Citation", citation)
-            required = {"url", "title", "start_index", "end_index"}
-            if not required.issubset(citation):
-                continue
-            annotation = Annotation.model_validate(
-                {
-                    "type": "url_citation",
-                    "url_citation": {
-                        "url": citation["url"],
-                        "title": citation["title"],
-                        "start_index": citation["start_index"] + text_offset,
-                        "end_index": citation["end_index"] + text_offset,
-                    },
-                }
-            )
-            span = citation_slice(annotation, message.text)
-            cited_text = citation.get("cited_text")
-            if cited_text is not None and message.text[span] != cited_text:
-                msg = "citation indices must match cited_text"
-                raise ValueError(msg)
-            annotations.append(annotation)
-        text_offset += len(block["text"])
-    return annotations
+    """Convert validated LangChain citations to Chat URL annotations."""
+    return [
+        Annotation.model_validate(
+            {
+                "type": "url_citation",
+                "url_citation": {
+                    key: citation[key]
+                    for key in ("url", "title", "start_index", "end_index")
+                },
+            }
+        )
+        for citation in citations_from_message(message)
+    ]
 
 
 def usage_info(usage: UsageMetadata | None) -> UsageInfo | None:

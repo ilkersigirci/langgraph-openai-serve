@@ -1,9 +1,9 @@
 # File Input
 
-`file-input` is a small model-backed graph for trying native Chat Completions
-file parts end to end. It reads each central `file_id`, downloads the original
-bytes, and sends them to the configured OpenAI Responses API. It has no graph
-persistence.
+`file-input` is a small model-backed graph for trying native Responses
+`input_file` parts end to end. It reads each central `file_id`, downloads the
+original bytes, and sends them to the configured OpenAI Responses API. It has
+no graph persistence.
 
 ## Request Flow
 
@@ -29,7 +29,7 @@ sequenceDiagram
     participant O as OpenAI Responses
     C->>F: POST /v1/files
     F-->>C: file_id
-    C->>G: Chat completion with file_id
+    C->>G: Response input with file_id
     G->>F: GET metadata and content
     F-->>G: filename and bytes
     G->>O: Inline input_file or input_image
@@ -47,7 +47,7 @@ graph TD;
 
 ## Try It
 
-Run the Compose Chainlit stack, select `lgos-a/file-input`, attach a supported
+Run the Compose Chainlit stack, select `file-input`, attach a supported
 document or image, and send a request such as:
 
 ```text

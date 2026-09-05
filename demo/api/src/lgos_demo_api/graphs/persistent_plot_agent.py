@@ -1,6 +1,6 @@
 """A persistent chart managed by a LangChain agent."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated, Any, Literal
@@ -9,23 +9,28 @@ from fastapi import status
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages.tool import tool_call
 from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph_openai_serve import (
     ClientSettings,
     GraphConfig,
-    GraphFeature,
-    client_event,
+    GraphRequest,
+    NamedFunctionToolChoice,
 )
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
+from openai import AsyncOpenAI
 from openai.types.shared import ErrorObject
+from plotly import graph_objects as go
 from pydantic import BaseModel, ConfigDict, Field
 
 from lgos_demo_api.settings import settings
 
 ARTIFACT_KEY = "quarterly-revenue"
+DISPLAY_FILE_TOOL_NAME = "display_file"
+PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"
 QUARTERS = ("Q1", "Q2", "Q3", "Q4")
 Quarter = Literal["Q1", "Q2", "Q3", "Q4"]
 SYSTEM_PROMPT = """You manage one persistent quarterly revenue chart.
@@ -33,8 +38,9 @@ SYSTEM_PROMPT = """You manage one persistent quarterly revenue chart.
 For reads or display requests, use show_quarterly_revenue. For edits, call
 update_quarterly_revenue directly; it reads the current values itself. Put every
 edit requested in one update call, and never call both tools for the same
-request. Never invent stored values. After a tool call, answer concisely and
-mention the important result.
+request. Never invent stored values. If the latest input is a display_file result,
+do not call another tool; acknowledge the result concisely. After any other tool
+call, answer concisely and mention the important result.
 """
 
 
@@ -79,31 +85,16 @@ class PersistentPlotAgentSettings(ClientSettings):
     )
 
 
-class ChartSeries(BaseModel):
-    """One portable series in a chart artifact."""
+class DisplayFile(BaseModel):
+    """Arguments for the client-owned file display function."""
 
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
-    values: list[float]
-
-
-class ChartArtifact(BaseModel):
-    """A small UI-neutral chart snapshot for rich clients."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    schema_version: Literal[1] = 1
-    id: str = Field(min_length=1)
-    kind: Literal["chart"] = "chart"
+    file_id: str = Field(min_length=1)
+    filename: str = Field(min_length=1)
+    media_type: Literal["application/vnd.plotly.v1+json"] = PLOTLY_MEDIA_TYPE
     title: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
-    chart_type: Literal["bar", "line"]
-    labels: list[str]
-    series: list[ChartSeries]
-    x_axis_title: str = Field(min_length=1)
-    y_axis_title: str = Field(min_length=1)
-    show_legend: bool
+    alt: str = Field(min_length=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +102,7 @@ class PersistentPlotAgentContext:
     user_id: str
     session_id: str
     settings: PersistentPlotAgentSettings
+    display_file_available: bool = False
 
 
 PersistentPlotAgent = CompiledStateGraph[Any, PersistentPlotAgentContext, Any, Any]
@@ -126,29 +118,12 @@ def _values(document: PlotDocument) -> list[float]:
 
 def _summary(
     document: PlotDocument,
-    settings: PersistentPlotAgentSettings,
+    chart_settings: PersistentPlotAgentSettings,
 ) -> str:
     values = _values(document)
     highest_index = values.index(max(values))
-    symbol = _currency_symbol(settings.currency)
+    symbol = _currency_symbol(chart_settings.currency)
     return f"{QUARTERS[highest_index]} is highest at {symbol}{max(values):g}k."
-
-
-def _artifact(
-    document: PlotDocument,
-    settings: PersistentPlotAgentSettings,
-) -> ChartArtifact:
-    return ChartArtifact(
-        id=ARTIFACT_KEY,
-        title="Quarterly revenue",
-        summary=_summary(document, settings),
-        chart_type=settings.chart_type,
-        labels=list(QUARTERS),
-        series=[ChartSeries(name="Revenue", values=_values(document))],
-        x_axis_title="Quarter",
-        y_axis_title=f"Revenue ({settings.currency}, thousands)",
-        show_legend=settings.show_legend,
-    )
 
 
 def _thread_scope(user_id: str, session_id: str) -> str:
@@ -186,20 +161,53 @@ async def _load_document(
     )
 
 
-def _publish(
+def _render_plotly(
+    document: PlotDocument,
+    chart_settings: PersistentPlotAgentSettings,
+) -> bytes:
+    """Serialize the interactive figure using Plotly's native JSON format."""
+    values = _values(document)
+    trace = (
+        go.Scatter(x=QUARTERS, y=values, mode="lines+markers", name="Revenue")
+        if chart_settings.chart_type == "line"
+        else go.Bar(x=QUARTERS, y=values, name="Revenue")
+    )
+    figure = go.Figure(trace)
+    figure.update_layout(
+        title="Quarterly revenue",
+        xaxis_title="Quarter",
+        yaxis_title=f"Revenue ({chart_settings.currency}, thousands)",
+        showlegend=chart_settings.show_legend,
+        template="plotly_white",
+    )
+    return figure.to_json().encode()
+
+
+async def _publish(
     document: PlotDocument,
     context: PersistentPlotAgentContext,
-    runtime: ToolRuntime[PersistentPlotAgentContext],
-) -> ChartArtifact:
-    artifact = _artifact(document, context.settings)
-    runtime.stream_writer(
-        client_event(
-            "artifact",
-            artifact.model_dump(mode="json"),
-            namespace=("charts",),
+) -> DisplayFile | None:
+    if not context.display_file_available:
+        return None
+
+    content = _render_plotly(document, context.settings)
+    digest = sha256(content).hexdigest()[:12]
+    filename = f"quarterly-revenue-{digest}.plotly.json"
+    async with AsyncOpenAI(
+        base_url=settings.FILES_BASE_URL,
+        api_key="DUMMY",
+        max_retries=0,
+    ) as files_client:
+        uploaded = await files_client.files.create(
+            file=(filename, content, PLOTLY_MEDIA_TYPE),
+            purpose="user_data",
         )
+    return DisplayFile(
+        file_id=uploaded.id,
+        filename=filename,
+        title="Quarterly revenue",
+        alt=_summary(document, context.settings),
     )
-    return artifact
 
 
 def _tool_result(document: PlotDocument, summary: str) -> str:
@@ -210,22 +218,22 @@ def _tool_result(document: PlotDocument, summary: str) -> str:
     return f"{summary} Current values: {values}."
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def show_quarterly_revenue(
     runtime: ToolRuntime[PersistentPlotAgentContext],
-) -> str:
+) -> tuple[str, DisplayFile | None]:
     """Read the stored quarterly revenue values and display the current chart."""
     store, context = _runtime_dependencies(runtime)
     document = await _load_document(store, context)
-    artifact = _publish(document, context, runtime)
-    return _tool_result(document, artifact.summary)
+    summary = _summary(document, context.settings)
+    return _tool_result(document, summary), await _publish(document, context)
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def update_quarterly_revenue(
     updates: Annotated[list[RevenueUpdate], Field(min_length=1)],
     runtime: ToolRuntime[PersistentPlotAgentContext],
-) -> str:
+) -> tuple[str, DisplayFile | None]:
     """Apply one or more quarterly revenue edits and display the updated chart."""
     store, context = _runtime_dependencies(runtime)
     document = await _load_document(store, context)
@@ -239,8 +247,8 @@ async def update_quarterly_revenue(
             updated.model_dump(mode="json"),
         )
 
-    artifact = _publish(updated, context, runtime)
-    return _tool_result(updated, artifact.summary)
+    summary = _summary(updated, context.settings)
+    return _tool_result(updated, summary), await _publish(updated, context)
 
 
 def _chat_model() -> ChatOpenAI:
@@ -269,7 +277,7 @@ def create_persistent_plot_agent(
 
 
 def context_factory(
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     client_settings: ClientSettings | None,
 ) -> PersistentPlotAgentContext:
     user_id, session_id = _persistence_scope(request)
@@ -282,10 +290,54 @@ def context_factory(
         user_id=user_id,
         session_id=session_id,
         settings=plot_settings,
+        display_file_available=_display_file_available(request),
     )
 
 
-def _persistence_scope(request: ChatCompletionRequest) -> tuple[str, str]:
+def _display_file_available(request: GraphRequest) -> bool:
+    if request.tool_choice == "none":
+        return False
+    if isinstance(request.tool_choice, NamedFunctionToolChoice):
+        return request.tool_choice.name == DISPLAY_FILE_TOOL_NAME
+    return any(tool.name == DISPLAY_FILE_TOOL_NAME for tool in request.tools)
+
+
+def output_to_message(output: Any) -> AIMessage:
+    """Prefer the latest deterministic display request over agent prose."""
+    raw_messages = (
+        output.get("messages")
+        if isinstance(output, Mapping)
+        else getattr(output, "messages", None)
+    )
+    if not isinstance(raw_messages, Sequence) or not raw_messages:
+        msg = "Persistent plot output must contain messages."
+        raise TypeError(msg)
+
+    for message in reversed(raw_messages):
+        if not isinstance(message, ToolMessage) or not isinstance(
+            message.artifact, DisplayFile
+        ):
+            continue
+        call_id = sha256(message.artifact.file_id.encode()).hexdigest()[:24]
+        return AIMessage(
+            content="",
+            tool_calls=[
+                tool_call(
+                    name=DISPLAY_FILE_TOOL_NAME,
+                    args=message.artifact.model_dump(mode="json"),
+                    id=f"lg_display_{call_id}",
+                )
+            ],
+        )
+
+    final = raw_messages[-1]
+    if not isinstance(final, AIMessage):
+        msg = "Persistent plot output must end with an AIMessage."
+        raise TypeError(msg)
+    return final
+
+
+def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
     if not request.user:
         raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -296,7 +348,7 @@ def _persistence_scope(request: ChatCompletionRequest) -> tuple[str, str]:
                 code="missing_persistence_scope",
             ),
         )
-    session_id = (request.metadata or {}).get("session_id")
+    session_id = request.metadata.get("session_id")
     if not session_id:
         raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -318,19 +370,20 @@ def create_persistent_plot_agent_config(
         graph=graph_factory,
         description="Uses an agent to inspect and edit a persistent revenue chart.",
         context_factory=context_factory,
-        streamable_node_names=["model"],
-        features={GraphFeature.CLIENT_EVENTS},
         client_settings=PersistentPlotAgentSettings,
+        output_to_message=output_to_message,
     )
 
 
 __all__ = [
     "ARTIFACT_KEY",
-    "ChartArtifact",
+    "DISPLAY_FILE_TOOL_NAME",
+    "DisplayFile",
     "PersistentPlotAgentContext",
     "PersistentPlotAgentSettings",
     "PlotDocument",
     "RevenueUpdate",
     "create_persistent_plot_agent",
     "create_persistent_plot_agent_config",
+    "output_to_message",
 ]

@@ -39,7 +39,7 @@ sequenceDiagram
   participant DB as PostgreSQL checkpointer
 
   User->>UI: Request protected action
-  UI->>API: Initial Chat Completion
+  UI->>API: Initial Responses request
   API->>Graph: Invoke under run coordinator
   Graph->>DB: Save refund pause
   Graph-->>UI: Refund review tool call via API

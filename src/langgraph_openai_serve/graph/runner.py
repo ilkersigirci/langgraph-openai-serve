@@ -1,4 +1,4 @@
-"""Run LangGraph workflows behind the OpenAI-compatible chat API."""
+"""Run LangGraph workflows from protocol-neutral requests and messages."""
 
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
@@ -6,14 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from anyio import CancelScope
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import CustomStreamPart, GraphOutput, StreamMode
 
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionRequestMessage,
-)
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
@@ -21,6 +17,7 @@ from langgraph_openai_serve.graph.interrupt import (
     models as interrupt_models,
     state as interrupt_state,
 )
+from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
     prepare_run,
@@ -49,10 +46,12 @@ _CheckpointDisposition = Literal["unknown", "preserve", "delete"]
 
 
 async def run_langgraph(
-    model: str,
-    messages: list[ChatCompletionRequestMessage],
+    request: GraphRequest,
+    messages: list[BaseMessage],
     graph_registry: GraphRegistry,
-    request: ChatCompletionRequest | None = None,
+    *,
+    resume: interrupt_models.InterruptResume | None = None,
+    checkpoint_scope: str = "default",
 ) -> LangGraphInvocation:
     """
     Prepare and invoke a graph for direct runner callers.
@@ -63,20 +62,27 @@ async def run_langgraph(
     calls ``invoke_run`` directly with that prepared run.
 
     Examples:
-        >>> invocation = await run_langgraph("my-model", messages, registry)
+        >>> invocation = await run_langgraph(request, messages, registry)
         >>> print(invocation.output)
 
     Args:
-        model: The name of the model to use, which also determines which graph to use.
-        messages: A list of messages to process through the LangGraph.
+        request: Normalized graph selection, metadata, user, and client tools.
+        messages: Decoded LangChain messages to process through the graph.
         graph_registry: The GraphRegistry instance containing registered graphs.
-        request: The complete chat completion request passed to graph adapters.
+        resume: A decoded, complete interrupt answer batch, when resuming.
+        checkpoint_scope: Server-trusted scope used to isolate checkpoint state.
 
     Returns:
         The durable graph output.
 
     """
-    run = await prepare_run(model, messages, graph_registry, request)
+    run = await prepare_run(
+        request,
+        messages,
+        graph_registry,
+        resume=resume,
+        checkpoint_scope=checkpoint_scope,
+    )
 
     return await invoke_run(run)
 
@@ -123,10 +129,12 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
 
 
 async def run_langgraph_stream(
-    model: str,
-    messages: list[ChatCompletionRequestMessage],
+    request: GraphRequest,
+    messages: list[BaseMessage],
     graph_registry: GraphRegistry,
-    request: ChatCompletionRequest | None = None,
+    *,
+    resume: interrupt_models.InterruptResume | None = None,
+    checkpoint_scope: str = "default",
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
     Prepare and stream a graph for direct runner callers.
@@ -137,16 +145,23 @@ async def run_langgraph_stream(
     therefore calls ``stream_run`` directly with that prepared run.
 
     Args:
-        model: The name of the model (graph) to run.
-        messages: A list of OpenAI-compatible messages.
+        request: Normalized graph selection, metadata, user, and client tools.
+        messages: Decoded LangChain messages to process through the graph.
         graph_registry: The registry containing the graph configurations.
-        request: The complete chat completion request passed to graph adapters.
+        resume: A decoded, complete interrupt answer batch, when resuming.
+        checkpoint_scope: Server-trusted scope used to isolate checkpoint state.
 
     Yields:
         Assistant text chunks, custom events, or LangGraph interrupts.
 
     """
-    run = await prepare_run(model, messages, graph_registry, request)
+    run = await prepare_run(
+        request,
+        messages,
+        graph_registry,
+        resume=resume,
+        checkpoint_scope=checkpoint_scope,
+    )
     run_stream = stream_run(run)
     async with aclosing(run_stream):
         async for event in run_stream:

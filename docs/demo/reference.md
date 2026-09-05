@@ -12,7 +12,7 @@ under `demo/`. These commands and `DEMO_*` settings are not part of the
 | `demo/files_api` | OpenAI-compatible Files service and S3 adapter | No |
 | `demo/ui/chainlit_ui` | Persistent OpenAI-protocol client | No |
 | `demo/ui/openwebui` | Open WebUI Function sources and sync command | No |
-| `demo/docker` | Compose-only Bifrost configuration and service data directories | No |
+| `demo/docker` | Compose gateway configuration and service data directories | No |
 
 Each Python project has its own `pyproject.toml`, virtual environment, and
 `uv.lock`; `demo/` deliberately is not a uv workspace.
@@ -26,6 +26,8 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
 | `make run-api-b` | Run the published `lgos-b` container on port 3005 |
 | `make run-files` | Run the published Files API container on port 3006 |
+| `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
+| `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3007 |
 | `make run-chainlit` | Run the published Chainlit container and its dependencies on port 3002 |
 | `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
 | `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
@@ -42,6 +44,12 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make lint` | Check all four projects with Ruff |
 | `make check` | Run tests, lint, formatting checks, and Compose validation |
 
+From the repository root, `make test-litellm` and `make test-bifrost` run the
+focused OpenAI SDK checks. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
+gateway used by both maintained UIs. Responses and Files use its normal
+managed/native routes. A separate catalog-detail client retains LGOS model
+extensions through authenticated pass-through; UI inference never does.
+
 ## Stack Settings
 
 | Setting | Default | Purpose |
@@ -49,7 +57,8 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `DEMO_IMAGE_TAG` | `latest` | Tag selected for all project-owned demo images |
 | `PUID` | `1000` | Host user ID used by Compose services |
 | `PGID` | `1000` | Host group ID used by Compose services |
-| `DEMO_BIFROST_BASE_URL` | internal Compose URL | Optional external Bifrost origin used by both UI clients |
+| `OPENAI_GATEWAY_TYPE` | `litellm` | Gateway used by both demo UIs: `litellm` or `bifrost` |
+| `DEMO_LITELLM_MASTER_KEY` | demo-only value | LiteLLM bearer key shared by the two UI clients and default local Admin UI password for username `admin`; replace it outside local demos |
 | `DEMO_OPENWEBUI_SECRET_KEY` | demo-only value | Open WebUI application secret; replace it outside local demos |
 
 ## OpenTelemetry Settings
@@ -72,9 +81,6 @@ The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
 `OTEL_HOST_NAME`; set them per machine in `.env`. The endpoint URL scheme
 controls transport security: use `https://` for TLS and `http://` only when the
 gateway intentionally accepts cleartext OTLP/HTTP.
-
-Set `DEMO_BIFROST_BASE_URL` to the public Bifrost origin when UI inference
-should traverse an external proxy and participate in its distributed trace.
 
 ## Demo API Settings
 
@@ -117,9 +123,9 @@ of truth for these `DEMO_OPENWEBUI_` variables.
 | `DEMO_OPENWEBUI_URL` | `http://localhost:3003` | Open WebUI API used by the sync command |
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | `lgos@example.com` | Open WebUI sync account |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | `lgos` | Open WebUI sync password |
-| `DEMO_OPENWEBUI_OPENAI_CATALOG_BASE_URL` | `http://localhost:3000/v1` | Bifrost model catalog used for discovery |
-| `DEMO_OPENWEBUI_OPENAI_BASE_URL` | `http://localhost:3000/openai_passthrough/v1` | Bifrost pass-through used for model metadata |
-| `DEMO_OPENWEBUI_API_KEY` | `DUMMY` | Gateway key used by both OpenAI clients |
+| `OPENAI_GATEWAY_TYPE` | `litellm` | Exact global selector shared with Chainlit: `litellm` or `bifrost` |
+| `DEMO_OPENWEBUI_OPENAI_GATEWAY_BASE_URL` | selected local gateway | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
+| `DEMO_OPENWEBUI_API_KEY` | `sk-lgos-litellm-demo` | Gateway key used by the OpenAI clients |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the

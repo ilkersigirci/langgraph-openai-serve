@@ -57,10 +57,12 @@ async def test_modern_function_tools_remain_supported(
                         "properties": {"city": {"type": "string"}},
                         "required": ["city"],
                     },
+                    "strict": True,
                 },
             }
         ],
         tool_choice="auto",
+        parallel_tool_calls=False,
     )
 
     assert response.choices[0].message.content == "hello"

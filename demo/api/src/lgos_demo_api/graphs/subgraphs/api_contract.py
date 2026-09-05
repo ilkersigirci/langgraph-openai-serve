@@ -14,7 +14,7 @@ async def collect_contract_checks(state: ApiContractState) -> dict[str, Any]:
     source_text = state.normalized_question or state.question
     normalized = " ".join(source_text.lower().split())
     checks = [
-        "OpenAI chat messages were adapted into native graph input",
+        "OpenAI request messages were adapted into native graph input",
         "native graph output is rendered back as assistant text",
     ]
     if "stream" in normalized:

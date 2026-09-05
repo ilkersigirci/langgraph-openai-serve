@@ -9,7 +9,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.api.responses.request import decode_responses_request
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
@@ -95,15 +96,12 @@ def _source_document(content: str, name: str) -> Document:
     )
 
 
-async def _stream(request: ChatCompletionRequest) -> list[object]:
+async def _stream(request: ResponseCreateRequest) -> list[object]:
+    graph_request, messages, _ = decode_responses_request(request)
+
     events: list[object] = [
         event
-        async for event in run_langgraph_stream(
-            request.model,
-            request.messages,
-            _registry(),
-            request,
-        )
+        async for event in run_langgraph_stream(graph_request, messages, _registry())
     ]
     assert isinstance(events[-1], AIMessage)
     return events

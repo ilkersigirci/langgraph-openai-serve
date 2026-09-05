@@ -98,7 +98,16 @@ async def test_non_streaming_completion_uses_openai_inclusive_end_index(
     assert [annotation.model_dump() for annotation in message.annotations] == [
         ANNOTATION
     ]
-    assert ANSWER[citation_slice(message.annotations[0], ANSWER)] == CITATION_TEXT
+    assert (
+        ANSWER[
+            citation_slice(
+                message.annotations[0].url_citation.start_index,
+                message.annotations[0].url_citation.end_index,
+                ANSWER,
+            )
+        ]
+        == CITATION_TEXT
+    )
 
 
 async def test_streaming_completion_emits_annotations_on_final_delta(
@@ -174,7 +183,16 @@ def test_citation_indices_are_offset_across_text_blocks() -> None:
     annotation = annotations_from_message(message)[0]
 
     assert annotation.url_citation.start_index == len(prefix)
-    assert message.text[citation_slice(annotation, message.text)] == cited_text
+    assert (
+        message.text[
+            citation_slice(
+                annotation.url_citation.start_index,
+                annotation.url_citation.end_index,
+                message.text,
+            )
+        ]
+        == cited_text
+    )
 
 
 def test_citation_indices_must_match_cited_text() -> None:

@@ -28,3 +28,7 @@ OpenAI Responses API.
 The `lgos-rag` graph reads a compact Markdown corpus packaged under
 `src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
 external documentation checkout.
+
+From `demo/`, `make marimo-local` opens the notebook workspace. `custom_api.py`
+demonstrates synchronous, streaming, and asynchronous Responses calls;
+`graph_runner.py` compares the Responses endpoint with direct graph execution.

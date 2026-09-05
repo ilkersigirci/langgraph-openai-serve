@@ -5,6 +5,7 @@ import json
 import uuid
 from typing import Any, cast
 
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     RESUME,
@@ -14,18 +15,17 @@ from langgraph.checkpoint.base import (
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt, StateSnapshot
 
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.api.chat.utils.interrupts import (
-    InterruptResume,
-    InvalidResumeRequestError,
-    validate_interrupt_payload,
-)
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphConfigurationError,
 )
-from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
-from langgraph_openai_serve.utils.message import convert_to_lc_messages
+from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
+from langgraph_openai_serve.graph.interrupt.models import (
+    InterruptResume,
+    LangGraphInterruptBatch,
+)
+from langgraph_openai_serve.graph.interrupt.validation import validate_interrupt_payload
+from langgraph_openai_serve.graph.request import GraphRequest
 
 RUN_METADATA_KEY = "langgraph_run_id"
 
@@ -38,12 +38,14 @@ class InterruptStateConflictError(RuntimeError):
     """Raised when a resume does not match durable pending state."""
 
 
-async def prepare_interrupt_input(
+async def prepare_interrupt_input(  # ruff: ignore[too-many-arguments]
     graph_config: GraphConfig,
     graph: CompiledStateGraph,
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     snapshot: StateSnapshot,
     resume: InterruptResume | None,
+    *,
+    messages: list[BaseMessage],
 ) -> tuple[Any, bool]:
     """Build a new input or causally validate an interrupt resume."""
     pending_interrupts = interrupts_by_id(snapshot)
@@ -51,8 +53,7 @@ async def prepare_interrupt_input(
 
     if resume is None:
         if checkpoint_id is None:
-            lc_messages = convert_to_lc_messages(request.messages)
-            return await graph_config.build_input(request, lc_messages), True
+            return await graph_config.build_input(request, messages), True
         if pending_interrupts:
             # Re-emit persisted tool calls without rerunning graph nodes.
             return None, False
@@ -144,9 +145,9 @@ def normalize_run_id(value: str) -> str:
     return str(parsed)
 
 
-def get_run_id(request: ChatCompletionRequest) -> str | None:
-    """Read the optional interrupt run id from OpenAI request metadata."""
-    return (request.metadata or {}).get(RUN_METADATA_KEY)
+def get_run_id(request: GraphRequest) -> str | None:
+    """Read the optional interrupt run id from normalized request metadata."""
+    return request.metadata.get(RUN_METADATA_KEY)
 
 
 def normalize_checkpoint_scope(value: str) -> str:

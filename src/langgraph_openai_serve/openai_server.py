@@ -41,6 +41,7 @@ from langgraph_openai_serve.api.chat import views as chat_views
 from langgraph_openai_serve.api.health import views as health_views
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.api.models import views as models_views
+from langgraph_openai_serve.api.responses import views as responses_views
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
@@ -147,6 +148,7 @@ class LanggraphOpenaiServe:
         openai_app.include_router(chat_views.router)
         openai_app.include_router(health_views.router)
         openai_app.include_router(models_views.router)
+        openai_app.include_router(responses_views.router)
 
         self.app.router.routes.append(
             Mount(

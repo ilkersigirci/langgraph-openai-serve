@@ -7,6 +7,7 @@ import httpx
 from openai import OpenAI, OpenAIError
 
 from .bundle import bundle_function
+from .functions.generic.gateway import gateway_config
 from .settings import Settings
 from .workspace_models import (
     discover_workspace_model_specs,
@@ -104,7 +105,7 @@ def sync_functions(
     client: httpx.Client,
     specs: tuple[FunctionSpec, ...] | None = None,
 ) -> dict[str, str]:
-    """Create or update bundled Functions without deleting others."""
+    """Create/update maintained Functions while preserving unrelated Functions."""
     specs = discover_function_specs() if specs is None else specs
     exported = client.get("/api/v1/functions/export").raise_for_status().json()
     if not isinstance(exported, list):
@@ -156,26 +157,36 @@ def main() -> None:
     """Synchronize the bundled Function and generated Workspace Models."""
     try:
         settings = Settings()
+        gateway = gateway_config(
+            settings.OPENAI_GATEWAY_TYPE,
+            settings.OPENAI_GATEWAY_BASE_URL,
+            local=True,
+        )
         with (
             httpx.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
-                base_url=settings.OPENAI_CATALOG_BASE_URL,
+                base_url=gateway.catalog_base_url,
                 api_key=settings.API_KEY,
                 timeout=10,
             ) as catalog_client,
             OpenAI(
-                base_url=settings.OPENAI_BASE_URL,
+                base_url=gateway.catalog_detail_base_url,
                 api_key=settings.API_KEY,
                 timeout=10,
-            ) as passthrough_client,
+            ) as catalog_detail_client,
         ):
             sign_in(client, settings.ADMIN_EMAIL, settings.ADMIN_PASSWORD)
             function_results = sync_functions(client)
             model_specs = discover_workspace_model_specs(
                 catalog_client,
-                passthrough_client,
+                catalog_detail_client,
+                provider_routing=gateway.provider_routing,
+                model_prefixes=gateway.model_prefixes,
             )
             sync_workspace_models(client, model_specs)
+    except httpx.HTTPStatusError as exc:
+        msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
+        raise SystemExit(msg) from exc
     except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
         msg = f"Open WebUI sync failed: {exc}"
         raise SystemExit(msg) from exc

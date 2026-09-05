@@ -1,0 +1,130 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_fixture_failed",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "in_progress",
+      "background": false,
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "metadata": {}
+    }
+  },
+  {
+    "type": "response.in_progress",
+    "sequence_number": 1,
+    "response": {
+      "id": "resp_fixture_failed",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "in_progress",
+      "background": false,
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "metadata": {}
+    }
+  },
+  {
+    "type": "error",
+    "sequence_number": 2,
+    "code": "server_error",
+    "message": "Fixture graph failed.",
+    "param": null
+  },
+  {
+    "type": "response.failed",
+    "sequence_number": 3,
+    "response": {
+      "id": "resp_fixture_failed",
+      "object": "response",
+      "created_at": 1788451200,
+      "status": "failed",
+      "background": false,
+      "completed_at": 1788451200,
+      "error": {
+        "code": "server_error",
+        "message": "Fixture graph failed."
+      },
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "model": "test",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "store": false,
+      "temperature": null,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_logprobs": 0,
+      "top_p": null,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "metadata": {}
+    }
+  }
+]

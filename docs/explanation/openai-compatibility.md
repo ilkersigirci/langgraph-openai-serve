@@ -1,19 +1,21 @@
 # OpenAI API Compatibility
 
 LangGraph OpenAI Serve is an OpenAI-client compatibility layer, not a separate
-LangGraph-specific HTTP API. Public chat and model behavior must remain
-reachable through the configured OpenAI-compatible base URL.
+LangGraph-specific HTTP API. Public Responses, Chat Completions, and model
+behavior remain reachable through the configured OpenAI-compatible base URL.
 
 The same contract lets LGOS run behind OpenAI-compatible intermediaries without
 a project-specific inference adapter. Generic gateway requirements are in the
 [proxy guide](../how-to-guides/openai-proxies.md); concrete Chainlit, Open WebUI,
-and Bifrost implementations belong to the [Demo Stack](../demo/index.md).
+Files, LiteLLM, and Bifrost implementations belong to the
+[Demo Stack](../demo/index.md).
 
 ## Contract
 
 - Registered graph names are exposed as OpenAI `model` values.
-- Core graph behavior must fit OpenAI-compatible request fields, response
-  objects, tool calls, streaming chunks, metadata, or error envelopes.
+- Core graph behavior must fit OpenAI-compatible request fields, Responses
+  items, Chat objects, tool calls, streaming events, metadata, or error
+  envelopes.
 - Do not require custom payloads, headers, routes, or SSE event shapes for core
   behavior unless the OpenAI client path still works.
 - Treat direct HTTP calls such as `curl` as diagnostics; validate compatibility
@@ -79,7 +81,7 @@ versions they do not understand.
 
 | Feature | Enabled behavior |
 | --- | --- |
-| `client_events` | The server may emit opted-in public client-event chunks. |
+| `client_events` | Streaming Responses may emit status commentary; direct Chat clients may opt into the v1 event extension. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 
@@ -98,25 +100,26 @@ secret-bearing runtime context out of discovery.
 Direct JavaScript clients can read the property normally, and the
 [OpenAI Python SDK exposes it through `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
 An intermediary may rebuild a retrieved model from the standard fields and drop
-extensions. For one LGOS deployment, clients must use one direct or
-pass-through OpenAI base URL for model listing, model retrieval, and chat
-completions. A federating gateway may expose a separate normalized catalog for
-provider and model routing, but that catalog is not a source of LGOS
-descriptions or capabilities. Clients must obtain those fields again through
-the selected provider's direct or pass-through route. Request paths must also
-preserve OpenAI metadata and extension-only stream chunks. Concrete gateway
-configurations are documented under
+extensions. For one LGOS deployment, a client can use one OpenAI base URL for
+model listing, model retrieval, Responses, and Chat Completions; that URL may
+be a proxy pass-through such as the demo's LiteLLM `/v1/lgos-a` catalog route. A
+federating gateway may expose a normalized catalog for provider and model
+routing, but that catalog is not necessarily a source of LGOS descriptions or
+capabilities. Standard Responses requests do not depend on the extension. A UI
+that offers graph-specific settings or capability controls must retrieve the
+selected provider's detail object through a route that preserves it. Concrete
+gateway configurations and native Responses requirements are documented under
 [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
 
 !!! warning "Limited functionality signal"
 
     A missing description in model listing or missing or invalid
     `langgraph_openai_serve` metadata on model retrieval means the configured
-    endpoint is not preserving the LGOS contract. A UI may continue ordinary
-    Chat Completions, but it must visibly label the model or chat as **Limited
-    functionality** and must not assume runtime settings, file inputs, client
-    events, or interrupts are available. A normalized routing catalog cannot
-    remove this requirement.
+    endpoint is not preserving the optional LGOS discovery contract. A UI may
+    continue plain Responses text, but it must visibly label the model or chat
+    as **Limited functionality** and must not assume runtime settings, file
+    inputs, status commentary, or interrupts are available. A normalized
+    routing catalog cannot remove this requirement.
 
 ## Runtime Settings
 
@@ -124,7 +127,7 @@ The request keeps each concern in its standard OpenAI location:
 
 | Concern | OpenAI request location |
 | --- | --- |
-| System instructions | A `system` message |
+| System instructions | Responses `instructions` or an input `system`/`developer` message; a `system` message in Chat |
 | Small graph-specific values | One `metadata.langgraph_runtime_settings` string containing a JSON object |
 | Graph selection | `model` |
 | Caller-selected interrupt operation ID | Optional `metadata.langgraph_run_id` UUID |
@@ -143,25 +146,25 @@ settings string and omit values equal to the advertised defaults. The
 advertised JSON Schema describes the available settings; LGOS remains the
 validation authority. The descriptor's separate `defaults` object is the
 authoritative validated baseline; JSON Schema `default` keywords are annotations
-and may precede Pydantic field normalization. Native Chat Completions fields
-keep their standard semantics. Graphs that need identity, authorization,
+and may precede Pydantic field normalization. Native OpenAI fields keep their
+standard semantics. Graphs that need identity, authorization,
 database clients, secrets, or other server-owned per-request context combine
 `client_settings` with `context_factory(request, settings)`.
 
 `metadata.session_id` is an optional, UI-neutral correlation value. A client
-uses the same stable value for every Chat Completions request in one
-conversation. LGOS maps it to the Langfuse-recognized
+uses the same stable value for every Responses or Chat Completions request in
+one conversation. LGOS maps it to the Langfuse-recognized
 `RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
 trace, while Langfuse can group those traces in one
 [session](https://langfuse.com/docs/observability/features/sessions). It does
 not select checkpoint state or cause LGOS to retain conversation history.
 Clients targeting Langfuse should use an ASCII value shorter than 200
-characters. The value is distinct from the Chat Completions `user` field,
+characters. The value is distinct from the OpenAI `user` field,
 `metadata.langgraph_run_id`, and per-request trace or request identifiers.
 
 ### Per-Request Resolution
 
-Every chat completion starts from the registered defaults. Values supplied in
+Every graph request starts from the registered defaults. Values supplied in
 `metadata.langgraph_runtime_settings` replace matching top-level defaults, and LGOS
 validates the complete result. The merge is shallow: a supplied nested object
 replaces that whole default value rather than recursively merging its keys.
@@ -180,16 +183,78 @@ for the complete author and client flow. Adapter support is summarized under
 
 ## Message And Schema Adaptation
 
-Incoming OpenAI messages are converted to LangChain messages. `GraphConfig`
-adapters keep custom LangGraph schemas behind that public boundary. See
+Incoming OpenAI messages are converted to LangChain messages. The protocol
+decoder also produces the small, protocol-neutral `GraphRequest` received by
+`GraphConfig` adapters, keeping custom LangGraph schemas behind the public API
+boundary. See
 [LangGraph Integration](langgraph-integration.md#adaptation) and
 [Custom Graphs](../tutorials/custom-graphs.md#custom-schemas).
 
-Native Chat Completions file content parts are preserved in the resulting
-LangChain message. LGOS does not expose Files routes or own file storage. A
-client uploads through an external OpenAI-compatible Files API and sends the
-returned `file_id` to a graph; the graph still owns file interpretation. See
-[Accept File Inputs](../how-to-guides/file-inputs.md).
+Responses `input_file.file_id` content and native Chat Completions file parts
+normalize to the same LangChain file content. LGOS does not expose Files routes
+or own file storage. A client uploads through an external OpenAI-compatible
+Files API and sends the returned `file_id` to a graph; the graph still owns file
+interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
+
+## Supported Responses Subset
+
+`POST /v1/responses` implements stateless text, files, function calls, and
+streaming over the same graph runner as Chat Completions. It intentionally does
+not claim every field in the upstream OpenAI API.
+
+| Request field or item | LGOS behavior |
+| --- | --- |
+| `model`, `input`, `instructions` | Supported. String input and ordered user, system, developer, and replayed assistant messages become LangChain messages. |
+| `input_text` | Supported. |
+| `input_file.file_id` | Supported and normalized to the existing graph file block. |
+| function `tools`, `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. |
+| `function_call` and string-valued `function_call_output` | Supported for tool continuation and interrupts. |
+| `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
+| `stream` | Supported with typed Responses SSE events. |
+| `store` | Omitted and false mean false; true is rejected. |
+| `text.format.type="text"` | Supported. |
+| `input_image`, `input_file.file_url`, `input_file.file_data` | Rejected. LGOS does not fetch URLs or accept inline file data. |
+| structured output, hosted tools, MCP tools, custom tools, image/audio items | Rejected. Only plain text and function tools are implemented. |
+| `previous_response_id`, `conversation`, `background: true` | Rejected because LGOS has no Responses persistence or background lifecycle. |
+| `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
+
+Unknown request fields also fail validation. Exact errors use the standard
+OpenAI envelope and identify the unsupported parameter where it is known.
+
+### Stateless Item Replay
+
+LGOS generates an opaque Response ID for correlation but does not persist it.
+There are no response retrieve, delete, cancel, compact, or input-item routes.
+Clients therefore keep an input ledger and resend the items needed by the next
+turn instead of using `previous_response_id` or a Conversation.
+
+When continuing a function call, append every item from `response.output`
+unchanged and then append a matching `function_call_output`. Replaying complete
+SDK items preserves message and call IDs plus assistant `phase`. The current
+SDK may serialize optional function-call `caller` and `namespace` fields as
+null; LGOS accepts those null values but rejects non-null program or namespace
+semantics. This state model follows OpenAI's documented manual item replay while
+keeping storage in the client.
+
+LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
+only paused workflow execution; a graph Store keeps explicit application data.
+Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
+
+### Responses Output
+
+| Graph result | Responses representation |
+| --- | --- |
+| Final assistant text | Completed message item with `phase="final_answer"` and `output_text` content |
+| Visible streaming status | Separate completed message item with `phase="commentary"` |
+| Client tool or interrupt | One `function_call` item per call |
+| Tool result on the next request | Matching `function_call_output` item |
+| URL citation | `url_citation` annotation on `output_text` |
+| Provider-reported usage | `usage` on the completed Response |
+
+Function arguments are complete JSON strings. The graph runner does not emit
+incremental arguments, so the Responses stream sends one argument delta before
+the corresponding done event. IDs and output indices remain stable throughout
+the typed event lifecycle.
 
 ## Streaming
 
@@ -200,8 +265,9 @@ for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
 LGOS aggregates usage reported by LangChain model calls across the graph run.
-Complete responses include it in `usage`; streaming responses add the standard
-final empty-choices usage chunk only when the request sets
+Complete Responses include it in `usage`, and a Responses stream carries it on
+the terminal `response.completed` object. Chat streams add the standard final
+empty-choices usage chunk only when the request sets
 `stream_options={"include_usage": true}`. When underlying providers report no
 usage, LGOS omits it rather than estimating tokens.
 
@@ -212,19 +278,43 @@ Non-streaming returns it directly. Streaming emits eligible message chunks
 immediately and retains them until the final message arrives. It then
 concatenates the chunks and compares them with the final text. If no text
 streamed, LGOS emits the final text as a fallback; a mismatch instead produces
-a stream error without a normal finish chunk. This check covers one graph run,
-not two independent LLM executions. Transient client events are excluded.
+the protocol's failure sequence rather than a successful terminal event. This
+check covers one graph run, not two independent LLM executions. Transient
+status events are excluded.
 
 When multiple streamable nodes contribute text, the graph's
 `output_to_message` adapter must render their messages in the same order.
 
-## Client Stream Events
+## Streaming Status
 
-Passive application notifications are an opt-in, namespaced extension on an
-otherwise complete `chat.completion.chunk`. The graph must declare
-`GraphFeature.CLIENT_EVENTS`, and the client requests v1 events through the
-standard Chat Completions metadata field only when model retrieval advertises
-`client_events`:
+The graph must declare `GraphFeature.CLIENT_EVENTS` before any public client
+event can cross an HTTP route. Ordinary LangGraph custom data, malformed events,
+debug values, and non-JSON Python objects stay private. Responses exposes only
+validated `status_event()` values; the direct Chat extension also carries the
+validated `progress` and `artifact` variants.
+
+### Responses Commentary
+
+A streaming Responses request needs no metadata opt-in. LGOS maps every visible
+status description to its own completed assistant message with
+`phase="commentary"` and maps the durable answer to a message with
+`phase="final_answer"`. A status whose graph-owned `hidden` flag is true is
+suppressed. The custom namespace and `done` flag do not leak into the Response;
+item completion is a wire lifecycle concept, not graph progress state.
+
+Commentary is transient and streaming-only. Non-streaming execution calls the
+graph once for its durable result and does not collect status history. The
+OpenAI Python SDK's `Response.output_text` convenience property concatenates
+text across both phases, so UIs must select `final_answer` messages for
+the transcript and render commentary separately. The maintained Chainlit and
+Open WebUI adapters do this. Other clients may ignore `phase` or show all text
+as one answer; that is a client presentation limitation, not a reason to add a
+custom server event.
+
+### Direct Chat Client Events
+
+The direct Chat compatibility route exposes the v1 extension. The client
+must opt in with standard metadata:
 
 ```python
 stream = client.chat.completions.create(
@@ -235,93 +325,36 @@ stream = client.chat.completions.create(
 )
 ```
 
-An event frame has the following data payload:
+Each validated `status`, `progress`, or `artifact` event appears in a namespaced
+`langgraph_openai_serve.event` property on an otherwise valid
+`chat.completion.chunk`. It reuses the completion ID and has an empty choice
+delta. The final Chat chunk and `[DONE]` remain unchanged. The OpenAI Python SDK
+preserves the extension in `model_extra`.
 
-```json
-{
-  "id": "chatcmpl-abc",
-  "object": "chat.completion.chunk",
-  "created": 1784280000,
-  "model": "research-graph",
-  "choices": [
-    {
-      "index": 0,
-      "delta": {},
-      "finish_reason": null
-    }
-  ],
-  "langgraph_openai_serve": {
-    "schema_version": 1,
-    "event": {
-      "type": "progress",
-      "namespace": ["research"],
-      "data": {
-        "stage": "retrieval",
-        "completed": 2,
-        "total": 5,
-        "message": "Searching documents"
-      }
-    }
-  }
-}
-```
+This Chat property is a direct-client compatibility extension, not the
+maintained UI transport. A schema-normalizing proxy may discard it. Do not use
+raw pass-through for maintained UI inference; use native Responses
+commentary or connect the direct compatibility client to LGOS.
 
-Event chunks reuse the completion ID, creation timestamp, and model. Choice `0`
-has an empty delta and a null finish reason; the actual final chunk still uses
-`stop` or `tool_calls`, and `[DONE]` is unchanged. Recognized public events are
-emitted immediately among text chunks in LangGraph stream order. The namespace
-is explicitly authored by the graph so dynamic task IDs and internal subgraph
-structure do not become part of the public contract.
+The v1 direct Chat vocabulary is `status`, `progress`, and `artifact`. Only
+`status` is portable to Responses, where LGOS maps it to standard commentary.
+Responses ignores the other two variants, and maintained demo UIs do not consume
+the Chat extension. Portable rich output uses standard Responses function calls
+and Files instead.
 
-!!! note "Proxy compatibility"
+| Graph result | Responses | Direct Chat compatibility |
+| --- | --- | --- |
+| Assistant text | `final_answer` message | `delta.content` |
+| Interrupt requiring input | `function_call` | `delta.tool_calls` |
+| Citation | `output_text.annotations` | message/final-delta annotations |
+| Diagnostic progress or artifact | Ignored | `langgraph_openai_serve.event` |
+| Midstream failure | `error` then `response.failed` | OpenAI error object |
+| Passive status | `commentary` message | `langgraph_openai_serve.event` |
 
-    Schema-normalizing proxies may discard extension-only chunks because their
-    delta is empty, while continuing to stream assistant text normally. Use a
-    documented raw pass-through route when client events are required. See
-    [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md#client-event-compatibility)
-    for the required gateway behavior and the demo's Bifrost configuration.
-
-Without the graph feature and exact `v1` opt-in, LGOS emits no event extensions.
-Even with both, only explicitly marked event envelopes in the shape produced by
-`client_event()` or `status_event()` and revalidated by the server are exposed.
-Ordinary LangGraph custom data, malformed events, debug data, and non-JSON
-Python objects stay private. The v1 public event types are `status`, `progress`,
-and `artifact`.
-
-Client events are transient and streaming-only. A non-streaming request uses
-the graph's durable final result and never collects or replays status, progress,
-or artifact events, even when its metadata contains the stream-event opt-in.
-
-`status_event()` produces portable data with a user-facing `description` and
-the booleans `done` and `hidden`. The graph emits meaningful application status
-at the point where it knows what work is happening. LGOS does not infer status
-from node names, graph topology, inputs, or results.
-
-Keep standard response semantics separate:
-
-| Graph result | Chat Completions representation |
-| --- | --- |
-| Assistant text | `delta.content` |
-| Interrupt requiring input | `delta.tool_calls` |
-| Citation | `delta.annotations` |
-| Midstream failure | OpenAI error object |
-| Passive status, progress, or artifact notification | `langgraph_openai_serve.event` |
-
-Status updates are deliberately not encoded as `delta.tool_calls`. In OpenAI
+Status is deliberately not a tool call. In OpenAI
 [function calling](https://developers.openai.com/api/docs/guides/function-calling),
-a tool call asks the client application to execute work and return a matching
-tool message. A passive status only describes backend work already in progress.
-UI adapters render it with native status components without changing the Chat
-Completions tool protocol.
-
-The published
-[Chat Completions chunk schema](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events#chat.completion.chunk)
-does not define arbitrary delta event fields. OpenAI's
-[compatibility policy](https://developers.openai.com/api/reference/overview#backwards-compatibility)
-treats added JSON response or event properties as backward-compatible, and the
-[Python SDK preserves undocumented response properties in `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
-Consume the events while iterating the stream; an SDK's accumulated final
-completion is not the event log.
+a function call asks the client to execute work and return a result. A passive
+status describes backend work already in progress.
 
 ## Citation Ownership
 
@@ -329,10 +362,12 @@ OpenAI `url_citation` annotations are the canonical citation contract. Their
 URL, title, and text span associate a source with the answer. `end_index` is
 inclusive, matching OpenAI's last-character convention.
 
-Graphs attach LangChain citation annotations to their final `AIMessage`. LGOS
-returns them as `message.annotations` for non-streaming responses and
-`delta.annotations` on the final streaming chunk. It does not define a
-UI-specific source schema or reconstruct citations from custom events.
+Graphs attach LangChain citation annotations to their final `AIMessage`.
+Responses returns them on `output_text.annotations` and emits
+`response.output_text.annotation.added` during streaming. Chat Completions
+returns them as `message.annotations` and as an extension on the final delta.
+LGOS does not define a UI-specific source schema or reconstruct citations from
+custom events.
 
 Portable resource presentation belongs in the assistant text, not in the
 annotation object. Graphs may return ordinary Markdown links and images in
@@ -347,9 +382,9 @@ Structured citations remain available to OpenAI clients that need
 machine-readable provenance. The `citation-events` demo showcases that optional
 contract.
 
-The streaming field is a compatibility extension because the published Chat
-Completions delta schema does not currently declare annotations. The OpenAI
-Python SDK preserves it as extra model data.
+Only the Chat streaming field is a compatibility extension because the
+published Chat delta schema does not declare annotations. Responses annotations
+and their typed streaming event are standard fields.
 
 See the official [OpenAI citation contract](https://developers.openai.com/api/docs/guides/tools-web-search#output-and-citations).
 
@@ -374,8 +409,9 @@ translate generic FastAPI validation and HTTP errors into the same envelope.
 
 Invalid runtime settings return HTTP 400 with
 `param: "metadata.langgraph_runtime_settings"`. A proxy-stripped model
-extension does not make standard chat invalid, but clients surface it as
-limited functionality rather than silently presenting a fully capable model.
+extension does not make plain text generation invalid, but clients surface it
+as limited functionality rather than silently presenting a fully capable
+model.
 Malformed interrupt envelopes, a missing or duplicate tool result, and invalid
 caller-supplied run UUIDs return HTTP 400. A structurally complete exchange that
 does not match the durable pending set, or is stale or already completed,
@@ -384,21 +420,32 @@ acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
 ## Tool Calls And Interrupts
 
-Tool definitions are accepted for OpenAI compatibility. Graphs can read them
-through the full request in `request_to_input` or load tools independently, as
-the mock MCP demo does.
+Tool definitions are accepted for OpenAI compatibility. Graphs can read their
+normalized function definitions and choices from `GraphRequest` in
+`request_to_input` or load tools independently, as the mock MCP demo does.
 
-LGOS supports only the modern Chat Completions tool-calling shape: `tools`,
-`tool_choice`, assistant `tool_calls`, and `tool` messages with a matching
-`tool_call_id`. The deprecated `functions`, singular `function_call`, and
-`function` message role are rejected rather than silently ignored. OpenAI marks
-the older `functions` and top-level `function_call` parameters as deprecated in
-the [Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
+Responses accepts flat function tool definitions, named or automatic tool
+choice, returned `function_call` items, and matching string-valued
+`function_call_output` items. Chat supports the modern nested `tools`,
+`tool_choice`, assistant `tool_calls`, and `tool` messages with matching
+`tool_call_id` values. The deprecated Chat `functions`, singular
+`function_call`, and `function` message role are rejected rather than silently
+ignored.
 
-Ordinary chats work in any client that implements the supported OpenAI Chat
-Completions surface. Interrupt graphs are also OpenAI-wire-compatible, but they
-require the client application to collect interrupt input and replay tool
-results. A UI that only renders assistant text cannot complete an interrupt.
+Interrupt graphs require a client application that can collect input and replay
+tool results. A UI that only renders assistant text cannot complete an
+interrupt. The maintained demo UIs implement the Responses form; direct Chat
+compatibility clients may use the equivalent Chat tool-message form.
+
+### Files And `display_file`
+
+Portable generated files use the standard Files API plus a client-owned
+function. The client offers strict `display_file` arguments; the graph uploads
+the bytes and returns their `file_id`; the trusted client backend downloads and
+persists the file through its native UI; and the client appends a small matching
+`function_call_output`. Neither file bytes nor a protected bearer URL are placed
+in the transcript. There is no LGOS artifact field or custom chart event. See
+[Accept And Display Files](../how-to-guides/file-inputs.md#display-a-graph-generated-file).
 
 ### Operation Identity
 
@@ -421,8 +468,8 @@ The public run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
 operation, so two models or authenticated tenant scopes do not share state even
 when callers use the same UUID. Configure the server scope from trusted request
-or authentication state, never caller-controlled metadata or the Chat
-Completions `user` field. The default shared scope is appropriate only for a
+or authentication state, never caller-controlled metadata or the OpenAI `user`
+field. The default shared scope is appropriate only for a
 single-tenant or shared-trust deployment. Conversation history remains
 client-owned; the checkpoint contains only the isolated workflow state needed
 while this operation is paused.
@@ -454,53 +501,52 @@ tool-call ID is `lg_interrupt_` followed by the LangGraph interrupt ID.
 
 ### Canonical Batch Replay
 
-A resume request must end with the complete assistant message returned by LGOS,
-including every `langgraph_interrupt` tool call, followed by exactly one `tool`
-message for every call. Each result has the matching `tool_call_id` and JSON
-content containing a `resume` value:
+A Responses resume request must end with every complete `function_call` item
+returned by LGOS, followed by exactly one `function_call_output` item for every
+call. Each result has the matching `call_id` and a JSON string containing a
+`resume` value:
 
 ```json
 {
   "model": "interruptible",
-  "messages": [
+  "input": [
     {
-      "role": "assistant",
-      "content": null,
-      "tool_calls": [
-        {
-          "id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
-          "type": "function",
-          "function": {
-            "name": "langgraph_interrupt",
-            "arguments": "{\"run_id\":\"f654e904-1bd8-4fd6-a8bf-53a49ca25699\",\"state_token\":\"47ecb7c6f7b9...\",\"payload\":{\"question\":\"How should the refund be handled?\",\"choices\":[\"approve\",\"reject\"],\"allow_other\":true}}"
-          }
-        }
-      ]
+      "type": "function_call",
+      "id": "fc_2de0b65b",
+      "call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
+      "name": "langgraph_interrupt",
+      "arguments": "{\"run_id\":\"f654e904-1bd8-4fd6-a8bf-53a49ca25699\",\"state_token\":\"47ecb7c6f7b9...\",\"payload\":{\"question\":\"How should the refund be handled?\",\"choices\":[\"approve\",\"reject\"],\"allow_other\":true}}",
+      "status": "completed"
     },
     {
-      "role": "tool",
-      "tool_call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
-      "content": "{\"resume\":\"Verify the delivery address first.\"}"
+      "type": "function_call_output",
+      "call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
+      "output": "{\"resume\":\"Verify the delivery address first.\"}"
     }
-  ]
+  ],
+  "store": false
 }
 ```
 
-Parallel interrupts are one atomic interrupt batch: the assistant message must
-contain all pending calls, and the following messages must answer all of them.
-A client must not select one call, mix ordinary tool calls into that exchange,
-duplicate a result, or synthesize a partial replay. Streaming clients assemble
-all tool-call deltas into the canonical assistant message before presenting the
-batch.
+Parallel interrupts are one atomic interrupt batch: the replay must contain all
+pending calls and answer all of them. A client must not select one call, mix
+ordinary function calls into that exchange, duplicate a result, or synthesize a
+partial replay. Streaming clients use the terminal Response's complete output
+items instead of reconstructing them from argument deltas.
+
+The direct Chat compatibility route uses the complete assistant `tool_calls`
+message followed by exactly one matching `tool` message per call. Both protocol
+decoders produce the same durable `InterruptResume`; there is no second
+interrupt state machine.
 
 The replayed arguments carry the resume operation ID. Metadata is not required
 on a resume, but `metadata.langgraph_run_id`, when present, must match the UUID
 in every replayed call.
 
-The UI owns persistence of this canonical assistant/tool ledger. It must store
-the exact calls before soliciting input so a reconnect can reproduce the same
-resume request. Persisting only rendered prompt text or only the user's response
-is insufficient.
+The UI owns persistence of this canonical call/output ledger. It must store the
+exact calls before soliciting input so a reconnect can reproduce the same resume
+request. Persisting only rendered prompt text or only the user's response is
+insufficient.
 
 ### Durable Validation And Recovery
 
@@ -549,8 +595,13 @@ for the underlying checkpoint model.
 ## Known Differences From OpenAI
 
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
-- The supported surface focuses on chat completions, model listing/retrieval,
-  health, and compatible tool-call flows.
+- Responses is stateless and implements the explicit subset above; response
+  storage, Conversations, previous-response chaining, background work, hosted
+  tools, structured output, and unconsumed generation controls are rejected.
+- Chat Completions remains a direct compatibility surface, while maintained
+  demo UIs use Responses for every graph.
+- The package exposes model listing/retrieval and health, but no Files storage;
+  deploy a separate OpenAI-compatible Files service when graphs use file IDs.
 - Authentication is not enforced by default.
 - Token usage is present only when underlying LangChain model calls report it.
   LGOS aggregates reported usage across the graph run and never estimates

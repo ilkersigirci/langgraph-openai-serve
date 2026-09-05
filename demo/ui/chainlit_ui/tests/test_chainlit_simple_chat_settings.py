@@ -2,12 +2,14 @@
 
 import importlib
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from openai import OpenAIError
 from openai.types import Model
+from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 
+from lgos_chainlit.gateway import gateway_config
 from lgos_chainlit.lgos_protocol import ModelClientSettings
 
 
@@ -20,6 +22,29 @@ class Session:
 
     def set(self, key, value):
         self.values[key] = value
+
+
+def completed_response(content: str) -> Response:
+    return Response.model_construct(
+        status="completed",
+        output=[
+            ResponseOutputMessage(
+                id="msg_final",
+                content=[
+                    ResponseOutputText(
+                        annotations=[],
+                        logprobs=[],
+                        text=content,
+                        type="output_text",
+                    )
+                ],
+                role="assistant",
+                status="completed",
+                type="message",
+                phase="final_answer",
+            )
+        ],
+    )
 
 
 def configured_model(settings: ModelClientSettings) -> Model:
@@ -98,29 +123,25 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     monkeypatch.setattr(
-        simple.openai_client.models,
-        "list",
+        simple,
+        "list_models",
         AsyncMock(
-            return_value=MagicMock(
-                data=[
-                    Model(
-                        id="configured",
-                        object="model",
-                        created=1,
-                        owned_by="test",
-                        langgraph_openai_serve={
-                            "schema_version": 1,
-                            "description": "DUMMY",
-                            "features": ["file_inputs"],
-                        },
-                    ),
-                    model_without_extension("proxy-model"),
-                ]
-            )
+            return_value=[
+                Model(
+                    id="configured",
+                    object="model",
+                    created=1,
+                    owned_by="test",
+                    langgraph_openai_serve={
+                        "schema_version": 1,
+                        "description": "DUMMY",
+                        "features": ["file_inputs"],
+                    },
+                ),
+                model_without_extension("proxy-model"),
+            ]
         ),
     )
-    retrieve = AsyncMock()
-    monkeypatch.setattr(simple.openai_client.models, "retrieve", retrieve)
 
     profiles = await simple.set_chat_profiles(None)
 
@@ -133,7 +154,6 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
         profile.config_overrides.features.spontaneous_file_upload.enabled
         for profile in profiles
     ] == [True, False]
-    retrieve.assert_not_awaited()
 
 
 async def test_model_retrieval_failure_disables_settings(
@@ -229,7 +249,7 @@ async def test_missing_profile_disables_settings_and_message(
     ]
     form.send.assert_awaited_once_with()
     send_ui_message.assert_awaited_once_with(
-        "Chat completion failed: no model profile is selected."
+        "Response failed: no model profile is selected."
     )
 
 
@@ -240,26 +260,21 @@ async def test_file_upload_failure_is_visible(
     session = Session({"chat_profile": "lgos-a/file-input"})
     send_ui_message = AsyncMock()
     create = AsyncMock()
-    renderer = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr(simple.cl, "user_session", session)
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=Mock(content="")))
-    monkeypatch.setattr(simple, "ClientEventRenderer", Mock(return_value=renderer))
     monkeypatch.setattr(simple, "text_only_chat_messages", list)
     monkeypatch.setattr(
         simple,
-        "with_file_parts",
+        "with_response_file_parts",
         AsyncMock(side_effect=RuntimeError("upload unavailable")),
     )
     monkeypatch.setattr(simple, "send_ui_message", send_ui_message)
-    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
+    monkeypatch.setattr(simple.openai_client.responses, "create", create)
 
     await simple.on_message(Mock(content="Summarize it."))
 
-    send_ui_message.assert_awaited_once_with(
-        "Chat completion failed: upload unavailable"
-    )
+    send_ui_message.assert_awaited_once_with("Response failed: upload unavailable")
     create.assert_not_awaited()
-    renderer.close.assert_awaited_once_with()
 
 
 async def test_selected_settings_reach_the_openai_request(
@@ -273,6 +288,7 @@ async def test_selected_settings_reach_the_openai_request(
         {
             "chat_profile": "lgos-a/simple",
             "chat_settings": {
+                chat_settings.STREAMING_SETTING_ID: False,
                 "use_history": False,
                 "mode": "detailed",
                 "assistant_name": "Guide",
@@ -283,11 +299,8 @@ async def test_selected_settings_reach_the_openai_request(
         }
     )
     messages = [{"role": "user", "content": "Hello"}]
-    stream = MagicMock()
-    stream.__aiter__.return_value = iter([])
-    stream.close = AsyncMock()
-    create = AsyncMock(return_value=stream)
-    assistant_message = Mock(content="", update=AsyncMock())
+    create = AsyncMock(return_value=completed_response("Complete answer"))
+    assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
     monkeypatch.setattr(simple.cl, "user_session", session)
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
     monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
@@ -298,19 +311,20 @@ async def test_selected_settings_reach_the_openai_request(
         SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
     )
     monkeypatch.setattr(
-        clients.settings.OPENAI,
-        "catalog_base_url",
-        "https://gateway.example/v1",
+        clients,
+        "gateway",
+        gateway_config("bifrost", "https://gateway.example"),
     )
-    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
+    monkeypatch.setattr(simple.openai_client.responses, "create", create)
 
     await simple.on_message(Mock(content="Hello"))
 
     create.assert_awaited_once_with(
         model="simple",
         extra_headers={"x-model-provider": "lgos-a"},
-        messages=messages,
-        stream=True,
+        input=messages,
+        store=False,
+        tools=[simple.DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
             "langgraph_runtime_settings": (
@@ -319,6 +333,8 @@ async def test_selected_settings_reach_the_openai_request(
             "session_id": "thread-123",
         },
     )
+    assert assistant_message.content == "Complete answer"
+    assistant_message.send.assert_awaited_once_with()
 
 
 async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
@@ -338,14 +354,11 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
             chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
                 runtime_client_settings.defaults
             ),
-            chat_settings.MODEL_FEATURES_SESSION_KEY: ["client_events"],
+            chat_settings.MODEL_FEATURES_SESSION_KEY: [],
         }
     )
     messages = [{"role": "user", "content": "Hello"}]
-    completion = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content="Complete answer"))]
-    )
-    create = AsyncMock(return_value=completion)
+    create = AsyncMock(return_value=completed_response("Complete answer"))
     assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
     monkeypatch.setattr(simple.cl, "user_session", session)
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
@@ -357,19 +370,20 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
     )
     monkeypatch.setattr(
-        clients.settings.OPENAI,
-        "catalog_base_url",
-        "https://gateway.example/v1",
+        clients,
+        "gateway",
+        gateway_config("bifrost", "https://gateway.example"),
     )
-    monkeypatch.setattr(simple.openai_client.chat.completions, "create", create)
+    monkeypatch.setattr(simple.openai_client.responses, "create", create)
 
     await simple.on_message(Mock(content="Hello"))
 
     create.assert_awaited_once_with(
         model="simple",
         extra_headers={"x-model-provider": "lgos-a"},
-        messages=messages,
-        stream=False,
+        input=messages,
+        store=False,
+        tools=[simple.DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
             "langgraph_runtime_settings": '{"mode":"detailed"}',

@@ -1,6 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
@@ -8,7 +9,7 @@ from lgos_demo_api.graphs.subgraphs.keyword import create_keyword_graph
 from lgos_demo_api.graphs.subgraphs.schemas import KeywordState
 
 API_ANSWER = (
-    "API contract: OpenAI chat messages were adapted into native graph input; "
+    "API contract: OpenAI request messages were adapted into native graph input; "
     "native graph output is rendered back as assistant text; "
     "streamable nested node names can be exposed safely"
 )
@@ -62,12 +63,9 @@ async def test_routes_to_the_expected_specialist(
 ) -> None:
     request = make_request("complex-subgraphs", content=question)
 
-    result = await run_langgraph(
-        request.model,
-        request.messages,
-        _registry(),
-        request,
-    )
+    graph_request, messages, _ = decode_responses_request(request)
+
+    result = await run_langgraph(graph_request, messages, _registry())
 
     assert isinstance(result.output, AIMessage)
     assert result.output.text == expected
@@ -81,14 +79,11 @@ async def test_streaming_matches_non_streaming_for_nested_output(
         content="Show nested subgraph routing docs.",
     )
 
+    graph_request, messages, _ = decode_responses_request(request)
+
     events = [
         event
-        async for event in run_langgraph_stream(
-            request.model,
-            request.messages,
-            _registry(),
-            request,
-        )
+        async for event in run_langgraph_stream(graph_request, messages, _registry())
     ]
 
     assert [
@@ -98,12 +93,7 @@ async def test_streaming_matches_non_streaming_for_nested_output(
     ] == ["Selected keywords: subgraph, routing"]
 
     streamed = "".join(event for event in events if isinstance(event, str))
-    complete = await run_langgraph(
-        request.model,
-        request.messages,
-        _registry(),
-        request,
-    )
+    complete = await run_langgraph(graph_request, messages, _registry())
 
     assert isinstance(complete.output, AIMessage)
     assert streamed == complete.output.text == DOCS_ANSWER

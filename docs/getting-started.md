@@ -91,17 +91,19 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
 
-response = client.chat.completions.create(
+response = client.responses.create(
     model="echo",
-    messages=[{"role": "user", "content": "Hello from an OpenAI client"}],
+    input="Hello from an OpenAI client",
+    store=False,
 )
 
-print(response.choices[0].message.content)
+print(response.output_text)
 ```
 
-The result is `LGOS received: Hello from an OpenAI client` in a standard Chat
-Completions response. The dummy key satisfies the SDK; LGOS does not enforce
-authentication unless the host application adds it.
+The result is `LGOS received: Hello from an OpenAI client` in a standard
+Response. The dummy key satisfies the SDK; LGOS does not enforce authentication
+unless the host application adds it. LGOS also exposes Chat Completions for
+direct compatibility clients, but Responses is the primary client contract.
 
 ## Next Steps
 

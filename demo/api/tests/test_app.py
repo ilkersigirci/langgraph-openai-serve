@@ -7,11 +7,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionRequestMessage,
-    Role,
-)
+from langgraph_openai_serve.api.responses.request import decode_responses_request
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
@@ -96,7 +93,7 @@ async def test_app_lists_exactly_the_documented_models(
 
     plot_model = await openai_client.models.retrieve("persistent-plot-agent")
     plot_extension = (plot_model.model_extra or {})["langgraph_openai_serve"]
-    assert plot_extension["features"] == ["client_events"]
+    assert plot_extension["features"] == []
     assert plot_extension["client_settings"]["defaults"] == {
         "chart_type": "bar",
         "currency": "USD",
@@ -157,59 +154,73 @@ async def test_simple_model_builds_its_runtime_context(
     metadata: dict[str, str] | None,
     expected_context: SimpleContext,
 ) -> None:
-    request = ChatCompletionRequest(
+    request = ResponseCreateRequest(
         model="simple-graph",
-        messages=[ChatCompletionRequestMessage(role=Role.USER, content="Question")],
+        input="Question",
         metadata=metadata,
     )
 
     graph_config = demo_app.state.graph_registry.get_graph("simple-graph")
     graph = await graph_config.resolve_graph()
 
-    assert await graph_config.build_context(request, graph) == expected_context
+    graph_request, _, _ = decode_responses_request(request)
+
+    assert await graph_config.build_context(graph_request, graph) == expected_context
 
 
 async def test_custom_io_demo_works_through_openai_client(
     openai_client: AsyncOpenAI,
 ) -> None:
-    response = await openai_client.chat.completions.create(
+    response = await openai_client.responses.create(
+        store=False,
         model="custom-input-output-context",
-        messages=[{"role": "user", "content": "Show me custom schemas."}],
+        input=[{"role": "user", "content": "Show me custom schemas."}],
         user="demo-user",
     )
 
-    assert response.choices[0].message.content == (
-        "demo-user asked: Show me custom schemas."
-    )
+    assert response.output_text == ("demo-user asked: Show me custom schemas.")
 
 
 async def test_file_input_demo_prompts_for_an_attachment(
     openai_client: AsyncOpenAI,
 ) -> None:
-    response = await openai_client.chat.completions.create(
+    response = await openai_client.responses.create(
+        store=False,
         model="file-input",
-        messages=[{"role": "user", "content": "Summarize my file."}],
+        input=[{"role": "user", "content": "Summarize my file."}],
     )
 
-    assert response.choices[0].message.content == "Attach a file and try again."
+    assert response.output_text == "Attach a file and try again."
 
 
 async def test_complex_subgraphs_preserve_streaming_parity(
     openai_client: AsyncOpenAI,
 ) -> None:
-    complete = await openai_client.chat.completions.create(
+    complete = await openai_client.responses.create(
+        store=False,
         model="complex-subgraphs",
-        messages=[{"role": "user", "content": "Show nested subgraph routing docs."}],
+        input=[{"role": "user", "content": "Show nested subgraph routing docs."}],
     )
-    stream = await openai_client.chat.completions.create(
+    stream = await openai_client.responses.create(
+        store=False,
         model="complex-subgraphs",
-        messages=[{"role": "user", "content": "Show nested subgraph routing docs."}],
+        input=[{"role": "user", "content": "Show nested subgraph routing docs."}],
         stream=True,
     )
 
-    streamed = "".join([chunk.choices[0].delta.content or "" async for chunk in stream])
+    phases = {}
+    final_deltas = []
+    async for event in stream:
+        if event.type == "response.output_item.added" and event.item.type == "message":
+            phases[event.output_index] = event.item.phase
+        elif (
+            event.type == "response.output_text.delta"
+            and phases.get(event.output_index) == "final_answer"
+        ):
+            final_deltas.append(event.delta)
+    streamed = "".join(final_deltas)
 
-    assert streamed == complete.choices[0].message.content
+    assert streamed == complete.output_text
 
 
 async def test_lifespan_installs_shared_postgres_runtime(

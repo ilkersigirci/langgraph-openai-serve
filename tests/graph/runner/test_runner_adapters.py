@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
+from langgraph_openai_serve import GraphRequest
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.schemas import (
@@ -27,6 +28,7 @@ async def test_typed_dict_schemas_and_native_context(
 ) -> None:
     model = FakeListChatModel(responses=["answer"])
     output_keys = []
+    adapter_requests = []
 
     async def generate(state: QuestionState, runtime: Runtime[UserContext]):
         assert isinstance(runtime.context, UserContext)
@@ -53,31 +55,35 @@ async def test_typed_dict_schemas_and_native_context(
         output_keys.append(set(output))
         return AIMessage(content=output["answer"])
 
+    def request_to_input(request, messages):
+        adapter_requests.append(request)
+        return {
+            "question": messages[-1].content,
+            "ignored": True,
+        }
+
     graph_registry = GraphRegistry(
         registry={
             "typed": GraphConfig(
                 graph=graph,
                 description="DUMMY",
-                request_to_input=lambda request, messages: {
-                    "question": messages[-1].content,
-                    "ignored": True,
-                },
+                request_to_input=request_to_input,
                 context_factory=lambda request, _settings: {"user_id": request.user},
                 output_to_message=output_to_message,
             )
         },
     )
-    chat_request = make_request("typed", user="alice")
+    request = make_request("typed", user="alice")
 
     invocation = await run_langgraph(
-        "typed",
-        chat_request.messages,
-        graph_registry,
-        chat_request,
+        request, [HumanMessage(content="question")], graph_registry
     )
 
     assert invocation.output.text == "alice:answer"
     assert output_keys == [{"answer"}]
+    assert len(adapter_requests) == 1
+    assert isinstance(adapter_requests[0], GraphRequest)
+    assert adapter_requests[0].user == "alice"
 
 
 async def test_async_graph_factory_and_async_adapters(
@@ -118,13 +124,10 @@ async def test_async_graph_factory_and_async_adapters(
             )
         },
     )
-    chat_request = make_request("pydantic")
+    request = make_request("pydantic")
 
     invocation = await run_langgraph(
-        "pydantic",
-        chat_request.messages,
-        graph_registry,
-        chat_request,
+        request, [HumanMessage(content="question")], graph_registry
     )
 
     assert invocation.output.text == "question"
@@ -164,21 +167,15 @@ async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> N
             )
         },
     )
-    chat_request = make_request("typed")
+    request = make_request("typed")
 
     invocation = await run_langgraph(
-        "typed",
-        chat_request.messages,
-        graph_registry,
-        chat_request,
+        request, [HumanMessage(content="question")], graph_registry
     )
     events = [
         event
         async for event in run_langgraph_stream(
-            "typed",
-            chat_request.messages,
-            graph_registry,
-            chat_request,
+            request, [HumanMessage(content="question")], graph_registry
         )
     ]
 

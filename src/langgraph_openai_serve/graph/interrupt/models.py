@@ -1,8 +1,18 @@
-"""Result models produced by interrupt-enabled graph runs."""
+"""Protocol-neutral models for interrupt-enabled graph runs."""
 
 from dataclasses import dataclass
+from typing import Any
 
 from langgraph.types import Interrupt
+
+
+@dataclass(frozen=True, slots=True)
+class InterruptResume:
+    """A complete, causally bound set of interrupt answers."""
+
+    run_id: str
+    state_token: str
+    values: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -14,4 +24,4 @@ class LangGraphInterruptBatch:
     interrupts: tuple[Interrupt, ...]
 
 
-__all__ = ["LangGraphInterruptBatch"]
+__all__ = ["InterruptResume", "LangGraphInterruptBatch"]

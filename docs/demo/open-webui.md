@@ -1,20 +1,55 @@
 # Open WebUI Integration
 
-The demo includes two Open WebUI Functions over LGOS APIs registered in Bifrost:
+Start with **UserValves Simple / simple-graph** to try static per-user runtime
+settings. Its small
+[`uservalves_simple.py`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/src/lgos_openwebui/functions/uservalves_simple.py)
+Filter declares two settings and passes their values to the shared Responses
+Pipe. Open WebUI owns the settings form and persistence.
+
+The demo includes two Open WebUI Functions:
+
+- `functions/uservalves_simple.py` demonstrates a fixed `UserValves` schema
+  for one graph, using Open WebUI's native
+  [Filter and UserValves support](https://docs.openwebui.com/features/extensibility/plugin/development/valves/).
 
 - `demo/ui/openwebui/src/lgos_openwebui/functions/generic/` is the modular source
   for a
   [manifold Pipe](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/#creating-multiple-models-with-pipes)
-  for all registered graphs. It forwards standard Chat Completions chunks,
-  native tools, citations, and graph-specific runtime settings, and adapts LGOS
+  for all registered graphs. It uses OpenAI Responses, graph-specific runtime
+  settings, and the standard Files API, and adapts LGOS
   interrupts to Open WebUI's native question UI.
-- `demo/ui/openwebui/src/lgos_openwebui/functions/uservalves_simple.py` keeps
-  a static `UserValves` design as a small single-model example.
 
 The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
+When `lgos-a/simple-graph` is available with valid metadata, sync also creates
+the dedicated UserValves example over the same manifold base.
+
+## Simple Per-User Settings
+
+After setup below, select **UserValves Simple / simple-graph**. Open
+**Controls → Valves**, select **Functions → UserValves Simple**, and choose
+`use_history` and `audience`. These preferences belong to the user and apply across chats
+using this example. The field definitions are static; their values are editable.
+
+The Filter supplies those values through Open WebUI's request metadata
+`chat_variables` slot. The shared Pipe serializes them into
+`metadata.langgraph_runtime_settings`; LGOS validates and applies them.
+The example has no Chat Variables form, so there is only one settings control.
+
+The Filter is enabled only on the dedicated Workspace Model
+`lgos.uservalves_simple`. Keep it attached there rather than enabling it globally.
+It depends on the Generic Pipe for Responses transport. The generated
+**LGOS / ...** models below demonstrate schema-driven per-chat settings.
+
+!!! info "Select one first-class gateway"
+
+    Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
+    uses managed Responses; Bifrost uses native Responses. Files also use the
+    selected gateway's normal route. Pass-through is limited to catalog detail
+    so LGOS descriptions and settings survive gateway normalization. Neither
+    the Function nor the sync logic connects directly to LGOS.
 
 ## Setup
 
@@ -33,19 +68,27 @@ make sync-openwebui
 ```
 
 The sync command signs in through `/api/v1/auths/signin`, creates or updates the
-bundled Functions, lists provider-qualified LGOS models from Bifrost's `/v1`
-catalog, retrieves detailed metadata through `/openai_passthrough/v1`, and
-bulk-imports each generated Workspace Model with an active, public, hidden
-override for its manifold base. Run it again after changing a Function, the
-Bifrost provider catalog, or a graph's client settings schema.
+bundled Functions, lists LGOS models through the selected gateway, retrieves
+their detailed metadata, and bulk-imports each generated Workspace Model with
+an active, public, hidden override for its manifold base. Run it again after
+changing a Function, the configured model catalog, or a graph's client settings
+schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
 `GraphConfig.description`. The sync marks a model as **Limited functionality**
 when the API omits a description.
 
+LiteLLM's managed `/v1/models` response is not the UI catalog. The sync instead
+merges `/v1/lgos-a/models` and `/v1/lgos-b/models`, and retrieves details
+through the matching catalog pass-through. Bifrost uses aggregate `/v1/models`
+for discovery and its pass-through only for provider-specific detail. This
+preserves LGOS descriptions, features, and detailed client-settings schemas
+without a direct connection to LGOS. Inference still uses the selected
+gateway's normal Responses route.
+
 After importing the current catalog, sync deletes obsolete generated `lgos.*`
 Workspace Models and `generic.*` base visibility records. It does not delete
-bundled Functions or unrelated user-managed Workspace Models. New generated
+unrelated user-managed Functions or Workspace Models. New generated
 Workspace Models are public; later syncs preserve their access grants and
 active state. The sync owns the generated bases' hidden, public, and active
 state.
@@ -72,50 +115,45 @@ model is `generic.lgos-a/simple-graph`. The raw `Generic / ...` manifold entry
 remains active and public but is hidden from the chat selector, following Open
 WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
-`UserValves-Simple / simple-graph` remains available as the static alternative.
 
-Configure `OPENAI_API_BASE_URL`, `OPENAI_CATALOG_BASE_URL`, `OPENAI_API_KEY`,
-`OPENAI_API_TIMEOUT`, `OPENAI_FILES_BASE_URL`, and `OPENAI_FILES_PROVIDER` in
-the generic Function's admin valves. The Pydantic valve model in the Function
-is the source of truth for their defaults and descriptions. The Function lists
-the Bifrost catalog once, keeps models owned by `langgraph-openai-serve`, and
-exposes Bifrost's existing `provider/model` IDs.
-For detailed retrieval and inference, it removes the provider prefix from the
-model and sends it as `x-model-provider` through Bifrost pass-through. The
-static UserValves Function accepts one provider-qualified `MODEL` and uses the
-same routing rule. Open WebUI stores Function code in its database, so a bind
-mount of the Python file does not update it.
+Configure `OPENAI_GATEWAY_TYPE`, optional `OPENAI_GATEWAY_BASE_URL`,
+`OPENAI_API_KEY`, and `OPENAI_API_TIMEOUT` in the generic Function's admin
+valves. The Pydantic valve model in the Function is the source of truth for
+their defaults and descriptions. Compose supplies `DEMO_LITELLM_MASTER_KEY` as
+`OPENAI_API_KEY`; replace the demo-only value in shared deployments. LiteLLM
+keeps `lgos-a/` or `lgos-b/` on the managed-routing model ID. Bifrost removes
+that provider prefix and sends it as `x-model-provider` to native Responses.
+Open WebUI stores Function code in its database, so a bind mount of the Python
+file does not update it.
 
-The generic manifold uses only Bifrost's catalog for discovery. It retrieves
-detailed LGOS metadata after a model is selected for chat, when settings and
-capability checks need it. The sync command performs the same detailed
-retrieval before it generates Workspace Models and their Chat Variables.
+The generic manifold lists the selected gateway's aggregate UI catalog. The
+sync command additionally retrieves detailed LGOS metadata before it generates
+Workspace Models, their Chat Variables, and file-upload capability.
 
 ## File Input
 
 Generated models enable Open WebUI's native file-upload control only when the
-graph advertises `file_inputs`. Select `lgos-a/file-input` (or the `lgos-b`
-equivalent) to process an attachment. The Generic Function receives non-image
-attachments through Open WebUI's documented
+graph advertises `file_inputs`. Select `file-input` to process an attachment.
+Selecting Bifrost also exposes provider-qualified equivalents. The Generic
+Function receives non-image attachments through Open WebUI's documented
 [`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
-argument and images through their base64 `image_url` content parts. In the
-pinned release, `__metadata__["user_message"]` identifies the message that
-started this turn. Because `__files__` also includes files from earlier turns,
-the Function intersects it with that current message, uploads each current
-attachment's original bytes with `purpose="user_data"`, and appends the returned
-OpenAI `file_id` to the message. It never reuploads historical chat attachments
-or moves them to the latest message. Images also keep Open WebUI's native
-`image_url` representation.
+argument and image bytes from their base64 `image_url` content. In the pinned
+release, `__metadata__["user_message"]` identifies the message that started this
+turn. Because `__files__` also includes files from earlier turns, the Function
+intersects it with that current message, uploads each current attachment's
+original bytes with `purpose="user_data"`, and appends the returned OpenAI
+`file_id` to the message. It never reuploads historical chat attachments or
+moves them to the latest message. Images use `input_file.file_id` too; the
+current LGOS Responses subset does not accept `input_image` items.
 
-If a request nevertheless attaches a file to a graph without `file_inputs`, the
-Function rejects it before uploading. This prevents central Files IDs from being
-forwarded to an unrelated downstream model, where the ID has no meaning.
+The generated Workspace Model is the upload-capability boundary. The raw
+manifold entry is intended for diagnostics and does not add a second remote
+metadata check to every Responses request.
 
-Compose sends file uploads through Bifrost's `/v1` endpoint with the dedicated
-`lgos-files` provider. To bypass Bifrost, set `OPENAI_FILES_BASE_URL` to the
-standalone Files API `/v1` endpoint and leave `OPENAI_FILES_PROVIDER` empty.
-This endpoint is independent from `OPENAI_API_BASE_URL`, which remains the
-graph chat and metadata endpoint.
+Compose sends file uploads through the selected gateway's normal `/v1` Files
+route. Bifrost assigns the request to `lgos-files`; LiteLLM assigns it to
+`litellm_proxy`. Both providers target the central Files API. Neither UI uses a
+Files pass-through.
 
 The Compose service mounts a small ASGI wrapper that forces `process=false` on
 Open WebUI's native file-upload endpoint. Open WebUI therefore stores the
@@ -146,13 +184,10 @@ not only to generated LGOS models.
 
 ## Limited Functionality
 
-Every generated model remains visible when its pass-through detail response
+Every generated model remains visible when its native detail response
 lacks the required `langgraph_openai_serve` extension. Its name and description
-say **Limited functionality**. At chat time both bundled Pipes also emit an Open
-WebUI
-[`notification`](https://docs.openwebui.com/features/extensibility/plugin/development/events/#notification)
-with warning severity. Standard assistant text may still work; runtime settings,
-file inputs, client events, and interrupts are not assumed.
+say **Limited functionality**. Standard assistant text may still work; runtime
+settings and file-upload controls are not assumed.
 
 ## Runtime Settings
 
@@ -174,14 +209,14 @@ message merely to confirm them.
 *Runtime settings synchronized from `lgos-a/simple-graph` and rendered as
 native Open WebUI Chat Variables.*
 
-When a chat has values, the Pipe retrieves the selected model's current LGOS
-metadata, ignores names no longer present, removes values equal to current
-defaults, and sends only changes as
+When a chat has values, the Pipe serializes Open WebUI's generated Chat
+Variables and sends them as
 `metadata.langgraph_runtime_settings`. LGOS performs the authoritative runtime
 validation.
 
-Both bundled Functions also map Open WebUI's stable `chat_id` to
-`metadata.session_id` on every completion. Langfuse can therefore group the
+The shared Pipe maps Open WebUI's stable `chat_id` to
+`metadata.session_id` on every completion, including the UserValves example.
+Langfuse can therefore group the
 chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the
 opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot-agent` uses
@@ -195,13 +230,6 @@ configuration source. Open WebUI does not fetch a remote schema when the model
 selector changes, so rerun `make sync-openwebui` after an LGOS schema change.
 Model selection then switches among the already-synchronized native forms.
 
-### Static Alternative
-
-`uservalves_simple.py` remains useful for one fixed graph when settings are
-intentionally hand-maintained per user and dynamic discovery or per-chat values
-are unnecessary. Its fields are illustrative; generated Workspace Models still
-take their schemas only from LGOS.
-
 !!! note "Pinned Open WebUI contract"
 
     The demo pins Open WebUI v0.11.3. The sync imports its native
@@ -213,46 +241,41 @@ take their schemas only from LGOS.
 
 ## Streaming, Status, And Citations
 
-The general manifold Pipe honors Open WebUI's requested Chat Completions mode.
-Streaming requests pass standard Chat Completion chunks through unchanged, and
-non-streaming requests return the full Chat Completion object. Open WebUI owns
-standard stream parsing, including assistant text, finish reasons, usage, tool
-calls, and citation annotations. Inline citation markers remain part of the
-assistant content. Non-streaming requests do not replay status or artifact
-events. The static example streams assistant text only.
+The general manifold Pipe uses OpenAI Responses for every model. The SDK stream
+manager owns event accumulation and supplies the terminal `Response`; the Pipe
+adapts final-answer deltas to Open WebUI's native stream interface and maps
+completed commentary messages to native status history. It translates standard
+final-answer URL annotations into persistent native source events, with each
+cited span as the source excerpt. Non-streaming requests select only
+`phase="final_answer"` output. Inline citation markers remain part of assistant
+content.
 
 !!! note "Keep streaming enabled"
 
     In Open WebUI v0.11.3, native citation sources, tool calls, and `ask_user`
-    use its streaming middleware. Non-streaming responses preserve
-    annotations and tool calls, but the UI does not render their native controls.
+    use its streaming middleware. The UI does not render equivalent native
+    controls from non-streaming adapter output.
 
-The manifold Pipe opts into LGOS client stream events only when model retrieval
-advertises `client_events`, and maps every portable status update to Open
-WebUI's native
-[`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
-Open WebUI saves each update in the assistant message's `statusHistory`;
-`done=False` displays an active shimmer, `done=True` stops it, and `hidden=True`
-keeps the history entry out of the current display. Persisted statuses survive
-a reload or closed tab. The Pipe translates the demo's versioned semantic chart
-artifact to Plotly using the official versioned Plotly.js CDN, then sends Open
-WebUI's persistent
-[`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds).
-The embedded document reports its rendered height to Open WebUI so responsive
-charts are not clipped by the iframe's initial height. The browser needs access
-to `cdn.plot.ly`; no same-origin iframe setting is required. Other `progress`
-and artifact kinds remain ignored. Shared prompts and graph behavior are
-documented under
+The persistent plot graph returns a standard `display_file` function call. The
+Pipe downloads the Plotly JSON through the OpenAI Files API and embeds the
+figure in a small HTML document. The browser renders it with the native
+[`Plotly.newPlot`](https://plotly.com/javascript/plotlyjs-function-reference/#plotlynewplot)
+API; the Open WebUI backend needs no Python Plotly package.
+It emits the native persistent [`embeds` event](https://docs.openwebui.com/features/extensibility/plugin/development/events/#embeds-or-chatmessageembeds)
+to render an interactive chart in Open WebUI's sandboxed iframe, then returns
+the matching `function_call_output` before requesting the final answer.
+The HTML uses Plotly's versioned CDN script, so browsers must be able to reach
+`cdn.plot.ly`. Open WebUI saves the embed with the message for chat reloads;
+HTML and chart bytes stay out of the upstream model transcript. Image files
+still use authenticated Open WebUI file storage and the native `files` event. Each continuation retains the original input, including instructions
+and file references, then appends complete Response output items and matching
+tool results. Final-answer text from every call is retained in both modes.
+
+The Pipe's returned Chat-shaped dictionaries belong to Open WebUI's internal
+rendering interface; upstream inference always uses Responses.
+Shared prompts and graph behavior are documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
 [Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it).
-
-The adapter deliberately does not turn status updates into OpenAI tool calls.
-Open WebUI treats a tool call as work it must execute, but LGOS has already
-started the backend work. The passive status mapping keeps execution in the
-graph and avoids duplicate execution.
-
-Proxy requirements are documented under
-[proxy compatibility](../how-to-guides/openai-proxies.md#client-event-compatibility).
 
 ## Interrupt Input
 
@@ -271,8 +294,8 @@ this adapter maps Open WebUI choices and free-form answers to strings.
 
 After the user answers, the Pipe decodes the original calls and performs the
 [canonical LGOS replay](../explanation/openai-compatibility.md#canonical-batch-replay):
-the exact assistant tool-call message, including `run_id` and `state_token`,
-followed by one `{"resume": ...}` result per interrupt. One native `ask_user`
+the exact Responses function-call items, including `run_id` and `state_token`,
+followed by one `{"resume": ...}` function output per interrupt. One native `ask_user`
 call can contain one to three questions, matching Open WebUI's built-in limit.
 LGOS itself remains generic and can expose larger atomic batches to clients that
 support them.
@@ -288,11 +311,6 @@ support them.
 The refund demo offers **approve**, **reject**, and a custom response. Approval
 executes the simulated refund and notification, rejection stops the workflow,
 and custom text is returned as reviewer feedback without executing an action.
-
-The Pipe also forwards Open WebUI's native tool definitions, including
-`ask_user`, through the standard Chat Completions `tools` fields. A compatible
-model can therefore ask one to three multiple-choice questions with an optional
-free-form answer; Open WebUI owns the question UI, persistence, and continuation.
 
 ![Open WebUI native human input card for a LangGraph interrupt](../static/hitl_openwebui.png)
 
