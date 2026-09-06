@@ -45,17 +45,14 @@ ResponseInputContent: TypeAlias = (
 
 
 class ResponseInputMessage(_ResponsesRequestModel):
-    """A user, system, or developer input message."""
+    """
+    A standard OpenAI role message provided as input.
 
-    role: Literal["user", "system", "developer"]
-    content: ResponseInputContent
-    type: Literal["message"] = "message"
+    ``phase`` is accepted for every role and used only for assistant messages.
+    See https://developers.openai.com/api/reference/resources/responses.
+    """
 
-
-class ResponseAssistantInputMessage(_ResponsesRequestModel):
-    """A compact assistant message replayed as input."""
-
-    role: Literal["assistant"]
+    role: Literal["user", "assistant", "system", "developer"]
     content: ResponseInputContent
     type: Literal["message"] = "message"
     phase: Literal["commentary", "final_answer"] | None = None
@@ -108,7 +105,6 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
 
 ResponseInputItem: TypeAlias = (
     ResponseOutputMessageInput
-    | ResponseAssistantInputMessage
     | ResponseInputMessage
     | ResponseFunctionCallInput
     | ResponseFunctionCallOutputInput
@@ -203,7 +199,6 @@ class ResponseCreateRequest(_ResponsesRequestModel):
 
 
 __all__ = [
-    "ResponseAssistantInputMessage",
     "ResponseCreateRequest",
     "ResponseFunctionCallInput",
     "ResponseFunctionCallOutputInput",

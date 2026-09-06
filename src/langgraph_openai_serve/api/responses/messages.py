@@ -13,7 +13,6 @@ from langchain_core.messages import (
 )
 
 from langgraph_openai_serve.api.responses.schemas import (
-    ResponseAssistantInputMessage,
     ResponseFunctionCallInput,
     ResponseFunctionCallOutputInput,
     ResponseInputFile,
@@ -119,19 +118,21 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
         raise TypeError(msg)
 
     content = _input_content(item.content)
-    if isinstance(item, ResponseAssistantInputMessage):
-        return AIMessage(
-            content=content,
-            additional_kwargs={"phase": item.phase},
-        )
-    if item.role == "user":
-        return HumanMessage(content=content)
-    if item.role == "developer":
-        return SystemMessage(
-            content=content,
-            additional_kwargs={"__openai_role__": "developer"},
-        )
-    return SystemMessage(content=content)
+    match item.role:
+        case "assistant":
+            return AIMessage(
+                content=content,
+                additional_kwargs={"phase": item.phase},
+            )
+        case "user":
+            return HumanMessage(content=content)
+        case "developer":
+            return SystemMessage(
+                content=content,
+                additional_kwargs={"__openai_role__": "developer"},
+            )
+        case "system":
+            return SystemMessage(content=content)
 
 
 def _function_call_message(calls: list[ResponseFunctionCallInput]) -> AIMessage:

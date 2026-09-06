@@ -51,23 +51,18 @@ def parse_responses_resume(
             "the previous Response."
         )
         raise InvalidResumeRequestError(msg)
-    outputs = [
-        item
-        for item in input_value
-        if isinstance(item, ResponseFunctionCallOutputInput)
-    ]
-    if len(outputs) != len(input_value):
-        msg = (
-            "Interrupt resumes require only function_call_output input items for "
-            "the previous Response."
-        )
-        raise InvalidResumeRequestError(msg)
 
     run_id = _parse_interrupt_response_id(previous_response_id)
     state_token: str | None = None
     values: dict[str, str] = {}
-    for output in outputs:
-        output_token, interrupt_id = _parse_interrupt_tool_call_id(output.call_id)
+    for item in input_value:
+        if not isinstance(item, ResponseFunctionCallOutputInput):
+            msg = (
+                "Interrupt resumes require only function_call_output input items for "
+                "the previous Response."
+            )
+            raise InvalidResumeRequestError(msg)
+        output_token, interrupt_id = _parse_interrupt_tool_call_id(item.call_id)
         if state_token is None:
             state_token = output_token
         elif output_token != state_token:
@@ -76,7 +71,7 @@ def parse_responses_resume(
         if interrupt_id in values:
             msg = "Interrupt function_call_output call_id values must be unique."
             raise InvalidResumeRequestError(msg)
-        values[interrupt_id] = output.output
+        values[interrupt_id] = item.output
 
     if state_token is None:  # Response input lists are non-empty by schema.
         msg = "Interrupt resumes require at least one function_call_output item."

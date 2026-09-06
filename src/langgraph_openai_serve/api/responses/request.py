@@ -107,4 +107,8 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
         raise UnsupportedResponsesRequestError(message, param="instructions")
 
 
-__all__ = ["UnsupportedResponsesRequestError", "decode_responses_request"]
+__all__ = [
+    "UnsupportedResponsesRequestError",
+    "decode_responses_request",
+    "validate_hosted_tools",
+]

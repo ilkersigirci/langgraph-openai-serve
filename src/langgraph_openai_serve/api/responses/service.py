@@ -48,17 +48,25 @@ class ResponseContext:
     id: str = field(default_factory=lambda: f"resp_{uuid.uuid4().hex}")
     created_at: float = field(default_factory=time.time)
 
+    @classmethod
+    def for_run(
+        cls,
+        request: ResponseCreateRequest,
+        *,
+        run_id: str | None = None,
+    ) -> "ResponseContext":
+        """Build context, binding an interrupt response ID when run_id is present."""
+        if run_id is None:
+            return cls(request=request)
+        return cls(request=request, id=interrupt_response_id(run_id))
+
 
 async def generate_response(
     request: ResponseCreateRequest,
     run: GraphRun,
 ) -> Response:
     """Invoke a graph and serialize its durable Responses output."""
-    context = (
-        ResponseContext(request=request, id=interrupt_response_id(run.run_id))
-        if run.run_id is not None
-        else ResponseContext(request=request)
-    )
+    context = ResponseContext.for_run(request, run_id=run.run_id)
     invocation = await invoke_run(run)
     output = invocation.output
     if isinstance(output, AIMessage):

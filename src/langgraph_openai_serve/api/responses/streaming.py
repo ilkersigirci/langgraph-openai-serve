@@ -31,7 +31,6 @@ from openai.types.responses import (
     ResponseUsage,
 )
 
-from langgraph_openai_serve.api.responses.interrupts import interrupt_response_id
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
@@ -77,12 +76,7 @@ class ResponsesStreamBuilder:
         *,
         run_id: str | None = None,
     ) -> None:
-        response_id = (
-            interrupt_response_id(run_id)
-            if run_id is not None
-            else f"resp_{uuid.uuid4().hex}"
-        )
-        self._context = ResponseContext(request=request, id=response_id)
+        self._context = ResponseContext.for_run(request, run_id=run_id)
         self._sequence_number = 0
         self._output: list[ResponseOutputMessage | ResponseFunctionToolCall] = []
         self._final_item: _TextItem | None = None

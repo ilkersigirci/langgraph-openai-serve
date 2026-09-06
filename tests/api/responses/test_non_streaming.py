@@ -77,6 +77,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
         input=[
             {
                 "role": "user",
+                "phase": "commentary",
                 "content": [
                     {"type": "input_text", "text": "First."},
                     {"type": "input_text", "text": "Second."},
@@ -136,6 +137,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
         {"type": "text", "text": "First."},
         {"type": "text", "text": "Second."},
     ]
+    assert messages[1].additional_kwargs == {}
     assert messages[2].additional_kwargs == {"__openai_role__": "developer"}
     assert messages[3].additional_kwargs == {"phase": "commentary"}
     assert messages[4].id == "msg_prior"
