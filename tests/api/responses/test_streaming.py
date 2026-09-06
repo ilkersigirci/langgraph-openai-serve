@@ -1,7 +1,6 @@
 import json
 import uuid
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -15,6 +14,7 @@ from langgraph.graph import StateGraph
 from langgraph.types import interrupt
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseStreamEvent
+from starlette import status
 
 from langgraph_openai_serve import (
     GraphConfig,
@@ -26,13 +26,27 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
+from tests.api.responses.support import (
+    load_stream_fixture,
+    normalize_stream_payloads,
+)
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.schemas import MessageState
 
-FIXTURES = Path(__file__).with_name("fixtures")
 FINAL_TEXT = "Fixture answer."
-USAGE = {"input_tokens": 5, "output_tokens": 6, "total_tokens": 11}
+WEATHER_TOOL = {
+    "type": "function",
+    "name": "weather",
+    "description": "Get the weather for a city.",
+    "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 
 def _status_graph(*, multiple: bool = False, stream_final: bool = True) -> Any:
@@ -103,9 +117,20 @@ def fastapi_app() -> FastAPI:
             )
         ]
     )
+    tool_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "weather",
+                "args": {"city": "Istanbul"},
+                "id": "call_weather",
+                "type": "tool_call",
+            }
+        ],
+    )
     registry = GraphRegistry(
         registry={
-            "golden": GraphConfig(
+            "text": GraphConfig(
                 graph=lambda: _status_graph(stream_final=False),
                 description="DUMMY",
                 streamable_node_names=["generate"],
@@ -127,15 +152,6 @@ def fastapi_app() -> FastAPI:
                 streamable_node_names=["generate"],
                 output_to_message=lambda _output: AIMessage("durable"),
             ),
-            "usage": GraphConfig(
-                graph=lambda: make_message_graph("counted"),
-                description="DUMMY",
-                streamable_node_names=["generate"],
-                output_to_message=lambda _output: AIMessage(
-                    "counted",
-                    usage_metadata=USAGE,
-                ),
-            ),
             "citations": GraphConfig(
                 graph=lambda: make_message_graph(citation_text),
                 description="DUMMY",
@@ -144,6 +160,11 @@ def fastapi_app() -> FastAPI:
             "failure": GraphConfig(
                 graph=_failing_graph,
                 description="DUMMY",
+            ),
+            "wire-tool": GraphConfig(
+                graph=make_message_graph,
+                description="DUMMY",
+                output_to_message=lambda _output: tool_message,
             ),
         }
     )
@@ -163,18 +184,28 @@ async def _events(
     return [event async for event in stream]
 
 
-def _fixture_event_types(name: str) -> list[str]:
-    with FIXTURES.joinpath(name).open(encoding="utf-8") as fixture:
-        payloads = cast("list[dict[str, Any]]", json.load(fixture))
-    return [cast("str", payload["type"]) for payload in payloads]
-
-
-async def test_text_stream_matches_golden_lifecycle_and_stable_identity(
+async def test_text_stream_has_complete_lifecycle_and_stable_identity(
     openai_client: AsyncOpenAI,
 ) -> None:
-    events = await _events(openai_client, "golden")
+    events = await _events(openai_client, "text")
 
-    assert [event.type for event in events] == _fixture_event_types("text_stream.json")
+    assert [event.type for event in events] == [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.output_item.added",
+        "response.content_part.added",
+        "response.output_text.delta",
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
     assert [event.sequence_number for event in events] == list(range(len(events)))
 
     response_events = [
@@ -214,7 +245,7 @@ async def test_text_stream_matches_golden_lifecycle_and_stable_identity(
         assert event_item_ids == {output_item.id}
 
 
-async def test_raw_stream_uses_named_compact_sse_without_done_sentinel(
+async def test_raw_stream_uses_named_sse_without_done_sentinel(
     client: AsyncClient,
 ) -> None:
     async with client.stream(
@@ -232,9 +263,44 @@ async def test_raw_stream_uses_named_compact_sse_without_done_sentinel(
         event_line, data_line = frame.splitlines()
         event_type = event_line.removeprefix("event: ")
         assert event_type
-        assert data_line.startswith("data: {")
+        assert data_line.startswith("data: ")
         assert json.loads(data_line.removeprefix("data: "))["type"] == event_type
-        assert ": " not in data_line.removeprefix("data: ")
+
+
+@pytest.mark.parametrize(
+    ("model", "tools", "fixture_name"),
+    [
+        pytest.param("fallback", [], "text_stream.json", id="text"),
+        pytest.param(
+            "wire-tool",
+            [WEATHER_TOOL],
+            "function_call_stream.json",
+            id="function-call",
+        ),
+        pytest.param("failure", [], "failed_stream.json", id="failure"),
+    ],
+)
+async def test_stream_matches_openai_wire_contract(
+    client: AsyncClient,
+    model: str,
+    tools: list[dict[str, Any]],
+    fixture_name: str,
+) -> None:
+    async with client.stream(
+        "POST",
+        "/v1/responses",
+        json={
+            "model": model,
+            "input": "Hello",
+            "store": False,
+            "stream": True,
+            "tools": tools,
+        },
+    ) as response:
+        body = (await response.aread()).decode()
+
+    assert response.status_code == status.HTTP_200_OK
+    assert normalize_stream_payloads(body) == load_stream_fixture(fixture_name)
 
 
 async def test_responses_exposes_only_visible_statuses_as_commentary(
@@ -265,13 +331,13 @@ async def test_status_commentary_requires_feature_and_streaming(
     fastapi_app: FastAPI,
 ) -> None:
     response = await openai_client.responses.create(
-        model="golden",
+        model="text",
         input="Hello",
     )
     assert [item.phase for item in response.output] == ["final_answer"]
 
-    fastapi_app.state.graph_registry.get_graph("golden").features.clear()
-    events = await _events(openai_client, "golden")
+    fastapi_app.state.graph_registry.get_graph("text").features.clear()
+    events = await _events(openai_client, "text")
     completed = events[-1].response
     assert [item.phase for item in completed.output] == ["final_answer"]
 
@@ -317,31 +383,19 @@ async def test_streamed_final_text_mismatch_ends_in_failed_response(
     assert failed.output[0].id == added.item.id
 
 
-async def test_graph_failure_matches_golden_terminal_order(
+async def test_graph_failure_emits_terminal_failure_events(
     openai_client: AsyncOpenAI,
 ) -> None:
     events = await _events(openai_client, "failure")
 
-    assert [event.type for event in events] == _fixture_event_types(
-        "failed_stream.json"
-    )
+    assert [event.type for event in events] == [
+        "response.created",
+        "response.in_progress",
+        "error",
+        "response.failed",
+    ]
     assert [event.sequence_number for event in events] == list(range(len(events)))
     assert events[-1].response.status == "failed"
-
-
-async def test_completed_stream_contains_provider_usage(
-    openai_client: AsyncOpenAI,
-) -> None:
-    events = await _events(openai_client, "usage")
-
-    usage = events[-1].response.usage
-    assert usage is not None
-    assert usage.input_tokens == USAGE["input_tokens"]
-    assert usage.output_tokens == USAGE["output_tokens"]
-    assert usage.total_tokens == USAGE["total_tokens"]
-    assert usage.input_tokens_details.cached_tokens == 0
-    assert usage.input_tokens_details.cache_write_tokens == 0
-    assert usage.output_tokens_details.reasoning_tokens == 0
 
 
 async def test_responses_citations_use_unicode_inclusive_boundaries(

@@ -1,6 +1,5 @@
 import pytest
 from langgraph_openai_serve import GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
@@ -14,11 +13,11 @@ from lgos_demo_api.graphs.custom_io import custom_io_graph_config
     ],
 )
 async def test_adapts_request_input_context_and_output(
-    make_request,
+    make_graph_input,
     user: str | None,
     expected_user: str,
 ) -> None:
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "custom-input-output-context",
         content="Show me custom schemas.",
         user=user,
@@ -26,8 +25,6 @@ async def test_adapts_request_input_context_and_output(
     registry = GraphRegistry(
         registry={"custom-input-output-context": custom_io_graph_config}
     )
-
-    graph_request, messages, _ = decode_responses_request(request)
 
     result = await run_langgraph(graph_request, messages, registry)
 

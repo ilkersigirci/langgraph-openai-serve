@@ -14,15 +14,16 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.tools import BaseTool
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
-from langgraph_openai_serve.api.responses.request import decode_responses_request
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.api.responses.service import generate_response
+from langgraph_openai_serve import (
+    ClientFunctionTool,
+    GraphRegistry,
+    GraphRequest,
+    LanggraphOpenaiServe,
+)
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.runner import run_langgraph
-from langgraph_openai_serve.graph.utils import prepare_run
 from openai import AsyncOpenAI
-from openai.types.responses import ResponseCompletedEvent, ResponseFunctionToolCall
+from openai.types.responses import ResponseCompletedEvent
 from plotly import io as pio
 
 from lgos_demo_api.graphs import persistent_plot_agent as plot_module
@@ -98,15 +99,21 @@ def _last_tool_result(result: dict[str, Any]) -> str:
     ],
 )
 def test_plot_requires_a_complete_persistence_scope(
-    make_request: Callable[..., ResponseCreateRequest],
     user: str | None,
     metadata: dict[str, str] | None,
     param: str,
 ) -> None:
-    request = make_request("persistent-plot-agent", user=user, metadata=metadata)
+    request = GraphRequest(
+        model="persistent-plot-agent",
+        metadata=metadata or {},
+        user=user,
+        tools=(),
+        tool_choice=None,
+        parallel_tool_calls=None,
+    )
 
     with pytest.raises(OpenAIHTTPException) as exc_info:
-        context_factory(decode_responses_request(request)[0], None)
+        context_factory(request, None)
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.error.param == param
@@ -180,24 +187,22 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
             return None
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
-    request = ResponseCreateRequest.model_validate(
-        {
-            "model": "persistent-plot-agent",
-            "input": "Show the chart.",
-            "tools": [_display_file_tool()],
-            "store": False,
-            "user": "user-1",
-            "metadata": {
-                "session_id": "thread-1",
-                "langgraph_runtime_settings": json.dumps(
-                    {
-                        "chart_type": chart_type,
-                        "currency": currency,
-                        "show_legend": show_legend,
-                    }
-                ),
-            },
-        }
+    graph_request = GraphRequest(
+        model="persistent-plot-agent",
+        user="user-1",
+        metadata={
+            "session_id": "thread-1",
+            "langgraph_runtime_settings": json.dumps(
+                {
+                    "chart_type": chart_type,
+                    "currency": currency,
+                    "show_legend": show_legend,
+                }
+            ),
+        },
+        tools=(_display_file_client_tool(),),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
     registry = _registry(
         make_tool_calling_model(
@@ -205,16 +210,17 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
             AIMessage(content="Q4 is highest at €230k."),
         )
     )
-    graph_request, messages, resume = decode_responses_request(request)
-    run = await prepare_run(graph_request, messages, registry, resume=resume)
+    result = await run_langgraph(
+        graph_request,
+        [HumanMessage(content="Show the chart.")],
+        registry,
+    )
 
-    response = await generate_response(request, run)
-
-    assert [item.type for item in response.output] == ["function_call"]
-    display_call = response.output[0]
-    assert isinstance(display_call, ResponseFunctionToolCall)
-    assert display_call.name == DISPLAY_FILE_TOOL_NAME
-    arguments = json.loads(display_call.arguments)
+    assert isinstance(result, AIMessage)
+    assert len(result.tool_calls) == 1
+    display_call = result.tool_calls[0]
+    assert display_call["name"] == DISPLAY_FILE_TOOL_NAME
+    arguments = dict(display_call["args"])
     expected_filename = arguments.pop("filename")
     assert re.fullmatch(
         r"quarterly-revenue-[0-9a-f]{12}\.plotly\.json",
@@ -226,7 +232,7 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
         "title": "Quarterly revenue",
         "alt": f"Q4 is highest at {'€' if currency == 'EUR' else '$'}230k.",
     }
-    assert display_call.call_id.startswith("lg_display_")
+    assert display_call["id"].startswith("lg_display_")
 
     create_file.assert_awaited_once()
     filename, content, media_type = create_file.await_args.kwargs["file"]
@@ -320,14 +326,24 @@ def _display_file_tool() -> dict[str, Any]:
     }
 
 
+def _display_file_client_tool() -> ClientFunctionTool:
+    tool = _display_file_tool()
+    return ClientFunctionTool(
+        name=DISPLAY_FILE_TOOL_NAME,
+        description=str(tool["description"]),
+        parameters=tool["parameters"],
+        strict=True,
+    )
+
+
 async def test_agent_does_not_upload_when_display_tool_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
-    make_request,
+    make_graph_input,
     make_tool_calling_model: Callable[..., BaseChatModel],
 ) -> None:
     client = AsyncMock()
     monkeypatch.setattr(plot_module, "AsyncOpenAI", client)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "persistent-plot-agent",
         user="user-1",
         metadata={"session_id": "thread-1"},
@@ -339,35 +355,9 @@ async def test_agent_does_not_upload_when_display_tool_is_unavailable(
         )
     )
 
-    graph_request, messages, _ = decode_responses_request(request)
-
     message = await run_langgraph(graph_request, messages, registry)
 
     assert isinstance(message, AIMessage)
     assert message.text == "Q4 is highest at €230k."
     assert not message.tool_calls
     client.assert_not_called()
-
-
-async def test_agent_supports_non_streaming_invocation(
-    make_request,
-    make_tool_calling_model: Callable[..., BaseChatModel],
-) -> None:
-    request = make_request(
-        "persistent-plot-agent",
-        user="user-1",
-        metadata={"session_id": "thread-1"},
-    )
-    registry = _registry(
-        make_tool_calling_model(
-            _tool_call("show_quarterly_revenue", {}, "show-1"),
-            AIMessage(content="Q4 is highest at $230k."),
-        )
-    )
-
-    graph_request, messages, _ = decode_responses_request(request)
-
-    output = await run_langgraph(graph_request, messages, registry)
-    assert (output.text if isinstance(output, AIMessage) else output) == (
-        "Q4 is highest at $230k."
-    )

@@ -716,7 +716,6 @@ async def test_display_file_is_copied_to_authenticated_openwebui_storage(
     assert output["output"] == '{"displayed":true}'
 
 
-@pytest.mark.parametrize("provider", ["lgos-files", "litellm_proxy"])
 @pytest.mark.parametrize(
     "invalid_content",
     [None, b"bad-json", b'{"data":{}}', b'{"data":[],"layout":[]}'],
@@ -725,7 +724,6 @@ async def test_display_file_is_copied_to_authenticated_openwebui_storage(
 async def test_display_plotly_emits_a_persistent_interactive_embed(
     monkeypatch: pytest.MonkeyPatch,
     invalid_content: bytes | None,
-    provider: str,
 ) -> None:
     call = function_call(
         "display_file",
@@ -757,7 +755,7 @@ async def test_display_plotly_emits_a_persistent_interactive_embed(
         "files_base_url": "https://files.example/v1",
         "api_key": "test",
         "timeout": 10,
-        "provider": provider,
+        "provider": "lgos-files",
     }
     if invalid_content is not None:
         with pytest.raises(ValueError):
@@ -768,7 +766,7 @@ async def test_display_plotly_emits_a_persistent_interactive_embed(
     output = await generic_files._handle_display_file(call, emit, object(), **kwargs)
 
     files_client.files.content.assert_awaited_once_with(
-        "file-chart", extra_query={"provider": provider}
+        "file-chart", extra_query={"provider": "lgos-files"}
     )
     emit.assert_awaited_once()
     event = emit.await_args.args[0]

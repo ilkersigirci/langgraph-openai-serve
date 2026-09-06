@@ -2,8 +2,15 @@ import json
 
 import pytest
 from httpx import AsyncClient
+from langchain_core.messages import BaseMessage
 from openai import AsyncOpenAI, BadRequestError
 from starlette import status
+
+from langgraph_openai_serve import (
+    ClientFunctionTool,
+    GraphRegistry,
+    GraphRequest,
+)
 
 
 async def test_non_streaming_completion_matches_openai_contract(
@@ -61,7 +68,19 @@ async def test_sdk_assistant_message_can_be_replayed_unchanged(
 
 async def test_modern_function_tools_remain_supported(
     openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
 ) -> None:
+    received: list[GraphRequest] = []
+
+    def capture_request(
+        request: GraphRequest,
+        messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    graph_registry.get_graph("test").request_to_input = capture_request
+
     response = await openai_client.chat.completions.create(
         model="test",
         messages=[{"role": "user", "content": "What is the weather?"}],
@@ -85,6 +104,27 @@ async def test_modern_function_tools_remain_supported(
     )
 
     assert response.choices[0].message.content == "hello"
+    assert received == [
+        GraphRequest(
+            model="test",
+            metadata={},
+            user=None,
+            tools=(
+                ClientFunctionTool(
+                    name="get_weather",
+                    description="Get the weather for a city.",
+                    parameters={
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                    strict=True,
+                ),
+            ),
+            tool_choice="auto",
+            parallel_tool_calls=False,
+        )
+    ]
 
 
 async def test_streaming_completion_forwards_llm_chunks(

@@ -3,7 +3,6 @@ from typing import Any, cast
 
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import custom_events
@@ -16,10 +15,10 @@ def _public_event(value: object) -> dict[str, Any]:
 
 
 async def test_showcase_streams_a_small_event_timeline(
-    make_request, monkeypatch
+    make_graph_input, monkeypatch
 ) -> None:
     monkeypatch.setattr(custom_events, "SHOWCASE_EVENT_DELAY_SECONDS", 0)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "custom-event-showcase",
         content="Build the compatibility report.",
     )
@@ -28,8 +27,6 @@ async def test_showcase_streams_a_small_event_timeline(
             "custom-event-showcase": custom_events.custom_event_showcase_graph_config
         }
     )
-
-    graph_request, messages, _ = decode_responses_request(request)
 
     stream = [
         item async for item in run_langgraph_stream(graph_request, messages, registry)

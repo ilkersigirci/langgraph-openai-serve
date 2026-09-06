@@ -7,8 +7,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve.api.responses.request import decode_responses_request
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve import GraphRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 
@@ -155,16 +154,17 @@ async def test_simple_model_builds_its_runtime_context(
     metadata: dict[str, str] | None,
     expected_context: SimpleContext,
 ) -> None:
-    request = ResponseCreateRequest(
+    graph_request = GraphRequest(
         model="simple-graph",
-        input="Question",
-        metadata=metadata,
+        metadata=metadata or {},
+        user=None,
+        tools=(),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
 
     graph_config = demo_app.state.graph_registry.get_graph("simple-graph")
     graph = await graph_config.resolve_graph()
-
-    graph_request, _, _ = decode_responses_request(request)
 
     assert await graph_config.build_context(graph_request, graph) == expected_context
 

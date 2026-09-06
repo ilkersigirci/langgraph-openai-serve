@@ -1,6 +1,5 @@
 from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 
 from lgos_demo_api.graphs.multi_node_streaming import (
@@ -10,17 +9,15 @@ from lgos_demo_api.graphs.multi_node_streaming import (
 
 
 async def test_multiple_nodes_produce_the_same_streamed_and_complete_output(
-    make_request,
+    make_graph_input,
 ) -> None:
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "multi-node-streaming",
         content="Build one answer from two nodes.",
     )
     registry = GraphRegistry(
         registry={"multi-node-streaming": multi_node_streaming_graph_config}
     )
-
-    graph_request, messages, _ = decode_responses_request(request)
 
     events = [
         event async for event in run_langgraph_stream(graph_request, messages, registry)

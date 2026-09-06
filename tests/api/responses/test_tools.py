@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -13,8 +12,6 @@ from langgraph_openai_serve import (
     NamedFunctionToolChoice,
 )
 from tests.graph.support.message import make_message_graph
-
-FIXTURES = Path(__file__).with_name("fixtures")
 
 
 async def test_function_tools_and_choices_reach_graph_adapter(
@@ -286,7 +283,7 @@ async def test_multiple_tool_calls_are_distinct_response_output_items(
     assert all(item.id.startswith("fc_") for item in response.output)
 
 
-async def test_function_call_stream_matches_golden_lifecycle(
+async def test_function_call_stream_has_complete_lifecycle(
     tool_openai_client: AsyncOpenAI,
 ) -> None:
     stream = await tool_openai_client.responses.create(
@@ -295,12 +292,15 @@ async def test_function_call_stream_matches_golden_lifecycle(
         stream=True,
     )
     events = [event async for event in stream]
-    with FIXTURES.joinpath("function_call_stream.json").open(
-        encoding="utf-8"
-    ) as fixture:
-        expected = json.load(fixture)
-
-    one_call_event_types = [payload["type"] for payload in expected]
+    one_call_event_types = [
+        "response.created",
+        "response.in_progress",
+        "response.output_item.added",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
     assert [event.type for event in events] == [
         *one_call_event_types[:-1],
         *one_call_event_types[2:],

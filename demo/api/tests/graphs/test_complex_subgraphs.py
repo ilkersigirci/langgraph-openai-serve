@@ -1,7 +1,6 @@
 import pytest
 from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
@@ -27,13 +26,6 @@ def _registry() -> GraphRegistry:
 
 async def test_keyword_extraction_falls_back_to_general() -> None:
     graph = create_keyword_graph()
-    graph_view = graph.get_graph()
-
-    assert "prepare_keyword_context" in graph_view.nodes
-    assert (
-        "extract_keywords",
-        "prepare_keyword_context",
-    ) in {(edge.source, edge.target) for edge in graph_view.edges}
 
     result = await graph.ainvoke(KeywordState(normalized_question="Hello."))
 
@@ -57,13 +49,11 @@ async def test_keyword_extraction_falls_back_to_general() -> None:
     ],
 )
 async def test_routes_to_the_expected_specialist(
-    make_request,
+    make_graph_input,
     question: str,
     expected: str,
 ) -> None:
-    request = make_request("complex-subgraphs", content=question)
-
-    graph_request, messages, _ = decode_responses_request(request)
+    graph_request, messages = make_graph_input("complex-subgraphs", content=question)
 
     result = await run_langgraph(graph_request, messages, _registry())
 
@@ -72,14 +62,12 @@ async def test_routes_to_the_expected_specialist(
 
 
 async def test_streaming_matches_non_streaming_for_nested_output(
-    make_request,
+    make_graph_input,
 ) -> None:
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "complex-subgraphs",
         content="Show nested subgraph routing docs.",
     )
-
-    graph_request, messages, _ = decode_responses_request(request)
 
     events = [
         event

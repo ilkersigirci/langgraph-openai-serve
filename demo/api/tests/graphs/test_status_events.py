@@ -2,7 +2,6 @@ from typing import Any, cast
 
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import status_events
@@ -15,19 +14,17 @@ def _public_event(value: object) -> dict[str, Any]:
 
 
 async def test_graph_streams_portable_status_updates(
-    make_request,
+    make_graph_input,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(status_events, "STATUS_EVENT_DELAY_SECONDS", 0)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "status-events",
         content="Prepare the media workflow.",
     )
     registry = GraphRegistry(
         registry={"status-events": status_events.status_event_graph_config}
     )
-
-    graph_request, messages, _ = decode_responses_request(request)
 
     stream = [
         item async for item in run_langgraph_stream(graph_request, messages, registry)

@@ -5,12 +5,15 @@ from typing import Any, cast
 import pytest
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.types import CustomStreamPart
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphFeature,
+    GraphRegistry,
+    GraphRequest,
+)
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
@@ -96,9 +99,10 @@ def _source_document(content: str, name: str) -> Document:
     )
 
 
-async def _stream(request: ResponseCreateRequest) -> list[object]:
-    graph_request, messages, _ = decode_responses_request(request)
-
+async def _stream(
+    graph_request: GraphRequest,
+    messages: list[BaseMessage],
+) -> list[object]:
     events: list[object] = [
         event
         async for event in run_langgraph_stream(graph_request, messages, _registry())
@@ -222,7 +226,7 @@ def test_splits_documents_and_preserves_source_metadata(
 
 
 async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
-    make_request,
+    make_graph_input,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     documents = [
@@ -252,16 +256,16 @@ async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
         lgos_rag_module.GradeDocuments(binary_score="yes"),
     )
     _stub_chat_model(monkeypatch, ANSWER)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "lgos-rag",
         messages=[
-            {"role": "user", "content": "What is LGOS?"},
-            {"role": "assistant", "content": "It serves LangGraph over /v1."},
-            {"role": "user", "content": "How do I call it?"},
+            HumanMessage(content="What is LGOS?"),
+            AIMessage(content="It serves LangGraph over /v1."),
+            HumanMessage(content="How do I call it?"),
         ],
     )
 
-    stream = await _stream(request)
+    stream = await _stream(graph_request, messages)
     streamed_answer = "".join(item for item in stream if isinstance(item, str))
 
     assert queries == [REWRITTEN_QUESTION]
@@ -277,7 +281,7 @@ async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
 
 
 async def test_direct_response_skips_retrieval(
-    make_request,
+    make_graph_input,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def unexpected_retrieval(query: str) -> list[Document]:
@@ -291,16 +295,16 @@ async def test_direct_response_skips_retrieval(
         AIMessage(content="respond_direct"),
     )
     _stub_chat_model(monkeypatch, HISTORY_ANSWER)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "lgos-rag",
         messages=[
-            {"role": "user", "content": "Who are you?"},
-            {"role": "assistant", "content": "I am the LGOS RAG assistant."},
-            {"role": "user", "content": "What did I ask you?"},
+            HumanMessage(content="Who are you?"),
+            AIMessage(content="I am the LGOS RAG assistant."),
+            HumanMessage(content="What did I ask you?"),
         ],
     )
 
-    stream = await _stream(request)
+    stream = await _stream(graph_request, messages)
 
     assert "".join(item for item in stream if isinstance(item, str)) == HISTORY_ANSWER
     assert _status_timeline(stream) == [
@@ -311,7 +315,7 @@ async def test_direct_response_skips_retrieval(
 
 
 async def test_irrelevant_retrieval_rewrites_once_then_stops(
-    make_request,
+    make_graph_input,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     queries: list[str] = []
@@ -340,9 +344,9 @@ async def test_irrelevant_retrieval_rewrites_once_then_stops(
     )
     refusal = "I cannot answer that from the available LGOS documentation."
     _stub_chat_model(monkeypatch, refusal)
-    request = make_request("lgos-rag", content="How do I call it?")
+    graph_request, messages = make_graph_input("lgos-rag", content="How do I call it?")
 
-    stream = await _stream(request)
+    stream = await _stream(graph_request, messages)
     streamed_answer = "".join(item for item in stream if isinstance(item, str))
 
     assert queries == ["weak query", REWRITTEN_QUESTION]

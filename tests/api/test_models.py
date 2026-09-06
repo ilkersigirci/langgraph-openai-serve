@@ -9,9 +9,8 @@ from langgraph_openai_serve import (
     GraphConfig,
     GraphFeature,
     GraphRegistry,
+    GraphRequest,
 )
-from langgraph_openai_serve.api.chat.request import decode_chat_request
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.graph.client_settings import RUNTIME_SETTINGS_METADATA_KEY
 from tests.graph.support.message import make_message_graph
 
@@ -150,14 +149,17 @@ async def test_bound_client_settings_builds_validated_runtime_context(
     graph_registry: GraphRegistry,
 ) -> None:
     graph_config = bind_public_settings(graph_registry)
-    request = ChatCompletionRequest(
+    request = GraphRequest(
         model="test",
-        messages=[{"role": "user", "content": "Hello"}],
         metadata={RUNTIME_SETTINGS_METADATA_KEY: '{"enabled":false,"mode":"detailed"}'},
+        user=None,
+        tools=(),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
 
     context = await graph_config.build_context(
-        decode_chat_request(request)[0],
+        request,
         await graph_config.resolve_graph(),
     )
 

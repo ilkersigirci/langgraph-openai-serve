@@ -94,9 +94,9 @@ timer only masks the environment failure.
   request decoding in API tests.
 - API tests should exercise HTTP/OpenAI-client behavior through the FastAPI or
   OpenAI client fixtures.
-- Responses golden SSE fixtures define the text, function-call, and failure
-  lifecycles checked against the real endpoint. Run gateway checks through the
-  live demo integration suites.
+- Responses normalized golden fixtures assert the complete text, function-call,
+  and failure stream payloads from the real endpoint. Run gateway checks through
+  the live demo integration suites.
 - Use `AsyncOpenAI` over HTTPX's ASGI transport for OpenAI contract tests. Use
   the raw HTTP client only for wire-format and host-application assertions.
 - If the same graph shape is needed in both layers, define it once in

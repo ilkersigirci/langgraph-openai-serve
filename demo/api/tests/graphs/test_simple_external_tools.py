@@ -2,26 +2,37 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langgraph_openai_serve import GraphConfig, GraphRegistry
-from langgraph_openai_serve.api.responses.request import decode_responses_request
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langgraph_openai_serve import (
+    ClientFunctionTool,
+    GraphConfig,
+    GraphRegistry,
+    GraphRequest,
+    NamedFunctionToolChoice,
+)
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs import simple_external_tools as graph_module
 
 MODEL = "simple-graph-external-tools"
+WEATHER_PARAMETERS = {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"],
+}
+CLIENT_TOOL = ClientFunctionTool(
+    name="get_weather",
+    description="Get the weather for a city.",
+    parameters=WEATHER_PARAMETERS,
+    strict=True,
+)
 WEATHER_TOOL = {
     "type": "function",
     "function": {
-        "name": "get_weather",
-        "description": "Get the weather for a city.",
-        "parameters": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"],
-        },
-        "strict": True,
+        "name": CLIENT_TOOL.name,
+        "description": CLIENT_TOOL.description,
+        "parameters": WEATHER_PARAMETERS,
+        "strict": CLIENT_TOOL.strict,
     },
 }
 
@@ -81,16 +92,20 @@ async def test_client_tools_are_bound_and_returned_to_the_client(
         )
     )
     monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
-    request = ResponseCreateRequest(
+    graph_request = GraphRequest(
         model=MODEL,
-        input="What is the weather?",
-        tools=[{"type": "function", **WEATHER_TOOL["function"]}],
-        tool_choice={"type": "function", "name": "get_weather"},
+        metadata={},
+        user=None,
+        tools=(CLIENT_TOOL,),
+        tool_choice=NamedFunctionToolChoice(name="get_weather"),
         parallel_tool_calls=False,
     )
 
-    graph_request, messages, _ = decode_responses_request(request)
-    result = await run_langgraph(graph_request, messages, _registry())
+    result = await run_langgraph(
+        graph_request,
+        [HumanMessage(content="What is the weather?")],
+        _registry(),
+    )
 
     assert model.bound_tools == [WEATHER_TOOL]
     assert model.bound_tool_choice == {
@@ -108,26 +123,30 @@ async def test_tool_results_are_forwarded_with_the_complete_history(
 ) -> None:
     model = RecordingModel(AIMessage(content="It is sunny in Istanbul."))
     monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
-    request = ResponseCreateRequest(
+    graph_request = GraphRequest(
         model=MODEL,
-        input=[
-            {"role": "user", "content": "What is the weather?"},
-            {
-                "type": "function_call",
-                "call_id": "call-1",
-                "name": "get_weather",
-                "arguments": '{"city":"Istanbul"}',
-            },
-            {
-                "type": "function_call_output",
-                "call_id": "call-1",
-                "output": '{"temperature": "sunny"}',
-            },
-        ],
-        tools=[{"type": "function", **WEATHER_TOOL["function"]}],
+        metadata={},
+        user=None,
+        tools=(CLIENT_TOOL,),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
+    messages = [
+        HumanMessage(content="What is the weather?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "Istanbul"},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        ToolMessage(content='{"temperature": "sunny"}', tool_call_id="call-1"),
+    ]
 
-    graph_request, messages, _ = decode_responses_request(request)
     result = await run_langgraph(graph_request, messages, _registry())
 
     assert isinstance(result, AIMessage)

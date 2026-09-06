@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
 import pytest
-from langgraph_openai_serve.api.responses.request import decode_responses_request
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langchain_core.messages import HumanMessage
+from langgraph_openai_serve import GraphRequest
 
 from lgos_demo_api.graphs.hosted_tool import get_current_time, request_to_input
 
@@ -38,14 +38,15 @@ def test_only_the_requested_server_tool_is_enabled(
     choice: str | None,
     enabled: bool,
 ) -> None:
-    request = ResponseCreateRequest(
+    request = GraphRequest(
         model="hosted-tool",
-        input="Time?",
-        tools=[
-            {"type": "custom" if name.startswith("lgos_") else "function", "name": name}
-            for name in names
-        ],
+        metadata={},
+        user=None,
+        tools=(),
         tool_choice=choice,
+        parallel_tool_calls=None,
+        hosted_tools=tuple(name for name in names if name.startswith("lgos_")),
     )
-    graph_request, messages, _ = decode_responses_request(request)
-    assert request_to_input(graph_request, messages).time_requested is enabled
+    messages = [HumanMessage(content="Time?")]
+
+    assert request_to_input(request, messages).time_requested is enabled

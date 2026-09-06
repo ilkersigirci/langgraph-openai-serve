@@ -1,6 +1,5 @@
 from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphConfig, GraphRegistry, citation_slice
-from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
@@ -23,7 +22,9 @@ EXPECTED_CITATIONS = [
 ]
 
 
-async def test_streams_portable_markdown_with_anchored_citations(make_request) -> None:
+async def test_streams_portable_markdown_with_anchored_citations(
+    make_graph_input,
+) -> None:
     registry = GraphRegistry(
         registry={
             "citation-events": GraphConfig(
@@ -33,9 +34,9 @@ async def test_streams_portable_markdown_with_anchored_citations(make_request) -
             )
         }
     )
-    request = make_request("citation-events", content="Show citations")
-
-    graph_request, messages, _ = decode_responses_request(request)
+    graph_request, messages = make_graph_input(
+        "citation-events", content="Show citations"
+    )
 
     events = [
         event async for event in run_langgraph_stream(graph_request, messages, registry)
