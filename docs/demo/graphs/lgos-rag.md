@@ -3,7 +3,8 @@
 `lgos-rag` is an agentic retrieval graph over the Markdown corpus packaged with
 the demo API. It lazily splits and embeds that corpus into a process-local
 in-memory vector index, retrieves up to four chunks, and grounds answers with
-the source URLs stored on those chunks.
+Markdown links and OpenAI `url_citation` annotations for the source URLs stored
+on those chunks.
 
 ## LangGraph Topology
 
@@ -30,7 +31,7 @@ flowchart TD
 
   decide -->|"LGOS factual question"| retrieve["Retrieve documentation"]
   retrieve --> grade{"Context relevant?"}
-  grade -->|"yes"| answer["Generate grounded answer with Markdown links"]
+  grade -->|"yes"| answer["Generate answer with links and URL citations"]
   answer --> response
   grade -->|"no, first miss"| rewrite["Rewrite query once"]
   rewrite --> decide
@@ -42,6 +43,11 @@ The retry is deliberately bounded to one rewrite. Routing, grading, and
 rewriting use non-streaming internal model calls; retrieval uses the in-memory
 vector index. Direct, grounded, and no-result answers are the user-visible
 streamed nodes.
+
+For a grounded answer, the graph adds annotations only for Markdown links whose
+URLs exactly match retrieved document metadata. Citation spans come from the
+actual generated link text; the model does not generate indices. Other resource
+links and images remain ordinary Markdown.
 
 The graph also emits request-scoped status events while it understands the
 question, searches, checks sources, optionally rewrites, and prepares the

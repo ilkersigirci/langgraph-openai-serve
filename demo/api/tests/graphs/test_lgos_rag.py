@@ -13,7 +13,9 @@ from langgraph_openai_serve import (
     GraphFeature,
     GraphRegistry,
     GraphRequest,
+    citation_slice,
 )
+from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
@@ -225,7 +227,7 @@ def test_splits_documents_and_preserves_source_metadata(
     assert all(isinstance(chunk.metadata["start_index"], int) for chunk in chunks)
 
 
-async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
+async def test_retrieval_uses_rewritten_query_and_returns_streamed_cited_answer(
     make_graph_input,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -267,9 +269,20 @@ async def test_retrieval_uses_the_rewritten_query_and_streams_only_the_answer(
 
     stream = await _stream(graph_request, messages)
     streamed_answer = "".join(item for item in stream if isinstance(item, str))
+    final_message = cast(AIMessage, stream[-1])
+    citations = citations_from_message(final_message)
 
     assert queries == [REWRITTEN_QUESTION]
     assert streamed_answer == ANSWER
+    assert len(citations) == 1
+    citation = citations[0]
+    assert citation["url"] == "https://example.com/second"
+    assert citation["title"] == "Second"
+    assert (
+        ANSWER[citation_slice(citation["start_index"], citation["end_index"], ANSWER)]
+        == "registered model"
+    )
+    assert "cited_text" not in citation
     assert DECISION_PREAMBLE not in streamed_answer
     assert _status_timeline(stream) == [
         (["rag"], "Understanding your question", False),
