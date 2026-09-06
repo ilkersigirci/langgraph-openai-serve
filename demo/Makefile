@@ -9,7 +9,7 @@ LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
 
 .PHONY: help sync test test-postgres lint check compose-config \
-	run-api-local run-api-a-local run-api-b-local run-files-local \
+	run-postgres run-api-local run-api-a-local run-api-b-local run-files-local \
 	run-chainlit-local \
 	run-api run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
 	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
@@ -78,6 +78,9 @@ compose-config: ## Validate published, development, and OTEL Compose models
 		-f docker/compose/otel.yml config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
+
+run-postgres: ## Start the demo PostgreSQL service in the background
+	$(COMPOSE) up -d lgos-db
 
 run-api-local: run-api-a-local ## Run lgos-a locally
 

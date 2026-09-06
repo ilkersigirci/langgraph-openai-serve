@@ -436,3 +436,44 @@ def test_hosted_tool_request_enables_server_execution(model: str) -> None:
     assert responses.response_tools("lgos-a/simple-graph") == [
         responses.DISPLAY_FILE_TOOL
     ]
+
+
+async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(
+    monkeypatch,
+) -> None:
+    from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME
+
+    simple = importlib.import_module("lgos_chainlit.simple")
+    interrupt_resp = _response(
+        ResponseFunctionToolCall(
+            id="fc_1",
+            call_id="call_interrupt_1",
+            name=INTERRUPT_TOOL_NAME,
+            arguments="{}",
+            type="function_call",
+        )
+    )
+    assistant = Mock(content="", send=AsyncMock())
+    error = AsyncMock()
+    display = AsyncMock()
+    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(simple, "text_only_chat_messages", list)
+    monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
+    monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
+    monkeypatch.setattr(simple, "chat_settings_metadata", dict)
+    monkeypatch.setattr(simple, "session_metadata", dict)
+    monkeypatch.setattr(
+        simple, "model_request", lambda _: {"model": "interruptible-approval"}
+    )
+    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(
+        simple.openai_client.responses, "create", AsyncMock(return_value=interrupt_resp)
+    )
+    monkeypatch.setattr(simple, "display_file", display)
+    monkeypatch.setattr(simple, "send_ui_message", error)
+
+    await simple._response_message(Mock(), "interruptible-approval")
+
+    assert error.await_count == 1
+    assert "DEMO_CHAINLIT_UI_FILE=hitl" in error.await_args[0][0]
+    display.assert_not_awaited()

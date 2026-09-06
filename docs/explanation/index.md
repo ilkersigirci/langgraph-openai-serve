@@ -27,7 +27,7 @@ the architecture, then read only the detail needed for your task.
 -   :material-api:{ .lg .middle } __OpenAI compatibility__
 
     The precise client-facing contract for discovery, events, citations,
-    errors, and interrupt replay.
+    errors, and interrupt resumption.
 
     [:octicons-arrow-right-24: Read the contract](openai-compatibility.md)
 

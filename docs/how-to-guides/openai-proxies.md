@@ -17,15 +17,18 @@ Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
 - typed Responses SSE events, item IDs, output indices, sequence numbers, and
   assistant `phase` values;
 - complete `function_call` items and matching `function_call_output` items for
-  stateless continuation and interrupt resume;
+  stateless tool continuation;
+- `previous_response_id` plus matching `function_call_output` items for
+  interrupt continuation;
 - standard OpenAI error `type`, `param`, and `code` values;
 - Files upload, list, retrieve, content, and delete operations through one file
   namespace independent of graph routing; and
 - downstream disconnect propagation to the upstream streaming request.
 
 LGOS does not require the proxy to retain Responses. It rejects
-`previous_response_id`, `conversation`, `store: true`, and background mode, so
-the client owns the input ledger and replays complete returned items. A proxy
+`conversation`, `store: true`, and background mode (`previous_response_id` is
+supported for resuming interruptible graphs), so
+the client owns the ordinary conversation input ledger. A proxy
 must not silently turn `store: false` into a stored response.
 
 `GET /v1/models` is sufficient for ordinary graph selection. A client that uses
@@ -95,12 +98,11 @@ that route only for provider-specific catalog detail. Responses use native
 
 ## Direct Chat Compatibility
 
-Chat Completions remains available for direct compatibility clients. If such a
-client is placed behind a proxy, verify modern tool calls, metadata, usage, and
-stream cancellation separately. The optional LGOS Chat client-event extension
-(`status`, `progress`, and `artifact`) is not part of the standard Chat schema
-and may be removed by a normalizing proxy; use standard Responses commentary,
-function calls, and Files for portable maintained UI behavior.
+Chat Completions remains available for direct compatibility clients running
+simple graphs. If such a client is placed behind a proxy, verify modern tool
+calls, metadata, usage, and stream cancellation separately. Complex features
+such as streaming status commentary, checkpointed persistence, and interrupts
+are exclusive to the Responses API.
 
 ## Request Correlation
 

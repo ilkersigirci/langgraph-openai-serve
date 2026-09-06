@@ -90,8 +90,7 @@ def _resume_interrupt_inputs(
         msg = "Interrupt results do not match the complete pending interrupt set."
         raise InterruptStateConflictError(msg)
 
-    # Always use the ID/value form, including for one interrupt. It preserves
-    # OpenAI tool_call causality and handles JSON null as a legitimate answer.
+    # The ID/value form preserves call causality and handles parallel batches.
     return Command(resume=resume.values)
 
 
@@ -122,9 +121,12 @@ def resolve_run_id(
             if requested_run_id != resume_run_id:
                 msg = (
                     f"metadata.{RUN_METADATA_KEY} does not match the interrupt "
-                    "tool call."
+                    "Response."
                 )
-                raise InvalidResumeRequestError(msg)
+                raise InvalidResumeRequestError(
+                    msg,
+                    param=f"metadata.{RUN_METADATA_KEY}",
+                )
         return resume_run_id
 
     if requested_run_id is not None:

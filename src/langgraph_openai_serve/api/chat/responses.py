@@ -5,7 +5,6 @@ import time
 import uuid
 
 from langchain_core.messages import AIMessage, UsageMetadata
-from langgraph.types import Interrupt
 from openai.types.chat.chat_completion_message import Annotation
 from openai.types.shared import ErrorObject
 
@@ -25,23 +24,15 @@ from langgraph_openai_serve.api.chat.schemas import (
 )
 from langgraph_openai_serve.core.errors import openai_error_payload
 from langgraph_openai_serve.graph.citations import citations_from_message
-from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
-from langgraph_openai_serve.graph.interrupt.codec import (
-    INTERRUPT_TOOL_NAME,
-    interrupt_arguments,
-    interrupt_tool_call_id,
-)
-from langgraph_openai_serve.graph.runner import LangGraphOutput
 
 
 def chat_completion_response(
     *,
     model: str,
-    completion: LangGraphOutput,
+    message: AIMessage,
 ) -> ChatCompletionResponse:
     """Build a non-streaming OpenAI-compatible chat completion response."""
-    message, finish_reason = response_message(completion)
-    usage = completion.usage_metadata if isinstance(completion, AIMessage) else None
+    resp_message, finish_reason = response_message(message)
     return ChatCompletionResponse(
         id=f"chatcmpl-{uuid.uuid4()}",
         created=int(time.time()),
@@ -49,37 +40,24 @@ def chat_completion_response(
         choices=[
             ChatCompletionResponseChoice(
                 index=0,
-                message=message,
+                message=resp_message,
                 finish_reason=finish_reason,
             )
         ],
-        usage=usage_info(usage),
+        usage=usage_info(message.usage_metadata),
     )
 
 
 def response_message(
-    completion: LangGraphOutput,
+    message: AIMessage,
 ) -> tuple[ChatCompletionResponseMessage, str]:
     """Format response message."""
-    if isinstance(completion, LangGraphInterruptBatch):
-        return (
-            ChatCompletionResponseMessage(
-                role=Role.ASSISTANT,
-                content=None,
-                tool_calls=[
-                    interrupt_tool_call(completion, interrupt)
-                    for interrupt in completion.interrupts
-                ],
-            ),
-            "tool_calls",
-        )
-
-    tool_calls = tool_calls_from_message(completion)
+    tool_calls = tool_calls_from_message(message)
     return (
         ChatCompletionResponseMessage(
             role=Role.ASSISTANT,
-            content=completion.text or None,
-            annotations=annotations_from_message(completion) or None,
+            content=message.text or None,
+            annotations=annotations_from_message(message) or None,
             tool_calls=tool_calls or None,
         ),
         "tool_calls" if tool_calls else "stop",
@@ -133,33 +111,6 @@ def usage_info(usage: UsageMetadata | None) -> UsageInfo | None:
     )
 
 
-def interrupt_tool_call(
-    batch: LangGraphInterruptBatch,
-    interrupt: Interrupt,
-) -> ToolCall:
-    """Format interrupt tool call."""
-    return ToolCall(
-        id=interrupt_tool_call_id(interrupt.id),
-        type="function",
-        function=ToolCallFunction(
-            name=INTERRUPT_TOOL_NAME,
-            arguments=interrupt_tool_arguments(batch, interrupt),
-        ),
-    )
-
-
-def interrupt_tool_arguments(
-    batch: LangGraphInterruptBatch,
-    interrupt: Interrupt,
-) -> str:
-    """Format interrupt tool arguments."""
-    return interrupt_arguments(
-        run_id=batch.run_id,
-        state_token=batch.state_token,
-        payload=interrupt.value,
-    )
-
-
 class ChatCompletionStreamResponseBuilder:
     """Build OpenAI-compatible chat completion SSE chunks."""
 
@@ -176,32 +127,6 @@ class ChatCompletionStreamResponseBuilder:
     def text(self, content: str) -> str:
         """Stream text content."""
         return self._chunk(ChatCompletionStreamResponseDelta(content=content))
-
-    def client_event(self, extension: dict[str, object]) -> str:
-        """Build an empty-delta chunk carrying the opt-in event extension."""
-        return self._chunk(
-            ChatCompletionStreamResponseDelta(),
-            client_event_extension=extension,
-        )
-
-    def interrupt(self, batch: LangGraphInterruptBatch) -> str:
-        """Stream interrupt."""
-        return self._chunk(
-            ChatCompletionStreamResponseDelta(
-                tool_calls=[
-                    ChatCompletionStreamToolCall(
-                        index=index,
-                        id=interrupt_tool_call_id(interrupt.id),
-                        type="function",
-                        function=ChatCompletionStreamToolCallFunction(
-                            name=INTERRUPT_TOOL_NAME,
-                            arguments=interrupt_tool_arguments(batch, interrupt),
-                        ),
-                    )
-                    for index, interrupt in enumerate(batch.interrupts)
-                ],
-            ),
-        )
 
     def tool_calls(self, message: AIMessage) -> str:
         """Stream complete final-message tool calls as one delta."""
@@ -241,7 +166,8 @@ class ChatCompletionStreamResponseBuilder:
             openai_error_payload(ErrorObject(message=message, type="server_error"))
         )
 
-    def done(self) -> str:  # ruff: ignore[no-self-use]
+    @staticmethod
+    def done() -> str:
         """Stream done."""
         return "data: [DONE]\n\n"
 
@@ -261,7 +187,6 @@ class ChatCompletionStreamResponseBuilder:
         delta: ChatCompletionStreamResponseDelta,
         finish_reason: str | None = None,
         annotations: list[Annotation] | None = None,
-        client_event_extension: dict[str, object] | None = None,
     ) -> str:
         response = ChatCompletionStreamResponse(
             id=self.response_id,
@@ -275,25 +200,26 @@ class ChatCompletionStreamResponseBuilder:
                 )
             ],
         )
-        # We apply exclude_none=True here because SSE (StreamingResponse) chunks
-        # bypass FastAPI's route-level response_model_exclude_none setting.
-        # This prevents sending bloated chunks and matches OpenAI's REST behavior.
         data = response.model_dump(mode="json", exclude_none=True)
         if self.include_usage:
             data["usage"] = None
         if annotations:
-            # The Chat Completions delta schema omits annotations, so add the
-            # compatibility extension after validating the standard chunk.
             data["choices"][0]["delta"]["annotations"] = [
                 annotation.model_dump(mode="json", exclude_none=True)
                 for annotation in annotations
             ]
-        if client_event_extension is not None:
-            # Event extensions remain complete Chat Completions chunks; their
-            # empty delta keeps extension data separate from assistant text.
-            data["choices"][0]["delta"] = {}
-            data["langgraph_openai_serve"] = client_event_extension
         return self._format_data(data)
 
-    def _format_data(self, data: dict) -> str:  # ruff: ignore[no-self-use]
+    @staticmethod
+    def _format_data(data: dict) -> str:
         return f"data: {json.dumps(data)}\n\n"
+
+
+__all__ = [
+    "ChatCompletionStreamResponseBuilder",
+    "annotations_from_message",
+    "chat_completion_response",
+    "response_message",
+    "tool_calls_from_message",
+    "usage_info",
+]

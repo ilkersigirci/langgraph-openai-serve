@@ -14,7 +14,6 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionResponse,
 )
 from langgraph_openai_serve.api.deps import (
-    checkpoint_scope_dependency,
     stream_owner_dependency,
 )
 from langgraph_openai_serve.api.errors import graph_errors
@@ -22,6 +21,7 @@ from langgraph_openai_serve.api.models.deps import get_graph_registry_dependency
 from langgraph_openai_serve.api.streaming import _StreamOwner
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.core.logging import bind_log_context
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.utils import prepare_run
 
@@ -36,7 +36,6 @@ router = APIRouter(tags=["openai"])
 async def create_chat_completion(
     chat_request: ChatCompletionRequest,
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
-    checkpoint_scope: Annotated[str, Depends(checkpoint_scope_dependency)],
     stream_owner: Annotated[
         _StreamOwner,
         Depends(stream_owner_dependency, scope="request"),
@@ -50,7 +49,6 @@ async def create_chat_completion(
     Args:
         chat_request: The parsed chat completion request.
         graph_registry: The graph registry dependency.
-        checkpoint_scope: The checkpoint scope boundary.
         stream_owner: The request-scoped streaming task owner.
 
     Returns:
@@ -64,7 +62,7 @@ async def create_chat_completion(
 
     with graph_errors(input_param="messages"):
         try:
-            graph_request, messages, resume = decode_chat_request(chat_request)
+            graph_request, messages = decode_chat_request(chat_request)
         except InvalidChatMessageError as exc:
             raise OpenAIHTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,12 +70,25 @@ async def create_chat_completion(
                     message=str(exc), type="invalid_request_error", param="messages"
                 ),
             ) from exc
+
+        graph_config = graph_registry.get_graph(chat_request.model)
+        if graph_config.supports(GraphFeature.INTERRUPTS):
+            raise OpenAIHTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error=ErrorObject(
+                    message=(
+                        f"Model '{chat_request.model}' requires interrupts, which is only "
+                        "supported via the Responses API (/v1/responses)."
+                    ),
+                    type="invalid_request_error",
+                    param="model",
+                ),
+            )
+
         run = await prepare_run(
             graph_request,
             messages,
             graph_registry,
-            resume=resume,
-            checkpoint_scope=checkpoint_scope,
         )
 
         if chat_request.stream:

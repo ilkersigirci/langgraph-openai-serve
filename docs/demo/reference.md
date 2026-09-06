@@ -23,6 +23,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 
 | Command | Purpose |
 | --- | --- |
+| `make run-postgres` | Start the demo PostgreSQL service on port 3001 |
 | `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
 | `make run-api-b` | Run the published `lgos-b` container on port 3005 |
 | `make run-files` | Run the published Files API container on port 3006 |

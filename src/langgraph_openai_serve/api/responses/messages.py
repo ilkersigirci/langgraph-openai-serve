@@ -63,7 +63,9 @@ def convert_responses_input(
     return messages
 
 
-def _validate_replay_ids(items: list[ResponseInputItem]) -> None:
+def _validate_replay_ids(
+    items: list[ResponseInputItem],
+) -> None:
     seen_item_ids: set[str] = set()
     seen_call_ids: set[str] = set()
     seen_output_call_ids: set[str] = set()

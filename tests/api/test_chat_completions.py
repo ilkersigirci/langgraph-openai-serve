@@ -149,3 +149,50 @@ async def test_unknown_model_raises_openai_bad_request(
             "code": None,
         }
     }
+
+
+async def test_streaming_completion_ignores_custom_stream_events(
+    openai_client: AsyncOpenAI,
+    fastapi_app,
+) -> None:
+    from langchain_core.messages import AIMessage
+    from langgraph.config import get_stream_writer
+    from langgraph.graph import StateGraph
+
+    from langgraph_openai_serve import GraphConfig, status_event
+    from tests.graph.support.schemas import MessageState
+
+    async def generate(_state: MessageState):
+        writer = get_stream_writer()
+        writer(status_event("Processing step 1"))
+        writer(status_event("Processing step 2"))
+        return {"messages": [AIMessage(content="done")]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("generate", generate)
+        .set_entry_point("generate")
+        .set_finish_point("generate")
+        .compile()
+    )
+    fastapi_app.state.graph_registry.register(
+        "custom-stream-test",
+        GraphConfig(
+            graph=graph,
+            description="Test custom stream",
+            streamable_node_names=["generate"],
+        ),
+    )
+
+    stream = await openai_client.chat.completions.create(
+        model="custom-stream-test",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+    )
+    chunks = [chunk async for chunk in stream]
+
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "done"
+    assert all(
+        "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
+    )
+    assert chunks[-1].choices[0].finish_reason == "stop"

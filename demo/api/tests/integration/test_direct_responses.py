@@ -200,16 +200,16 @@ async def test_direct_function_output_continuation(base_url: str | None) -> None
         call = paused.output[0]
         assert isinstance(call, ResponseFunctionToolCall)
         arguments = json.loads(call.arguments)
-        assert arguments["payload"]["action"] == "refund"
+        assert arguments["action"] == "refund"
 
         completed = await client.responses.create(
             model="interruptible-approval",
+            previous_response_id=paused.id,
             input=[
-                *paused.output,
                 {
                     "type": "function_call_output",
                     "call_id": call.call_id,
-                    "output": json.dumps({"resume": "approve"}),
+                    "output": "approve",
                 },
             ],
             store=False,

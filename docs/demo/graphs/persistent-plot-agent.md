@@ -52,7 +52,7 @@ sequenceDiagram
   Agent-->>LGOS: display_file(file_id, ...) function call
   LGOS-->>UI: standard Response function_call item
   UI->>Files: download Plotly JSON
-  UI->>LGOS: replay call + function_call_output
+  UI->>LGOS: prior input + function_call + function_call_output
   LGOS-->>UI: final answer
 ```
 

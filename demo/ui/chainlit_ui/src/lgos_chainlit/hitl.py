@@ -46,7 +46,6 @@ from lgos_chainlit.utils.files import (
     with_response_file_parts,
 )
 from lgos_chainlit.utils.responses import (
-    continuation_input,
     final_answer,
     function_calls,
     raise_for_response,
@@ -62,7 +61,7 @@ register_auth_callback()
 logger = logging.getLogger(__name__)
 
 INTERRUPT_LEDGER_METADATA_KEY = "lgos_chainlit.hitl_interrupt_ledger"
-INTERRUPT_LEDGER_SCHEMA_VERSION = 1
+INTERRUPT_LEDGER_SCHEMA_VERSION = 2
 PENDING_LEDGER_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
 PENDING_LEDGER_STATUS = "pending"
 COMPLETED_LEDGER_STATUS = "completed"
@@ -78,6 +77,7 @@ class PendingInterruptLedger:
 
     message: cl.Message
     model_id: str
+    response_id: str
     calls: tuple[ResponseFunctionToolCall, ...]
 
 
@@ -162,6 +162,7 @@ async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
         task_started = True
         await resolve_interrupts(
             response_calls=list(ledger.calls),
+            response_id=ledger.response_id,
             model_id=ledger.model_id,
             ledger_message=ledger.message,
         )
@@ -203,6 +204,7 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
         )
         await resolve_interrupts(
             response_calls=list(pending.calls),
+            response_id=pending.response_id,
             model_id=pending.model_id,
             ledger_message=pending.message,
         )
@@ -224,6 +226,7 @@ async def resolve_interrupts(
     *,
     response: Response | None = None,
     response_calls: list[ResponseFunctionToolCall] | None = None,
+    response_id: str | None = None,
     model_id: str,
     ledger_message: cl.Message | None = None,
 ) -> None:
@@ -240,9 +243,15 @@ async def resolve_interrupts(
         if not tool_calls:
             break
 
+        current_response_id = response.id if response is not None else response_id
+        if not isinstance(current_response_id, str) or not current_response_id:
+            msg = "The interrupt Response has no ID."
+            raise RuntimeError(msg)
+
         ledger_message = await persist_pending_ledger(
             ledger_message=ledger_message,
             model_id=model_id,
+            response_id=current_response_id,
             calls=tool_calls,
         )
         decisions = []
@@ -256,26 +265,17 @@ async def resolve_interrupts(
             {
                 "type": "function_call_output",
                 "call_id": tool_call.call_id,
-                "output": json.dumps(
-                    {"resume": decision},
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                "output": decision,
             }
             for tool_call, decision in zip(tool_calls, decisions, strict=True)
         ]
-        if response is None:
-            input_items = [
-                *(
-                    call.model_dump(mode="json", exclude_none=True)
-                    for call in tool_calls
-                ),
-                *outputs,
-            ]
-        else:
-            input_items = continuation_input(response, outputs)
-        response = await create_response(input_items, model_id=model_id)
+        response = await create_response(
+            outputs,
+            model_id=model_id,
+            previous_response_id=current_response_id,
+        )
         response_calls = None
+        response_id = None
 
     if ledger_message is not None:
         await mark_ledger_completed(ledger_message)
@@ -288,10 +288,12 @@ async def create_response(
     input_items: list[dict[str, Any]],
     *,
     model_id: str | None = None,
+    previous_response_id: str | None = None,
 ) -> Response:
     response = await openai_client.responses.create(
         **model_request(model_id or selected_model_id()),
         input=cast("ResponseInputParam", input_items),
+        previous_response_id=previous_response_id,
         store=False,
         user=authenticated_user_identifier(),
         metadata=session_metadata(),
@@ -308,6 +310,7 @@ async def persist_pending_ledger(
     *,
     ledger_message: cl.Message | None,
     model_id: str,
+    response_id: str,
     calls: list[ResponseFunctionToolCall],
 ) -> cl.Message:
     """Create or update the one public Chainlit message that owns the ledger."""
@@ -315,6 +318,7 @@ async def persist_pending_ledger(
         "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
         "status": PENDING_LEDGER_STATUS,
         "model_id": model_id,
+        "response_id": response_id,
         "function_calls": [
             call.model_dump(mode="json", exclude_none=True) for call in calls
         ],
@@ -333,6 +337,7 @@ async def persist_pending_ledger(
         PendingInterruptLedger(
             message=ledger_message,
             model_id=model_id,
+            response_id=response_id,
             calls=tuple(calls),
         ),
     )
@@ -381,7 +386,7 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         )
         if parsed is None:
             return None
-        model_id, calls = parsed
+        model_id, response_id, calls = parsed
         restored_step = dict(step)
         created_at = restored_step.get("createdAt")
         if isinstance(created_at, str) and not created_at.endswith("Z"):
@@ -396,6 +401,7 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         return PendingInterruptLedger(
             message=message,
             model_id=model_id,
+            response_id=response_id,
             calls=tuple(calls),
         )
     return None
@@ -403,7 +409,7 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
 
 def parse_interrupt_ledger_metadata(
     raw_ledger: object,
-) -> tuple[str, list[ResponseFunctionToolCall]] | None:
+) -> tuple[str, str, list[ResponseFunctionToolCall]] | None:
     if not isinstance(raw_ledger, dict):
         msg = "Interrupt ledger metadata is not an object."
         raise InvalidInterruptLedgerError(msg)
@@ -421,6 +427,10 @@ def parse_interrupt_ledger_metadata(
     if not isinstance(model_id, str) or not model_id:
         msg = "Interrupt ledger model ID is invalid."
         raise InvalidInterruptLedgerError(msg)
+    response_id = raw_ledger.get("response_id")
+    if not isinstance(response_id, str) or not response_id:
+        msg = "Interrupt ledger Response ID is invalid."
+        raise InvalidInterruptLedgerError(msg)
     try:
         raw_calls = raw_ledger.get("function_calls")
         if not isinstance(raw_calls, list):
@@ -432,7 +442,7 @@ def parse_interrupt_ledger_metadata(
     if not calls or any(call.name != INTERRUPT_TOOL_NAME for call in calls):
         msg = "Interrupt ledger has no valid interrupt calls."
         raise InvalidInterruptLedgerError(msg)
-    return model_id, calls
+    return model_id, response_id, calls
 
 
 async def _warn_if_model_metadata_is_missing() -> None:
@@ -579,11 +589,7 @@ def interrupt_payload(
     if not isinstance(arguments, dict):
         msg = "Interrupt tool arguments must be a JSON object."
         raise TypeError(msg)
-    if "payload" not in arguments:
-        msg = "Interrupt tool arguments must contain a payload."
-        raise ValueError(msg)
-
-    return arguments["payload"]
+    return arguments
 
 
 def pending_interrupt_prompt(calls: list[ResponseFunctionToolCall]) -> str:

@@ -1,8 +1,10 @@
+"""Test support for OpenAI interrupt testing."""
+
 import json
-import uuid
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI
+from openai.types.responses import Response, ResponseFunctionToolCall
 
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 
@@ -16,63 +18,64 @@ NESTED_SEQUENTIAL_MODEL = "nested-sequential-interrupts"
 CHECKPOINT_SCOPE_HEADER = "x-test-checkpoint-scope"
 
 
-async def create_completion(
+async def create_response(
     openai_client: AsyncOpenAI,
     *,
     model: str = MODEL,
     stream: bool = False,
     run_id: str | None = None,
     checkpoint_scope: str | None = None,
-):
+) -> Response:
     metadata = {"langgraph_run_id": run_id} if run_id is not None else None
-    return await openai_client.chat.completions.create(
+    return await openai_client.responses.create(
         model=model,
-        messages=[{"role": "user", "content": "Hi"}],
+        input="Hi",
         stream=stream,
         metadata=metadata,
         extra_headers=_checkpoint_scope_headers(checkpoint_scope),
     )
 
 
-def assert_interrupt_arguments(tool_call) -> dict:
-    assert tool_call.function is not None
-    assert tool_call.function.name == "langgraph_interrupt"
-    assert tool_call.id is not None
-    assert tool_call.id.startswith("lg_interrupt_")
-    arguments = json.loads(tool_call.function.arguments)
-    assert set(arguments) == {"run_id", "state_token", "payload"}
-    assert uuid.UUID(arguments["run_id"]).int != 0
-    assert arguments["state_token"]
+def interrupt_calls(response: Response) -> list[ResponseFunctionToolCall]:
+    calls = [
+        item for item in response.output if isinstance(item, ResponseFunctionToolCall)
+    ]
+    assert len(calls) == len(response.output)
+    return calls
+
+
+def assert_interrupt_arguments(call: ResponseFunctionToolCall) -> dict:
+    assert call.name == "langgraph_interrupt"
+    assert call.call_id.startswith("call_lg_")
+    arguments = json.loads(call.arguments)
+    assert isinstance(arguments, dict)
     return arguments
 
 
-def resume_messages(response, values: list[object]) -> list[dict]:
-    assistant = response.choices[0].message
-    tool_calls = assistant.tool_calls or []
-    assert len(tool_calls) == len(values)
+def resume_outputs(response: Response, values: list[object]) -> list[dict[str, str]]:
+    calls = interrupt_calls(response)
+    assert len(calls) == len(values)
     return [
-        assistant.model_dump(mode="json", exclude_none=True),
-        *[
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps({"resume": value}),
-            }
-            for tool_call, value in zip(tool_calls, values, strict=True)
-        ],
+        {
+            "type": "function_call_output",
+            "call_id": call.call_id,
+            "output": value if isinstance(value, str) else json.dumps(value),
+        }
+        for call, value in zip(calls, values, strict=True)
     ]
 
 
-async def resume_interrupt(
+async def resume_response(
     openai_client: AsyncOpenAI,
-    response,
+    response: Response,
     *resume_values: object,
     model: str = MODEL,
     checkpoint_scope: str | None = None,
-):
-    return await openai_client.chat.completions.create(
+) -> Response:
+    return await openai_client.responses.create(
         model=model,
-        messages=resume_messages(response, list(resume_values)),
+        previous_response_id=response.id,
+        input=resume_outputs(response, list(resume_values)),
         extra_headers=_checkpoint_scope_headers(checkpoint_scope),
     )
 

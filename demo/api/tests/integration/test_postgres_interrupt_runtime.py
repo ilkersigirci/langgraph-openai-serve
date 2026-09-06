@@ -104,14 +104,13 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
     ]
     assert len(tool_calls) == 1
     arguments = json.loads(tool_calls[0].arguments)
-    assert arguments["run_id"] == run_id
-    assert arguments["payload"]["action"] == "refund"
+    assert tool_calls[0].call_id.startswith("call_lg_")
+    assert arguments["action"] == "refund"
     resume_items = [
-        *(item.model_dump(mode="json", exclude_none=True) for item in paused.output),
         {
             "type": "function_call_output",
             "call_id": tool_calls[0].call_id,
-            "output": json.dumps({"resume": "approve"}),
+            "output": "approve",
         },
     ]
 
@@ -125,6 +124,7 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
                 await client.responses.create(
                     store=False,
                     model=MODEL,
+                    previous_response_id=paused.id,
                     input=resume_items,
                 )
             assert exc_info.value.code == "run_busy"
@@ -132,6 +132,7 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
         completed = await client.responses.create(
             store=False,
             model=MODEL,
+            previous_response_id=paused.id,
             input=resume_items,
         )
 

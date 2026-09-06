@@ -40,7 +40,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
-    Compare schema adapters, RAG, citations, direct Chat events, file output,
+    Compare schema adapters, RAG, citations, stream-event filtering, file output,
     subgraphs, and HITL.
 
     [:octicons-arrow-right-24: Example graphs](graphs/index.md)
@@ -122,14 +122,14 @@ catalog detail uses pass-through to preserve LGOS extensions.
 
 | Demo client | File input | Missing LGOS metadata | Runtime settings | Interrupts | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable ledger | Native status and persisted image elements | Markdown content |
-| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS replay | Native status and persisted file events | Native source events and Markdown |
+| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Native status and persisted image elements | Markdown content |
+| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Native status and persisted file events | Native source events and Markdown |
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
 An interrupt uses standard Responses function calls, but a client application
-must recognize `langgraph_interrupt`, collect human answers, and replay the
-canonical `function_call`/`function_call_output` exchange. The Chainlit and
-Open WebUI adapters show that client behavior without importing LGOS. See
+must recognize `langgraph_interrupt`, collect human answers, and return each
+call ID in a `function_call_output` item with `previous_response_id`. The
+Chainlit and Open WebUI adapters show that client behavior without importing LGOS. See
 [OpenAI Clients](../tutorials/openai-clients.md).
 
 ## Persistence Boundary
@@ -143,9 +143,10 @@ for Store and UI ownership,
 [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
 for the server lifecycle, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
-for the normative replay and retention contract.
+for the normative continuation and retention contract.
 
-Chainlit persists its pending tool-call ledger with a documented crash window.
+Chainlit persists the paused Response ID and exact interrupt calls in a pending
+interrupt record with a documented crash window.
 Open WebUI persists its native `ask_user` card and opaque graph cursor on the
 assistant message. Their exact recovery boundaries are documented on the
 [Chainlit](chainlit.md#interrupt-demo) and

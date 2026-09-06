@@ -29,7 +29,7 @@ subset.
 
 LGOS implements a deliberately bounded Responses surface. A client that always
 sends hosted tools, reasoning configuration, `include`, prompt-cache options,
-`previous_response_id`, or another unsupported field will receive an explicit
+or another unsupported field will receive an explicit
 OpenAI `invalid_request_error`. Do not place a Responses-to-Chat translator in
 front of LGOS to hide that mismatch.
 

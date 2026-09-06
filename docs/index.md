@@ -35,6 +35,7 @@ OpenAI-compatible `/v1` API.
 
     Connect from Python or JavaScript, with regular or streaming responses.
 
+    [:octicons-arrow-right-24: Choose an API](getting-started.md#choose-responses-or-chat-completions)
     [:octicons-arrow-right-24: OpenAI clients](tutorials/openai-clients.md)
 
 -   :material-graph-outline:{ .lg .middle } __Register a graph__

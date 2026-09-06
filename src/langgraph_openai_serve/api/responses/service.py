@@ -24,13 +24,14 @@ from openai.types.responses.response_usage import (
     OutputTokensDetails,
 )
 
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.graph.citations import citations_from_message
-from langgraph_openai_serve.graph.interrupt.codec import (
+from langgraph_openai_serve.api.responses.interrupts import (
     INTERRUPT_TOOL_NAME,
     interrupt_arguments,
+    interrupt_response_id,
     interrupt_tool_call_id,
 )
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import invoke_run
 from langgraph_openai_serve.graph.utils import GraphRun
@@ -56,15 +57,19 @@ async def generate_response(
     """Invoke a graph and serialize its durable Responses output."""
     invocation = await invoke_run(run)
     output = invocation.output
-    items: Sequence[ResponseOutputItem]
     if isinstance(output, AIMessage):
         items = response_output_items(output)
         usage = output.usage_metadata
     else:
         items = interrupt_output_items(output)
         usage = run.usage_metadata()
+    context = (
+        ResponseContext(request=request, id=interrupt_response_id(run.run_id))
+        if run.run_id is not None
+        else ResponseContext(request=request)
+    )
     return response_object(
-        ResponseContext(request=request),
+        context,
         status="completed",
         output=items,
         usage=response_usage(usage),
@@ -135,13 +140,12 @@ def interrupt_output_items(
     """Serialize one durable interrupt batch as function-call items."""
     return [
         _function_call_item(
-            call_id=interrupt_tool_call_id(interrupt.id),
-            name=INTERRUPT_TOOL_NAME,
-            arguments=interrupt_arguments(
-                run_id=batch.run_id,
+            call_id=interrupt_tool_call_id(
+                interrupt.id,
                 state_token=batch.state_token,
-                payload=interrupt.value,
             ),
+            name=INTERRUPT_TOOL_NAME,
+            arguments=interrupt_arguments(interrupt.value),
         )
         for interrupt in batch.interrupts
     ]
@@ -202,7 +206,7 @@ def response_object(
                 if request.parallel_tool_calls is not None
                 else True
             ),
-            "previous_response_id": None,
+            "previous_response_id": request.previous_response_id,
             "prompt_cache_key": None,
             "reasoning": None,
             "safety_identifier": None,

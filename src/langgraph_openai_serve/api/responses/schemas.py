@@ -87,7 +87,7 @@ class ResponseFunctionCallInput(_ResponsesRequestModel):
     arguments: str
     call_id: str
     name: str
-    type: Literal["function_call"]
+    type: Literal["function_call"] = "function_call"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
     # Current SDK output models serialize these optional fields as null during
@@ -101,7 +101,7 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
 
     call_id: str
     output: str
-    type: Literal["function_call_output"]
+    type: Literal["function_call_output"] = "function_call_output"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
 
@@ -125,7 +125,7 @@ ResponseInput: TypeAlias = (
 class ResponseFunctionTool(_ResponsesRequestModel):
     """A client-supplied function available to the graph."""
 
-    type: Literal["function"]
+    type: Literal["function"] = "function"
     name: str
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
@@ -192,7 +192,7 @@ class ResponseCreateRequest(_ResponsesRequestModel):
         default=None,
         max_length=OPENAI_METADATA_MAX_PAIRS,
     )
-    store: bool | None = False
+    store: bool | None = None
     stream: bool | None = False
     text: ResponseTextConfig | None = None
     tools: list[ResponseTool] | None = None

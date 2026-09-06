@@ -91,6 +91,7 @@ def _responses_request(
     *,
     provider_routing: bool,
     model_prefixes: tuple[str, ...] = (),
+    previous_response_id: str | None = None,
 ) -> dict[str, Any]:
     request = {
         **_model_request(
@@ -106,6 +107,8 @@ def _responses_request(
         request["metadata"] = metadata
     if user_id is not None:
         request["user"] = user_id
+    if previous_response_id is not None:
+        request["previous_response_id"] = previous_response_id
     return request
 
 

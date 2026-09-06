@@ -279,7 +279,7 @@ The Pipe returns plain text for non-streaming answers and uses the OpenAI SDK's
 typed chunk schema for streamed text. Open WebUI JSON-encodes these chunks, so
 literal text such as `data: [DONE]` cannot be mistaken for a stream event.
 Open WebUI owns stream termination. The native `ask_user` bridge also uses the
-host's tool-call dictionaries to persist question cards and replay answers.
+host's tool-call dictionaries to persist question cards and submit answers.
 These shapes belong to the UI boundary; inference uses Responses exclusively.
 See the pinned
 [Pipe host](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/functions.py).
@@ -299,13 +299,13 @@ The deliberately small UI profile is an object containing a non-empty
 `question`, two or three unique string `choices`, and optional boolean
 `allow_other`. When `allow_other` is true, Open WebUI adds its free-form
 **Other** input. This is a demo-client presentation convention, not an LGOS
-restriction: the LGOS interrupt protocol accepts any JSON resume value, while
-this adapter maps Open WebUI choices and free-form answers to strings.
+payload restriction. Responses carries each resume value as a string, and this
+adapter maps Open WebUI choices and free-form answers directly to those strings.
 
-After the user answers, the Pipe decodes the original calls and performs the
-[canonical LGOS replay](../explanation/openai-compatibility.md#canonical-batch-replay):
-the exact Responses function-call items, including `run_id` and `state_token`,
-followed by one `{"resume": ...}` function output per interrupt. One native `ask_user`
+After the user answers, the Pipe decodes the paused Response ID and original
+calls from the opaque cursor. It sends the Response ID as `previous_response_id`
+with one `function_call_output` item per interrupt containing the user's answer.
+One native `ask_user`
 call can contain one to three questions, matching Open WebUI's built-in limit.
 LGOS itself remains generic and can expose larger atomic batches to clients that
 support them.

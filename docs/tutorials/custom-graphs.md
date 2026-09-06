@@ -20,10 +20,10 @@ features are published in LGOS model list and detail extensions for catalog UIs.
 
 Return an `AIMessage` only from the node or subgraph that owns the final
 assistant turn. Internal workers should return structured state; public status
-should use `status_event()`. A direct Chat integration may deliberately publish
-small `progress` or `artifact` payloads with `client_event()`; keep other
-application events private. `add_messages` preserves message history but does
-not enable streaming or combine multiple assistant messages.
+should use `status_event()`. Lower-level `progress` and `artifact` events remain
+available to direct runner consumers but are ignored by the HTTP APIs; keep
+other application events private. `add_messages` preserves message history but
+does not enable streaming or combine multiple assistant messages.
 
 ## Custom Schemas
 
@@ -258,21 +258,13 @@ status_graph_config = GraphConfig(
 
 Declare `GraphFeature.CLIENT_EVENTS` on every graph that emits these events.
 Streaming Responses clients receive visible descriptions as standard
-`phase="commentary"` messages without a metadata opt-in. Direct Chat clients opt
-into the namespaced v1 extension with
-`metadata={"langgraph_stream_events": "v1"}`. The `done` and `hidden` fields
-remain available to that Chat extension; Responses suppresses hidden updates
-and does not invent custom progress fields.
+`phase="commentary"` messages without a metadata opt-in. Responses suppresses
+hidden updates and does not invent custom progress fields. The Chat Completions
+API ignores custom stream events and does not emit commentary.
 
 These passive updates are not OpenAI tool calls, which would ask the client to
 execute work. The graph remains responsible for its own work; the client only
 renders status.
-
-The same graph feature also permits `client_event("progress", data)` and
-`client_event("artifact", data)` for the opted-in direct Chat v1 extension.
-Responses ignores those variants, maintained demo UIs do not consume them, and
-a normalizing proxy may discard the extension. Prefer Responses commentary,
-function calls, and Files when the client is not connected directly to LGOS.
 
 ## Interrupts
 
@@ -294,8 +286,8 @@ The graph must be compiled with an asynchronous checkpointer that implements
 `aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`.
 LGOS generates a UUID for an initial interrupt run; callers only need to send
 `metadata.langgraph_run_id` when they want to choose that UUID for deterministic
-retries and isolation. The OpenAI tool-call ID and opaque arguments carry the
-operation and state-generation identities needed for a resume.
+retries and isolation. The opaque OpenAI tool-call ID carries the state-generation
+identity needed for a resume; the paused Response ID locates the operation.
 
 !!! warning "Choose coordination and storage together"
 
@@ -307,8 +299,9 @@ operation and state-generation identities needed for a resume.
     LangGraph's official `AsyncPostgresSaver`; see
     [package reference](../reference.md#postgresql-coordination).
 
-Clients must preserve every complete `function_call` output item and submit
-exactly one result for every pending call in one resume request. See
+Clients must preserve the paused Response ID and every complete `function_call`
+item, then submit exactly one result for every pending call in one resume
+request. See
 [Resume an interrupt](openai-clients.md#resume-an-interrupt) for client code and
 [Tool calls and interrupts](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative protocol, node-restart/idempotency rules, and retention

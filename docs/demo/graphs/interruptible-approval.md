@@ -10,8 +10,8 @@ topology.
 
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
-[`persistent-plot-agent`](persistent-plot-agent.md). Operation identity, canonical replay,
-and retention rules are defined in
+[`persistent-plot-agent`](persistent-plot-agent.md). Operation identity,
+interrupt continuation, and retention rules are defined in
 [OpenAI Compatibility](../../explanation/openai-compatibility.md#tool-calls-and-interrupts).
 
 ## LangGraph Topology
@@ -44,7 +44,7 @@ sequenceDiagram
   Graph->>DB: Save refund pause
   Graph-->>UI: Refund review tool call via API
   User-->>UI: Approve, reject, or enter feedback
-  UI->>API: Replay tool call and result
+  UI->>API: previous_response_id + output batch
   API->>Graph: Resume from checkpoint
   alt Refund rejected or feedback supplied
     Graph->>Graph: Skip protected actions
@@ -80,7 +80,7 @@ pending runs and follow LangGraph's
 
 The application must also authorize and audit the reviewing identity. Interrupt
 results are workflow input, not proof of authorization. Applications that must
-replay a lost terminal response also need their own result/idempotency store;
+recover a lost terminal response also need their own result/idempotency store;
 LGOS deletes the checkpoint after terminal completion.
 
 See [Docker Compose](../docker.md#demo-services) for schema setup, connection

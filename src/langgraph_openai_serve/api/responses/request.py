@@ -32,6 +32,10 @@ def decode_responses_request(
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     """Normalize one supported, stateless Responses request."""
     _validate_supported_semantics(request)
+    resume = parse_responses_resume(
+        request.input,
+        previous_response_id=request.previous_response_id,
+    )
     return (
         GraphRequest(
             model=request.model,
@@ -57,11 +61,15 @@ def decode_responses_request(
             tool_choice=_decode_tool_choice(request.tool_choice),
             parallel_tool_calls=request.parallel_tool_calls,
         ),
-        convert_responses_input(
-            request.input,
-            instructions=request.instructions,
+        (
+            []
+            if resume is not None
+            else convert_responses_input(
+                request.input,
+                instructions=request.instructions,
+            )
         ),
-        parse_responses_resume(request.input),
+        resume,
     )
 
 
@@ -83,7 +91,7 @@ def _decode_tool_choice(
 
 def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
     if request.store:
-        message = "Response storage is not supported; 'store' must be false."
+        message = "'store' must be false; response storage is not supported."
         raise UnsupportedResponsesRequestError(message, param="store")
     if request.background:
         message = "Background Responses are not supported."
@@ -94,14 +102,9 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
             "items."
         )
         raise UnsupportedResponsesRequestError(message, param="conversation")
-    if request.previous_response_id is not None:
-        message = (
-            "Previous response state is not supported; resend the required input items."
-        )
-        raise UnsupportedResponsesRequestError(
-            message,
-            param="previous_response_id",
-        )
+    if request.previous_response_id is not None and request.instructions is not None:
+        message = "'instructions' cannot be changed while resuming an interrupt."
+        raise UnsupportedResponsesRequestError(message, param="instructions")
 
 
 __all__ = ["UnsupportedResponsesRequestError", "decode_responses_request"]

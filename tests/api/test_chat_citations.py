@@ -13,7 +13,7 @@ from langgraph_openai_serve import (
     LanggraphOpenaiServe,
     citation_slice,
 )
-from langgraph_openai_serve.api.chat.utils.responses import annotations_from_message
+from langgraph_openai_serve.api.chat.responses import annotations_from_message
 from tests.graph.support.schemas import MessageState
 
 ANSWER = "Cited answer with source"
@@ -117,7 +117,6 @@ async def test_streaming_completion_emits_annotations_on_final_delta(
         model="citations",
         messages=[{"role": "user", "content": "Cite this"}],
         stream=True,
-        metadata={"langgraph_stream_events": "v1"},
     )
     chunks = [chunk async for chunk in stream]
 

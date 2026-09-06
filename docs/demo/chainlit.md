@@ -197,9 +197,10 @@ DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
 ```
 
 Initial requests need no interrupt metadata. The HITL client implements the
-[canonical batch replay](../explanation/openai-compatibility.md#canonical-batch-replay):
-it asks for every response, sends no partial batch, and repeats when the graph
-pauses again. Each response is shown with Chainlit's native
+[Responses interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
+it stores the paused Response ID, asks for every call in the batch, submits only
+matching `function_call_output` items, and repeats when the graph pauses again.
+Each response is shown with Chainlit's native
 [`AskElementMessage`](https://docs.chainlit.io/api-reference/ask/ask-for-element)
 and a small custom element. Choice buttons and the allowed free-text field submit
 one `{resume: ...}` value, so the client depends only on the standard tool-call
@@ -213,11 +214,11 @@ custom response field.*
 
 !!! note "Reconnect recovery and its boundary"
 
-    The adapter stores the exact Responses function-call batch on the same
+    The adapter stores the paused Response ID and exact function-call batch on the same
     model-context-excluded Chainlit message that displays the current prompt.
     Its
     [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
-    hook restores the newest pending batch and reattaches its custom review form,
+    hook restores the newest pending continuation and reattaches its custom review form,
     including the free-text field when allowed, after the pinned Chainlit host
     hydrates the displayed thread. Refreshing abandons only the old live prompt;
     it neither duplicates the persisted message nor rejects or resumes the graph.
@@ -228,7 +229,7 @@ custom response field.*
 
     The demo does not durably cache a terminal response or a later interrupt
     response that has not yet reached Chainlit. If the API accepts a resume but
-    the worker loses the following response, replaying the older ledger fails
+    the worker loses the following response, resubmitting the older continuation fails
     safely as stale; the completed output or newer batch cannot be reconstructed
     from that old ledger. Applications requiring recovery across that window
     need a durable result/pending-response handoff in their UI boundary. See
@@ -249,7 +250,7 @@ full response succeeds. Clicking **Stop** marks the active task as failed and
 closes the Responses stream; incomplete assistant text remains visible but is
 excluded from later model context. Both streaming and non-streaming requests
 require a completed Response before displaying files or accepting a successful
-turn. Failed interrupt resumes leave the saved pending ledger intact.
+turn. Failed interrupt resumes leave the saved continuation intact.
 
 Transcript replay labels assistant answers as `final_answer` and preserves
 explicit phase values, following OpenAI's

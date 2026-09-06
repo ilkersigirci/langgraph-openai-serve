@@ -81,7 +81,7 @@ versions they do not understand.
 
 | Feature | Enabled behavior |
 | --- | --- |
-| `client_events` | Streaming Responses may emit status commentary; direct Chat clients may opt into the v1 event extension. |
+| `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 
@@ -169,8 +169,8 @@ Every graph request starts from the registered defaults. Values supplied in
 validates the complete result. The merge is shallow: a supplied nested object
 replaces that whole default value rather than recursively merging its keys.
 
-Client settings are not persisted between requests. The interrupt tool-call
-envelope identifies durable state, but it does not restore runtime context.
+Client settings are not persisted between requests. The paused Response ID and
+interrupt call IDs identify durable state, but they do not restore runtime context.
 Clients must resend non-default settings on every request that needs them,
 including interrupt-resume requests. A later request that omits
 `langgraph_runtime_settings` uses registered defaults again.
@@ -204,29 +204,29 @@ not claim every field in the upstream OpenAI API.
 
 | Request field or item | LGOS behavior |
 | --- | --- |
-| `model`, `input`, `instructions` | Supported. String input and ordered user, system, developer, and replayed assistant messages become LangChain messages. |
+| `model`, `input`, `instructions` | Supported. String input and ordered user, system, developer, and replayed assistant messages become LangChain messages. New `instructions` are rejected on interrupt resumes because a paused invocation cannot consume them. |
 | `input_text` | Supported. |
 | `input_file.file_id` | Supported and normalized to the existing graph file block. |
 | function `tools`, `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. |
-| `function_call` and string-valued `function_call_output` | Supported for tool continuation and interrupts. |
+| `function_call` and string-valued `function_call_output` | Supported for ordinary client-tool continuation. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events. |
 | `store` | Omitted and false mean false; true is rejected. |
 | `text.format.type="text"` | Supported. |
 | `tools=[{"type": "custom", "name": "lgos_..."}]` | LGOS hosted-tool selector; selected graph must declare each identifier. Shorthand `{"type": "lgos_..."}` is also accepted. |
-| structured output, OpenAI-hosted tools, MCP tools, image/audio items | Rejected. |
-| `previous_response_id`, `conversation`, `background: true` | Rejected because LGOS has no Responses persistence or background lifecycle. |
+| `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible graphs. |
+| `conversation`, `background: true` | Rejected because LGOS has no Responses conversation store or background lifecycle. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
 
 Unknown request fields also fail validation. Exact errors use the standard
 OpenAI envelope and identify the unsupported parameter where it is known.
 
-### Stateless Item Replay
+### Stateless Item Continuation
 
 LGOS generates an opaque Response ID for correlation but does not persist it.
 There are no response retrieve, delete, cancel, compact, or input-item routes.
 Clients therefore keep an input ledger and resend the items needed by the next
-turn instead of using `previous_response_id` or a Conversation.
+turn instead of using a server-side Conversation.
 
 When continuing a function call, append every item from `response.output`
 unchanged and then append a matching `function_call_output`. Replaying complete
@@ -235,6 +235,11 @@ SDK may serialize optional function-call `caller` and `namespace` fields as
 null; LGOS accepts those null values but rejects non-null program or namespace
 semantics. This state model follows OpenAI's documented manual item replay while
 keeping storage in the client.
+
+An interrupt continuation uses a narrower stateful path. The client sends the
+paused Response ID as `previous_response_id` and sends only matching
+`function_call_output` items. LGOS uses those opaque IDs to locate and validate
+the paused checkpoint; it does not reconstruct ordinary conversation history.
 
 LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
 only paused workflow execution; a graph Store keeps explicit application data.
@@ -290,8 +295,7 @@ When multiple streamable nodes contribute text, the graph's
 The graph must declare `GraphFeature.CLIENT_EVENTS` before any public client
 event can cross an HTTP route. Ordinary LangGraph custom data, malformed events,
 debug values, and non-JSON Python objects stay private. Responses exposes only
-validated `status_event()` values; the direct Chat extension also carries the
-validated `progress` and `artifact` variants.
+validated `status_event()` values. Chat Completions ignores custom events.
 
 ### Responses Commentary
 
@@ -311,45 +315,26 @@ Open WebUI adapters do this. Other clients may ignore `phase` or show all text
 as one answer; that is a client presentation limitation, not a reason to add a
 custom server event.
 
-### Direct Chat Client Events
+### Chat Completions vs Responses Boundary
 
-The direct Chat compatibility route exposes the v1 extension. The client
-must opt in with standard metadata:
+Complex workflow features—such as streaming status commentary, checkpointed
+persistence, and human-in-the-loop interrupts—are exclusively available through
+the native Responses API (`/v1/responses`).
 
-```python
-stream = client.chat.completions.create(
-    model="research-graph",
-    messages=messages,
-    stream=True,
-    metadata={"langgraph_stream_events": "v1"},
-)
-```
+The Chat Completions API (`/v1/chat/completions`) provides strict, standard OpenAI
+compatibility for simple graphs and tool calling. It streams plain text
+`delta.content` chunks and ignores custom streaming events. Interrupt-enabled
+models requested via Chat Completions fail fast with HTTP 400 Bad Request
+indicating that interrupts require the Responses API.
 
-Each validated `status`, `progress`, or `artifact` event appears in a namespaced
-`langgraph_openai_serve.event` property on an otherwise valid
-`chat.completion.chunk`. It reuses the completion ID and has an empty choice
-delta. The final Chat chunk and `[DONE]` remain unchanged. The OpenAI Python SDK
-preserves the extension in `model_extra`.
-
-This Chat property is a direct-client compatibility extension, not the
-maintained UI transport. A schema-normalizing proxy may discard it. Do not use
-raw pass-through for maintained UI inference; use native Responses
-commentary or connect the direct compatibility client to LGOS.
-
-The v1 direct Chat vocabulary is `status`, `progress`, and `artifact`. Only
-`status` is portable to Responses, where LGOS maps it to standard commentary.
-Responses ignores the other two variants, and maintained demo UIs do not consume
-the Chat extension. Portable rich output uses standard Responses function calls
-and Files instead.
-
-| Graph result | Responses | Direct Chat compatibility |
+| Graph result | Responses | Chat Completions |
 | --- | --- | --- |
 | Assistant text | `final_answer` message | `delta.content` |
-| Interrupt requiring input | `function_call` | `delta.tool_calls` |
+| Interrupt requiring input | `function_call` item | Unsupported (HTTP 400) |
 | Citation | `output_text.annotations` | message/final-delta annotations |
-| Diagnostic progress or artifact | Ignored | `langgraph_openai_serve.event` |
+| Passive status | `commentary` message | Ignored |
+| Diagnostic progress or artifact | Ignored | Ignored |
 | Midstream failure | `error` then `response.failed` | OpenAI error object |
-| Passive status | `commentary` message | `langgraph_openai_serve.event` |
 
 Status is deliberately not a tool call. In OpenAI
 [function calling](https://developers.openai.com/api/docs/guides/function-calling),
@@ -432,10 +417,10 @@ choice, returned `function_call` items, and matching string-valued
 `function_call`, and `function` message role are rejected rather than silently
 ignored.
 
-Interrupt graphs require a client application that can collect input and replay
-tool results. A UI that only renders assistant text cannot complete an
-interrupt. The maintained demo UIs implement the Responses form; direct Chat
-compatibility clients may use the equivalent Chat tool-message form.
+Interrupt graphs require a client application that can collect and submit tool
+results. Interrupts and checkpoint resumes are supported exclusively via
+the Responses API (`/v1/responses`). Requesting an interrupt-enabled model via
+Chat Completions returns HTTP 400 Bad Request.
 
 ### Hosted Tools
 
@@ -481,7 +466,7 @@ in the transcript. There is no LGOS artifact field or custom chart event. See
 ### Operation Identity
 
 An initial interrupt request does not require metadata. LGOS generates a UUID
-operation ID and returns it inside every resulting tool call. A caller may
+operation ID and embeds it in the paused Response ID. A caller may
 instead supply a non-nil UUID in `metadata.langgraph_run_id`; doing so lets it
 retry an initial request deterministically if the response is lost. Reusing
 that UUID while the run is pending re-emits the durable pending batch without
@@ -492,8 +477,8 @@ run; choose the UUID before sending whenever initial-response recovery matters.
 Treat a caller-chosen UUID as single-use. LGOS deliberately deletes terminal
 checkpoint state and keeps no tombstone, so a later ordinary initial request
 with that UUID is indistinguishable from a new operation and can start again.
-Only replaying the old assistant/tool resume ledger is fail-closed after
-terminal deletion.
+Only resubmitting the old paused Response ID and call outputs is fail-closed
+after terminal deletion.
 
 The public run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
@@ -507,77 +492,56 @@ while this operation is paused.
 
 The authenticated scope must remain stable between the initial request and all
 resumes. A request resolved into another scope cannot address the pending
-checkpoint, even if it presents the same public run UUID and tool ledger.
+checkpoint, even if it presents the same public run UUID and continuation IDs.
 
 ### Interrupt Tool Envelope
 
 Every pending LangGraph interrupt becomes an OpenAI function tool call named
-`langgraph_interrupt`. Its `arguments` string contains this JSON object:
+`langgraph_interrupt`. Its `arguments` string contains the JSON payload directly:
 
 ```json
 {
-  "run_id": "f654e904-1bd8-4fd6-a8bf-53a49ca25699",
-  "state_token": "47ecb7c6f7b9...",
-  "payload": {
-    "question": "How should the refund be handled?",
-    "choices": ["approve", "reject"],
-    "allow_other": true
-  }
+  "question": "How should the refund be handled?",
+  "choices": ["approve", "reject"],
+  "allow_other": true
 }
 ```
 
-The UI renders `payload` and otherwise preserves the arguments unchanged.
-Treat `run_id`, `state_token`, and the tool-call ID as opaque protocol data. The
-tool-call ID is `lg_interrupt_` followed by the LangGraph interrupt ID.
+Response and call IDs are opaque. The Response ID locates the paused operation;
+each call ID binds an interrupt to that exact checkpoint generation. Clients
+must persist and return both values unchanged.
 
-### Canonical Batch Replay
+### Resuming an Interrupt
 
-A Responses resume request must end with every complete `function_call` item
-returned by LGOS, followed by exactly one `function_call_output` item for every
-call. Each result has the matching `call_id` and a JSON string containing a
-`resume` value:
+Clients can resume using standard OpenAI `previous_response_id`:
 
 ```json
 {
   "model": "interruptible",
+  "previous_response_id": "resp_lg_f654e9041bd84fd6a8bf53a49ca25699_0123456789abcdef0123456789abcdef",
   "input": [
     {
-      "type": "function_call",
-      "id": "fc_2de0b65b",
-      "call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
-      "name": "langgraph_interrupt",
-      "arguments": "{\"run_id\":\"f654e904-1bd8-4fd6-a8bf-53a49ca25699\",\"state_token\":\"47ecb7c6f7b9...\",\"payload\":{\"question\":\"How should the refund be handled?\",\"choices\":[\"approve\",\"reject\"],\"allow_other\":true}}",
-      "status": "completed"
-    },
-    {
       "type": "function_call_output",
-      "call_id": "lg_interrupt_6f719db61be2b8e875cc775f0f6c86aa",
-      "output": "{\"resume\":\"Verify the delivery address first.\"}"
+      "call_id": "call_lg_47ecb7c6f7b901230fc4d3119976daae11888d39c973953060b8a849c3d8a5f2_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
+      "output": "Verify the delivery address first."
     }
   ],
   "store": false
 }
 ```
 
-Parallel interrupts are one atomic interrupt batch: the replay must contain all
-pending calls and answer all of them. A client must not select one call, mix
-ordinary function calls into that exchange, duplicate a result, or synthesize a
-partial replay. Streaming clients use the terminal Response's complete output
-items instead of reconstructing them from argument deltas.
+Parallel interrupts are one atomic interrupt batch: the resume request must answer
+all of them. A client must not select one call, mix ordinary function calls into that
+request, duplicate a result, or synthesize a call ID. Streaming clients persist
+the terminal Response ID and completed function-call items instead of reconstructing
+them from argument deltas.
 
-The direct Chat compatibility route uses the complete assistant `tool_calls`
-message followed by exactly one matching `tool` message per call. Both protocol
-decoders produce the same durable `InterruptResume`; there is no second
-interrupt state machine.
+Metadata is not required on a resume, but `metadata.langgraph_run_id`, when
+present, must match the operation encoded by `previous_response_id`.
 
-The replayed arguments carry the resume operation ID. Metadata is not required
-on a resume, but `metadata.langgraph_run_id`, when present, must match the UUID
-in every replayed call.
-
-The UI owns persistence of this canonical call/output ledger. It must store the
-exact calls before soliciting input so a reconnect can reproduce the same resume
-request. Persisting only rendered prompt text or only the user's response is
-insufficient.
+The UI owns persistence of the paused Response ID and exact calls. It must store
+them before soliciting input so a reconnect can reproduce the same resume request.
+Persisting only rendered prompt text or only the user's response is insufficient.
 
 ### Durable Validation And Recovery
 
@@ -587,9 +551,9 @@ executes the graph. Same-key contention is rejected instead of queued. Exit
 durability stores state when the invocation pauses or finishes without
 retaining every intermediate superstep.
 LGOS drains the invocation before it exposes interrupt tool calls. It compares
-the replayed pending IDs and opaque state token with the durable checkpoint
-before passing answers to LangGraph. The replayed display payload is never used
-as graph input.
+the submitted pending IDs and opaque state token with the durable checkpoint
+before passing answers to LangGraph. The displayed interrupt payload is not part
+of the resume input.
 Concurrent work for another operation remains independent; a second request
 for the same operation receives HTTP 409.
 
@@ -626,9 +590,10 @@ for the underlying checkpoint model.
 ## Known Differences From OpenAI
 
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
-- Responses is stateless and implements the explicit subset above; response
-  storage, Conversations, previous-response chaining, background work, OpenAI-hosted
-  tools, structured output, and unconsumed generation controls are rejected.
+- Responses implements the explicit subset above; response storage,
+  Conversations, general previous-response chaining, background work,
+  OpenAI-hosted tools, structured output, and unconsumed generation controls are
+  rejected. `previous_response_id` is reserved for interrupt continuation.
 - Chat Completions remains a direct compatibility surface, while maintained
   demo UIs use Responses for every graph.
 - The package exposes model listing/retrieval and health, but no Files storage;

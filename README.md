@@ -48,11 +48,8 @@ From this repository, prepare the demo environment and PostgreSQL:
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f docker/compose/demo.yml up -d lgos-db
-uv run --directory api --env-file ../.env \
-  --locked --with-editable ../.. lgos-demo-api-setup
-uv run --directory api --env-file ../.env \
-  --locked --with-editable ../.. lgos-demo-api
+make run-postgres
+make run-api-local
 ```
 
 Then call the demo with the OpenAI Python client:
@@ -60,7 +57,7 @@ Then call the demo with the OpenAI Python client:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="DUMMY")
+client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 
 response = client.responses.create(
     model="custom-input-output-context",
@@ -72,13 +69,29 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-Use `curl http://localhost:8000/v1/models` only as a diagnostic to inspect the
+Existing Chat Completions clients can call the same simple graph through the
+same base URL:
+
+```python
+completion = client.chat.completions.create(
+    model="custom-input-output-context",
+    messages=[{"role": "user", "content": "Show me custom schemas."}],
+    user="demo-user",
+)
+
+print(completion.choices[0].message.content)
+```
+
+Use Responses for new clients and advanced workflow features. The Chat example
+is the compatibility path for existing Chat-only clients.
+
+Use `curl http://localhost:3004/v1/models` only as a diagnostic to inspect the
 registered demo graph names.
 
-The optional editable overlay tests this checkout without changing the
-self-contained demo project or its lockfile. The demo publishes independent API
-and Chainlit images and uses official images for third-party services such as
-Open WebUI. See the [demo Docker Compose guide](docs/demo/docker.md).
+`make run-api-local` overlays this checkout without changing the self-contained
+demo project or its lockfile. The demo publishes independent API and Chainlit
+images and uses official images for third-party services such as Open WebUI.
+See the [demo Docker Compose guide](docs/demo/docker.md).
 
 The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`
 setting place either gateway in front of both maintained UI clients. Chainlit
@@ -118,7 +131,9 @@ but does not own file upload or storage. Deploy one Files API for the graph
 services that share a file namespace, or use a gateway-native Files provider.
 The standalone S3-backed [demo Files API](demo/files_api/README.md) is a small
 reference deployment. Chat Completions remains available for direct
-compatibility clients; the maintained demo UIs use Responses exclusively.
+compatibility clients; the maintained demo UIs use Responses exclusively. See
+[Choose Responses or Chat Completions](docs/getting-started.md#choose-responses-or-chat-completions)
+for a feature-by-feature comparison.
 
 ## Docs
 

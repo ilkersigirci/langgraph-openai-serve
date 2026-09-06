@@ -25,16 +25,19 @@ The route accepts string or ordered message input, instructions, plain
 function tools and choices, `parallel_tool_calls`, plain text output, and
 streaming. Replayed assistant output messages preserve `phase`; complete
 `function_call` items and matching string-valued `function_call_output` items
-support tools and interrupts.
+support ordinary client-tool continuation. Interrupt continuation sends only
+matching `function_call_output` items with `previous_response_id`.
 
-LGOS does not persist Responses. Omitted `store` and `store=false` are accepted;
-`store=true`, `previous_response_id`, `conversation`, and background mode are
-rejected. The route also rejects OpenAI-hosted tools, structured output, image/audio
+LGOS does not persist completed Responses for retrieve or deletion. Omitted `store` and
+`store=false` are accepted; `store=true`, `conversation`, and background mode are
+rejected. `previous_response_id` is supported for interruptible graphs to resume execution
+(and rejected for non-interruptible graphs); new `instructions` are rejected on
+those resumes. The route also rejects OpenAI-hosted tools, structured output, image/audio
 input, URL or inline file input, result-content lists, reasoning and generation
 controls, `include`, stream options, service tiers, reusable prompts,
 prompt-cache controls, and truncation. Unknown fields are not silently ignored.
 See the [supported Responses subset](explanation/openai-compatibility.md#supported-responses-subset)
-for the complete behavior and replay rules.
+for the complete behavior and continuation rules.
 
 ## Settings
 
@@ -234,7 +237,7 @@ Interrupt-enabled graphs have additional registration requirements:
 - use a durable checkpointer and cross-process coordinator in production.
 
 The initial request does not require metadata. LGOS generates a UUID operation
-ID and returns it in every interrupt tool call. A caller that needs deterministic
+ID and embeds it in the paused Response ID. A caller that needs deterministic
 initial-request retries can instead supply a non-nil UUID in
 `metadata.langgraph_run_id`. `InMemoryRunCoordinator` is suitable only for
 tests and a single-process development server; it cannot serialize requests
@@ -326,31 +329,24 @@ The portable status data matches native UI status concepts:
 ```
 
 Status text is deliberately authored by the graph; LGOS does not infer it from
-internal node names or state. The direct Chat extension preserves `done` and
-`hidden`. Responses exposes the description as commentary and suppresses hidden
-updates; those graph flags do not become nonstandard Response fields.
+internal node names or state. Responses exposes the description as commentary
+and suppresses hidden updates; the namespace, `done`, and `hidden` fields do not
+become nonstandard Response fields.
 
 The v1 public vocabulary is `status`, `progress`, and `artifact`.
 `client_event("status", data)` remains the lower-level equivalent when an
 application already has validated status data; prefer `status_event()` for its
-typed fields. Direct Chat integrations may use `client_event("progress", data)`
-and `client_event("artifact", data)` for small, application-defined JSON
-payloads. Event data must be JSON-safe, and every namespace segment must be a
+typed fields. Event data must be JSON-safe, and every namespace segment must be a
 string. The namespace is a stable, author-defined path; LGOS does not expose
 LangGraph's dynamic execution namespace.
 
 Status is streaming-only and always requires the graph feature. Responses needs
 no metadata opt-in and emits each visible update as a standard
-`phase="commentary"` message. Direct Chat clients additionally request the v1
-extension with
-`metadata={"langgraph_stream_events": "v1"}` and receive a versioned
-`langgraph_openai_serve` property on an otherwise standard Chat Completions
-chunk. Missing and unsupported versions produce the ordinary strict Chat stream.
-Responses ignores `progress` and `artifact`; maintained demo UIs do not consume
-the Chat extension. Use standard Responses function calls plus the Files API for
-portable durable rich output. Unknown custom events remain available only to
-direct runner consumers. A schema-normalizing proxy may discard the namespaced
-Chat property, so clients that depend on it must connect directly to LGOS.
+`phase="commentary"` message. The Chat Completions API is strictly for simple
+graphs and plain text streaming; it ignores custom stream events and does not emit
+commentary. Responses ignores `progress` and `artifact`. Use standard Responses
+function calls plus the Files API for portable durable rich output. Unknown custom
+events remain available only to direct runner consumers.
 
 See [Streaming status](explanation/openai-compatibility.md#streaming-status) for
 the wire contract and

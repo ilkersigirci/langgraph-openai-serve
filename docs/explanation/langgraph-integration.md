@@ -116,11 +116,11 @@ durable.
     the list may include nodes in nested subgraphs. Returning a message through
     the graph's `messages` state is not a live-streaming signal.
     The protocol adapter maps explicitly public `status_event()` values to
-    standard Responses commentary messages, or to namespaced Chat chunks for a
-    direct Chat client that opts into v1 events. The final root value supplies
-    durable citations, tool calls, and provider-reported usage. After execution
-    quiesces, it reads durable pending state and renders a complete interrupt
-    batch when present. Unknown custom events stay private.
+    standard Responses commentary messages. Chat Completions ignores custom
+    events. The final root value supplies durable citations, tool calls, and
+    provider-reported usage. After execution quiesces, it reads durable pending
+    state and renders a complete interrupt batch when present. Unknown custom
+    events stay private.
 
 Internal model calls that must not reach the assistant text stream use LangGraph's native
 `nostream` tag. `streamable_node_names` selects calls whose text is intended for

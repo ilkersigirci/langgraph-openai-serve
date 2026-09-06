@@ -33,10 +33,15 @@ from lgos_openwebui.functions.uservalves_simple import Filter
 
 MODEL_ID = "interruptible-approval"
 QUALIFIED_MODEL_ID = f"generic.{MODEL_ID}"
+RESPONSE_ID = "resp_lg_725c277af6d54c5295eb8c09e91f7a7c_" + "b" * 32
 
 
 def response(*output: object) -> Response:
-    return Response.model_construct(status="completed", output=list(output))
+    return Response.model_construct(
+        id=RESPONSE_ID,
+        status="completed",
+        output=list(output),
+    )
 
 
 def final_response(text: str) -> Response:
@@ -74,13 +79,9 @@ def interrupt_call() -> ResponseFunctionToolCall:
     return function_call(
         "langgraph_interrupt",
         {
-            "run_id": "725c277a-f6d5-4c52-95eb-8c09e91f7a7c",
-            "state_token": "state-token-1",
-            "payload": {
-                "question": "Approve refund?",
-                "choices": ["approve", "reject"],
-                "allow_other": False,
-            },
+            "question": "Approve refund?",
+            "choices": ["approve", "reject"],
+            "allow_other": False,
         },
     )
 
@@ -227,6 +228,27 @@ async def test_deployed_bundle_runs_responses_inference(
     request = create.await_args.kwargs
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
+
+
+async def test_deployed_bundle_runs_non_streaming_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    function_dir = Path(generic_pipe.__file__).parent
+    source = bundle_function(function_dir)
+    module = ModuleType("bundled_generic")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(compile(source, "<generic>", "exec"), module.__dict__)
+    create = AsyncMock(return_value=response(interrupt_call()))
+    module._client = lambda **_: FakeClient(create=create)
+
+    result = await module.Pipe().pipe(body(stream=False))
+
+    assert (
+        result["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
+        == "ask_user"
+    )
+    assert result["output"][0]["name"] == "ask_user"
+    assert result["output"][0]["status"] == "pending"
 
 
 @pytest.mark.parametrize("deltas", [False, True])
@@ -818,9 +840,9 @@ async def test_openwebui_storage_upload_forwards_request_authorization(
     )
 
 
-def test_interrupt_round_trip_uses_responses_function_items() -> None:
+def test_interrupt_round_trip_uses_previous_response_id() -> None:
     call = interrupt_call()
-    ask_user = _interrupts_to_ask_user([call])
+    ask_user = _interrupts_to_ask_user(RESPONSE_ID, [call])
     answer = {
         "role": "tool",
         "tool_call_id": ask_user["id"],
@@ -832,7 +854,7 @@ def test_interrupt_round_trip_uses_responses_function_items() -> None:
         ),
     }
 
-    replay = _ask_user_to_resume(
+    continuation = _ask_user_to_resume(
         [
             {
                 "role": "assistant",
@@ -843,14 +865,16 @@ def test_interrupt_round_trip_uses_responses_function_items() -> None:
         ]
     )
 
-    assert replay is not None
-    assert replay[0]["type"] == "function_call"
-    assert replay[0]["call_id"] == call.call_id
-    assert replay[1] == {
-        "type": "function_call_output",
-        "call_id": call.call_id,
-        "output": '{"resume":"approve"}',
-    }
+    assert continuation is not None
+    outputs, previous_response_id = continuation
+    assert previous_response_id == RESPONSE_ID
+    assert outputs == [
+        {
+            "type": "function_call_output",
+            "call_id": call.call_id,
+            "output": "approve",
+        }
+    ]
 
 
 async def test_interrupt_response_becomes_native_ask_user_call(
@@ -864,6 +888,30 @@ async def test_interrupt_response_becomes_native_ask_user_call(
     tool_call = result["choices"][0]["message"]["tool_calls"][0]
     assert tool_call["function"]["name"] == "ask_user"
     assert result["choices"][0]["finish_reason"] == "tool_calls"
+    assert result["output"][0]["type"] == "function_call"
+    assert result["output"][0]["name"] == "ask_user"
+    assert result["output"][0]["status"] == "pending"
+    assert result["output"][0]["id"] == tool_call["id"]
+    assert result["output"][0]["call_id"] == tool_call["id"]
+    assert result["output"][0]["arguments"] == tool_call["function"]["arguments"]
+
+
+async def test_interrupt_response_with_preliminary_text_preserves_content_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_part = final_response("Please confirm: ").output[0]
+    create = AsyncMock(return_value=response(first_part, interrupt_call()))
+    install_client(monkeypatch, create=create)
+
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
+
+    assert result["choices"][0]["message"]["content"] == "Please confirm: "
+    assert len(result["output"]) == 2
+    assert result["output"][0]["type"] == "message"
+    assert result["output"][0]["content"][0]["text"] == "Please confirm: "
+    assert result["output"][1]["type"] == "function_call"
+    assert result["output"][1]["name"] == "ask_user"
+    assert result["output"][1]["status"] == "pending"
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])

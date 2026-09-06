@@ -12,7 +12,7 @@ demo model catalogs.
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`advanced-mcp-tools`](core-patterns.md#advanced-mcp-tools) | Async graph factories and a mock MCP-style tool | None | None |
 | [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
-| [`custom-event-showcase`](events-and-citations.md) | Opted-in direct Chat progress and artifact events | `client_events` | None |
+| [`custom-event-showcase`](events-and-citations.md) | Filtering internal progress and artifact events at the API boundary | `client_events` | None |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | None | Upstream model, Files API, and PostgreSQL store |

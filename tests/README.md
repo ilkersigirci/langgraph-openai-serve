@@ -5,8 +5,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Test Roots
 
 - `tests/` owns the installed package's API, graph runner, and utility tests.
-- `tests/api/interrupt/` keeps the interrupt codec, response, HTTP contract,
-  durable-state, and concurrency coverage together.
+- `tests/api/interrupt/` keeps the Responses interrupt codec, response, HTTP
+  contract, durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
   checkout into the demo API test run.
@@ -119,10 +119,9 @@ timer only masks the environment failure.
   idempotency should pass a non-nil UUID as
   `metadata.langgraph_run_id`; invalid or reused UUID cases should remain
   separate assertions.
-- Resume helpers must preserve the complete protocol output: the Chat assistant
-  message with all original `tool_calls`, or every Responses `function_call`
-  item. Append exactly one JSON `{"resume": ...}` result for every call, using
-  the protocol's matching `tool_call_id` or `call_id`. Parallel interrupts must
+- Resume helpers should use standard `previous_response_id` and provide one
+  `function_call_output` item for every returned interrupt call. Use the matching
+  `call_id` and the resume value directly as `output`. Parallel interrupts must
   be answered together; never synthesize only the visible payload or select the
   first call.
 - Cover the durable lifecycle at the API boundary: an initial retry with the
@@ -142,7 +141,6 @@ external database.
 
 - Graphs that emit client events must declare
   `features={GraphFeature.CLIENT_EVENTS}`.
-- Streaming Responses requests expose visible statuses as commentary without a
-  metadata opt-in. Direct Chat streaming requests must opt in with
-  `metadata.langgraph_stream_events="v1"`; test the feature declaration and
-  Chat request opt-in as independent gates.
+- Streaming Responses requests expose visible statuses as commentary
+  (`phase="commentary"`) without a metadata opt-in. The Chat Completions API
+  ignores custom stream events and does not emit commentary.

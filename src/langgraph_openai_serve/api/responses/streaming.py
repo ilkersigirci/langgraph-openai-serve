@@ -32,6 +32,7 @@ from openai.types.responses import (
     ResponseUsage,
 )
 
+from langgraph_openai_serve.api.responses.interrupts import interrupt_response_id
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
@@ -87,8 +88,18 @@ class _TextItem:
 class ResponsesStreamBuilder:
     """Own stable state for one Responses SSE lifecycle."""
 
-    def __init__(self, request: ResponseCreateRequest) -> None:
-        self._context = ResponseContext(request=request)
+    def __init__(
+        self,
+        request: ResponseCreateRequest,
+        *,
+        run_id: str | None = None,
+    ) -> None:
+        response_id = (
+            interrupt_response_id(run_id)
+            if run_id is not None
+            else f"resp_{uuid.uuid4().hex}"
+        )
+        self._context = ResponseContext(request=request, id=response_id)
         self._sequence_number = 0
         self._next_output_index = 0
         self._output: dict[int, ResponseOutputItem] = {}
@@ -406,7 +417,7 @@ async def stream_response(
         Named, compact Responses SSE frames.
 
     """
-    builder = ResponsesStreamBuilder(request)
+    builder = ResponsesStreamBuilder(request, run_id=run.run_id)
     events = _successful_events(builder, run)
     try:
         async with aclosing(events):

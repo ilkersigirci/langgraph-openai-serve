@@ -136,7 +136,7 @@ class Pipe:
     ) -> AsyncIterator[PipeChunk]:
         """Yield Open WebUI chunks while the SDK owns Response accumulation."""
         try:
-            model_id, input_items = await self._request_input(
+            model_id, input_items, previous_response_id = await self._request_input(
                 body, __metadata__, __files__
             )
         except InterruptCancelled:
@@ -155,6 +155,7 @@ class Pipe:
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
                 model_prefixes=gateway.model_prefixes,
+                previous_response_id=previous_response_id,
             )
             async with _client(
                 base_url=gateway.responses_base_url,
@@ -202,7 +203,11 @@ class Pipe:
                             )
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
-                        yield _openwebui_interrupt_chunk(model_id, calls)
+                        yield _openwebui_interrupt_chunk(
+                            model_id,
+                            response.id,
+                            calls,
+                        )
                         return
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
                         raise ValueError(
@@ -220,6 +225,7 @@ class Pipe:
                         )
                         for call in calls
                     ]
+                    request.pop("previous_response_id", None)
                     request["input"].extend(_responses_continuation(response, outputs))
         except (ValueError, RuntimeError, OpenAIError) as exc:
             yield _error(f"Responses request failed: {exc}")
@@ -236,7 +242,7 @@ class Pipe:
         """Return native Pipe text or an ask-user call from Responses output."""
         answer_parts: list[str] = []
         try:
-            model_id, input_items = await self._request_input(
+            model_id, input_items, previous_response_id = await self._request_input(
                 body, __metadata__, __files__
             )
         except InterruptCancelled:
@@ -253,6 +259,7 @@ class Pipe:
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
                 model_prefixes=gateway.model_prefixes,
+                previous_response_id=previous_response_id,
             )
             async with _client(
                 base_url=gateway.responses_base_url,
@@ -268,7 +275,12 @@ class Pipe:
                     if not calls:
                         return "".join(answer_parts)
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
-                        return _openwebui_interrupt_completion(model_id, calls)
+                        return _openwebui_interrupt_completion(
+                            model_id,
+                            response.id,
+                            calls,
+                            content="".join(answer_parts),
+                        )
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
                         raise ValueError(
                             "LangGraph API returned a mixed function-call batch."
@@ -285,6 +297,7 @@ class Pipe:
                         )
                         for call in calls
                     ]
+                    request.pop("previous_response_id", None)
                     request["input"].extend(_responses_continuation(response, outputs))
         except (ValueError, RuntimeError, OpenAIError) as exc:
             return _error(f"Responses request failed: {exc}")
@@ -294,7 +307,7 @@ class Pipe:
         body: dict[str, Any],
         metadata: dict[str, Any] | None,
         files: list[dict[str, Any]] | None,
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> tuple[str, list[dict[str, Any]], str | None]:
         model_id = _model_id(body)
         gateway = self._gateway()
         _model_request(
@@ -305,7 +318,8 @@ class Pipe:
         raw_messages = body.get("messages")
         messages = raw_messages if isinstance(raw_messages, list) else []
         if resume := _ask_user_to_resume(messages):
-            return model_id, resume
+            input_items, previous_response_id = resume
+            return model_id, input_items, previous_response_id
         messages = await _with_response_file_parts(
             messages,
             files,
@@ -315,7 +329,7 @@ class Pipe:
             timeout=self.valves.OPENAI_API_TIMEOUT,
             provider=gateway.files_provider,
         )
-        return model_id, _responses_input(messages)
+        return model_id, _responses_input(messages), None
 
     def _gateway(self) -> GatewayConfig:
         return gateway_config(

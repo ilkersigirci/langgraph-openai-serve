@@ -1,7 +1,6 @@
 """Protocol-neutral models for interrupt-enabled graph runs."""
 
 from dataclasses import dataclass
-from typing import Any
 
 from langgraph.types import Interrupt
 
@@ -12,7 +11,7 @@ class InterruptResume:
 
     run_id: str
     state_token: str
-    values: dict[str, Any]
+    values: dict[str, str]
 
 
 @dataclass(frozen=True)

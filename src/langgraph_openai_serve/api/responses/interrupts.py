@@ -1,95 +1,153 @@
-"""OpenAI Responses codec for LangGraph interrupt continuations."""
+"""OpenAI Responses encoding for LangGraph interrupt continuations."""
+
+import json
+import re
+import uuid
+from typing import Any
 
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseFunctionCallInput,
     ResponseFunctionCallOutputInput,
     ResponseInputItem,
 )
-from langgraph_openai_serve.graph.interrupt.codec import (
-    INTERRUPT_TOOL_NAME,
-    InterruptToolCall,
-    InterruptToolOutput,
-    is_interrupt_tool_call_id,
-    parse_interrupt_exchange,
-)
 from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+
+INTERRUPT_TOOL_NAME = "langgraph_interrupt"
+_INTERRUPT_CALL_PREFIX = "call_lg_"
+_INTERRUPT_RESPONSE_PREFIX = "resp_lg_"
+_STATE_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_RESPONSE_ID_PATTERN = re.compile(
+    rf"^{_INTERRUPT_RESPONSE_PREFIX}(?P<run>[0-9a-f]{{32}})_[0-9a-f]{{32}}$"
+)
+
+
+def interrupt_response_id(run_id: str) -> str:
+    """Create a unique Response ID that carries its interrupt run identity."""
+    return f"{_INTERRUPT_RESPONSE_PREFIX}{uuid.UUID(run_id).hex}_{uuid.uuid4().hex}"
+
+
+def interrupt_tool_call_id(interrupt_id: str, state_token: str) -> str:
+    """Bind one interrupt ID to the durable checkpoint generation."""
+    if not interrupt_id:
+        msg = "LangGraph interrupt IDs must be non-empty strings."
+        raise ValueError(msg)
+    if _STATE_TOKEN_PATTERN.fullmatch(state_token) is None:
+        msg = "LangGraph interrupt state tokens must be SHA-256 hex digests."
+        raise ValueError(msg)
+    return f"{_INTERRUPT_CALL_PREFIX}{state_token}_{interrupt_id}"
+
+
+def interrupt_arguments(payload: dict[str, Any]) -> str:
+    """Encode one validated interrupt payload as function-call arguments."""
+    try:
+        return json.dumps(payload, allow_nan=False, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        msg = "LangGraph interrupt payloads must be valid JSON values."
+        raise ValueError(msg) from exc
 
 
 def parse_responses_resume(
     input_value: str | list[ResponseInputItem],
+    *,
+    previous_response_id: str | None = None,
 ) -> InterruptResume | None:
-    """Parse a trailing canonical interrupt function call/output exchange."""
+    """Parse the sole supported interrupt continuation form."""
+    if previous_response_id is None:
+        _reject_interrupt_items_without_response_id(input_value)
+        return None
     if isinstance(input_value, str):
-        return None
-
-    output_start = _trailing_output_start(input_value)
-    if output_start is None:
-        return None
-
-    outputs = input_value[output_start:]
-    call_start = output_start
-    while call_start > 0 and isinstance(
-        input_value[call_start - 1],
-        ResponseFunctionCallInput,
-    ):
-        call_start -= 1
-    calls = input_value[call_start:output_start]
-
-    if not calls:
-        if any(_is_interrupt_output(item) for item in outputs):
-            msg = "Interrupt function outputs must follow their function calls."
-            raise InvalidResumeRequestError(msg)
-        return None
-
-    interrupt_calls = [
+        msg = (
+            "Interrupt resumes require only function_call_output input items for "
+            "the previous Response."
+        )
+        raise InvalidResumeRequestError(msg)
+    outputs = [
         item
-        for item in calls
-        if isinstance(item, ResponseFunctionCallInput)
-        and item.name == INTERRUPT_TOOL_NAME
+        for item in input_value
+        if isinstance(item, ResponseFunctionCallOutputInput)
     ]
-    if not interrupt_calls:
-        if any(_is_interrupt_output(item) for item in outputs):
-            msg = "Interrupt function outputs must follow their function calls."
-            raise InvalidResumeRequestError(msg)
-        return None
-    if len(interrupt_calls) != len(calls):
-        msg = "Interrupt and ordinary function calls cannot be resumed together."
+    if len(outputs) != len(input_value):
+        msg = (
+            "Interrupt resumes require only function_call_output input items for "
+            "the previous Response."
+        )
         raise InvalidResumeRequestError(msg)
 
-    return parse_interrupt_exchange(
-        [
-            InterruptToolCall(
-                call_id=call.call_id,
-                name=call.name,
-                arguments=call.arguments,
-            )
-            for call in interrupt_calls
-        ],
-        [
-            InterruptToolOutput(call_id=output.call_id, output=output.output)
-            for output in outputs
-            if isinstance(output, ResponseFunctionCallOutputInput)
-        ],
+    run_id = _parse_interrupt_response_id(previous_response_id)
+    state_token: str | None = None
+    values: dict[str, str] = {}
+    for output in outputs:
+        output_token, interrupt_id = _parse_interrupt_tool_call_id(output.call_id)
+        if state_token is None:
+            state_token = output_token
+        elif output_token != state_token:
+            msg = "Interrupt outputs must belong to one checkpoint generation."
+            raise InvalidResumeRequestError(msg)
+        if interrupt_id in values:
+            msg = "Interrupt function_call_output call_id values must be unique."
+            raise InvalidResumeRequestError(msg)
+        values[interrupt_id] = output.output
+
+    if state_token is None:  # Response input lists are non-empty by schema.
+        msg = "Interrupt resumes require at least one function_call_output item."
+        raise InvalidResumeRequestError(msg)
+    return InterruptResume(
+        run_id=run_id,
+        state_token=state_token,
+        values=values,
     )
 
 
-def _trailing_output_start(items: list[ResponseInputItem]) -> int | None:
-    if not items or not isinstance(items[-1], ResponseFunctionCallOutputInput):
-        return None
-    index = len(items) - 1
-    while index > 0 and isinstance(
-        items[index - 1],
-        ResponseFunctionCallOutputInput,
+def _reject_interrupt_items_without_response_id(
+    input_value: str | list[ResponseInputItem],
+) -> None:
+    if isinstance(input_value, str):
+        return
+    if any(
+        (
+            isinstance(item, ResponseFunctionCallInput)
+            and item.name == INTERRUPT_TOOL_NAME
+        )
+        or (
+            isinstance(item, ResponseFunctionCallOutputInput)
+            and item.call_id.startswith(_INTERRUPT_CALL_PREFIX)
+        )
+        for item in input_value
     ):
-        index -= 1
-    return index
+        msg = "Interrupt resumes require previous_response_id."
+        raise InvalidResumeRequestError(msg)
 
 
-def _is_interrupt_output(item: ResponseInputItem) -> bool:
-    return isinstance(item, ResponseFunctionCallOutputInput) and (
-        is_interrupt_tool_call_id(item.call_id)
-    )
+def _parse_interrupt_response_id(response_id: str) -> str:
+    match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
+    if match is None:
+        msg = "previous_response_id is not an LGOS interrupt Response ID."
+        raise InvalidResumeRequestError(msg, param="previous_response_id")
+    return str(uuid.UUID(hex=match.group("run")))
 
 
-__all__ = ["parse_responses_resume"]
+def _parse_interrupt_tool_call_id(call_id: str) -> tuple[str, str]:
+    if not call_id.startswith(_INTERRUPT_CALL_PREFIX):
+        msg = "Interrupt function_call_output call_id is invalid."
+        raise InvalidResumeRequestError(msg)
+    state_token, separator, interrupt_id = call_id.removeprefix(
+        _INTERRUPT_CALL_PREFIX
+    ).partition("_")
+    if (
+        not separator
+        or not interrupt_id
+        or _STATE_TOKEN_PATTERN.fullmatch(state_token) is None
+    ):
+        msg = "Interrupt function_call_output call_id is invalid."
+        raise InvalidResumeRequestError(msg)
+    return state_token, interrupt_id
+
+
+__all__ = [
+    "INTERRUPT_TOOL_NAME",
+    "interrupt_arguments",
+    "interrupt_response_id",
+    "interrupt_tool_call_id",
+    "parse_responses_resume",
+]

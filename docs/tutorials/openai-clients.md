@@ -167,7 +167,8 @@ useful but do not treat that client as a full advanced-UI integration.
 ## Manage Conversation State
 
 LGOS does not persist Response objects or Conversations. It rejects
-`store=True`, `previous_response_id`, `conversation`, and background mode.
+`store=True`, `conversation`, and background mode (`previous_response_id` is
+supported only for resuming interruptible graphs).
 Keep an input ledger and resend the items needed by each turn:
 
 ```python
@@ -282,28 +283,26 @@ paused = client.responses.create(
 calls = [item for item in paused.output if item.type == "function_call"]
 if not calls:
     raise RuntimeError("The graph completed without interrupting")
-
-input_items.extend(item.model_dump(mode="json") for item in paused.output)
-input_items.extend(
-    {
-        "type": "function_call_output",
-        "call_id": call.call_id,
-        "output": json.dumps({"resume": collect_answer(call)}),
-    }
-    for call in calls
-)
-
+# Resume using standard previous_response_id:
 completed = client.responses.create(
     model="interruptible",
-    input=input_items,
+    previous_response_id=paused.id,
+    input=[
+        {
+            "type": "function_call_output",
+            "call_id": call.call_id,
+            "output": collect_answer(call),
+        }
+        for call in calls
+    ],
     metadata=metadata,
     store=False,
 )
 ```
 
-Do not resume a subset, synthesize a new call, or replay only the visible
-question. Persist the canonical returned items before asking the user so a
-reconnect can reproduce the request. Runtime settings remain per-request and
+Do not resume a subset, synthesize a new call, or send only the visible
+question. Persist `paused.id` and the returned calls before asking the user so
+a reconnect can reproduce the request. Runtime settings remain per-request and
 must be resent. See
 [Tool Calls And Interrupts](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for stale-state conflicts and recovery boundaries.
@@ -349,13 +348,10 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-This route shares the same graph runner but has its own protocol adapter. Direct
-Chat clients can opt into the namespaced client-event extension (`status`,
-`progress`, and `artifact`) with
-`metadata.langgraph_stream_events="v1"`; maintained demo UIs do not use that
-transport. A schema-normalizing proxy may discard extension-only Chat chunks,
-so use standard Responses commentary, function calls, and Files for portable
-advanced UI behavior.
+This route shares the same graph runner but has its own protocol adapter. Chat
+Completions is suited for simple graphs and tool calls. For advanced workflows
+such as streaming status commentary, checkpointed persistence, or interrupts,
+use the Responses API (`/v1/responses`).
 
 ## Diagnostics
 

@@ -15,7 +15,7 @@ from chainlit_utils.chat import (
 from openai.types.responses import Response, ResponseInputParam
 
 from lgos_chainlit.auth import register_auth_callback
-from lgos_chainlit.lgos_protocol import model_description
+from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
 from lgos_chainlit.utils.chat import LIMITED_FUNCTIONALITY_MESSAGE, session_metadata
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
@@ -141,6 +141,14 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     await assistant_message.update()
                 await commentary_tasks.complete()
                 return
+
+            if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
+                msg = (
+                    f"Model '{upstream_model}' requested human review ('{INTERRUPT_TOOL_NAME}'). "
+                    "The standard Chainlit UI does not support interactive interrupts. "
+                    "Please run Chainlit with DEMO_CHAINLIT_UI_FILE=hitl to interact with interruptible graphs."
+                )
+                raise RuntimeError(msg)
 
             outputs = [await display_file(call) for call in calls]
             input_items.extend(continuation_input(response, outputs))

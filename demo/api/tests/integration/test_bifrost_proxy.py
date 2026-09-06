@@ -224,16 +224,16 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
         call = paused.output[0]
         assert isinstance(call, ResponseFunctionToolCall)
         arguments = json.loads(call.arguments)
-        assert arguments["payload"]["action"] == "refund"
+        assert arguments["action"] == "refund"
 
         completed = await client.responses.create(
             model="interruptible-approval",
+            previous_response_id=paused.id,
             input=[
-                *paused.output,
                 {
                     "type": "function_call_output",
                     "call_id": call.call_id,
-                    "output": json.dumps({"resume": "approve"}),
+                    "output": "approve",
                 },
             ],
             store=False,

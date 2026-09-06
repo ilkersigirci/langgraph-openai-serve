@@ -1,4 +1,4 @@
-"""Validation shared by interrupt codecs and graph execution."""
+"""Validate graph-authored LangGraph interrupt payloads."""
 
 import json
 from typing import Any
@@ -7,7 +7,10 @@ from langgraph_openai_serve.graph.interrupt.errors import InvalidInterruptPayloa
 
 
 def validate_interrupt_payload(payload: Any) -> None:
-    """Reject graph values that cannot cross a JSON protocol boundary."""
+    """Require function-call arguments containing valid JSON object values."""
+    if not isinstance(payload, dict):
+        msg = "LangGraph interrupt payloads must be JSON objects."
+        raise InvalidInterruptPayloadError(msg)
     try:
         json.dumps(payload, allow_nan=False)
     except (TypeError, ValueError) as exc:

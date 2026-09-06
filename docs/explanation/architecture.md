@@ -111,10 +111,9 @@ Endpoint paths and settings live in [Reference](../reference.md).
 6. LGOS releases any interrupt lease and renders a protocol-specific OpenAI
    object or SSE sequence.
 
-The function-call item or Chat tool-call message is part of the client-owned
-ledger. A UI that supports reconnectable interrupt input persists the exact
-returned item and matching result; the backend does not become a general
-chat-history database.
+The paused Response ID and interrupt function-call items are client-owned. A UI
+that supports reconnectable interrupt input persists both before asking for a
+result; the backend does not become a general chat-history database.
 
 See [LangGraph Integration](langgraph-integration.md) for adapter and runner
 details, [OpenAI compatibility](openai-compatibility.md#tool-calls-and-interrupts)

@@ -61,7 +61,7 @@ def graph_errors(*, input_param: Literal["input", "messages"]) -> Iterator[None]
             case ClientSettingsValidationError():
                 param = exc.param
             case InvalidResumeRequestError():
-                param = input_param
+                param = exc.param or input_param
         raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             error=ErrorObject(

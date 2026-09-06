@@ -15,10 +15,15 @@ from openai.types.responses import (
 )
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
+RESPONSE_ID = f"resp_lg_{RUN_ID.replace('-', '')}_{'b' * 32}"
 
 
-def response(*output: object) -> Response:
-    return Response.model_construct(status="completed", output=list(output))
+def response(*output: object, response_id: str = RESPONSE_ID) -> Response:
+    return Response.model_construct(
+        id=response_id,
+        status="completed",
+        output=list(output),
+    )
 
 
 def final_response(content: str) -> Response:
@@ -45,16 +50,13 @@ def interrupt_call(
     suffix: str,
     payload: object,
     *,
-    state_token: str = "state-token-1",
+    state_token: str = "a" * 64,
 ) -> ResponseFunctionToolCall:
     return ResponseFunctionToolCall(
         id=f"fc_{suffix}",
-        call_id=f"lg_interrupt_{suffix}",
+        call_id=f"call_lg_{state_token}_{suffix}",
         name="langgraph_interrupt",
-        arguments=json.dumps(
-            {"run_id": RUN_ID, "state_token": state_token, "payload": payload},
-            separators=(",", ":"),
-        ),
+        arguments=json.dumps(payload, separators=(",", ":")),
         status="completed",
         type="function_call",
     )
@@ -140,7 +142,7 @@ async def test_handle_message_uploads_files_and_uses_responses(
     assert created[-1].content == "Done."
 
 
-async def test_interrupt_batch_replays_calls_before_small_outputs(
+async def test_interrupt_batch_uses_previous_response_id_with_small_outputs(
     monkeypatch: pytest.MonkeyPatch,
     hitl: Any,
 ) -> None:
@@ -165,19 +167,17 @@ async def test_interrupt_batch_replays_calls_before_small_outputs(
 
     continuation = create.await_args_list[1].args[0]
     assert [item["type"] for item in continuation] == [
-        "function_call",
-        "function_call",
         "function_call_output",
         "function_call_output",
     ]
     assert [item["call_id"] for item in continuation] == [
         calls[0].call_id,
         calls[1].call_id,
-        calls[0].call_id,
-        calls[1].call_id,
     ]
-    assert json.loads(continuation[2]["output"]) == {"resume": "approve"}
+    assert continuation[0]["output"] == "approve"
+    assert create.await_args_list[1].kwargs["previous_response_id"] == RESPONSE_ID
     ledger = writes[0][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]
+    assert ledger["response_id"] == RESPONSE_ID
     assert ledger["function_calls"] == [
         call.model_dump(mode="json", exclude_none=True) for call in calls
     ]
@@ -191,14 +191,16 @@ def test_pending_ledger_round_trips_response_function_calls(hitl: Any) -> None:
         "schema_version": hitl.INTERRUPT_LEDGER_SCHEMA_VERSION,
         "status": hitl.PENDING_LEDGER_STATUS,
         "model_id": "lgos-a/hitl",
+        "response_id": RESPONSE_ID,
         "function_calls": [
             call.model_dump(mode="json", exclude_none=True) for call in calls
         ],
     }
 
-    model_id, restored = hitl.parse_interrupt_ledger_metadata(raw)
+    model_id, response_id, restored = hitl.parse_interrupt_ledger_metadata(raw)
 
     assert model_id == "lgos-a/hitl"
+    assert response_id == RESPONSE_ID
     assert restored == calls
 
 
@@ -216,17 +218,20 @@ async def test_resumed_ledger_uses_responses_continuation(
 
     await hitl.resolve_interrupts(
         response_calls=[call],
+        response_id=RESPONSE_ID,
         model_id="lgos-a/hitl",
         ledger_message=ledger_message,
     )
 
     continuation = create.await_args.args[0]
-    assert continuation[0]["type"] == "function_call"
-    assert continuation[1] == {
-        "type": "function_call_output",
-        "call_id": call.call_id,
-        "output": '{"resume":"approve"}',
-    }
+    assert continuation == [
+        {
+            "type": "function_call_output",
+            "call_id": call.call_id,
+            "output": "approve",
+        }
+    ]
+    assert create.await_args.kwargs["previous_response_id"] == RESPONSE_ID
     assert created[-1].content == "Resumed."
 
 
@@ -292,7 +297,11 @@ async def test_failed_response_keeps_pending_interrupt_ledger(monkeypatch, hitl)
     monkeypatch.setattr(hitl, "ask_for_resume", AsyncMock(return_value="approve"))
 
     with pytest.raises(RuntimeError, match="Resume failed"):
-        await hitl.resolve_interrupts(response_calls=calls, model_id="hitl")
+        await hitl.resolve_interrupts(
+            response_calls=calls,
+            response_id=RESPONSE_ID,
+            model_id="hitl",
+        )
 
     assert writes[-1][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]["status"] == "pending"
     assert len(created) == 1

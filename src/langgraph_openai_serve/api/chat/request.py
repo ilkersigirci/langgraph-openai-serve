@@ -7,8 +7,6 @@ from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionRequest,
     ChatToolChoice,
 )
-from langgraph_openai_serve.api.chat.utils.interrupts import parse_resume_request
-from langgraph_openai_serve.graph.interrupt.models import InterruptResume
 from langgraph_openai_serve.graph.request import (
     ClientFunctionTool,
     ClientToolChoice,
@@ -19,9 +17,8 @@ from langgraph_openai_serve.graph.request import (
 
 def decode_chat_request(
     request: ChatCompletionRequest,
-) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
+) -> tuple[GraphRequest, list[BaseMessage]]:
     """Normalize one Chat Completions request for graph execution."""
-    resume = parse_resume_request(request.messages)
     graph_request = GraphRequest(
         model=request.model,
         metadata=dict(request.metadata or {}),
@@ -45,7 +42,6 @@ def decode_chat_request(
     return (
         graph_request,
         convert_to_lc_messages(request.messages),
-        resume,
     )
 
 
