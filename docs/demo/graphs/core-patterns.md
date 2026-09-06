@@ -60,6 +60,11 @@ so each adapter or streaming behavior is visible on its own.
 
 ## Request Flow
 
+Each maintained demo UI sends a standard request through LGOS
+`/v1/responses`. After LGOS decodes the OpenAI input, each selected graph uses
+the graph-specific path below and returns standard assistant output through the
+same endpoint.
+
 ### custom-input-output-context
 
 This deterministic graph demonstrates all three `GraphConfig` adapters around

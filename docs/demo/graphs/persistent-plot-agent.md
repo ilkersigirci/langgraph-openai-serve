@@ -36,24 +36,28 @@ identifier as `metadata.session_id`.
 ```mermaid
 sequenceDiagram
   participant UI as Chainlit / Open WebUI
-  participant LGOS as LGOS /v1/responses
-  participant Agent as Agent and tools
+  box LGOS API process
+    participant API as /v1/responses
+    participant Graph as persistent-plot-agent graph
+  end
   participant Store as AsyncPostgresStore
   participant Files as OpenAI Files API
 
-  UI->>LGOS: input + display_file tool + user + session_id
-  LGOS->>LGOS: validate settings and build request context
-  LGOS->>Agent: messages + request context
-  Agent->>Store: aget chart document
+  UI->>API: input + display_file tool + user + session_id
+  API->>API: Validate settings and build request context
+  API->>Graph: Messages + request context
+  Graph->>Store: aget chart document
   alt update requested and values changed
-    Agent->>Store: aput complete document once
+    Graph->>Store: aput complete document once
   end
-  Agent->>Files: upload Plotly JSON
-  Agent-->>LGOS: display_file(file_id, ...) function call
-  LGOS-->>UI: standard Response function_call item
-  UI->>Files: download Plotly JSON
-  UI->>LGOS: prior input + function_call + function_call_output
-  LGOS-->>UI: final answer
+  Graph->>Files: Upload Plotly JSON
+  Graph-->>API: display_file(file_id, ...) function call
+  API-->>UI: Standard Response function_call item
+  UI->>Files: Download Plotly JSON
+  UI->>API: Prior input + function_call + function_call_output
+  API->>Graph: Replayed messages + function_call_output
+  Graph-->>API: Final assistant message
+  API-->>UI: Final assistant text
 ```
 
 For each request:
@@ -129,8 +133,8 @@ See the [Chainlit](../chainlit.md) and
 Those UI records are presentation snapshots; the Store remains the source of
 canonical revenue values.
 
-The small tool output acknowledges display only; it does not echo bytes or
-canonical revenue data into the model
+The client's small `function_call_output` (`{"displayed":true}`) acknowledges
+display only; it does not echo bytes or canonical revenue data into the model
 transcript. Both streaming and non-streaming Responses requests use the same
 function-call continuation contract.
 

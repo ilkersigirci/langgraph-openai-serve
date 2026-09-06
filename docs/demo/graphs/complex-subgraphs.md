@@ -32,7 +32,7 @@ graph TD;
 
 ```mermaid
 flowchart TD
-  request([OpenAI user message]) --> adapter["request_to_input"]
+  request(["UI → LGOS /v1/responses<br/>User message"]) --> adapter["request_to_input"]
   adapter --> route["Normalize question and select route"]
 
   subgraph api["API contract subgraph"]
@@ -50,7 +50,7 @@ flowchart TD
   route -->|"other questions"| extract
   api_summary --> output["final assistant message"]
   docs_summary --> output
-  output --> response([OpenAI assistant text])
+  output --> response(["LGOS /v1/responses → UI<br/>Assistant text"])
 ```
 
 LGOS exposes the answer-producing nested nodes `summarize_contract` and

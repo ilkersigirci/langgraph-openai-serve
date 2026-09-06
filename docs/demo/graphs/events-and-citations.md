@@ -37,8 +37,8 @@ without turning UI notifications into tool calls.
 
 ## Request Flow
 
-1. A maintained demo UI sends a standard Responses request to `citation-events`
-   or `status-events`.
+1. A maintained demo UI sends a standard request through LGOS
+   `/v1/responses` to `citation-events` or `status-events`.
 2. `citation-events` returns portable Markdown plus standard OpenAI
    `url_citation` annotations.
 3. `status-events` publishes passive updates through LangGraph's stream writer

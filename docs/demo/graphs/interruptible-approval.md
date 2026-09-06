@@ -4,9 +4,9 @@
 state. It is a deterministic production-pattern example: a refund rejection
 ends the workflow, while approval leads to simulated refund execution and an
 automatic customer notification. A custom response records reviewer feedback
-without executing either action. The interrupt crosses `/v1` as a standard tool
-call, so clients can collect the human response without understanding the graph
-topology.
+without executing either action. The interrupt crosses `/v1/responses` as a
+standard tool call, so clients can collect the human response without
+understanding the graph topology.
 
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
@@ -28,21 +28,24 @@ graph TD;
   notify_customer --> finish;
 ```
 
-## Interrupt Flow
+## Request Flow
 
 ```mermaid
 sequenceDiagram
   actor User
-  participant UI as Chainlit or Open WebUI
-  participant API as LGOS /v1
-  participant Graph
+  participant UI as Chainlit / Open WebUI
+  box LGOS API process
+    participant API as /v1/responses
+    participant Graph as interruptible-approval graph
+  end
   participant DB as PostgreSQL checkpointer
 
   User->>UI: Request protected action
   UI->>API: Initial Responses request
   API->>Graph: Invoke under run coordinator
   Graph->>DB: Save refund pause
-  Graph-->>UI: Refund review tool call via API
+  Graph-->>API: Refund review function call
+  API-->>UI: Standard Response function_call item
   User-->>UI: Approve, reject, or enter feedback
   UI->>API: previous_response_id + output batch
   API->>Graph: Resume from checkpoint
@@ -54,7 +57,7 @@ sequenceDiagram
   end
   Graph-->>API: Terminal result
   API->>DB: Delete checkpoint
-  API-->>UI: Final assistant response
+  API-->>UI: Final assistant text
 ```
 
 ## PostgreSQL Runtime

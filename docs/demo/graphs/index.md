@@ -20,7 +20,7 @@ demo model catalogs.
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`hosted-tool`](hosted-tool.md) | A client-requested time tool executed on LGOS | None | Upstream chat model |
-| [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
+| [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | `client_events` | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it
