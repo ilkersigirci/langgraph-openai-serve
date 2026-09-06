@@ -49,8 +49,9 @@ services:
       OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-litellm}
       DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-litellm}:4000
       DEMO_CHAINLIT_OPENAI__API_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
-      DEMO_CHAINLIT_HITL_MODEL: interruptible-approval
-      # DEMO_CHAINLIT_UI_FILE: hitl # NOTE: To select HITL chainlit file
+      ## HITL ##
+      # DEMO_CHAINLIT_UI_FILE: hitl
+      # DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
       interval: 10s
