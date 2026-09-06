@@ -10,6 +10,7 @@ from anyio import CancelScope
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
 from langchain_core.messages import BaseMessage, UsageMetadata
+from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
@@ -64,14 +65,10 @@ class GraphRun:
 
     def usage_metadata(self) -> UsageMetadata | None:
         """Return provider-reported usage aggregated across the graph run."""
-        usages = self.usage_callback.usage_metadata.values()
-        if not usages:
-            return None
-        return UsageMetadata(
-            input_tokens=sum(usage["input_tokens"] for usage in usages),
-            output_tokens=sum(usage["output_tokens"] for usage in usages),
-            total_tokens=sum(usage["total_tokens"] for usage in usages),
-        )
+        total = None
+        for usage in self.usage_callback.usage_metadata.values():
+            total = add_usage(total, usage)
+        return total
 
 
 async def prepare_run(

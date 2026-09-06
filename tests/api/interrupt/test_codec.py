@@ -1,12 +1,9 @@
 """Unit coverage for the Responses interrupt continuation codec."""
 
-import json
-
 import pytest
 
 from langgraph_openai_serve.api.responses.interrupts import (
     INTERRUPT_TOOL_NAME,
-    interrupt_arguments,
     interrupt_response_id,
     interrupt_tool_call_id,
     parse_responses_resume,
@@ -177,14 +174,3 @@ def test_interrupt_response_ids_are_unique_and_keep_run_identity() -> None:
     )
     assert resume is not None
     assert resume.run_id == RUN_ID
-
-
-def test_interrupt_arguments_are_compact_json() -> None:
-    assert interrupt_arguments({"question": "Approve?"}) == json.dumps(
-        {"question": "Approve?"}, separators=(",", ":")
-    )
-
-
-def test_interrupt_arguments_reject_non_json_values() -> None:
-    with pytest.raises(ValueError, match="valid JSON"):
-        interrupt_arguments({"value": float("nan")})

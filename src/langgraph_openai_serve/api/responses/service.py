@@ -26,7 +26,6 @@ from openai.types.responses.response_usage import (
 
 from langgraph_openai_serve.api.responses.interrupts import (
     INTERRUPT_TOOL_NAME,
-    interrupt_arguments,
     interrupt_response_id,
     interrupt_tool_call_id,
 )
@@ -55,6 +54,11 @@ async def generate_response(
     run: GraphRun,
 ) -> Response:
     """Invoke a graph and serialize its durable Responses output."""
+    context = (
+        ResponseContext(request=request, id=interrupt_response_id(run.run_id))
+        if run.run_id is not None
+        else ResponseContext(request=request)
+    )
     invocation = await invoke_run(run)
     output = invocation.output
     if isinstance(output, AIMessage):
@@ -63,11 +67,6 @@ async def generate_response(
     else:
         items = interrupt_output_items(output)
         usage = run.usage_metadata()
-    context = (
-        ResponseContext(request=request, id=interrupt_response_id(run.run_id))
-        if run.run_id is not None
-        else ResponseContext(request=request)
-    )
     return response_object(
         context,
         status="completed",
@@ -145,7 +144,7 @@ def interrupt_output_items(
                 state_token=batch.state_token,
             ),
             name=INTERRUPT_TOOL_NAME,
-            arguments=interrupt_arguments(interrupt.value),
+            arguments=_dump_arguments(interrupt.value),
         )
         for interrupt in batch.interrupts
     ]
@@ -192,7 +191,7 @@ def response_object(
             "created_at": context.created_at,
             "status": status,
             "background": False,
-            "completed_at": context.created_at if status == "completed" else None,
+            "completed_at": time.time() if status == "completed" else None,
             "error": error,
             "incomplete_details": None,
             "instructions": request.instructions,
@@ -253,14 +252,18 @@ def response_usage(usage: UsageMetadata | None) -> ResponseUsage | None:
     """Map provider-reported LangChain usage to Responses token details."""
     if usage is None:
         return None
+    input_details = usage.get("input_token_details", {})
+    output_details = usage.get("output_token_details", {})
     return ResponseUsage(
         input_tokens=usage["input_tokens"],
         input_tokens_details=InputTokensDetails(
-            cached_tokens=0,
-            cache_write_tokens=0,
+            cached_tokens=input_details.get("cache_read", 0),
+            cache_write_tokens=input_details.get("cache_creation", 0),
         ),
         output_tokens=usage["output_tokens"],
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+        output_tokens_details=OutputTokensDetails(
+            reasoning_tokens=output_details.get("reasoning", 0),
+        ),
         total_tokens=usage["total_tokens"],
     )
 

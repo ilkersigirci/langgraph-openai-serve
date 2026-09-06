@@ -33,31 +33,18 @@ async def test_unknown_timezone_is_actionable() -> None:
         (["lgos_current_time"], "none", False),
     ],
 )
-@pytest.mark.parametrize(
-    "tool_builder",
-    [
-        lambda name: (
-            {"type": "custom", "name": name}
-            if name.startswith("lgos_")
-            else {"type": "function", "name": name}
-        ),
-        lambda name: (
-            {"type": name}
-            if name.startswith("lgos_")
-            else {"type": "function", "name": name}
-        ),
-    ],
-)
 def test_only_the_requested_server_tool_is_enabled(
     names: list[str],
     choice: str | None,
     enabled: bool,
-    tool_builder: object,
 ) -> None:
     request = ResponseCreateRequest(
         model="hosted-tool",
         input="Time?",
-        tools=[tool_builder(name) for name in names],  # type: ignore[operator]
+        tools=[
+            {"type": "custom" if name.startswith("lgos_") else "function", "name": name}
+            for name in names
+        ],
         tool_choice=choice,
     )
     graph_request, messages, _ = decode_responses_request(request)

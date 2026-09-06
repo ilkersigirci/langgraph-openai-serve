@@ -78,14 +78,16 @@ async def test_function_tools_and_choices_reach_graph_adapter(
     assert response.tools[0].name == "get_weather"
 
 
-async def test_hosted_tools_are_rejected_explicitly(
+@pytest.mark.parametrize("tool_type", ["web_search_preview", "lgos_clock"])
+async def test_unsupported_tool_types_are_rejected_explicitly(
     openai_client: AsyncOpenAI,
+    tool_type: str,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.responses.create(
             model="test",
             input="Search.",
-            tools=[{"type": "web_search_preview"}],
+            tools=[{"type": tool_type}],
         )
 
     error = exc_info.value.response.json()["error"]
@@ -316,18 +318,10 @@ async def test_function_call_stream_matches_golden_lifecycle(
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize(
-    "tool_selector",
-    [
-        {"type": "custom", "name": "lgos_clock"},
-        {"type": "lgos_clock"},
-    ],
-)
 async def test_hosted_selector_reaches_graph_without_a_function_schema(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     stream: bool,
-    tool_selector: dict[str, str],
 ) -> None:
     received: list[GraphRequest] = []
 
@@ -345,7 +339,7 @@ async def test_hosted_selector_reaches_graph_without_a_function_schema(
         input="Time?",
         stream=stream,
         tools=[
-            tool_selector,
+            {"type": "custom", "name": "lgos_clock"},
             {"type": "function", "name": "client_tool"},
         ],
     )

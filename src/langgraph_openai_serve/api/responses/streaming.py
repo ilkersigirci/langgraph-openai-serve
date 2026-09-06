@@ -1,6 +1,5 @@
 """Assemble SDK-typed OpenAI Responses streaming events."""
 
-import json
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
@@ -27,6 +26,7 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputText,
     ResponseOutputTextAnnotationAddedEvent,
+    ResponseStreamEvent,
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
     ResponseUsage,
@@ -55,22 +55,6 @@ from langgraph_openai_serve.graph.utils import GraphRun
 logger = get_logger(__name__)
 
 _MessagePhase: TypeAlias = Literal["commentary", "final_answer"]
-_ResponseEvent: TypeAlias = (
-    ResponseCreatedEvent
-    | ResponseInProgressEvent
-    | ResponseOutputItemAddedEvent
-    | ResponseContentPartAddedEvent
-    | ResponseTextDeltaEvent
-    | ResponseFunctionCallArgumentsDeltaEvent
-    | ResponseFunctionCallArgumentsDoneEvent
-    | ResponseOutputTextAnnotationAddedEvent
-    | ResponseTextDoneEvent
-    | ResponseContentPartDoneEvent
-    | ResponseOutputItemDoneEvent
-    | ResponseCompletedEvent
-    | ResponseErrorEvent
-    | ResponseFailedEvent
-)
 
 
 @dataclass
@@ -121,7 +105,7 @@ class ResponsesStreamBuilder:
             response=self._response(status="in_progress"),
         )
 
-    def commentary(self, text: str) -> Iterator[_ResponseEvent]:
+    def commentary(self, text: str) -> Iterator[ResponseStreamEvent]:
         """
         Emit one complete commentary message lifecycle.
 
@@ -141,7 +125,7 @@ class ResponsesStreamBuilder:
         )
         yield from self._finish_text_item(item, part)
 
-    def final_delta(self, delta: str) -> Iterator[_ResponseEvent]:
+    def final_delta(self, delta: str) -> Iterator[ResponseStreamEvent]:
         """
         Emit one final-answer delta, opening its item if needed.
 
@@ -157,7 +141,7 @@ class ResponsesStreamBuilder:
         item.text_parts.append(delta)
         yield self._text_delta(item, delta)
 
-    def finish(self, message: AIMessage) -> Iterator[_ResponseEvent]:
+    def finish(self, message: AIMessage) -> Iterator[ResponseStreamEvent]:
         """
         Reconcile final text, finish its item, and complete the Response.
 
@@ -198,7 +182,7 @@ class ResponsesStreamBuilder:
         batch: LangGraphInterruptBatch,
         *,
         usage: ResponseUsage | None,
-    ) -> Iterator[_ResponseEvent]:
+    ) -> Iterator[ResponseStreamEvent]:
         """
         Emit a durable interrupt batch and complete the Response.
 
@@ -206,6 +190,11 @@ class ResponsesStreamBuilder:
             Typed function-call and terminal events.
 
         """
+        if self._final_item is not None:
+            yield from self._finish_text_item(
+                self._final_item,
+                response_output_text(AIMessage(content=self._final_item.text)),
+            )
         for call in interrupt_output_items(batch):
             yield from self._function_call(call)
         yield ResponseCompletedEvent(
@@ -214,7 +203,7 @@ class ResponsesStreamBuilder:
             response=self._response(status="completed", usage=usage),
         )
 
-    def failure(self, message: str) -> Iterator[_ResponseEvent]:
+    def failure(self, message: str) -> Iterator[ResponseStreamEvent]:
         """
         Emit the normative terminal failure sequence.
 
@@ -247,7 +236,7 @@ class ResponsesStreamBuilder:
         self._next_output_index += 1
         return item
 
-    def _start_text_item(self, item: _TextItem) -> Iterator[_ResponseEvent]:
+    def _start_text_item(self, item: _TextItem) -> Iterator[ResponseStreamEvent]:
         yield ResponseOutputItemAddedEvent(
             type="response.output_item.added",
             sequence_number=self._sequence(),
@@ -290,7 +279,7 @@ class ResponsesStreamBuilder:
         self,
         item: _TextItem,
         part: ResponseOutputText,
-    ) -> Iterator[_ResponseEvent]:
+    ) -> Iterator[ResponseStreamEvent]:
         for annotation_index, annotation in enumerate(part.annotations):
             yield ResponseOutputTextAnnotationAddedEvent(
                 type="response.output_text.annotation.added",
@@ -337,7 +326,7 @@ class ResponsesStreamBuilder:
     def _function_call(
         self,
         completed: ResponseFunctionToolCall,
-    ) -> Iterator[_ResponseEvent]:
+    ) -> Iterator[ResponseStreamEvent]:
         output_index = self._next_output_index
         self._next_output_index += 1
         if completed.id is None:
@@ -396,14 +385,9 @@ class ResponsesStreamBuilder:
         return sequence_number
 
 
-def encode_event(event: _ResponseEvent) -> str:
+def encode_event(event: ResponseStreamEvent) -> str:
     """Encode one Responses event using the official named SSE framing."""
-    payload = json.dumps(
-        event.model_dump(mode="json"),
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return f"event: {event.type}\ndata: {payload}\n\n"
+    return f"event: {event.type}\ndata: {event.model_dump_json()}\n\n"
 
 
 async def stream_response(
@@ -432,7 +416,7 @@ async def stream_response(
 async def _successful_events(
     builder: ResponsesStreamBuilder,
     run: GraphRun,
-) -> AsyncGenerator[_ResponseEvent, None]:
+) -> AsyncGenerator[ResponseStreamEvent, None]:
     """
     Adapt one successful graph stream to typed Responses events.
 
@@ -474,7 +458,7 @@ def _response_events(
     event: LangGraphStreamEvent,
     *,
     expose_status: bool,
-) -> Iterator[_ResponseEvent]:
+) -> Iterator[ResponseStreamEvent]:
     """
     Translate one non-final graph event.
 

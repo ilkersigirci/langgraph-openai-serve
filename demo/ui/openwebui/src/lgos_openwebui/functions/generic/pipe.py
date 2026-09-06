@@ -225,7 +225,10 @@ class Pipe:
                         )
                         for call in calls
                     ]
-                    request.pop("previous_response_id", None)
+                    if request.pop("previous_response_id", None) is not None:
+                        # Interrupt answers belong only to the paused checkpoint.
+                        # Client tools continue from the UI's transcript instead.
+                        request["input"] = _responses_input(body["messages"])
                     request["input"].extend(_responses_continuation(response, outputs))
         except (ValueError, RuntimeError, OpenAIError) as exc:
             yield _error(f"Responses request failed: {exc}")
@@ -297,7 +300,8 @@ class Pipe:
                         )
                         for call in calls
                     ]
-                    request.pop("previous_response_id", None)
+                    if request.pop("previous_response_id", None) is not None:
+                        request["input"] = _responses_input(body["messages"])
                     request["input"].extend(_responses_continuation(response, outputs))
         except (ValueError, RuntimeError, OpenAIError) as exc:
             return _error(f"Responses request failed: {exc}")

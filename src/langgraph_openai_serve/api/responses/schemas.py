@@ -143,13 +143,8 @@ class ResponseHostedTool(_ResponsesRequestModel):
 def _parse_tool(value: object) -> ResponseFunctionTool | ResponseHostedTool:
     if isinstance(value, (ResponseFunctionTool, ResponseHostedTool)):
         return value
-    if isinstance(value, dict):
-        if value.get("type") == "custom":
-            return ResponseHostedTool.model_validate(value)
-        if str(value.get("type", "")).startswith("lgos_"):
-            return ResponseHostedTool.model_validate(
-                {"type": "custom", "name": value["type"]}
-            )
+    if isinstance(value, dict) and value.get("type") == "custom":
+        return ResponseHostedTool.model_validate(value)
     return ResponseFunctionTool.model_validate(value)
 
 

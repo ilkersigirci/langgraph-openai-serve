@@ -213,7 +213,7 @@ not claim every field in the upstream OpenAI API.
 | `stream` | Supported with typed Responses SSE events. |
 | `store` | Omitted and false mean false; true is rejected. |
 | `text.format.type="text"` | Supported. |
-| `tools=[{"type": "custom", "name": "lgos_..."}]` | LGOS hosted-tool selector; selected graph must declare each identifier. Shorthand `{"type": "lgos_..."}` is also accepted. |
+| `tools=[{"type": "custom", "name": "lgos_..."}]` | LGOS hosted-tool selector; selected graph must declare each identifier. |
 | `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible graphs. |
 | `conversation`, `background: true` | Rejected because LGOS has no Responses conversation store or background lifecycle. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
@@ -425,8 +425,7 @@ Chat Completions returns HTTP 400 Bad Request.
 ### Hosted Tools
 
 Responses accepts LGOS hosted-tool selectors matching the OpenAI custom tool shape,
-such as `tools=[{"type": "custom", "name": "lgos_current_time"}]` (as well as
-shorthand `tools=[{"type": "lgos_current_time"}]`). Function schemas and
+such as `tools=[{"type": "custom", "name": "lgos_current_time"}]`. Function schemas and
 execution remain server-owned.
 
 A graph declares its supported identifiers in `GraphConfig.hosted_tools` and

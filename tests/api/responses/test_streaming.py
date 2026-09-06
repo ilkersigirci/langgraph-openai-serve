@@ -12,6 +12,7 @@ from langchain_core.messages.content import create_citation, create_text_block
 from langgraph.config import get_stream_writer
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
+from langgraph.types import interrupt
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseStreamEvent
 
@@ -185,7 +186,7 @@ async def test_text_stream_matches_golden_lifecycle_and_stable_identity(
     assert len({event.response.id for event in response_events}) == 1
     completed = response_events[-1].response
     assert completed.created_at == response_events[0].response.created_at
-    assert completed.completed_at == completed.created_at
+    assert completed.completed_at > completed.created_at
     assert completed.status == "completed"
     assert [item.phase for item in completed.output] == [
         "commentary",
@@ -419,3 +420,63 @@ async def test_interrupt_stream_completes_and_releases_run_lease(
     assert events[-1].response.output[0].name == "langgraph_interrupt"
     async with coordinator(checkpoint_key("interrupt", run_id)):
         pass
+
+
+async def test_text_before_interrupt_is_completed_and_retained(
+    openai_client: AsyncOpenAI,
+    fastapi_app: FastAPI,
+    sqlite_checkpointer: Any,
+) -> None:
+    model = FakeListChatModel(responses=["Please review this."])
+
+    async def generate(state: MessageState) -> dict[str, list[AIMessage]]:
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    def review(_state: MessageState) -> dict[str, list[AIMessage]]:
+        answer = interrupt({"question": "Approve?"})
+        return {"messages": [AIMessage(content=f"Reviewed: {answer}")]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("generate", generate)
+        .add_node("review", review)
+        .set_entry_point("generate")
+        .add_edge("generate", "review")
+        .set_finish_point("review")
+        .compile(checkpointer=sqlite_checkpointer)
+    )
+    fastapi_app.state.graph_registry.register(
+        "review",
+        GraphConfig(
+            graph=graph,
+            description="DUMMY",
+            streamable_node_names=["generate"],
+            features={GraphFeature.INTERRUPTS},
+            run_coordinator=InMemoryRunCoordinator(),
+        ),
+    )
+
+    async with openai_client.responses.stream(model="review", input="Hello") as stream:
+        events = [event async for event in stream]
+        paused = await stream.get_final_response()
+
+    assert paused.status == "completed"
+    assert [item.type for item in paused.output] == ["message", "function_call"]
+    assert paused.output_text == "Please review this."
+    done = [event for event in events if event.type == "response.output_item.done"]
+    assert [event.item.id for event in done] == [item.id for item in paused.output]
+    assert all(event.item.status == "completed" for event in done)
+    assert any(event.type == "response.output_text.done" for event in events)
+
+    resumed = await openai_client.responses.create(
+        model="review",
+        previous_response_id=paused.id,
+        input=[
+            {
+                "type": "function_call_output",
+                "call_id": paused.output[1].call_id,
+                "output": "approve",
+            }
+        ],
+    )
+    assert resumed.output_text == "Reviewed: approve"

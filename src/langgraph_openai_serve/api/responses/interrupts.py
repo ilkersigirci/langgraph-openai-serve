@@ -1,9 +1,7 @@
 """OpenAI Responses encoding for LangGraph interrupt continuations."""
 
-import json
 import re
 import uuid
-from typing import Any
 
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseFunctionCallInput,
@@ -36,15 +34,6 @@ def interrupt_tool_call_id(interrupt_id: str, state_token: str) -> str:
         msg = "LangGraph interrupt state tokens must be SHA-256 hex digests."
         raise ValueError(msg)
     return f"{_INTERRUPT_CALL_PREFIX}{state_token}_{interrupt_id}"
-
-
-def interrupt_arguments(payload: dict[str, Any]) -> str:
-    """Encode one validated interrupt payload as function-call arguments."""
-    try:
-        return json.dumps(payload, allow_nan=False, separators=(",", ":"))
-    except (TypeError, ValueError) as exc:
-        msg = "LangGraph interrupt payloads must be valid JSON values."
-        raise ValueError(msg) from exc
 
 
 def parse_responses_resume(
@@ -146,7 +135,6 @@ def _parse_interrupt_tool_call_id(call_id: str) -> tuple[str, str]:
 
 __all__ = [
     "INTERRUPT_TOOL_NAME",
-    "interrupt_arguments",
     "interrupt_response_id",
     "interrupt_tool_call_id",
     "parse_responses_resume",

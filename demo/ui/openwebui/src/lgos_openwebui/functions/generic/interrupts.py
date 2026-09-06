@@ -5,6 +5,7 @@ import json
 from typing import Any, cast
 
 from openai.types.responses import ResponseFunctionToolCall
+from pydantic import TypeAdapter
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
@@ -15,6 +16,8 @@ from .contracts import (
     INTERRUPT_TOOL_NAME,
     InterruptCancelled,
 )
+
+_INTERRUPT_CALLS = TypeAdapter(list[ResponseFunctionToolCall])
 
 
 def _ask_user_to_resume(
@@ -63,14 +66,16 @@ def _ask_user_to_resume(
         outputs.append(
             {
                 "type": "function_call_output",
-                "call_id": interrupt_call["call_id"],
+                "call_id": interrupt_call.call_id,
                 "output": _resume_value(answers.get(f"resume_{index}"), payload),
             }
         )
     return outputs, response_id
 
 
-def _decode_interrupt_cursor(call_id: str) -> tuple[str, list[dict[str, Any]]]:
+def _decode_interrupt_cursor(
+    call_id: str,
+) -> tuple[str, list[ResponseFunctionToolCall]]:
     try:
         encoded = call_id.removeprefix(ASK_USER_CALL_ID_PREFIX)
         padding = "=" * (-len(encoded) % 4)
@@ -91,17 +96,11 @@ def _decode_interrupt_cursor(call_id: str) -> tuple[str, list[dict[str, Any]]]:
     ):
         msg = "Open WebUI returned an invalid interrupt cursor."
         raise ValueError(msg)
-    for call in calls:
-        if (
-            not isinstance(call, dict)
-            or call.get("type") != "function_call"
-            or call.get("name") != INTERRUPT_TOOL_NAME
-            or not isinstance(call.get("call_id"), str)
-            or not isinstance(call.get("arguments"), str)
-        ):
-            msg = "Open WebUI returned an invalid interrupt cursor."
-            raise ValueError(msg)
-    return response_id, cast(list[dict[str, Any]], calls)
+    parsed_calls = _INTERRUPT_CALLS.validate_python(calls)
+    if any(call.name != INTERRUPT_TOOL_NAME for call in parsed_calls):
+        msg = "Open WebUI returned an invalid interrupt cursor."
+        raise ValueError(msg)
+    return response_id, parsed_calls
 
 
 def _interrupt_answers(content: object) -> dict[str, Any]:
@@ -144,7 +143,7 @@ def _interrupts_to_ask_user(
             raise ValueError(msg)
         item = call.model_dump(mode="json", exclude_none=True)
         stored_calls.append(item)
-        questions.append(_interrupt_question(_interrupt_payload(item), index))
+        questions.append(_interrupt_question(_interrupt_payload(call), index))
 
     cursor = json.dumps(
         {
@@ -253,10 +252,10 @@ def _openwebui_interrupt_completion(
     }
 
 
-def _interrupt_payload(call: dict[str, Any]) -> object:
+def _interrupt_payload(call: ResponseFunctionToolCall) -> dict[str, Any]:
     try:
-        arguments = json.loads(call["arguments"])
-    except (KeyError, TypeError, ValueError) as exc:
+        arguments = json.loads(call.arguments)
+    except (TypeError, ValueError) as exc:
         msg = "LangGraph API returned invalid interrupt tool arguments."
         raise ValueError(msg) from exc
     if not isinstance(arguments, dict):

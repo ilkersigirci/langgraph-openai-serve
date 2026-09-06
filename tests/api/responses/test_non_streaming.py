@@ -1,16 +1,19 @@
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     HumanMessage,
     SystemMessage,
 )
+from langgraph.graph import StateGraph
 from openai import AsyncOpenAI, BadRequestError, InternalServerError
 from starlette import status
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry, GraphRequest
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from tests.graph.support.message import make_message_graph
+from tests.graph.support.schemas import MessageState
 
 
 @pytest.mark.parametrize(
@@ -36,7 +39,7 @@ async def test_async_openai_creates_stateless_text_response(
     assert response.model == "test"
     assert response.output_text == "hello"
     assert response.background is False
-    assert response.completed_at == response.created_at
+    assert response.completed_at > response.created_at
     assert response.usage is None
     assert response.text is not None
     assert response.text.format is not None
@@ -219,36 +222,60 @@ async def test_empty_final_text_remains_a_completed_message(
     assert not response.output[0].content[0].text
 
 
+@pytest.mark.parametrize("stream", [False, True])
 async def test_provider_usage_maps_to_responses_details(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
+    stream: bool,
 ) -> None:
-    usage = {
-        "input_tokens": 3,
-        "output_tokens": 2,
-        "total_tokens": 5,
-    }
-    graph_registry.register(
-        "usage",
-        GraphConfig(
-            graph=make_message_graph(),
-            description="DUMMY",
-            output_to_message=lambda _output: AIMessage(
+    model = FakeMessagesListChatModel(
+        responses=[
+            AIMessage(
                 content="counted",
-                usage_metadata=usage,
-            ),
-        ),
+                response_metadata={"model_name": name},
+                usage_metadata={
+                    "input_tokens": 5,
+                    "output_tokens": 3,
+                    "total_tokens": 8,
+                    "input_token_details": {"cache_read": 2, "cache_creation": 1},
+                    "output_token_details": {"reasoning": 1},
+                },
+            )
+            for name in ("first-model", "second-model")
+        ]
     )
 
-    response = await openai_client.responses.create(model="usage", input="Hi")
+    async def generate(state: MessageState) -> dict[str, list[AIMessage]]:
+        await model.ainvoke(state["messages"])
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("generate", generate)
+        .set_entry_point("generate")
+        .set_finish_point("generate")
+        .compile()
+    )
+    graph_registry.register(
+        "usage",
+        GraphConfig(graph=graph, description="DUMMY"),
+    )
+
+    response = await openai_client.responses.create(
+        model="usage", input="Hi", stream=stream
+    )
+    if stream:
+        events = [event async for event in response]
+        response = events[-1].response
 
     assert response.usage is not None
-    assert response.usage.input_tokens == usage["input_tokens"]
-    assert response.usage.output_tokens == usage["output_tokens"]
-    assert response.usage.total_tokens == usage["total_tokens"]
-    assert response.usage.input_tokens_details.cached_tokens == 0
-    assert response.usage.input_tokens_details.cache_write_tokens == 0
-    assert response.usage.output_tokens_details.reasoning_tokens == 0
+    assert response.usage.model_dump() == {
+        "input_tokens": 10,
+        "output_tokens": 6,
+        "total_tokens": 16,
+        "input_tokens_details": {"cached_tokens": 4, "cache_write_tokens": 2},
+        "output_tokens_details": {"reasoning_tokens": 2},
+    }
 
 
 @pytest.mark.parametrize(

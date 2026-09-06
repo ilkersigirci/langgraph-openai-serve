@@ -501,9 +501,11 @@ async def test_response_maps_final_answer_annotations_to_persistent_sources(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("resume_interrupt", [False, True])
 async def test_display_file_continuation_preserves_input_and_all_final_text(
     monkeypatch: pytest.MonkeyPatch,
     streaming: bool,
+    resume_interrupt: bool,
 ) -> None:
     call = function_call(
         "display_file",
@@ -572,6 +574,26 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
             ],
         },
     ]
+    transcript = deepcopy(request_body["messages"])
+    if resume_interrupt:
+        ask_user = _interrupts_to_ask_user(RESPONSE_ID, [interrupt_call()])
+        request_body["messages"].extend(
+            [
+                {"role": "assistant", "content": None, "tool_calls": [ask_user]},
+                {
+                    "role": "tool",
+                    "tool_call_id": ask_user["id"],
+                    "content": json.dumps(
+                        {
+                            "status": "answered",
+                            "answers": {
+                                "resume_0": {"type": "option", "option_index": 0}
+                            },
+                        }
+                    ),
+                },
+            ]
+        )
 
     result = await collect(
         generic_pipe.Pipe().pipe(
@@ -585,9 +607,14 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         else result[0]
     )
     assert text == "Here is the chart. Chart ready."
-    assert requests[0]["input"] == request_body["messages"]
+    if resume_interrupt:
+        assert requests[0]["previous_response_id"] == RESPONSE_ID
+        assert requests[0]["input"][0]["type"] == "function_call_output"
+    else:
+        assert requests[0]["input"] == transcript
+    assert "previous_response_id" not in requests[1]
     assert requests[1]["input"] == [
-        *request_body["messages"],
+        *transcript,
         *expected_output,
         output,
     ]
