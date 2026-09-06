@@ -20,7 +20,6 @@ from openai.types.responses import (
     ResponseFunctionCallArgumentsDoneEvent,
     ResponseFunctionToolCall,
     ResponseInProgressEvent,
-    ResponseOutputItem,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseOutputMessage,
@@ -85,8 +84,7 @@ class ResponsesStreamBuilder:
         )
         self._context = ResponseContext(request=request, id=response_id)
         self._sequence_number = 0
-        self._next_output_index = 0
-        self._output: dict[int, ResponseOutputItem] = {}
+        self._output: list[ResponseOutputMessage | ResponseFunctionToolCall] = []
         self._final_item: _TextItem | None = None
 
     def created(self) -> ResponseCreatedEvent:
@@ -211,6 +209,21 @@ class ResponsesStreamBuilder:
             The error and failed Response events.
 
         """
+        # Keep the items already exposed to the client in the terminal snapshot.
+        # The SDK replaces its accumulated Response with response.failed.
+        item = self._final_item
+        if item is not None and self._output[item.output_index].status == "in_progress":
+            self._output[item.output_index] = self._output[
+                item.output_index
+            ].model_copy(
+                update={"content": [response_output_text(AIMessage(content=item.text))]}
+            )
+        self._output = [
+            item.model_copy(update={"status": "incomplete"})
+            if item.status == "in_progress"
+            else item
+            for item in self._output
+        ]
         yield ResponseErrorEvent(
             type="error",
             sequence_number=self._sequence(),
@@ -228,27 +241,27 @@ class ResponsesStreamBuilder:
         )
 
     def _new_text_item(self, phase: _MessagePhase) -> _TextItem:
-        item = _TextItem(
+        return _TextItem(
             id=f"msg_{uuid.uuid4().hex}",
-            output_index=self._next_output_index,
+            output_index=len(self._output),
             phase=phase,
         )
-        self._next_output_index += 1
-        return item
 
     def _start_text_item(self, item: _TextItem) -> Iterator[ResponseStreamEvent]:
+        message = ResponseOutputMessage(
+            id=item.id,
+            content=[],
+            role="assistant",
+            status="in_progress",
+            type="message",
+            phase=item.phase,
+        )
+        self._output.append(message)
         yield ResponseOutputItemAddedEvent(
             type="response.output_item.added",
             sequence_number=self._sequence(),
             output_index=item.output_index,
-            item=ResponseOutputMessage(
-                id=item.id,
-                content=[],
-                role="assistant",
-                status="in_progress",
-                type="message",
-                phase=item.phase,
-            ),
+            item=message,
         )
         yield ResponseContentPartAddedEvent(
             type="response.content_part.added",
@@ -327,19 +340,20 @@ class ResponsesStreamBuilder:
         self,
         completed: ResponseFunctionToolCall,
     ) -> Iterator[ResponseStreamEvent]:
-        output_index = self._next_output_index
-        self._next_output_index += 1
+        output_index = len(self._output)
         if completed.id is None:
             msg = "Responses function-call items must include an id."
             raise RuntimeError(msg)
 
+        pending = completed.model_copy(
+            update={"arguments": "", "status": "in_progress"}
+        )
+        self._output.append(pending)
         yield ResponseOutputItemAddedEvent(
             type="response.output_item.added",
             sequence_number=self._sequence(),
             output_index=output_index,
-            item=completed.model_copy(
-                update={"arguments": "", "status": "in_progress"}
-            ),
+            item=pending,
         )
         yield ResponseFunctionCallArgumentsDeltaEvent(
             type="response.function_call_arguments.delta",
@@ -374,7 +388,7 @@ class ResponsesStreamBuilder:
         return response_object(
             self._context,
             status=status,
-            output=[self._output[index] for index in sorted(self._output)],
+            output=self._output,
             error=error,
             usage=usage,
         )

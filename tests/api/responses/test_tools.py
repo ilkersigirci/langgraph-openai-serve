@@ -95,9 +95,11 @@ async def test_unsupported_tool_types_are_rejected_explicitly(
     assert error["param"] == "tools.0.type"
 
 
+@pytest.mark.parametrize("invalid_arguments", ["{", '{"value":NaN}', '{"value":1e999}'])
 async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
+    invalid_arguments: str,
 ) -> None:
     received: list[list[BaseMessage]] = []
 
@@ -126,7 +128,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
                 "id": "fc_clock",
                 "call_id": "call_clock",
                 "name": "clock",
-                "arguments": "{",
+                "arguments": invalid_arguments,
                 "status": "completed",
             },
             {
@@ -161,7 +163,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     ]
     assert len(assistant.invalid_tool_calls) == 1
     assert assistant.invalid_tool_calls[0]["id"] == "call_clock"
-    assert assistant.invalid_tool_calls[0]["args"] == "{"
+    assert assistant.invalid_tool_calls[0]["args"] == invalid_arguments
     assert "not valid JSON" in (assistant.invalid_tool_calls[0]["error"] or "")
     assert [message.tool_call_id for message in messages[1:]] == [
         "call_weather",
@@ -182,6 +184,18 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
             ],
             "must match an earlier function call",
             id="unmatched-output",
+        ),
+        pytest.param(
+            [
+                {
+                    "type": "function_call",
+                    "call_id": "call_unanswered",
+                    "name": "weather",
+                    "arguments": "{}",
+                },
+            ],
+            "missing outputs for call_unanswered",
+            id="missing-output",
         ),
         pytest.param(
             [

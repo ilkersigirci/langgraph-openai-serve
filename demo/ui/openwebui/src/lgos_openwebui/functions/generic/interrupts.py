@@ -5,7 +5,7 @@ import json
 from typing import Any, cast
 
 from openai.types.responses import ResponseFunctionToolCall
-from pydantic import TypeAdapter
+from pydantic import BaseModel, Field, field_validator
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
@@ -17,7 +17,27 @@ from .contracts import (
     InterruptCancelled,
 )
 
-_INTERRUPT_CALLS = TypeAdapter(list[ResponseFunctionToolCall])
+
+class InterruptCursor(BaseModel):
+    """Responses continuation persisted by Open WebUI with its ask-user call."""
+
+    previous_response_id: str = Field(min_length=1)
+    calls: list[ResponseFunctionToolCall] = Field(
+        min_length=1, max_length=ASK_USER_MAX_QUESTIONS
+    )
+
+    @field_validator("calls")
+    @classmethod
+    def validate_calls(
+        cls, calls: list[ResponseFunctionToolCall]
+    ) -> list[ResponseFunctionToolCall]:
+        if any(call.name != INTERRUPT_TOOL_NAME or not call.call_id for call in calls):
+            msg = "LangGraph API returned an invalid interrupt batch."
+            raise ValueError(msg)
+        if len({call.call_id for call in calls}) != len(calls):
+            msg = "LangGraph API returned duplicate interrupt call IDs."
+            raise ValueError(msg)
+        return calls
 
 
 def _ask_user_to_resume(
@@ -27,18 +47,30 @@ def _ask_user_to_resume(
     if not messages:
         return None
 
-    has_tool_result = (
-        len(messages) >= 2
-        and isinstance(messages[-1], dict)
-        and messages[-1].get("role") == "tool"
-    )
-    assistant = messages[-2] if has_tool_result else messages[-1]
+    assistant_index = len(messages) - 1
+    while (
+        assistant_index >= 0
+        and isinstance(messages[assistant_index], dict)
+        and messages[assistant_index].get("role") == "tool"
+    ):
+        assistant_index -= 1
+    if assistant_index < 0:
+        return None
+    assistant = messages[assistant_index]
     if not isinstance(assistant, dict) or assistant.get("role") != "assistant":
         return None
 
     tool_calls = assistant.get("tool_calls")
-    if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+    if not isinstance(tool_calls, list) or not any(
+        isinstance(call, dict)
+        and isinstance(call.get("id"), str)
+        and call["id"].startswith(ASK_USER_CALL_ID_PREFIX)
+        for call in tool_calls
+    ):
         return None
+    if len(tool_calls) != 1 or assistant_index != len(messages) - 2:
+        msg = "Open WebUI returned an incomplete interrupt batch."
+        raise ValueError(msg)
     ask_call = tool_calls[0]
     function = ask_call.get("function") if isinstance(ask_call, dict) else None
     call_id = ask_call.get("id") if isinstance(ask_call, dict) else None
@@ -48,8 +80,6 @@ def _ask_user_to_resume(
         or not isinstance(call_id, str)
         or not call_id.startswith(ASK_USER_CALL_ID_PREFIX)
     ):
-        return None
-    if not has_tool_result:
         msg = "Open WebUI returned an incomplete interrupt batch."
         raise ValueError(msg)
 
@@ -60,6 +90,9 @@ def _ask_user_to_resume(
 
     response_id, interrupt_calls = _decode_interrupt_cursor(call_id)
     answers = _interrupt_answers(tool_result.get("content"))
+    if set(answers) != {f"resume_{index}" for index in range(len(interrupt_calls))}:
+        msg = "Open WebUI returned an incomplete interrupt answer batch."
+        raise ValueError(msg)
     outputs = []
     for index, interrupt_call in enumerate(interrupt_calls):
         payload = _interrupt_payload(interrupt_call)
@@ -79,28 +112,13 @@ def _decode_interrupt_cursor(
     try:
         encoded = call_id.removeprefix(ASK_USER_CALL_ID_PREFIX)
         padding = "=" * (-len(encoded) % 4)
-        cursor = json.loads(base64.urlsafe_b64decode(encoded + padding))
+        cursor = InterruptCursor.model_validate_json(
+            base64.urlsafe_b64decode(encoded + padding)
+        )
     except (TypeError, ValueError) as exc:
         msg = "Open WebUI returned an invalid interrupt cursor."
         raise ValueError(msg) from exc
-    if not isinstance(cursor, dict):
-        msg = "Open WebUI returned an invalid interrupt cursor."
-        raise ValueError(msg)
-    response_id = cursor.get("previous_response_id")
-    calls = cursor.get("calls")
-    if (
-        not isinstance(response_id, str)
-        or not response_id
-        or not isinstance(calls, list)
-        or not 1 <= len(calls) <= ASK_USER_MAX_QUESTIONS
-    ):
-        msg = "Open WebUI returned an invalid interrupt cursor."
-        raise ValueError(msg)
-    parsed_calls = _INTERRUPT_CALLS.validate_python(calls)
-    if any(call.name != INTERRUPT_TOOL_NAME for call in parsed_calls):
-        msg = "Open WebUI returned an invalid interrupt cursor."
-        raise ValueError(msg)
-    return response_id, parsed_calls
+    return cursor.previous_response_id, cursor.calls
 
 
 def _interrupt_answers(content: object) -> dict[str, Any]:
@@ -131,31 +149,17 @@ def _interrupts_to_ask_user(
     streaming: bool = False,
 ) -> dict[str, Any]:
     """Present one atomic LGOS interrupt batch as one native question card."""
-    if len(calls) > ASK_USER_MAX_QUESTIONS:
-        msg = f"Open WebUI supports at most {ASK_USER_MAX_QUESTIONS} interrupts per batch."
-        raise ValueError(msg)
-
-    stored_calls = []
-    questions = []
-    for index, call in enumerate(calls):
-        if call.name != INTERRUPT_TOOL_NAME:
-            msg = "LangGraph API returned a mixed function-call batch."
-            raise ValueError(msg)
-        item = call.model_dump(mode="json", exclude_none=True)
-        stored_calls.append(item)
-        questions.append(_interrupt_question(_interrupt_payload(call), index))
-
-    cursor = json.dumps(
-        {
-            "previous_response_id": response_id,
-            "calls": stored_calls,
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode()
+    cursor = InterruptCursor(previous_response_id=response_id, calls=calls)
+    questions = [
+        _interrupt_question(_interrupt_payload(call), index)
+        for index, call in enumerate(cursor.calls)
+    ]
+    # The Pipe host only returns its native ask-user call and answer on resume.
+    # Persist the upstream IDs here so reconnects need no separate state store.
+    encoded = cursor.model_dump_json(exclude_none=True).encode()
     result = {
         "id": ASK_USER_CALL_ID_PREFIX
-        + base64.urlsafe_b64encode(cursor).decode().rstrip("="),
+        + base64.urlsafe_b64encode(encoded).decode().rstrip("="),
         "type": "function",
         "function": {
             "name": ASK_USER_TOOL_NAME,

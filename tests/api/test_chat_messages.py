@@ -132,7 +132,17 @@ def test_tool_call_round_trip_preserves_wire_fields_and_order():
 
 @pytest.mark.parametrize(
     "arguments",
-    ['{"city":', '"Istanbul"', "[]", "false", "0", "null", '""'],
+    [
+        '{"city":',
+        '"Istanbul"',
+        "[]",
+        "false",
+        "0",
+        "null",
+        '""',
+        '{"value":NaN}',
+        '{"value":1e999}',
+    ],
     ids=(
         "invalid-json",
         "string-json",
@@ -141,6 +151,8 @@ def test_tool_call_round_trip_preserves_wire_fields_and_order():
         "zero-json",
         "null-json",
         "empty-string-json",
+        "non-finite-json",
+        "overflow-json",
     ),
 )
 def test_invalid_tool_arguments_preserve_raw_call(arguments):

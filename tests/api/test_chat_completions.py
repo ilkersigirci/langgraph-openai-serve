@@ -40,6 +40,25 @@ async def test_message_content_parts_are_accepted(
     assert response.choices[0].message.content == "hello"
 
 
+async def test_sdk_assistant_message_can_be_replayed_unchanged(
+    openai_client: AsyncOpenAI,
+) -> None:
+    first = await openai_client.chat.completions.create(
+        model="test", messages=[{"role": "user", "content": "Hello"}]
+    )
+
+    second = await openai_client.chat.completions.create(
+        model="test",
+        messages=[
+            {"role": "user", "content": "Hello"},
+            first.choices[0].message.model_dump(),
+            {"role": "user", "content": "Continue"},
+        ],
+    )
+
+    assert second.choices[0].message.content == "hello"
+
+
 async def test_modern_function_tools_remain_supported(
     openai_client: AsyncOpenAI,
 ) -> None:

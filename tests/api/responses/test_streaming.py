@@ -309,6 +309,12 @@ async def test_streamed_final_text_mismatch_ends_in_failed_response(
     assert failed.completed_at is None
     assert failed.error is not None
     assert failed.error.code == "server_error"
+    assert failed.output_text == "streamed"
+    assert failed.output[0].status == "incomplete"
+    added = next(
+        event for event in events if event.type == "response.output_item.added"
+    )
+    assert failed.output[0].id == added.item.id
 
 
 async def test_graph_failure_matches_golden_terminal_order(

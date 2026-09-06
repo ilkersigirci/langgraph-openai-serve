@@ -1,9 +1,7 @@
 """Convert Chat Completions messages into LangChain messages."""
 
-import json
 from typing import Any, cast
 
-from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -13,16 +11,13 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.output_parsers.openai_tools import (
-    make_invalid_tool_call,
-    parse_tool_call,
-)
 
 from langgraph_openai_serve.api.chat.schemas import (
     ChatCompletionMessageContent,
     ChatCompletionRequestMessage,
     Role,
 )
+from langgraph_openai_serve.api.tools import decode_function_call
 
 
 class InvalidChatMessageError(ValueError):
@@ -91,46 +86,16 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
         ]
         additional_kwargs["tool_calls"] = raw_tool_calls
 
-        for raw_tool_call in raw_tool_calls:
-            raw_arguments = raw_tool_call.get("function", {}).get("arguments", "")
-            if raw_arguments:
-                # LangChain's parse_tool_call handles invalid JSON strings (like "false" or "0")
-                # by coercing them to an empty dict. We manually parse first to reject these.
-                try:
-                    decoded = json.loads(raw_arguments)
-                    if not isinstance(decoded, dict):
-                        invalid_tool_calls.append(
-                            make_invalid_tool_call(
-                                raw_tool_call,
-                                "Tool arguments must decode to a JSON object.",
-                            )
-                        )
-                        continue
-                except json.JSONDecodeError:
-                    # Let LangChain handle actual JSONDecodeErrors for richer diagnostics.
-                    pass
-
-            try:
-                parsed_tool_call = parse_tool_call(raw_tool_call, return_id=True)
-            except OutputParserException as exc:
-                invalid_tool_calls.append(
-                    make_invalid_tool_call(raw_tool_call, str(exc))
-                )
-                continue
-
-            if parsed_tool_call is None:
-                continue
-
-            if not isinstance(parsed_tool_call.get("args"), dict):
-                invalid_tool_calls.append(
-                    make_invalid_tool_call(
-                        raw_tool_call,
-                        "Tool arguments must decode to a JSON object.",
-                    )
-                )
-                continue
-
-            tool_calls.append(cast("ToolCall", parsed_tool_call))
+        for call in message.tool_calls:
+            parsed = decode_function_call(
+                name=call.function.name,
+                arguments=call.function.arguments or "{}",
+                call_id=call.id,
+            )
+            if parsed["type"] == "tool_call":
+                tool_calls.append(parsed)
+            else:
+                invalid_tool_calls.append(parsed)
 
     return AIMessage(
         content=_langchain_content(message.content),

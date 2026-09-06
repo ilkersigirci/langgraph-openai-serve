@@ -3,25 +3,25 @@
 import json
 import time
 import uuid
+from typing import Literal
 
 from langchain_core.messages import AIMessage, UsageMetadata
+from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice as ChatChoice
+from openai.types.chat.chat_completion_chunk import (
+    Choice as ChunkChoice,
+    ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
+)
 from openai.types.chat.chat_completion_message import Annotation
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall,
+    Function,
+)
 from openai.types.shared import ErrorObject
 
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionResponse,
-    ChatCompletionResponseChoice,
-    ChatCompletionResponseMessage,
-    ChatCompletionStreamResponse,
-    ChatCompletionStreamResponseChoice,
-    ChatCompletionStreamResponseDelta,
-    ChatCompletionStreamToolCall,
-    ChatCompletionStreamToolCallFunction,
-    Role,
-    ToolCall,
-    ToolCallFunction,
-    UsageInfo,
-)
 from langgraph_openai_serve.core.errors import openai_error_payload
 from langgraph_openai_serve.graph.citations import citations_from_message
 
@@ -30,15 +30,16 @@ def chat_completion_response(
     *,
     model: str,
     message: AIMessage,
-) -> ChatCompletionResponse:
+) -> ChatCompletion:
     """Build a non-streaming OpenAI-compatible chat completion response."""
     resp_message, finish_reason = response_message(message)
-    return ChatCompletionResponse(
+    return ChatCompletion(
         id=f"chatcmpl-{uuid.uuid4()}",
+        object="chat.completion",
         created=int(time.time()),
         model=model,
         choices=[
-            ChatCompletionResponseChoice(
+            ChatChoice(
                 index=0,
                 message=resp_message,
                 finish_reason=finish_reason,
@@ -50,12 +51,12 @@ def chat_completion_response(
 
 def response_message(
     message: AIMessage,
-) -> tuple[ChatCompletionResponseMessage, str]:
+) -> tuple[ChatCompletionMessage, Literal["stop", "tool_calls"]]:
     """Format response message."""
     tool_calls = tool_calls_from_message(message)
     return (
-        ChatCompletionResponseMessage(
-            role=Role.ASSISTANT,
+        ChatCompletionMessage(
+            role="assistant",
             content=message.text or None,
             annotations=annotations_from_message(message) or None,
             tool_calls=tool_calls or None,
@@ -64,7 +65,9 @@ def response_message(
     )
 
 
-def tool_calls_from_message(message: AIMessage) -> list[ToolCall]:
+def tool_calls_from_message(
+    message: AIMessage,
+) -> list[ChatCompletionMessageFunctionToolCall]:
     """Convert native LangChain tool calls to Chat Completions tool calls."""
     tool_calls = []
     for tool_call in message.tool_calls:
@@ -73,9 +76,10 @@ def tool_calls_from_message(message: AIMessage) -> list[ToolCall]:
             msg = "Final AIMessage tool calls must have an id."
             raise ValueError(msg)
         tool_calls.append(
-            ToolCall(
+            ChatCompletionMessageFunctionToolCall(
                 id=tool_call_id,
-                function=ToolCallFunction(
+                type="function",
+                function=Function(
                     name=tool_call["name"],
                     arguments=json.dumps(tool_call["args"]),
                 ),
@@ -100,11 +104,11 @@ def annotations_from_message(message: AIMessage) -> list[Annotation]:
     ]
 
 
-def usage_info(usage: UsageMetadata | None) -> UsageInfo | None:
+def usage_info(usage: UsageMetadata | None) -> CompletionUsage | None:
     """Map LangChain's provider-reported usage to Chat Completions usage."""
     if usage is None:
         return None
-    return UsageInfo(
+    return CompletionUsage(
         prompt_tokens=usage["input_tokens"],
         completion_tokens=usage["output_tokens"],
         total_tokens=usage["total_tokens"],
@@ -122,22 +126,22 @@ class ChatCompletionStreamResponseBuilder:
 
     def role(self) -> str:
         """Stream role."""
-        return self._chunk(ChatCompletionStreamResponseDelta(role=Role.ASSISTANT))
+        return self._chunk(ChoiceDelta(role="assistant"))
 
     def text(self, content: str) -> str:
         """Stream text content."""
-        return self._chunk(ChatCompletionStreamResponseDelta(content=content))
+        return self._chunk(ChoiceDelta(content=content))
 
     def tool_calls(self, message: AIMessage) -> str:
         """Stream complete final-message tool calls as one delta."""
         return self._chunk(
-            ChatCompletionStreamResponseDelta(
+            ChoiceDelta(
                 tool_calls=[
-                    ChatCompletionStreamToolCall(
+                    ChoiceDeltaToolCall(
                         index=index,
                         id=tool_call.id,
                         type=tool_call.type,
-                        function=ChatCompletionStreamToolCallFunction(
+                        function=ChoiceDeltaToolCallFunction(
                             name=tool_call.function.name,
                             arguments=tool_call.function.arguments,
                         ),
@@ -149,13 +153,13 @@ class ChatCompletionStreamResponseBuilder:
 
     def finish(
         self,
-        finish_reason: str,
+        finish_reason: Literal["stop", "tool_calls"],
         *,
         annotations: list[Annotation] | None = None,
     ) -> str:
         """Stream finish."""
         return self._chunk(
-            ChatCompletionStreamResponseDelta(),
+            ChoiceDelta(),
             finish_reason=finish_reason,
             annotations=annotations,
         )
@@ -173,8 +177,9 @@ class ChatCompletionStreamResponseBuilder:
 
     def usage(self, usage: UsageMetadata) -> str:
         """Stream the optional final usage-only chunk."""
-        response = ChatCompletionStreamResponse(
+        response = ChatCompletionChunk(
             id=self.response_id,
+            object="chat.completion.chunk",
             created=self.created,
             model=self.model,
             choices=[],
@@ -184,16 +189,17 @@ class ChatCompletionStreamResponseBuilder:
 
     def _chunk(
         self,
-        delta: ChatCompletionStreamResponseDelta,
-        finish_reason: str | None = None,
+        delta: ChoiceDelta,
+        finish_reason: Literal["stop", "tool_calls"] | None = None,
         annotations: list[Annotation] | None = None,
     ) -> str:
-        response = ChatCompletionStreamResponse(
+        response = ChatCompletionChunk(
             id=self.response_id,
+            object="chat.completion.chunk",
             created=self.created,
             model=self.model,
             choices=[
-                ChatCompletionStreamResponseChoice(
+                ChunkChoice(
                     index=0,
                     delta=delta,
                     finish_reason=finish_reason,

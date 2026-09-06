@@ -236,10 +236,21 @@ null; LGOS accepts those null values but rejects non-null program or namespace
 semantics. This state model follows OpenAI's documented manual item replay while
 keeping storage in the client.
 
+Each replayed function call requires one matching output. Missing, duplicate,
+or unmatched results fail validation before graph execution, including when the
+client requests streaming.
+
 An interrupt continuation uses a narrower stateful path. The client sends the
 paused Response ID as `previous_response_id` and sends only matching
 `function_call_output` items. LGOS uses those opaque IDs to locate and validate
 the paused checkpoint; it does not reconstruct ordinary conversation history.
+
+OpenAI's [previous-response chaining](https://developers.openai.com/api/docs/guides/conversation-state#passing-context-from-the-previous-response)
+defines the client exchange, but does not execute or persist a LangGraph graph.
+LGOS remains responsible for checkpoint storage, complete-batch validation, and
+coordination across workers. The checkpointer owns paused execution state; the
+coordinator prevents overlapping runs. There is no separate interrupt-response
+store or Chat Completions resume codec.
 
 LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
 only paused workflow execution; a graph Store keeps explicit application data.
@@ -260,6 +271,9 @@ Function arguments are complete JSON strings. The graph runner does not emit
 incremental arguments, so the Responses stream sends one argument delta before
 the corresponding done event. IDs and output indices remain stable throughout
 the typed event lifecycle.
+
+On failure, the terminal `response.failed` object retains any partial answer
+already streamed, with unfinished output items marked `incomplete`.
 
 ## Streaming
 
@@ -397,7 +411,7 @@ Invalid runtime settings return HTTP 400 with
 extension does not make plain text generation invalid, but clients surface it
 as limited functionality rather than silently presenting a fully capable
 model.
-Malformed interrupt envelopes, a missing or duplicate tool result, and invalid
+Malformed interrupt inputs, a missing or duplicate tool result, and invalid
 caller-supplied run UUIDs return HTTP 400. A structurally complete exchange that
 does not match the durable pending set, or is stale or already completed,
 returns HTTP 409 with `code: "interrupt_state_conflict"`. A request that cannot
@@ -416,6 +430,11 @@ choice, returned `function_call` items, and matching string-valued
 `tool_call_id` values. The deprecated Chat `functions`, singular
 `function_call`, and `function` message role are rejected rather than silently
 ignored.
+
+Chat request fields outside the supported schema are rejected by
+normal request validation. Deprecated function fields have no separate parser
+or migration path. An assistant message's `function_call: null` is accepted so
+clients can replay SDK message objects unchanged.
 
 Interrupt graphs require a client application that can collect and submit tool
 results. Interrupts and checkpoint resumes are supported exclusively via

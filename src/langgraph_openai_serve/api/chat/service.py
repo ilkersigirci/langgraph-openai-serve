@@ -4,16 +4,14 @@ from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
 
 from langchain_core.messages import AIMessage
+from openai.types.chat import ChatCompletion
 
 from langgraph_openai_serve.api.chat.responses import (
     ChatCompletionStreamResponseBuilder,
     annotations_from_message,
     chat_completion_response,
 )
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-)
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
@@ -26,7 +24,7 @@ logger = get_logger(__name__)
 
 async def generate_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
-) -> ChatCompletionResponse:
+) -> ChatCompletion:
     """Generate a chat completion."""
     invocation = await invoke_run(run)
     if not isinstance(invocation.output, AIMessage):

@@ -217,10 +217,12 @@ async def test_resumed_ledger_uses_responses_continuation(
     monkeypatch.setattr(hitl, "ask_for_resume", AsyncMock(return_value="approve"))
 
     await hitl.resolve_interrupts(
-        response_calls=[call],
-        response_id=RESPONSE_ID,
-        model_id="lgos-a/hitl",
-        ledger_message=ledger_message,
+        hitl.PendingInterruptLedger(
+            message=ledger_message,
+            response_id=RESPONSE_ID,
+            model_id="lgos-a/hitl",
+            calls=(call,),
+        )
     )
 
     continuation = create.await_args.args[0]
@@ -297,11 +299,67 @@ async def test_failed_response_keeps_pending_interrupt_ledger(monkeypatch, hitl)
     monkeypatch.setattr(hitl, "ask_for_resume", AsyncMock(return_value="approve"))
 
     with pytest.raises(RuntimeError, match="Resume failed"):
-        await hitl.resolve_interrupts(
-            response_calls=calls,
-            response_id=RESPONSE_ID,
+        pending = await hitl.publish_response(
+            response(*calls),
             model_id="hitl",
         )
+        await hitl.resolve_interrupts(pending)
 
     assert writes[-1][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]["status"] == "pending"
     assert len(created) == 1
+
+
+@pytest.mark.parametrize("payload", [[], None, "approve"])
+async def test_invalid_interrupt_payload_is_persisted_before_prompting(
+    monkeypatch, hitl, payload
+):
+    call = interrupt_call("one", payload)
+    _, writes = install_chainlit(monkeypatch, hitl)
+    notify = AsyncMock()
+    create = AsyncMock()
+    monkeypatch.setattr(hitl, "send_ui_message", notify)
+    monkeypatch.setattr(hitl, "create_response", create)
+
+    pending = await hitl.publish_response(response(call), model_id="hitl")
+    await hitl.resolve_interrupts(pending)
+
+    saved = writes[0][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]
+    assert saved["response_id"] == RESPONSE_ID
+    assert saved["function_calls"][0]["arguments"] == call.arguments
+    assert saved["status"] == "pending"
+    notify.assert_awaited_once_with("Received an unsupported interrupt payload.")
+    create.assert_not_awaited()
+
+
+async def test_sequential_interrupts_replace_the_ledger_before_prompting(
+    monkeypatch, hitl
+):
+    first = interrupt_call("one", {"question": "First?"})
+    second = interrupt_call("two", {"question": "Second?"})
+    second_response_id = "resp_second"
+    _, writes = install_chainlit(monkeypatch, hitl)
+    create = AsyncMock(
+        side_effect=[
+            response(second, response_id=second_response_id),
+            final_response("Both approved."),
+        ]
+    )
+    monkeypatch.setattr(hitl, "create_response", create)
+    seen = []
+
+    async def approve(call, message):
+        saved = deepcopy(message.metadata[hitl.INTERRUPT_LEDGER_METADATA_KEY])
+        seen.append(saved)
+        assert saved["function_calls"][0]["call_id"] == call.call_id
+        return "approve"
+
+    monkeypatch.setattr(hitl, "ask_for_resume", approve)
+    pending = await hitl.publish_response(response(first), model_id="hitl")
+    await hitl.resolve_interrupts(pending)
+
+    assert [saved["response_id"] for saved in seen] == [RESPONSE_ID, second_response_id]
+    assert [call.kwargs["previous_response_id"] for call in create.await_args_list] == [
+        RESPONSE_ID,
+        second_response_id,
+    ]
+    assert writes[-2][2][hitl.INTERRUPT_LEDGER_METADATA_KEY]["status"] == "completed"

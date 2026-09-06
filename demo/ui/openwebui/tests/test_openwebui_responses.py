@@ -923,6 +923,52 @@ async def test_interrupt_response_becomes_native_ask_user_call(
     assert result["output"][0]["arguments"] == tool_call["function"]["arguments"]
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "missing-result",
+        "duplicate-result",
+        "mixed-calls",
+        "missing-answer",
+        "extra-answer",
+    ],
+)
+async def test_invalid_interrupt_exchange_cannot_start_a_new_run(
+    monkeypatch, stream, malformation
+):
+    ask_user = _interrupts_to_ask_user(RESPONSE_ID, [interrupt_call()])
+    answers = {"resume_0": {"type": "option", "option_index": 0}}
+    if malformation == "missing-answer":
+        answers.clear()
+    elif malformation == "extra-answer":
+        answers["resume_1"] = {"type": "option", "option_index": 1}
+    assistant = {"role": "assistant", "content": None, "tool_calls": [ask_user]}
+    result = {
+        "role": "tool",
+        "tool_call_id": ask_user["id"],
+        "content": json.dumps({"status": "answered", "answers": answers}),
+    }
+    messages = [assistant, result]
+    if malformation == "missing-result":
+        messages.pop()
+    elif malformation == "duplicate-result":
+        messages.append(result)
+    elif malformation == "mixed-calls":
+        assistant["tool_calls"].append(
+            {"id": "call_other", "type": "function", "function": {"name": "other"}}
+        )
+    request = body(stream=stream)
+    request["messages"].extend(messages)
+    create = AsyncMock(return_value=final_response("Unexpected new run"))
+    install_client(monkeypatch, create=create)
+
+    output = await collect(generic_pipe.Pipe().pipe(request))
+
+    assert "interrupt" in output[0]["error"]["detail"]
+    create.assert_not_awaited()
+
+
 async def test_interrupt_response_with_preliminary_text_preserves_content_and_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

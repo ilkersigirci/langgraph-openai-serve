@@ -84,7 +84,7 @@ async def test_missing_tool_call_id_returns_openai_error(
                 "functions": [],
             },
             "functions",
-            "'functions' is not supported; use 'tools' instead.",
+            "Extra inputs are not permitted",
             id="functions",
         ),
         pytest.param(
@@ -94,7 +94,7 @@ async def test_missing_tool_call_id_returns_openai_error(
                 "function_call": "auto",
             },
             "function_call",
-            "'function_call' is not supported; use 'tool_choice' instead.",
+            "Extra inputs are not permitted",
             id="request-function-call",
         ),
         pytest.param(
@@ -109,7 +109,7 @@ async def test_missing_tool_call_id_returns_openai_error(
                 ],
             },
             "messages.0.function_call",
-            "'function_call' is not supported; use 'tool_calls' instead.",
+            "Input should be None",
             id="message-function-call",
         ),
         pytest.param(
@@ -123,9 +123,19 @@ async def test_missing_tool_call_id_returns_openai_error(
             "Input should be 'system', 'user', 'assistant' or 'tool'",
             id="function-role",
         ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "previous_response_id": "resp_paused",
+            },
+            "previous_response_id",
+            "Extra inputs are not permitted",
+            id="responses-continuation",
+        ),
     ],
 )
-async def test_legacy_function_calling_fields_are_rejected(
+async def test_unsupported_chat_fields_are_rejected(
     openai_client: AsyncOpenAI,
     body: dict[str, object],
     expected_param: str | None,

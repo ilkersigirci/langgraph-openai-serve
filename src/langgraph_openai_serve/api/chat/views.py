@@ -4,15 +4,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
+from openai.types.chat import ChatCompletion
 from openai.types.shared import ErrorObject
 
 from langgraph_openai_serve.api.chat import service as chat_service
 from langgraph_openai_serve.api.chat.messages import InvalidChatMessageError
 from langgraph_openai_serve.api.chat.request import decode_chat_request
-from langgraph_openai_serve.api.chat.schemas import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-)
+from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.api.deps import (
     stream_owner_dependency,
 )
@@ -30,7 +28,7 @@ router = APIRouter(tags=["openai"])
 
 @router.post(
     "/chat/completions",
-    response_model=ChatCompletionResponse,
+    response_model=ChatCompletion,
     response_model_exclude_none=True,
 )
 async def create_chat_completion(
@@ -40,7 +38,7 @@ async def create_chat_completion(
         _StreamOwner,
         Depends(stream_owner_dependency, scope="request"),
     ],
-) -> StreamingResponse | ChatCompletionResponse:
+) -> StreamingResponse | ChatCompletion:
     """
     Create a chat completion.
 

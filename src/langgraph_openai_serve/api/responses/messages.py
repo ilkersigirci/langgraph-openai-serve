@@ -1,6 +1,5 @@
 """Convert Responses message input into LangChain messages."""
 
-import json
 from typing import Any, cast
 
 from langchain_core.messages import (
@@ -12,7 +11,6 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.messages.tool import invalid_tool_call, tool_call
 
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseAssistantInputMessage,
@@ -24,6 +22,7 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseOutputMessageInput,
     ResponseOutputTextInput,
 )
+from langgraph_openai_serve.api.tools import decode_function_call
 
 
 class InvalidResponsesInputError(ValueError):
@@ -97,6 +96,14 @@ def _validate_replay_ids(
                 raise InvalidResponsesInputError(msg)
             seen_output_call_ids.add(item.call_id)
 
+    unanswered = seen_call_ids - seen_output_call_ids
+    if unanswered:
+        msg = (
+            "Responses function calls require matching function_call_output items; "
+            f"missing outputs for {', '.join(sorted(unanswered))}."
+        )
+        raise InvalidResponsesInputError(msg)
+
 
 def _message_from_item(item: ResponseInputItem) -> BaseMessage:
     if isinstance(item, ResponseOutputMessageInput):
@@ -131,47 +138,19 @@ def _function_call_message(calls: list[ResponseFunctionCallInput]) -> AIMessage:
     tool_calls: list[ToolCall] = []
     invalid_tool_calls: list[InvalidToolCall] = []
     for call in calls:
-        error: str | None = None
-        try:
-            arguments = json.loads(
-                call.arguments,
-                parse_constant=_reject_json_constant,
-            )
-        except (TypeError, ValueError) as exc:
-            arguments = None
-            error = f"Function arguments are not valid JSON: {exc}"
-
-        if error is None and not isinstance(arguments, dict):
-            error = "Function arguments must decode to a JSON object."
-
-        if error is None:
-            tool_calls.append(
-                tool_call(
-                    name=call.name,
-                    args=cast("dict[str, Any]", arguments),
-                    id=call.call_id,
-                )
-            )
+        parsed = decode_function_call(
+            name=call.name, arguments=call.arguments, call_id=call.call_id
+        )
+        if parsed["type"] == "tool_call":
+            tool_calls.append(parsed)
         else:
-            invalid_tool_calls.append(
-                invalid_tool_call(
-                    name=call.name,
-                    args=call.arguments,
-                    id=call.call_id,
-                    error=error,
-                )
-            )
+            invalid_tool_calls.append(parsed)
 
     return AIMessage(
         content="",
         tool_calls=tool_calls,
         invalid_tool_calls=invalid_tool_calls,
     )
-
-
-def _reject_json_constant(value: str) -> None:
-    msg = f"Unsupported JSON constant: {value}"
-    raise ValueError(msg)
 
 
 def _input_content(
