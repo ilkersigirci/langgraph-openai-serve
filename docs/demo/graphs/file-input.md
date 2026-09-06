@@ -1,14 +1,23 @@
 # File Input
 
-`file-input` is a small model-backed graph for trying native Chat Completions
-file parts end to end. It reads each central `file_id`, downloads the original
-bytes, and sends them to the configured OpenAI Responses API. It has no graph
-persistence.
+`file-input` is a small model-backed graph for trying native Responses
+`input_file` parts end to end. It reads each central `file_id`, downloads the
+original bytes, and sends them to the configured OpenAI Responses API. It has
+no graph persistence.
+
+## LangGraph Topology
+
+```mermaid
+graph TD;
+    __start__ --> process_files;
+    process_files --> __end__;
+```
 
 ## Request Flow
 
-1. Chainlit uploads the current attachments to the central demo Files service
-   and places the returned IDs in the user message.
+1. Chainlit and Open WebUI upload the current attachments through their
+   configured `/v1/files` route to the central demo Files service, then place
+   the returned IDs in the user message.
 2. LGOS preserves those native `file` content parts in the LangChain
    `HumanMessage`.
 3. The graph retrieves the filename and bytes from `DEMO_API_FILES_BASE_URL`.
@@ -23,31 +32,29 @@ depends on the file type; see the official OpenAI
 
 ```mermaid
 sequenceDiagram
-    participant C as Chainlit
-    participant F as Central Files API
-    participant G as file-input graph
-    participant O as OpenAI Responses
-    C->>F: POST /v1/files
-    F-->>C: file_id
-    C->>G: Chat completion with file_id
-    G->>F: GET metadata and content
-    F-->>G: filename and bytes
-    G->>O: Inline input_file or input_image
-    O-->>G: output_text
-    G-->>C: Assistant text
-```
+  participant UI as Chainlit / Open WebUI
+  box LGOS API process
+    participant API as /v1/responses
+    participant Graph as file-input graph
+  end
+  participant Files as Central Files API
+  participant Model as Upstream Responses API
 
-## LangGraph Topology
-
-```mermaid
-graph TD;
-    __start__ --> process_files;
-    process_files --> __end__;
+  UI->>Files: POST /v1/files
+  Files-->>UI: file_id
+  UI->>API: Responses input with file_id
+  API->>Graph: LangChain file content parts
+  Graph->>Files: GET metadata and content
+  Files-->>Graph: Filename and bytes
+  Graph->>Model: Inline input_file or input_image
+  Model-->>Graph: output_text
+  Graph-->>API: Assistant message
+  API-->>UI: Assistant text
 ```
 
 ## Try It
 
-Run the Compose Chainlit stack, select `lgos-a/file-input`, attach a supported
+Run either maintained Compose UI, select `file-input`, attach a supported
 document or image, and send a request such as:
 
 ```text

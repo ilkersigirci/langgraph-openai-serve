@@ -9,9 +9,9 @@ LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
 
 .PHONY: help sync test test-postgres lint check compose-config \
-	run-api-local run-api-a-local run-api-b-local run-files-local \
+	run-postgres run-api-local run-api-a-local run-api-b-local run-files-local \
 	run-chainlit-local \
-	run-api run-api-a run-api-b run-files run-chainlit \
+	run-api run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
 	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
 	marimo marimo-local
 .DEFAULT_GOAL := help
@@ -79,6 +79,9 @@ compose-config: ## Validate published, development, and OTEL Compose models
 
 check: test lint type-check compose-config ## Run every standalone validation
 
+run-postgres: ## Start the demo PostgreSQL service in the background
+	$(COMPOSE) up -d lgos-db
+
 run-api-local: run-api-a-local ## Run lgos-a locally
 
 run-api-a-local: ## Run lgos-a locally
@@ -111,6 +114,12 @@ run-api-b: ## Run the lgos-b container
 
 run-files: ## Run the central OpenAI Files container
 	$(COMPOSE) up lgos-files-api
+
+run-bifrost: ## Run Bifrost and its demo API dependencies
+	$(COMPOSE) up lgos-bifrost
+
+run-litellm: ## Run LiteLLM and its demo API dependencies
+	$(COMPOSE) up lgos-litellm
 
 run-chainlit: ## Run the Chainlit container and its dependencies
 	$(COMPOSE) up lgos-chainlit

@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 from langgraph_openai_serve import GraphConfig, GraphRegistry, citation_slice
-from langgraph_openai_serve.api.chat.utils.responses import annotations_from_message
+from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs.citations import citation_graph
@@ -22,7 +22,9 @@ EXPECTED_CITATIONS = [
 ]
 
 
-async def test_streams_portable_markdown_with_anchored_citations(make_request) -> None:
+async def test_streams_portable_markdown_with_anchored_citations(
+    make_graph_input,
+) -> None:
     registry = GraphRegistry(
         registry={
             "citation-events": GraphConfig(
@@ -32,28 +34,28 @@ async def test_streams_portable_markdown_with_anchored_citations(make_request) -
             )
         }
     )
-    request = make_request("citation-events", content="Show citations")
+    graph_request, messages = make_graph_input(
+        "citation-events", content="Show citations"
+    )
 
     events = [
-        event
-        async for event in run_langgraph_stream(
-            request.model,
-            request.messages,
-            registry,
-            request,
-        )
+        event async for event in run_langgraph_stream(graph_request, messages, registry)
     ]
 
     answer = "".join(event for event in events if isinstance(event, str))
     final_message = events[-1]
     assert isinstance(final_message, AIMessage)
-    annotations = annotations_from_message(final_message)
+    annotations = citations_from_message(final_message)
 
     assert [
         (
-            answer[citation_slice(annotation, answer)],
-            annotation.url_citation.title,
-            annotation.url_citation.url,
+            answer[
+                citation_slice(
+                    annotation["start_index"], annotation["end_index"], answer
+                )
+            ],
+            annotation["title"],
+            annotation["url"],
         )
         for annotation in annotations
     ] == [(title, title, url) for title, url in EXPECTED_CITATIONS]

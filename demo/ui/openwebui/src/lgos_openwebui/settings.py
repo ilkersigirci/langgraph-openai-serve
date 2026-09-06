@@ -3,6 +3,8 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from lgos_openwebui.functions.generic.gateway import GatewayType
+
 
 class Settings(BaseSettings):
     """Configuration for the Open WebUI synchronization command."""
@@ -21,15 +23,16 @@ class Settings(BaseSettings):
         default="lgos",
         description="Password for the Open WebUI account used by the sync command.",
     )
-    OPENAI_BASE_URL: str = Field(
-        default="http://localhost:3000/openai_passthrough/v1",
-        description="OpenAI-compatible base URL used for model metadata.",
+    OPENAI_GATEWAY_TYPE: GatewayType = Field(
+        default="litellm",
+        validation_alias="OPENAI_GATEWAY_TYPE",
+        description="OpenAI gateway used for model sync and Function defaults.",
     )
-    OPENAI_CATALOG_BASE_URL: str = Field(
-        default="http://localhost:3000/v1",
-        description="OpenAI-compatible base URL used to list the model catalog.",
+    OPENAI_GATEWAY_BASE_URL: str | None = Field(
+        default=None,
+        description="Optional gateway root override for the host sync command.",
     )
     API_KEY: str = Field(
-        default="DUMMY",
+        default="sk-lgos-litellm-demo",
         description="API key sent to the configured OpenAI-compatible endpoints.",
     )

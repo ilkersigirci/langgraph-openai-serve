@@ -83,9 +83,10 @@ Send changed values as JSON text in `metadata.langgraph_runtime_settings`:
     ```python
     import json
 
-    response = client.chat.completions.create(
+    response = client.responses.create(
         model="simple-graph",
-        messages=[{"role": "user", "content": "Explain LangGraph."}],
+        input="Explain LangGraph.",
+        store=False,
         metadata={"langgraph_runtime_settings": json.dumps({"use_history": True})},
     )
     ```
@@ -93,9 +94,10 @@ Send changed values as JSON text in `metadata.langgraph_runtime_settings`:
 === "JavaScript"
 
     ```javascript
-    const response = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: "simple-graph",
-      messages: [{ role: "user", content: "Explain LangGraph." }],
+      input: "Explain LangGraph.",
+      store: false,
       metadata: {
         langgraph_runtime_settings: JSON.stringify({ use_history: true }),
       },
@@ -134,8 +136,7 @@ describes the combined value.
 
 See [OpenAI clients](../tutorials/openai-clients.md#model-discovery-and-runtime-settings)
 for discovery code. The included Chainlit client automates descriptor discovery,
-Chat Settings, and metadata serialization; see the
+Chat Settings, Responses calls, and metadata serialization; see the
 [Chainlit demo](../demo/chainlit.md#runtime-settings). The
 [Open WebUI demo](../demo/open-webui.md#runtime-settings) projects each
-discovered model's descriptor into native per-chat Chat Variables and retains a
-static `UserValves` example for fixed single-model integrations.
+discovered model's descriptor into native per-chat Chat Variables.

@@ -20,16 +20,29 @@ dependency source.
 | `ui/openwebui` | Open WebUI Function sync and raw-upload policy | Local uv command and official-image bind mount |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
-overlays under `docker/compose/`. The Bifrost gateway configuration is at
-`docker/configs/bifrost/config.json`. Compose runs the demo API image as two
+overlays under `docker/compose/`. Bifrost and LiteLLM gateway configurations
+live under `docker/configs/`. Compose runs the demo API image as two
 independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs under separate provider identities so the stack can
-demonstrate routing multiple LGOS APIs through one Bifrost pass-through
-endpoint. The independent `lgos-files-api` image provides the shared S3-backed
-Files service. The dynamic clients discover provider-qualified
-models from Bifrost's catalog and use its OpenAI pass-through endpoint for
-detailed model metadata and chat. Chainlit and the generated Open WebUI models
-send Files operations through the gateway's normalized OpenAI endpoint.
+exercise native Responses routing through either gateway. The independent
+`lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
+1.99.1 and Bifrost v2.0.0 are both first-class UI gateways. Set
+`OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
+UI connects to an upstream container directly. Responses and Files use each
+gateway's normal OpenAI routes; a catalog-only client uses pass-through model
+detail where needed to preserve LGOS descriptions, features, and settings.
+
+Current verification exposes narrower upstream normalization limitations.
+Bifrost v2.0.0's normalized `/openai/v1` route preserves the tested native
+Responses fields, file input, commentary `phase`, and continuation, but not
+LGOS model-detail extensions or upstream error metadata. LiteLLM 1.99.1 still
+synthesizes wildcard Responses streams and rewrites standard error metadata.
+Bifrost's raw pass-through and LiteLLM's authenticated pass-through both
+preserve the full tested contract for protocol diagnostics. UI inference does
+not use either pass-through: it exercises LiteLLM's managed Responses route or
+Bifrost's native Responses route according to `OPENAI_GATEWAY_TYPE`. Run
+`make test-bifrost` and `make test-litellm` from the repository root for the
+current compatibility matrix.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -62,6 +75,13 @@ Run the central Files API on port 3006:
 
 ```bash
 make run-files
+```
+
+Run either native Responses gateway with its graph API dependencies:
+
+```bash
+make run-bifrost
+make run-litellm
 ```
 
 Run Chainlit and its Compose dependencies on port 3002:
@@ -110,8 +130,9 @@ make compose
 ```
 
 The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
-3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, and the Files API
-on 3006.
+3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, the Files API on
+3006, and LiteLLM on 3007. The selected UI gateway is controlled by
+`OPENAI_GATEWAY_TYPE`.
 
 From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:

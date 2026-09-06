@@ -60,6 +60,11 @@ so each adapter or streaming behavior is visible on its own.
 
 ## Request Flow
 
+Each maintained demo UI sends a standard request through LGOS
+`/v1/responses`. After LGOS decodes the OpenAI input, each selected graph uses
+the graph-specific path below and returns standard assistant output through the
+same endpoint.
+
 ### custom-input-output-context
 
 This deterministic graph demonstrates all three `GraphConfig` adapters around
@@ -112,14 +117,15 @@ shared discovery and metadata transport.
 ### simple-graph-external-tools
 
 This graph keeps the tool loop on the client side. `request_to_input` carries the
-validated `tools` and `tool_choice` fields into graph state. `generate` binds
-those definitions to the upstream chat model and returns its `AIMessage`.
+normalized `tools`, `tool_choice`, and `parallel_tool_calls` fields into graph
+state. `generate` binds those definitions to the upstream chat model and returns
+its `AIMessage`.
 
-The graph does not execute a tool or discard history. A client sends the returned
-assistant `tool_calls`, executes them, and sends the matching `tool` messages in
-the next request. This makes the graph suitable for a Responses-to-Chat gateway
-used by clients such as Codex, provided the gateway converts the tool shapes and
-streaming events correctly.
+The graph does not execute a tool or discard history. Responses clients replay
+the returned `function_call` items and append matching `function_call_output`
+items. Direct Chat compatibility clients send the returned assistant
+`tool_calls` and matching `tool` messages. LGOS normalizes both protocols before
+the graph sees them; no Responses-to-Chat gateway is required.
 
 ## State And Output
 
@@ -127,7 +133,7 @@ None of these graphs uses a checkpointer or LangGraph Store, so graph state ends
 with the request. All five return standard OpenAI assistant messages and emit no
 LGOS client events. `multi-node-streaming`, `simple-graph`, and the
 external-tools graph identify their answer-producing nodes for incremental text
-streaming and standard Chat Completions tool-call output.
+streaming and standard OpenAI function-call output.
 
 ## Try It
 

@@ -22,6 +22,8 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
+      lgos-litellm:
+        condition: service_healthy
       lgos-bifrost:
         condition: service_healthy
     command:
@@ -66,11 +68,9 @@ services:
       WEBUI_ADMIN_EMAIL: ${DEMO_OPENWEBUI_ADMIN_EMAIL:-lgos@example.com}
       WEBUI_ADMIN_PASSWORD: ${DEMO_OPENWEBUI_ADMIN_PASSWORD:-lgos}
       WEBUI_ADMIN_NAME: LGOS
-      OPENAI_API_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/openai_passthrough/v1
-      OPENAI_CATALOG_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
-      OPENAI_FILES_BASE_URL: ${DEMO_BIFROST_BASE_URL:-http://lgos-bifrost:8080}/v1
-      OPENAI_FILES_PROVIDER: lgos-files
-      OPENAI_API_KEY: ${DEMO_OPENWEBUI_API_KEY:-DUMMY}
+      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-litellm}
+      OPENAI_GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-litellm}:4000
+      OPENAI_API_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false
       RAG_EMBEDDING_ENGINE: openai

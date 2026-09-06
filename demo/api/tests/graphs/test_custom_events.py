@@ -15,10 +15,10 @@ def _public_event(value: object) -> dict[str, Any]:
 
 
 async def test_showcase_streams_a_small_event_timeline(
-    make_request, monkeypatch
+    make_graph_input, monkeypatch
 ) -> None:
     monkeypatch.setattr(custom_events, "SHOWCASE_EVENT_DELAY_SECONDS", 0)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "custom-event-showcase",
         content="Build the compatibility report.",
     )
@@ -29,13 +29,7 @@ async def test_showcase_streams_a_small_event_timeline(
     )
 
     stream = [
-        item
-        async for item in run_langgraph_stream(
-            request.model,
-            request.messages,
-            registry,
-            request,
-        )
+        item async for item in run_langgraph_stream(graph_request, messages, registry)
     ]
     events = [_public_event(item) for item in stream if isinstance(item, dict)]
 

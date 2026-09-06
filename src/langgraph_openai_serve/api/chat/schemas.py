@@ -1,62 +1,22 @@
-"""
-Pydantic models for the OpenAI API.
-
-This module defines Pydantic models that match the OpenAI API request and response formats.
-"""
+"""Request models for the supported Chat Completions subset."""
 
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Literal
 
 from openai.types.chat import ChatCompletionContentPartParam
-from openai.types.chat.chat_completion_message import Annotation
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
-    StringConstraints,
-    ValidationError,
+    JsonValue,
     model_validator,
 )
 
-OPENAI_METADATA_MAX_PAIRS = 16
-OPENAI_METADATA_KEY_MAX_LENGTH = 64
-OPENAI_METADATA_VALUE_MAX_LENGTH = 512
-
-MetadataKey = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=OPENAI_METADATA_KEY_MAX_LENGTH),
-]
-MetadataValue = Annotated[
-    str,
-    StringConstraints(max_length=OPENAI_METADATA_VALUE_MAX_LENGTH),
-]
-
-
-def _reject_legacy_fields(
-    data: Any,
-    replacements: dict[str, str],
-    *,
-    title: str,
-) -> Any:
-    if not isinstance(data, dict):
-        return data
-
-    for field, replacement in replacements.items():
-        if field in data:
-            error = ValueError(
-                f"'{field}' is not supported; use '{replacement}' instead."
-            )
-            raise ValidationError.from_exception_data(
-                title,
-                [
-                    {
-                        "type": "value_error",
-                        "loc": (field,),
-                        "input": data[field],
-                        "ctx": {"error": error},
-                    }
-                ],
-            )
-    return data
+from langgraph_openai_serve.api.metadata import (
+    OPENAI_METADATA_MAX_PAIRS,
+    MetadataKey,
+    MetadataValue,
+)
 
 
 class Role(StrEnum):
@@ -94,16 +54,8 @@ class ChatCompletionRequestMessage(BaseModel):
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_legacy_fields(cls, data: Any) -> Any:
-        """Reject the deprecated singular Chat Completions function call."""
-        return _reject_legacy_fields(
-            data,
-            {"function_call": "tool_calls"},
-            title=cls.__name__,
-        )
+    # SDK assistant messages include this as null even for modern tool calls.
+    function_call: None = None
 
 
 class FunctionDefinition(BaseModel):
@@ -111,13 +63,8 @@ class FunctionDefinition(BaseModel):
 
     name: str
     description: str | None = None
-    parameters: dict[str, Any] | None = None
-
-
-class ToolFunction(BaseModel):
-    """Model for a tool function."""
-
-    function: FunctionDefinition
+    parameters: dict[str, JsonValue] | None = None
+    strict: bool | None = None
 
 
 class Tool(BaseModel):
@@ -127,41 +74,39 @@ class Tool(BaseModel):
     function: FunctionDefinition
 
 
+class NamedToolChoiceFunction(BaseModel):
+    """Function selected by a named Chat Completions tool choice."""
+
+    name: str
+
+
+class NamedToolChoice(BaseModel):
+    """Named function tool choice accepted by Chat Completions."""
+
+    type: Literal["function"] = "function"
+    function: NamedToolChoiceFunction
+
+
+ChatToolChoice = Literal["none", "auto", "required"] | NamedToolChoice
+
+
 class ChatCompletionRequest(BaseModel):
     """Model for a chat completion request."""
 
+    model_config = ConfigDict(extra="forbid")
+
     model: str
     messages: list[ChatCompletionRequestMessage] = Field(min_length=1)
-    temperature: float | None = 0.7
-    top_p: float | None = 1.0
-    n: int | None = 1
     stream: bool | None = False
     stream_options: "ChatCompletionStreamOptions | None" = None
-    stop: str | list[str] | None = None
-    max_tokens: int | None = None
-    presence_penalty: float | None = 0.0
-    frequency_penalty: float | None = 0.0
-    logit_bias: dict[str, float] | None = None
     user: str | None = None
     tools: list[Tool] | None = None
-    tool_choice: Any | None = None
+    tool_choice: ChatToolChoice | None = None
+    parallel_tool_calls: bool | None = None
     metadata: dict[MetadataKey, MetadataValue] | None = Field(
         default=None,
         max_length=OPENAI_METADATA_MAX_PAIRS,
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def reject_legacy_fields(cls, data: Any) -> Any:
-        """Reject deprecated Chat Completions function parameters."""
-        return _reject_legacy_fields(
-            data,
-            {
-                "function_call": "tool_choice",
-                "functions": "tools",
-            },
-            title=cls.__name__,
-        )
 
     @model_validator(mode="after")
     def validate_stream_options(self) -> "ChatCompletionRequest":
@@ -176,82 +121,3 @@ class ChatCompletionStreamOptions(BaseModel):
     """Options that affect Chat Completions streaming."""
 
     include_usage: bool | None = False
-
-
-class ChatCompletionResponseMessage(BaseModel):
-    """Model for a chat completion response message."""
-
-    role: Role
-    content: str | None = None
-    annotations: list[Annotation] | None = None
-    tool_calls: list[ToolCall] | None = None
-
-
-class UsageInfo(BaseModel):
-    """Model for usage information."""
-
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class ChatCompletionResponseChoice(BaseModel):
-    """Model for a chat completion response choice."""
-
-    index: int
-    message: ChatCompletionResponseMessage
-    finish_reason: str | None = None
-
-
-class ChatCompletionResponse(BaseModel):
-    """Model for a chat completion response."""
-
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatCompletionResponseChoice]
-    usage: UsageInfo | None = None
-
-
-class ChatCompletionStreamToolCallFunction(BaseModel):
-    """Model for a streaming tool call function delta."""
-
-    name: str | None = None
-    arguments: str | None = None
-
-
-class ChatCompletionStreamToolCall(BaseModel):
-    """Model for a streaming tool call delta."""
-
-    index: int
-    id: str | None = None
-    type: Literal["function"] | None = None
-    function: ChatCompletionStreamToolCallFunction | None = None
-
-
-class ChatCompletionStreamResponseDelta(BaseModel):
-    """Model for a chat completion stream response delta."""
-
-    role: Role | None = None
-    content: str | None = None
-    tool_calls: list[ChatCompletionStreamToolCall] | None = None
-
-
-class ChatCompletionStreamResponseChoice(BaseModel):
-    """Model for a chat completion stream response choice."""
-
-    index: int
-    delta: ChatCompletionStreamResponseDelta
-    finish_reason: str | None = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    """Model for a chat completion stream response."""
-
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: list[ChatCompletionStreamResponseChoice]
-    usage: UsageInfo | None = None

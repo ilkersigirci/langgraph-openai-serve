@@ -6,8 +6,7 @@ from typing import TypedDict
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
-from langgraph_openai_serve import ClientSettings, GraphConfig
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
 
 
 @dataclass(frozen=True)
@@ -49,7 +48,7 @@ custom_io_graph = (
 
 
 def request_to_input(
-    _request: ChatCompletionRequest,
+    _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> Input:
     last_message = messages[-1]
@@ -57,7 +56,7 @@ def request_to_input(
 
 
 def context_factory(
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     _client_settings: ClientSettings | None,
 ) -> AppContext:
     return AppContext(user_id=request.user or "anonymous")

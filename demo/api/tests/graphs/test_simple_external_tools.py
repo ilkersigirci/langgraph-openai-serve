@@ -2,24 +2,37 @@ from collections.abc import Sequence
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langgraph_openai_serve import GraphConfig, GraphRegistry
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langgraph_openai_serve import (
+    ClientFunctionTool,
+    GraphConfig,
+    GraphRegistry,
+    GraphRequest,
+    NamedFunctionToolChoice,
+)
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs import simple_external_tools as graph_module
 
 MODEL = "simple-graph-external-tools"
+WEATHER_PARAMETERS = {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"],
+}
+CLIENT_TOOL = ClientFunctionTool(
+    name="get_weather",
+    description="Get the weather for a city.",
+    parameters=WEATHER_PARAMETERS,
+    strict=True,
+)
 WEATHER_TOOL = {
     "type": "function",
     "function": {
-        "name": "get_weather",
-        "description": "Get the weather for a city.",
-        "parameters": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"],
-        },
+        "name": CLIENT_TOOL.name,
+        "description": CLIENT_TOOL.description,
+        "parameters": WEATHER_PARAMETERS,
+        "strict": CLIENT_TOOL.strict,
     },
 }
 
@@ -31,6 +44,7 @@ class RecordingModel:
         self.response = response
         self.bound_tools: Sequence[dict[str, Any]] | None = None
         self.bound_tool_choice: object = None
+        self.bound_parallel_tool_calls: bool | None = None
         self.inputs: list[Sequence[BaseMessage]] = []
 
     def bind_tools(
@@ -38,9 +52,11 @@ class RecordingModel:
         tools: Sequence[dict[str, Any]],
         *,
         tool_choice: object = None,
+        parallel_tool_calls: bool | None = None,
     ) -> "RecordingModel":
         self.bound_tools = tools
         self.bound_tool_choice = tool_choice
+        self.bound_parallel_tool_calls = parallel_tool_calls
         return self
 
     async def ainvoke(self, messages: Sequence[BaseMessage]) -> AIMessage:
@@ -76,25 +92,30 @@ async def test_client_tools_are_bound_and_returned_to_the_client(
         )
     )
     monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
-    request = ChatCompletionRequest(
+    graph_request = GraphRequest(
         model=MODEL,
-        messages=[{"role": "user", "content": "What is the weather?"}],
-        tools=[WEATHER_TOOL],
-        tool_choice="auto",
+        metadata={},
+        user=None,
+        tools=(CLIENT_TOOL,),
+        tool_choice=NamedFunctionToolChoice(name="get_weather"),
+        parallel_tool_calls=False,
     )
 
     result = await run_langgraph(
-        MODEL,
-        request.messages,
+        graph_request,
+        [HumanMessage(content="What is the weather?")],
         _registry(),
-        request,
     )
 
     assert model.bound_tools == [WEATHER_TOOL]
-    assert model.bound_tool_choice == "auto"
-    assert isinstance(result.output, AIMessage)
-    assert result.output.tool_calls is not None
-    assert result.output.tool_calls[0]["name"] == "get_weather"
+    assert model.bound_tool_choice == {
+        "type": "function",
+        "function": {"name": "get_weather"},
+    }
+    assert model.bound_parallel_tool_calls is False
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls is not None
+    assert result.tool_calls[0]["name"] == "get_weather"
 
 
 async def test_tool_results_are_forwarded_with_the_complete_history(
@@ -102,37 +123,34 @@ async def test_tool_results_are_forwarded_with_the_complete_history(
 ) -> None:
     model = RecordingModel(AIMessage(content="It is sunny in Istanbul."))
     monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
-    request = ChatCompletionRequest(
+    graph_request = GraphRequest(
         model=MODEL,
-        messages=[
-            {"role": "user", "content": "What is the weather?"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {
-                            "name": "get_weather",
-                            "arguments": '{"city":"Istanbul"}',
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": "call-1",
-                "content": '{"temperature": "sunny"}',
-            },
-        ],
-        tools=[WEATHER_TOOL],
+        metadata={},
+        user=None,
+        tools=(CLIENT_TOOL,),
+        tool_choice=None,
+        parallel_tool_calls=None,
     )
+    messages = [
+        HumanMessage(content="What is the weather?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "Istanbul"},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        ToolMessage(content='{"temperature": "sunny"}', tool_call_id="call-1"),
+    ]
 
-    result = await run_langgraph(MODEL, request.messages, _registry(), request)
+    result = await run_langgraph(graph_request, messages, _registry())
 
-    assert isinstance(result.output, AIMessage)
-    assert result.output.content == "It is sunny in Istanbul."
+    assert isinstance(result, AIMessage)
+    assert result.content == "It is sunny in Istanbul."
     assert [message.type for message in model.inputs[0]] == [
         "system",
         "human",

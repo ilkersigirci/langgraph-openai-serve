@@ -38,7 +38,7 @@ dependencies = [
     "anyio>=4,<5",
     "fastapi[standard]>=0.121.0",
     "langgraph>=1.1.10,<2.0.0",
-    "openai>=2.0.0,<3.0.0",
+    "openai>=2.45.0,<3.0.0",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
 ]

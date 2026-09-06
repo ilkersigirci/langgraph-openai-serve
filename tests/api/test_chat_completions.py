@@ -2,8 +2,15 @@ import json
 
 import pytest
 from httpx import AsyncClient
+from langchain_core.messages import BaseMessage
 from openai import AsyncOpenAI, BadRequestError
 from starlette import status
+
+from langgraph_openai_serve import (
+    ClientFunctionTool,
+    GraphRegistry,
+    GraphRequest,
+)
 
 
 async def test_non_streaming_completion_matches_openai_contract(
@@ -40,9 +47,40 @@ async def test_message_content_parts_are_accepted(
     assert response.choices[0].message.content == "hello"
 
 
-async def test_modern_function_tools_remain_supported(
+async def test_sdk_assistant_message_can_be_replayed_unchanged(
     openai_client: AsyncOpenAI,
 ) -> None:
+    first = await openai_client.chat.completions.create(
+        model="test", messages=[{"role": "user", "content": "Hello"}]
+    )
+
+    second = await openai_client.chat.completions.create(
+        model="test",
+        messages=[
+            {"role": "user", "content": "Hello"},
+            first.choices[0].message.model_dump(),
+            {"role": "user", "content": "Continue"},
+        ],
+    )
+
+    assert second.choices[0].message.content == "hello"
+
+
+async def test_modern_function_tools_remain_supported(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture_request(
+        request: GraphRequest,
+        messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    graph_registry.get_graph("test").request_to_input = capture_request
+
     response = await openai_client.chat.completions.create(
         model="test",
         messages=[{"role": "user", "content": "What is the weather?"}],
@@ -57,13 +95,36 @@ async def test_modern_function_tools_remain_supported(
                         "properties": {"city": {"type": "string"}},
                         "required": ["city"],
                     },
+                    "strict": True,
                 },
             }
         ],
         tool_choice="auto",
+        parallel_tool_calls=False,
     )
 
     assert response.choices[0].message.content == "hello"
+    assert received == [
+        GraphRequest(
+            model="test",
+            metadata={},
+            user=None,
+            tools=(
+                ClientFunctionTool(
+                    name="get_weather",
+                    description="Get the weather for a city.",
+                    parameters={
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                    strict=True,
+                ),
+            ),
+            tool_choice="auto",
+            parallel_tool_calls=False,
+        )
+    ]
 
 
 async def test_streaming_completion_forwards_llm_chunks(
@@ -94,6 +155,37 @@ async def test_stream_options_require_streaming(
             messages=[{"role": "user", "content": "Hi"}],
             stream_options={"include_usage": True},
         )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        ("temperature", 0.2),
+        ("top_p", 0.5),
+        ("n", 2),
+        ("stop", "END"),
+        ("max_tokens", 10),
+        ("presence_penalty", 1.0),
+        ("frequency_penalty", 1.0),
+        ("logit_bias", {"123": 1}),
+    ],
+)
+async def test_unsupported_generation_controls_are_rejected(
+    openai_client: AsyncOpenAI,
+    parameter: str,
+    value: object,
+    stream: bool,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.chat.completions.create(
+            model="test",
+            messages=[{"role": "user", "content": "Hi"}],
+            stream=stream,
+            extra_body={parameter: value},
+        )
+
+    assert exc_info.value.body["param"] == parameter
 
 
 async def test_streaming_completion_uses_sse_wire_format(
@@ -147,3 +239,50 @@ async def test_unknown_model_raises_openai_bad_request(
             "code": None,
         }
     }
+
+
+async def test_streaming_completion_ignores_custom_stream_events(
+    openai_client: AsyncOpenAI,
+    fastapi_app,
+) -> None:
+    from langchain_core.messages import AIMessage
+    from langgraph.config import get_stream_writer
+    from langgraph.graph import StateGraph
+
+    from langgraph_openai_serve import GraphConfig, status_event
+    from tests.graph.support.schemas import MessageState
+
+    async def generate(_state: MessageState):
+        writer = get_stream_writer()
+        writer(status_event("Processing step 1"))
+        writer(status_event("Processing step 2"))
+        return {"messages": [AIMessage(content="done")]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("generate", generate)
+        .set_entry_point("generate")
+        .set_finish_point("generate")
+        .compile()
+    )
+    fastapi_app.state.graph_registry.register(
+        "custom-stream-test",
+        GraphConfig(
+            graph=graph,
+            description="Test custom stream",
+            streamable_node_names=["generate"],
+        ),
+    )
+
+    stream = await openai_client.chat.completions.create(
+        model="custom-stream-test",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+    )
+    chunks = [chunk async for chunk in stream]
+
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "done"
+    assert all(
+        "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
+    )
+    assert chunks[-1].choices[0].finish_reason == "stop"

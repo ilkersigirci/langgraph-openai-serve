@@ -14,13 +14,13 @@ are documented separately under [Demo Stack](../demo/index.md).
 -   :material-rocket-launch-outline:{ .lg .middle } __First application__
 
     Install the package, register a provider-free graph, and call it through
-    Chat Completions.
+    Responses.
 
     [:octicons-arrow-right-24: Get started](../getting-started.md)
 
 -   :material-code-braces:{ .lg .middle } __OpenAI clients__
 
-    Call chat completions from Python and JavaScript, including streaming.
+    Call Responses from Python and JavaScript, including streaming and tools.
 
     [:octicons-arrow-right-24: Connect a client](openai-clients.md)
 

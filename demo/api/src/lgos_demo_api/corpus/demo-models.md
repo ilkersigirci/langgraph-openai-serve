@@ -9,7 +9,8 @@ The demo API registers these graph names as OpenAI models:
 - `citation-events` emits structured OpenAI URL citations alongside portable
   Markdown links.
 - `lgos-rag` retrieves from this packaged Markdown corpus, grades relevance,
-  performs at most one query rewrite, and grounds its answer in retrieved text.
+  performs at most one query rewrite, and grounds its answer in retrieved text
+  with Markdown links and structured URL citations.
 - `custom-input-output-context` demonstrates graph input, output, and context
   adapters.
 - `advanced-mcp-tools` demonstrates an asynchronous graph factory and mock
@@ -18,8 +19,8 @@ The demo API registers these graph names as OpenAI models:
 - `multi-node-streaming` combines streamed contributions from two sequential
   nodes into one final assistant message.
 - `status-events` streams portable status updates for native client UI.
-- `custom-event-showcase` streams explicitly public progress and artifact
-  events among ordinary assistant text.
+- `custom-event-showcase` demonstrates stream writer events handled safely
+  at the API boundary while streaming ordinary assistant text.
 - `persistent-plot-agent` uses a tool-calling agent to edit chart data scoped
   to the current user and chat, with request-scoped presentation settings.
 - `interruptible-approval` accepts a preset choice or custom reviewer feedback

@@ -20,12 +20,9 @@ from tests.graph.support.schemas import (
 
 
 async def stream_text(name: str, graph_registry: GraphRegistry, make_request) -> str:
-    chat_request = make_request(name)
+    request = make_request(name)
     chunks = run_langgraph_stream(
-        name,
-        chat_request.messages,
-        graph_registry,
-        chat_request,
+        request, [HumanMessage(content="question")], graph_registry
     )
     events = [event async for event in chunks]
     assert isinstance(events[-1], AIMessage)

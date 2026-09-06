@@ -100,6 +100,13 @@ async def main() -> None:
             max_retries=0,
         ) as openai_client,
     ):
+        response = await openai_client.responses.create(
+            model="minimal",
+            input="hello",
+            store=False,
+        )
+        assert response.output_text == "base install works"
+
         response = await openai_client.chat.completions.create(
             model="minimal",
             messages=[{"role": "user", "content": "hello"}],

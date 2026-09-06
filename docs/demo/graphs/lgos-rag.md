@@ -3,7 +3,8 @@
 `lgos-rag` is an agentic retrieval graph over the Markdown corpus packaged with
 the demo API. It lazily splits and embeds that corpus into a process-local
 in-memory vector index, retrieves up to four chunks, and grounds answers with
-the source URLs stored on those chunks.
+Markdown links and OpenAI `url_citation` annotations for the source URLs stored
+on those chunks.
 
 ## LangGraph Topology
 
@@ -24,24 +25,36 @@ graph TD;
 
 ```mermaid
 flowchart TD
-  start([User message]) --> decide["Choose direct response or retrieval"]
+  start(["UI → LGOS /v1/responses<br/>User message"]) --> decide["Choose direct response or retrieval"]
   decide -->|"greeting, conversation, or unrelated"| direct["Direct response"]
-  direct --> done([End])
+  direct --> response(["LGOS /v1/responses → UI<br/>Assistant text"])
 
   decide -->|"LGOS factual question"| retrieve["Retrieve documentation"]
   retrieve --> grade{"Context relevant?"}
-  grade -->|"yes"| answer["Generate grounded answer with Markdown links"]
-  answer --> done
+  grade -->|"yes"| answer["Generate answer with links and URL citations"]
+  answer --> response
   grade -->|"no, first miss"| rewrite["Rewrite query once"]
   rewrite --> decide
   grade -->|"no after rewrite"| no_results["Answer that documentation is insufficient"]
-  no_results --> done
+  no_results --> response
 ```
 
 The retry is deliberately bounded to one rewrite. Routing, grading, and
 rewriting use non-streaming internal model calls; retrieval uses the in-memory
 vector index. Direct, grounded, and no-result answers are the user-visible
 streamed nodes.
+
+For a grounded answer, the graph adds annotations only for Markdown links whose
+URLs exactly match retrieved document metadata. Citation spans come from the
+actual generated link text; the model does not generate indices. Other resource
+links and images remain ordinary Markdown.
+
+The graph also emits request-scoped status events while it understands the
+question, searches, checks sources, optionally rewrites, and prepares the
+answer. Streaming Responses exposes those updates as commentary for the
+maintained UIs; they are not persisted graph state. See
+[`status-events`](events-and-citations.md#request-flow) for the shared transport
+behavior.
 
 ## State And Lifetime
 

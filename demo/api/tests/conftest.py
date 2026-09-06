@@ -3,10 +3,10 @@ from typing import Any
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest, Role
+from langgraph_openai_serve import GraphRequest
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
@@ -31,29 +31,30 @@ async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
 
 
 @pytest.fixture
-def make_request() -> Callable[..., ChatCompletionRequest]:
-    """Build OpenAI chat requests used by graph tests."""
+def make_graph_input() -> Callable[..., tuple[GraphRequest, list[BaseMessage]]]:
+    """Build protocol-neutral inputs used by demo graph runner tests."""
 
-    def _make_request(
+    def _make_graph_input(
         model: str,
         *,
         content: str = "question",
         user: str | None = None,
         metadata: dict[str, str] | None = None,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> ChatCompletionRequest:
-        return ChatCompletionRequest(
+        messages: list[BaseMessage] | None = None,
+    ) -> tuple[GraphRequest, list[BaseMessage]]:
+        request = GraphRequest(
             model=model,
-            messages=(
-                messages
-                if messages is not None
-                else [{"role": Role.USER, "content": content}]
-            ),
+            metadata=metadata or {},
             user=user,
-            metadata=metadata,
+            tools=(),
+            tool_choice=None,
+            parallel_tool_calls=None,
+        )
+        return request, (
+            messages if messages is not None else [HumanMessage(content=content)]
         )
 
-    return _make_request
+    return _make_graph_input
 
 
 @pytest.fixture

@@ -14,11 +14,11 @@ def _public_event(value: object) -> dict[str, Any]:
 
 
 async def test_graph_streams_portable_status_updates(
-    make_request,
+    make_graph_input,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(status_events, "STATUS_EVENT_DELAY_SECONDS", 0)
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "status-events",
         content="Prepare the media workflow.",
     )
@@ -27,13 +27,7 @@ async def test_graph_streams_portable_status_updates(
     )
 
     stream = [
-        item
-        async for item in run_langgraph_stream(
-            request.model,
-            request.messages,
-            registry,
-            request,
-        )
+        item async for item in run_langgraph_stream(graph_request, messages, registry)
     ]
     events = [_public_event(item) for item in stream if isinstance(item, dict)]
 

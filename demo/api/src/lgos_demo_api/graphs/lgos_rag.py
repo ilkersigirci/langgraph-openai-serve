@@ -1,6 +1,7 @@
 """Agentic RAG graph over the bundled LGOS corpus."""
 
 import asyncio
+import re
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -16,6 +17,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.messages.content import create_citation, create_text_block
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
@@ -230,6 +232,33 @@ def _format_context(documents: list[Document]) -> str:
     )
 
 
+def _answer_message(answer: str, documents: list[Document]) -> AIMessage:
+    """Cite direct Markdown links that exactly match retrieved source URLs."""
+    sources = {
+        str(document.metadata["url"]): str(document.metadata["title"])
+        for document in documents
+    }
+    citations = []
+    for match in re.finditer(
+        r"(?<!!)\[(?P<label>[^]\r\n]+)\]\((?P<url>[^)\r\n]+)\)", answer
+    ):
+        url = match.group("url")
+        title = sources.get(url)
+        if title is None:
+            continue
+        citations.append(
+            create_citation(
+                url=url,
+                title=title,
+                start_index=match.start("label"),
+                end_index=match.end("label") - 1,
+            )
+        )
+    return AIMessage(
+        content_blocks=[create_text_block(text=answer, annotations=citations)]
+    )
+
+
 @tool(response_format="content_and_artifact")
 async def retrieve_lgos_rag(query: str) -> tuple[str, list[Document]]:
     """Search the LGOS documentation for facts needed to answer a question."""
@@ -373,7 +402,7 @@ async def rewrite_question(
 async def generate_answer(
     state: LgosRagState,
 ) -> dict[str, list[AIMessage]]:
-    """Generate a grounded answer with direct Markdown source links."""
+    """Generate a grounded answer with Markdown links and URL citations."""
     _emit_status("Writing the answer")
     documents = _retrieved_documents(state)
     prompt = ChatPromptTemplate.from_messages(
@@ -394,7 +423,7 @@ async def generate_answer(
         },
     )
     _emit_status("Answer ready", done=True)
-    return {"messages": [AIMessage(content=answer)]}
+    return {"messages": [_answer_message(answer, documents)]}
 
 
 async def answer_no_results(
@@ -445,7 +474,7 @@ lgos_rag = workflow.compile()
 lgos_rag_graph_config = GraphConfig(
     graph=lgos_rag,
     description=(
-        "Answers questions with agentic retrieval over the packaged demo corpus."
+        "Answers questions with cited agentic retrieval over the packaged demo corpus."
     ),
     streamable_node_names=[
         "generate_query_or_respond",

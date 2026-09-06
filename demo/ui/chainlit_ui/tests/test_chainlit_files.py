@@ -3,11 +3,9 @@
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from openai.types.chat import ChatCompletionMessageParam
 
 from lgos_chainlit.utils import clients
 from lgos_chainlit.utils import files as file_utils
@@ -48,7 +46,7 @@ def test_packaged_chainlit_config_enables_file_attachments() -> None:
     }
 
 
-async def test_current_attachments_become_openai_file_parts(
+async def test_current_attachments_become_responses_file_parts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -57,7 +55,6 @@ async def test_current_attachments_become_openai_file_parts(
     create = AsyncMock(return_value=SimpleNamespace(id="file-123"))
     set_profile_file_upload(monkeypatch, enabled=True)
     monkeypatch.setattr(clients.files_client.files, "create", create)
-    monkeypatch.setattr(clients.settings.OPENAI, "files_provider", "lgos-files")
     message = SimpleNamespace(
         elements=[
             SimpleNamespace(
@@ -68,28 +65,23 @@ async def test_current_attachments_become_openai_file_parts(
         ]
     )
 
-    messages = await file_utils.with_file_parts(
-        [
-            cast(
-                "ChatCompletionMessageParam",
-                {"role": "user", "content": "Summarize it."},
-            )
-        ],
+    input_items = await file_utils.with_response_file_parts(
+        [{"role": "user", "content": "Summarize it."}],
         message,
     )
 
-    assert messages == [
+    assert input_items == [
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "Summarize it."},
-                {"type": "file", "file": {"file_id": "file-123"}},
+                {"type": "input_text", "text": "Summarize it."},
+                {"type": "input_file", "file_id": "file-123"},
             ],
         }
     ]
     create.assert_awaited_once()
     assert create.await_args.kwargs["purpose"] == "user_data"
-    assert create.await_args.kwargs["extra_query"] == {"provider": "lgos-files"}
+    assert create.await_args.kwargs["extra_query"] == {"provider": "litellm_proxy"}
     filename, content, content_type = create.await_args.kwargs["file"]
     assert filename == "report.pdf"
     assert content.closed
@@ -97,11 +89,9 @@ async def test_current_attachments_become_openai_file_parts(
 
 
 async def test_message_without_attachments_is_unchanged() -> None:
-    messages = [
-        cast("ChatCompletionMessageParam", {"role": "user", "content": "Hello"})
-    ]
+    messages = [{"role": "user", "content": "Hello"}]
 
-    result = await file_utils.with_file_parts(
+    result = await file_utils.with_response_file_parts(
         messages,
         SimpleNamespace(elements=[]),
     )
@@ -109,7 +99,7 @@ async def test_message_without_attachments_is_unchanged() -> None:
     assert result is messages
 
 
-async def test_file_only_message_still_reaches_chat(
+async def test_file_only_message_still_reaches_responses(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -122,7 +112,7 @@ async def test_file_only_message_still_reaches_chat(
         AsyncMock(return_value=SimpleNamespace(id="file-123")),
     )
 
-    result = await file_utils.with_file_parts(
+    result = await file_utils.with_response_file_parts(
         [],
         SimpleNamespace(
             content="",
@@ -140,7 +130,7 @@ async def test_file_only_message_still_reaches_chat(
         {
             "role": "user",
             "content": [
-                {"type": "file", "file": {"file_id": "file-123"}},
+                {"type": "input_file", "file_id": "file-123"},
             ],
         }
     ]
@@ -160,7 +150,7 @@ async def test_unsupported_profile_rejects_before_central_upload(
         ValueError,
         match="The selected graph does not support file inputs",
     ):
-        await file_utils.with_file_parts(
+        await file_utils.with_response_file_parts(
             [],
             SimpleNamespace(elements=[SimpleNamespace(path=str(path))]),
         )

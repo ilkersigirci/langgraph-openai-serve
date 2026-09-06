@@ -1,7 +1,7 @@
 """Upload Chainlit attachments through the OpenAI Files API."""
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from chainlit.config import (
     ChainlitConfigOverrides,
@@ -10,10 +10,6 @@ from chainlit.config import (
 )
 from chainlit.context import context as chainlit_context
 from openai.types import Model
-from openai.types.chat import (
-    ChatCompletionContentPartParam,
-    ChatCompletionMessageParam,
-)
 
 from lgos_chainlit.lgos_protocol import GraphFeature, model_supports
 from lgos_chainlit.utils.clients import files_request
@@ -36,20 +32,68 @@ def file_upload_overrides(model: Model | None) -> ChainlitConfigOverrides:
     )
 
 
-async def with_file_parts(
-    messages: list[ChatCompletionMessageParam],
+async def with_response_file_parts(
+    input_items: list[dict[str, Any]],
     message: object,
-) -> list[ChatCompletionMessageParam]:
-    """Attach current Chainlit files to the latest OpenAI user message."""
+) -> list[dict[str, Any]]:
+    """Attach current Chainlit files as native Responses input parts."""
+    file_ids = await _upload_file_ids(message)
+    if not file_ids:
+        return input_items
+
+    user_message_index = next(
+        (
+            index
+            for index in range(len(input_items) - 1, -1, -1)
+            if input_items[index].get("role") == "user"
+        ),
+        None,
+    )
+    if user_message_index is None:
+        return [
+            *input_items,
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_file", "file_id": file_id} for file_id in file_ids
+                ],
+            },
+        ]
+
+    item = input_items[user_message_index]
+    content = item.get("content")
+    if isinstance(content, str):
+        parts: list[object] = (
+            [{"type": "input_text", "text": content}] if content else []
+        )
+    elif isinstance(content, list):
+        parts = list(content)
+    else:
+        parts = []
+    updated = {
+        **item,
+        "content": [
+            *parts,
+            *({"type": "input_file", "file_id": file_id} for file_id in file_ids),
+        ],
+    }
+    return [
+        *input_items[:user_message_index],
+        updated,
+        *input_items[user_message_index + 1 :],
+    ]
+
+
+async def _upload_file_ids(message: object) -> list[str]:
     elements = getattr(message, "elements", None)
     if not isinstance(elements, list) or not elements:
-        return messages
+        return []
     if not _session_file_upload_enabled():
         msg = "The selected graph does not support file inputs."
         raise ValueError(msg)
 
     client, provider = files_request()
-    parts: list[ChatCompletionContentPartParam] = []
+    file_ids = []
     for element in elements:
         path = getattr(element, "path", None)
         if not isinstance(path, str) or not path:
@@ -60,30 +104,10 @@ async def with_file_parts(
             uploaded = await client.files.create(
                 file=(filename, content, content_type),
                 purpose="user_data",
-                extra_query={"provider": provider} if provider else None,
+                extra_query={"provider": provider},
             )
-        parts.append({"type": "file", "file": {"file_id": uploaded.id}})
-
-    if not parts:
-        return messages
-
-    if not messages:
-        text = getattr(message, "content", None)
-        content = (
-            [{"type": "text", "text": text}] if isinstance(text, str) and text else []
-        )
-        return [
-            cast(
-                "ChatCompletionMessageParam",
-                {"role": "user", "content": [*content, *parts]},
-            )
-        ]
-
-    latest = messages[-1]
-    text = latest.get("content")
-    content = [{"type": "text", "text": text}] if isinstance(text, str) and text else []
-    updated = {**latest, "content": [*content, *parts]}
-    return [*messages[:-1], cast("ChatCompletionMessageParam", updated)]
+        file_ids.append(uploaded.id)
+    return file_ids
 
 
 def _session_file_upload_enabled() -> bool:

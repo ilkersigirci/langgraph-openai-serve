@@ -13,11 +13,11 @@ from lgos_demo_api.graphs.custom_io import custom_io_graph_config
     ],
 )
 async def test_adapts_request_input_context_and_output(
-    make_request,
+    make_graph_input,
     user: str | None,
     expected_user: str,
 ) -> None:
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "custom-input-output-context",
         content="Show me custom schemas.",
         user=user,
@@ -26,11 +26,6 @@ async def test_adapts_request_input_context_and_output(
         registry={"custom-input-output-context": custom_io_graph_config}
     )
 
-    result = await run_langgraph(
-        request.model,
-        request.messages,
-        registry,
-        request,
-    )
+    result = await run_langgraph(graph_request, messages, registry)
 
-    assert result.output.text == f"{expected_user} asked: Show me custom schemas."
+    assert result.text == f"{expected_user} asked: Show me custom schemas."

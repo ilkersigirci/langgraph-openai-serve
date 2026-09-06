@@ -1,0 +1,53 @@
+model_list:
+  # LiteLLM 1.99.1 still synthesizes a final-only Responses stream for wildcard
+  # routes. Keep exact entries for graphs whose commentary lifecycle is tested.
+  - model_name: lgos-a/status-events
+    litellm_params:
+      model: openai/status-events
+      api_base: http://lgos-demo-api-a:8000/v1
+      api_key: DUMMY
+    model_info:
+      supports_native_streaming: true
+  - model_name: lgos-b/status-events
+    litellm_params:
+      model: openai/status-events
+      api_base: http://lgos-demo-api-b:8000/v1
+      api_key: DUMMY
+    model_info:
+      supports_native_streaming: true
+  # Qualified wildcard aliases exercise LiteLLM-managed multi-provider routing.
+  - model_name: lgos-a/*
+    litellm_params:
+      model: openai/*
+      api_base: http://lgos-demo-api-a:8000/v1
+      api_key: DUMMY
+    model_info:
+      supports_native_streaming: true
+  - model_name: lgos-b/*
+    litellm_params:
+      model: openai/*
+      api_base: http://lgos-demo-api-b:8000/v1
+      api_key: DUMMY
+    model_info:
+      supports_native_streaming: true
+
+files_settings:
+  - custom_llm_provider: litellm_proxy
+    api_base: http://lgos-files-api:8000/v1
+    api_key: DUMMY
+
+general_settings:
+  pass_through_endpoints:
+    # The UI catalog-detail clients use authenticated pass-through routes so
+    # model extensions remain lossless. The API and Files routes also remain
+    # full-fidelity protocol references for integration tests; UI inference and
+    # Files operations use managed routing instead.
+    - path: /v1/lgos-a
+      target: http://lgos-demo-api-a:8000/v1
+      include_subpath: true
+    - path: /v1/lgos-b
+      target: http://lgos-demo-api-b:8000/v1
+      include_subpath: true
+    - path: /v1/lgos-files
+      target: http://lgos-files-api:8000/v1
+      include_subpath: true

@@ -27,10 +27,10 @@ The OpenAI base URL is `http://localhost:3006/v1`; health is available at
 `http://localhost:3006/health`.
 
 The service supports upload, list, retrieve, content, and delete operations for
-`purpose="user_data"`. Chainlit and generated Open WebUI models may call it
-directly or send Files requests through Bifrost's dedicated `lgos-files`
-provider. The `file-input` graph uses the same service to resolve an incoming
-`file_id`.
+`purpose="user_data"`. The maintained UIs reach it through Bifrost's
+`lgos-files` provider or LiteLLM's `litellm_proxy` Files provider; they do not
+connect directly. Direct protocol checks may call it on port 3006. The
+`file-input` graph uses the same service to resolve an incoming `file_id`.
 
 ## Use A Custom Repository
 
@@ -60,6 +60,6 @@ volume.
 The demo is a deliberately small reference implementation. Before exposing it
 to untrusted clients, add authentication, tenant isolation, upload limits,
 retention, malware policy, and the availability controls required by the
-deployment. See [Accept File Inputs](../how-to-guides/file-inputs.md) for the
+deployment. See [Accept And Display Files](../how-to-guides/file-inputs.md) for the
 client and graph flow and [Settings and Commands](reference.md#files-api-settings)
 for configuration.

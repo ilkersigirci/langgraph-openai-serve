@@ -2,7 +2,6 @@
 
 from typing import Literal
 
-from openai.types.chat.chat_completion_message import Annotation
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 CLIENT_EVENT_SCHEMA_VERSION = 1
@@ -32,7 +31,9 @@ class _ClientEventEnvelope(BaseModel):
     event: _ClientEventData = Field(description="Public event exposed to clients.")
 
 
-class _StatusEventData(BaseModel):
+class StatusEventData(BaseModel):
+    """Validated graph status used to render Responses commentary."""
+
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     description: str = Field(
@@ -76,7 +77,7 @@ def status_event(
     namespace: tuple[str, ...] = (),
 ) -> dict[str, object]:
     """Build a portable status update for native client UI."""
-    data = _StatusEventData(
+    data = StatusEventData(
         description=description,
         done=done,
         hidden=hidden,
@@ -88,24 +89,15 @@ def status_event(
     )
 
 
-def client_event_extension(value: object) -> dict[str, object] | None:
-    """Build a stream extension from validated public custom stream data."""
+def parse_status_event(value: object) -> StatusEventData | None:
+    """Read a public graph status, ignoring private or diagnostic custom data."""
     if not isinstance(value, dict) or value.get("type") != _CLIENT_EVENT_ENVELOPE_TYPE:
         return None
 
     try:
         envelope = _ClientEventEnvelope.model_validate(value)
+        if envelope.event.type != "status":
+            return None
+        return StatusEventData.model_validate(envelope.event.data)
     except ValidationError:
         return None
-    return envelope.model_dump(mode="json", exclude={"type"})
-
-
-def citation_slice(annotation: Annotation, content: str) -> slice:
-    """Convert an OpenAI inclusive citation span to a validated Python slice."""
-    citation = annotation.url_citation
-    start = citation.start_index
-    stop = citation.end_index + 1
-    if not 0 <= start < stop <= len(content):
-        msg = "citation indices must refer to the final assistant text"
-        raise ValueError(msg)
-    return slice(start, stop)

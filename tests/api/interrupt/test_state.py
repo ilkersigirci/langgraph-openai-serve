@@ -1,4 +1,3 @@
-import json
 import uuid
 from http import HTTPStatus
 
@@ -7,15 +6,18 @@ from fastapi import FastAPI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI, BadRequestError, ConflictError
 
+from langgraph_openai_serve.api.responses.interrupts import interrupt_tool_call_id
+
 from .support import (
     MODEL,
     NESTED_SEQUENTIAL_MODEL,
     SEQUENTIAL_MODEL,
     assert_checkpoint_deleted,
     assert_interrupt_arguments,
-    create_completion,
-    resume_interrupt,
-    resume_messages,
+    create_response,
+    interrupt_calls,
+    resume_outputs,
+    resume_response,
 )
 
 
@@ -25,7 +27,7 @@ async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run_id = str(uuid.uuid4()).upper()
-    first_response = await create_completion(openai_client, run_id=run_id)
+    first_response = await create_response(openai_client, run_id=run_id)
     graph_config = fastapi_app.state.graph_registry.get_graph(MODEL)
     graph = await graph_config.resolve_graph()
 
@@ -35,60 +37,63 @@ async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
 
     with monkeypatch.context() as retry_patch:
         retry_patch.setattr(graph, "astream", fail_execution)
-        recovered_response = await create_completion(openai_client, run_id=run_id)
+        recovered_response = await create_response(openai_client, run_id=run_id)
 
-    first_calls = first_response.choices[0].message.tool_calls or []
-    recovered_calls = recovered_response.choices[0].message.tool_calls or []
-    assert assert_interrupt_arguments(first_calls[0])["run_id"] == run_id.lower()
-    assert [call.model_dump(mode="json") for call in recovered_calls] == [
-        call.model_dump(mode="json") for call in first_calls
+    first_calls = interrupt_calls(first_response)
+    recovered_calls = interrupt_calls(recovered_response)
+    clean_id = run_id.lower().replace("-", "")
+    assert first_response.id.startswith(f"resp_lg_{clean_id}_")
+    assert recovered_response.id.startswith(f"resp_lg_{clean_id}_")
+    assert recovered_response.id != first_response.id
+    assert [call.arguments for call in recovered_calls] == [
+        call.arguments for call in first_calls
     ]
 
-    final_response = await resume_interrupt(
+    final_response = await resume_response(
         openai_client,
         recovered_response,
         "approve",
     )
-    assert final_response.choices[0].message.content == "resumed:approve"
+    assert final_response.output_text == "resumed:approve"
 
 
 async def test_same_run_id_is_isolated_by_server_checkpoint_scope(
     openai_client: AsyncOpenAI,
 ) -> None:
     run_id = str(uuid.uuid4())
-    tenant_a = await create_completion(
+    tenant_a = await create_response(
         openai_client,
         run_id=run_id,
         checkpoint_scope="tenant-a",
     )
-    tenant_b = await create_completion(
+    tenant_b = await create_response(
         openai_client,
         run_id=run_id,
         checkpoint_scope="tenant-b",
     )
 
     with pytest.raises(ConflictError):
-        await resume_interrupt(
+        await resume_response(
             openai_client,
             tenant_a,
             "approve",
             checkpoint_scope="tenant-b",
         )
 
-    response_a = await resume_interrupt(
+    response_a = await resume_response(
         openai_client,
         tenant_a,
         "approve",
         checkpoint_scope="tenant-a",
     )
-    response_b = await resume_interrupt(
+    response_b = await resume_response(
         openai_client,
         tenant_b,
         "reject",
         checkpoint_scope="tenant-b",
     )
-    assert response_a.choices[0].message.content == "resumed:approve"
-    assert response_b.choices[0].message.content == "resumed:reject"
+    assert response_a.output_text == "resumed:approve"
+    assert response_b.output_text == "resumed:reject"
 
 
 @pytest.mark.parametrize(
@@ -103,7 +108,7 @@ async def test_invalid_caller_run_id_returns_400(
     run_id: str,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
-        await create_completion(openai_client, run_id=run_id)
+        await create_response(openai_client, run_id=run_id)
 
     assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
     assert exc_info.value.body["param"] == "metadata.langgraph_run_id"
@@ -112,51 +117,42 @@ async def test_invalid_caller_run_id_returns_400(
 async def test_resume_rejects_mismatched_caller_run_id(
     openai_client: AsyncOpenAI,
 ) -> None:
-    first_response = await create_completion(openai_client)
-    messages = resume_messages(first_response, ["approve"])
+    first_response = await create_response(openai_client)
+    input_items = resume_outputs(first_response, ["approve"])
 
     with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.chat.completions.create(
+        await openai_client.responses.create(
             model=MODEL,
-            messages=messages,
+            previous_response_id=first_response.id,
+            input=input_items,
             metadata={"langgraph_run_id": str(uuid.uuid4())},
         )
 
     assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
-    assert exc_info.value.body["param"] == "messages"
+    assert exc_info.value.body["param"] == "metadata.langgraph_run_id"
 
 
 async def test_fabricated_interrupt_id_cannot_resume_pending_state(
     openai_client: AsyncOpenAI,
 ) -> None:
-    first_response = await create_completion(openai_client)
-    messages = resume_messages(first_response, ["approve"])
-    assistant_call = messages[0]["tool_calls"][0]
-    assistant_call["id"] = "lg_interrupt_fabricated"
-    messages[1]["tool_call_id"] = "lg_interrupt_fabricated"
-
-    with pytest.raises(ConflictError) as exc_info:
-        await openai_client.chat.completions.create(model=MODEL, messages=messages)
-
-    assert exc_info.value.status_code == HTTPStatus.CONFLICT
-
-
-async def test_modified_replayed_payload_does_not_change_resume_target(
-    openai_client: AsyncOpenAI,
-) -> None:
-    first_response = await create_completion(openai_client)
-    messages = resume_messages(first_response, ["approve"])
-    assistant_call = messages[0]["tool_calls"][0]
-    arguments = json.loads(assistant_call["function"]["arguments"])
-    arguments["payload"] = {"question": "Approve a different action?"}
-    assistant_call["function"]["arguments"] = json.dumps(arguments)
-
-    response = await openai_client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
+    first_response = await create_response(openai_client)
+    call_id = interrupt_calls(first_response)[0].call_id
+    state_token = call_id.removeprefix("call_lg_").partition("_")[0]
+    input_items = resume_outputs(first_response, ["approve"])
+    input_items[0]["call_id"] = interrupt_tool_call_id(
+        "fabricated",
+        state_token,
+        response_id=first_response.id,
     )
 
-    assert response.choices[0].message.content == "resumed:approve"
+    with pytest.raises(ConflictError) as exc_info:
+        await openai_client.responses.create(
+            model=MODEL,
+            previous_response_id=first_response.id,
+            input=input_items,
+        )
+
+    assert exc_info.value.status_code == HTTPStatus.CONFLICT
 
 
 @pytest.mark.parametrize("model", [SEQUENTIAL_MODEL, NESTED_SEQUENTIAL_MODEL])
@@ -164,49 +160,80 @@ async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
     openai_client: AsyncOpenAI,
     model: str,
 ) -> None:
-    first_pause = await create_completion(openai_client, model=model)
-    first_messages = resume_messages(first_pause, ["one"])
-    second_pause = await openai_client.chat.completions.create(
+    first_pause = await create_response(openai_client, model=model)
+    second_pause = await resume_response(
+        openai_client,
+        first_pause,
+        "one",
         model=model,
-        messages=first_messages,
     )
 
-    first_call = first_pause.choices[0].message.tool_calls[0]
-    second_call = second_pause.choices[0].message.tool_calls[0]
-    assert first_call.id == second_call.id
+    first_call = interrupt_calls(first_pause)[0]
+    second_call = interrupt_calls(second_pause)[0]
+    assert first_call.call_id != second_call.call_id
+    assert first_pause.id != second_pause.id
     first_arguments = assert_interrupt_arguments(first_call)
     second_arguments = assert_interrupt_arguments(second_call)
-    assert first_arguments["state_token"] != second_arguments["state_token"]
+    assert first_arguments == {"question": "first"}
+    assert second_arguments == {"question": "second"}
 
     with pytest.raises(ConflictError):
-        await openai_client.chat.completions.create(
+        await resume_response(
+            openai_client,
+            first_pause,
+            "one",
             model=model,
-            messages=first_messages,
         )
 
-    final_response = await resume_interrupt(
+    final_response = await resume_response(
         openai_client,
         second_pause,
         "two",
         model=model,
     )
-    assert final_response.choices[0].message.content == "one,two"
+    assert final_response.output_text == "one,two"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_interrupt_outputs_must_belong_to_previous_response(
+    openai_client: AsyncOpenAI,
+    stream: bool,
+) -> None:
+    first_pause = await create_response(openai_client, model=SEQUENTIAL_MODEL)
+    second_pause = await resume_response(
+        openai_client, first_pause, "one", model=SEQUENTIAL_MODEL
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.responses.create(
+            model=SEQUENTIAL_MODEL,
+            previous_response_id=first_pause.id,
+            input=resume_outputs(second_pause, ["two"]),
+            stream=stream,
+        )
+
+    assert exc_info.value.body["param"] == "previous_response_id"
+    final = await resume_response(
+        openai_client, second_pause, "two", model=SEQUENTIAL_MODEL
+    )
+    assert final.output_text == "one,two"
 
 
 async def test_streaming_state_conflict_returns_409_before_sse(
     openai_client: AsyncOpenAI,
 ) -> None:
-    first_response = await create_completion(openai_client)
-    messages = resume_messages(first_response, ["approve"])
-    assistant_call = messages[0]["tool_calls"][0]
-    arguments = json.loads(assistant_call["function"]["arguments"])
-    arguments["state_token"] = "stale-state-token"
-    assistant_call["function"]["arguments"] = json.dumps(arguments)
+    first_response = await create_response(openai_client)
+    input_items = resume_outputs(first_response, ["approve"])
+    interrupt_id = input_items[0]["call_id"].removeprefix("call_lg_").split("_", 2)[2]
+    input_items[0]["call_id"] = interrupt_tool_call_id(
+        interrupt_id, "f" * 64, response_id=first_response.id
+    )
 
     with pytest.raises(ConflictError) as exc_info:
-        await openai_client.chat.completions.create(
+        await openai_client.responses.create(
             model=MODEL,
-            messages=messages,
+            previous_response_id=first_response.id,
+            input=input_items,
             stream=True,
         )
 
@@ -221,9 +248,8 @@ async def test_repeated_resume_does_not_execute_completed_run_again(
     fastapi_app: FastAPI,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first_response = await create_completion(openai_client)
-    messages = resume_messages(first_response, ["approve"])
-    await openai_client.chat.completions.create(model=MODEL, messages=messages)
+    first_response = await create_response(openai_client)
+    await resume_response(openai_client, first_response, "approve")
 
     graph_config = fastapi_app.state.graph_registry.get_graph(MODEL)
     graph = await graph_config.resolve_graph()
@@ -235,24 +261,21 @@ async def test_repeated_resume_does_not_execute_completed_run_again(
     with monkeypatch.context() as retry_patch:
         retry_patch.setattr(graph, "astream", fail_execution)
         with pytest.raises(ConflictError):
-            await openai_client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-            )
+            await resume_response(openai_client, first_response, "approve")
 
 
 async def test_terminal_run_deletes_its_checkpoint_lineage(
     openai_client: AsyncOpenAI,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    first_response = await create_completion(openai_client)
-    arguments = assert_interrupt_arguments(
-        first_response.choices[0].message.tool_calls[0]
-    )
-    await resume_interrupt(openai_client, first_response, "approve")
+    run_id = str(uuid.uuid4())
+    first_response = await create_response(openai_client, run_id=run_id)
+    first_call = interrupt_calls(first_response)[0]
+    assert_interrupt_arguments(first_call)
+    await resume_response(openai_client, first_response, "approve")
 
     await assert_checkpoint_deleted(
         sqlite_checkpointer,
         model=MODEL,
-        run_id=arguments["run_id"],
+        run_id=run_id,
     )

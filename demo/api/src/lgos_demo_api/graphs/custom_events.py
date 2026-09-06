@@ -1,4 +1,4 @@
-"""Deterministic graph showcasing public custom stream events."""
+"""Deterministic graph showcasing internal stream writer events."""
 
 import asyncio
 from typing import Annotated, Sequence
@@ -12,8 +12,8 @@ from langgraph_openai_serve import GraphConfig, GraphFeature, client_event
 from pydantic import BaseModel
 
 ANSWER = (
-    "OpenAI compatibility stays intact: assistant text uses standard delta.content, "
-    "while opt-in client events use the namespaced chunk extension."
+    "OpenAI compatibility stays intact: assistant text uses native text deltas, "
+    "while custom events remain filtered at the API boundary."
 )
 SHOWCASE_EVENT_DELAY_SECONDS = 0.25
 VALIDATION_EVENT_CHUNK_INDEX = 4
@@ -102,7 +102,7 @@ custom_event_showcase_graph = workflow.compile()
 custom_event_showcase_graph_config = GraphConfig(
     graph=custom_event_showcase_graph,
     description=(
-        "Streams public progress and artifact events alongside assistant text."
+        "Demonstrates internal stream writer events handled safely alongside assistant text."
     ),
     streamable_node_names=["build_compatibility_report"],
     features={GraphFeature.CLIENT_EVENTS},

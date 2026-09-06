@@ -81,7 +81,7 @@ metadata through LangChain's `RunnableConfig`:
 - `langfuse_session_id`, when the request contains a non-empty
   `metadata.session_id` string.
 
-LGOS also uses the stable run name `lgos.chat_completion`. LangGraph propagates
+Both endpoints use the stable graph run name `lgos.graph_run`. LangGraph propagates
 primitive `configurable` fields to callback metadata during execution, so an
 interrupt-enabled run also exposes the derived checkpoint `thread_id` to
 callbacks. That checkpoint identifier is operation state, not conversation
@@ -89,13 +89,13 @@ identity. LGOS does not set LangChain's native execution `run_id` or Langfuse's
 generated trace ID.
 
 Langfuse's LangChain integration creates a trace for each invocation by
-default. Treat one Chat Completions request as one trace. When several requests
-belong to one conversation, send the same UI-owned value as
+default. Treat one Responses or Chat Completions request as one trace. When
+several requests belong to one conversation, send the same UI-owned value as
 `metadata.session_id`; LGOS maps it to Langfuse's `langfuse_session_id`, which
 groups the independent traces into one
 [session](https://langfuse.com/docs/observability/features/sessions). This is
 correlation only: LGOS remains stateless and the client must still send the
-conversation messages needed by each completion. The
+input items needed by each request. The
 [Langfuse trace ID guidance](https://langfuse.com/docs/observability/features/trace-ids-and-distributed-tracing)
 supports deterministic custom trace IDs for a trusted external ID, but LGOS's
 `X-Request-ID` is a correlation header and may be client-supplied or reused.

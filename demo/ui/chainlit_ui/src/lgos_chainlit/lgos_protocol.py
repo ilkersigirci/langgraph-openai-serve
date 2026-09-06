@@ -12,15 +12,11 @@ Authoritative LGOS sources:
 * Graph feature values:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
 * OpenAI metadata limits:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/schemas.py
+  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/metadata.py
 * Runtime-settings metadata key:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
-* Stream-event opt-in keys:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/events.py
-* Client-event schema:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/events.py
 * Interrupt tool contract:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/chat/utils/interrupts.py
+  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/responses/interrupts.py
 """
 
 import logging
@@ -31,7 +27,6 @@ from openai.types import Model
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
     JsonValue,
     StringConstraints,
     ValidationError,
@@ -43,15 +38,12 @@ LGOS_EXTENSION_KEY = "langgraph_openai_serve"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 SESSION_ID_METADATA_KEY = "session_id"
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
-STREAM_EVENTS_METADATA_KEY = "langgraph_stream_events"
-STREAM_EVENTS_METADATA_VALUE = "v1"
 INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 
 
 class GraphFeature(StrEnum):
     """Features advertised for an LGOS model."""
 
-    CLIENT_EVENTS = "client_events"
     FILE_INPUTS = "file_inputs"
     INTERRUPTS = "interrupts"
 
@@ -133,62 +125,3 @@ def model_client_settings(model: Model) -> ModelClientSettings | None:
             model.id,
         )
         return None
-
-
-ClientEventType = Literal["status", "progress", "artifact"]
-
-
-class StatusUpdate(BaseModel):
-    """A portable status update rendered by the standalone client."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    description: str = Field(min_length=1)
-    done: bool = False
-    hidden: bool = False
-
-
-class ChartSeries(BaseModel):
-    """One portable series in a chart artifact."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    name: str = Field(min_length=1)
-    values: list[float]
-
-
-class ChartArtifact(BaseModel):
-    """A versioned chart snapshot published as a portable artifact."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    schema_version: Literal[1]
-    id: str = Field(min_length=1)
-    kind: Literal["chart"]
-    title: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
-    chart_type: Literal["bar", "line"]
-    labels: list[str]
-    series: list[ChartSeries]
-    x_axis_title: str = Field(min_length=1)
-    y_axis_title: str = Field(min_length=1)
-    show_legend: bool
-
-
-class ClientEventData(BaseModel):
-    """A validated public event carried by an LGOS stream extension."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    type: ClientEventType
-    namespace: tuple[str, ...] = ()
-    data: JsonValue
-
-
-class ClientEventExtension(BaseModel):
-    """The LGOS-specific portion of an OpenAI chat completion chunk."""
-
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
-
-    schema_version: Literal[1]
-    event: ClientEventData

@@ -1,0 +1,67 @@
+services:
+  lgos-litellm:
+    container_name: lgos-litellm
+    image: ghcr.io/berriai/litellm:v1.99.1@sha256:a53a7d3ffebede1925bd3ee8a21e4a7b9b63e2e68ec883af136edcccb6eeb82c
+    restart: "no"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add: []
+    pids_limit: 256
+    cpus: "1.0"
+    # LiteLLM's Prisma migration and proxy initialization overlap briefly and
+    # exceed 2 GiB on a fresh Admin UI database.
+    mem_limit: 3G
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    depends_on:
+      lgos-db:
+        condition: service_healthy
+      lgos-demo-api-a:
+        condition: service_healthy
+      lgos-demo-api-b:
+        condition: service_healthy
+      lgos-files-api:
+        condition: service_healthy
+    environment:
+      CONFIG_FILE_PATH: /app/config.yaml
+      DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos?schema=litellm
+      LITELLM_MASTER_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
+      OPENAI_BASE_URL: http://lgos-files-api:8000/v1
+      OPENAI_API_KEY: DUMMY
+      PRISMA_CLI_PATH: /opt/prisma/binaries/node_modules/.bin/prisma
+      PRISMA_OFFLINE_MODE: "true"
+    # The smaller gateway image has a reduced route allowlist and no migration
+    # runtime. The full image initializes the Admin UI database and keeps
+    # authenticated pass-through routes for rich LGOS model metadata.
+    command:
+      - --config
+      - /app/config.yaml
+      - --host
+      - 0.0.0.0
+      - --port
+      - "4000"
+      - --use_v2_migration_resolver
+      - --enforce_prisma_migration_check
+    ports:
+      - "3007:4000"
+    volumes:
+      - type: bind
+        source: ../configs/litellm/config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12

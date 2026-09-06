@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
+import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -19,7 +20,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.api.chat.utils.streaming import (
+from langgraph_openai_serve.api.streaming import (
     _StreamOwner,  # ruff: ignore[import-private-name]
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
@@ -27,6 +28,7 @@ from langgraph_openai_serve.graph.utils import GraphRun
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionChunk
+    from openai.types.responses import ResponseStreamEvent
 
 _TEST_TIMEOUT = 5.0
 _PROVIDER_CHUNK = (
@@ -176,7 +178,10 @@ def _build_downstream_graph(
     )
 
 
-async def test_closing_openai_stream_cancels_graph_and_provider() -> None:
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+async def test_closing_openai_stream_cancels_graph_and_provider(
+    protocol: str,
+) -> None:
     provider = _ProviderLifecycle()
     node = _NodeLifecycle()
 
@@ -191,7 +196,7 @@ async def test_closing_openai_stream_cancels_graph_and_provider() -> None:
             }
         )
         app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
-        stream: AsyncStream[ChatCompletionChunk] | None = None
+        stream: AsyncStream[ChatCompletionChunk | ResponseStreamEvent] | None = None
 
         async with _serve_over_tcp(app) as base_url:
             try:
@@ -201,11 +206,19 @@ async def test_closing_openai_stream_cancels_graph_and_provider() -> None:
                     max_retries=0,
                     timeout=_TEST_TIMEOUT,
                 ) as client:
-                    stream = await client.chat.completions.create(
-                        model="cancellable",
-                        messages=[{"role": "user", "content": "start"}],
-                        stream=True,
-                    )
+                    if protocol == "chat":
+                        stream = await client.chat.completions.create(
+                            model="cancellable",
+                            messages=[{"role": "user", "content": "start"}],
+                            stream=True,
+                        )
+                    else:
+                        stream = await client.responses.create(
+                            model="cancellable",
+                            input="start",
+                            store=False,
+                            stream=True,
+                        )
                     await _wait_for_event(node.streaming)
                     await _wait_for_event(provider.waiting)
 

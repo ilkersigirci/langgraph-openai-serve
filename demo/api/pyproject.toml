@@ -20,6 +20,7 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.65b0,<0.66",
     "opentelemetry-instrumentation-logging>=0.65b0,<0.66",
     "opentelemetry-instrumentation-psycopg>=0.65b0,<0.66",
+    "plotly>=6,<7",
     "psycopg[binary,pool]>=3.3.4,<4",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",

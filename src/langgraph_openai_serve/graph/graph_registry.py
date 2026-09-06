@@ -17,23 +17,21 @@ from pydantic import (
     field_validator,
 )
 
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.graph.client_settings import (
     ClientSettings,
     validate_client_settings_model,
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
+from langgraph_openai_serve.graph.request import GraphRequest
 
 GraphResolver = (
     CompiledStateGraph
     | Callable[[], CompiledStateGraph | Awaitable[CompiledStateGraph]]
 )
-RequestToInput = Callable[
-    [ChatCompletionRequest, list[BaseMessage]], Any | Awaitable[Any]
-]
+RequestToInput = Callable[[GraphRequest, list[BaseMessage]], Any | Awaitable[Any]]
 ContextFactory = Callable[
-    [ChatCompletionRequest, Any],
+    [GraphRequest, Any],
     Any | Awaitable[Any],
 ]
 OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
@@ -78,6 +76,9 @@ class GraphConfig(BaseModel):
     ]
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
+    hosted_tools: set[
+        Annotated[str, StringConstraints(pattern=r"^lgos_[a-z][a-z0-9_]*$")]
+    ] = Field(default_factory=set)
     client_settings: type[ClientSettings] | None = None
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
@@ -141,17 +142,17 @@ class GraphConfig(BaseModel):
 
     async def build_input(
         self,
-        request: ChatCompletionRequest,
+        request: GraphRequest,
         messages: list[BaseMessage],
     ) -> Any:
-        """Build the native graph input for a chat completion request."""
+        """Build the native graph input for a normalized request."""
         if self.request_to_input is None:
             return {"messages": messages}
         return await _maybe_await(self.request_to_input(request, messages))
 
     async def build_context(
         self,
-        request: ChatCompletionRequest,
+        request: GraphRequest,
         graph: CompiledStateGraph,
     ) -> Any:
         """Build the LangGraph runtime context for a request."""

@@ -19,8 +19,10 @@ features are published in LGOS model list and detail extensions for catalog UIs.
 ### Message Ownership
 
 Return an `AIMessage` only from the node or subgraph that owns the final
-assistant turn. Internal workers should return structured state; status and
-progress should use custom events. `add_messages` preserves message history but
+assistant turn. Internal workers should return structured state; public status
+should use `status_event()`. Lower-level `progress` and `artifact` events remain
+available to direct runner consumers but are ignored by the HTTP APIs; keep
+other application events private. `add_messages` preserves message history but
 does not enable streaming or combine multiple assistant messages.
 
 ## Custom Schemas
@@ -89,19 +91,18 @@ Build that context from the validated OpenAI request at the adapter boundary:
 ```python title="Request to runtime context"
 from langchain_core.messages import AIMessage, BaseMessage
 
-from langgraph_openai_serve import ClientSettings, GraphConfig
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
 
 
 def request_to_input(
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     messages: list[BaseMessage],
 ) -> State:
     return {"question": str(messages[-1].content or "")}
 
 
 def context_factory(
-    request: ChatCompletionRequest,
+    request: GraphRequest,
     _client_settings: ClientSettings | None,
 ) -> AppContext:
     return AppContext(user_id=request.user or "anonymous")
@@ -256,10 +257,10 @@ status_graph_config = GraphConfig(
 ```
 
 Declare `GraphFeature.CLIENT_EVENTS` on every graph that emits these events.
-Streaming clients then opt into the events with
-`metadata={"langgraph_stream_events": "v1"}`. Emit a final `done=True` update so
-native clients stop showing the status as active. Use `hidden=True` on that final
-update when the status should disappear after completion.
+Streaming Responses clients receive visible descriptions as standard
+`phase="commentary"` messages without a metadata opt-in. Responses suppresses
+hidden updates and does not invent custom progress fields. The Chat Completions
+API ignores custom stream events and does not emit commentary.
 
 These passive updates are not OpenAI tool calls, which would ask the client to
 execute work. The graph remains responsible for its own work; the client only
@@ -285,8 +286,8 @@ The graph must be compiled with an asynchronous checkpointer that implements
 `aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`.
 LGOS generates a UUID for an initial interrupt run; callers only need to send
 `metadata.langgraph_run_id` when they want to choose that UUID for deterministic
-retries and isolation. The OpenAI tool-call ID and opaque arguments carry the
-operation and state-generation identities needed for a resume.
+retries and isolation. The opaque OpenAI tool-call ID carries the state-generation
+identity needed for a resume; the paused Response ID locates the operation.
 
 !!! warning "Choose coordination and storage together"
 
@@ -298,9 +299,10 @@ operation and state-generation identities needed for a resume.
     LangGraph's official `AsyncPostgresSaver`; see
     [package reference](../reference.md#postgresql-coordination).
 
-Clients must preserve the complete assistant `tool_calls` message and submit
-exactly one result for every pending call in one resume request. See
-[Interrupt resume](openai-clients.md#interrupt-resume) for client code and
+Clients must preserve the paused Response ID and every complete `function_call`
+item, then submit exactly one result for every pending call in one resume
+request. See
+[Resume an interrupt](openai-clients.md#resume-an-interrupt) for client code and
 [Tool calls and interrupts](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative protocol, node-restart/idempotency rules, and retention
 requirements. Harden persistent deserialization according to LangGraph's

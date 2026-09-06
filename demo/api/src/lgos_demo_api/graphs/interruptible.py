@@ -6,8 +6,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
-from langgraph_openai_serve import GraphConfig, GraphFeature
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
 from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 
 ReviewOutcome = Literal["approve", "reject", "feedback"]
@@ -74,7 +73,7 @@ def create_interruptible_graph(
 
 
 def request_to_input(
-    _request: ChatCompletionRequest,
+    _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> ReviewState:
     return {"request": str(messages[-1].content or "")}

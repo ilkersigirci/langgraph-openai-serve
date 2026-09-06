@@ -1,14 +1,11 @@
-"""Adapt LGOS interrupt tool calls to Open WebUI's native ask-user UI."""
+"""Adapt Responses interrupt calls to Open WebUI's native ask-user UI."""
 
 import base64
 import json
 from typing import Any, cast
 
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionChunk,
-    ChatCompletionMessageParam,
-)
+from openai.types.responses import ResponseFunctionToolCall
+from pydantic import BaseModel, Field, field_validator
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
@@ -16,53 +13,73 @@ from .contracts import (
     ASK_USER_QUESTION_MAX_LENGTH,
     ASK_USER_REJECTED_OUTPUT,
     ASK_USER_TOOL_NAME,
-    INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
     InterruptCancelled,
-    PipeChunk,
 )
 
 
-def _request_messages(body: dict[str, Any]) -> list[ChatCompletionMessageParam]:
-    """Translate a persisted Open WebUI answer into an LGOS resume."""
-    messages = body.get("messages")
-    if not isinstance(messages, list):
-        return []
+class InterruptCursor(BaseModel):
+    """Responses continuation persisted by Open WebUI with its ask-user call."""
 
-    resume_messages = _ask_user_to_resume(messages)
-    if resume_messages is not None:
-        return resume_messages
-    return cast(list[ChatCompletionMessageParam], messages)
+    previous_response_id: str = Field(min_length=1)
+    calls: list[ResponseFunctionToolCall] = Field(
+        min_length=1, max_length=ASK_USER_MAX_QUESTIONS
+    )
+
+    @field_validator("calls")
+    @classmethod
+    def validate_calls(
+        cls, calls: list[ResponseFunctionToolCall]
+    ) -> list[ResponseFunctionToolCall]:
+        if any(call.name != INTERRUPT_TOOL_NAME or not call.call_id for call in calls):
+            msg = "LangGraph API returned an invalid interrupt batch."
+            raise ValueError(msg)
+        if len({call.call_id for call in calls}) != len(calls):
+            msg = "LangGraph API returned duplicate interrupt call IDs."
+            raise ValueError(msg)
+        return calls
 
 
-def _ask_user_to_resume(messages: list[Any]) -> list[ChatCompletionMessageParam] | None:
-    """Restore the canonical LGOS batch from Open WebUI's persisted answer."""
+def _ask_user_to_resume(
+    messages: list[Any],
+) -> tuple[list[dict[str, Any]], str] | None:
+    """Restore a Responses continuation from Open WebUI's persisted answer."""
     if not messages:
         return None
 
-    has_tool_result = (
-        len(messages) >= 2
-        and isinstance(messages[-1], dict)
-        and messages[-1].get("role") == "tool"
-    )
-    assistant = messages[-2] if has_tool_result else messages[-1]
+    assistant_index = len(messages) - 1
+    while (
+        assistant_index >= 0
+        and isinstance(messages[assistant_index], dict)
+        and messages[assistant_index].get("role") == "tool"
+    ):
+        assistant_index -= 1
+    if assistant_index < 0:
+        return None
+    assistant = messages[assistant_index]
     if not isinstance(assistant, dict) or assistant.get("role") != "assistant":
         return None
 
     tool_calls = assistant.get("tool_calls")
-    if not isinstance(tool_calls, list) or len(tool_calls) != 1:
+    if not isinstance(tool_calls, list) or not any(
+        isinstance(call, dict)
+        and isinstance(call.get("id"), str)
+        and call["id"].startswith(ASK_USER_CALL_ID_PREFIX)
+        for call in tool_calls
+    ):
         return None
+    if len(tool_calls) != 1 or assistant_index != len(messages) - 2:
+        msg = "Open WebUI returned an incomplete interrupt batch."
+        raise ValueError(msg)
     ask_call = tool_calls[0]
-    if not isinstance(ask_call, dict) or not isinstance(ask_call.get("function"), dict):
-        return None
-    call_id = ask_call.get("id")
+    function = ask_call.get("function") if isinstance(ask_call, dict) else None
+    call_id = ask_call.get("id") if isinstance(ask_call, dict) else None
     if (
-        ask_call["function"].get("name") != ASK_USER_TOOL_NAME
+        not isinstance(function, dict)
+        or function.get("name") != ASK_USER_TOOL_NAME
         or not isinstance(call_id, str)
         or not call_id.startswith(ASK_USER_CALL_ID_PREFIX)
     ):
-        return None
-    if not has_tool_result:
         msg = "Open WebUI returned an incomplete interrupt batch."
         raise ValueError(msg)
 
@@ -71,21 +88,40 @@ def _ask_user_to_resume(messages: list[Any]) -> list[ChatCompletionMessageParam]
         msg = "Open WebUI returned an incomplete interrupt batch."
         raise ValueError(msg)
 
+    response_id, interrupt_calls = _decode_interrupt_cursor(call_id)
+    answers = _interrupt_answers(tool_result.get("content"))
+    if set(answers) != {f"resume_{index}" for index in range(len(interrupt_calls))}:
+        msg = "Open WebUI returned an incomplete interrupt answer batch."
+        raise ValueError(msg)
+    outputs = []
+    for index, interrupt_call in enumerate(interrupt_calls):
+        payload = _interrupt_payload(interrupt_call)
+        outputs.append(
+            {
+                "type": "function_call_output",
+                "call_id": interrupt_call.call_id,
+                "output": _resume_value(answers.get(f"resume_{index}"), payload),
+            }
+        )
+    return outputs, response_id
+
+
+def _decode_interrupt_cursor(
+    call_id: str,
+) -> tuple[str, list[ResponseFunctionToolCall]]:
     try:
         encoded = call_id.removeprefix(ASK_USER_CALL_ID_PREFIX)
         padding = "=" * (-len(encoded) % 4)
-        interrupt_calls = json.loads(base64.urlsafe_b64decode(encoded + padding))
+        cursor = InterruptCursor.model_validate_json(
+            base64.urlsafe_b64decode(encoded + padding)
+        )
     except (TypeError, ValueError) as exc:
         msg = "Open WebUI returned an invalid interrupt cursor."
         raise ValueError(msg) from exc
-    if (
-        not isinstance(interrupt_calls, list)
-        or not 1 <= len(interrupt_calls) <= ASK_USER_MAX_QUESTIONS
-    ):
-        msg = "Open WebUI returned an invalid interrupt cursor."
-        raise ValueError(msg)
+    return cursor.previous_response_id, cursor.calls
 
-    content = tool_result.get("content")
+
+def _interrupt_answers(content: object) -> dict[str, Any]:
     if content == ASK_USER_REJECTED_OUTPUT:
         raise InterruptCancelled
     try:
@@ -103,118 +139,27 @@ def _ask_user_to_resume(messages: list[Any]) -> list[ChatCompletionMessageParam]
     ):
         msg = "Open WebUI returned an invalid interrupt answer."
         raise ValueError(msg)
-
-    replay: list[dict[str, Any]] = [
-        {"role": "assistant", "content": None, "tool_calls": interrupt_calls}
-    ]
-    for index, interrupt_call in enumerate(interrupt_calls):
-        if (
-            not isinstance(interrupt_call, dict)
-            or not isinstance(interrupt_call.get("id"), str)
-            or not isinstance(interrupt_call.get("function"), dict)
-            or interrupt_call["function"].get("name") != INTERRUPT_TOOL_NAME
-        ):
-            msg = "Open WebUI returned an invalid interrupt cursor."
-            raise ValueError(msg)
-        payload = _interrupt_payload(interrupt_call)
-        replay.append(
-            {
-                "role": "tool",
-                "tool_call_id": interrupt_call["id"],
-                "content": json.dumps(
-                    {
-                        "resume": _resume_value(
-                            answers.get(f"resume_{index}"),
-                            payload,
-                        )
-                    }
-                ),
-            }
-        )
-    return cast(list[ChatCompletionMessageParam], replay)
-
-
-def _openwebui_chunk(chunk: ChatCompletionChunk) -> PipeChunk:
-    value = chunk.model_dump(mode="json", exclude_none=True)
-    for choice in value.get("choices", []):
-        delta = choice.get("delta")
-        if isinstance(delta, dict):
-            _rewrite_interrupts(delta, streaming=True)
-    return value
-
-
-def _openwebui_completion(completion: ChatCompletion) -> PipeChunk:
-    value = completion.model_dump(mode="json", exclude_none=True)
-    for choice in value.get("choices", []):
-        message = choice.get("message")
-        if isinstance(message, dict):
-            _rewrite_interrupts(message)
-    return value
-
-
-def _rewrite_interrupts(message: dict[str, Any], *, streaming: bool = False) -> None:
-    tool_calls = message.get("tool_calls")
-    if not (
-        isinstance(tool_calls, list)
-        and tool_calls
-        and all(
-            isinstance(call, dict)
-            and isinstance(call.get("function"), dict)
-            and call["function"].get("name") == INTERRUPT_TOOL_NAME
-            for call in tool_calls
-        )
-    ):
-        return
-    message["tool_calls"] = [
-        _interrupts_to_ask_user(
-            cast(list[dict[str, Any]], tool_calls),
-            streaming=streaming,
-        )
-    ]
+    return answers
 
 
 def _interrupts_to_ask_user(
-    calls: list[dict[str, Any]],
+    response_id: str,
+    calls: list[ResponseFunctionToolCall],
     *,
     streaming: bool = False,
 ) -> dict[str, Any]:
     """Present one atomic LGOS interrupt batch as one native question card."""
-    if len(calls) > ASK_USER_MAX_QUESTIONS:
-        msg = f"Open WebUI supports at most {ASK_USER_MAX_QUESTIONS} interrupts per batch."
-        raise ValueError(msg)
-
-    interrupt_calls = []
-    questions = []
-    for index, call in enumerate(calls):
-        function = call.get("function")
-        call_id = call.get("id")
-        if (
-            not isinstance(call_id, str)
-            or not call_id
-            or not isinstance(function, dict)
-            or not isinstance(function.get("arguments"), str)
-        ):
-            msg = "LangGraph API returned invalid interrupt tool arguments."
-            raise ValueError(msg)
-        interrupt_call = {
-            "id": call_id,
-            "type": "function",
-            "function": {
-                "name": INTERRUPT_TOOL_NAME,
-                "arguments": function["arguments"],
-            },
-        }
-        interrupt_calls.append(interrupt_call)
-        questions.append(_interrupt_question(_interrupt_payload(interrupt_call), index))
-
-    cursor = json.dumps(
-        interrupt_calls,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode()
+    cursor = InterruptCursor(previous_response_id=response_id, calls=calls)
+    questions = [
+        _interrupt_question(_interrupt_payload(call), index)
+        for index, call in enumerate(cursor.calls)
+    ]
+    # The Pipe host only returns its native ask-user call and answer on resume.
+    # Persist the upstream IDs here so reconnects need no separate state store.
+    encoded = cursor.model_dump_json(exclude_none=True).encode()
     result = {
         "id": ASK_USER_CALL_ID_PREFIX
-        + base64.urlsafe_b64encode(cursor).decode().rstrip("="),
+        + base64.urlsafe_b64encode(encoded).decode().rstrip("="),
         "type": "function",
         "function": {
             "name": ASK_USER_TOOL_NAME,
@@ -235,16 +180,92 @@ def _interrupts_to_ask_user(
     return result
 
 
-def _interrupt_payload(tool_call: dict[str, Any]) -> object:
+def _openwebui_interrupt_chunk(
+    model_id: str,
+    response_id: str,
+    calls: list[ResponseFunctionToolCall],
+) -> dict[str, Any]:
+    return {
+        "id": "chatcmpl-lgos-responses",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "tool_calls": [
+                        _interrupts_to_ask_user(
+                            response_id,
+                            calls,
+                            streaming=True,
+                        )
+                    ]
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+
+def _openwebui_interrupt_completion(
+    model_id: str,
+    response_id: str,
+    calls: list[ResponseFunctionToolCall],
+    content: str = "",
+) -> dict[str, Any]:
+    ask_user = _interrupts_to_ask_user(response_id, calls)
+    output: list[dict[str, Any]] = []
+    if content:
+        output.append(
+            {
+                "type": "message",
+                "id": "msg_answer",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content}],
+            }
+        )
+    output.append(
+        {
+            "type": "function_call",
+            "id": ask_user["id"],
+            "call_id": ask_user["id"],
+            "name": ASK_USER_TOOL_NAME,
+            "arguments": ask_user["function"]["arguments"],
+            "status": "pending",
+        }
+    )
+    return {
+        "id": "chatcmpl-lgos-responses",
+        "object": "chat.completion",
+        "created": 0,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content or None,
+                    "tool_calls": [ask_user],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "output": output,
+    }
+
+
+def _interrupt_payload(call: ResponseFunctionToolCall) -> dict[str, Any]:
     try:
-        arguments = json.loads(tool_call["function"]["arguments"])
-    except (KeyError, TypeError, ValueError) as exc:
+        arguments = json.loads(call.arguments)
+    except (TypeError, ValueError) as exc:
         msg = "LangGraph API returned invalid interrupt tool arguments."
         raise ValueError(msg) from exc
-    if not isinstance(arguments, dict) or "payload" not in arguments:
+    if not isinstance(arguments, dict):
         msg = "LangGraph API returned invalid interrupt tool arguments."
         raise ValueError(msg)
-    return arguments["payload"]
+    return arguments
 
 
 def _interrupt_question(payload: object, index: int) -> dict[str, Any]:
@@ -286,10 +307,7 @@ def _interrupt_question(payload: object, index: int) -> dict[str, Any]:
         "header": "Human input",
         "question": prompt,
         "options": [
-            {
-                "label": choice,
-                "description": f"Resume with {choice!r}.",
-            }
+            {"label": choice, "description": f"Resume with {choice!r}."}
             for choice in choices
         ],
         "allow_other": allow_other,
@@ -317,24 +335,3 @@ def _resume_value(answer: object, payload: object) -> str:
             return text.strip()
     msg = "Open WebUI returned an invalid interrupt answer."
     raise ValueError(msg)
-
-
-def _interrupt_cancelled_response(
-    model_id: str,
-    *,
-    streaming: bool,
-) -> dict[str, Any]:
-    message = {"role": "assistant", "content": INTERRUPT_CANCELLED_MESSAGE}
-    return {
-        "id": "chatcmpl-lgos-interrupt-cancelled",
-        "object": "chat.completion.chunk" if streaming else "chat.completion",
-        "created": 0,
-        "model": model_id,
-        "choices": [
-            {
-                "index": 0,
-                "delta" if streaming else "message": message,
-                "finish_reason": "stop",
-            }
-        ],
-    }

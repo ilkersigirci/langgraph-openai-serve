@@ -12,14 +12,15 @@ demo model catalogs.
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`advanced-mcp-tools`](core-patterns.md#advanced-mcp-tools) | Async graph factories and a mock MCP-style tool | None | None |
 | [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
+| [`custom-event-showcase`](events-and-citations.md) | Filtering internal progress and artifact events at the API boundary | `client_events` | None |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
-| [`custom-event-showcase`](events-and-citations.md) | Public progress and artifact events interleaved with text | `client_events` | None |
-| [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | `client_events` | Upstream chat model and PostgreSQL store |
+| [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | None | Upstream model, Files API, and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
-| [`lgos-rag`](lgos-rag.md) | Agentic retrieval over the packaged demo corpus | None | Upstream chat and embedding models |
+| [`hosted-tool`](hosted-tool.md) | A client-requested time tool executed on LGOS | None | Upstream chat model |
+| [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | `client_events` | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it

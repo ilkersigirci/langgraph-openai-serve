@@ -1,0 +1,218 @@
+[
+  {
+    "response": {
+      "id": "<response_0>",
+      "created_at": "<created_at_0>",
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "metadata": {},
+      "model": "fallback",
+      "object": "response",
+      "output": [],
+      "parallel_tool_calls": true,
+      "temperature": null,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_p": null,
+      "background": false,
+      "completed_at": null,
+      "conversation": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "moderation": null,
+      "previous_response_id": null,
+      "prompt": null,
+      "prompt_cache_key": null,
+      "prompt_cache_options": null,
+      "prompt_cache_retention": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "status": "in_progress",
+      "text": { "format": { "type": "text" }, "verbosity": null },
+      "top_logprobs": 0,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "store": false
+    },
+    "sequence_number": 0,
+    "type": "response.created"
+  },
+  {
+    "response": {
+      "id": "<response_0>",
+      "created_at": "<created_at_0>",
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "metadata": {},
+      "model": "fallback",
+      "object": "response",
+      "output": [],
+      "parallel_tool_calls": true,
+      "temperature": null,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_p": null,
+      "background": false,
+      "completed_at": null,
+      "conversation": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "moderation": null,
+      "previous_response_id": null,
+      "prompt": null,
+      "prompt_cache_key": null,
+      "prompt_cache_options": null,
+      "prompt_cache_retention": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "status": "in_progress",
+      "text": { "format": { "type": "text" }, "verbosity": null },
+      "top_logprobs": 0,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "store": false
+    },
+    "sequence_number": 1,
+    "type": "response.in_progress"
+  },
+  {
+    "item": {
+      "id": "<message_0>",
+      "content": [],
+      "role": "assistant",
+      "status": "in_progress",
+      "type": "message",
+      "phase": "final_answer"
+    },
+    "output_index": 0,
+    "sequence_number": 2,
+    "type": "response.output_item.added"
+  },
+  {
+    "content_index": 0,
+    "item_id": "<message_0>",
+    "output_index": 0,
+    "part": {
+      "annotations": [],
+      "text": "",
+      "type": "output_text",
+      "logprobs": []
+    },
+    "sequence_number": 3,
+    "type": "response.content_part.added"
+  },
+  {
+    "content_index": 0,
+    "delta": "fallback",
+    "item_id": "<message_0>",
+    "logprobs": [],
+    "output_index": 0,
+    "sequence_number": 4,
+    "type": "response.output_text.delta"
+  },
+  {
+    "content_index": 0,
+    "item_id": "<message_0>",
+    "logprobs": [],
+    "output_index": 0,
+    "sequence_number": 5,
+    "text": "fallback",
+    "type": "response.output_text.done"
+  },
+  {
+    "content_index": 0,
+    "item_id": "<message_0>",
+    "output_index": 0,
+    "part": {
+      "annotations": [],
+      "text": "fallback",
+      "type": "output_text",
+      "logprobs": []
+    },
+    "sequence_number": 6,
+    "type": "response.content_part.done"
+  },
+  {
+    "item": {
+      "id": "<message_0>",
+      "content": [
+        {
+          "annotations": [],
+          "text": "fallback",
+          "type": "output_text",
+          "logprobs": []
+        }
+      ],
+      "role": "assistant",
+      "status": "completed",
+      "type": "message",
+      "phase": "final_answer"
+    },
+    "output_index": 0,
+    "sequence_number": 7,
+    "type": "response.output_item.done"
+  },
+  {
+    "response": {
+      "id": "<response_0>",
+      "created_at": "<created_at_0>",
+      "error": null,
+      "incomplete_details": null,
+      "instructions": null,
+      "metadata": {},
+      "model": "fallback",
+      "object": "response",
+      "output": [
+        {
+          "id": "<message_0>",
+          "content": [
+            {
+              "annotations": [],
+              "text": "fallback",
+              "type": "output_text",
+              "logprobs": []
+            }
+          ],
+          "role": "assistant",
+          "status": "completed",
+          "type": "message",
+          "phase": "final_answer"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "temperature": null,
+      "tool_choice": "auto",
+      "tools": [],
+      "top_p": null,
+      "background": false,
+      "completed_at": "<completed_at_0>",
+      "conversation": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "moderation": null,
+      "previous_response_id": null,
+      "prompt": null,
+      "prompt_cache_key": null,
+      "prompt_cache_options": null,
+      "prompt_cache_retention": null,
+      "reasoning": null,
+      "safety_identifier": null,
+      "service_tier": "default",
+      "status": "completed",
+      "text": { "format": { "type": "text" }, "verbosity": null },
+      "top_logprobs": 0,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null,
+      "store": false
+    },
+    "sequence_number": 8,
+    "type": "response.completed"
+  }
+]

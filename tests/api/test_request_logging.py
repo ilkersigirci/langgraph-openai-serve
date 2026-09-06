@@ -172,11 +172,11 @@ async def test_handled_server_error_is_logged(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/chat/completions",
+            "/v1/responses",
             headers={"X-Request-ID": "server-error"},
             json={
                 "model": "broken",
-                "messages": [{"role": "user", "content": "Hello"}],
+                "input": "Hello",
             },
         )
 
@@ -214,11 +214,11 @@ async def test_unhandled_error_response_has_request_id(
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/v1/chat/completions",
+            "/v1/responses",
             headers={"X-Request-ID": "unhandled-error"},
             json={
                 "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
+                "input": "Hello",
             },
         )
 
@@ -231,11 +231,9 @@ async def test_unhandled_error_response_has_request_id(
 
 
 async def test_stream_failure_keeps_request_context_in_producer_task(
-    sqlite_checkpointer,
     caplog,
 ) -> None:
     caplog.set_level(logging.ERROR, logger="langgraph_openai_serve")
-    operation_id = str(uuid.uuid4())
 
     async def fail(_state: MessageState) -> dict[str, object]:
         msg = "stream failed"
@@ -246,15 +244,13 @@ async def test_stream_failure_keeps_request_context_in_producer_task(
         .add_node("fail", fail)
         .set_entry_point("fail")
         .set_finish_point("fail")
-        .compile(checkpointer=sqlite_checkpointer)
+        .compile()
     )
     registry = GraphRegistry(
         registry={
             "broken-stream": GraphConfig(
                 graph=graph,
                 description="Broken stream",
-                features={GraphFeature.INTERRUPTS},
-                run_coordinator=InMemoryRunCoordinator(),
             )
         }
     )
@@ -269,7 +265,6 @@ async def test_stream_failure_keeps_request_context_in_producer_task(
                 "model": "broken-stream",
                 "messages": [{"role": "user", "content": "Hello"}],
                 "stream": True,
-                "metadata": {"langgraph_run_id": operation_id},
             },
         )
 
@@ -279,7 +274,6 @@ async def test_stream_failure_keeps_request_context_in_producer_task(
     assert records[0].request_id == "stream-error"
     assert records[0].model == "broken-stream"
     assert records[0].stream is True
-    assert records[0].operation_id == operation_id
 
 
 async def test_host_routes_are_not_wrapped_by_lgos_middleware(

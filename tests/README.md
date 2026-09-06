@@ -5,14 +5,15 @@ Keep test setup explicit and assertions focused on observable behavior.
 ## Test Roots
 
 - `tests/` owns the installed package's API, graph runner, and utility tests.
-- `tests/api/interrupt/` keeps the interrupt codec, response, HTTP contract,
-  durable-state, and concurrency coverage together.
+- `tests/api/interrupt/` keeps the Responses interrupt codec, response, HTTP
+  contract, durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
   checkout into the demo API test run.
 - Live demo integration tests are excluded from default pytest runs. Start the
   required services and use the dedicated root target, such as
-  `make test-bifrost`, to select the `integration` marker explicitly.
+  `make test-bifrost` or `make test-litellm`, to select the `integration`
+  marker explicitly.
 - `tests/integration/test_demo_*` guards copied wire declarations and the
   distribution boundary without making demo runtime code import the parent
   package checkout.
@@ -88,9 +89,14 @@ timer only masks the environment failure.
 ## Runner And API Tests
 
 - Runner tests should exercise graph execution behavior directly through
-  `run_langgraph` or `run_langgraph_stream`.
+  `run_langgraph` or `run_langgraph_stream`, passing a `GraphRequest`, native
+  LangChain messages, and an explicit `InterruptResume` when needed. Keep HTTP
+  request decoding in API tests.
 - API tests should exercise HTTP/OpenAI-client behavior through the FastAPI or
   OpenAI client fixtures.
+- Responses normalized golden fixtures assert the complete text, function-call,
+  and failure stream payloads from the real endpoint. Run gateway checks through
+  the live demo integration suites.
 - Use `AsyncOpenAI` over HTTPX's ASGI transport for OpenAI contract tests. Use
   the raw HTTP client only for wire-format and host-application assertions.
 - If the same graph shape is needed in both layers, define it once in
@@ -113,11 +119,11 @@ timer only masks the environment failure.
   idempotency should pass a non-nil UUID as
   `metadata.langgraph_run_id`; invalid or reused UUID cases should remain
   separate assertions.
-- Resume helpers must copy the complete assistant message with all original
-  `tool_calls`, then append exactly one JSON `{"resume": ...}` tool result for
-  every call. Parallel interrupts must be answered together and matched by
-  `tool_call_id`; never synthesize only the visible payload or select the first
-  call.
+- Resume helpers should use standard `previous_response_id` and provide one
+  `function_call_output` item for every returned interrupt call. Use the matching
+  `call_id` and the resume value directly as `output`. Parallel interrupts must
+  be answered together; never synthesize only the visible payload or select the
+  first call.
 - Cover the durable lifecycle at the API boundary: an initial retry with the
   same caller run UUID re-emits the pending batch, stale or repeated resumes
   return a conflict without re-executing work, concurrent resumes are
@@ -135,6 +141,6 @@ external database.
 
 - Graphs that emit client events must declare
   `features={GraphFeature.CLIENT_EVENTS}`.
-- Streaming requests must also opt in with
-  `metadata.langgraph_stream_events="v1"`; test the feature declaration and
-  request opt-in as independent gates.
+- Streaming Responses requests expose visible statuses as commentary
+  (`phase="commentary"`) without a metadata opt-in. The Chat Completions API
+  ignores custom stream events and does not emit commentary.

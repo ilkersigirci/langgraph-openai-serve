@@ -5,7 +5,7 @@ from typing import NamedTuple, Self, cast
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
-from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
+from langgraph_openai_serve.graph.request import GraphRequest
 
 RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
 
@@ -36,10 +36,10 @@ class ClientSettings(BaseModel):
         )
 
     @classmethod
-    def validate_request(cls, request: ChatCompletionRequest) -> Self:
+    def validate_request(cls, request: GraphRequest) -> Self:
         """Read and validate this model's values from an OpenAI request."""
         parameter = f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
-        encoded = (request.metadata or {}).get(RUNTIME_SETTINGS_METADATA_KEY, "{}")
+        encoded = request.metadata.get(RUNTIME_SETTINGS_METADATA_KEY, "{}")
 
         try:
             changes = _validate_json_object(encoded)

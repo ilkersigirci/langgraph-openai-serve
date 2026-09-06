@@ -9,9 +9,9 @@ from lgos_demo_api.graphs.multi_node_streaming import (
 
 
 async def test_multiple_nodes_produce_the_same_streamed_and_complete_output(
-    make_request,
+    make_graph_input,
 ) -> None:
-    request = make_request(
+    graph_request, messages = make_graph_input(
         "multi-node-streaming",
         content="Build one answer from two nodes.",
     )
@@ -20,23 +20,12 @@ async def test_multiple_nodes_produce_the_same_streamed_and_complete_output(
     )
 
     events = [
-        event
-        async for event in run_langgraph_stream(
-            request.model,
-            request.messages,
-            registry,
-            request,
-        )
+        event async for event in run_langgraph_stream(graph_request, messages, registry)
     ]
-    complete = await run_langgraph(
-        request.model,
-        request.messages,
-        registry,
-        request,
-    )
+    complete = await run_langgraph(graph_request, messages, registry)
 
     streamed = "".join(event for event in events if isinstance(event, str))
     final_stream_message = events[-1]
     assert isinstance(final_stream_message, AIMessage)
-    assert isinstance(complete.output, AIMessage)
-    assert streamed == final_stream_message.text == complete.output.text == ANSWER
+    assert isinstance(complete, AIMessage)
+    assert streamed == final_stream_message.text == complete.text == ANSWER

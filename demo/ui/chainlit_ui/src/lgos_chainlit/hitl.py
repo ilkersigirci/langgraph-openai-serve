@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import cast
+from typing import Any, cast
 
 import chainlit as cl
 from chainlit.context import context as chainlit_context
@@ -18,15 +18,12 @@ from chainlit_utils.chat import (
     text_only_chat_messages,
 )
 from openai import OpenAIError
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessage,
-    ChatCompletionMessageParam,
-    ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCallParam,
-    ChatCompletionToolMessageParam,
+from openai.types.responses import (
+    Response,
+    ResponseFunctionToolCall,
+    ResponseInputParam,
 )
+from pydantic import BaseModel, Field
 
 from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
@@ -45,7 +42,16 @@ from lgos_chainlit.utils.clients import (
     openai_client,
     retrieve_model,
 )
-from lgos_chainlit.utils.files import file_upload_overrides, with_file_parts
+from lgos_chainlit.utils.files import (
+    file_upload_overrides,
+    with_response_file_parts,
+)
+from lgos_chainlit.utils.responses import (
+    final_answer,
+    function_calls,
+    raise_for_response,
+    response_input,
+)
 from lgos_chainlit.utils.thread_resume import (
     reuse_persisted_step,
     schedule_after_thread_hydration,
@@ -56,7 +62,7 @@ register_auth_callback()
 logger = logging.getLogger(__name__)
 
 INTERRUPT_LEDGER_METADATA_KEY = "lgos_chainlit.hitl_interrupt_ledger"
-INTERRUPT_LEDGER_SCHEMA_VERSION = 1
+INTERRUPT_LEDGER_SCHEMA_VERSION = 2
 PENDING_LEDGER_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
 PENDING_LEDGER_STATUS = "pending"
 COMPLETED_LEDGER_STATUS = "completed"
@@ -72,7 +78,16 @@ class PendingInterruptLedger:
 
     message: cl.Message
     model_id: str
-    assistant_message: ChatCompletionMessage
+    response_id: str
+    calls: tuple[ResponseFunctionToolCall, ...]
+
+
+class InterruptContinuation(BaseModel):
+    """The Responses fields needed to resume a persisted interrupt batch."""
+
+    model_id: str = Field(min_length=1)
+    response_id: str = Field(min_length=1)
+    function_calls: list[ResponseFunctionToolCall] = Field(min_length=1)
 
 
 @cl.set_chat_profiles
@@ -154,16 +169,12 @@ async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
     try:
         await chainlit_context.emitter.task_start()
         task_started = True
-        await resolve_interrupts(
-            assistant_message=ledger.assistant_message,
-            model_id=ledger.model_id,
-            ledger_message=ledger.message,
-        )
+        await resolve_interrupts(ledger)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         logger.exception("Chainlit HITL automatic resume failed")
-        await send_ui_message(f"Chat completion failed: {exc}")
+        await send_ui_message(f"Response failed: {exc}")
     finally:
         if task_started:
             await chainlit_context.emitter.task_end()
@@ -176,7 +187,7 @@ async def on_message(message: cl.Message) -> None:
         await handle_message(message)
     except Exception as exc:
         logger.exception("Chainlit HITL completion failed")
-        await send_ui_message(f"Chat completion failed: {exc}")
+        await send_ui_message(f"Response failed: {exc}")
 
 
 async def handle_message(trigger_message: cl.Message | None = None) -> None:
@@ -184,8 +195,8 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
     Start a run and publish every interrupt ledger before prompting.
 
     Chainlit exposes public ``Message.metadata`` in restored ``ThreadDict``
-    values. A model-context-excluded assistant message therefore owns the exact
-    OpenAI tool-call ledger without private data-layer access.
+    values. A model-context-excluded message therefore owns the exact Responses
+    function-call ledger without private data-layer access.
     """
     pending = cl.user_session.get(PENDING_LEDGER_SESSION_KEY)
     if isinstance(pending, PendingInterruptLedger):
@@ -195,84 +206,89 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
         await send_ui_message(
             "Resolve the pending interrupt before starting another request."
         )
-        await resolve_interrupts(
-            assistant_message=pending.assistant_message,
-            model_id=pending.model_id,
-            ledger_message=pending.message,
-        )
+        await resolve_interrupts(pending)
         return
 
-    messages = text_only_chat_messages()
+    input_items = response_input(text_only_chat_messages())
     if trigger_message is not None:
-        messages = await with_file_parts(messages, trigger_message)
+        input_items = await with_response_file_parts(input_items, trigger_message)
     model_id = selected_model_id()
 
-    response = await create_completion(messages, model_id=model_id)
-    await resolve_interrupts(
-        assistant_message=response.choices[0].message,
-        model_id=model_id,
-    )
+    response = await create_response(input_items, model_id=model_id)
+    pending = await publish_response(response, model_id=model_id)
+    if pending is not None:
+        await resolve_interrupts(pending)
 
 
-async def resolve_interrupts(
-    *,
-    assistant_message: ChatCompletionMessage,
-    model_id: str,
-    ledger_message: cl.Message | None = None,
-) -> None:
+async def resolve_interrupts(pending: PendingInterruptLedger) -> None:
     """Resolve complete interrupt batches until the graph returns terminal text."""
     while True:
-        tool_calls = interrupt_tool_calls(assistant_message)
-        if tool_calls is None:
-            if ledger_message is not None:
-                await mark_ledger_completed(ledger_message)
-            await send_ui_message("Received an unsupported tool-call batch.")
-            return
-        if not tool_calls:
-            break
-
-        ledger_message = await persist_pending_ledger(
-            ledger_message=ledger_message,
-            model_id=model_id,
-            assistant_message=assistant_message,
-        )
-        decisions = []
-        for tool_call in tool_calls:
-            decision = await ask_for_resume(tool_call, ledger_message)
+        outputs = []
+        for call in pending.calls:
+            decision = await ask_for_resume(call, pending.message)
             if decision is None:
                 return
-            decisions.append(decision)
+            outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": decision,
+                }
+            )
+        response = await create_response(
+            outputs,
+            model_id=pending.model_id,
+            previous_response_id=pending.response_id,
+        )
+        next_pending = await publish_response(
+            response, model_id=pending.model_id, ledger_message=pending.message
+        )
+        if next_pending is None:
+            return
+        pending = next_pending
 
-        resume_messages: list[ChatCompletionMessageParam] = [
-            assistant_tool_call_message(assistant_message),
-            *[
-                ChatCompletionToolMessageParam(
-                    role="tool",
-                    tool_call_id=tool_call.id,
-                    content=json.dumps({"resume": decision}),
-                )
-                for tool_call, decision in zip(tool_calls, decisions, strict=True)
-            ],
-        ]
-        response = await create_completion(resume_messages, model_id=model_id)
-        assistant_message = response.choices[0].message
 
+async def publish_response(
+    response: Response,
+    *,
+    model_id: str,
+    ledger_message: cl.Message | None = None,
+) -> PendingInterruptLedger | None:
+    """Persist a paused Response before prompting, or publish its final answer."""
+    raise_for_response(response)
+    calls = function_calls(response)
+    if any(call.name != INTERRUPT_TOOL_NAME for call in calls):
+        msg = "Received an unsupported tool-call batch."
+        raise ValueError(msg)
+    if calls:
+        return await persist_pending_ledger(
+            ledger_message=ledger_message,
+            model_id=model_id,
+            response_id=response.id,
+            calls=calls,
+        )
     if ledger_message is not None:
         await mark_ledger_completed(ledger_message)
-    await cl.Message(content=assistant_message.content or "").send()
+    await cl.Message(content=final_answer(response)).send()
+    return None
 
 
-async def create_completion(
-    messages: list[ChatCompletionMessageParam],
+async def create_response(
+    input_items: list[dict[str, Any]],
     *,
     model_id: str | None = None,
-) -> ChatCompletion:
-    return await openai_client.chat.completions.create(
+    previous_response_id: str | None = None,
+) -> Response:
+    response = await openai_client.responses.create(
         **model_request(model_id or selected_model_id()),
-        messages=messages,
+        input=cast("ResponseInputParam", input_items),
+        previous_response_id=previous_response_id,
+        store=False,
         user=authenticated_user_identifier(),
         metadata=session_metadata(),
     )
+    raise_for_response(response)
+    return response
 
 
 def selected_model_id() -> str:
@@ -283,33 +299,35 @@ async def persist_pending_ledger(
     *,
     ledger_message: cl.Message | None,
     model_id: str,
-    assistant_message: ChatCompletionMessage,
-) -> cl.Message:
+    response_id: str,
+    calls: list[ResponseFunctionToolCall],
+) -> PendingInterruptLedger:
     """Create or update the one public Chainlit message that owns the ledger."""
+    continuation = InterruptContinuation(
+        model_id=model_id, response_id=response_id, function_calls=calls
+    )
     ledger = {
         "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
         "status": PENDING_LEDGER_STATUS,
-        "model_id": model_id,
-        "assistant_message": assistant_tool_call_message(assistant_message),
+        **continuation.model_dump(mode="json", exclude_none=True),
     }
-    prompt = pending_interrupt_prompt(assistant_message)
+    prompt = pending_interrupt_prompt(calls)
     if ledger_message is None:
         ledger_message = cl.Message(content=prompt)
-        set_ledger_message_metadata(ledger_message, ledger)  # ty: ignore[invalid-argument-type]
+        set_ledger_message_metadata(ledger_message, ledger)
         await ledger_message.send()
     else:
         ledger_message.content = prompt
-        set_ledger_message_metadata(ledger_message, ledger)  # ty: ignore[invalid-argument-type]
+        set_ledger_message_metadata(ledger_message, ledger)
         await ledger_message.update()
-    cl.user_session.set(
-        PENDING_LEDGER_SESSION_KEY,
-        PendingInterruptLedger(
-            message=ledger_message,
-            model_id=model_id,
-            assistant_message=assistant_message,
-        ),
+    pending = PendingInterruptLedger(
+        message=ledger_message,
+        model_id=model_id,
+        response_id=response_id,
+        calls=tuple(calls),
     )
-    return ledger_message
+    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, pending)
+    return pending
 
 
 async def mark_ledger_completed(ledger_message: cl.Message) -> None:
@@ -354,7 +372,7 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         )
         if parsed is None:
             return None
-        model_id, assistant_message = parsed
+        model_id, response_id, calls = parsed
         restored_step = dict(step)
         created_at = restored_step.get("createdAt")
         if isinstance(created_at, str) and not created_at.endswith("Z"):
@@ -369,14 +387,15 @@ def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | Non
         return PendingInterruptLedger(
             message=message,
             model_id=model_id,
-            assistant_message=assistant_message,
+            response_id=response_id,
+            calls=tuple(calls),
         )
     return None
 
 
 def parse_interrupt_ledger_metadata(
     raw_ledger: object,
-) -> tuple[str, ChatCompletionMessage] | None:
+) -> tuple[str, str, list[ResponseFunctionToolCall]] | None:
     if not isinstance(raw_ledger, dict):
         msg = "Interrupt ledger metadata is not an object."
         raise InvalidInterruptLedgerError(msg)
@@ -390,25 +409,20 @@ def parse_interrupt_ledger_metadata(
     if status != PENDING_LEDGER_STATUS:
         msg = "Interrupt ledger status is invalid."
         raise InvalidInterruptLedgerError(msg)
-    model_id = raw_ledger.get("model_id")
-    if not isinstance(model_id, str) or not model_id:
-        msg = "Interrupt ledger model ID is invalid."
-        raise InvalidInterruptLedgerError(msg)
     try:
-        assistant_message = ChatCompletionMessage.model_validate(
-            raw_ledger.get("assistant_message")
-        )
-    except (TypeError, ValueError) as exc:
-        msg = "Interrupt ledger assistant message is invalid."
+        continuation = InterruptContinuation.model_validate(raw_ledger)
+    except ValueError as exc:
+        msg = "Interrupt ledger continuation is invalid."
         raise InvalidInterruptLedgerError(msg) from exc
-    if not interrupt_tool_calls(assistant_message):
-        msg = "Interrupt ledger assistant message has no interrupt calls."
+    calls = continuation.function_calls
+    if any(call.name != INTERRUPT_TOOL_NAME for call in calls):
+        msg = "Interrupt ledger has no valid interrupt calls."
         raise InvalidInterruptLedgerError(msg)
-    return model_id, assistant_message
+    return continuation.model_id, continuation.response_id, calls
 
 
 async def _warn_if_model_metadata_is_missing() -> None:
-    """Warn without blocking standard Chat Completions behavior."""
+    """Warn without blocking standard Responses behavior."""
     model_id = selected_model_id()
     try:
         model = await retrieve_model(model_id)
@@ -418,31 +432,8 @@ async def _warn_if_model_metadata_is_missing() -> None:
         await send_limited_functionality_warning()
 
 
-def assistant_tool_call_message(
-    message: ChatCompletionMessage,
-) -> ChatCompletionAssistantMessageParam:
-    """Preserve the complete assistant tool-call ledger without re-encoding it."""
-    return ChatCompletionAssistantMessageParam(
-        role=message.role,
-        content=message.content,
-        tool_calls=[
-            tool_call_param(tool_call)  # ty: ignore[invalid-argument-type]
-            for tool_call in message.tool_calls or []
-        ],
-    )
-
-
-def tool_call_param(
-    tool_call: ChatCompletionMessageToolCall,
-) -> ChatCompletionMessageToolCallParam:
-    return cast(
-        ChatCompletionMessageToolCallParam,
-        tool_call.model_dump(mode="json"),
-    )
-
-
 async def ask_for_resume(
-    tool_call: ChatCompletionMessageToolCall,
+    tool_call: ResponseFunctionToolCall,
     ledger_message: cl.Message,
 ) -> str | None:
     try:
@@ -553,41 +544,27 @@ def interrupt_choices(payload: object) -> tuple[list[str], bool] | None:
     return cast(list[str], choices), payload.get("allow_other") is True
 
 
-def interrupt_tool_calls(
-    message: ChatCompletionMessage,
-) -> list[ChatCompletionMessageToolCall] | None:
-    tool_calls = list(message.tool_calls or [])
-    if any(tool_call.function.name != INTERRUPT_TOOL_NAME for tool_call in tool_calls):  # ty: ignore[unresolved-attribute]
-        return None
-    return tool_calls  # ty: ignore[invalid-return-type]
-
-
 def interrupt_payload(
-    tool_call: ChatCompletionMessageToolCall,
-) -> object:
+    tool_call: ResponseFunctionToolCall,
+) -> dict[str, Any]:
     try:
-        arguments = json.loads(tool_call.function.arguments)
+        arguments = json.loads(tool_call.arguments)
     except (TypeError, ValueError) as exc:
         msg = "Interrupt tool arguments must be valid JSON."
         raise ValueError(msg) from exc
 
     if not isinstance(arguments, dict):
         msg = "Interrupt tool arguments must be a JSON object."
-        raise TypeError(msg)
-    if "payload" not in arguments:
-        msg = "Interrupt tool arguments must contain a payload."
         raise ValueError(msg)
+    return arguments
 
-    return arguments["payload"]
 
-
-def pending_interrupt_prompt(message: ChatCompletionMessage) -> str:
+def pending_interrupt_prompt(calls: list[ResponseFunctionToolCall]) -> str:
     """Render the ledger step without letting malformed payloads skip persistence."""
-    tool_calls = interrupt_tool_calls(message)
-    if not tool_calls:
+    if not calls:
         return ""
     try:
-        return interrupt_prompt(interrupt_payload(tool_calls[0]))
+        return interrupt_prompt(interrupt_payload(calls[0]))
     except ValueError:
         return ""
 

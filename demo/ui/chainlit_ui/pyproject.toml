@@ -15,7 +15,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
     "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
     "opentelemetry-instrumentation-httpx>=0.65b0,<0.66",
-    "plotly>=6.9.0,<7",
+    "plotly>=6,<7",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
 ]

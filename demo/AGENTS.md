@@ -4,6 +4,10 @@ Each demo project is independent. Keep its dependencies and lockfile local to
 that project; run demo-wide checks with `make -C demo test` and
 `make -C demo lint type-check`.
 
+For live Chainlit or Open WebUI verification, read
+[Browser UI checks](.agents/ui_checks.md). It covers browser setup, login,
+model selection, rendering checks, and common deployment failures.
+
 ## Modular OpenWebUI Function
 
 - The source of truth for the Generic Function is
@@ -21,7 +25,7 @@ that project; run demo-wide checks with `make -C demo test` and
   Avoid `from __future__` imports, dynamic/local package imports, `__file__`,
   and other module-boundary assumptions in bundled modules.
 - Keep behavior in its responsibility module: `contracts`, `api`, `metadata`,
-  `events`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
+  `gateway`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
   together when adding a module.
 - Validate OpenWebUI changes from `ui/openwebui/` with:
   `uv run --locked pytest`, `uv run --locked ruff check src tests`, and
