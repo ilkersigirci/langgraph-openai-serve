@@ -96,7 +96,7 @@ async def _(
         )
     ]
 
-    runner_text = str(_complete.output.text)
+    runner_text = str(_complete.text)
     _streamed_text = "".join(event for event in _events if isinstance(event, str))
     runner_result = check_parity("LGOS runner", runner_text, _streamed_text)
     return runner_result, runner_text

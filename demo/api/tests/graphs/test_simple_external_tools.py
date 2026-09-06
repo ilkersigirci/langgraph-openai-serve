@@ -98,9 +98,9 @@ async def test_client_tools_are_bound_and_returned_to_the_client(
         "function": {"name": "get_weather"},
     }
     assert model.bound_parallel_tool_calls is False
-    assert isinstance(result.output, AIMessage)
-    assert result.output.tool_calls is not None
-    assert result.output.tool_calls[0]["name"] == "get_weather"
+    assert isinstance(result, AIMessage)
+    assert result.tool_calls is not None
+    assert result.tool_calls[0]["name"] == "get_weather"
 
 
 async def test_tool_results_are_forwarded_with_the_complete_history(
@@ -130,8 +130,8 @@ async def test_tool_results_are_forwarded_with_the_complete_history(
     graph_request, messages, _ = decode_responses_request(request)
     result = await run_langgraph(graph_request, messages, _registry())
 
-    assert isinstance(result.output, AIMessage)
-    assert result.output.content == "It is sunny in Istanbul."
+    assert isinstance(result, AIMessage)
+    assert result.content == "It is sunny in Istanbul."
     assert [message.type for message in model.inputs[0]] == [
         "system",
         "human",

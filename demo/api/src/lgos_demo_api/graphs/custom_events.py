@@ -12,7 +12,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature, client_event
 from pydantic import BaseModel
 
 ANSWER = (
-    "OpenAI compatibility stays intact: assistant text uses standard delta.content, "
+    "OpenAI compatibility stays intact: assistant text uses native text deltas, "
     "while custom events remain filtered at the API boundary."
 )
 SHOWCASE_EVENT_DELAY_SECONDS = 0.25

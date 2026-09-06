@@ -23,7 +23,7 @@ async def test_async_factory_loads_and_calls_the_mock_mcp_tool(make_request) -> 
 
     result = await run_langgraph(graph_request, messages, registry)
 
-    assert result.output.text == (
+    assert result.text == (
         "The async mock MCP tool was loaded and called. "
         "It reported sunny weather in Istanbul."
     )

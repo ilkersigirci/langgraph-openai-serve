@@ -25,15 +25,18 @@ def interrupt_response_id(run_id: str) -> str:
     return f"{_INTERRUPT_RESPONSE_PREFIX}{uuid.UUID(run_id).hex}_{uuid.uuid4().hex}"
 
 
-def interrupt_tool_call_id(interrupt_id: str, state_token: str) -> str:
-    """Bind one interrupt ID to the durable checkpoint generation."""
+def interrupt_tool_call_id(
+    interrupt_id: str, state_token: str, *, response_id: str
+) -> str:
+    """Bind one interrupt to its Response and durable checkpoint generation."""
     if not interrupt_id:
         msg = "LangGraph interrupt IDs must be non-empty strings."
         raise ValueError(msg)
     if _STATE_TOKEN_PATTERN.fullmatch(state_token) is None:
         msg = "LangGraph interrupt state tokens must be SHA-256 hex digests."
         raise ValueError(msg)
-    return f"{_INTERRUPT_CALL_PREFIX}{state_token}_{interrupt_id}"
+    response_nonce = response_id.rsplit("_", 1)[-1]
+    return f"{_INTERRUPT_CALL_PREFIX}{state_token}_{response_nonce}_{interrupt_id}"
 
 
 def parse_responses_resume(
@@ -62,7 +65,9 @@ def parse_responses_resume(
                 "the previous Response."
             )
             raise InvalidResumeRequestError(msg)
-        output_token, interrupt_id = _parse_interrupt_tool_call_id(item.call_id)
+        output_token, interrupt_id = _parse_interrupt_tool_call_id(
+            item.call_id, previous_response_id
+        )
         if state_token is None:
             state_token = output_token
         elif output_token != state_token:
@@ -111,13 +116,16 @@ def _parse_interrupt_response_id(response_id: str) -> str:
     return str(uuid.UUID(hex=match.group("run")))
 
 
-def _parse_interrupt_tool_call_id(call_id: str) -> tuple[str, str]:
+def _parse_interrupt_tool_call_id(
+    call_id: str, previous_response_id: str
+) -> tuple[str, str]:
     if not call_id.startswith(_INTERRUPT_CALL_PREFIX):
         msg = "Interrupt function_call_output call_id is invalid."
         raise InvalidResumeRequestError(msg)
-    state_token, separator, interrupt_id = call_id.removeprefix(
+    state_token, _, response_call = call_id.removeprefix(
         _INTERRUPT_CALL_PREFIX
     ).partition("_")
+    response_nonce, separator, interrupt_id = response_call.partition("_")
     if (
         not separator
         or not interrupt_id
@@ -125,6 +133,9 @@ def _parse_interrupt_tool_call_id(call_id: str) -> tuple[str, str]:
     ):
         msg = "Interrupt function_call_output call_id is invalid."
         raise InvalidResumeRequestError(msg)
+    if response_nonce != previous_response_id.rsplit("_", 1)[-1]:
+        msg = "Interrupt outputs do not belong to previous_response_id."
+        raise InvalidResumeRequestError(msg, param="previous_response_id")
     return state_token, interrupt_id
 
 

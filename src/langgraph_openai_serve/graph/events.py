@@ -1,6 +1,6 @@
 """Public events emitted by LangGraph nodes and tools."""
 
-from typing import Literal, TypedDict
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
@@ -31,7 +31,9 @@ class _ClientEventEnvelope(BaseModel):
     event: _ClientEventData = Field(description="Public event exposed to clients.")
 
 
-class _StatusEventData(BaseModel):
+class StatusEventData(BaseModel):
+    """Validated graph status used to render Responses commentary."""
+
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     description: str = Field(
@@ -46,14 +48,6 @@ class _StatusEventData(BaseModel):
         default=False,
         description="Whether clients should hide the status.",
     )
-
-
-class StatusEventData(TypedDict):
-    """Validated public fields used to render one status event."""
-
-    description: str
-    done: bool
-    hidden: bool
 
 
 def client_event(
@@ -83,7 +77,7 @@ def status_event(
     namespace: tuple[str, ...] = (),
 ) -> dict[str, object]:
     """Build a portable status update for native client UI."""
-    data = _StatusEventData(
+    data = StatusEventData(
         description=description,
         done=done,
         hidden=hidden,
@@ -95,26 +89,15 @@ def status_event(
     )
 
 
-def client_event_extension(value: object) -> dict[str, object] | None:
-    """Build a stream extension from validated public custom stream data."""
+def parse_status_event(value: object) -> StatusEventData | None:
+    """Read a public graph status, ignoring private or diagnostic custom data."""
     if not isinstance(value, dict) or value.get("type") != _CLIENT_EVENT_ENVELOPE_TYPE:
         return None
 
     try:
         envelope = _ClientEventEnvelope.model_validate(value)
+        if envelope.event.type != "status":
+            return None
+        return StatusEventData.model_validate(envelope.event.data)
     except ValidationError:
         return None
-    return envelope.model_dump(mode="json", exclude={"type"})
-
-
-def status_event_data(extension: dict[str, object]) -> StatusEventData | None:
-    """Validate the payload of an extracted public status extension."""
-    event = extension.get("event")
-    if not isinstance(event, dict) or event.get("type") != "status":
-        return None
-
-    try:
-        data = _StatusEventData.model_validate(event.get("data"))
-    except ValidationError:
-        return None
-    return StatusEventData(**data.model_dump(mode="json"))

@@ -177,6 +177,10 @@ Python callers use `run_langgraph(request, messages, registry)` or
 belongs to the corresponding API adapter; the graph runner imports neither API's
 request types.
 
+`run_langgraph()` returns the final `AIMessage` or `LangGraphInterruptBatch`
+directly. The streaming helper yields text and custom events followed by that
+same output type.
+
 When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
 Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation
 and every resume. The helpers delegate to the same `prepare_run()`, `invoke_run()`,

@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from openai.types.chat import ChatCompletionChunk
@@ -347,36 +347,68 @@ async def test_uservalves_reach_responses_through_shared_pipe(
     assert request["input"] == [{"role": "user", "content": "Hello"}]
 
 
-async def test_bifrost_request_uses_native_responses_route(
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("gateway_type", "base_path", "expected_model", "extra_headers"),
+    [
+        (
+            "bifrost",
+            "/openai/v1",
+            "interruptible-approval",
+            {"x-model-provider": "lgos-a"},
+        ),
+        ("litellm", "/v1", "lgos-a/interruptible-approval", None),
+    ],
+)
+async def test_request_uses_a_native_responses_route(
     monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    base_path: str,
+    expected_model: str,
+    extra_headers: dict[str, str] | None,
+    stream: bool,
 ) -> None:
     base_urls = []
 
     @asynccontextmanager
     async def client(*, base_url: str, **_: object) -> AsyncIterator[object]:
         base_urls.append(base_url)
-        yield FakeClient(create=create)
+        yield FakeClient(create=create, stream=stream_request)
 
-    create = AsyncMock(return_value=final_response("Approved."))
+    completed = final_response("Approved.")
+    create = AsyncMock(return_value=completed)
+
+    @asynccontextmanager
+    async def response_stream(**_: object) -> AsyncIterator[FakeResponseStream]:
+        yield FakeResponseStream([], completed)
+
+    stream_request = Mock(side_effect=response_stream)
     monkeypatch.setattr(generic_pipe, "_client", client)
     pipe = generic_pipe.Pipe()
-    pipe.valves.OPENAI_GATEWAY_TYPE = "bifrost"
-    pipe.valves.OPENAI_GATEWAY_BASE_URL = "https://bifrost.example"
+    pipe.valves.OPENAI_GATEWAY_TYPE = gateway_type
+    pipe.valves.OPENAI_GATEWAY_BASE_URL = "https://gateway.example"
 
-    result = await pipe.pipe(
-        {
-            **body(stream=False),
-            "model": "generic.lgos-a/interruptible-approval",
-        },
-        __metadata__={"chat_id": "thread-123"},
-        __user__={"id": "user-123"},
+    result = await collect(
+        pipe.pipe(
+            {
+                **body(stream=stream),
+                "model": "generic.lgos-a/interruptible-approval",
+            },
+            __metadata__={"chat_id": "thread-123"},
+            __user__={"id": "user-123"},
+        )
     )
 
-    assert result == "Approved."
-    assert base_urls == ["https://bifrost.example/openai/v1"]
-    request = create.await_args.kwargs
-    assert request["model"] == "interruptible-approval"
-    assert request["extra_headers"] == {"x-model-provider": "lgos-a"}
+    if stream:
+        chunk = ChatCompletionChunk.model_validate(result[0])
+        assert chunk.choices[0].delta.content == "Approved."
+        request = stream_request.call_args.kwargs
+    else:
+        assert result == ["Approved."]
+        request = create.await_args.kwargs
+    assert base_urls == [f"https://gateway.example{base_path}"]
+    assert request["model"] == expected_model
+    assert request.get("extra_headers") == extra_headers
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
@@ -1028,7 +1060,7 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
 
 
 @pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
+    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos-b/hosted-tool"]
 )
 def test_hosted_tool_request_enables_server_execution(model: str) -> None:
     from lgos_openwebui.functions.generic.responses import (
@@ -1036,6 +1068,11 @@ def test_hosted_tool_request_enables_server_execution(model: str) -> None:
     )
 
     request = _responses_request(
-        model, [], None, None, provider_routing=False, model_prefixes=("lgos", "lgos-a")
+        model,
+        [],
+        None,
+        None,
+        provider_routing=False,
+        model_prefixes=("lgos-a", "lgos-b"),
     )
     assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

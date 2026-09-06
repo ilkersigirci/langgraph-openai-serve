@@ -67,8 +67,8 @@ async def test_routes_to_the_expected_specialist(
 
     result = await run_langgraph(graph_request, messages, _registry())
 
-    assert isinstance(result.output, AIMessage)
-    assert result.output.text == expected
+    assert isinstance(result, AIMessage)
+    assert result.text == expected
 
 
 async def test_streaming_matches_non_streaming_for_nested_output(
@@ -95,5 +95,5 @@ async def test_streaming_matches_non_streaming_for_nested_output(
     streamed = "".join(event for event in events if isinstance(event, str))
     complete = await run_langgraph(graph_request, messages, _registry())
 
-    assert isinstance(complete.output, AIMessage)
-    assert streamed == complete.output.text == DOCS_ANSWER
+    assert isinstance(complete, AIMessage)
+    assert streamed == complete.text == DOCS_ANSWER

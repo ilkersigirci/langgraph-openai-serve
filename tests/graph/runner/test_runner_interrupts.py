@@ -214,12 +214,10 @@ async def test_thread_id_reaches_runnable_config(
         metadata={RUN_METADATA_KEY: RUN_ID},
     )
 
-    invocation = await run_langgraph(
-        request, [HumanMessage(content="question")], registry
-    )
+    message = await run_langgraph(request, [HumanMessage(content="question")], registry)
 
-    assert isinstance(invocation.output, AIMessage)
-    assert invocation.output.text == "ok"
+    assert isinstance(message, AIMessage)
+    assert message.text == "ok"
     assert seen_thread_ids == [checkpoint_key("threaded", RUN_ID)]
 
 
@@ -247,14 +245,12 @@ async def test_interrupt_result_is_returned_before_output_rendering(
         metadata={RUN_METADATA_KEY: RUN_ID},
     )
 
-    invocation = await run_langgraph(
-        request, [HumanMessage(content="question")], registry
-    )
+    batch = await run_langgraph(request, [HumanMessage(content="question")], registry)
 
-    assert isinstance(invocation.output, LangGraphInterruptBatch)
-    assert invocation.output.run_id == RUN_ID
-    assert len(invocation.output.interrupts) == 1
-    assert invocation.output.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
+    assert isinstance(batch, LangGraphInterruptBatch)
+    assert batch.run_id == RUN_ID
+    assert len(batch.interrupts) == 1
+    assert batch.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
 
 
 async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
@@ -283,10 +279,10 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
         run_id=None,
     )
 
-    invocation = await invoke_run(run)
+    message = await invoke_run(run)
 
-    assert isinstance(invocation.output, AIMessage)
-    assert invocation.output.text == "not-enabled"
+    assert isinstance(message, AIMessage)
+    assert message.text == "not-enabled"
 
 
 @pytest.mark.parametrize(
@@ -347,10 +343,9 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
         assert len(outputs) == 1
         output = outputs[0]
     else:
-        invocation = await run_langgraph(
+        output = await run_langgraph(
             request, [HumanMessage(content="question")], registry
         )
-        output = invocation.output
 
     assert isinstance(output, LangGraphInterruptBatch)
     assert len(output.interrupts) == EXPECTED_PARALLEL_INTERRUPTS
@@ -390,11 +385,11 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
             initial_request, [HumanMessage(content="question")], registry(saver)
         )
 
-    assert isinstance(paused.output, LangGraphInterruptBatch)
+    assert isinstance(paused, LangGraphInterruptBatch)
     resume = InterruptResume(
-        run_id=paused.output.run_id,
-        state_token=paused.output.state_token,
-        values={paused.output.interrupts[0].id: "approve"},
+        run_id=paused.run_id,
+        state_token=paused.state_token,
+        values={paused.interrupts[0].id: "approve"},
     )
 
     async with AsyncSqliteSaver.from_conn_string(str(database_path)) as saver:
@@ -405,8 +400,8 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
             resume=resume,
         )
 
-    assert isinstance(completed.output, AIMessage)
-    assert completed.output.text == "resumed:approve"
+    assert isinstance(completed, AIMessage)
+    assert completed.text == "resumed:approve"
 
 
 async def test_interrupt_enabled_graph_requires_checkpointer() -> None:

@@ -41,10 +41,7 @@ from langgraph_openai_serve.api.responses.service import (
     response_usage,
 )
 from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.events import (
-    client_event_extension,
-    status_event_data,
-)
+from langgraph_openai_serve.graph.events import parse_status_event
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import LangGraphStreamEvent, stream_run
@@ -187,7 +184,7 @@ class ResponsesStreamBuilder:
                 self._final_item,
                 response_output_text(AIMessage(content=self._final_item.text)),
             )
-        for call in interrupt_output_items(batch):
+        for call in interrupt_output_items(batch, response_id=self._context.id):
             yield from self._function_call(call)
         yield ResponseCompletedEvent(
             type="response.completed",
@@ -480,13 +477,10 @@ def _response_events(
     if not isinstance(event, dict) or not expose_status:
         return
 
-    extension = client_event_extension(event["data"])
-    if extension is None:
+    status_data = parse_status_event(event["data"])
+    if status_data is None or status_data.hidden:
         return
-    status_data = status_event_data(extension)
-    if status_data is None or status_data["hidden"]:
-        return
-    yield from builder.commentary(status_data["description"])
+    yield from builder.commentary(status_data.description)
 
 
 def _require_final_message(message: AIMessage | None) -> AIMessage:

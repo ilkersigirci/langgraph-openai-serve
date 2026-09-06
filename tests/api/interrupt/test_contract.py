@@ -8,7 +8,6 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI, BadRequestError, InternalServerError
 from openai.types.responses import ResponseFunctionToolCall
 
-from langgraph_openai_serve.api.responses.interrupts import interrupt_tool_call_id
 from tests.graph.support.interrupt import DEFAULT_INTERRUPT_PAYLOAD
 
 from .support import (
@@ -94,7 +93,7 @@ async def test_invalid_interrupt_response_id_reports_its_parameter(
             input=[
                 {
                     "type": "function_call_output",
-                    "call_id": interrupt_tool_call_id("interrupt-1", "a" * 64),
+                    "call_id": "call_invalid",
                     "output": "approve",
                 }
             ],

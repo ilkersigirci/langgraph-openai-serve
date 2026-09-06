@@ -74,6 +74,16 @@ model's upstream event stream with a final-only synthetic stream. The managed
 test surface therefore keeps exact `status-events` entries with
 `supports_native_streaming: true`. It does not duplicate the graph catalog.
 
+The pinned implementation's `supports_native_streaming()` looks up the concrete
+upstream model in its model-cost registry, not the wildcard deployment metadata.
+An unknown model returns `False`, causing `OpenAIResponsesAPIConfig` to select
+synthetic streaming. Setting the flag on `lgos-a/*` therefore does not enable it
+for `complex-subgraphs`; registering the concrete model does. The same fallback
+is described in [LiteLLM issue #21090](https://github.com/BerriAI/litellm/issues/21090).
+The managed integration suite marks lost wildcard commentary as a strict expected
+failure so a future fix is visible. The UIs keep using managed `/v1/responses`;
+they do not switch to pass-through when the gateway loses events.
+
 The maintained UIs use `OPENAI_GATEWAY_TYPE=litellm|bifrost`. With LiteLLM,
 their catalog clients read `/models` and `/models/{model}` through authenticated
 `/v1/lgos-a` and `/v1/lgos-b` pass-throughs, then retain the matching prefix and

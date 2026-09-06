@@ -17,6 +17,7 @@ from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestEr
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 STATE_TOKEN = "a" * 64
+RESPONSE_ID = interrupt_response_id(RUN_ID)
 
 
 def _output(
@@ -24,9 +25,12 @@ def _output(
     output: str,
     *,
     state_token: str = STATE_TOKEN,
+    response_id: str = RESPONSE_ID,
 ) -> ResponseFunctionCallOutputInput:
     return ResponseFunctionCallOutputInput(
-        call_id=interrupt_tool_call_id(interrupt_id, state_token),
+        call_id=interrupt_tool_call_id(
+            interrupt_id, state_token, response_id=response_id
+        ),
         output=output,
     )
 
@@ -43,7 +47,7 @@ def test_parse_responses_resume_preserves_complete_string_output_batch() -> None
 
     resume = parse_responses_resume(
         outputs,
-        previous_response_id=interrupt_response_id(RUN_ID),
+        previous_response_id=RESPONSE_ID,
     )
 
     assert resume is not None
@@ -88,12 +92,14 @@ def test_previous_response_id_requires_only_function_outputs(
     with pytest.raises(InvalidResumeRequestError, match="only function_call_output"):
         parse_responses_resume(
             input_value,
-            previous_response_id=interrupt_response_id(RUN_ID),
+            previous_response_id=RESPONSE_ID,
         )
 
 
 def test_interrupt_items_require_previous_response_id() -> None:
-    call_id = interrupt_tool_call_id("interrupt-1", STATE_TOKEN)
+    call_id = interrupt_tool_call_id(
+        "interrupt-1", STATE_TOKEN, response_id=RESPONSE_ID
+    )
     items: list[ResponseInputItem] = [
         ResponseFunctionCallInput(
             call_id=call_id,
@@ -136,7 +142,7 @@ def test_parse_responses_resume_rejects_invalid_call_id(call_id: str) -> None:
     with pytest.raises(InvalidResumeRequestError, match="call_id is invalid"):
         parse_responses_resume(
             [output],
-            previous_response_id=interrupt_response_id(RUN_ID),
+            previous_response_id=RESPONSE_ID,
         )
 
 
@@ -147,7 +153,7 @@ def test_parse_responses_resume_rejects_mixed_generations() -> None:
                 _output("interrupt-1", "yes"),
                 _output("interrupt-2", "no", state_token="b" * 64),
             ],
-            previous_response_id=interrupt_response_id(RUN_ID),
+            previous_response_id=RESPONSE_ID,
         )
 
 
@@ -158,7 +164,7 @@ def test_parse_responses_resume_rejects_duplicate_outputs() -> None:
                 _output("interrupt-1", "yes"),
                 _output("interrupt-1", "no"),
             ],
-            previous_response_id=interrupt_response_id(RUN_ID),
+            previous_response_id=RESPONSE_ID,
         )
 
 
@@ -169,7 +175,7 @@ def test_interrupt_response_ids_are_unique_and_keep_run_identity() -> None:
     assert first != second
     assert first.startswith(f"resp_lg_{RUN_ID.replace('-', '')}_")
     resume = parse_responses_resume(
-        [_output("interrupt-1", "yes")],
+        [_output("interrupt-1", "yes", response_id=first)],
         previous_response_id=first,
     )
     assert resume is not None

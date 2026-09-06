@@ -97,16 +97,8 @@ class ChatCompletionRequest(BaseModel):
 
     model: str
     messages: list[ChatCompletionRequestMessage] = Field(min_length=1)
-    temperature: float | None = 0.7
-    top_p: float | None = 1.0
-    n: int | None = 1
     stream: bool | None = False
     stream_options: "ChatCompletionStreamOptions | None" = None
-    stop: str | list[str] | None = None
-    max_tokens: int | None = None
-    presence_penalty: float | None = 0.0
-    frequency_penalty: float | None = 0.0
-    logit_bias: dict[str, float] | None = None
     user: str | None = None
     tools: list[Tool] | None = None
     tool_choice: ChatToolChoice | None = None

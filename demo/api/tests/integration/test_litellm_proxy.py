@@ -213,7 +213,28 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_native_stream_preserves_commentary(provider: str) -> None:
+@pytest.mark.parametrize(
+    ("model", "prompt", "commentary_count"),
+    [
+        ("status-events", "Build the report.", 3),
+        pytest.param(
+            "complex-subgraphs",
+            "Show nested subgraph routing docs.",
+            1,
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason=(
+                    "LiteLLM 1.99.1 does not resolve wildcard model capabilities "
+                    "and synthesizes Responses streams; BerriAI/litellm#21090"
+                ),
+            ),
+        ),
+    ],
+)
+async def test_litellm_native_stream_preserves_commentary(
+    provider: str, model: str, prompt: str, commentary_count: int
+) -> None:
     assert LITELLM_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -223,8 +244,8 @@ async def test_litellm_native_stream_preserves_commentary(provider: str) -> None
         timeout=10.0,
     ) as client:
         stream = await client.responses.create(
-            model=f"{provider}/status-events",
-            input="Build the report.",
+            model=f"{provider}/{model}",
+            input=prompt,
             store=False,
             stream=True,
         )
@@ -234,9 +255,7 @@ async def test_litellm_native_stream_preserves_commentary(provider: str) -> None
         event.item for event in events if event.type == "response.output_item.added"
     ]
     assert [(item.phase, item.type) for item in added_items] == [
-        ("commentary", "message"),
-        ("commentary", "message"),
-        ("commentary", "message"),
+        *[("commentary", "message")] * commentary_count,
         ("final_answer", "message"),
     ]
 

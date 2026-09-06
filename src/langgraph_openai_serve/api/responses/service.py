@@ -67,13 +67,12 @@ async def generate_response(
 ) -> Response:
     """Invoke a graph and serialize its durable Responses output."""
     context = ResponseContext.for_run(request, run_id=run.run_id)
-    invocation = await invoke_run(run)
-    output = invocation.output
+    output = await invoke_run(run)
     if isinstance(output, AIMessage):
         items = response_output_items(output)
         usage = output.usage_metadata
     else:
-        items = interrupt_output_items(output)
+        items = interrupt_output_items(output, response_id=context.id)
         usage = run.usage_metadata()
     return response_object(
         context,
@@ -143,6 +142,8 @@ def response_function_call(call: ToolCall) -> ResponseFunctionToolCall:
 
 def interrupt_output_items(
     batch: LangGraphInterruptBatch,
+    *,
+    response_id: str,
 ) -> list[ResponseFunctionToolCall]:
     """Serialize one durable interrupt batch as function-call items."""
     return [
@@ -150,6 +151,7 @@ def interrupt_output_items(
             call_id=interrupt_tool_call_id(
                 interrupt.id,
                 state_token=batch.state_token,
+                response_id=response_id,
             ),
             name=INTERRUPT_TOOL_NAME,
             arguments=_dump_arguments(interrupt.value),

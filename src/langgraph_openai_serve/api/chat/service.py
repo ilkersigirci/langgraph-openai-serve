@@ -26,13 +26,13 @@ async def generate_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> ChatCompletion:
     """Generate a chat completion."""
-    invocation = await invoke_run(run)
-    if not isinstance(invocation.output, AIMessage):
+    output = await invoke_run(run)
+    if not isinstance(output, AIMessage):
         msg = "The graph returned an unsupported Chat Completions output."
         raise TypeError(msg)
     return chat_completion_response(
         model=chat_request.model,
-        message=invocation.output,
+        message=output,
     )
 
 

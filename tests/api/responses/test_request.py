@@ -69,13 +69,16 @@ def test_decode_responses_request_normalized_graph_inputs() -> None:
 def test_decode_responses_request_with_previous_response_id() -> None:
     run_id = "11111111-1111-4111-8111-111111111111"
     state_token = "a" * 64
+    response_id = interrupt_response_id(run_id)
     request = ResponseCreateRequest(
         model="interruptible",
-        previous_response_id=interrupt_response_id(run_id),
+        previous_response_id=response_id,
         input=[
             ResponseFunctionCallOutputInput(
                 type="function_call_output",
-                call_id=interrupt_tool_call_id("1", state_token),
+                call_id=interrupt_tool_call_id(
+                    "1", state_token, response_id=response_id
+                ),
                 output="yes",
             ),
         ],

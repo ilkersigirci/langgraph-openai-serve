@@ -75,11 +75,11 @@ async def test_typed_dict_schemas_and_native_context(
     )
     request = make_request("typed", user="alice")
 
-    invocation = await run_langgraph(
+    message = await run_langgraph(
         request, [HumanMessage(content="question")], graph_registry
     )
 
-    assert invocation.output.text == "alice:answer"
+    assert message.text == "alice:answer"
     assert output_keys == [{"answer"}]
     assert len(adapter_requests) == 1
     assert isinstance(adapter_requests[0], GraphRequest)
@@ -126,11 +126,11 @@ async def test_async_graph_factory_and_async_adapters(
     )
     request = make_request("pydantic")
 
-    invocation = await run_langgraph(
+    message = await run_langgraph(
         request, [HumanMessage(content="question")], graph_registry
     )
 
-    assert invocation.output.text == "question"
+    assert message.text == "question"
 
 
 async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> None:
@@ -169,7 +169,7 @@ async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> N
     )
     request = make_request("typed")
 
-    invocation = await run_langgraph(
+    message = await run_langgraph(
         request, [HumanMessage(content="question")], graph_registry
     )
     events = [
@@ -179,7 +179,7 @@ async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> N
         )
     ]
 
-    assert invocation.output.text == "question"
+    assert message.text == "question"
     assert isinstance(events[-1], AIMessage)
     assert events[-1].text == "question"
     assert output_keys == [{"answer"}, {"answer"}]

@@ -45,9 +45,6 @@ async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
     assert first_response.id.startswith(f"resp_lg_{clean_id}_")
     assert recovered_response.id.startswith(f"resp_lg_{clean_id}_")
     assert recovered_response.id != first_response.id
-    assert [call.call_id for call in recovered_calls] == [
-        call.call_id for call in first_calls
-    ]
     assert [call.arguments for call in recovered_calls] == [
         call.arguments for call in first_calls
     ]
@@ -145,6 +142,7 @@ async def test_fabricated_interrupt_id_cannot_resume_pending_state(
     input_items[0]["call_id"] = interrupt_tool_call_id(
         "fabricated",
         state_token,
+        response_id=first_response.id,
     )
 
     with pytest.raises(ConflictError) as exc_info:
@@ -196,13 +194,40 @@ async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
     assert final_response.output_text == "one,two"
 
 
+@pytest.mark.parametrize("stream", [False, True])
+async def test_interrupt_outputs_must_belong_to_previous_response(
+    openai_client: AsyncOpenAI,
+    stream: bool,
+) -> None:
+    first_pause = await create_response(openai_client, model=SEQUENTIAL_MODEL)
+    second_pause = await resume_response(
+        openai_client, first_pause, "one", model=SEQUENTIAL_MODEL
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.responses.create(
+            model=SEQUENTIAL_MODEL,
+            previous_response_id=first_pause.id,
+            input=resume_outputs(second_pause, ["two"]),
+            stream=stream,
+        )
+
+    assert exc_info.value.body["param"] == "previous_response_id"
+    final = await resume_response(
+        openai_client, second_pause, "two", model=SEQUENTIAL_MODEL
+    )
+    assert final.output_text == "one,two"
+
+
 async def test_streaming_state_conflict_returns_409_before_sse(
     openai_client: AsyncOpenAI,
 ) -> None:
     first_response = await create_response(openai_client)
     input_items = resume_outputs(first_response, ["approve"])
-    interrupt_id = input_items[0]["call_id"].removeprefix("call_lg_").partition("_")[2]
-    input_items[0]["call_id"] = interrupt_tool_call_id(interrupt_id, "f" * 64)
+    interrupt_id = input_items[0]["call_id"].removeprefix("call_lg_").split("_", 2)[2]
+    input_items[0]["call_id"] = interrupt_tool_call_id(
+        interrupt_id, "f" * 64, response_id=first_response.id
+    )
 
     with pytest.raises(ConflictError) as exc_info:
         await openai_client.responses.create(

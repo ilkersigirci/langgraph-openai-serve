@@ -30,5 +30,5 @@ async def test_multiple_nodes_produce_the_same_streamed_and_complete_output(
     streamed = "".join(event for event in events if isinstance(event, str))
     final_stream_message = events[-1]
     assert isinstance(final_stream_message, AIMessage)
-    assert isinstance(complete.output, AIMessage)
-    assert streamed == final_stream_message.text == complete.output.text == ANSWER
+    assert isinstance(complete, AIMessage)
+    assert streamed == final_stream_message.text == complete.text == ANSWER

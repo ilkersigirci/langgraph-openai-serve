@@ -4,9 +4,8 @@ import pytest
 
 from langgraph_openai_serve.graph.events import (
     client_event,
-    client_event_extension,
+    parse_status_event,
     status_event,
-    status_event_data,
 )
 
 
@@ -51,18 +50,14 @@ def test_status_event_builds_the_portable_status_shape() -> None:
         status_event("")
 
 
-def test_client_event_extension_and_status_event_data() -> None:
+def test_parse_status_event_preserves_status_fields() -> None:
     event = status_event("Processing", namespace=("test",))
-    extension = client_event_extension(event)
-    assert extension is not None
-    assert extension["schema_version"] == 1
-    assert "event" in extension
-
-    status_data = status_event_data(extension)
+    status_data = parse_status_event(event)
     assert status_data is not None
-    assert status_data["description"] == "Processing"
-    assert status_data["done"] is False
-    assert status_data["hidden"] is False
+    assert status_data.description == "Processing"
+    assert status_data.done is False
+    assert status_data.hidden is False
 
-    assert client_event_extension({"type": "wrong"}) is None
-    assert status_event_data({"event": {"type": "other"}}) is None
+    assert parse_status_event({"type": "wrong"}) is None
+    assert parse_status_event(client_event("progress", {"value": 1})) is None
+    assert parse_status_event(client_event("status", {"description": ""})) is None

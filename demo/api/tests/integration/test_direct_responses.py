@@ -161,13 +161,22 @@ async def test_direct_responses_preserve_text_and_stream(
 
 
 @pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_stream_preserves_commentary(base_url: str | None) -> None:
+@pytest.mark.parametrize(
+    ("model", "prompt", "commentary_count"),
+    [
+        ("status-events", "Build the report.", 3),
+        ("complex-subgraphs", "Show nested subgraph routing docs.", 1),
+    ],
+)
+async def test_direct_stream_preserves_commentary(
+    base_url: str | None, model: str, prompt: str, commentary_count: int
+) -> None:
     assert base_url is not None
 
     async with _graph_client(base_url) as client:
         stream = await client.responses.create(
-            model="status-events",
-            input="Build the report.",
+            model=model,
+            input=prompt,
             store=False,
             stream=True,
         )
@@ -177,9 +186,7 @@ async def test_direct_stream_preserves_commentary(base_url: str | None) -> None:
         event.item for event in events if event.type == "response.output_item.added"
     ]
     assert [(item.phase, item.type) for item in added_items] == [
-        ("commentary", "message"),
-        ("commentary", "message"),
-        ("commentary", "message"),
+        *[("commentary", "message")] * commentary_count,
         ("final_answer", "message"),
     ]
 

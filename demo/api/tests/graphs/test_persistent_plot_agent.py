@@ -341,11 +341,11 @@ async def test_agent_does_not_upload_when_display_tool_is_unavailable(
 
     graph_request, messages, _ = decode_responses_request(request)
 
-    invocation = await run_langgraph(graph_request, messages, registry)
+    message = await run_langgraph(graph_request, messages, registry)
 
-    assert isinstance(invocation.output, AIMessage)
-    assert invocation.output.text == "Q4 is highest at €230k."
-    assert not invocation.output.tool_calls
+    assert isinstance(message, AIMessage)
+    assert message.text == "Q4 is highest at €230k."
+    assert not message.tool_calls
     client.assert_not_called()
 
 
@@ -367,9 +367,7 @@ async def test_agent_supports_non_streaming_invocation(
 
     graph_request, messages, _ = decode_responses_request(request)
 
-    invocation = await run_langgraph(graph_request, messages, registry)
-
-    output = invocation.output
+    output = await run_langgraph(graph_request, messages, registry)
     assert (output.text if isinstance(output, AIMessage) else output) == (
         "Q4 is highest at $230k."
     )

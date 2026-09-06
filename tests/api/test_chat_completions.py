@@ -117,6 +117,37 @@ async def test_stream_options_require_streaming(
         )
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        ("temperature", 0.2),
+        ("top_p", 0.5),
+        ("n", 2),
+        ("stop", "END"),
+        ("max_tokens", 10),
+        ("presence_penalty", 1.0),
+        ("frequency_penalty", 1.0),
+        ("logit_bias", {"123": 1}),
+    ],
+)
+async def test_unsupported_generation_controls_are_rejected(
+    openai_client: AsyncOpenAI,
+    parameter: str,
+    value: object,
+    stream: bool,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.chat.completions.create(
+            model="test",
+            messages=[{"role": "user", "content": "Hi"}],
+            stream=stream,
+            extra_body={parameter: value},
+        )
+
+    assert exc_info.value.body["param"] == parameter
+
+
 async def test_streaming_completion_uses_sse_wire_format(
     client: AsyncClient,
 ) -> None:

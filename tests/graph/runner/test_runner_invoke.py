@@ -89,11 +89,11 @@ async def test_enabled_langfuse_is_added_to_graph_run(
     )
     request = make_request("messages")
 
-    invocation = await run_langgraph(
+    message = await run_langgraph(
         request, [HumanMessage(content="question")], graph_registry
     )
 
-    assert invocation.output.text == "hello"
+    assert message.text == "hello"
     assert mock_langfuse_callback.starts == 1
 
     if recording_callback:
@@ -302,6 +302,6 @@ async def test_invoke_run_ignores_generic_custom_events() -> None:
         run_id=None,
     )
 
-    invocation = await invoke_run(run)
+    message = await invoke_run(run)
 
-    assert invocation.output.text == "done"
+    assert message.text == "done"

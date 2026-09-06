@@ -31,4 +31,4 @@ async def test_adapts_request_input_context_and_output(
 
     result = await run_langgraph(graph_request, messages, registry)
 
-    assert result.output.text == f"{expected_user} asked: Show me custom schemas."
+    assert result.text == f"{expected_user} asked: Show me custom schemas."

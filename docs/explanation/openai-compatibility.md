@@ -432,7 +432,9 @@ choice, returned `function_call` items, and matching string-valued
 ignored.
 
 Chat request fields outside the supported schema are rejected by
-normal request validation. Deprecated function fields have no separate parser
+normal request validation, including generation controls such as `temperature`,
+`max_tokens`, and `n`. Graphs own their model configuration; LGOS cannot apply
+those fields to arbitrary workflows. Deprecated function fields have no separate parser
 or migration path. An assistant message's `function_call: null` is accepted so
 clients can replay SDK message objects unchanged.
 
@@ -526,8 +528,11 @@ Every pending LangGraph interrupt becomes an OpenAI function tool call named
 ```
 
 Response and call IDs are opaque. The Response ID locates the paused operation;
-each call ID binds an interrupt to that exact checkpoint generation. Clients
-must persist and return both values unchanged.
+each call ID binds an interrupt to that Response and exact checkpoint generation.
+Clients must persist and return both values unchanged. Mixing a Response ID with
+another Response's calls returns HTTP 400 with `param: "previous_response_id"`.
+Retrying an initial request returns new Response and call IDs for the same pending
+work; either complete exchange can resume it while that checkpoint remains current.
 
 ### Resuming an Interrupt
 
@@ -540,7 +545,7 @@ Clients can resume using standard OpenAI `previous_response_id`:
   "input": [
     {
       "type": "function_call_output",
-      "call_id": "call_lg_47ecb7c6f7b901230fc4d3119976daae11888d39c973953060b8a849c3d8a5f2_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
+      "call_id": "call_lg_47ecb7c6f7b901230fc4d3119976daae11888d39c973953060b8a849c3d8a5f2_0123456789abcdef0123456789abcdef_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
       "output": "Verify the delivery address first."
     }
   ],

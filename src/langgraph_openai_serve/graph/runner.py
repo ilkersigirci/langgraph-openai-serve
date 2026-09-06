@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from anyio import CancelScope
@@ -29,13 +28,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class LangGraphInvocation:
-    """A durable graph result."""
-
-    output: "LangGraphOutput"
-
-
 LangGraphOutput = AIMessage | interrupt_models.LangGraphInterruptBatch
 LangGraphStreamEvent = (
     str | AIMessage | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
@@ -52,7 +44,7 @@ async def run_langgraph(
     *,
     resume: interrupt_models.InterruptResume | None = None,
     checkpoint_scope: str = "default",
-) -> LangGraphInvocation:
+) -> LangGraphOutput:
     """
     Prepare and invoke a graph for direct runner callers.
 
@@ -62,8 +54,8 @@ async def run_langgraph(
     calls ``invoke_run`` directly with that prepared run.
 
     Examples:
-        >>> invocation = await run_langgraph(request, messages, registry)
-        >>> print(invocation.output)
+        >>> output = await run_langgraph(request, messages, registry)
+        >>> print(output)
 
     Args:
         request: Normalized graph selection, metadata, user, and client tools.
@@ -87,7 +79,7 @@ async def run_langgraph(
     return await invoke_run(run)
 
 
-async def invoke_run(run: GraphRun) -> LangGraphInvocation:
+async def invoke_run(run: GraphRun) -> LangGraphOutput:
     """Invoke a graph and return only its durable result."""
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
@@ -97,7 +89,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
                 msg = "Pending interrupt state disappeared before use."
                 raise RuntimeError(msg)
             checkpoint_disposition = "preserve"
-            return LangGraphInvocation(output=interrupt_batch)
+            return interrupt_batch
 
         result = cast(
             "GraphOutput[Any]",
@@ -114,7 +106,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
             interrupt_batch = await _durable_interrupt_batch(run)
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
-                return LangGraphInvocation(output=interrupt_batch)
+                return interrupt_batch
 
         rendered_output = _with_usage(
             await run.config.render_output(result.value),
@@ -123,7 +115,7 @@ async def invoke_run(run: GraphRun) -> LangGraphInvocation:
         if run.config.supports(GraphFeature.INTERRUPTS):
             checkpoint_disposition = "delete"
 
-        return LangGraphInvocation(output=rendered_output)
+        return rendered_output
     finally:
         await finalize_run(run, checkpoint_disposition)
 
