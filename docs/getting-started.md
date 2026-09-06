@@ -8,29 +8,6 @@ Build a small application that registers one LangGraph graph as an OpenAI
     The [self-contained demo](demo/index.md) provides example graphs,
     PostgreSQL, Docker Compose, Chainlit, Open WebUI, and Bifrost.
 
-## Choose Responses Or Chat Completions
-
-Use the Responses API for new clients. It is LGOS's primary client contract and
-the only route that exposes workflow features such as phase-tagged status and
-human-in-the-loop interrupts. Use Chat Completions when an existing client only
-supports that API and the graph needs the simpler compatibility surface.
-
-| Need | Responses API (`/v1/responses`) | Chat Completions (`/v1/chat/completions`) |
-| --- | --- | --- |
-| New LGOS integration | **Recommended** | Compatibility for existing Chat-only clients |
-| Final assistant text | Message with `phase="final_answer"`; typed SSE events when streaming | Assistant message; `delta.content` when streaming |
-| Graph status from `status_event()` | Streaming message with `phase="commentary"` when the graph declares `client_events` | Ignored |
-| Human review with LangGraph `interrupt()` | `langgraph_interrupt` function calls resumed with `previous_response_id` and matching outputs | Unsupported; interrupt-enabled models return HTTP 400 |
-| Client-executed function tools | `function_call` and `function_call_output` items | `tool_calls` and tool messages |
-| File input by opaque Files API ID | `input_file` content part | Native Chat file content part |
-| Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
-| Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
-
-The `langgraph_openai_serve.features` model extension advertises
-`client_events`, `file_inputs`, and `interrupts` so a capability-aware UI can
-enable only supported controls. See the
-[complete compatibility contract](explanation/openai-compatibility.md) for the
-accepted fields, item shapes, streaming events, errors, and retention rules.
 
 ## Install
 
@@ -147,6 +124,30 @@ Both calls print `LGOS received: Hello from an OpenAI client`. The dummy key
 satisfies the SDK; LGOS does not enforce authentication unless the host
 application adds it. Responses remains the primary client contract; the Chat
 example is the concise compatibility path for simple graphs.
+
+### Choose Responses Or Chat Completions
+
+Use the Responses API for new clients. It is LGOS's primary client contract and
+the only route that exposes workflow features such as phase-tagged status and
+human-in-the-loop interrupts. Use Chat Completions when an existing client only
+supports that API and the graph needs the simpler compatibility surface.
+
+| Need | Responses API (`/v1/responses`) | Chat Completions (`/v1/chat/completions`) |
+| --- | --- | --- |
+| New LGOS integration | **Recommended** | Compatibility for existing Chat-only clients |
+| Final assistant text | Message with `phase="final_answer"`; typed SSE events when streaming | Assistant message; `delta.content` when streaming |
+| Graph status from `status_event()` | Streaming message with `phase="commentary"` when the graph declares `client_events` | Ignored |
+| Human review with LangGraph `interrupt()` | `langgraph_interrupt` function calls resumed with `previous_response_id` and matching outputs | Unsupported; interrupt-enabled models return HTTP 400 |
+| Client-executed function tools | `function_call` and `function_call_output` items | `tool_calls` and tool messages |
+| File input by opaque Files API ID | `input_file` content part | Native Chat file content part |
+| Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
+| Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
+
+The `langgraph_openai_serve.features` model extension advertises
+`client_events`, `file_inputs`, and `interrupts` so a capability-aware UI can
+enable only supported controls. See the
+[complete compatibility contract](explanation/openai-compatibility.md) for the
+accepted fields, item shapes, streaming events, errors, and retention rules.
 
 ## Next Steps
 

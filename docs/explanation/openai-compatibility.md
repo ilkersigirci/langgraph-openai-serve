@@ -529,6 +529,11 @@ Clients can resume using standard OpenAI `previous_response_id`:
 }
 ```
 
+Each `function_call_output.output` is a string, following the standard
+[OpenAI function-output pattern](https://developers.openai.com/api/docs/guides/function-calling#formatting-results).
+LGOS passes it unchanged to LangGraph as the return value of `interrupt()`.
+Graphs that need structured answers own their JSON parsing and schema validation.
+
 Parallel interrupts are one atomic interrupt batch: the resume request must answer
 all of them. A client must not select one call, mix ordinary function calls into that
 request, duplicate a result, or synthesize a call ID. Streaming clients persist
