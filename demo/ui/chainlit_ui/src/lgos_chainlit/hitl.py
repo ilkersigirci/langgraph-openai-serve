@@ -34,8 +34,8 @@ from lgos_chainlit.lgos_protocol import (
 from lgos_chainlit.settings import settings
 from lgos_chainlit.utils.chat import (
     LIMITED_FUNCTIONALITY_MESSAGE,
+    conversation_metadata,
     send_limited_functionality_warning,
-    session_metadata,
 )
 from lgos_chainlit.utils.clients import (
     model_request,
@@ -285,7 +285,7 @@ async def create_response(
         previous_response_id=previous_response_id,
         store=False,
         user=authenticated_user_identifier(),
-        metadata=session_metadata(),
+        metadata=conversation_metadata(),
     )
     raise_for_response(response)
     return response

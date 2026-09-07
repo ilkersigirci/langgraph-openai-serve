@@ -215,7 +215,7 @@ Variables and sends them as
 validation.
 
 The shared Pipe maps Open WebUI's stable `chat_id` to
-`metadata.session_id` on every Responses request, including the UserValves example.
+`metadata.conversation_id` on every Responses request, including the UserValves example.
 Langfuse can therefore group the
 chat's independent request traces into one session, while Open WebUI continues
 to own and resend the conversation history. The generic Pipe also forwards the

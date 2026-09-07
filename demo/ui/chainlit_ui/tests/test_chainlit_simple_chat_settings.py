@@ -331,7 +331,7 @@ async def test_selected_settings_reach_the_openai_request(
             "lgos_settings": (
                 '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
             ),
-            "session_id": "thread-123",
+            "conversation_id": "thread-123",
         },
     )
     assert assistant_message.content == "Complete answer"
@@ -388,7 +388,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         user="demo-user",
         metadata={
             "lgos_settings": '{"mode":"detailed"}',
-            "session_id": "thread-123",
+            "conversation_id": "thread-123",
         },
     )
     assert assistant_message.content == "Complete answer"

@@ -16,7 +16,10 @@ from openai.types.responses import Response, ResponseInputParam
 
 from lgos_chainlit.auth import register_auth_callback
 from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
-from lgos_chainlit.utils.chat import LIMITED_FUNCTIONALITY_MESSAGE, session_metadata
+from lgos_chainlit.utils.chat import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
+    conversation_metadata,
+)
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
@@ -102,7 +105,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
         input_items = await with_response_file_parts(input_items, message)
         streaming = streaming_enabled()
         metadata = chat_settings_metadata()
-        metadata.update(session_metadata())
+        metadata.update(conversation_metadata())
         model_options = model_request(model)
         upstream_model = cast(str, model_options["model"])
         extra_headers = cast(dict[str, str] | None, model_options.get("extra_headers"))

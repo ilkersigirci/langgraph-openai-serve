@@ -20,6 +20,7 @@ from langgraph_openai_serve.graph.client_settings import (
 )
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.protocol import (
+    CONVERSATION_METADATA_KEY,
     INTERRUPT_TOOL_NAME,
     MODEL_EXTENSION_KEY,
     SETTINGS_METADATA_KEY,
@@ -87,6 +88,7 @@ def test_chainlit_accepts_model_detail_extension() -> None:
 )
 def test_demo_clients_mirror_lgos_protocol_names(protocol: dict[str, object]) -> None:
     assert protocol["LGOS_EXTENSION_KEY"] == MODEL_EXTENSION_KEY
+    assert protocol["CONVERSATION_METADATA_KEY"] == CONVERSATION_METADATA_KEY
     assert protocol["SETTINGS_METADATA_KEY"] == SETTINGS_METADATA_KEY
     assert protocol["INTERRUPT_TOOL_NAME"] == INTERRUPT_TOOL_NAME
 

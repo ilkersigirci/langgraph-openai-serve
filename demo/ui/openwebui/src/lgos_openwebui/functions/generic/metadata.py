@@ -4,8 +4,8 @@ import json
 from typing import Any
 
 from .contracts import (
+    CONVERSATION_METADATA_KEY,
     OPENAI_METADATA_VALUE_MAX_LENGTH,
-    SESSION_ID_METADATA_KEY,
     SETTINGS_METADATA_KEY,
 )
 
@@ -14,7 +14,7 @@ def _request_metadata(metadata: dict[str, Any]) -> dict[str, str]:
     request_metadata = _runtime_settings_metadata(metadata)
     chat_id = metadata.get("chat_id")
     if isinstance(chat_id, str) and chat_id:
-        request_metadata[SESSION_ID_METADATA_KEY] = chat_id
+        request_metadata[CONVERSATION_METADATA_KEY] = chat_id
     return request_metadata
 
 

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 LGOS_EXTENSION_KEY = "lgos"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
-SESSION_ID_METADATA_KEY = "session_id"
+CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
 

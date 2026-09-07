@@ -44,7 +44,7 @@ async def test_persistent_plot_agent_survives_runtime_restart(
     await setup_postgres_schema(POSTGRES_URI)
     context = PersistentPlotAgentContext(
         user_id=str(uuid.uuid4()),
-        session_id=str(uuid.uuid4()),
+        conversation_id=str(uuid.uuid4()),
         settings=PersistentPlotAgentSettings(),
     )
 

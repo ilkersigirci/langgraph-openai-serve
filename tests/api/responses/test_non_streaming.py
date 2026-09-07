@@ -104,19 +104,19 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
                 ],
             },
         ],
-        metadata={"session_id": "session-1"},
+        metadata={"conversation_id": "session-1"},
         user="alice",
         store=False,
     )
 
     assert response.output_text == "hello"
     assert response.instructions == "Follow the instruction."
-    assert response.metadata == {"session_id": "session-1"}
+    assert response.metadata == {"conversation_id": "session-1"}
     assert response.user == "alice"
     assert received_requests == [
         GraphRequest(
             model="test",
-            metadata={"session_id": "session-1"},
+            metadata={"conversation_id": "session-1"},
             user="alice",
             tools=(),
             tool_choice=None,

@@ -171,7 +171,7 @@ application-created vendor handler through `runtime_callbacks`.
 When a callback is present, LGOS gives the graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
 request ID, registered graph model, (for interrupt runs) operation ID, and (when
-the request supplies `metadata.session_id`) the Langfuse-recognized
+the request supplies `metadata.conversation_id`) the Langfuse-recognized
 `langfuse_session_id`. LangGraph also propagates primitive configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a

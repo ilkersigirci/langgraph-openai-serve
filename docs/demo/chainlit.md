@@ -162,7 +162,7 @@ request that needs them. The underlying contract is documented in
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
-`metadata.session_id` on every Responses request, allowing Langfuse to group the
+`metadata.conversation_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
 combines that value with the authenticated OpenAI `user` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat

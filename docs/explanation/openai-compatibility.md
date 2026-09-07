@@ -139,7 +139,7 @@ The request keeps each concern in its standard OpenAI location:
 | Small graph-specific values | One `metadata.lgos_settings` string containing a JSON object |
 | Graph selection | `model` |
 | Caller-selected interrupt operation ID | Optional `metadata.lgos_run_id` UUID |
-| Conversation correlation | Optional `metadata.session_id` string |
+| Conversation correlation | Optional `metadata.conversation_id` string |
 
 Only small graph-specific values belong to `ClientSettings`. A graph may expose
 controlled semantic choices such as intended audience, but not arbitrary system
@@ -165,13 +165,17 @@ rather than sharing one JSON envelope so each value retains OpenAI's full
 512-character allowance. Arbitrary non-LGOS metadata continues through the
 protocol-neutral graph request unchanged.
 
-`metadata.session_id` is an optional, UI-neutral correlation value. A client
-uses the same stable value for every Responses or Chat Completions request in
+`metadata.conversation_id` is an optional, client-owned correlation value. It is
+a documented metadata convention, not a server-managed conversation resource.
+A client uses the same stable value for every Responses or Chat Completions request in
 one conversation. LGOS maps it to the Langfuse-recognized
 `RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
 trace, while Langfuse can group those traces in one
 [session](https://langfuse.com/docs/observability/features/sessions). It does
-not select checkpoint state or cause LGOS to retain conversation history.
+not select checkpoint state or cause LGOS to retain conversation history; clients
+still supply the input needed by each ordinary request. Omit the field when no
+conversation exists; LGOS does not generate a fallback ID. Application graphs
+may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value shorter than 200
 characters. The value is distinct from the OpenAI `user` field,
 `metadata.lgos_run_id`, and per-request trace or request identifiers.

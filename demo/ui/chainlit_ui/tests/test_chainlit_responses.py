@@ -333,7 +333,7 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch.setattr(simple, "streaming_enabled", lambda: streaming)
     monkeypatch.setattr(simple, "chat_settings_metadata", dict)
     monkeypatch.setattr(
-        simple, "session_metadata", lambda: {"session_id": "thread-123"}
+        simple, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
     )
     monkeypatch.setattr(simple, "model_request", lambda _: {"model": "plot"})
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
@@ -382,7 +382,7 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
     monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
     monkeypatch.setattr(simple, "chat_settings_metadata", dict)
-    monkeypatch.setattr(simple, "session_metadata", dict)
+    monkeypatch.setattr(simple, "conversation_metadata", dict)
     monkeypatch.setattr(simple, "model_request", lambda _: {"model": "plot"})
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
@@ -433,7 +433,7 @@ async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(
     monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
     monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
     monkeypatch.setattr(simple, "chat_settings_metadata", dict)
-    monkeypatch.setattr(simple, "session_metadata", dict)
+    monkeypatch.setattr(simple, "conversation_metadata", dict)
     monkeypatch.setattr(
         simple, "model_request", lambda _: {"model": "interruptible-approval"}
     )

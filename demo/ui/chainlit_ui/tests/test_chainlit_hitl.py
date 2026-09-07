@@ -295,7 +295,7 @@ async def test_failed_response_keeps_pending_interrupt_ledger(monkeypatch, hitl)
     )
     monkeypatch.setattr(hitl, "model_request", lambda _: {"model": "hitl"})
     monkeypatch.setattr(hitl, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(hitl, "session_metadata", dict)
+    monkeypatch.setattr(hitl, "conversation_metadata", dict)
     monkeypatch.setattr(hitl, "ask_for_resume", AsyncMock(return_value="approve"))
 
     with pytest.raises(RuntimeError, match="Resume failed"):

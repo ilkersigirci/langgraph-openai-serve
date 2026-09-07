@@ -2,7 +2,7 @@
 
 import chainlit as cl
 
-from lgos_chainlit.lgos_protocol import LGOS_EXTENSION_KEY, SESSION_ID_METADATA_KEY
+from lgos_chainlit.lgos_protocol import CONVERSATION_METADATA_KEY, LGOS_EXTENSION_KEY
 
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: The configured OpenAI endpoint did not return valid "
@@ -11,9 +11,9 @@ LIMITED_FUNCTIONALITY_MESSAGE = (
 )
 
 
-def session_metadata() -> dict[str, str]:
+def conversation_metadata() -> dict[str, str]:
     """Return the stable Chainlit thread ID as OpenAI request metadata."""
-    return {SESSION_ID_METADATA_KEY: cl.context.session.thread_id}
+    return {CONVERSATION_METADATA_KEY: cl.context.session.thread_id}
 
 
 async def send_limited_functionality_warning() -> None:

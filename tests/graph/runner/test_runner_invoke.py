@@ -119,7 +119,7 @@ async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutatio
     graph_registry = GraphRegistry(registry={"interruptible": graph_config})
     request = make_request(
         "interruptible",
-        metadata={"session_id": "conversation-123"},
+        metadata={"conversation_id": "conversation-123"},
     )
 
     run = await prepare_run(
@@ -162,7 +162,7 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
     graph_registry = GraphRegistry(registry={"interruptible": graph_config})
     request = make_request(
         "interruptible",
-        metadata={"session_id": "conversation-123"},
+        metadata={"conversation_id": "conversation-123"},
     )
 
     await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
@@ -176,8 +176,10 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
     assert get_log_context() == {}
 
 
+@pytest.mark.parametrize("conversation_id", [None, "", "conversation-123"])
 async def test_runnable_config_contains_request_correlation_metadata(
     make_request,
+    conversation_id: str | None,
 ) -> None:
     recording_callback = RecordingCallback()
     graph_config = GraphConfig(
@@ -189,7 +191,11 @@ async def test_runnable_config_contains_request_correlation_metadata(
     request = make_request(
         "messages",
         metadata={
-            "session_id": "conversation-123",
+            **(
+                {"conversation_id": conversation_id}
+                if conversation_id is not None
+                else {}
+            ),
             "unrelated": "not callback metadata",
         },
     )
@@ -210,7 +216,7 @@ async def test_runnable_config_contains_request_correlation_metadata(
         assert run.runnable_config["metadata"] == {
             "lgos.model": "messages",
             "lgos.request_id": "request-123",
-            "langfuse_session_id": "conversation-123",
+            **({"langfuse_session_id": conversation_id} if conversation_id else {}),
         }
         assert "run_id" not in run.runnable_config
     finally:

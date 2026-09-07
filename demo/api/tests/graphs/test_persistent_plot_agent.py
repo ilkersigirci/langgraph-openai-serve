@@ -94,8 +94,8 @@ def _last_tool_result(result: dict[str, Any]) -> str:
 @pytest.mark.parametrize(
     ("user", "metadata", "param"),
     [
-        (None, {"session_id": "thread-1"}, "user"),
-        ("user-1", None, "metadata.session_id"),
+        (None, {"conversation_id": "thread-1"}, "user"),
+        ("user-1", None, "metadata.conversation_id"),
     ],
 )
 def test_plot_requires_a_complete_persistence_scope(
@@ -141,10 +141,10 @@ async def test_agent_reuses_plot_data_only_in_the_same_thread(
     )
     settings = PersistentPlotAgentSettings()
     first_thread = PersistentPlotAgentContext(
-        user_id="user-1", session_id="thread-1", settings=settings
+        user_id="user-1", conversation_id="thread-1", settings=settings
     )
     second_thread = PersistentPlotAgentContext(
-        user_id="user-1", session_id="thread-2", settings=settings
+        user_id="user-1", conversation_id="thread-2", settings=settings
     )
 
     await graph.ainvoke(_state("Set Q3 to 250."), context=first_thread)
@@ -191,7 +191,7 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
         model="persistent-plot-agent",
         user="user-1",
         metadata={
-            "session_id": "thread-1",
+            "conversation_id": "thread-1",
             "lgos_settings": json.dumps(
                 {
                     "chart_type": chart_type,
@@ -291,7 +291,7 @@ async def test_streaming_agent_completes_with_display_file_call(
         stream = await client.responses.create(
             model="persistent-plot-agent",
             input="Show the chart.",
-            metadata={"session_id": "thread-1"},
+            metadata={"conversation_id": "thread-1"},
             store=False,
             stream=True,
             tools=[_display_file_tool()],
@@ -346,7 +346,7 @@ async def test_agent_does_not_upload_when_display_tool_is_unavailable(
     graph_request, messages = make_graph_input(
         "persistent-plot-agent",
         user="user-1",
-        metadata={"session_id": "thread-1"},
+        metadata={"conversation_id": "thread-1"},
     )
     registry = _registry(
         make_tool_calling_model(
