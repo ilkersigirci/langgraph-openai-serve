@@ -3,7 +3,6 @@
 import pytest
 
 from langgraph_openai_serve.api.responses.interrupts import (
-    INTERRUPT_TOOL_NAME,
     interrupt_response_id,
     interrupt_tool_call_id,
     parse_responses_resume,
@@ -14,6 +13,7 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseInputItem,
 )
 from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
+from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 STATE_TOKEN = "a" * 64

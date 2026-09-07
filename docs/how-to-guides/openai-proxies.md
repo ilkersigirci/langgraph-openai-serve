@@ -33,7 +33,7 @@ must not silently turn `store: false` into a stored response.
 
 `GET /v1/models` is sufficient for ordinary graph selection. A client that uses
 LGOS descriptions, feature discovery, or runtime-settings forms also needs
-`GET /v1/models/{model}` and the namespaced `langgraph_openai_serve` property.
+`GET /v1/models/{model}` and the namespaced `lgos` property.
 Those extensions improve presentation but are not prerequisites for a standard
 Responses request.
 

@@ -97,10 +97,13 @@ Use these values when querying Responses telemetry for `lgos-demo-api`:
 | API request span | `POST /responses` |
 | Graph execution span | `lgos.graph_run` |
 | UI identity on the API span | `user_agent.original` |
-| Conversation correlation | `session.id`, supplied through `metadata.session_id` |
+| Conversation correlation | `gen_ai.conversation.id`, supplied through `metadata.conversation_id` |
 
-Graph spans and session attributes come from the optional Langfuse callback;
-HTTP spans and metrics come from FastAPI instrumentation.
+Graph spans and Langfuse's `session.id` come from the optional Langfuse callback;
+HTTP spans and metrics come from FastAPI instrumentation. For `lgos-demo-api`,
+the Collector copies `session.id` to `gen_ai.conversation.id` when the latter is
+absent. Here the value identifies a UI conversation, not a browser session.
+Langfuse's original attribute is preserved, and no fallback ID is generated.
 
 The mounted API's route template omits `/v1`; the actual request URL remains
 `/v1/responses`. The `/v1/models` diagnostic above verifies export, but does not

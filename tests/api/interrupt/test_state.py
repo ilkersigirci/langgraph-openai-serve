@@ -111,7 +111,7 @@ async def test_invalid_caller_run_id_returns_400(
         await create_response(openai_client, run_id=run_id)
 
     assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
-    assert exc_info.value.body["param"] == "metadata.langgraph_run_id"
+    assert exc_info.value.body["param"] == "metadata.lgos_run_id"
 
 
 async def test_resume_rejects_mismatched_caller_run_id(
@@ -125,11 +125,11 @@ async def test_resume_rejects_mismatched_caller_run_id(
             model=MODEL,
             previous_response_id=first_response.id,
             input=input_items,
-            metadata={"langgraph_run_id": str(uuid.uuid4())},
+            metadata={"lgos_run_id": str(uuid.uuid4())},
         )
 
     assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
-    assert exc_info.value.body["param"] == "metadata.langgraph_run_id"
+    assert exc_info.value.body["param"] == "metadata.lgos_run_id"
 
 
 async def test_fabricated_interrupt_id_cannot_resume_pending_state(

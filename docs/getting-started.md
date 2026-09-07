@@ -137,13 +137,13 @@ supports that API and the graph needs the simpler compatibility surface.
 | New LGOS integration | **Recommended** | Compatibility for existing Chat-only clients |
 | Final assistant text | Message with `phase="final_answer"`; typed SSE events when streaming | Assistant message; `delta.content` when streaming |
 | Graph status from `status_event()` | Streaming message with `phase="commentary"` when the graph declares `client_events` | Ignored |
-| Human review with LangGraph `interrupt()` | `langgraph_interrupt` function calls resumed with `previous_response_id` and matching outputs | Unsupported; interrupt-enabled models return HTTP 400 |
+| Human review with LangGraph `interrupt()` | `lgos_interrupt` function calls resumed with `previous_response_id` and matching outputs | Unsupported; interrupt-enabled models return HTTP 400 |
 | Client-executed function tools | `function_call` and `function_call_output` items | `tool_calls` and tool messages |
 | File input by opaque Files API ID | `input_file` content part | Native Chat file content part |
 | Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
 | Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
 
-The `langgraph_openai_serve.features` model extension advertises
+The `lgos.features` model extension advertises
 `client_events`, `file_inputs`, and `interrupts` so a capability-aware UI can
 enable only supported controls. See the
 [complete compatibility contract](explanation/openai-compatibility.md) for the

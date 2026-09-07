@@ -29,10 +29,10 @@ from langgraph_openai_serve.graph.interrupt import state as interrupt_state
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
+from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 
 logger = get_logger(__name__)
 _RUN_NAME = "lgos.graph_run"
-_SESSION_ID_METADATA_KEY = "session_id"
 _LANGFUSE_SESSION_ID_METADATA_KEY = "langfuse_session_id"
 
 
@@ -236,9 +236,9 @@ def _runnable_metadata(
     metadata = {
         "lgos.model": request.model,
     }
-    session_id = request.metadata.get(_SESSION_ID_METADATA_KEY)
-    if session_id:
-        metadata[_LANGFUSE_SESSION_ID_METADATA_KEY] = session_id
+    conversation_id = request.metadata.get(CONVERSATION_METADATA_KEY)
+    if conversation_id:
+        metadata[_LANGFUSE_SESSION_ID_METADATA_KEY] = conversation_id
     request_id = get_log_context().get("request_id")
     if isinstance(request_id, str):
         metadata["lgos.request_id"] = request_id

@@ -10,8 +10,8 @@ from langgraph_openai_serve.api.responses.schemas import (
 )
 from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME as _INTERRUPT_TOOL_NAME
 
-INTERRUPT_TOOL_NAME = "langgraph_interrupt"
 _INTERRUPT_CALL_PREFIX = "call_lg_"
 _INTERRUPT_RESPONSE_PREFIX = "resp_lg_"
 _STATE_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -96,7 +96,7 @@ def _reject_interrupt_items_without_response_id(
     if any(
         (
             isinstance(item, ResponseFunctionCallInput)
-            and item.name == INTERRUPT_TOOL_NAME
+            and item.name == _INTERRUPT_TOOL_NAME
         )
         or (
             isinstance(item, ResponseFunctionCallOutputInput)
@@ -140,7 +140,6 @@ def _parse_interrupt_tool_call_id(
 
 
 __all__ = [
-    "INTERRUPT_TOOL_NAME",
     "interrupt_response_id",
     "interrupt_tool_call_id",
     "parse_responses_resume",

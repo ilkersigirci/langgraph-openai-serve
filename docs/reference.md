@@ -133,7 +133,7 @@ Runtime context is separate from `RunnableConfig`:
 | Graph input | `graph.ainvoke(input, ...)` or `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
-| Interrupt run | server scope + model + optional `metadata.langgraph_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
+| Interrupt run | server scope + model + optional `metadata.lgos_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
 
 LGOS assembles runnable config from `runtime_callbacks` and, for an
 interrupt-enabled run, a fixed-length SHA-256 checkpoint key derived from the
@@ -171,7 +171,7 @@ application-created vendor handler through `runtime_callbacks`.
 When a callback is present, LGOS gives the graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
 request ID, registered graph model, (for interrupt runs) operation ID, and (when
-the request supplies `metadata.session_id`) the Langfuse-recognized
+the request supplies `metadata.conversation_id`) the Langfuse-recognized
 `langfuse_session_id`. LangGraph also propagates primitive configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
@@ -179,9 +179,10 @@ custom Langfuse trace ID. See [Production Logging and Request
 Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
 The same `features` set drives runtime behavior and the versioned
-`langgraph_openai_serve.features` extension returned by model listing and
+`lgos.features` extension returned by model listing and
 retrieval. `GraphFeature.CLIENT_EVENTS` enables and advertises public
-status commentary in Responses and opted-in Chat event chunks.
+status commentary in streaming Responses. Chat Completions ignores custom
+stream events and does not emit commentary.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow.
@@ -208,7 +209,7 @@ frozen, extra-forbid, or default-validation behavior, as well as fields excluded
 from Pydantic serialization.
 
 All public fields travel together as compact JSON text in the
-`metadata.langgraph_runtime_settings` string. Clients omit values equal to the advertised
+`metadata.lgos_settings` string. Clients omit values equal to the advertised
 defaults. System instructions remain ordinary OpenAI messages and are
 independent of `ClientSettings`; native OpenAI fields keep their standard
 request semantics.
@@ -220,11 +221,13 @@ combine them with server-derived identity, authorization, database clients, and
 other dependencies.
 
 The serialized descriptor appears only on model retrieval as
-`langgraph_openai_serve.client_settings`, with independent `schema_version`,
+`lgos.client_settings`, with independent `schema_version`,
 `json_schema`, and `defaults` fields. All client settings use the fixed
-`metadata.langgraph_runtime_settings` envelope. Clients use the descriptor's
+`metadata.lgos_settings` key. Clients use the descriptor's
 validated `defaults` object as the baseline; `default` keywords within the
-generated JSON Schema are annotations, not the runtime baseline.
+generated JSON Schema are annotations, not the runtime baseline. The schema's
+`$schema` keyword declares the JSON Schema 2020-12 dialect independently of the
+LGOS descriptor version.
 
 See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
 for the runtime settings flow, and
@@ -241,7 +244,7 @@ Interrupt-enabled graphs have additional registration requirements:
 The initial request does not require metadata. LGOS generates a UUID operation
 ID and embeds it in the paused Response ID. A caller that needs deterministic
 initial-request retries can instead supply a non-nil UUID in
-`metadata.langgraph_run_id`. `InMemoryRunCoordinator` is suitable only for
+`metadata.lgos_run_id`. `InMemoryRunCoordinator` is suitable only for
 tests and a single-process development server; it cannot serialize requests
 across workers or hosts.
 
@@ -316,16 +319,20 @@ writer(
 )
 ```
 
-The portable status data matches native UI status concepts:
+The helper writes this versioned graph-to-LGOS envelope:
 
 ```json
 {
-  "type": "status",
-  "namespace": ["media"],
-  "data": {
-    "description": "Generating audio",
-    "done": false,
-    "hidden": false
+  "type": "lgos.client_event",
+  "schema_version": 1,
+  "event": {
+    "type": "status",
+    "namespace": ["media"],
+    "data": {
+      "description": "Generating audio",
+      "done": false,
+      "hidden": false
+    }
   }
 }
 ```
@@ -335,7 +342,9 @@ internal node names or state. Responses exposes the description as commentary
 and suppresses hidden updates; the namespace, `done`, and `hidden` fields do not
 become nonstandard Response fields.
 
-The v1 public vocabulary is `status`, `progress`, and `artifact`.
+The event envelope has its own schema version, independent of model discovery
+and client settings. The v1 event vocabulary is `status`, `progress`, and
+`artifact`.
 `client_event("status", data)` remains the lower-level equivalent when an
 application already has validated status data; prefer `status_event()` for its
 typed fields. Event data must be JSON-safe, and every namespace segment must be a

@@ -25,7 +25,6 @@ from openai.types.responses.response_usage import (
 )
 
 from langgraph_openai_serve.api.responses.interrupts import (
-    INTERRUPT_TOOL_NAME,
     interrupt_response_id,
     interrupt_tool_call_id,
 )
@@ -34,6 +33,7 @@ from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import invoke_run
 from langgraph_openai_serve.graph.utils import GraphRun
+from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 
 class UnsupportedResponsesOutputError(RuntimeError):

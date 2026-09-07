@@ -7,13 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 # These values mirror the public LGOS wire contract. This standalone Open WebUI
 # Function must not import the server package:
+# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/protocol.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/responses/interrupts.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/metadata.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
-INTERRUPT_TOOL_NAME = "langgraph_interrupt"
+INTERRUPT_TOOL_NAME = "lgos_interrupt"
 DISPLAY_FILE_TOOL_NAME = "display_file"
 PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"
 ASK_USER_TOOL_NAME = "ask_user"
@@ -22,10 +23,10 @@ ASK_USER_MAX_QUESTIONS = 3
 ASK_USER_QUESTION_MAX_LENGTH = 500
 ASK_USER_REJECTED_OUTPUT = "Error: tool call rejected by user."
 INTERRUPT_CANCELLED_MESSAGE = "Interrupt cancelled."
-LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+LGOS_EXTENSION_KEY = "lgos"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
-SESSION_ID_METADATA_KEY = "session_id"
-RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
+CONVERSATION_METADATA_KEY = "conversation_id"
+SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk

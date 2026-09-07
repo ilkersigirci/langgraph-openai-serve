@@ -26,8 +26,7 @@ from langgraph_openai_serve.graph.interrupt.models import (
 )
 from langgraph_openai_serve.graph.interrupt.validation import validate_interrupt_payload
 from langgraph_openai_serve.graph.request import GraphRequest
-
-RUN_METADATA_KEY = "langgraph_run_id"
+from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 
 class InvalidRunIDError(ValueError):

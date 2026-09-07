@@ -7,14 +7,14 @@ image is an independent OpenAI client, not an LGOS Python application.
 
 Authoritative LGOS sources:
 
+* Public protocol names:
+  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/protocol.py
 * Model-detail extension schema:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 * Graph feature values:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
 * OpenAI metadata limits:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/metadata.py
-* Runtime-settings metadata key:
-  https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 * Interrupt tool contract:
   https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/responses/interrupts.py
 """
@@ -34,11 +34,11 @@ from pydantic import (
 
 logger = logging.getLogger(__name__)
 
-LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+LGOS_EXTENSION_KEY = "lgos"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
-SESSION_ID_METADATA_KEY = "session_id"
-RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
-INTERRUPT_TOOL_NAME = "langgraph_interrupt"
+CONVERSATION_METADATA_KEY = "conversation_id"
+SETTINGS_METADATA_KEY = "lgos_settings"
+INTERRUPT_TOOL_NAME = "lgos_interrupt"
 
 
 class GraphFeature(StrEnum):
@@ -51,7 +51,7 @@ class GraphFeature(StrEnum):
 class ModelClientSettings(BaseModel):
     """Versioned runtime-settings descriptor advertised for one model."""
 
-    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+    model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
     schema_version: Literal[1]
     json_schema: dict[str, JsonValue]

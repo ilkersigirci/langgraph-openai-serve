@@ -31,7 +31,7 @@ graph TD;
 
 Both Chainlit and Open WebUI send their current model-context messages, a
 UI-provided user identifier as OpenAI `user`, and their stable thread or chat
-identifier as `metadata.session_id`.
+identifier as `metadata.conversation_id`.
 
 ```mermaid
 sequenceDiagram
@@ -43,7 +43,7 @@ sequenceDiagram
   participant Store as AsyncPostgresStore
   participant Files as OpenAI Files API
 
-  UI->>API: input + display_file tool + user + session_id
+  UI->>API: input + display_file tool + user + conversation_id
   API->>API: Validate settings and build request context
   API->>Graph: Messages + request context
   Graph->>Store: aget chart document
@@ -62,7 +62,7 @@ sequenceDiagram
 
 For each request:
 
-1. LGOS validates `user`, `metadata.session_id`, and the request-scoped chart
+1. LGOS validates `user`, `metadata.conversation_id`, and the request-scoped chart
    settings.
 2. The agent selects the read or update tool from the user's natural-language
    request.
@@ -94,7 +94,7 @@ A LangGraph Store addresses a JSON-like value by `namespace` and `key`. The
 demo uses:
 
 ```text
-namespace = ("demo", "persistent-plot-agent", "threads", sha256(user + "\0" + session_id))
+namespace = ("demo", "persistent-plot-agent", "threads", sha256(user + "\0" + conversation_id))
 key       = "quarterly-revenue"
 value     = {"schema_version": 1, "q1": 120, "q2": 180, "q3": 150, "q4": 230}
 ```
@@ -162,7 +162,7 @@ services and database layout.
 
 !!! warning "Correlation is not authorization"
 
-    `user` and `session_id` are request correlation values. A production
+    `user` and `conversation_id` are request correlation values. A production
     application must derive them from authenticated server state and define a
     retention policy for stored chart documents.
 

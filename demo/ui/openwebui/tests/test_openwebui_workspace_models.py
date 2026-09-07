@@ -53,7 +53,7 @@ def _assert_workspace_reads(client: Mock) -> None:
 def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
     model = SimpleNamespace(
         model_extra={
-            "langgraph_openai_serve": {
+            "lgos": {
                 "schema_version": 1,
                 "description": "DUMMY",
                 "features": [],
@@ -116,7 +116,7 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
 def test_discover_workspace_models_uses_bifrost_catalog_and_native_api() -> None:
     configured = SimpleNamespace(
         model_extra={
-            "langgraph_openai_serve": {
+            "lgos": {
                 "schema_version": 1,
                 "description": "  DUMMY  ",
                 "features": ["file_inputs"],
@@ -190,7 +190,7 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
     api_client = Mock()
     api_client.models.retrieve.return_value = SimpleNamespace(
         model_extra={
-            "langgraph_openai_serve": {
+            "lgos": {
                 "schema_version": 1,
                 "features": [],
             }
@@ -215,7 +215,7 @@ def test_discover_workspace_models_merges_litellm_passthrough_catalogs() -> None
             id="simple-graph",
             owned_by="langgraph-openai-serve",
             model_extra={
-                "langgraph_openai_serve": {
+                "lgos": {
                     "schema_version": 1,
                     "description": f"LiteLLM {model_prefix} graph",
                     "features": ["file_inputs"],

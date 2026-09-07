@@ -77,7 +77,7 @@ def function_call(name: str, arguments: dict[str, object]) -> ResponseFunctionTo
 
 def interrupt_call() -> ResponseFunctionToolCall:
     return function_call(
-        "langgraph_interrupt",
+        "lgos_interrupt",
         {
             "question": "Approve refund?",
             "choices": ["approve", "reject"],
@@ -306,7 +306,7 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
     assert request["user"] == "user-123"
-    assert request["metadata"] == {"session_id": "thread-123"}
+    assert request["metadata"] == {"conversation_id": "thread-123"}
     assert request["tools"][0]["name"] == "display_file"
 
 
@@ -339,8 +339,8 @@ async def test_uservalves_reach_responses_through_shared_pipe(
     assert result == "Hello."
     request = create.await_args.kwargs
     assert request["model"] == "lgos-a/simple-graph"
-    assert request["metadata"]["session_id"] == "thread-123"
-    assert json.loads(request["metadata"]["langgraph_runtime_settings"]) == {
+    assert request["metadata"]["conversation_id"] == "thread-123"
+    assert json.loads(request["metadata"]["lgos_settings"]) == {
         "use_history": settings.use_history,
         "audience": settings.audience,
     }

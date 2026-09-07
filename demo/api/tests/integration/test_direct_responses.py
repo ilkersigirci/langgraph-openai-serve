@@ -89,7 +89,7 @@ async def test_direct_model_catalog_preserves_lgos_metadata(
         model = await client.models.retrieve("simple-graph")
 
     assert any(item.id == "simple-graph" for item in models.data)
-    extension = (model.model_extra or {})["langgraph_openai_serve"]
+    extension = (model.model_extra or {})["lgos"]
     assert extension["schema_version"] == 1
     assert isinstance(extension["description"], str)
 
@@ -200,7 +200,7 @@ async def test_direct_function_output_continuation(base_url: str | None) -> None
         paused = await client.responses.create(
             model="interruptible-approval",
             input=public_request,
-            metadata={"langgraph_run_id": str(uuid.uuid4())},
+            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
         )
         assert len(paused.output) == 1

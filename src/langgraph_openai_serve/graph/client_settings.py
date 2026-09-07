@@ -6,8 +6,10 @@ from typing import NamedTuple, Self, cast
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
 
 from langgraph_openai_serve.graph.request import GraphRequest
-
-RUNTIME_SETTINGS_METADATA_KEY = "langgraph_runtime_settings"
+from langgraph_openai_serve.protocol import (
+    JSON_SCHEMA_DIALECT,
+    SETTINGS_METADATA_KEY,
+)
 
 
 class ClientSettings(BaseModel):
@@ -38,8 +40,8 @@ class ClientSettings(BaseModel):
     @classmethod
     def validate_request(cls, request: GraphRequest) -> Self:
         """Read and validate this model's values from an OpenAI request."""
-        parameter = f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
-        encoded = request.metadata.get(RUNTIME_SETTINGS_METADATA_KEY, "{}")
+        parameter = f"metadata.{SETTINGS_METADATA_KEY}"
+        encoded = request.metadata.get(SETTINGS_METADATA_KEY, "{}")
 
         try:
             changes = _validate_json_object(encoded)
@@ -128,6 +130,7 @@ def _validated_contract(
         settings_model.model_json_schema(by_alias=False),
         strict=True,
     )
+    schema["$schema"] = JSON_SCHEMA_DIALECT
     return _ValidatedContract(
         defaults=validated,
         defaults_json=defaults_json,

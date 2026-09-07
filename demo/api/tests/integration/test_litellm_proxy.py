@@ -88,7 +88,7 @@ async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> Non
             user="gateway-user",
         )
 
-    extension = (detail.model_extra or {})["langgraph_openai_serve"]
+    extension = (detail.model_extra or {})["lgos"]
     assert extension["description"]
     assert response.output_text == (
         "gateway-user asked: Use the catalog model through managed routing."
@@ -275,7 +275,7 @@ async def test_litellm_native_function_output_continuation(provider: str) -> Non
         paused = await client.responses.create(
             model=model,
             input=public_request,
-            metadata={"langgraph_run_id": str(uuid.uuid4())},
+            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
         )
         assert len(paused.output) == 1

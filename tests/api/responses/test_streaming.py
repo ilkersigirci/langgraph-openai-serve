@@ -469,7 +469,7 @@ async def test_interrupt_stream_completes_and_releases_run_lease(
         stream = await openai_client.responses.create(
             model="interrupt",
             input="Hello",
-            metadata={"langgraph_run_id": run_id},
+            metadata={"lgos_run_id": run_id},
             store=False,
             stream=True,
         )
@@ -477,7 +477,7 @@ async def test_interrupt_stream_completes_and_releases_run_lease(
 
     assert events[-1].type == "response.completed"
     assert events[-1].response.output[0].type == "function_call"
-    assert events[-1].response.output[0].name == "langgraph_interrupt"
+    assert events[-1].response.output[0].name == "lgos_interrupt"
     async with coordinator(checkpoint_key("interrupt", run_id)):
         pass
 

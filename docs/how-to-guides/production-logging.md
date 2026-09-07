@@ -79,7 +79,7 @@ metadata through LangChain's `RunnableConfig`:
 - `lgos.operation_id`, for an interrupt operation;
 - `lgos.model`, the registered OpenAI-compatible graph model;
 - `langfuse_session_id`, when the request contains a non-empty
-  `metadata.session_id` string.
+  `metadata.conversation_id` string.
 
 Both endpoints use the stable graph run name `lgos.graph_run`. LangGraph propagates
 primitive `configurable` fields to callback metadata during execution, so an
@@ -91,7 +91,7 @@ generated trace ID.
 Langfuse's LangChain integration creates a trace for each invocation by
 default. Treat one Responses or Chat Completions request as one trace. When
 several requests belong to one conversation, send the same UI-owned value as
-`metadata.session_id`; LGOS maps it to Langfuse's `langfuse_session_id`, which
+`metadata.conversation_id`; LGOS maps it to Langfuse's `langfuse_session_id`, which
 groups the independent traces into one
 [session](https://langfuse.com/docs/observability/features/sessions). This is
 correlation only: LGOS remains stateless and the client must still send the

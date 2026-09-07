@@ -255,9 +255,9 @@ natively, and returns a small acknowledgment. See
 ## Resume An Interrupt
 
 An interrupt-enabled graph returns one or more `function_call` items named
-`langgraph_interrupt`. Preserve every returned call and answer the whole batch.
+`lgos_interrupt`. Preserve every returned call and answer the whole batch.
 No metadata is required for an initial request; use a new UUID in
-`metadata.langgraph_run_id` when retrying a lost initial response must address
+`metadata.lgos_run_id` when retrying a lost initial response must address
 the same pending operation.
 
 ```python
@@ -269,7 +269,7 @@ client = OpenAI(
     api_key="DUMMY",
     max_retries=0,
 )
-metadata = {"langgraph_run_id": str(uuid4())}
+metadata = {"lgos_run_id": str(uuid4())}
 
 input_items = [
     {"role": "user", "content": "Perform the protected action."}
@@ -310,12 +310,12 @@ for stale-state conflicts and recovery boundaries.
 ## Model Discovery And Runtime Settings
 
 Use `client.models.list()` for registered graph IDs. Direct LGOS model objects
-also expose the namespaced `langgraph_openai_serve` extension. Retrieve a
+also expose the namespaced `lgos` extension. Retrieve a
 selected model to discover its settings descriptor:
 
 ```python
 model = client.models.retrieve("my-settings-graph")
-extension = (model.model_extra or {}).get("langgraph_openai_serve")
+extension = (model.model_extra or {}).get("lgos")
 settings = (
     extension.get("client_settings")
     if isinstance(extension, dict) and extension.get("schema_version") == 1
@@ -327,7 +327,7 @@ if isinstance(settings, dict) and settings.get("schema_version") == 1:
     print(settings["defaults"])
 ```
 
-`metadata.langgraph_runtime_settings` is JSON text, not a nested metadata
+`metadata.lgos_settings` is JSON text, not a nested metadata
 object. Send only values that differ from the advertised defaults, keep the
 encoded value at 512 characters or fewer, and resend it on every request that
 needs it. A normalizing proxy may omit this optional extension; plain Responses

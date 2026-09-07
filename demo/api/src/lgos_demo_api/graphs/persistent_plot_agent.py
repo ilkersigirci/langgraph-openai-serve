@@ -21,6 +21,7 @@ from langgraph_openai_serve import (
     NamedFunctionToolChoice,
 )
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
+from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 from openai import AsyncOpenAI
 from openai.types.shared import ErrorObject
 from plotly import graph_objects as go
@@ -100,7 +101,7 @@ class DisplayFile(BaseModel):
 @dataclass(frozen=True, slots=True)
 class PersistentPlotAgentContext:
     user_id: str
-    session_id: str
+    conversation_id: str
     settings: PersistentPlotAgentSettings
     display_file_available: bool = False
 
@@ -126,8 +127,8 @@ def _summary(
     return f"{QUARTERS[highest_index]} is highest at {symbol}{max(values):g}k."
 
 
-def _thread_scope(user_id: str, session_id: str) -> str:
-    return sha256(f"{user_id}\0{session_id}".encode()).hexdigest()
+def _thread_scope(user_id: str, conversation_id: str) -> str:
+    return sha256(f"{user_id}\0{conversation_id}".encode()).hexdigest()
 
 
 def _thread_namespace(context: PersistentPlotAgentContext) -> tuple[str, ...]:
@@ -135,7 +136,7 @@ def _thread_namespace(context: PersistentPlotAgentContext) -> tuple[str, ...]:
         "demo",
         "persistent-plot-agent",
         "threads",
-        _thread_scope(context.user_id, context.session_id),
+        _thread_scope(context.user_id, context.conversation_id),
     )
 
 
@@ -280,7 +281,7 @@ def context_factory(
     request: GraphRequest,
     client_settings: ClientSettings | None,
 ) -> PersistentPlotAgentContext:
-    user_id, session_id = _persistence_scope(request)
+    user_id, conversation_id = _persistence_scope(request)
     plot_settings = (
         client_settings
         if isinstance(client_settings, PersistentPlotAgentSettings)
@@ -288,7 +289,7 @@ def context_factory(
     )
     return PersistentPlotAgentContext(
         user_id=user_id,
-        session_id=session_id,
+        conversation_id=conversation_id,
         settings=plot_settings,
         display_file_available=_display_file_available(request),
     )
@@ -348,18 +349,21 @@ def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
                 code="missing_persistence_scope",
             ),
         )
-    session_id = request.metadata.get("session_id")
-    if not session_id:
+    conversation_parameter = f"metadata.{CONVERSATION_METADATA_KEY}"
+    conversation_id = request.metadata.get(CONVERSATION_METADATA_KEY)
+    if not conversation_id:
         raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             error=ErrorObject(
-                message="metadata.session_id is required for persistent plot agent storage.",
+                message=(
+                    f"{conversation_parameter} is required for persistent plot agent storage."
+                ),
                 type="invalid_request_error",
-                param="metadata.session_id",
+                param=conversation_parameter,
                 code="missing_persistence_scope",
             ),
         )
-    return request.user, session_id
+    return request.user, conversation_id
 
 
 def create_persistent_plot_agent_config(

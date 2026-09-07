@@ -40,6 +40,11 @@ processors:
         action: delete
       - key: gen_ai.output.messages
         action: delete
+  # LGOS sends a UI conversation ID to Langfuse's session grouping API.
+  transform/lgos_conversation:
+    error_mode: ignore
+    trace_statements:
+      - 'set(span.attributes["gen_ai.conversation.id"], span.attributes["session.id"]) where resource.attributes["service.name"] == "lgos-demo-api" and span.attributes["gen_ai.conversation.id"] == nil and span.attributes["session.id"] != nil'
   resource/defaults:
     attributes:
       - key: service.namespace
@@ -90,7 +95,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, resource/defaults]
+      processors: [memory_limiter, filter/asgi_transport, attributes/redact_payload, transform/lgos_conversation, resource/defaults]
       exporters: [otlp_http/upstream]
     metrics:
       receivers: [otlp]

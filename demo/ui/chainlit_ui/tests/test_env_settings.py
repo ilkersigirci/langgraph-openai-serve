@@ -107,7 +107,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
                     object="model",
                     created=1,
                     owned_by="langgraph-openai-serve",
-                    langgraph_openai_serve={
+                    lgos={
                         "schema_version": 1,
                         "description": "DUMMY",
                         "features": [],
@@ -140,7 +140,7 @@ async def test_catalog_discovers_providers_and_preserves_model_metadata(
         "lgos-a/graph-a",
         "lgos-future/graph-b",
     ]
-    assert (models[0].model_extra or {})["langgraph_openai_serve"] == {
+    assert (models[0].model_extra or {})["lgos"] == {
         "schema_version": 1,
         "description": "DUMMY",
         "features": [],
@@ -225,7 +225,7 @@ async def test_litellm_catalog_prefixes_models_and_owns_metadata(
             object="model",
             created=1,
             owned_by="langgraph-openai-serve",
-            langgraph_openai_serve={
+            lgos={
                 "schema_version": 1,
                 "description": f"Graph {model_prefix}",
                 "features": [],

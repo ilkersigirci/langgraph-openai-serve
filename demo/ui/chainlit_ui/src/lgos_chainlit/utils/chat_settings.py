@@ -13,7 +13,7 @@ from openai import OpenAIError
 
 from lgos_chainlit.lgos_protocol import (
     OPENAI_METADATA_VALUE_MAX_LENGTH,
-    RUNTIME_SETTINGS_METADATA_KEY,
+    SETTINGS_METADATA_KEY,
     GraphFeature,
     model_client_settings,
     model_extension,
@@ -104,7 +104,7 @@ def chat_settings_metadata() -> dict[str, str]:
         selected if isinstance(selected, dict) else None,
         max_length=OPENAI_METADATA_VALUE_MAX_LENGTH,
     )
-    return {RUNTIME_SETTINGS_METADATA_KEY: encoded} if encoded is not None else {}
+    return {SETTINGS_METADATA_KEY: encoded} if encoded is not None else {}
 
 
 def _store_runtime_settings_defaults(

@@ -36,13 +36,14 @@ model-retrieval responses. Runtime-settings discovery remains detail-only:
   "object": "model",
   "created": 1720000000,
   "owned_by": "langgraph-openai-serve",
-  "langgraph_openai_serve": {
+  "lgos": {
     "schema_version": 1,
     "description": "Streams responses with configurable history and audience.",
     "features": [],
     "client_settings": {
       "schema_version": 1,
       "json_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "use_history": {
@@ -68,7 +69,7 @@ model-retrieval responses. Runtime-settings discovery remains detail-only:
 
 The standard OpenAI Model object has no description field. The required
 `GraphConfig.description` is therefore exposed as
-`langgraph_openai_serve.description` on both list entries and detailed model
+`lgos.description` on both list entries and detailed model
 responses. It is API-owned presentation text; clients decide how to render it.
 
 `GraphConfig.features` is the single source of truth: the runner uses it to
@@ -79,6 +80,13 @@ Additive features do not require an outer schema-version change. The nested
 runtime settings descriptor has its own version, and clients must ignore
 versions they do not understand.
 
+The two schema versions evolve independently. Adding an optional extension
+field or a new feature value does not change version 1. Removing a field,
+renaming it, or changing its type or semantics requires incrementing only the
+affected schema version. Clients ignore unknown fields and feature values. An
+unsupported outer version disables LGOS capability discovery; an unsupported
+`client_settings` version disables only the settings UI.
+
 | Feature | Enabled behavior |
 | --- | --- |
 | `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
@@ -87,10 +95,10 @@ versions they do not understand.
 
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
-`langgraph_openai_serve` object with `schema_version`, `description`, and
+`lgos` object with `schema_version`, `description`, and
 `features`. Client-settings schemas remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
-`langgraph_openai_serve` extension, even when its feature list is empty and it
+`lgos` extension, even when its feature list is empty and it
 has no client settings. A UI reads catalog descriptions from the list and
 retrieves the selected model details through the same configured OpenAI client.
 This keeps large schemas out of list responses and keeps internal or
@@ -114,7 +122,7 @@ gateway configurations and native Responses requirements are documented under
 !!! warning "Limited functionality signal"
 
     A missing description in model listing or missing or invalid
-    `langgraph_openai_serve` metadata on model retrieval means the configured
+    `lgos` metadata on model retrieval means the configured
     endpoint is not preserving the optional LGOS discovery contract. A UI may
     continue plain Responses text, but it must visibly label the model or chat
     as **Limited functionality** and must not assume runtime settings, file
@@ -128,10 +136,10 @@ The request keeps each concern in its standard OpenAI location:
 | Concern | OpenAI request location |
 | --- | --- |
 | System instructions | Responses `instructions` or an input `system`/`developer` message; a `system` message in Chat |
-| Small graph-specific values | One `metadata.langgraph_runtime_settings` string containing a JSON object |
+| Small graph-specific values | One `metadata.lgos_settings` string containing a JSON object |
 | Graph selection | `model` |
-| Caller-selected interrupt operation ID | Optional `metadata.langgraph_run_id` UUID |
-| Conversation correlation | Optional `metadata.session_id` string |
+| Caller-selected interrupt operation ID | Optional `metadata.lgos_run_id` UUID |
+| Conversation correlation | Optional `metadata.conversation_id` string |
 
 Only small graph-specific values belong to `ClientSettings`. A graph may expose
 controlled semantic choices such as intended audience, but not arbitrary system
@@ -151,21 +159,31 @@ standard semantics. Graphs that need identity, authorization,
 database clients, secrets, or other server-owned per-request context combine
 `client_settings` with `context_factory(request, settings)`.
 
-`metadata.session_id` is an optional, UI-neutral correlation value. A client
-uses the same stable value for every Responses or Chat Completions request in
+LGOS reserves metadata keys beginning with `lgos_`; applications should use
+their own names outside that prefix. The independent keys remain separate
+rather than sharing one JSON envelope so each value retains OpenAI's full
+512-character allowance. Arbitrary non-LGOS metadata continues through the
+protocol-neutral graph request unchanged.
+
+`metadata.conversation_id` is an optional, client-owned correlation value. It is
+a documented metadata convention, not a server-managed conversation resource.
+A client uses the same stable value for every Responses or Chat Completions request in
 one conversation. LGOS maps it to the Langfuse-recognized
 `RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
 trace, while Langfuse can group those traces in one
 [session](https://langfuse.com/docs/observability/features/sessions). It does
-not select checkpoint state or cause LGOS to retain conversation history.
+not select checkpoint state or cause LGOS to retain conversation history; clients
+still supply the input needed by each ordinary request. Omit the field when no
+conversation exists; LGOS does not generate a fallback ID. Application graphs
+may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value shorter than 200
 characters. The value is distinct from the OpenAI `user` field,
-`metadata.langgraph_run_id`, and per-request trace or request identifiers.
+`metadata.lgos_run_id`, and per-request trace or request identifiers.
 
 ### Per-Request Resolution
 
 Every graph request starts from the registered defaults. Values supplied in
-`metadata.langgraph_runtime_settings` replace matching top-level defaults, and LGOS
+`metadata.lgos_settings` replace matching top-level defaults, and LGOS
 validates the complete result. The merge is shallow: a supplied nested object
 replaces that whole default value rather than recursively merging its keys.
 
@@ -173,7 +191,7 @@ Client settings are not persisted between requests. The paused Response ID and
 interrupt call IDs identify durable state, but they do not restore runtime context.
 Clients must resend non-default settings on every request that needs them,
 including interrupt-resume requests. A later request that omits
-`langgraph_runtime_settings` uses registered defaults again.
+`lgos_settings` uses registered defaults again.
 
 When the required extension is missing or unsupported, the client omits runtime
 settings and shows the limited-functionality warning described above. See
@@ -407,7 +425,7 @@ Route code that knows the OpenAI error metadata should raise
 translate generic FastAPI validation and HTTP errors into the same envelope.
 
 Invalid runtime settings return HTTP 400 with
-`param: "metadata.langgraph_runtime_settings"`. A proxy-stripped model
+`param: "metadata.lgos_settings"`. A proxy-stripped model
 extension does not make plain text generation invalid, but clients surface it
 as limited functionality rather than silently presenting a fully capable
 model.
@@ -487,7 +505,7 @@ in the transcript. There is no LGOS artifact field or custom chart event. See
 
 An initial interrupt request does not require metadata. LGOS generates a UUID
 operation ID and embeds it in the paused Response ID. A caller may
-instead supply a non-nil UUID in `metadata.langgraph_run_id`; doing so lets it
+instead supply a non-nil UUID in `metadata.lgos_run_id`; doing so lets it
 retry an initial request deterministically if the response is lost. Reusing
 that UUID while the run is pending re-emits the durable pending batch without
 executing the interrupted nodes again. If the caller lets LGOS generate the UUID
@@ -517,7 +535,7 @@ checkpoint, even if it presents the same public run UUID and continuation IDs.
 ### Interrupt Tool Envelope
 
 Every pending LangGraph interrupt becomes an OpenAI function tool call named
-`langgraph_interrupt`. Its `arguments` string contains the JSON payload directly:
+`lgos_interrupt`. Its `arguments` string contains the JSON payload directly:
 
 ```json
 {
@@ -564,7 +582,7 @@ request, duplicate a result, or synthesize a call ID. Streaming clients persist
 the terminal Response ID and completed function-call items instead of reconstructing
 them from argument deltas.
 
-Metadata is not required on a resume, but `metadata.langgraph_run_id`, when
+Metadata is not required on a resume, but `metadata.lgos_run_id`, when
 present, must match the operation encoded by `previous_response_id`.
 
 The UI owns persistence of the paused Response ID and exact calls. It must store

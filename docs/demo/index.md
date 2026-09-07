@@ -136,7 +136,7 @@ catalog detail uses pass-through to preserve LGOS extensions.
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
 An interrupt uses standard Responses function calls, but a client application
-must recognize `langgraph_interrupt`, collect human answers, and return each
+must recognize `lgos_interrupt`, collect human answers, and return each
 call ID in a `function_call_output` item with `previous_response_id`. The
 Chainlit and Open WebUI adapters show that client behavior without importing LGOS. See
 [OpenAI Clients](../tutorials/openai-clients.md).

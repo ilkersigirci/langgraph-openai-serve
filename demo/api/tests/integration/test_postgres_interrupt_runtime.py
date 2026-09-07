@@ -96,7 +96,7 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
             store=False,
             model=MODEL,
             input=[{"role": "user", "content": public_request}],
-            metadata={"langgraph_run_id": run_id},
+            metadata={"lgos_run_id": run_id},
         )
 
     tool_calls = [

@@ -4,9 +4,9 @@ import json
 from typing import Any
 
 from .contracts import (
+    CONVERSATION_METADATA_KEY,
     OPENAI_METADATA_VALUE_MAX_LENGTH,
-    RUNTIME_SETTINGS_METADATA_KEY,
-    SESSION_ID_METADATA_KEY,
+    SETTINGS_METADATA_KEY,
 )
 
 
@@ -14,7 +14,7 @@ def _request_metadata(metadata: dict[str, Any]) -> dict[str, str]:
     request_metadata = _runtime_settings_metadata(metadata)
     chat_id = metadata.get("chat_id")
     if isinstance(chat_id, str) and chat_id:
-        request_metadata[SESSION_ID_METADATA_KEY] = chat_id
+        request_metadata[CONVERSATION_METADATA_KEY] = chat_id
     return request_metadata
 
 
@@ -35,4 +35,4 @@ def _runtime_settings_metadata(metadata: dict[str, Any]) -> dict[str, str]:
     if len(encoded) > OPENAI_METADATA_VALUE_MAX_LENGTH:
         msg = "The selected runtime settings exceed the OpenAI metadata value limit."
         raise ValueError(msg)
-    return {RUNTIME_SETTINGS_METADATA_KEY: encoded}
+    return {SETTINGS_METADATA_KEY: encoded}
