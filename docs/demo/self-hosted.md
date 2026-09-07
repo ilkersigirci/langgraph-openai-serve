@@ -21,6 +21,9 @@ runtime configuration, and persistence layout for the surrounding services.
 
 The Grafana configuration includes the [LGOS end-to-end dashboard](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/LGOS-End-to-End-Tracing.json)
 and the [Traefik OpenTelemetry dashboard](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/Traefik-Opentelemetry.json).
+
+![Grafana LGOS end-to-end OpenTelemetry dashboard showing Responses traffic, HTTP failures, graph latency, and requests by UI](../static/grafana_otel.png)
+
 The LGOS dashboard contains deployment-specific Chainlit, Open WebUI, and
 Langfuse URLs, so update those links and the Langfuse project path before using
 it on another domain. Its queries also assume the demo's `lgos` service
