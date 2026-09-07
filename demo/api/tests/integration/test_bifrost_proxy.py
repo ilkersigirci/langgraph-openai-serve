@@ -136,7 +136,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
 
     model_extra = getattr(model, "model_extra", None)
     assert isinstance(model_extra, dict)
-    extension = model_extra["langgraph_openai_serve"]
+    extension = model_extra["lgos"]
     assert extension["client_settings"]["schema_version"] == 1
 
 
@@ -216,7 +216,7 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
         paused = await client.responses.create(
             model="interruptible-approval",
             input=public_request,
-            metadata={"langgraph_run_id": str(uuid.uuid4())},
+            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
             extra_headers=extra_headers,
         )

@@ -4,8 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
-CLIENT_EVENT_SCHEMA_VERSION = 1
-_CLIENT_EVENT_ENVELOPE_TYPE = "langgraph_openai_serve.client_event"
+from langgraph_openai_serve.protocol import (
+    CLIENT_EVENT_SCHEMA_VERSION,
+    CLIENT_EVENT_TYPE,
+)
 
 ClientEventType = Literal["status", "progress", "artifact"]
 
@@ -24,7 +26,7 @@ class _ClientEventData(BaseModel):
 class _ClientEventEnvelope(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    type: Literal["langgraph_openai_serve.client_event"] = Field(
+    type: Literal["lgos.client_event"] = Field(
         description="Envelope type discriminator.",
     )
     schema_version: Literal[1] = Field(description="Client-event schema version.")
@@ -58,7 +60,7 @@ def client_event(
 ) -> dict[str, object]:
     """Build an explicitly public, JSON-safe client stream event."""
     envelope = _ClientEventEnvelope(
-        type=_CLIENT_EVENT_ENVELOPE_TYPE,
+        type=CLIENT_EVENT_TYPE,
         schema_version=CLIENT_EVENT_SCHEMA_VERSION,
         event=_ClientEventData(
             type=event_type,
@@ -91,7 +93,7 @@ def status_event(
 
 def parse_status_event(value: object) -> StatusEventData | None:
     """Read a public graph status, ignoring private or diagnostic custom data."""
-    if not isinstance(value, dict) or value.get("type") != _CLIENT_EVENT_ENVELOPE_TYPE:
+    if not isinstance(value, dict) or value.get("type") != CLIENT_EVENT_TYPE:
         return None
 
     try:

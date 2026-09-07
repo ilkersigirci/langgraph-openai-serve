@@ -13,7 +13,7 @@ def test_model_settings_are_versioned_and_optional(
         object="model",
         created=1,
         owned_by="test",
-        langgraph_openai_serve={
+        lgos={
             "schema_version": 1,
             "description": "DUMMY",
             "features": [],
@@ -25,7 +25,7 @@ def test_model_settings_are_versioned_and_optional(
         object="model",
         created=1,
         owned_by="test",
-        langgraph_openai_serve={
+        lgos={
             "schema_version": 1,
             "description": "DUMMY",
             "features": [],

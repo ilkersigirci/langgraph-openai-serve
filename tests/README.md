@@ -117,7 +117,7 @@ timer only masks the environment failure.
   resuming.
 - Initial interrupt requests need no metadata. Tests for caller-owned
   idempotency should pass a non-nil UUID as
-  `metadata.langgraph_run_id`; invalid or reused UUID cases should remain
+  `metadata.lgos_run_id`; invalid or reused UUID cases should remain
   separate assertions.
 - Resume helpers should use standard `previous_response_id` and provide one
   `function_call_output` item for every returned interrupt call. Use the matching

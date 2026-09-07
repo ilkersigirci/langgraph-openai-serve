@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from openai import OpenAI, OpenAIError
 
-LGOS_EXTENSION_KEY = "langgraph_openai_serve"
+LGOS_EXTENSION_KEY = "lgos"
 FILE_INPUTS_FEATURE = "file_inputs"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -23,7 +23,7 @@ PUBLIC_READ_GRANT = {
 }
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "langgraph_openai_serve model metadata. Runtime settings, file inputs, and "
+    "lgos model metadata. Runtime settings, file inputs, and "
     "interrupt profile checks may be unavailable."
 )
 

@@ -54,12 +54,16 @@ LGOS never exposes the graph's complete context schema automatically.
 ## Client Discovery
 
 `GET /v1/models/{model}` includes
-`langgraph_openai_serve.client_settings` when the graph has public settings. It
+`lgos.client_settings` when the graph has public settings. It
 contains:
 
 - `json_schema` for field names, types, choices, and UI labels.
 - `defaults` used when the client sends no changes.
 - `schema_version` for the descriptor format.
+
+The generated schema declares the JSON Schema 2020-12 dialect with its
+`$schema` keyword. This dialect identifier is independent of the descriptor's
+LGOS `schema_version`.
 
 The descriptor's `defaults` object is the authoritative validated baseline.
 Pydantic-generated `default` keywords inside `json_schema` are
@@ -69,14 +73,14 @@ should use `defaults`, not those annotations, when initializing values or
 computing changes.
 
 An absent `client_settings` member on a valid LGOS extension means the graph has
-no public runtime settings. If the `langgraph_openai_serve` extension itself is
+no public runtime settings. If the `lgos` extension itself is
 missing or invalid, omit runtime settings, use server defaults, and show the UI's
 **Limited functionality** warning. That condition usually means a proxy rebuilt
 the model response instead of passing it through.
 
 ## Client Request
 
-Send changed values as JSON text in `metadata.langgraph_runtime_settings`:
+Send changed values as JSON text in `metadata.lgos_settings`:
 
 === "Python"
 
@@ -87,7 +91,7 @@ Send changed values as JSON text in `metadata.langgraph_runtime_settings`:
         model="simple-graph",
         input="Explain LangGraph.",
         store=False,
-        metadata={"langgraph_runtime_settings": json.dumps({"use_history": True})},
+        metadata={"lgos_settings": json.dumps({"use_history": True})},
     )
     ```
 
@@ -99,7 +103,7 @@ Send changed values as JSON text in `metadata.langgraph_runtime_settings`:
       input: "Explain LangGraph.",
       store: false,
       metadata: {
-        langgraph_runtime_settings: JSON.stringify({ use_history: true }),
+        lgos_settings: JSON.stringify({ use_history: true }),
       },
     });
     ```
@@ -126,7 +130,7 @@ context coercion when the graph runs.
 
 Runtime settings are not persisted. Resend non-default values on every request
 that needs them, including interrupt-resume requests. Omitting
-`langgraph_runtime_settings` on a later request uses the registered defaults
+`lgos_settings` on a later request uses the registered defaults
 again.
 
 Keep identity, authorization, secrets, and service clients out of

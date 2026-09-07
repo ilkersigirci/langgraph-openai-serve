@@ -64,18 +64,18 @@ async def test_app_lists_exactly_the_documented_models(
     assert response.object == "list"
     assert {model.id for model in response.data} == DOCUMENTED_MODEL_IDS
     descriptions = {
-        model.id: (model.model_extra or {})["langgraph_openai_serve"]["description"]
+        model.id: (model.model_extra or {})["lgos"]["description"]
         for model in response.data
     }
     assert all(description.strip() for description in descriptions.values())
     features = {
-        model.id: (model.model_extra or {})["langgraph_openai_serve"]["features"]
+        model.id: (model.model_extra or {})["lgos"]["features"]
         for model in response.data
     }
     assert features["file-input"] == ["file_inputs"]
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
-    extension = (interrupt_model.model_extra or {})["langgraph_openai_serve"]
+    extension = (interrupt_model.model_extra or {})["lgos"]
     assert extension == {
         "schema_version": 1,
         "description": descriptions["interruptible-approval"],
@@ -84,7 +84,7 @@ async def test_app_lists_exactly_the_documented_models(
 
     for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)
-        extension = (model.model_extra or {})["langgraph_openai_serve"]
+        extension = (model.model_extra or {})["lgos"]
         assert extension == {
             "schema_version": 1,
             "description": descriptions[model_id],
@@ -92,7 +92,7 @@ async def test_app_lists_exactly_the_documented_models(
         }
 
     plot_model = await openai_client.models.retrieve("persistent-plot-agent")
-    plot_extension = (plot_model.model_extra or {})["langgraph_openai_serve"]
+    plot_extension = (plot_model.model_extra or {})["lgos"]
     assert plot_extension["features"] == []
     assert plot_extension["client_settings"]["defaults"] == {
         "chart_type": "bar",
@@ -121,7 +121,7 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
 ) -> None:
     model = await openai_client.models.retrieve("simple-graph")
 
-    extension = (model.model_extra or {})["langgraph_openai_serve"]
+    extension = (model.model_extra or {})["lgos"]
     client_settings = extension["client_settings"]
     assert client_settings["schema_version"] == CLIENT_SETTINGS_SCHEMA_VERSION
     assert client_settings["defaults"] == {
@@ -140,11 +140,11 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
     [
         (None, SimpleContext()),
         (
-            {"langgraph_runtime_settings": '{"use_history":true}'},
+            {"lgos_settings": '{"use_history":true}'},
             SimpleContext(use_history=True),
         ),
         (
-            {"langgraph_runtime_settings": '{"audience":"expert"}'},
+            {"lgos_settings": '{"audience":"expert"}'},
             SimpleContext(audience="expert"),
         ),
     ],

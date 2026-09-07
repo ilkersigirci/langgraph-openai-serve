@@ -35,7 +35,7 @@ using this example. The field definitions are static; their values are editable.
 
 The Filter supplies those values through Open WebUI's request metadata
 `chat_variables` slot. The shared Pipe serializes them into
-`metadata.langgraph_runtime_settings`; LGOS validates and applies them.
+`metadata.lgos_settings`; LGOS validates and applies them.
 The example has no Chat Variables form, so there is only one settings control.
 
 The Filter is enabled only on the dedicated Workspace Model
@@ -185,7 +185,7 @@ not only to generated LGOS models.
 ## Limited Functionality
 
 Every generated model remains visible when its native detail response
-lacks the required `langgraph_openai_serve` extension. Its name and description
+lacks the required `lgos` extension. Its name and description
 say **Limited functionality**. Standard assistant text may still work; runtime
 settings and file-upload controls are not assumed.
 
@@ -211,7 +211,7 @@ native Open WebUI Chat Variables.*
 
 When a chat has values, the Pipe serializes Open WebUI's generated Chat
 Variables and sends them as
-`metadata.langgraph_runtime_settings`. LGOS performs the authoritative runtime
+`metadata.lgos_settings`. LGOS performs the authoritative runtime
 validation.
 
 The shared Pipe maps Open WebUI's stable `chat_id` to
@@ -289,7 +289,7 @@ Shared prompts and graph behavior are documented under
 
 ## Interrupt Input
 
-The Pipe translates each LGOS `langgraph_interrupt` batch into one built-in
+The Pipe translates each LGOS `lgos_interrupt` batch into one built-in
 Open WebUI `ask_user` call. Open WebUI persists that pending call on the saved
 assistant message, so its native question card survives a page reload. The
 Pipe keeps the original LGOS calls in the opaque `ask_user` call ID; answering

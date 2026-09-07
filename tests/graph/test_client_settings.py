@@ -14,10 +14,11 @@ from pydantic import (
 
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
 from langgraph_openai_serve.graph.client_settings import (
-    RUNTIME_SETTINGS_METADATA_KEY,
     ClientSettingsValidationError,
+    client_settings_json_schema,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.schemas import MessageState
 
 
@@ -59,7 +60,7 @@ def make_request(
 ) -> GraphRequest:
     return GraphRequest(
         model="test",
-        metadata={RUNTIME_SETTINGS_METADATA_KEY: settings} if settings else {},
+        metadata={SETTINGS_METADATA_KEY: settings} if settings else {},
         user=user,
         tools=(),
         tool_choice=None,
@@ -79,7 +80,9 @@ def test_client_settings_own_the_public_contract_and_defaults() -> None:
         "enabled": True,
         "day": "2026-07-17",
     }
-    assert PublicSettings.model_json_schema()["additionalProperties"] is False
+    schema = client_settings_json_schema(PublicSettings)
+    assert schema["$schema"] == JSON_SCHEMA_DIALECT
+    assert schema["additionalProperties"] is False
 
 
 def test_client_settings_require_a_complete_default(message_graph) -> None:
@@ -179,7 +182,7 @@ def test_request_validation_does_not_coerce_json_values() -> None:
         PublicSettings.validate_request(make_request(settings='{"enabled":"false"}'))
 
     assert "Input should be a valid boolean" in str(exc_info.value)
-    assert exc_info.value.param == f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
+    assert exc_info.value.param == f"metadata.{SETTINGS_METADATA_KEY}"
 
 
 def test_runtime_settings_must_be_a_json_object() -> None:
@@ -187,7 +190,7 @@ def test_runtime_settings_must_be_a_json_object() -> None:
         PublicSettings.validate_request(make_request(settings="[]"))
 
     assert "Input should be an object" in str(exc_info.value)
-    assert exc_info.value.param == f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}"
+    assert exc_info.value.param == f"metadata.{SETTINGS_METADATA_KEY}"
 
 
 def test_runtime_settings_reject_non_finite_json_values() -> None:

@@ -19,10 +19,10 @@ from langgraph_openai_serve.graph.interrupt.errors import (
     InvalidResumeRequestError,
 )
 from langgraph_openai_serve.graph.interrupt.state import (
-    RUN_METADATA_KEY,
     InterruptStateConflictError,
     InvalidRunIDError,
 )
+from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 
 @contextmanager

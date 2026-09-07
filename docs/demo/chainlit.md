@@ -125,12 +125,12 @@ not wait for a Chainlit persistence URL or put one in `file_data`. See
 After a profile is selected, Chainlit:
 
 1. Retrieves the detailed model through the configured OpenAI client and reads
-   `langgraph_openai_serve.client_settings`.
+   `lgos.client_settings`.
 2. Renders supported JSON Schema properties as Chainlit Chat Settings.
 3. Restores saved values that still match the supported widget type or choice.
 4. Compares the selected values with the advertised defaults.
 5. Sends changed values as JSON text in
-   `metadata.langgraph_runtime_settings` on every Responses request.
+   `metadata.lgos_settings` on every Responses request.
 
 Booleans become switches, inline string enums become selects, and strings
 become text inputs. Other schema shapes are not rendered. The adapter checks
@@ -148,7 +148,7 @@ Chainlit controls.*
 
 The same panel includes a Chainlit-owned **Stream response** switch for every
 profile. It defaults to enabled and selects `responses.stream` or
-`responses.create`; it is not included in `langgraph_runtime_settings`. With
+`responses.create`; it is not included in `lgos_settings`. With
 streaming disabled, Chainlit waits for the complete response and sends the
 answer once.
 

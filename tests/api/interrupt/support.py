@@ -26,7 +26,7 @@ async def create_response(
     run_id: str | None = None,
     checkpoint_scope: str | None = None,
 ) -> Response:
-    metadata = {"langgraph_run_id": run_id} if run_id is not None else None
+    metadata = {"lgos_run_id": run_id} if run_id is not None else None
     return await openai_client.responses.create(
         model=model,
         input="Hi",
@@ -45,7 +45,7 @@ def interrupt_calls(response: Response) -> list[ResponseFunctionToolCall]:
 
 
 def assert_interrupt_arguments(call: ResponseFunctionToolCall) -> dict:
-    assert call.name == "langgraph_interrupt"
+    assert call.name == "lgos_interrupt"
     assert call.call_id.startswith("call_lg_")
     arguments = json.loads(call.arguments)
     assert isinstance(arguments, dict)

@@ -36,10 +36,7 @@ from langgraph_openai_serve.graph.interrupt import (
     InterruptResume,
     LangGraphInterruptBatch,
 )
-from langgraph_openai_serve.graph.interrupt.state import (
-    RUN_METADATA_KEY,
-    checkpoint_key,
-)
+from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
     run_langgraph,
@@ -49,6 +46,7 @@ from langgraph_openai_serve.graph.utils import (
     GraphRun,
     prepare_run,
 )
+from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
     make_interrupt_graph,

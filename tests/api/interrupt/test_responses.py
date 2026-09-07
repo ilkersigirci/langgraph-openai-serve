@@ -40,8 +40,8 @@ def test_interrupt_output_items_preserves_order() -> None:
     assert len(calls) == len(EXPECTED_CALL_IDS)
     assert [call.call_id for call in calls] == EXPECTED_CALL_IDS
     assert [call.name for call in calls] == [
-        "langgraph_interrupt",
-        "langgraph_interrupt",
+        "lgos_interrupt",
+        "lgos_interrupt",
     ]
     assert [json.loads(call.arguments) for call in calls] == EXPECTED_ARGUMENTS
 

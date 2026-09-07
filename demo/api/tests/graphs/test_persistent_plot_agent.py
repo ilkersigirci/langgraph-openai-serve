@@ -192,7 +192,7 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
         user="user-1",
         metadata={
             "session_id": "thread-1",
-            "langgraph_runtime_settings": json.dumps(
+            "lgos_settings": json.dumps(
                 {
                     "chart_type": chart_type,
                     "currency": currency,

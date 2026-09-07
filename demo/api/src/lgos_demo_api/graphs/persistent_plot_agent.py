@@ -32,6 +32,7 @@ ARTIFACT_KEY = "quarterly-revenue"
 DISPLAY_FILE_TOOL_NAME = "display_file"
 PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"
 QUARTERS = ("Q1", "Q2", "Q3", "Q4")
+_SESSION_ID_METADATA_KEY = "session_id"
 Quarter = Literal["Q1", "Q2", "Q3", "Q4"]
 SYSTEM_PROMPT = """You manage one persistent quarterly revenue chart.
 
@@ -348,14 +349,17 @@ def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
                 code="missing_persistence_scope",
             ),
         )
-    session_id = request.metadata.get("session_id")
+    session_parameter = f"metadata.{_SESSION_ID_METADATA_KEY}"
+    session_id = request.metadata.get(_SESSION_ID_METADATA_KEY)
     if not session_id:
         raise OpenAIHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             error=ErrorObject(
-                message="metadata.session_id is required for persistent plot agent storage.",
+                message=(
+                    f"{session_parameter} is required for persistent plot agent storage."
+                ),
                 type="invalid_request_error",
-                param="metadata.session_id",
+                param=session_parameter,
                 code="missing_persistence_scope",
             ),
         )

@@ -282,7 +282,5 @@ async def test_streaming_completion_ignores_custom_stream_events(
     chunks = [chunk async for chunk in stream]
 
     assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == "done"
-    assert all(
-        "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
-    )
+    assert all("lgos" not in (chunk.model_extra or {}) for chunk in chunks)
     assert chunks[-1].choices[0].finish_reason == "stop"

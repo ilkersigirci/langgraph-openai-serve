@@ -132,9 +132,7 @@ async def test_streaming_completion_emits_annotations_on_final_delta(
     assert annotation_deltas == [[ANNOTATION]]
     assert annotated_chunks[0].choices[0].finish_reason == "stop"
     assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == ANSWER
-    assert all(
-        "langgraph_openai_serve" not in (chunk.model_extra or {}) for chunk in chunks
-    )
+    assert all("lgos" not in (chunk.model_extra or {}) for chunk in chunks)
 
 
 def test_citation_must_refer_to_final_assistant_text() -> None:

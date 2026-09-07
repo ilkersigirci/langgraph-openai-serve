@@ -34,7 +34,7 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
             id=name,
             created=MODEL_CREATED,
             owned_by=MODEL_OWNER,
-            langgraph_openai_serve=LangGraphModelSummaryExtension(
+            lgos=LangGraphModelSummaryExtension(
                 description=graph_config.description,
                 features=sorted(
                     graph_config.features,
@@ -63,7 +63,7 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
         id=model,
         created=MODEL_CREATED,
         owned_by=MODEL_OWNER,
-        langgraph_openai_serve=LangGraphModelExtension(
+        lgos=LangGraphModelExtension(
             description=graph_config.description,
             features=sorted(
                 graph_config.features,

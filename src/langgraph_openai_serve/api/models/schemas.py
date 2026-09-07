@@ -3,6 +3,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, JsonValue, StringConstraints
 
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.protocol import (
+    CLIENT_SETTINGS_SCHEMA_VERSION,
+    MODEL_EXTENSION_SCHEMA_VERSION,
+)
 
 
 class ModelClientSettings(BaseModel):
@@ -10,7 +14,7 @@ class ModelClientSettings(BaseModel):
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1] = CLIENT_SETTINGS_SCHEMA_VERSION
     json_schema: dict[str, JsonValue]
     defaults: dict[str, JsonValue]
 
@@ -18,7 +22,9 @@ class ModelClientSettings(BaseModel):
 class LangGraphModelSummaryExtension(BaseModel):
     """Versioned LGOS fields safe to include in a model list."""
 
-    schema_version: Literal[1] = 1
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    schema_version: Literal[1] = MODEL_EXTENSION_SCHEMA_VERSION
     description: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
@@ -35,21 +41,25 @@ class LangGraphModelExtension(LangGraphModelSummaryExtension):
 class Model(BaseModel):
     """Individual model information."""
 
+    model_config = ConfigDict(extra="forbid")
+
     id: str
-    object: str = "model"
+    object: Literal["model"] = "model"
     created: int
     owned_by: str
-    langgraph_openai_serve: LangGraphModelSummaryExtension
+    lgos: LangGraphModelSummaryExtension
 
 
 class ModelDetails(Model):
     """Retrieved model with required LGOS capability metadata."""
 
-    langgraph_openai_serve: LangGraphModelExtension
+    lgos: LangGraphModelExtension
 
 
 class ModelList(BaseModel):
     """List of available models."""
 
-    object: str = "list"
+    model_config = ConfigDict(extra="forbid")
+
+    object: Literal["list"] = "list"
     data: list[Model]

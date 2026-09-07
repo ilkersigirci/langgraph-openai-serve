@@ -54,7 +54,7 @@ def configured_model(settings: ModelClientSettings) -> Model:
         object="model",
         created=1,
         owned_by="test",
-        langgraph_openai_serve={
+        lgos={
             "schema_version": 1,
             "description": "DUMMY",
             "features": [],
@@ -133,7 +133,7 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
                     object="model",
                     created=1,
                     owned_by="test",
-                    langgraph_openai_serve={
+                    lgos={
                         "schema_version": 1,
                         "description": "DUMMY",
                         "features": ["file_inputs"],
@@ -328,7 +328,7 @@ async def test_selected_settings_reach_the_openai_request(
         tools=[DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
-            "langgraph_runtime_settings": (
+            "lgos_settings": (
                 '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
             ),
             "session_id": "thread-123",
@@ -387,7 +387,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         tools=[DISPLAY_FILE_TOOL],
         user="demo-user",
         metadata={
-            "langgraph_runtime_settings": '{"mode":"detailed"}',
+            "lgos_settings": '{"mode":"detailed"}',
             "session_id": "thread-123",
         },
     )

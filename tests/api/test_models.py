@@ -11,7 +11,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
-from langgraph_openai_serve.graph.client_settings import RUNTIME_SETTINGS_METADATA_KEY
+from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.message import make_message_graph
 
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
@@ -50,12 +50,12 @@ async def test_model_metadata_is_exposed_by_list_and_retrieval(
     listed = await openai_client.models.list()
     retrieved = await openai_client.models.retrieve("test")
 
-    assert (listed.data[0].model_extra or {})["langgraph_openai_serve"] == {
+    assert (listed.data[0].model_extra or {})["lgos"] == {
         "schema_version": 1,
         "description": "DUMMY",
         "features": [],
     }
-    assert (retrieved.model_extra or {})["langgraph_openai_serve"] == {
+    assert (retrieved.model_extra or {})["lgos"] == {
         "schema_version": 1,
         "description": "DUMMY",
         "features": [],
@@ -70,9 +70,10 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
 
     response = await openai_client.models.retrieve("test")
 
-    extension = (response.model_extra or {})["langgraph_openai_serve"]
+    extension = (response.model_extra or {})["lgos"]
     client_settings = extension["client_settings"]
     assert client_settings["schema_version"] == CLIENT_SETTINGS_SCHEMA_VERSION
+    assert client_settings["json_schema"]["$schema"] == JSON_SCHEMA_DIALECT
     assert client_settings["json_schema"]["additionalProperties"] is False
     assert client_settings["json_schema"]["properties"]["enabled"] == {
         "default": True,
@@ -98,16 +99,14 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     response = await openai_client.models.retrieve("test")
     listed = await openai_client.models.list()
 
-    extension = (response.model_extra or {})["langgraph_openai_serve"]
+    extension = (response.model_extra or {})["lgos"]
     expected_extension = {
         "schema_version": 1,
         "description": "DUMMY",
         "features": ["client_events", "file_inputs", "interrupts"],
     }
     assert extension == expected_extension
-    assert (listed.data[0].model_extra or {})["langgraph_openai_serve"] == (
-        expected_extension
-    )
+    assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)
 
 
 async def test_model_retrieval_reuses_the_registration_schema(
@@ -138,8 +137,8 @@ async def test_model_retrieval_reuses_the_registration_schema(
     first = await openai_client.models.retrieve("stateful")
     second = await openai_client.models.retrieve("stateful")
 
-    first_extension = (first.model_extra or {})["langgraph_openai_serve"]
-    second_extension = (second.model_extra or {})["langgraph_openai_serve"]
+    first_extension = (first.model_extra or {})["lgos"]
+    second_extension = (second.model_extra or {})["lgos"]
     assert first_extension["client_settings"]["json_schema"]["generation"] == 1
     assert second_extension["client_settings"]["json_schema"]["generation"] == 1
     assert calls == 1
@@ -151,7 +150,7 @@ async def test_bound_client_settings_builds_validated_runtime_context(
     graph_config = bind_public_settings(graph_registry)
     request = GraphRequest(
         model="test",
-        metadata={RUNTIME_SETTINGS_METADATA_KEY: '{"enabled":false,"mode":"detailed"}'},
+        metadata={SETTINGS_METADATA_KEY: '{"enabled":false,"mode":"detailed"}'},
         user=None,
         tools=(),
         tool_choice=None,
@@ -179,7 +178,7 @@ async def test_bound_client_settings_does_not_coerce_json_values(
         await openai_client.chat.completions.create(
             model="test",
             messages=[{"role": "user", "content": "Hello"}],
-            metadata={RUNTIME_SETTINGS_METADATA_KEY: '{"enabled":"false"}'},
+            metadata={SETTINGS_METADATA_KEY: '{"enabled":"false"}'},
         )
 
     assert exc_info.value.response.json() == {
@@ -188,7 +187,7 @@ async def test_bound_client_settings_does_not_coerce_json_values(
                 "Invalid runtime setting for enabled: Input should be a valid boolean"
             ),
             "type": "invalid_request_error",
-            "param": f"metadata.{RUNTIME_SETTINGS_METADATA_KEY}",
+            "param": f"metadata.{SETTINGS_METADATA_KEY}",
             "code": None,
         }
     }

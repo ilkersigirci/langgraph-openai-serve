@@ -55,7 +55,7 @@ def interrupt_call(
     return ResponseFunctionToolCall(
         id=f"fc_{suffix}",
         call_id=f"call_lg_{state_token}_{suffix}",
-        name="langgraph_interrupt",
+        name="lgos_interrupt",
         arguments=json.dumps(payload, separators=(",", ":")),
         status="completed",
         type="function_call",

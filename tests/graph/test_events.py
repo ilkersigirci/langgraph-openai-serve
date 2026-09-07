@@ -33,7 +33,7 @@ def test_status_event_builds_the_portable_status_shape() -> None:
         hidden=True,
         namespace=("media",),
     ) == {
-        "type": "langgraph_openai_serve.client_event",
+        "type": "lgos.client_event",
         "schema_version": 1,
         "event": {
             "type": "status",

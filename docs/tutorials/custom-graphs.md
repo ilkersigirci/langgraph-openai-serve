@@ -285,7 +285,7 @@ GraphConfig(
 The graph must be compiled with an asynchronous checkpointer that implements
 `aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`.
 LGOS generates a UUID for an initial interrupt run; callers only need to send
-`metadata.langgraph_run_id` when they want to choose that UUID for deterministic
+`metadata.lgos_run_id` when they want to choose that UUID for deterministic
 retries and isolation. The opaque OpenAI tool-call ID carries the state-generation
 identity needed for a resume; the paused Response ID locates the operation.
 
