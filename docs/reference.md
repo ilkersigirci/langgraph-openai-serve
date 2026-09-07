@@ -142,6 +142,8 @@ not a UI chat or thread ID. There is intentionally no adapter for placing
 arbitrary OpenAI request fields into `config["configurable"]`; use typed runtime
 context for values consumed by nodes.
 
+### Langfuse Tracing
+
 Langfuse is a first-class optional integration. Install it and enable the
 default callback through process environment settings:
 
