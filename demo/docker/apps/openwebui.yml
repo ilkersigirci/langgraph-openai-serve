@@ -21,11 +21,6 @@ services:
       nofile:
         soft: 4096
         hard: 8192
-    depends_on:
-      lgos-litellm:
-        condition: service_healthy
-      lgos-bifrost:
-        condition: service_healthy
     command:
       - python
       - -m
@@ -68,8 +63,8 @@ services:
       WEBUI_ADMIN_EMAIL: ${DEMO_OPENWEBUI_ADMIN_EMAIL:-lgos@example.com}
       WEBUI_ADMIN_PASSWORD: ${DEMO_OPENWEBUI_ADMIN_PASSWORD:-lgos}
       WEBUI_ADMIN_NAME: LGOS
-      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-litellm}
-      OPENAI_GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-litellm}:4000
+      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-bifrost}
+      OPENAI_GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-bifrost}:4000
       OPENAI_API_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false

@@ -1,6 +1,7 @@
 services:
   lgos-litellm:
     container_name: lgos-litellm
+    profiles: [litellm]
     image: ghcr.io/berriai/litellm:v1.99.1@sha256:a53a7d3ffebede1925bd3ee8a21e4a7b9b63e2e68ec883af136edcccb6eeb82c
     restart: "no"
     user: "${PUID:-1000}:${PGID:-1000}"

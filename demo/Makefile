@@ -1,5 +1,7 @@
 SHELL := /bin/sh
-COMPOSE := docker compose --env-file .env -f docker/compose/demo.yml
+OPENAI_GATEWAY_TYPE ?= $(shell sed -n 's/^OPENAI_GATEWAY_TYPE=//p' .env 2>/dev/null)
+OPENAI_GATEWAY_TYPE := $(or $(OPENAI_GATEWAY_TYPE),bifrost)
+COMPOSE := docker compose --env-file .env --profile $(OPENAI_GATEWAY_TYPE) -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 FILES_RUN := uv run --directory files_api --locked
 LGOS_CHAINLIT_PORT ?= 3002
@@ -122,7 +124,7 @@ run-litellm: ## Run LiteLLM and its demo API dependencies
 	$(COMPOSE) up lgos-litellm
 
 run-chainlit: ## Run the Chainlit container and its dependencies
-	$(COMPOSE) up lgos-chainlit
+	$(COMPOSE) up lgos-$(OPENAI_GATEWAY_TYPE) lgos-chainlit
 
 sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync
@@ -131,7 +133,7 @@ compose: ## Run the stack from published images
 	$(COMPOSE) up $(UP_ARGS)
 
 compose-down: ## Stop and remove any demo stack variant
-	$(COMPOSE) down --remove-orphans
+	$(COMPOSE) --profile "*" down --remove-orphans
 
 compose-dev: ## Build the Python application images and run the stack
 	$(COMPOSE) -f docker/compose/development.yml up --build $(UP_ARGS)

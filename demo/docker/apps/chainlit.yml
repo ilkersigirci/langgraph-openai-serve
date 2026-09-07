@@ -26,10 +26,6 @@ services:
     depends_on:
       lgos-db:
         condition: service_healthy
-      lgos-litellm:
-        condition: service_healthy
-      lgos-bifrost:
-        condition: service_healthy
     pre_start:
       - command: ["lgos-chainlit-setup"]
     ports:
@@ -46,8 +42,8 @@ services:
       APP_AWS_REGION: ${APP_AWS_REGION:?Configure APP_AWS_REGION}
       DEV_AWS_ENDPOINT: ${DEV_AWS_ENDPOINT:?Configure DEV_AWS_ENDPOINT}
       STORAGE_EXPIRY_TIME: ${STORAGE_EXPIRY_TIME:-3600}
-      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-litellm}
-      DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-litellm}:4000
+      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-bifrost}
+      DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-bifrost}:4000
       DEMO_CHAINLIT_OPENAI__API_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
       ## HITL ##
       # DEMO_CHAINLIT_UI_FILE: hitl

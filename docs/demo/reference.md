@@ -58,7 +58,7 @@ extensions through authenticated pass-through; UI inference never does.
 | `DEMO_IMAGE_TAG` | `latest` | Tag selected for all project-owned demo images |
 | `PUID` | `1000` | Host user ID used by Compose services |
 | `PGID` | `1000` | Host group ID used by Compose services |
-| `OPENAI_GATEWAY_TYPE` | `litellm` | Gateway used by both demo UIs: `litellm` or `bifrost` |
+| `OPENAI_GATEWAY_TYPE` | `bifrost` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `DEMO_LITELLM_MASTER_KEY` | demo-only value | LiteLLM bearer key shared by the two UI clients and default local Admin UI password for username `admin`; replace it outside local demos |
 | `DEMO_OPENWEBUI_SECRET_KEY` | demo-only value | Open WebUI application secret; replace it outside local demos |
 
