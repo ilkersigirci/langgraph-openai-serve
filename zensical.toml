@@ -39,6 +39,7 @@ nav = [
     { "Open WebUI Functions" = "demo/open-webui.md" },
     { "Bifrost Gateway" = "demo/bifrost.md" },
     { "OpenTelemetry Overlay" = "demo/opentelemetry.md" },
+    { "Self-hosted Service References" = "demo/self-hosted.md" },
     { "Settings and Commands" = "demo/reference.md" },
   ]},
   { Tutorials = [

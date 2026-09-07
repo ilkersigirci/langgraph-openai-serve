@@ -80,9 +80,13 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-chart-timeline-variant:{ .lg .middle } __Observe the stack__
 
-    Add the optional Collector overlay without changing the LGOS package.
+    Add the optional Collector overlay without changing the LGOS package. For
+    the surrounding self-hosted infrastructure, use the separate reference
+    page.
 
     [:octicons-arrow-right-24: OpenTelemetry overlay](opentelemetry.md)
+
+    [:octicons-arrow-right-24: Self-hosted service references](self-hosted.md)
 
 </div>
 

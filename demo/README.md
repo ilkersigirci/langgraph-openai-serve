@@ -151,6 +151,9 @@ For local source changes with the same overlay, use `make compose-otel-dev`.
 See the repository's [demo OpenTelemetry guide](../docs/demo/opentelemetry.md)
 for signal ownership and the external gateway contract.
 
+For deployment-specific infrastructure references, see the
+[self-hosted service references](../docs/demo/self-hosted.md).
+
 Set `PUID` and `PGID` in `.env` to the host identity that owns
 `docker/volumes/`; the example values are `1000:1000`.
 
