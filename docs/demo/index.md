@@ -9,6 +9,11 @@ The `demo/` directory is a portable example distribution built around
 `langgraph-openai-serve`. It contains independently locked applications,
 client integrations, gateway configuration, and a complete Compose stack.
 
+!!! tip "Watch the demo showcase"
+
+    Watch the [complete demo showcase](https://go.ilkerflix.com/otdn) to see
+    the demo stack in action.
+
 !!! info "Package and demo have different owners"
 
     The PyPI package provides the OpenAI-compatible server integration. It
