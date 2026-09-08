@@ -3,6 +3,8 @@ from unittest.mock import Mock, call
 
 import httpx
 import pytest
+from openai import OpenAI
+from openai.types import Model
 
 from lgos_openwebui.workspace_models import (
     PUBLIC_READ_GRANT,
@@ -113,68 +115,151 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
     assert chat_variable_fields(SimpleNamespace(model_extra={})) is None
 
 
-def test_discover_workspace_models_uses_bifrost_catalog_and_native_api() -> None:
-    configured = SimpleNamespace(
-        model_extra={
+@pytest.mark.parametrize(
+    ("name", "schema", "default"),
+    [
+        ("bad-key", {"type": "string"}, "value"),
+        ("invalid", {"type": "boolean"}, "false"),
+        ("invalid", {"type": "boolean"}, 0),
+        ("invalid", {"type": "string"}, False),
+        ("invalid", {"type": "string", "enum": []}, "value"),
+        ("invalid", {"type": "string", "enum": ["a", "a"]}, "a"),
+        ("invalid", {"type": "string", "enum": ["a", {}]}, "a"),
+        ("invalid", {"type": "string", "enum": ["a"]}, "b"),
+        ("invalid", {"type": "object"}, {}),
+        ("invalid", None, "value"),
+    ],
+)
+def test_chat_variable_fields_omits_invalid_fields_without_losing_valid_ones(
+    name: str, schema: object, default: object
+) -> None:
+    model = Model.model_validate(
+        {
+            "id": "test-graph",
+            "object": "model",
+            "created": 1,
+            "owned_by": "langgraph-openai-serve",
             "lgos": {
                 "schema_version": 1,
-                "description": "  DUMMY  ",
-                "features": ["file_inputs"],
-            }
+                "description": "Test graph",
+                "features": [],
+                "client_settings": {
+                    "schema_version": 1,
+                    "json_schema": {
+                        "properties": {"enabled": {"type": "boolean"}, name: schema}
+                    },
+                    "defaults": {"enabled": False, name: default},
+                },
+            },
         }
     )
-    catalog_client = Mock()
-    catalog_client.models.list.return_value = SimpleNamespace(
-        data=[
-            SimpleNamespace(
-                id="lgos-a/graph-a",
-                owned_by="langgraph-openai-serve",
-            ),
-            SimpleNamespace(
-                id="lgos-future/graph-b",
-                owned_by="langgraph-openai-serve",
-            ),
-            SimpleNamespace(id="openai/gpt-5", owned_by="openai"),
-        ]
-    )
-    api_client = Mock()
-    api_client.models.retrieve.return_value = configured
 
-    specs = discover_workspace_model_specs(
-        catalog_client,
-        api_client,
-        provider_routing=True,
+    assert chat_variable_fields(model) == (
+        {"key": "enabled", "label": "Enabled", "default": False, "type": "checkbox"},
     )
 
-    assert specs == (
-        WorkspaceModelSpec(
-            id="lgos-a/graph-a",
-            fields=(),
-            description="DUMMY",
-            supports_file_inputs=True,
-        ),
-        WorkspaceModelSpec(
-            id="lgos-future/graph-b",
-            fields=(),
-            description="DUMMY",
-            supports_file_inputs=True,
-        ),
+
+@pytest.mark.parametrize("provider_routing", [True, False], ids=["bifrost", "litellm"])
+def test_discovery_projects_settings_from_gateway_model_details(
+    provider_routing: bool,
+) -> None:
+    graph = Model(
+        id="simple-graph",
+        object="model",
+        created=1,
+        owned_by="langgraph-openai-serve",
+        lgos={
+            "schema_version": 1,
+            "description": "  Simple graph  ",
+            "features": ["file_inputs"],
+            "client_settings": {
+                "schema_version": 1,
+                "json_schema": {"properties": {"enabled": {"type": "boolean"}}},
+                "defaults": {"enabled": False},
+            },
+        },
     )
-    catalog_client.models.list.assert_called_once_with()
-    api_client.models.retrieve.assert_has_calls(
-        [
-            call(
-                model="graph-a",
-                extra_headers={"x-model-provider": "lgos-a"},
-            ),
-            call(
-                model="graph-b",
-                extra_headers={"x-model-provider": "lgos-future"},
-            ),
-        ],
-        any_order=True,
+    other_model = Model(id="gpt-5", object="model", created=1, owned_by="openai")
+    providers = ("lgos-a", "lgos-future")
+    responses: dict[tuple[str, str | None], object] = {}
+    for provider in providers:
+        detail = graph.model_dump()
+        if provider == "lgos-future":
+            detail["lgos"]["client_settings"] = {
+                "schema_version": 1,
+                "json_schema": {
+                    "properties": {
+                        "audience": {"type": "string", "enum": ["general", "expert"]}
+                    }
+                },
+                "defaults": {"audience": "general"},
+            }
+        if provider_routing:
+            responses[("/openai_passthrough/v1/models/simple-graph", provider)] = detail
+        else:
+            responses[(f"/v1/{provider}/models", None)] = {
+                "object": "list",
+                "data": [graph.model_dump(exclude={"lgos"}), other_model.model_dump()],
+            }
+            responses[(f"/v1/{provider}/models/simple-graph", None)] = detail
+    if provider_routing:
+        responses[("/v1/models", None)] = {
+            "object": "list",
+            "data": [
+                {
+                    **graph.model_dump(exclude={"lgos"}),
+                    "id": "lgos-future/simple-graph",
+                },
+                {**graph.model_dump(exclude={"lgos"}), "id": "lgos-a/simple-graph"},
+                other_model.model_dump(),
+            ],
+        }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        key = (request.url.path, request.headers.get("x-model-provider"))
+        return httpx.Response(200, json=responses[key])
+
+    with (
+        OpenAI(
+            base_url="https://gateway.example/v1",
+            api_key="test",
+            max_retries=0,
+            http_client=httpx.Client(transport=httpx.MockTransport(handle)),
+        ) as catalog_client,
+        OpenAI(
+            base_url="https://gateway.example/openai_passthrough/v1",
+            api_key="test",
+            max_retries=0,
+            http_client=httpx.Client(transport=httpx.MockTransport(handle)),
+        ) as detail_client,
+    ):
+        specs = discover_workspace_model_specs(
+            catalog_client,
+            detail_client,
+            provider_routing=provider_routing,
+            model_prefixes=() if provider_routing else providers,
+        )
+
+    assert [spec.id for spec in specs] == [
+        "lgos-a/simple-graph",
+        "lgos-future/simple-graph",
+    ]
+    for spec in specs:
+        assert spec.description == "Simple graph"
+        assert spec.supports_file_inputs is True
+    assert specs[0].fields == (
+        {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": False},
     )
-    assert api_client.models.retrieve.call_count == 2
+    assert specs[1].fields == (
+        {
+            "key": "audience",
+            "type": "select",
+            "label": "Audience",
+            "options": ["general", "expert"],
+            "default": "general",
+        },
+    )
 
 
 def test_discover_workspace_models_keeps_limited_models_visible() -> None:
@@ -204,63 +289,6 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
     )
 
     assert specs == (WorkspaceModelSpec(id="lgos-a/proxy-model", fields=()),)
-
-
-def test_discover_workspace_models_merges_litellm_passthrough_catalogs() -> None:
-    catalog_client = Mock()
-    catalog_client.base_url = "https://gateway.example/v1/"
-    catalog_clients = {}
-    for model_prefix in ("lgos-a", "lgos-b"):
-        model = SimpleNamespace(
-            id="simple-graph",
-            owned_by="langgraph-openai-serve",
-            model_extra={
-                "lgos": {
-                    "schema_version": 1,
-                    "description": f"LiteLLM {model_prefix} graph",
-                    "features": ["file_inputs"],
-                }
-            },
-        )
-        current_catalog = Mock()
-        current_catalog.models.list.return_value = SimpleNamespace(data=[model])
-        current_catalog.models.retrieve.return_value = model
-        catalog_clients[f"https://gateway.example/v1/{model_prefix}"] = current_catalog
-    catalog_client.with_options.side_effect = lambda *, base_url: catalog_clients[
-        base_url
-    ]
-    api_client = Mock()
-
-    specs = discover_workspace_model_specs(
-        catalog_client,
-        api_client,
-        provider_routing=False,
-        model_prefixes=("lgos-a", "lgos-b"),
-    )
-
-    assert specs == (
-        WorkspaceModelSpec(
-            id="lgos-a/simple-graph",
-            fields=(),
-            description="LiteLLM lgos-a graph",
-            supports_file_inputs=True,
-        ),
-        WorkspaceModelSpec(
-            id="lgos-b/simple-graph",
-            fields=(),
-            description="LiteLLM lgos-b graph",
-            supports_file_inputs=True,
-        ),
-    )
-    catalog_client.with_options.assert_has_calls(
-        [
-            call(base_url="https://gateway.example/v1/lgos-a"),
-            call(base_url="https://gateway.example/v1/lgos-b"),
-        ]
-    )
-    for current_catalog in catalog_clients.values():
-        current_catalog.models.retrieve.assert_called_once_with(model="simple-graph")
-    api_client.models.retrieve.assert_not_called()
 
 
 def test_workspace_model_spec_rejects_oversized_openwebui_ids() -> None:
