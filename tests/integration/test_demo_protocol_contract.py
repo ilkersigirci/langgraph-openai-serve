@@ -6,6 +6,7 @@ from runpy import run_path
 from typing import Any
 
 import pytest
+from demo.ui.openwebui.src.lgos_openwebui.workspace_models import chat_variable_fields
 from openai.types import Model as OpenAIModel
 
 from langgraph_openai_serve.api.models.schemas import (
@@ -35,9 +36,6 @@ OPENWEBUI_PROTOCOL = run_path(
         REPOSITORY_ROOT
         / "demo/ui/openwebui/src/lgos_openwebui/functions/generic/contracts.py"
     )
-)
-OPENWEBUI_WORKSPACE_MODELS = run_path(
-    str(REPOSITORY_ROOT / "demo/ui/openwebui/src/lgos_openwebui/workspace_models.py")
 )
 
 
@@ -69,7 +67,7 @@ def _openwebui_settings_fields(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], ...] | None:
     model = OpenAIModel.model_validate(payload)
-    return OPENWEBUI_WORKSPACE_MODELS["chat_variable_fields"](model)
+    return chat_variable_fields(model)
 
 
 def test_chainlit_accepts_model_detail_extension() -> None:

@@ -2,12 +2,22 @@
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from openai import OpenAI, OpenAIError
+from openai.types import Model
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    JsonValue,
+    StringConstraints,
+    ValidationError,
+)
 
-LGOS_EXTENSION_KEY = "lgos"
+from .functions.generic.api import _catalog_base_url, _model_request
+from .functions.generic.contracts import LGOS_EXTENSION_KEY, LGOS_MODEL_OWNER
+
 FILE_INPUTS_FEATURE = "file_inputs"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -15,7 +25,6 @@ GENERIC_FUNCTION_ID = "generic"
 WORKSPACE_MODEL_PREFIX = "lgos."
 USERVALVES_MODEL_ID = "lgos.uservalves_simple"
 OPENWEBUI_MODEL_ID_MAX_LENGTH = 256
-LGOS_MODEL_OWNER = "langgraph-openai-serve"
 PUBLIC_READ_GRANT = {
     "principal_type": "user",
     "principal_id": "*",
@@ -28,12 +37,33 @@ LIMITED_FUNCTIONALITY_DESCRIPTION = (
 )
 
 
+class _ModelExtension(BaseModel):
+    """Read the LGOS envelope; unsupported settings need not hide the model."""
+
+    model_config = ConfigDict(strict=True)
+
+    schema_version: Literal[1]
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    features: list[str]
+    client_settings: JsonValue = None
+
+
+class _ClientSettings(BaseModel):
+    """Validate the settings envelope before projecting its supported fields."""
+
+    model_config = ConfigDict(strict=True)
+
+    schema_version: Literal[1]
+    json_schema: dict[str, JsonValue]
+    defaults: dict[str, JsonValue]
+
+
 @dataclass(frozen=True)
 class WorkspaceModelSpec:
     """Describe one generated Open WebUI Workspace Model."""
 
     id: str
-    fields: tuple[dict[str, Any], ...]
+    fields: tuple[dict[str, JsonValue], ...]
     description: str | None = None
     supports_file_inputs: bool = False
 
@@ -60,31 +90,29 @@ class WorkspaceModelSpec:
         return f"{GENERIC_FUNCTION_ID}.{self.id}"
 
 
-def chat_variable_fields(model: Any) -> tuple[dict[str, Any], ...] | None:
+def chat_variable_fields(model: Model) -> tuple[dict[str, JsonValue], ...] | None:
     """Translate the Chainlit-supported LGOS schema subset to Chat Variables."""
-    return _chat_variable_fields(_model_extension(model))
+    extension = _model_extension(model)
+    return _chat_variable_fields(extension) if extension is not None else None
 
 
 def _chat_variable_fields(
-    extension: dict[str, Any] | None,
-) -> tuple[dict[str, Any], ...] | None:
-    if extension is None:
-        return None
-
-    settings = extension.get("client_settings")
-    if settings is None:
-        return ()
-    if not isinstance(settings, dict) or settings.get("schema_version") != 1:
+    extension: _ModelExtension | None,
+) -> tuple[dict[str, JsonValue], ...]:
+    if extension is None or extension.client_settings is None:
         return ()
 
-    schema = settings.get("json_schema")
-    defaults = settings.get("defaults")
-    properties = schema.get("properties") if isinstance(schema, dict) else None
-    if not isinstance(properties, dict) or not isinstance(defaults, dict):
+    try:
+        settings = _ClientSettings.model_validate(extension.client_settings)
+    except ValidationError:
+        return ()
+
+    properties = settings.json_schema.get("properties")
+    if not isinstance(properties, dict):
         return ()
 
     fields = []
-    for name, default in defaults.items():
+    for name, default in settings.defaults.items():
         field = _chat_variable_field(name, properties.get(name), default)
         if field is not None:
             fields.append(field)
@@ -100,23 +128,18 @@ def discover_workspace_model_specs(
 ) -> tuple[WorkspaceModelSpec, ...]:
     """Build Workspace Models from the configured OpenAI model endpoints."""
     specs = []
-    catalogs = (
-        tuple(
-            (
-                model_prefix,
-                catalog_client.with_options(
-                    base_url=_catalog_base_url(
-                        str(catalog_client.base_url), model_prefix
-                    )
-                ),
+    for model_prefix in model_prefixes or (None,):
+        current_catalog_client = (
+            catalog_client.with_options(
+                base_url=_catalog_base_url(str(catalog_client.base_url), model_prefix)
             )
-            for model_prefix in model_prefixes
+            if model_prefix is not None
+            else catalog_client
         )
-        if model_prefixes
-        else ((None, catalog_client),)
-    )
-    for model_prefix, current_catalog_client in catalogs:
-        for catalog_model_id in _list_model_ids(current_catalog_client):
+        for catalog_model in current_catalog_client.models.list().data:
+            if catalog_model.owned_by != LGOS_MODEL_OWNER:
+                continue
+            catalog_model_id = catalog_model.id
             model_id = (
                 f"{model_prefix}/{catalog_model_id}"
                 if model_prefix is not None
@@ -134,56 +157,20 @@ def discover_workspace_model_specs(
             except OpenAIError:
                 model = None
             extension = _model_extension(model)
-            fields = _chat_variable_fields(extension)
             specs.append(
                 WorkspaceModelSpec(
                     id=model_id,
-                    fields=fields or (),
+                    fields=_chat_variable_fields(extension),
                     description=(
-                        extension["description"].strip()
-                        if extension is not None
-                        else None
+                        extension.description if extension is not None else None
                     ),
                     supports_file_inputs=(
                         extension is not None
-                        and FILE_INPUTS_FEATURE in extension["features"]
+                        and FILE_INPUTS_FEATURE in extension.features
                     ),
                 )
             )
     return tuple(sorted(specs, key=lambda spec: spec.id))
-
-
-def _list_model_ids(
-    client: OpenAI,
-) -> list[str]:
-    return [
-        model.id
-        for model in client.models.list().data
-        if model.owned_by == LGOS_MODEL_OWNER
-    ]
-
-
-def _model_request(model_id: str, *, provider_routing: bool) -> dict[str, Any]:
-    if not model_id:
-        msg = "OpenAI model ID is missing."
-        raise ValueError(msg)
-    if not provider_routing:
-        msg = "Gateway model routing is not configured."
-        raise ValueError(msg)
-
-    provider, separator, upstream_model = model_id.partition("/")
-    if not provider or not separator or not upstream_model:
-        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        raise ValueError(msg)
-
-    return {
-        "model": upstream_model,
-        "extra_headers": {"x-model-provider": provider},
-    }
-
-
-def _catalog_base_url(catalog_root: str, model_prefix: str) -> str:
-    return f"{catalog_root.rstrip('/')}/{model_prefix}"
 
 
 def sync_workspace_models(
@@ -271,68 +258,43 @@ def sync_workspace_models(
 
 
 def _chat_variable_field(
-    name: Any,
-    schema: Any,
-    default: Any,
-) -> dict[str, Any] | None:
-    if (
-        not isinstance(name, str)
-        or CHAT_VARIABLE_KEY.fullmatch(name) is None
-        or not isinstance(schema, dict)
-    ):
+    name: str,
+    schema: JsonValue,
+    default: JsonValue,
+) -> dict[str, JsonValue] | None:
+    if CHAT_VARIABLE_KEY.fullmatch(name) is None or not isinstance(schema, dict):
         return None
 
-    label = str(schema.get("title") or name.replace("_", " ").title())
+    field: dict[str, JsonValue] = {
+        "key": name,
+        "label": str(schema.get("title") or name.replace("_", " ").title()),
+        "default": default,
+    }
     schema_type = schema.get("type")
     if schema_type == "boolean" and type(default) is bool:
-        return {
-            "key": name,
-            "type": "checkbox",
-            "label": label,
-            "default": default,
-        }
+        return {**field, "type": "checkbox"}
     if schema_type != "string" or not isinstance(default, str):
         return None
 
     enum = schema.get("enum")
     if enum is None:
-        return {
-            "key": name,
-            "type": "text",
-            "label": label,
-            "default": default,
-        }
+        return {**field, "type": "text"}
     if (
         not isinstance(enum, list)
-        or not enum
         or any(not isinstance(value, str) for value in enum)
         or len(set(enum)) != len(enum)
         or default not in enum
     ):
         return None
-    return {
-        "key": name,
-        "type": "select",
-        "label": label,
-        "options": enum,
-        "default": default,
-    }
+    return {**field, "type": "select", "options": enum}
 
 
-def _model_extension(model: Any) -> dict[str, Any] | None:
-    extension = (getattr(model, "model_extra", None) or {}).get(LGOS_EXTENSION_KEY)
-    if not isinstance(extension, dict) or extension.get("schema_version") != 1:
+def _model_extension(model: Model | None) -> _ModelExtension | None:
+    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY) if model else None
+    try:
+        return _ModelExtension.model_validate(extension)
+    except ValidationError:
         return None
-    description = extension.get("description")
-    features = extension.get("features")
-    if (
-        not isinstance(features, list)
-        or any(not isinstance(feature, str) for feature in features)
-        or not isinstance(description, str)
-        or not description.strip()
-    ):
-        return None
-    return extension
 
 
 def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
