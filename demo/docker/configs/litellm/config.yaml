@@ -1,21 +1,6 @@
 model_list:
-  # LiteLLM 1.100.0 still synthesizes a final-only Responses stream for wildcard
-  # routes. Keep exact entries for graphs whose commentary lifecycle is tested.
-  - model_name: lgos-a/status-events
-    litellm_params:
-      model: openai/status-events
-      api_base: http://lgos-demo-api-a:8000/v1
-      api_key: DUMMY
-    model_info:
-      supports_native_streaming: true
-  - model_name: lgos-b/status-events
-    litellm_params:
-      model: openai/status-events
-      api_base: http://lgos-demo-api-b:8000/v1
-      api_key: DUMMY
-    model_info:
-      supports_native_streaming: true
-  # Qualified wildcard aliases exercise LiteLLM-managed multi-provider routing.
+  # The patched gateway honors this capability after wildcard routing resolves
+  # the graph name. Graph discovery remains owned by each LGOS /v1/models.
   - model_name: lgos-a/*
     litellm_params:
       model: openai/*

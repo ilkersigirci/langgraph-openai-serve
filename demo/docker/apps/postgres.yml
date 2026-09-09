@@ -3,11 +3,11 @@ services:
     container_name: lgos-db
     image: postgres:18.4-alpine3.23
     restart: "no"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "$PUID:$PGID"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
-      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
     cap_drop:

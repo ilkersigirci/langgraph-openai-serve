@@ -2,13 +2,13 @@ services:
   lgos-litellm:
     container_name: lgos-litellm
     profiles: [litellm]
-    image: ghcr.io/berriai/litellm:v1.100.0@sha256:c8756e7b9a61fe45df2ccb5b781d388c3b2f3a21ef9e4956630caef20f9f03aa
+    image: $DEMO_LITELLM_IMAGE
     restart: "no"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "$PUID:$PGID"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
-      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -35,14 +35,15 @@ services:
     environment:
       CONFIG_FILE_PATH: /app/config.yaml
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos?schema=litellm
-      LITELLM_MASTER_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
+      LITELLM_MASTER_KEY: $DEMO_LITELLM_MASTER_KEY
+      STORE_MODEL_IN_DB: "true"
+      STORE_PROMPTS_IN_SPEND_LOGS: "true"
       OPENAI_BASE_URL: http://lgos-files-api:8000/v1
       OPENAI_API_KEY: DUMMY
-      PRISMA_CLI_PATH: /opt/prisma/binaries/node_modules/.bin/prisma
-      PRISMA_OFFLINE_MODE: "true"
-    # The smaller gateway image has a reduced route allowlist and no migration
-    # runtime. The full image initializes the Admin UI database and keeps
-    # authenticated pass-through routes for rich LGOS model metadata.
+      ##### CUSTOM IMAGE #####
+      # Opt in to the public patched image's temporary wildcard streaming fix.
+      LITELLM_ENABLE_RESPONSES_STREAMING_FIX: "true"
+    # Initialize the Admin UI database through the image's proxy CLI.
     command:
       - --config
       - /app/config.yaml

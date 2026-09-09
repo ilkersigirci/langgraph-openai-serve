@@ -9,9 +9,8 @@ from openai.types.responses import ResponseFunctionToolCall
 
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
 LITELLM_CATALOG_BASE_URL = os.getenv("DEMO_TEST_LITELLM_CATALOG_BASE_URL")
-LITELLM_API_KEY = os.getenv(
-    "DEMO_TEST_LITELLM_API_KEY",
-    "sk-lgos-litellm-demo",
+LITELLM_API_KEY = os.getenv("DEMO_TEST_LITELLM_API_KEY") or os.getenv(
+    "DEMO_LITELLM_MASTER_KEY", ""
 )
 FILES_QUERY = {"provider": "litellm_proxy"}
 
@@ -217,19 +216,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
     ("model", "prompt", "commentary_count"),
     [
         ("status-events", "Build the report.", 3),
-        pytest.param(
-            "complex-subgraphs",
-            "Show nested subgraph routing docs.",
-            1,
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason=(
-                    "LiteLLM 1.100.0 does not resolve wildcard model capabilities "
-                    "and synthesizes Responses streams; BerriAI/litellm#21090"
-                ),
-            ),
-        ),
+        ("complex-subgraphs", "Show nested subgraph routing docs.", 1),
     ],
 )
 async def test_litellm_native_stream_preserves_commentary(
@@ -258,6 +245,49 @@ async def test_litellm_native_stream_preserves_commentary(
         *[("commentary", "message")] * commentary_count,
         ("final_answer", "message"),
     ]
+
+
+@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
+async def test_litellm_preserves_upstream_text_deltas(provider: str) -> None:
+    if LITELLM_CATALOG_BASE_URL is None:
+        pytest.skip("set the LiteLLM catalog root URL")
+    assert LITELLM_BASE_URL is not None
+
+    deltas_by_route: list[list[str]] = []
+    for base_url, model in (
+        (f"{LITELLM_CATALOG_BASE_URL}/{provider}", "multi-node-streaming"),
+        (LITELLM_BASE_URL, f"{provider}/multi-node-streaming"),
+    ):
+        async with AsyncOpenAI(
+            base_url=base_url,
+            api_key=LITELLM_API_KEY,
+            max_retries=0,
+            timeout=10.0,
+        ) as client:
+            stream = await client.responses.create(
+                model=model,
+                input="Combine both contributions.",
+                store=False,
+                stream=True,
+            )
+            async with stream:
+                deltas_by_route.append(
+                    [
+                        event.delta
+                        async for event in stream
+                        if event.type == "response.output_text.delta"
+                    ]
+                )
+
+    upstream, managed = deltas_by_route
+    assert len(upstream) > 1
+    assert "".join(upstream) == (
+        "The first node contributed this sentence. "
+        "The second node contributed this sentence."
+    )
+    # A synthetic stream can contain many deltas yet deliver them only after
+    # generation. It must preserve the upstream chunks, not split final text.
+    assert managed == upstream
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])

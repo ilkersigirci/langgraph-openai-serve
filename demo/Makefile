@@ -1,6 +1,5 @@
 SHELL := /bin/sh
 OPENAI_GATEWAY_TYPE ?= $(shell sed -n 's/^OPENAI_GATEWAY_TYPE=//p' .env 2>/dev/null)
-OPENAI_GATEWAY_TYPE := $(or $(OPENAI_GATEWAY_TYPE),bifrost)
 COMPOSE := docker compose --env-file .env --profile $(OPENAI_GATEWAY_TYPE) -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 FILES_RUN := uv run --directory files_api --locked
@@ -11,7 +10,7 @@ LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
 
 .PHONY: help sync test test-postgres lint check compose-config \
-	run-postgres run-api-local run-api-a-local run-api-b-local run-files-local \
+	run-postgres reset-litellm-db run-api-local run-api-a-local run-api-b-local run-files-local \
 	run-chainlit-local \
 	run-api run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
 	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
@@ -71,18 +70,18 @@ type-check-local: type-check-ui ## Run type checking for all standalone projects
 compose-config: ## Validate published, development, and OTEL Compose models
 	$(COMPOSE) config --quiet
 	$(COMPOSE) -f docker/compose/development.yml config --quiet
-	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
-	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
-		$(COMPOSE) -f docker/compose/otel.yml config --quiet
-	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
-	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
-		$(COMPOSE) -f docker/compose/development.yml \
-		-f docker/compose/otel.yml config --quiet
+	$(COMPOSE) -f docker/compose/otel.yml config --quiet
+	$(COMPOSE) -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
 
 run-postgres: ## Start the demo PostgreSQL service in the background
 	$(COMPOSE) up -d lgos-db
+
+reset-litellm-db: ## Reset LiteLLM's PostgreSQL schema
+	@$(COMPOSE) exec -T lgos-db \
+		psql -U lgos -d lgos -v ON_ERROR_STOP=1 \
+		-c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
 
 run-api-local: run-api-a-local ## Run lgos-a locally
 

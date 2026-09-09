@@ -41,9 +41,9 @@ make run-postgres
 
 ??? info "Demo environment settings"
 
-    The API reads `DEMO_API_POSTGRES_URI` and defaults to
-    `postgresql://lgos:lgos@localhost:3001/lgos`, which matches the Compose
-    service.
+    The API reads `DEMO_API_POSTGRES_URI` from the demo environment. Use
+    [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
+    for the supplied connection settings.
 
     LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
     `DEMO_API_OPENAI_API_KEY`, and `DEMO_API_OPENAI_MODEL`. The

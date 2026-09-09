@@ -58,7 +58,7 @@ Start the official Open WebUI image:
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f docker/compose/demo.yml up --wait lgos-openwebui
+docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
 ```
 
 Then run the independent synchronization project locally:
@@ -102,9 +102,11 @@ The filename stem or directory name is the Function ID, and the required Open
 WebUI frontmatter `title` is its display name. Function IDs must be lowercase
 Python identifiers.
 
-The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model defines its
-environment names, defaults, and descriptions. The shared
-`.env.example` configures the local sync command. Set secrets in the environment
+The shared
+[`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
+is the source of truth for the local sync command's demo environment values.
+See [sync settings](reference.md#open-webui-sync-settings) for their purposes.
+Set secrets in the environment
 rather than passing them on the command line. Point the sync client and the
 Function valve below at the same deployment; their hostnames differ when one
 runs on the host and the other runs inside Compose.

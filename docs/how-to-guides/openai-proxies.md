@@ -49,16 +49,16 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | --- | --- | --- |
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
 | LiteLLM pass-through | Full maintained contract | UI catalog detail and protocol reference |
-| LiteLLM managed routing | Responses, Files, file input, exact-model commentary, and continuation pass; wildcard streams are synthesized, error metadata is rewritten, and some streams raise a background success-log error | LiteLLM-selected UI inference and Files |
+| LiteLLM managed routing | Native wildcard streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
 | Bifrost raw pass-through | Full maintained contract | UI catalog detail and protocol reference |
 | Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions are unavailable and error metadata is rewritten | Bifrost-selected UI inference and Files |
 
 These results describe the bundled configuration. Exact image tags and digests
-are pinned in `demo/docker/apps/litellm.yml` and
-`demo/docker/apps/bifrost.yml`.
+are provided by `DEMO_LITELLM_IMAGE` in `demo/.env.example` for LiteLLM and
+`demo/docker/apps/bifrost.yml` for Bifrost.
 
 The [demo Docker guide](../demo/docker.md) documents the pinned LiteLLM image,
-native-stream fixture, and test command. The [Bifrost guide](../demo/bifrost.md)
+native-stream configuration, and test command. The [Bifrost guide](../demo/bifrost.md)
 records its exact remaining strict expected failures. Do not hide an upstream
 failure with a Chat fallback, custom proxy plugin, or LGOS-specific response
 field.
@@ -72,15 +72,17 @@ gateway configuration and send the unqualified graph name upstream. Clients
 connected directly to LGOS use the registered graph name unchanged.
 
 LiteLLM's documented
-[Responses endpoint](https://docs.litellm.ai/docs/response_api) and wildcard
-routing can route arbitrary graph names, but the bundled gateway replaces a
-wildcard model's upstream event stream with a final-only synthetic stream. The
-managed test surface therefore keeps exact `status-events` entries with
-`supports_native_streaming: true`. It does not duplicate the graph catalog.
+[Responses endpoint](https://docs.litellm.ai/docs/response_api) uses two wildcard
+routes, one per graph API, with `model_info.supports_native_streaming: true`.
+Graph names come from each API's `/v1/models`; adding a graph requires no gateway
+catalog edits or discovery script.
 
-The managed integration suite marks lost wildcard commentary as a strict expected
-failure so a future fix is visible. The UIs keep using managed `/v1/responses`;
-they do not switch to pass-through when the gateway loses events.
+The demo defaults to the pinned public `homeserver-litellm` image, configured
+to honor the deployment capability and preserve text deltas and commentary
+through managed `/v1/responses`. `DEMO_LITELLM_IMAGE` can select an alternative
+compatible image; see [Docker Compose](../demo/docker.md#demo-services) for
+configuration and validation. The integration suite checks native text deltas
+and commentary through both wildcard routes.
 
 The maintained UIs use `OPENAI_GATEWAY_TYPE=litellm|bifrost`. With LiteLLM,
 their catalog clients read `/models` and `/models/{model}` through authenticated
@@ -89,10 +91,7 @@ send Responses and Files to LiteLLM's managed `/v1` route. Files requests select
 the configured `litellm_proxy` provider. This preserves both LGOS catalogs'
 descriptions and capability extensions while keeping LiteLLM's managed routing,
 accounting, policy, retry, and fallback features available for inference.
-Managed-stream, error-normalization, and background usage-logging limitations
-therefore apply when LiteLLM is selected. The demo uses the full official
-LiteLLM image because the smaller `litellm-gateway` image's reduced gateway app
-removes arbitrary configured routes from its data-plane allowlist.
+The error-normalization limitation still applies when LiteLLM is selected.
 
 Bifrost custom providers expose both normalized and raw OpenAI routes. The
 bundled native Responses route preserves `phase`, multiple commentary

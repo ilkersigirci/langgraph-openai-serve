@@ -1,22 +1,22 @@
 x-lgos-files-api-environment: &lgos-files-api-environment
   DEMO_API_FILES_PORT: 8000
-  DEMO_API_FILES_BUCKET: ${DEMO_API_FILES_BUCKET:?Configure DEMO_API_FILES_BUCKET for files}
-  DEMO_API_FILES_S3_ENDPOINT: ${DEMO_API_FILES_S3_ENDPOINT:?Configure DEMO_API_FILES_S3_ENDPOINT}
-  DEMO_API_FILES_AWS_ACCESS_KEY_ID: ${DEMO_API_FILES_AWS_ACCESS_KEY_ID:?Configure DEMO_API_FILES_AWS_ACCESS_KEY_ID}
-  DEMO_API_FILES_AWS_SECRET_ACCESS_KEY: ${DEMO_API_FILES_AWS_SECRET_ACCESS_KEY:?Configure DEMO_API_FILES_AWS_SECRET_ACCESS_KEY}
-  DEMO_API_FILES_AWS_DEFAULT_REGION: ${DEMO_API_FILES_AWS_DEFAULT_REGION:?Configure DEMO_API_FILES_AWS_DEFAULT_REGION}
+  DEMO_API_FILES_BUCKET: $DEMO_API_FILES_BUCKET
+  DEMO_API_FILES_S3_ENDPOINT: $DEMO_API_FILES_S3_ENDPOINT
+  DEMO_API_FILES_AWS_ACCESS_KEY_ID: $DEMO_API_FILES_AWS_ACCESS_KEY_ID
+  DEMO_API_FILES_AWS_SECRET_ACCESS_KEY: $DEMO_API_FILES_AWS_SECRET_ACCESS_KEY
+  DEMO_API_FILES_AWS_DEFAULT_REGION: $DEMO_API_FILES_AWS_DEFAULT_REGION
 
 services:
   lgos-files-api:
     container_name: lgos-files-api
-    image: ghcr.io/ilkersigirci/lgos-files-api:${DEMO_IMAGE_TAG:-latest}
+    image: ghcr.io/ilkersigirci/lgos-files-api:$DEMO_IMAGE_TAG
     pull_policy: always
     restart: "no"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "$PUID:$PGID"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
-      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
     cap_drop:

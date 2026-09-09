@@ -10,6 +10,12 @@ remove only workarounds that the new release demonstrably replaces. An
 assessment-only request does not authorize changing the running gateway.
 Paths below are relative to the repository root.
 
+LiteLLM defaults to the public `ghcr.io/ilkersigirci/homeserver-litellm` image;
+`DEMO_LITELLM_IMAGE` in `.env.example` owns its default pin; users can change
+the value in `.env`. Upgrade that image in
+place unless the user requests a different distribution. Bifrost uses its
+official image. Keep image builds and patch maintenance outside this repository.
+
 ## Establish the Baseline
 
 Read `demo/AGENTS.md`, `.agents/CODE_STYLE.md`, and `tests/README.md`.
@@ -18,7 +24,8 @@ Use `docs/how-to-guides/openai-proxies.md` for the routing contract and
 
 Inspect the affected gateway's:
 
-- image tag and digest in `demo/docker/apps/{litellm,bifrost}.yml`;
+- LiteLLM image tag and digest in `demo/.env.example`, and Bifrost's pin in
+  `demo/docker/apps/bifrost.yml`;
 - configuration under `demo/docker/configs/{litellm,bifrost}/`;
 - focused suite in `demo/api/tests/integration/test_{litellm,bifrost}_proxy.py`
   and shared `test_direct_responses.py`;
@@ -48,8 +55,8 @@ route or provider used here. In particular:
   can still require pass-through even when native Responses works.
 - Check response-ID handling and continuation after streaming as well as
   non-streaming creates. Clients must return opaque IDs unchanged.
-- Check the official image's startup, authentication, migrations, and route
-  availability before replacing a full image with a reduced gateway image.
+- Check the selected image's startup, authentication, migrations, and route
+  availability; preserve the demo's custom LiteLLM image and streaming opt-in.
 
 Prefer upstream configuration over custom adapters. Remove an exact model
 entry, pass-through, or UI helper only when the replacement preserves its
@@ -57,8 +64,8 @@ observable contract. A version bump with no safe simplification is valid.
 
 ## Update and Verify
 
-Resolve the requested official image's registry digest and update its Compose
-pin. These gateways run as external images; Python dependencies and lockfiles
+Resolve the requested image's registry digest and update its pin at the location
+above. These gateways run as external images; Python dependencies and lockfiles
 normally need no change. For an authorized local upgrade, preserve the running
 Compose overlays and recreate only the affected gateway with `--no-deps`.
 Wait for health before testing; do not reset its database or restart unrelated
@@ -81,7 +88,7 @@ checks explicitly instead of presenting source inspection as a passing test.
 
 ## Keep Documentation Stable
 
-Keep exact release pins in Compose and version-specific failure evidence near
+Keep exact release pins at the locations above and version-specific failure evidence near
 the integration tests or configuration that needs it. Published docs describe
 the bundled setup, user-facing behavior, and current operational limitations;
 update them when those facts change. Do not scatter version numbers through

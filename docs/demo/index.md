@@ -104,7 +104,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Chainlit | Persistent Responses client, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold plus dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
-| LiteLLM | Selectable managed UI inference edge plus catalog-detail pass-through | Pinned official image and Compose configuration |
+| LiteLLM | Selectable managed UI inference edge plus catalog-detail pass-through | Pinned public `homeserver-litellm` image and Compose configuration |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
@@ -120,8 +120,9 @@ catalog detail uses pass-through to preserve LGOS extensions.
     The bundled Bifrost native Responses route preserves `phase`, commentary,
     file-input, and continuation contracts; only normalized model-detail and
     error metadata remain strict expected failures. Its raw pass-through route
-    passes the direct contract suite. The bundled LiteLLM managed wildcard
-    routing synthesizes the upstream stream and rewrites standard error metadata.
+    passes the direct contract suite. The bundled `homeserver-litellm` image
+    preserves native streaming through dynamic wildcard routes. Standard
+    error metadata remains rewritten.
     Pass-through routes remain the lossless protocol references. The UIs use
     the selected gateway's normal inference route and accept that route's
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
