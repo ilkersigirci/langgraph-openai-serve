@@ -1,5 +1,5 @@
 model_list:
-  # LiteLLM 1.99.1 still synthesizes a final-only Responses stream for wildcard
+  # LiteLLM 1.100.0 still synthesizes a final-only Responses stream for wildcard
   # routes. Keep exact entries for graphs whose commentary lifecycle is tested.
   - model_name: lgos-a/status-events
     litellm_params:

@@ -8,6 +8,11 @@ For live Chainlit or Open WebUI verification, read
 [Browser UI checks](.agents/ui_checks.md). It covers browser setup, login,
 model selection, rendering checks, and common deployment failures.
 
+For LiteLLM or Bifrost upgrades and workaround reviews, use
+[Gateway upgrade](.agents/skills/gateway-upgrade/SKILL.md). Keep the upgrade
+procedure in agent guidance; published docs describe the bundled gateway
+behavior, with exact image versions owned by Compose.
+
 ## Modular OpenWebUI Function
 
 - The source of truth for the Generic Function is

@@ -26,16 +26,17 @@ independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs under separate provider identities so the stack can
 exercise native Responses routing through either gateway. The independent
 `lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
-1.99.1 and Bifrost v2.0.0 are both first-class UI gateways. Set
+and Bifrost are both first-class UI gateways, pinned in their respective
+`docker/apps/` Compose fragments. Set
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
 UI connects to an upstream container directly. Responses and Files use each
 gateway's normal OpenAI routes; a catalog-only client uses pass-through model
 detail where needed to preserve LGOS descriptions, features, and settings.
 
 Current verification exposes narrower upstream normalization limitations.
-Bifrost v2.0.0's normalized `/openai/v1` route preserves the tested native
+The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
 Responses fields, file input, commentary `phase`, and continuation, but not
-LGOS model-detail extensions or upstream error metadata. LiteLLM 1.99.1 still
+LGOS model-detail extensions or upstream error metadata. The bundled LiteLLM
 synthesizes wildcard Responses streams and rewrites standard error metadata.
 Bifrost's raw pass-through and LiteLLM's authenticated pass-through both
 preserve the full tested contract for protocol diagnostics. UI inference does
