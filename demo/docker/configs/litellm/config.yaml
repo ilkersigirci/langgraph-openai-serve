@@ -1,6 +1,7 @@
 model_list:
-  # The patched gateway honors this capability after wildcard routing resolves
-  # the graph name. Graph discovery remains owned by each LGOS /v1/models.
+  # `model_name` is the client-facing namespace. `model: openai/*` selects
+  # LiteLLM's OpenAI-compatible adapter; discovery still comes from each
+  # configured LGOS `api_base`.
   - model_name: lgos-a/*
     litellm_params:
       model: openai/*
@@ -15,6 +16,9 @@ model_list:
       api_key: DUMMY
     model_info:
       supports_native_streaming: true
+
+litellm_settings:
+  check_provider_endpoint: true
 
 files_settings:
   - custom_llm_provider: litellm_proxy

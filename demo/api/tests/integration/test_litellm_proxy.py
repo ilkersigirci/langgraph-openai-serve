@@ -41,6 +41,21 @@ async def test_litellm_admin_ui_login() -> None:
     assert body["token"]
 
 
+async def test_litellm_chat_catalog_discovers_lgos_models() -> None:
+    assert LITELLM_BASE_URL is not None
+
+    async with httpx.AsyncClient(
+        base_url=LITELLM_BASE_URL.removesuffix("/v1"),
+        headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
+        timeout=10.0,
+    ) as client:
+        response = await client.get("/model_group/info")
+
+    assert response.status_code == 200
+    model_groups = {item["model_group"] for item in response.json()["data"]}
+    assert {"lgos-a/simple-graph", "lgos-b/simple-graph"} <= model_groups
+
+
 async def test_litellm_passthrough_requires_gateway_authentication() -> None:
     if LITELLM_CATALOG_BASE_URL is None:
         pytest.skip("set the LiteLLM catalog root URL")
