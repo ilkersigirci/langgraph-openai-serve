@@ -199,12 +199,12 @@ settings](reference.md#opentelemetry-settings).
     native wildcard Responses streaming, authenticated catalog pass-through,
     managed Files routing, and the Admin UI migration runtime.
 
-    Managed routing also passes the tested Files
-    lifecycle, file-ID input, and function continuation, while its rewritten
-    standard error metadata remains a strict expected failure. Some successful
-    managed streaming requests also trigger an upstream background success-log
-    `AttributeError` after the client response completes; do not treat managed
-    LiteLLM usage logging as verified by this suite.
+    Managed routing also passes the tested Files lifecycle, file-ID input, and
+    function continuation, while its rewritten standard error metadata remains
+    a strict expected failure. The bundled image records successful managed
+    Responses requests in LiteLLM's spend logs, including streaming requests.
+    Token and spend values reflect usage and pricing supplied for the selected
+    graph model.
 
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference

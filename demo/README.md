@@ -42,8 +42,9 @@ Current verification exposes narrower upstream normalization limitations.
 The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
 Responses fields, file input, commentary `phase`, and continuation, but not
 LGOS model-detail extensions or upstream error metadata. The bundled LiteLLM
-preserves native wildcard streaming and commentary, but rewrites standard
-error metadata and can raise background usage-logging errors.
+preserves native wildcard streaming and commentary, and records successful
+managed Responses requests in its spend logs, but rewrites standard error
+metadata.
 Bifrost's raw pass-through and LiteLLM's authenticated pass-through both
 preserve the full tested contract for protocol diagnostics. UI inference does
 not use either pass-through: it exercises LiteLLM's managed Responses route or
