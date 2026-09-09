@@ -38,6 +38,16 @@ default. Copy `.env.example` to `.env` before running Compose; configurable
 defaults live in that template, not in Compose fallbacks. Set
 `DEMO_LITELLM_IMAGE` in `.env` to another compatible image if needed.
 
+`COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}` in `.env.example` starts the selected
+bundled gateway through Docker Compose's native profiles. To reuse an existing
+LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
+`OPENAI_GATEWAY_BASE_URL` to its HTTPS root (without `/v1`), and provide
+its key through `OPENAI_GATEWAY_API_KEY`. This mode starts no gateway container.
+Merge the LGOS routes from `docker/configs/litellm/config.yaml` into the existing
+gateway and make the demo backends reachable from it. See the
+[external LiteLLM setup](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/docker.md#demo-services)
+for networking, Files routing, and SSO ownership.
+
 Current verification exposes narrower upstream normalization limitations.
 The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
 Responses fields, file input, commentary `phase`, and continuation, but not
@@ -92,7 +102,7 @@ make run-bifrost
 make run-litellm
 ```
 
-Run Chainlit and its Compose dependencies on port 3002:
+With the gateway running, start Chainlit and PostgreSQL on port 3002:
 
 ```bash
 make run-chainlit

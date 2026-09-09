@@ -11,28 +11,28 @@ from lgos_chainlit.settings import settings
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 gateway = gateway_config(
     settings.OPENAI_GATEWAY_TYPE,
-    settings.OPENAI.gateway_base_url,
+    settings.OPENAI_GATEWAY_BASE_URL,
 )
 
 openai_client = AsyncOpenAI(
     base_url=gateway.responses_base_url,
-    api_key=settings.OPENAI.api_key,
+    api_key=settings.OPENAI_GATEWAY_API_KEY,
     max_retries=0,
     default_headers={"User-Agent": "lgos-chainlit"},
 )
 catalog_client = AsyncOpenAI(
     base_url=gateway.catalog_base_url,
-    api_key=settings.OPENAI.api_key,
+    api_key=settings.OPENAI_GATEWAY_API_KEY,
     max_retries=0,
 )
 catalog_detail_client = AsyncOpenAI(
     base_url=gateway.catalog_detail_base_url,
-    api_key=settings.OPENAI.api_key,
+    api_key=settings.OPENAI_GATEWAY_API_KEY,
     max_retries=0,
 )
 files_client = AsyncOpenAI(
     base_url=gateway.files_base_url,
-    api_key=settings.OPENAI.api_key,
+    api_key=settings.OPENAI_GATEWAY_API_KEY,
     max_retries=0,
 )
 

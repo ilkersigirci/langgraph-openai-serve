@@ -35,9 +35,14 @@ value before starting the UI; neither service reads the other's S3 settings.
 
 === "Compose"
 
+    Start the complete stack, including the gateway selected by `COMPOSE_PROFILES`:
+
     ```bash
-    make run-chainlit
+    make compose
     ```
+
+    If the gateway and backends are already running, `make run-chainlit`
+    starts only Chainlit and PostgreSQL.
 
 === "Local processes"
 
@@ -286,8 +291,8 @@ Gateway settings:
 | Setting | Notes |
 | --- | --- |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost`. |
-| `DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL` | Optional gateway-root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost. |
-| `DEMO_CHAINLIT_OPENAI__API_KEY` | Gateway credential shared with the configured deployment; replace demo credentials outside local use. |
+| `OPENAI_GATEWAY_BASE_URL` | Gateway root without `/v1`; defaults to port 3007 for LiteLLM or 3000 for Bifrost when unset. |
+| `OPENAI_GATEWAY_API_KEY` | Credential used by both demo UIs; replace demo credentials outside local use. |
 | `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |

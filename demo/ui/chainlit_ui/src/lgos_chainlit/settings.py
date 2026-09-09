@@ -4,7 +4,6 @@ from typing import Annotated, Literal, Self
 from pydantic import (
     AfterValidator,
     AnyHttpUrl,
-    BaseModel,
     Field,
     PlainValidator,
     PostgresDsn,
@@ -38,22 +37,6 @@ def _is_unconfigured(value: str | None) -> bool:
     return value is None or not value.strip() or value.strip() == PLACEHOLDER
 
 
-class OpenAIEndpoint(BaseModel):
-    """OpenAI-compatible endpoints and their shared credential."""
-
-    gateway_base_url: HttpUrlStr | None = Field(
-        default=None,
-        description=(
-            "Optional gateway root override. The demo selects the local root from "
-            "OPENAI_GATEWAY_TYPE when this is unset."
-        ),
-    )
-    api_key: str = Field(
-        min_length=1,
-        description="API key sent to the configured OpenAI-compatible endpoints.",
-    )
-
-
 class Settings(BaseSettings):
     """Configuration owned by the standalone Chainlit application."""
 
@@ -61,8 +44,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_prefix="DEMO_CHAINLIT_",
         env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        nested_model_default_partial_update=True,
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -71,7 +53,17 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_GATEWAY_TYPE",
         description="OpenAI gateway used by every Chainlit OpenAI client.",
     )
-    OPENAI: OpenAIEndpoint = OpenAIEndpoint(api_key="sk-lgos-litellm-demo")
+    OPENAI_GATEWAY_BASE_URL: HttpUrlStr | None = Field(
+        default=None,
+        validation_alias="OPENAI_GATEWAY_BASE_URL",
+        description="Optional gateway root override.",
+    )
+    OPENAI_GATEWAY_API_KEY: str = Field(
+        default="sk-lgos-litellm-demo",
+        min_length=1,
+        validation_alias="OPENAI_GATEWAY_API_KEY",
+        description="API key sent to the selected gateway.",
+    )
     HITL_MODEL: str = "interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"

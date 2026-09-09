@@ -99,7 +99,7 @@ test-litellm: ## Run LiteLLM managed-routing and catalog pass-through integratio
 	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS) \
 		DEMO_TEST_FILES_BASE_URL=$(DEMO_TEST_LITELLM_FILES_BASE_URL) \
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. --env-file ../.env \
-		sh -c 'export DEMO_TEST_OPENAI_API_KEY="$${DEMO_TEST_LITELLM_API_KEY:-$$DEMO_LITELLM_MASTER_KEY}"; exec pytest -m integration tests/integration/test_direct_responses.py'
+		sh -c 'export DEMO_TEST_OPENAI_API_KEY="$${DEMO_TEST_LITELLM_API_KEY:-$$OPENAI_GATEWAY_API_KEY}"; exec pytest -m integration tests/integration/test_direct_responses.py'
 
 test-demo: ## Test all demo projects against their locked dependencies
 	$(MAKE) -C $(DEMO_DIR) test

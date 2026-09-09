@@ -138,6 +138,65 @@ settings](reference.md#opentelemetry-settings).
     Gateway](bifrost.md) for endpoints, routing, and the shared SDK verification
     command.
 
+=== "External LiteLLM"
+
+    Set these values in `demo/.env` to reuse an existing LiteLLM gateway:
+
+    ```dotenv
+    OPENAI_GATEWAY_TYPE=litellm
+    COMPOSE_PROFILES=
+    OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
+    OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
+    ```
+
+    Use the gateway root without `/v1`. Both UIs and the host-side Open WebUI
+    sync command use these shared settings. An external LiteLLM uses the same
+    Responses, Files, and catalog routes as bundled LiteLLM.
+
+    `make compose` (or `make compose-dev`) starts the demo APIs, Files service,
+    PostgreSQL, and UIs. An empty `COMPOSE_PROFILES` disables both bundled
+    gateways; the template normally selects one through
+    `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`.
+
+    The existing gateway needs the LGOS entries from
+    [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml).
+    Merge its `model_list`, `litellm_settings`, `files_settings`, and
+    `general_settings.pass_through_endpoints` into the gateway's configuration.
+    These entries keep graph discovery dynamic and use LiteLLM's native
+    [pass-through configuration](https://docs.litellm.ai/docs/proxy/pass_through)
+    for catalog detail. Retain the bundled image's
+    `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` opt-in when using that image.
+
+    On the same Docker host, attach the existing LiteLLM service to the demo's
+    network through its own Compose deployment, alongside its current networks:
+
+    ```yaml
+    services:
+      litellm:
+        networks:
+          # Retain the service's existing networks here too.
+          - lgos
+
+    networks:
+      lgos:
+        external: true
+        name: lgos-network
+    ```
+
+    Create the network by starting the demo backends first, for example with
+    `make run-api-a`, `make run-api-b`, and `make run-files` in separate
+    terminals. The existing gateway can then resolve `lgos-demo-api-a`,
+    `lgos-demo-api-b`, and `lgos-files-api` using the checked-in routing
+    configuration unchanged. For another host, replace those upstream URLs
+    with addresses reachable from that gateway.
+
+    The external deployment continues to own its database, TLS, credentials,
+    and Admin UI SSO. Its key must allow the LGOS models, Files operations, and
+    catalog pass-through routes. If it already configures `litellm_proxy` Files,
+    reconcile that provider with the demo's shared Files namespace. Then run
+    `make sync-openwebui` and the [LiteLLM SDK checks](#demo-services) against
+    the external URL.
+
 === "LiteLLM"
 
     ```bash
@@ -160,10 +219,10 @@ settings](reference.md#opentelemetry-settings).
     and LGOS capability metadata and the Files service remains the owner of
     file bytes.
     Neither UI connects to an upstream service directly.
-    `DEMO_LITELLM_MASTER_KEY` protects all four routes; replace its demo-only
+    `OPENAI_GATEWAY_API_KEY` protects all four routes; replace its demo-only
     default in any shared deployment. For the local Admin UI, sign in as
     `admin`; unless `UI_PASSWORD` is set separately, the password is the value
-    of `DEMO_LITELLM_MASTER_KEY` from `.env`.
+    of `OPENAI_GATEWAY_API_KEY` from `.env`.
 
     The managed-routing surface uses one wildcard route per graph API
     and LiteLLM's native
@@ -216,11 +275,16 @@ settings](reference.md#opentelemetry-settings).
 
 === "Chainlit"
 
+    With the gateway and its backends running:
+
     ```bash
     make run-chainlit
     ```
 
     Chainlit: `http://localhost:3002`
+
+    This command starts Chainlit and PostgreSQL. Use `make compose` to start
+    the complete stack with the gateway selected by `COMPOSE_PROFILES`.
 
     Configure its signing secret as described in the
     [Chainlit client](chainlit.md).

@@ -183,11 +183,8 @@ def test_main_reads_demo_openwebui_environment(
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_PASSWORD", "password")
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
-    monkeypatch.setenv(
-        "DEMO_OPENWEBUI_OPENAI_GATEWAY_BASE_URL",
-        "https://bifrost.example",
-    )
-    monkeypatch.setenv("DEMO_OPENWEBUI_API_KEY", "api-key")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://bifrost.example")
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
     client = Mock()
     client_context = MagicMock()
     client_context.__enter__.return_value = client

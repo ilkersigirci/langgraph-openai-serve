@@ -166,12 +166,12 @@ def main() -> None:
             httpx.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
                 base_url=gateway.catalog_base_url,
-                api_key=settings.API_KEY,
+                api_key=settings.OPENAI_GATEWAY_API_KEY,
                 timeout=10,
             ) as catalog_client,
             OpenAI(
                 base_url=gateway.catalog_detail_base_url,
-                api_key=settings.API_KEY,
+                api_key=settings.OPENAI_GATEWAY_API_KEY,
                 timeout=10,
             ) as catalog_detail_client,
         ):

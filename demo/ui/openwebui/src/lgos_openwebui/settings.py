@@ -9,7 +9,10 @@ from lgos_openwebui.functions.generic.gateway import GatewayType
 class Settings(BaseSettings):
     """Configuration for the Open WebUI synchronization command."""
 
-    model_config = SettingsConfigDict(env_prefix="DEMO_OPENWEBUI_")
+    model_config = SettingsConfigDict(
+        env_prefix="DEMO_OPENWEBUI_",
+        env_ignore_empty=True,
+    )
 
     URL: str = Field(
         default="http://localhost:3003",
@@ -30,9 +33,11 @@ class Settings(BaseSettings):
     )
     OPENAI_GATEWAY_BASE_URL: str | None = Field(
         default=None,
+        validation_alias="OPENAI_GATEWAY_BASE_URL",
         description="Optional gateway root override for the host sync command.",
     )
-    API_KEY: str = Field(
+    OPENAI_GATEWAY_API_KEY: str = Field(
         default="sk-lgos-litellm-demo",
+        validation_alias="OPENAI_GATEWAY_API_KEY",
         description="API key sent to the configured OpenAI-compatible endpoints.",
     )

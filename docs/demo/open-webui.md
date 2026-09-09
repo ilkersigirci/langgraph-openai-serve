@@ -121,8 +121,8 @@ WebUI's
 Configure `OPENAI_GATEWAY_TYPE`, optional `OPENAI_GATEWAY_BASE_URL`,
 `OPENAI_API_KEY`, and `OPENAI_API_TIMEOUT` in the generic Function's admin
 valves. The Pydantic valve model in the Function is the source of truth for
-their defaults and descriptions. Compose supplies `DEMO_LITELLM_MASTER_KEY` as
-`OPENAI_API_KEY`; replace the demo-only value in shared deployments. LiteLLM
+their defaults and descriptions. Compose supplies `OPENAI_GATEWAY_API_KEY` as
+`OPENAI_API_KEY`; use a key issued by the selected gateway. LiteLLM
 keeps `lgos-a/` or `lgos-b/` on the managed-routing model ID. Bifrost removes
 that provider prefix and sends it as `x-model-provider` to native Responses.
 Open WebUI stores Function code in its database, so a bind mount of the Python

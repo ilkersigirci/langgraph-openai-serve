@@ -25,11 +25,11 @@ uv run --locked --env-file .env lgos-chainlit-setup
 uv run --locked --env-file .env lgos-chainlit
 ```
 
-Application settings use the `DEMO_CHAINLIT_` prefix. Reusable helper settings
-use `CHAINLIT_UTILS_`; Chainlit's native `DATABASE_URL` and
-`CHAINLIT_AUTH_SECRET` variables remain unprefixed. Native Chainlit elements
-use `BUCKET_NAME`, `APP_AWS_*`, and `DEV_AWS_ENDPOINT` S3 settings so generated
-files survive thread resume.
+Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
+`OPENAI_GATEWAY_*` settings. Reusable helper settings use `CHAINLIT_UTILS_`;
+Chainlit's native `DATABASE_URL` and `CHAINLIT_AUTH_SECRET` variables remain
+unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
+`DEV_AWS_ENDPOINT` S3 settings so generated files survive thread resume.
 
 User attachments are uploaded separately through the selected gateway's normal
 OpenAI Files API. LiteLLM assigns those requests to `litellm_proxy`; Bifrost

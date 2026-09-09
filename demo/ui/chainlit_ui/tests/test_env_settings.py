@@ -24,25 +24,25 @@ def test_openai_endpoint_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
-    monkeypatch.setenv(
-        "DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL",
-        "https://gateway.example",
-    )
-    monkeypatch.setenv("DEMO_CHAINLIT_OPENAI__API_KEY", "api-key")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example")
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI_GATEWAY_TYPE == "bifrost"
-    assert configured.OPENAI.gateway_base_url == "https://gateway.example"
-    assert configured.OPENAI.api_key == "api-key"
+    assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example"
+    assert configured.OPENAI_GATEWAY_API_KEY == "api-key"
 
 
-def test_openai_endpoints_default_to_litellm_managed_responses() -> None:
+def test_openai_endpoints_default_to_litellm_managed_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "")
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI_GATEWAY_TYPE == "litellm"
-    assert configured.OPENAI.gateway_base_url is None
-    assert configured.OPENAI.api_key == "sk-lgos-litellm-demo"
+    assert configured.OPENAI_GATEWAY_BASE_URL is None
+    assert configured.OPENAI_GATEWAY_API_KEY == "sk-lgos-litellm-demo"
     gateway = gateway_config(configured.OPENAI_GATEWAY_TYPE)
     assert gateway.responses_base_url == "http://localhost:3007/v1"
     assert gateway.catalog_detail_base_url == "http://localhost:3007/v1"

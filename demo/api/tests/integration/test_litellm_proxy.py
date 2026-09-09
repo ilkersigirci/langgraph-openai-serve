@@ -10,7 +10,7 @@ from openai.types.responses import ResponseFunctionToolCall
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
 LITELLM_CATALOG_BASE_URL = os.getenv("DEMO_TEST_LITELLM_CATALOG_BASE_URL")
 LITELLM_API_KEY = os.getenv("DEMO_TEST_LITELLM_API_KEY") or os.getenv(
-    "DEMO_LITELLM_MASTER_KEY", ""
+    "OPENAI_GATEWAY_API_KEY", ""
 )
 FILES_QUERY = {"provider": "litellm_proxy"}
 

@@ -6,12 +6,13 @@ def test_settings_fields_have_descriptions() -> None:
     assert all(field.description for field in Settings.model_fields.values())
 
 
-def test_model_discovery_defaults_to_litellm_hybrid_routing() -> None:
+def test_model_discovery_defaults_to_litellm_hybrid_routing(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "")
     settings = Settings(_env_file=None)
 
     assert settings.OPENAI_GATEWAY_TYPE == "litellm"
     assert settings.OPENAI_GATEWAY_BASE_URL is None
-    assert settings.API_KEY == "sk-lgos-litellm-demo"
+    assert settings.OPENAI_GATEWAY_API_KEY == "sk-lgos-litellm-demo"
     gateway = gateway_config(settings.OPENAI_GATEWAY_TYPE, local=True)
     assert gateway.responses_base_url == "http://localhost:3007/v1"
     assert gateway.catalog_detail_base_url == "http://localhost:3007/v1"

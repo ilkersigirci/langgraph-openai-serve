@@ -34,7 +34,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-files` | Run the published Files API container on port 3006 |
 | `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
 | `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3007 |
-| `make run-chainlit` | Run the published Chainlit container and its dependencies on port 3002 |
+| `make run-chainlit` | Run Chainlit on port 3002 and PostgreSQL; start the gateway separately or use `make compose` for the full stack |
 | `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
 | `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
 | `make run-files-local` | Run the independently locked local Files API process |
@@ -64,7 +64,9 @@ extensions through authenticated pass-through; UI inference never does.
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
-| `DEMO_LITELLM_MASTER_KEY` | Required LiteLLM bearer key shared by the two UI clients and local Admin UI password for username `admin`; replace it outside local demos |
+| `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
+| `OPENAI_GATEWAY_BASE_URL` | Optional gateway root without `/v1`; leave empty for context-aware bundled defaults or set an external HTTPS root |
+| `OPENAI_GATEWAY_API_KEY` | Gateway credential shared by Chainlit and Open WebUI; use a key issued by an external gateway |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
 | `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
@@ -131,8 +133,8 @@ These settings configure the host-side Open WebUI synchronization command.
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI sync account |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Open WebUI sync password |
 | `OPENAI_GATEWAY_TYPE` | Exact global selector shared with Chainlit: `litellm` or `bifrost` |
-| `DEMO_OPENWEBUI_OPENAI_GATEWAY_BASE_URL` | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
-| `DEMO_OPENWEBUI_API_KEY` | Gateway credential shared with the configured deployment |
+| `OPENAI_GATEWAY_BASE_URL` | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
+| `OPENAI_GATEWAY_API_KEY` | Gateway credential shared with Chainlit |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the
