@@ -36,6 +36,8 @@ services:
       CONFIG_FILE_PATH: /app/config.yaml
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos?schema=litellm
       LITELLM_MASTER_KEY: $DEMO_LITELLM_MASTER_KEY
+      STORE_MODEL_IN_DB: "true"
+      STORE_PROMPTS_IN_SPEND_LOGS: "true"
       OPENAI_BASE_URL: http://lgos-files-api:8000/v1
       OPENAI_API_KEY: DUMMY
       ##### CUSTOM IMAGE #####
