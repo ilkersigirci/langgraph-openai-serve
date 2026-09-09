@@ -21,8 +21,9 @@ editable install. The Open WebUI
 integration uses the official Open WebUI image and keeps its Function sync
 command local. Compose also mounts its small raw-upload policy into that image;
 it does not build a project-owned Open WebUI image. The two gateway fragments
-use pinned upstream Bifrost and LiteLLM images. There is no demo-wide
-`pyproject.toml`, uv workspace, shared Python environment, or shared lockfile.
+use pinned public images: upstream Bifrost and `homeserver-litellm`. There is
+no demo-wide `pyproject.toml`, uv workspace, shared Python environment, or
+shared lockfile.
 The API package includes the compact Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
@@ -45,6 +46,10 @@ Set `PUID` and `PGID` in `.env` to the numeric host identity that owns the bind
 directories. The checkout includes each empty service directory with a tracked
 `.gitkeep`; service-created contents remain ignored.
 
+`.env.example` owns the configurable demo defaults. Compose reads the
+corresponding values from `.env` without supplying fallbacks. Keep an
+existing `.env` in sync with new template settings without overwriting secrets.
+
 Before using either OTEL mode, configure the [OpenTelemetry
 settings](reference.md#opentelemetry-settings).
 
@@ -56,7 +61,7 @@ settings](reference.md#opentelemetry-settings).
     make compose
     ```
 
-    `DEMO_IMAGE_TAG` defaults to `latest`. Set it in `.env` to select one
+    Set `DEMO_IMAGE_TAG` in `.env` to select one
     release tag for all project-owned demo images. To add the published OTEL
     overlay, use `make compose-otel`.
 
@@ -158,11 +163,10 @@ settings](reference.md#opentelemetry-settings).
     `DEMO_LITELLM_MASTER_KEY` protects all four routes; replace its demo-only
     default in any shared deployment. For the local Admin UI, sign in as
     `admin`; unless `UI_PASSWORD` is set separately, the password is the value
-    of `DEMO_LITELLM_MASTER_KEY` (`sk-lgos-litellm-demo` by default).
+    of `DEMO_LITELLM_MASTER_KEY` from `.env`.
 
-    The managed-routing surface uses LiteLLM's documented
-    [wildcard routing](https://docs.litellm.ai/docs/wildcard_routing) to retain
-    the graph-name suffix and its native
+    The managed-routing surface uses one wildcard route per graph API
+    and LiteLLM's native
     [Responses endpoint](https://docs.litellm.ai/docs/response_api). Select an
     API with a provider-qualified model, such as
     `lgos-a/custom-input-output-context` or
@@ -172,22 +176,35 @@ settings](reference.md#opentelemetry-settings).
     standard `files_settings` route uses `provider=litellm_proxy` to isolate
     upload, retrieval, content, and deletion from the graph deployments.
 
-    The bundled LiteLLM synthesizes a final-only stream for graph names reached
-    only through a wildcard. The exact `status-events` entries set its supported
-    `model_info.supports_native_streaming` capability and provide the native
-    event-lifecycle fixture. Managed routing otherwise passes the tested Files
+    Graph discovery reads each API's `/v1/models`; no graph list is maintained
+    in gateway configuration. Both wildcard routes set
+    `model_info.supports_native_streaming: true`. The default public
+    [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
+    preserves native Responses streaming for these wildcard routes. Compose
+    reads its tag and digest from `DEMO_LITELLM_IMAGE` in `.env` and enables
+    `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` so it honors the deployment
+    capability. Normal demo commands use this image without a local build or
+    an image override.
+
+    To use another compatible image, set `DEMO_LITELLM_IMAGE` in `demo/.env`
+    or supply it on the command line from `demo/`:
+
+    ```bash
+    DEMO_LITELLM_IMAGE='registry.example.com/team/litellm:tag' \
+      make compose-otel-dev UP_ARGS=-d
+    ```
+
+    Keep the override set for subsequent Compose commands. To restore the
+    default, copy the image value from `.env.example`. An alternative image must preserve
+    native wildcard Responses streaming, authenticated catalog pass-through,
+    managed Files routing, and the Admin UI migration runtime.
+
+    Managed routing also passes the tested Files
     lifecycle, file-ID input, and function continuation, while its rewritten
     standard error metadata remains a strict expected failure. Some successful
     managed streaming requests also trigger an upstream background success-log
     `AttributeError` after the client response completes; do not treat managed
     LiteLLM usage logging as verified by this suite.
-
-    The smaller official `litellm-gateway` image starts a reduced data-plane
-    app that removes arbitrary configured routes and does not include the
-    migration runtime needed by the Admin UI. The demo therefore uses the full
-    official LiteLLM image and proxy CLI so database migrations run and
-    authenticated catalog `pass_through_endpoints` remain available; no custom LiteLLM
-    code or plugin is installed.
 
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference
@@ -211,7 +228,7 @@ settings](reference.md#opentelemetry-settings).
 === "Open WebUI"
 
     ```bash
-    docker compose -f docker/compose/demo.yml up --wait lgos-openwebui
+    docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
     make sync-openwebui
     ```
 

@@ -48,17 +48,19 @@ jobs:
       - name: Copy demo outside the package checkout
         env:
           DESTINATION: ${{ runner.temp }}/lgos-demo
-        run: cp -R demo "$DESTINATION"
+        run: |
+          cp -R demo "$DESTINATION"
+          cp "$DESTINATION/.env.example" "$DESTINATION/.env"
 
       - name: Render all Compose models
         working-directory: ${{ runner.temp }}/lgos-demo
         run: |
           export OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal
           export OTEL_HOST_NAME=github-actions
-          docker compose -f docker/compose/demo.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
 
       - name: Check API Dockerfile
         run: docker buildx build --check demo/api
@@ -69,6 +71,7 @@ jobs:
       - name: Build editable API image
         run: >-
           docker compose
+          --env-file ${{ runner.temp }}/lgos-demo/.env
           -f demo/docker/compose/demo.yml
           -f demo/docker/compose/development.yml
           build lgos-demo-api-a

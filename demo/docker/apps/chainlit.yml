@@ -1,16 +1,16 @@
 services:
   lgos-chainlit:
     container_name: lgos-chainlit
-    image: ghcr.io/ilkersigirci/lgos-chainlit:${DEMO_IMAGE_TAG:-latest}
+    image: ghcr.io/ilkersigirci/lgos-chainlit:$DEMO_IMAGE_TAG
     pull_policy: always
     restart: "no"
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "$PUID:$PGID"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
-      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
-      - /app/src/lgos_chainlit/.files:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
-      - /app/src/lgos_chainlit/.chainlit/translations:rw,noexec,nosuid,nodev,size=16m,uid=${PUID:-1000},gid=${PGID:-1000},mode=755
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
+      - /app/src/lgos_chainlit/.files:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=755
+      - /app/src/lgos_chainlit/.chainlit/translations:rw,noexec,nosuid,nodev,size=16m,uid=$PUID,gid=$PGID,mode=755
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -31,20 +31,19 @@ services:
     ports:
       - "3002:5000"
     env_file:
-      - path: ../../.env
-        required: false
+      - ../../.env
     environment:
       CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos
-      BUCKET_NAME: ${BUCKET_NAME:?Configure BUCKET_NAME for Chainlit elements}
-      APP_AWS_ACCESS_KEY: ${APP_AWS_ACCESS_KEY:?Configure APP_AWS_ACCESS_KEY}
-      APP_AWS_SECRET_KEY: ${APP_AWS_SECRET_KEY:?Configure APP_AWS_SECRET_KEY}
-      APP_AWS_REGION: ${APP_AWS_REGION:?Configure APP_AWS_REGION}
-      DEV_AWS_ENDPOINT: ${DEV_AWS_ENDPOINT:?Configure DEV_AWS_ENDPOINT}
-      STORAGE_EXPIRY_TIME: ${STORAGE_EXPIRY_TIME:-3600}
-      OPENAI_GATEWAY_TYPE: ${OPENAI_GATEWAY_TYPE:-bifrost}
-      DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL: http://lgos-${OPENAI_GATEWAY_TYPE:-bifrost}:4000
-      DEMO_CHAINLIT_OPENAI__API_KEY: ${DEMO_LITELLM_MASTER_KEY:-sk-lgos-litellm-demo}
+      BUCKET_NAME: $BUCKET_NAME
+      APP_AWS_ACCESS_KEY: $APP_AWS_ACCESS_KEY
+      APP_AWS_SECRET_KEY: $APP_AWS_SECRET_KEY
+      APP_AWS_REGION: $APP_AWS_REGION
+      DEV_AWS_ENDPOINT: $DEV_AWS_ENDPOINT
+      STORAGE_EXPIRY_TIME: $STORAGE_EXPIRY_TIME
+      OPENAI_GATEWAY_TYPE: $OPENAI_GATEWAY_TYPE
+      DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL: http://lgos-$OPENAI_GATEWAY_TYPE:4000
+      DEMO_CHAINLIT_OPENAI__API_KEY: $DEMO_LITELLM_MASTER_KEY
       ## HITL ##
       # DEMO_CHAINLIT_UI_FILE: hitl
       # DEMO_CHAINLIT_HITL_MODEL: lgos-a/interruptible-approval

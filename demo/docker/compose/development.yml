@@ -7,8 +7,8 @@ x-lgos-demo-api-development: &lgos-demo-api-development
     additional_contexts:
       lgos: ../../..
     args:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      PUID: $PUID
+      PGID: $PGID
   volumes:
     - type: bind
       source: ../../../src/langgraph_openai_serve
@@ -38,8 +38,8 @@ x-lgos-files-api-development: &lgos-files-api-development
     context: ../../files_api
     target: development
     args:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      PUID: $PUID
+      PGID: $PGID
   volumes:
     - type: bind
       source: ../../files_api/src/lgos_files_api
@@ -73,8 +73,8 @@ services:
     build:
       context: ../../ui/chainlit_ui
       args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+        PUID: $PUID
+        PGID: $PGID
     develop:
       watch:
         - action: rebuild

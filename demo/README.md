@@ -26,18 +26,24 @@ independently addressable services, `lgos-a` and `lgos-b`. They
 serve the same graphs under separate provider identities so the stack can
 exercise native Responses routing through either gateway. The independent
 `lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
-and Bifrost are both first-class UI gateways, pinned in their respective
-`docker/apps/` Compose fragments. Set
+and Bifrost are both first-class UI gateways. LiteLLM's image is configured in
+`.env.example`; Bifrost is pinned in its `docker/apps/` Compose fragment. Set
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
 UI connects to an upstream container directly. Responses and Files use each
 gateway's normal OpenAI routes; a catalog-only client uses pass-through model
 detail where needed to preserve LGOS descriptions, features, and settings.
 
+LiteLLM uses the public `ghcr.io/ilkersigirci/homeserver-litellm` image by
+default. Copy `.env.example` to `.env` before running Compose; configurable
+defaults live in that template, not in Compose fallbacks. Set
+`DEMO_LITELLM_IMAGE` in `.env` to another compatible image if needed.
+
 Current verification exposes narrower upstream normalization limitations.
 The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
 Responses fields, file input, commentary `phase`, and continuation, but not
 LGOS model-detail extensions or upstream error metadata. The bundled LiteLLM
-synthesizes wildcard Responses streams and rewrites standard error metadata.
+preserves native wildcard streaming and commentary, but rewrites standard
+error metadata and can raise background usage-logging errors.
 Bifrost's raw pass-through and LiteLLM's authenticated pass-through both
 preserve the full tested contract for protocol diagnostics. UI inference does
 not use either pass-through: it exercises LiteLLM's managed Responses route or
@@ -107,7 +113,7 @@ own migrations through `pre_start`.
 Start PostgreSQL for the local API and UI processes:
 
 ```bash
-docker compose -f docker/compose/demo.yml up -d lgos-db
+docker compose --env-file .env -f docker/compose/demo.yml up -d lgos-db
 ```
 
 The local targets use the independently locked projects. The API additionally
@@ -124,7 +130,7 @@ Run each long-lived process in a separate terminal.
 
 ## Run the stack
 
-Use the published demo images and the official third-party images:
+Use the published demo images and pinned service images:
 
 ```bash
 make compose

@@ -34,10 +34,10 @@ jobs:
           cp .env.example .env
           export OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal
           export OTEL_HOST_NAME=github-actions
-          docker compose -f docker/compose/demo.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
-          docker compose -f docker/compose/demo.yml -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/development.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/otel.yml config --quiet
+          docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
 
   test:
     name: Test ${{ matrix.name }}

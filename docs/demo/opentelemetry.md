@@ -65,7 +65,7 @@ curl -i http://localhost:3004/v1/models \
   -H 'X-Request-ID: lgos-otel-e2e'
 ```
 
-Exact environment defaults are listed in
+Exact environment settings are listed in
 [Demo Settings And Commands](reference.md#opentelemetry-settings).
 
 ## Signal Ownership

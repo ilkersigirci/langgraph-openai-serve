@@ -15,10 +15,11 @@ each API process.
     The bundled Bifrost native Responses route preserves standard fields, file
     input, commentary, and `phase`; normalized model detail and error metadata
     remain lossy. Its raw pass-through route passes the complete direct
-    contract suite. The bundled LiteLLM managed wildcard routing synthesizes
-    streams and rewrites error metadata. The UIs exercise the selected gateway's
-    managed/native inference path; only model-detail lookup uses a lossless
-    pass-through. See [Bifrost Gateway](bifrost.md).
+    contract suite. The bundled `homeserver-litellm` image preserves native
+    wildcard streaming and commentary; error metadata remains rewritten.
+    The UIs exercise the selected gateway's managed/native inference path;
+    only model-detail lookup uses a lossless pass-through. See
+    [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
 
 ## Request Path
 
@@ -74,9 +75,8 @@ attachments through normal gateway Files routing before sending the returned
 `file_id` to a graph. This preserves descriptions and runtime capabilities
 without allowing UI inference to bypass the gateway's normal data plane.
 
-LiteLLM wildcard aliases cover arbitrary graph names; exact `status-events`
-entries preserve native streams because the bundled gateway otherwise
-synthesizes streams for wildcard model names. Raw gateway routes remain available
+LiteLLM uses one wildcard route per graph API. Each API owns graph discovery;
+adding a graph requires no gateway configuration change. Raw gateway routes remain available
 for protocol-reference tests, but the UI clients do not use them for Responses.
 
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,

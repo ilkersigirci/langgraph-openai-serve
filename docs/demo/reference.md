@@ -4,6 +4,11 @@ This reference describes the independently locked projects and Compose stack
 under `demo/`. These commands and `DEMO_*` settings are not part of the
 `langgraph-openai-serve` package API.
 
+[`demo/.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
+is the source of truth for demo environment values. Copy it to `.env` and
+customize it before running the demo. This reference explains settings without
+duplicating their defaults.
+
 ## Projects
 
 | Path | Purpose | Imports LGOS? |
@@ -53,26 +58,28 @@ extensions through authenticated pass-through; UI inference never does.
 
 ## Stack Settings
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DEMO_IMAGE_TAG` | `latest` | Tag selected for all project-owned demo images |
-| `PUID` | `1000` | Host user ID used by Compose services |
-| `PGID` | `1000` | Host group ID used by Compose services |
-| `OPENAI_GATEWAY_TYPE` | `bifrost` | Gateway used by both demo UIs: `litellm` or `bifrost` |
-| `DEMO_LITELLM_MASTER_KEY` | demo-only value | LiteLLM bearer key shared by the two UI clients and default local Admin UI password for username `admin`; replace it outside local demos |
-| `DEMO_OPENWEBUI_SECRET_KEY` | demo-only value | Open WebUI application secret; replace it outside local demos |
+| Setting | Purpose |
+| --- | --- |
+| `DEMO_IMAGE_TAG` | Tag selected for all project-owned demo images |
+| `PUID` | Host user ID used by Compose services |
+| `PGID` | Host group ID used by Compose services |
+| `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
+| `DEMO_LITELLM_MASTER_KEY` | Required LiteLLM bearer key shared by the two UI clients and local Admin UI password for username `admin`; replace it outside local demos |
+| `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
+| `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
+| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
 
 ## OpenTelemetry Settings
 
 These settings apply when using `make compose-otel` or
 `make compose-otel-dev`:
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `OTEL_COLLECTOR_GATEWAY_ENDPOINT` | required | OTLP/HTTP base URL for the host or platform gateway |
-| `OTEL_SERVICE_NAMESPACE` | `lgos` | Namespace default for application and Collector signals |
-| `OTEL_DEPLOYMENT_ENVIRONMENT` | `production` | Environment default for application and Collector signals |
-| `OTEL_HOST_NAME` | required | Stable host identity added by the local Collector |
+| Setting | Purpose |
+| --- | --- |
+| `OTEL_COLLECTOR_GATEWAY_ENDPOINT` | Required. OTLP/HTTP base URL for the host or platform gateway |
+| `OTEL_SERVICE_NAMESPACE` | Namespace default for application and Collector signals |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | Environment default for application and Collector signals |
+| `OTEL_HOST_NAME` | Required. Stable host identity added by the local Collector |
 
 The OTEL overlay uses the OpenTelemetry `always_on` sampler, so application
 traces are exported without SDK sampling. The selected remote backend owns
@@ -85,15 +92,15 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 
 ## Demo API Settings
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DEMO_API_PORT` | `8000` | HTTP port used by `lgos-demo-api` |
-| `DEMO_API_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Upstream OpenAI-compatible base URL |
-| `DEMO_API_OPENAI_API_KEY` | `DUMMY` | Upstream key for provider-backed graphs |
-| `DEMO_API_OPENAI_MODEL` | `gpt-5.4-mini` | Upstream generation model |
-| `DEMO_API_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model used by `lgos-rag` |
-| `DEMO_API_POSTGRES_URI` | `postgresql://lgos:lgos@localhost:3001/lgos` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
-| `DEMO_API_FILES_BASE_URL` | `http://localhost:3006/v1` | Central Files API read by the `file-input` graph. |
+| Setting | Purpose |
+| --- | --- |
+| `DEMO_API_PORT` | HTTP port used by `lgos-demo-api` |
+| `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
+| `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
+| `DEMO_API_OPENAI_MODEL` | Upstream generation model |
+| `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
+| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
+| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` graph. |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
@@ -105,28 +112,27 @@ environment values or explicit constructor arguments.
 
 These settings belong only to the independent `demo/files_api` project.
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DEMO_API_FILES_PORT` | `8000` | HTTP port used by `lgos-files-api`. |
-| `DEMO_API_FILES_BUCKET` | unset | Required S3-compatible bucket. |
-| `DEMO_API_FILES_S3_ENDPOINT` | unset | Optional S3-compatible endpoint; required by the Compose demo. |
-| `DEMO_API_FILES_AWS_ACCESS_KEY_ID` | unset | Required S3 access key passed explicitly to boto3. |
-| `DEMO_API_FILES_AWS_SECRET_ACCESS_KEY` | unset | Required S3 secret key passed explicitly to boto3. |
-| `DEMO_API_FILES_AWS_DEFAULT_REGION` | unset | Required S3 signing region passed explicitly to boto3. |
+| Setting | Purpose |
+| --- | --- |
+| `DEMO_API_FILES_PORT` | HTTP port used by `lgos-files-api`. |
+| `DEMO_API_FILES_BUCKET` | Required S3-compatible bucket. |
+| `DEMO_API_FILES_S3_ENDPOINT` | Optional S3-compatible endpoint; required by the Compose demo. |
+| `DEMO_API_FILES_AWS_ACCESS_KEY_ID` | Required S3 access key passed explicitly to boto3. |
+| `DEMO_API_FILES_AWS_SECRET_ACCESS_KEY` | Required S3 secret key passed explicitly to boto3. |
+| `DEMO_API_FILES_AWS_DEFAULT_REGION` | Required S3 signing region passed explicitly to boto3. |
 
 ## Open WebUI Sync Settings
 
-The typed `demo/ui/openwebui/src/lgos_openwebui/settings.py` model is the source
-of truth for these `DEMO_OPENWEBUI_` variables.
+These settings configure the host-side Open WebUI synchronization command.
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DEMO_OPENWEBUI_URL` | `http://localhost:3003` | Open WebUI API used by the sync command |
-| `DEMO_OPENWEBUI_ADMIN_EMAIL` | `lgos@example.com` | Open WebUI sync account |
-| `DEMO_OPENWEBUI_ADMIN_PASSWORD` | `lgos` | Open WebUI sync password |
-| `OPENAI_GATEWAY_TYPE` | `litellm` | Exact global selector shared with Chainlit: `litellm` or `bifrost` |
-| `DEMO_OPENWEBUI_OPENAI_GATEWAY_BASE_URL` | selected local gateway | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
-| `DEMO_OPENWEBUI_API_KEY` | `sk-lgos-litellm-demo` | Gateway key used by the OpenAI clients |
+| Setting | Purpose |
+| --- | --- |
+| `DEMO_OPENWEBUI_URL` | Open WebUI API used by the sync command |
+| `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI sync account |
+| `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Open WebUI sync password |
+| `OPENAI_GATEWAY_TYPE` | Exact global selector shared with Chainlit: `litellm` or `bifrost` |
+| `DEMO_OPENWEBUI_OPENAI_GATEWAY_BASE_URL` | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
+| `DEMO_OPENWEBUI_API_KEY` | Gateway credential shared with the configured deployment |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the

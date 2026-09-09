@@ -98,23 +98,17 @@ def test_files_and_chainlit_s3_are_independently_configured() -> None:
         encoding="utf-8"
     )
 
-    assert "DEMO_API_FILES_BUCKET: ${DEMO_API_FILES_BUCKET:" in files_compose
-    assert "DEMO_API_FILES_S3_ENDPOINT: ${DEMO_API_FILES_S3_ENDPOINT:" in files_compose
-    assert (
-        "DEMO_API_FILES_AWS_ACCESS_KEY_ID: ${DEMO_API_FILES_AWS_ACCESS_KEY_ID:"
-        in files_compose
-    )
-    assert (
-        "DEMO_API_FILES_AWS_SECRET_ACCESS_KEY: "
-        "${DEMO_API_FILES_AWS_SECRET_ACCESS_KEY:" in files_compose
-    )
-    assert (
-        "DEMO_API_FILES_AWS_DEFAULT_REGION: "
-        "${DEMO_API_FILES_AWS_DEFAULT_REGION:" in files_compose
-    )
-    assert "${APP_AWS_" not in files_compose
-    assert "${DEV_AWS_ENDPOINT" not in files_compose
-    assert "BUCKET_NAME: ${BUCKET_NAME:" in chainlit_compose
+    for setting in (
+        "DEMO_API_FILES_BUCKET",
+        "DEMO_API_FILES_S3_ENDPOINT",
+        "DEMO_API_FILES_AWS_ACCESS_KEY_ID",
+        "DEMO_API_FILES_AWS_SECRET_ACCESS_KEY",
+        "DEMO_API_FILES_AWS_DEFAULT_REGION",
+    ):
+        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", files_compose)
+    assert "APP_AWS_" not in files_compose
+    assert "DEV_AWS_ENDPOINT" not in files_compose
+    assert re.search(r"\bBUCKET_NAME: \$\{?BUCKET_NAME\b", chainlit_compose)
 
 
 def test_compose_ci_supplies_both_independent_s3_configurations() -> None:

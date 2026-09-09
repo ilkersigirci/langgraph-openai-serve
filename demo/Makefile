@@ -1,6 +1,5 @@
 SHELL := /bin/sh
 OPENAI_GATEWAY_TYPE ?= $(shell sed -n 's/^OPENAI_GATEWAY_TYPE=//p' .env 2>/dev/null)
-OPENAI_GATEWAY_TYPE := $(or $(OPENAI_GATEWAY_TYPE),bifrost)
 COMPOSE := docker compose --env-file .env --profile $(OPENAI_GATEWAY_TYPE) -f docker/compose/demo.yml
 LOCAL_API_RUN := uv run --directory api --locked --with-editable ../..
 FILES_RUN := uv run --directory files_api --locked
@@ -71,13 +70,8 @@ type-check-local: type-check-ui ## Run type checking for all standalone projects
 compose-config: ## Validate published, development, and OTEL Compose models
 	$(COMPOSE) config --quiet
 	$(COMPOSE) -f docker/compose/development.yml config --quiet
-	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
-	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
-		$(COMPOSE) -f docker/compose/otel.yml config --quiet
-	OTEL_COLLECTOR_GATEWAY_ENDPOINT=$${OTEL_COLLECTOR_GATEWAY_ENDPOINT:-https://otel-gateway.example.internal} \
-	OTEL_HOST_NAME=$${OTEL_HOST_NAME:-compose-check} \
-		$(COMPOSE) -f docker/compose/development.yml \
-		-f docker/compose/otel.yml config --quiet
+	$(COMPOSE) -f docker/compose/otel.yml config --quiet
+	$(COMPOSE) -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
 

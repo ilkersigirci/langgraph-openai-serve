@@ -19,7 +19,7 @@ x-lgos-otel-environment: &lgos-otel-environment
   OTEL_SEMCONV_STABILITY_OPT_IN: http
   # Preserve complete distributed traces; sampling is disabled for this demo.
   OTEL_TRACES_SAMPLER: always_on
-  OTEL_RESOURCE_ATTRIBUTES: service.namespace=${OTEL_SERVICE_NAMESPACE:-lgos},deployment.environment.name=${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=$OTEL_SERVICE_NAMESPACE,deployment.environment.name=$OTEL_DEPLOYMENT_ENVIRONMENT
 
 x-lgos-otel-fastapi-environment: &lgos-otel-fastapi-environment
   <<: *lgos-otel-environment
@@ -53,13 +53,13 @@ services:
   lgos-otel-collector:
     container_name: lgos-otel-collector
     image: otel/opentelemetry-collector-contrib:0.158.0@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
-    restart: ${RESTART_POLICY:-unless-stopped}
+    restart: $RESTART_POLICY
     command: ["--config=/etc/otelcol/config.yaml"]
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "$PUID:$PGID"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=${PUID:-1000},gid=${PGID:-1000},mode=1777
-      - /run:rw,noexec,nosuid,nodev,size=32m,uid=${PUID:-1000},gid=${PGID:-1000},mode=775
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -91,10 +91,10 @@ services:
         bind:
           create_host_path: false
     environment:
-      OTEL_COLLECTOR_GATEWAY_ENDPOINT: ${OTEL_COLLECTOR_GATEWAY_ENDPOINT:?Set OTEL_COLLECTOR_GATEWAY_ENDPOINT to the OTLP/HTTP gateway base URL}
-      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-lgos}
-      OTEL_DEPLOYMENT_ENVIRONMENT: ${OTEL_DEPLOYMENT_ENVIRONMENT:-production}
-      OTEL_HOST_NAME: ${OTEL_HOST_NAME:?Set OTEL_HOST_NAME to the physical host name}
+      OTEL_COLLECTOR_GATEWAY_ENDPOINT: $OTEL_COLLECTOR_GATEWAY_ENDPOINT
+      OTEL_SERVICE_NAMESPACE: $OTEL_SERVICE_NAMESPACE
+      OTEL_DEPLOYMENT_ENVIRONMENT: $OTEL_DEPLOYMENT_ENVIRONMENT
+      OTEL_HOST_NAME: $OTEL_HOST_NAME
       GOMEMLIMIT: 800MiB
 
   lgos-demo-api-a:
@@ -104,7 +104,7 @@ services:
     environment:
       <<: *lgos-otel-api-environment
     command: ["opentelemetry-instrument", "lgos-demo-api"]
-    restart: ${RESTART_POLICY:-unless-stopped}
+    restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
         condition: service_started
@@ -116,7 +116,7 @@ services:
     environment:
       <<: *lgos-otel-api-environment
     command: ["opentelemetry-instrument", "lgos-demo-api"]
-    restart: ${RESTART_POLICY:-unless-stopped}
+    restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
         condition: service_started
@@ -128,7 +128,7 @@ services:
     environment:
       <<: *lgos-otel-files-environment
     command: ["opentelemetry-instrument", "lgos-files-api"]
-    restart: ${RESTART_POLICY:-unless-stopped}
+    restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
         condition: service_started

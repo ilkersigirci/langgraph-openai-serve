@@ -23,7 +23,7 @@ package.
 ```bash
 cd demo
 cp .env.example .env
-docker compose -f docker/compose/demo.yml up --wait lgos-bifrost
+docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-bifrost
 ```
 
 Bifrost exposes each service as a custom provider:

@@ -11,7 +11,8 @@ model selection, rendering checks, and common deployment failures.
 For LiteLLM or Bifrost upgrades and workaround reviews, use
 [Gateway upgrade](.agents/skills/gateway-upgrade/SKILL.md). Keep the upgrade
 procedure in agent guidance; published docs describe the bundled gateway
-behavior, with exact image versions owned by Compose.
+behavior. Configurable environment defaults belong in `.env.example`, not
+Compose fallbacks. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
 
 ## Modular OpenWebUI Function
 

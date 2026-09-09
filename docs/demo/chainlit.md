@@ -278,44 +278,47 @@ must preserve standard Responses items and events.
 
 ## Settings Reference
 
+Use [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
+for demo environment values. The tables below explain their roles, not their defaults.
+
 Gateway settings:
 
-| Setting | Default | Notes |
-| --- | --- | --- |
-| `OPENAI_GATEWAY_TYPE` | `litellm` | Gateway used by both demo UIs: `litellm` or `bifrost`. |
-| `DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL` | selected local gateway | Optional gateway-root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost. |
-| `DEMO_CHAINLIT_OPENAI__API_KEY` | `sk-lgos-litellm-demo` | Gateway key; replace the demo value outside local use. |
-| `DEMO_CHAINLIT_HITL_MODEL` | `interruptible-approval` | Model selected by the HITL UI. |
-| `DEMO_CHAINLIT_UI_FILE` | `simple` | Chainlit target: `simple` or `hitl`. |
-| `DEMO_CHAINLIT_LOGIN_TYPE` | `mock` | Browser login: `mock` or `oauth`. |
-| `CHAINLIT_UTILS_MIGRATIONS_TABLE` | `_lgos_chainlit_schema_migrations` | Chainlit-utils schema migration ledger. |
-| `CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY` | `lgos_chainlit.exclude_from_model_context` | Persisted metadata key for UI-only messages. |
+| Setting | Notes |
+| --- | --- |
+| `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost`. |
+| `DEMO_CHAINLIT_OPENAI__GATEWAY_BASE_URL` | Optional gateway-root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost. |
+| `DEMO_CHAINLIT_OPENAI__API_KEY` | Gateway credential shared with the configured deployment; replace demo credentials outside local use. |
+| `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
+| `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
+| `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
+| `CHAINLIT_UTILS_MIGRATIONS_TABLE` | Chainlit-utils schema migration ledger. |
+| `CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY` | Persisted metadata key for UI-only messages. |
 
 See the bundled [Bifrost gateway](bifrost.md) for the Compose endpoint and
 adapter behavior.
 
 Native Chainlit settings:
 
-| Setting | Default | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | required | PostgreSQL data-layer URL. |
-| `CHAINLIT_AUTH_SECRET` | required | Browser-session signing secret. |
-| `CHAINLIT_APP_ROOT` | `src/lgos_chainlit` | Tracked UI configuration and welcome Markdown. |
-| `BUCKET_NAME` | required | S3-compatible bucket for native elements. |
-| `APP_AWS_ACCESS_KEY` | required | S3 access key. |
-| `APP_AWS_SECRET_KEY` | required | S3 secret key. |
-| `APP_AWS_REGION` | required | S3 signing region. |
-| `DEV_AWS_ENDPOINT` | required | Custom S3-compatible endpoint URL. |
-| `STORAGE_EXPIRY_TIME` | `3600` | Lifetime in seconds for resumed element URLs. |
-| `CHAINLIT_URL` | request origin | External origin for OAuth callbacks. |
-| `OAUTH_GENERIC_CLIENT_ID` | required for `oauth` | OAuth client ID. |
-| `OAUTH_GENERIC_CLIENT_SECRET` | required for `oauth` | OAuth client secret. |
-| `OAUTH_GENERIC_AUTH_URL` | required for `oauth` | Authorization endpoint. |
-| `OAUTH_GENERIC_TOKEN_URL` | required for `oauth` | Token endpoint. |
-| `OAUTH_GENERIC_USER_INFO_URL` | required for `oauth` | User-info endpoint. |
-| `OAUTH_GENERIC_SCOPES` | required for `oauth` | Space-separated scopes. |
-| `OAUTH_GENERIC_NAME` | `generic` | Provider ID used in the callback path. |
-| `OAUTH_GENERIC_USER_IDENTIFIER` | `email` | User identifier claim. |
+| Setting | Notes |
+| --- | --- |
+| `DATABASE_URL` | Required. PostgreSQL data-layer URL. |
+| `CHAINLIT_AUTH_SECRET` | Required. Browser-session signing secret. |
+| `CHAINLIT_APP_ROOT` | Tracked UI configuration and welcome Markdown. |
+| `BUCKET_NAME` | Required. S3-compatible bucket for native elements. |
+| `APP_AWS_ACCESS_KEY` | Required. S3 access key. |
+| `APP_AWS_SECRET_KEY` | Required. S3 secret key. |
+| `APP_AWS_REGION` | Required. S3 signing region. |
+| `DEV_AWS_ENDPOINT` | Required. Custom S3-compatible endpoint URL. |
+| `STORAGE_EXPIRY_TIME` | Lifetime in seconds for resumed element URLs. |
+| `CHAINLIT_URL` | External origin for OAuth callbacks. |
+| `OAUTH_GENERIC_CLIENT_ID` | Required for `oauth`. OAuth client ID. |
+| `OAUTH_GENERIC_CLIENT_SECRET` | Required for `oauth`. OAuth client secret. |
+| `OAUTH_GENERIC_AUTH_URL` | Required for `oauth`. Authorization endpoint. |
+| `OAUTH_GENERIC_TOKEN_URL` | Required for `oauth`. Token endpoint. |
+| `OAUTH_GENERIC_USER_INFO_URL` | Required for `oauth`. User-info endpoint. |
+| `OAUTH_GENERIC_SCOPES` | Required for `oauth`. Space-separated scopes. |
+| `OAUTH_GENERIC_NAME` | Provider ID used in the callback path. |
+| `OAUTH_GENERIC_USER_IDENTIFIER` | User identifier claim. |
 
 The element bucket must allow browser CORS `GET` and `HEAD` requests from the
 Chainlit origin. CORS only permits the cross-origin response; the object still
