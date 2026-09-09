@@ -12,11 +12,11 @@ each API process.
 
 !!! warning "Managed gateway normalization boundaries"
 
-    Bifrost v2.0.0 native Responses preserves the tested standard fields, file
+    The bundled Bifrost native Responses route preserves standard fields, file
     input, commentary, and `phase`; normalized model detail and error metadata
     remain lossy. Its raw pass-through route passes the complete direct
-    contract suite. LiteLLM 1.99.1 managed wildcard routing synthesizes streams
-    and rewrites error metadata. The UIs exercise the selected gateway's
+    contract suite. The bundled LiteLLM managed wildcard routing synthesizes
+    streams and rewrites error metadata. The UIs exercise the selected gateway's
     managed/native inference path; only model-detail lookup uses a lossless
     pass-through. See [Bifrost Gateway](bifrost.md).
 
@@ -33,7 +33,7 @@ flowchart LR
   end
 
   bifrost["Bifrost gateway"]
-  litellm["LiteLLM 1.99.1<br/>managed inference + pass-through catalogs"]
+  litellm["LiteLLM<br/>managed inference + pass-through catalogs"]
   gateway["OPENAI_GATEWAY_TYPE<br/>selects one gateway"]
   sdk["OpenAI SDK test"]
 
@@ -75,9 +75,9 @@ attachments through normal gateway Files routing before sending the returned
 without allowing UI inference to bypass the gateway's normal data plane.
 
 LiteLLM wildcard aliases cover arbitrary graph names; exact `status-events`
-entries prove native stream preservation because 1.99.1 otherwise synthesizes
-streams for wildcard model names. Raw gateway routes remain available for
-protocol-reference tests, but the UI clients do not use them for Responses.
+entries preserve native streams because the bundled gateway otherwise
+synthesizes streams for wildcard model names. Raw gateway routes remain available
+for protocol-reference tests, but the UI clients do not use them for Responses.
 
 At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
 starts both healthy graph APIs and the Files service, and then starts Bifrost,

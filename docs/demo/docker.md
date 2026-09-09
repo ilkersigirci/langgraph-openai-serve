@@ -139,7 +139,7 @@ settings](reference.md#opentelemetry-settings).
     make run-litellm
     ```
 
-    LiteLLM 1.99.1 is one of the two first-class UI entry points. The UIs split
+    LiteLLM is one of the two first-class UI entry points. The UIs split
     catalog detail from normal inference and Files routing:
 
     - API A pass-through: `http://localhost:3007/v1/lgos-a`
@@ -172,7 +172,7 @@ settings](reference.md#opentelemetry-settings).
     standard `files_settings` route uses `provider=litellm_proxy` to isolate
     upload, retrieval, content, and deletion from the graph deployments.
 
-    LiteLLM 1.99.1 still synthesizes a final-only stream for graph names reached
+    The bundled LiteLLM synthesizes a final-only stream for graph names reached
     only through a wildcard. The exact `status-events` entries set its supported
     `model_info.supports_native_streaming` capability and provide the native
     event-lifecycle fixture. Managed routing otherwise passes the tested Files

@@ -4,7 +4,7 @@ import uuid
 
 import httpx
 import pytest
-from openai import AsyncOpenAI, BadRequestError
+from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
 
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
@@ -225,7 +225,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
                 strict=True,
                 raises=AssertionError,
                 reason=(
-                    "LiteLLM 1.99.1 does not resolve wildcard model capabilities "
+                    "LiteLLM 1.100.0 does not resolve wildcard model capabilities "
                     "and synthesizes Responses streams; BerriAI/litellm#21090"
                 ),
             ),
@@ -261,7 +261,10 @@ async def test_litellm_native_stream_preserves_commentary(
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_native_function_output_continuation(provider: str) -> None:
+@pytest.mark.parametrize("stream", [False, True], ids=["non-streaming", "streaming"])
+async def test_litellm_native_function_output_continuation(
+    provider: str, stream: bool
+) -> None:
     assert LITELLM_BASE_URL is not None
     model = f"{provider}/interruptible-approval"
     public_request = f"Refund order ORDER-{provider.upper()}"
@@ -277,7 +280,17 @@ async def test_litellm_native_function_output_continuation(provider: str) -> Non
             input=public_request,
             metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
+            stream=stream,
         )
+        if isinstance(paused, AsyncStream):
+            async with paused:
+                completed_events = [
+                    event
+                    async for event in paused
+                    if event.type == "response.completed"
+                ]
+            assert len(completed_events) == 1
+            paused = completed_events[0].response
         assert len(paused.output) == 1
         call = paused.output[0]
         assert isinstance(call, ResponseFunctionToolCall)
@@ -309,7 +322,7 @@ async def test_litellm_native_function_output_continuation(provider: str) -> Non
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="LiteLLM v1.99.1 rewrites upstream OpenAI error metadata",
+    reason="LiteLLM v1.100.0 rewrites upstream OpenAI error metadata",
 )
 async def test_litellm_preserves_openai_errors(provider: str) -> None:
     assert LITELLM_BASE_URL is not None

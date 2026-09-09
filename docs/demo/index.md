@@ -117,11 +117,11 @@ catalog detail uses pass-through to preserve LGOS extensions.
 
 !!! warning "Pinned managed-routing limitations"
 
-    Bifrost v2.0.0 native Responses preserves the tested `phase`, commentary,
+    The bundled Bifrost native Responses route preserves `phase`, commentary,
     file-input, and continuation contracts; only normalized model-detail and
     error metadata remain strict expected failures. Its raw pass-through route
-    passes the direct contract suite. LiteLLM 1.99.1 managed wildcard routing
-    synthesizes the upstream stream and rewrites standard error metadata.
+    passes the direct contract suite. The bundled LiteLLM managed wildcard
+    routing synthesizes the upstream stream and rewrites standard error metadata.
     Pass-through routes remain the lossless protocol references. The UIs use
     the selected gateway's normal inference route and accept that route's
     documented limitations; see [Docker Compose](docker.md) and [Bifrost

@@ -1,7 +1,7 @@
 # Use An OpenAI-Compatible Proxy
 
 Direct LGOS is the protocol reference, while the maintained demo UIs enter
-through either LiteLLM 1.99.1 or Bifrost v2.0.0. A proxy can either normalize
+through either LiteLLM or Bifrost. A proxy can either normalize
 managed model routes or forward an authenticated OpenAI-compatible pass-through
 route. In both cases,
 it must carry the native Responses contract without an LGOS-specific response
@@ -48,10 +48,14 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | Path | Current demo result | Intended use |
 | --- | --- | --- |
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
-| LiteLLM 1.99.1 pass-through | Full maintained contract | UI catalog detail and protocol reference |
-| LiteLLM 1.99.1 managed routing | Responses, Files, file input, exact-model commentary, and continuation pass; wildcard streams are synthesized, error metadata is rewritten, and some streams raise a background success-log error | LiteLLM-selected UI inference and Files |
-| Bifrost v2.0.0 raw pass-through | Full maintained contract | UI catalog detail and protocol reference |
-| Bifrost v2.0.0 normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions are unavailable and error metadata is rewritten | Bifrost-selected UI inference and Files |
+| LiteLLM pass-through | Full maintained contract | UI catalog detail and protocol reference |
+| LiteLLM managed routing | Responses, Files, file input, exact-model commentary, and continuation pass; wildcard streams are synthesized, error metadata is rewritten, and some streams raise a background success-log error | LiteLLM-selected UI inference and Files |
+| Bifrost raw pass-through | Full maintained contract | UI catalog detail and protocol reference |
+| Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions are unavailable and error metadata is rewritten | Bifrost-selected UI inference and Files |
+
+These results describe the bundled configuration. Exact image tags and digests
+are pinned in `demo/docker/apps/litellm.yml` and
+`demo/docker/apps/bifrost.yml`.
 
 The [demo Docker guide](../demo/docker.md) documents the pinned LiteLLM image,
 native-stream fixture, and test command. The [Bifrost guide](../demo/bifrost.md)
@@ -69,17 +73,11 @@ connected directly to LGOS use the registered graph name unchanged.
 
 LiteLLM's documented
 [Responses endpoint](https://docs.litellm.ai/docs/response_api) and wildcard
-routing can route arbitrary graph names, but 1.99.1 still replaces a wildcard
-model's upstream event stream with a final-only synthetic stream. The managed
-test surface therefore keeps exact `status-events` entries with
+routing can route arbitrary graph names, but the bundled gateway replaces a
+wildcard model's upstream event stream with a final-only synthetic stream. The
+managed test surface therefore keeps exact `status-events` entries with
 `supports_native_streaming: true`. It does not duplicate the graph catalog.
 
-The pinned implementation's `supports_native_streaming()` looks up the concrete
-upstream model in its model-cost registry, not the wildcard deployment metadata.
-An unknown model returns `False`, causing `OpenAIResponsesAPIConfig` to select
-synthetic streaming. Setting the flag on `lgos-a/*` therefore does not enable it
-for `complex-subgraphs`; registering the concrete model does. The same fallback
-is described in [LiteLLM issue #21090](https://github.com/BerriAI/litellm/issues/21090).
 The managed integration suite marks lost wildcard commentary as a strict expected
 failure so a future fix is visible. The UIs keep using managed `/v1/responses`;
 they do not switch to pass-through when the gateway loses events.
@@ -97,7 +95,7 @@ LiteLLM image because the smaller `litellm-gateway` image's reduced gateway app
 removes arbitrary configured routes from its data-plane allowlist.
 
 Bifrost custom providers expose both normalized and raw OpenAI routes. The
-pinned v2.0.0 native Responses route preserves `phase`, multiple commentary
+bundled native Responses route preserves `phase`, multiple commentary
 items, file input, and function continuation. It still omits LGOS extensions
 from normalized model detail and rewrites upstream error metadata.
 `/openai_passthrough/v1` passes the complete direct suite when the client

@@ -9,9 +9,8 @@ package.
 
 !!! info "Native Responses preserves phase"
 
-    Bifrost v2.0.0 contains the fix from
-    [PR #3530](https://github.com/maximhq/bifrost/pull/3530). With `responses`
-    and `responses_stream` enabled for both graph providers, its normalized
+    With `responses` and `responses_stream` enabled for both graph providers,
+    the bundled Bifrost gateway's normalized
     `/openai/v1` route preserves the tested `user`, `store: false`,
     `input_file`, function-continuation, final-answer `phase`, and multiple
     commentary `phase` contracts. Two narrower gaps remain: normalized model
