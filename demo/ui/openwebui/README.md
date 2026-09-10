@@ -15,19 +15,19 @@ Responses transport. Keep the Filter attached only to this example.
 The Function uses Responses exclusively and never connects directly to LGOS.
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for both inference and
 Files. LiteLLM uses managed Responses routing; Bifrost uses its native
-Responses route. A separate catalog client uses only the gateway's
-model-detail pass-through when necessary to preserve LGOS descriptions,
-features, and client-setting schemas.
+Responses route. LiteLLM metadata comes from native `/model/info`; Bifrost uses
+its aggregate catalog and model-detail pass-through.
+Before using LiteLLM, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
 
 ```bash
 cp .env.example .env
 uv run --locked --env-file .env lgos-openwebui-sync
 ```
 
-The command creates or updates the bundled Functions, discovers LGOS models
-through the selected gateway, and generates one Workspace Model per provider
-and graph. Detailed metadata comes from catalog-only pass-through routes; each
-model keeps the routing identity required by its gateway. Each generated model
+The command reads the gateway catalog before changing Open WebUI, then updates
+the bundled Functions and generates one Workspace Model per public model name.
+LiteLLM's `model_info.lgos` supplies the full metadata and
+`model_name` is sent unchanged for inference. Each generated model
 exposes the current LGOS runtime settings as native per-chat Chat Variables.
 When `lgos-a/simple-graph` has valid metadata, sync also adds the separate
 `lgos.uservalves_simple` example with its UserValves Filter. Each raw `Generic / ...`

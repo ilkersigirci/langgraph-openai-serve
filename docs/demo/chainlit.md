@@ -12,8 +12,8 @@ model metadata and link to their authoritative source files.
 
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
-    selected gateway's normal route. Pass-through is limited to catalog detail
-    so LGOS descriptions and settings survive gateway normalization. Chainlit
+    selected gateway's normal route. Metadata comes from LiteLLM's native
+    `/model/info` or Bifrost's catalog-detail pass-through. Chainlit
     never connects directly to the LGOS or Files containers and remains
     Responses-only.
 
@@ -71,10 +71,12 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
-With LiteLLM selected, profile discovery reads each graph's description and
-features from the `lgos-a` and `lgos-b` catalog pass-throughs, keeps the
-corresponding prefix, and sends the qualified model to managed
-`/v1/responses`. With Bifrost selected, aggregate discovery finds each
+With LiteLLM selected, [sync model metadata](litellm-sync.md) before using the UI.
+Profile discovery and settings read `GET /model/info` with the current gateway
+credential. Entries with `model_info.lgos` become profiles; `model_name` is
+sent unchanged to managed `/v1/responses`. There are no provider allowlists,
+implicit prefixes, or per-provider catalog URLs.
+With Bifrost selected, aggregate discovery finds each
 provider, catalog detail uses `/openai_passthrough/v1` with
 `x-model-provider`, and inference uses native `/openai/v1/responses` with the
 same provider header. The demo API owns the descriptions and capabilities.
@@ -82,10 +84,10 @@ Chainlit keeps the Responses model usable for plain text but marks it as
 **Limited functionality** when an endpoint omits or strips them.
 
 LiteLLM's managed `/v1/models` response contains only the standard model
-fields, so it is not the UI catalog. The pass-through base URL forwards
-`GET /models` and `GET /models/{model}` to LGOS unchanged; Chainlit therefore
-receives `GraphConfig.description`, features, and detailed client-settings
-schemas while all network traffic still terminates at LiteLLM.
+fields, so it is not the UI catalog. The full `model_info.lgos` extension
+supplies descriptions, features, and client-settings schemas in one response.
+Selecting a profile rereads this endpoint so settings use current metadata
+and model permissions. Errors do not trigger a fallback to LGOS.
 
 The gateway selector owns routing; users explicitly configure its type and root
 URL. Mock login uses the shared API key; OAuth uses the signed-in user's access
@@ -104,8 +106,8 @@ both inference providers.
 
 The attachment button appears only for profiles that advertise `file_inputs`
 and accepts up to five files of 10 MiB each per message. Select
-`file-input` to process an attachment with the dedicated demo graph. Selecting
-Bifrost instead exposes `lgos-a/file-input` and its `lgos-b` equivalent.
+`lgos-a/file-input` or `lgos-b/file-input` to process an attachment with the
+dedicated demo graph.
 If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
 resolve its central ID.
@@ -130,7 +132,7 @@ not wait for a Chainlit persistence URL or put one in `file_data`. See
 
 After a profile is selected, Chainlit:
 
-1. Retrieves the detailed model through the configured OpenAI client and reads
+1. Reads the selected model's gateway metadata through the OpenAI client and uses
    `lgos.client_settings`.
 2. Renders supported JSON Schema properties as Chainlit Chat Settings.
 3. Restores saved values that still match the supported widget type or choice.
@@ -236,16 +238,11 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     The gateway API key is ignored in OAuth mode, including when it remains
     configured for another demo service.
 
-    The gateway must accept delegated tokens on Responses, Files, and the
-    authenticated `/v1/lgos-a/models` and `/v1/lgos-b/models` catalog routes,
-    including model detail beneath each catalog. A standard OpenAI route
-    grant alone does not grant access to these custom LiteLLM pass-throughs.
-    In the custom LiteLLM image, set the gateway service environment to
-    `OIDC_PASSTHROUGH_ROUTES='{"GET":["/v1/lgos-a/models","/v1/lgos-b/models"]}'`.
-    This generic method/path allowlist permits reads beneath these catalog paths.
-    The LGOS paths are
-    deployment configuration, not built into LiteLLM. Catalog metadata is visible to all delegated users,
-    while managed Responses still enforces each user's model permissions.
+    The gateway must accept delegated tokens on Responses, Files, and native
+    `GET /model/info`. The custom LiteLLM image grants the native
+    `openai_routes` and `model_info_routes` route groups; no LGOS-specific
+    path allowlist is needed. The UI uses the list endpoint, which applies
+    LiteLLM's caller model permissions, and selects the model locally.
 
     Chainlit keeps credentials encrypted in `lgos_chainlit_oauth_sessions`, created
     at startup. Each login has a distinct credential record and an opaque session

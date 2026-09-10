@@ -241,14 +241,15 @@ async def oauth_app(
     gateway_authorizations: list[str] = []
 
     def catalog(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/model/info"
         gateway_authorizations.append(request.headers["Authorization"])
         return httpx.Response(200, json={"object": "list", "data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(catalog)) as gateway:
         monkeypatch.setattr(
             clients,
-            "catalog_detail_client",
-            clients.catalog_detail_client.with_options(http_client=gateway),
+            "openai_client",
+            clients.openai_client.with_options(http_client=gateway),
         )
         try:
             yield OAuthApp(app, provider, sessions, persisted, gateway_authorizations)

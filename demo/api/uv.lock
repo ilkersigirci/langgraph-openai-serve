@@ -1203,6 +1203,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
@@ -1235,7 +1236,6 @@ dev = [
 ]
 test = [
     { name = "anyio" },
-    { name = "httpx" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "openai" },
     { name = "pytest" },
@@ -1247,6 +1247,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "langchain", specifier = ">=1.2.0" },
     { name = "langchain-openai", specifier = ">=1.2.1" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
@@ -1278,7 +1279,6 @@ dev = [
 ]
 test = [
     { name = "anyio", specifier = ">=4.14,<5" },
-    { name = "httpx", specifier = ">=0.28.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.0,<4" },
     { name = "openai", specifier = ">=2.0.0,<3.0.0" },
     { name = "pytest", specifier = ">=8.3.3" },

@@ -41,7 +41,7 @@ services:
       OPENAI_BASE_URL: http://lgos-files-api:8000/v1
       OPENAI_API_KEY: DUMMY
       ##### CUSTOM IMAGE #####
-      # Opt in to the public patched image's temporary wildcard streaming fix.
+      # Honor each deployment's native Responses streaming capability.
       LITELLM_ENABLE_RESPONSES_STREAMING_FIX: "true"
     # Initialize the Admin UI database through the image's proxy CLI.
     command:

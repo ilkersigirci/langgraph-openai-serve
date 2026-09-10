@@ -31,6 +31,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-postgres` | Start the demo PostgreSQL service on port 3001 |
 | `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
 | `make run-api-b` | Run the published `lgos-b` container on port 3005 |
+| `make deploy-api API_SERVICE=lgos-demo-api-a` | Deploy one API, wait for health, and register its metadata in the running LiteLLM gateway |
 | `make run-files` | Run the published Files API container on port 3006 |
 | `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
 | `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3000 |
@@ -40,6 +41,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-files-local` | Run the independently locked local Files API process |
 | `make run-chainlit-local` | Apply Chainlit migrations and run the local UI process |
 | `make sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
+| `make sync-litellm SYNC_ARGS='...'` | Register one LGOS catalog in LiteLLM's native model metadata; see [LiteLLM model sync](litellm-sync.md) |
 | `make compose` | Run the stack with published project-owned images |
 | `make compose-dev` | Build the local API, Files API, and Chainlit images; overlay LGOS only into the graph API image |
 | `make compose-otel` | Run published images with the OTEL overlay |
@@ -57,8 +59,8 @@ client guides for the host-side commands.
 From the repository root, `make test-litellm` and `make test-bifrost` run the
 focused OpenAI SDK checks. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
 gateway used by both maintained UIs. Responses and Files use its normal
-managed/native routes. A separate catalog-detail client retains LGOS model
-extensions through authenticated pass-through; UI inference never does.
+managed/native routes. LiteLLM metadata comes from native `/model/info` after
+[model sync](litellm-sync.md); only Bifrost uses catalog-detail pass-through.
 
 ## Stack Settings
 
@@ -71,6 +73,8 @@ extensions through authenticated pass-through; UI inference never does.
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
 | `OPENAI_GATEWAY_API_KEY` | Gateway credential for Open WebUI and Chainlit mock login. Chainlit OAuth ignores it and uses the user's access token; see [Chainlit login](chainlit.md#persistence-and-login) |
+| `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container; may differ from the UI's SSO endpoint |
+| `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `.env` |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
 | `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |

@@ -6,6 +6,7 @@ import pytest
 from openai import OpenAI
 from openai.types import Model
 
+from lgos_openwebui.functions.generic.gateway import gateway_config
 from lgos_openwebui.workspace_models import (
     PUBLIC_READ_GRANT,
     WorkspaceModelSpec,
@@ -182,6 +183,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
     other_model = Model(id="gpt-5", object="model", created=1, owned_by="openai")
     providers = ("lgos-a", "lgos-future")
     responses: dict[tuple[str, str | None], object] = {}
+    deployments = []
     for provider in providers:
         detail = graph.model_dump()
         if provider == "lgos-future":
@@ -197,11 +199,18 @@ def test_discovery_projects_settings_from_gateway_model_details(
         if provider_routing:
             responses[("/openai_passthrough/v1/models/simple-graph", provider)] = detail
         else:
-            responses[(f"/v1/{provider}/models", None)] = {
-                "object": "list",
-                "data": [graph.model_dump(exclude={"lgos"}), other_model.model_dump()],
-            }
-            responses[(f"/v1/{provider}/models/simple-graph", None)] = detail
+            deployments.append(
+                {
+                    "model_name": f"{provider}/simple-graph",
+                    "model_info": {"lgos": detail["lgos"]},
+                }
+            )
+    responses[("/model/info", None)] = {
+        "data": [
+            *deployments,
+            {"model_name": "gpt-5", "model_info": {}},
+        ]
+    }
     if provider_routing:
         responses[("/v1/models", None)] = {
             "object": "list",
@@ -220,25 +229,17 @@ def test_discovery_projects_settings_from_gateway_model_details(
         key = (request.url.path, request.headers.get("x-model-provider"))
         return httpx.Response(200, json=responses[key])
 
-    with (
-        OpenAI(
-            base_url="https://gateway.example/v1",
-            api_key="test",
-            max_retries=0,
-            http_client=httpx.Client(transport=httpx.MockTransport(handle)),
-        ) as catalog_client,
-        OpenAI(
-            base_url="https://gateway.example/openai_passthrough/v1",
-            api_key="test",
-            max_retries=0,
-            http_client=httpx.Client(transport=httpx.MockTransport(handle)),
-        ) as detail_client,
-    ):
+    with OpenAI(
+        base_url="https://gateway.example/v1",
+        api_key="test",
+        max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(handle)),
+    ) as client:
         specs = discover_workspace_model_specs(
-            catalog_client,
-            detail_client,
-            provider_routing=provider_routing,
-            model_prefixes=() if provider_routing else providers,
+            client,
+            gateway=gateway_config(
+                "bifrost" if provider_routing else "litellm", "https://gateway.example"
+            ),
         )
 
     assert [spec.id for spec in specs] == [
@@ -263,30 +264,30 @@ def test_discovery_projects_settings_from_gateway_model_details(
 
 
 def test_discover_workspace_models_keeps_limited_models_visible() -> None:
-    catalog_client = Mock()
-    catalog_client.models.list.return_value = SimpleNamespace(
-        data=[
-            SimpleNamespace(
-                id="lgos-a/proxy-model",
-                owned_by="langgraph-openai-serve",
+    with OpenAI(
+        base_url="https://gateway.example/v1",
+        api_key="test",
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "model_name": "lgos-a/proxy-model",
+                                "model_info": {
+                                    "lgos": {"schema_version": 1, "features": []}
+                                },
+                            }
+                        ]
+                    },
+                )
             )
-        ]
-    )
-    api_client = Mock()
-    api_client.models.retrieve.return_value = SimpleNamespace(
-        model_extra={
-            "lgos": {
-                "schema_version": 1,
-                "features": [],
-            }
-        }
-    )
-
-    specs = discover_workspace_model_specs(
-        catalog_client,
-        api_client,
-        provider_routing=True,
-    )
+        ),
+    ) as client:
+        specs = discover_workspace_model_specs(
+            client, gateway=gateway_config("litellm", "https://gateway.example")
+        )
 
     assert specs == (WorkspaceModelSpec(id="lgos-a/proxy-model", fields=()),)
 

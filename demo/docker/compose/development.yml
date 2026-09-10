@@ -64,6 +64,12 @@ services:
   lgos-demo-api-setup:
     <<: *lgos-demo-api-development
 
+  lgos-demo-api-a-sync:
+    <<: *lgos-demo-api-development
+
+  lgos-demo-api-b-sync:
+    <<: *lgos-demo-api-development
+
   lgos-files-api:
     <<: *lgos-files-api-development
 

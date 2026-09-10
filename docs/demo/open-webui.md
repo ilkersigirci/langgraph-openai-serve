@@ -47,8 +47,8 @@ It depends on the Generic Pipe for Responses transport. The generated
 
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
-    selected gateway's normal route. Pass-through is limited to catalog detail
-    so LGOS descriptions and settings survive gateway normalization. Neither
+    selected gateway's normal route. Metadata comes from LiteLLM's native
+    `/model/info` or Bifrost's catalog-detail pass-through. Neither
     the Function nor the sync logic connects directly to LGOS.
 
 ## Setup
@@ -61,7 +61,8 @@ cp .env.example .env
 docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
 ```
 
-Then run the independent synchronization project locally:
+For LiteLLM, [sync LGOS model metadata](litellm-sync.md) into the gateway first.
+Then run the independent Open WebUI synchronization project locally:
 
 ```bash
 OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
@@ -72,20 +73,24 @@ override is necessary because the root `.env` configures the Compose DNS name,
 which is not resolvable by this host-side command. An external gateway URL that
 is reachable from both contexts needs no override.
 
-The sync command signs in through `/api/v1/auths/signin`, creates or updates the
-bundled Functions, lists LGOS models through the selected gateway, retrieves
-their detailed metadata, and bulk-imports each generated Workspace Model with
-an active, public, hidden override for its manifold base. Run it again after
-changing a Function, the configured model catalog, or a graph's client settings
-schema.
+The sync command signs in through `/api/v1/auths/signin` and reads LGOS metadata
+from the selected gateway before changing Functions or Workspace Models.
+An unavailable or malformed catalog stops the command without modifying them.
+It then updates the bundled Functions and bulk-imports each generated Workspace
+Model with an active, public, hidden override for its manifold base. Run it again
+after changing a Function, the configured model catalog, or a graph's client
+settings schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
 `GraphConfig.description`. The sync marks a model as **Limited functionality**
 when the API omits a description.
 
-LiteLLM's managed `/v1/models` response is not the UI catalog. The sync instead
-merges `/v1/lgos-a/models` and `/v1/lgos-b/models`, and retrieves details
-through the matching catalog pass-through. Bifrost uses aggregate `/v1/models`
+LiteLLM's managed `/v1/models` response is not the UI catalog. Both the Generic
+Pipe and Workspace Model sync read native `GET /model/info` using their
+configured gateway key. Entries with `model_info.lgos` supply descriptions,
+features, and complete settings; `model_name` remains the inference ID.
+No provider allowlist, per-provider catalog URL, or LGOS fallback is used.
+Bifrost uses aggregate `/v1/models`
 for discovery and its pass-through only for provider-specific detail. This
 preserves LGOS descriptions, features, and detailed client-settings schemas
 without a direct connection to LGOS. Inference still uses the selected
@@ -123,7 +128,7 @@ Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
 `OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
 Function's admin valves. Compose initializes the required values from `.env`;
 use a key issued by the selected gateway. LiteLLM
-keeps `lgos-a/` or `lgos-b/` on the managed-routing model ID. Bifrost removes
+sends the catalog's `model_name` unchanged for managed routing. Bifrost removes
 that provider prefix and sends it as `x-model-provider` to native Responses.
 Open WebUI stores Function code in its database, so a bind mount of the Python
 file does not update it.
@@ -131,8 +136,8 @@ file does not update it.
 ## File Input
 
 Generated models enable Open WebUI's native file-upload control only when the
-graph advertises `file_inputs`. Select `file-input` to process an attachment.
-Selecting Bifrost also exposes provider-qualified equivalents. The Generic
+graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
+demo to process an attachment. The Generic
 Function receives non-image attachments through Open WebUI's documented
 [`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
 argument and image bytes from their base64 `image_url` content. In the pinned

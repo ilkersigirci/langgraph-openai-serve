@@ -32,3 +32,15 @@ external documentation checkout.
 From `demo/`, `make marimo-local` opens the notebook workspace. `custom_api.py`
 demonstrates synchronous, streaming, and asynchronous Responses calls;
 `graph_runner.py` compares the Responses endpoint with direct graph execution.
+
+## LiteLLM Model Sync
+
+`lgos-demo-api-sync-litellm` registers LGOS model metadata through LiteLLM's
+native management API. Run `make sync-litellm SYNC_ARGS='...'` from `demo/`;
+see the [model sync guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+for arguments and deployment examples.
+For deployment automation, use `make deploy-api API_SERVICE=lgos-demo-api-a`
+from `demo/` with LiteLLM already running. Its one-shot Compose job reuses the
+API image and runs only after the deployed API is healthy.
+Provide `LITELLM_MASTER_KEY` only to this operator command, not to UI clients.
+The command and its tests belong to this project; LiteLLM does not load them.

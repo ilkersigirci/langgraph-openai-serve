@@ -63,7 +63,7 @@ test-all: ## Run all tests
 	uv lock --locked
 	uv run --module pytest
 
-test-direct-responses: DEMO_TEST_DIRECT_BASE_URLS ?= http://localhost:3004/v1,http://localhost:3005/v1
+DEMO_TEST_DIRECT_BASE_URLS ?= http://localhost:3004/v1,http://localhost:3005/v1
 test-direct-responses: DEMO_TEST_FILES_BASE_URL ?= http://localhost:3006/v1
 test-direct-responses: ## Run the optional live direct Responses integration tests
 	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_DIRECT_BASE_URLS) \
@@ -87,19 +87,12 @@ test-bifrost: ## Run the Bifrost normalized and pass-through integration tests
 		pytest -m integration tests/integration/test_direct_responses.py
 
 test-litellm: DEMO_TEST_LITELLM_BASE_URL ?= http://localhost:3000/v1
-test-litellm: DEMO_TEST_LITELLM_CATALOG_BASE_URL ?= http://localhost:3000/v1
-test-litellm: DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS ?= http://localhost:3000/v1/lgos-a,http://localhost:3000/v1/lgos-b
-test-litellm: DEMO_TEST_LITELLM_FILES_BASE_URL ?= http://localhost:3000/v1/lgos-files
 export DEMO_TEST_LITELLM_API_KEY
-test-litellm: ## Run LiteLLM managed-routing and catalog pass-through integration tests
+test-litellm: ## Run LiteLLM managed-routing and native model-info integration tests
 	DEMO_TEST_LITELLM_BASE_URL=$(DEMO_TEST_LITELLM_BASE_URL) \
-		DEMO_TEST_LITELLM_CATALOG_BASE_URL=$(DEMO_TEST_LITELLM_CATALOG_BASE_URL) \
+		DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_DIRECT_BASE_URLS) \
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. --env-file ../.env \
 		pytest -m integration tests/integration/test_litellm_proxy.py
-	DEMO_TEST_DIRECT_BASE_URLS=$(DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS) \
-		DEMO_TEST_FILES_BASE_URL=$(DEMO_TEST_LITELLM_FILES_BASE_URL) \
-		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. --env-file ../.env \
-		sh -c 'export DEMO_TEST_OPENAI_API_KEY="$${DEMO_TEST_LITELLM_API_KEY:-$$OPENAI_GATEWAY_API_KEY}"; exec pytest -m integration tests/integration/test_direct_responses.py'
 
 test-demo: ## Test all demo projects against their locked dependencies
 	$(MAKE) -C $(DEMO_DIR) test

@@ -7,9 +7,10 @@ package, demonstrating that UI logic needs only the OpenAI wire protocol.
 The client uses Responses exclusively and never connects directly to an LGOS
 or Files container. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway.
 LiteLLM uses managed Responses routing; Bifrost uses its native Responses
-route. Both use their normal Files route. A separate catalog client uses only
-the gateway's model-detail pass-through when necessary to preserve LGOS
-descriptions, features, and client-setting schemas.
+route. Both use their normal Files route. LiteLLM discovery and settings read
+`/model/info`, using `model_name` unchanged and the full `model_info.lgos`
+extension. Bifrost uses its aggregate catalog and model-detail pass-through.
+Before using LiteLLM, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
 
 Before starting, replace the example signing secret and configure the required
 S3-compatible bucket and credentials in `.env`.
@@ -37,8 +38,8 @@ access token on every gateway request. Request the gateway's API permission and
 `OPENAI_GATEWAY_BASE_URL` at the LiteLLM SSO endpoint.
 `OPENAI_GATEWAY_API_KEY` is ignored in OAuth mode and can be unset;
 mock login requires it.
-The gateway must authorize the LGOS catalog pass-throughs as well as Responses
-and Files. See the [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
+LiteLLM must authorize `/model/info` as well as Responses and Files for the
+user's credential. See the [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
 for configuration, key rotation, and logout behavior.
 
 Authentication code lives in [`src/lgos_chainlit/auth/`](src/lgos_chainlit/auth/):

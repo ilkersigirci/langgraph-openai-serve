@@ -7,12 +7,13 @@ LGOS_A_PORT ?= 3004
 LGOS_B_PORT ?= 3005
 LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
+API_SERVICE ?= lgos-demo-api-a
 
 .PHONY: help sync test test-postgres lint check compose-config \
 	run-postgres reset-litellm-db run-api-local run-api-a-local run-api-b-local run-files-local \
 	run-chainlit-local \
 	run-api run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
-	sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
+	deploy-api sync-litellm sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
 	marimo marimo-local
 .DEFAULT_GOAL := help
 
@@ -70,10 +71,10 @@ type-check-local: type-check-ui ## Run type checking for all standalone projects
 	$(LOCAL_API_RUN) ty check src --extra-search-path ../../src
 
 compose-config: ## Validate published, development, and OTEL Compose models
-	$(COMPOSE) config --quiet
-	$(COMPOSE) -f docker/compose/development.yml config --quiet
-	$(COMPOSE) -f docker/compose/otel.yml config --quiet
-	$(COMPOSE) -f docker/compose/development.yml -f docker/compose/otel.yml config --quiet
+	$(COMPOSE) --profile model-sync config --quiet
+	$(COMPOSE) -f docker/compose/development.yml --profile model-sync config --quiet
+	$(COMPOSE) -f docker/compose/otel.yml --profile model-sync config --quiet
+	$(COMPOSE) -f docker/compose/development.yml -f docker/compose/otel.yml --profile model-sync config --quiet
 
 check: test lint type-check compose-config ## Run every standalone validation
 
@@ -129,6 +130,13 @@ run-chainlit: ## Run Chainlit and PostgreSQL; start the gateway separately
 
 sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync
+
+sync-litellm: ## Sync one LGOS catalog into LiteLLM (pass CLI options in SYNC_ARGS)
+	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-sync-litellm $(SYNC_ARGS)
+
+deploy-api: ## Deploy API_SERVICE, wait for health, and sync its models to LiteLLM
+	$(COMPOSE) up -d --wait "$(API_SERVICE)"
+	$(COMPOSE) run --rm --no-deps --pull never "$(API_SERVICE)-sync"
 
 compose: ## Run the stack from published images
 	$(COMPOSE) up $(UP_ARGS)

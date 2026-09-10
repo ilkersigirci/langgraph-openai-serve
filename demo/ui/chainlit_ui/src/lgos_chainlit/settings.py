@@ -65,7 +65,7 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_GATEWAY_API_KEY",
         description="Shared gateway API key for mock login; ignored in OAuth mode.",
     )
-    HITL_MODEL: str = "interruptible-approval"
+    HITL_MODEL: str = "lgos-a/interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"
     OAUTH_RESOURCE: str | None = Field(default=None, min_length=1)

@@ -95,9 +95,9 @@ See the [demo Docker Compose guide](docs/demo/docker.md).
 
 The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`
 setting place either gateway in front of both maintained UI clients. Chainlit
-and Open WebUI use normal managed/native Responses and Files routes, plus a
-catalog-detail pass-through for rich model metadata, so neither UI connects
-directly to an LGOS service. The
+and Open WebUI use normal managed/native Responses and Files routes. Metadata
+comes from LiteLLM's native `/model/info` after [model sync](docs/demo/litellm-sync.md),
+or Bifrost's catalog-detail pass-through. Neither UI connects directly to LGOS. The
 PostgreSQL-persistent Chainlit client uses a shared mock login by default, with
 OIDC login available as an opt-in mode. See the
 [Chainlit demo](docs/demo/chainlit.md).

@@ -30,8 +30,8 @@ and Bifrost are both first-class UI gateways. LiteLLM's image is configured in
 `.env.example`; Bifrost is pinned in its `docker/apps/` Compose fragment. Set
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
 UI connects to an upstream container directly. Responses and Files use each
-gateway's normal OpenAI routes; a catalog-only client uses pass-through model
-detail where needed to preserve LGOS descriptions, features, and settings.
+gateway's normal OpenAI routes. Metadata comes from LiteLLM's native
+`/model/info` or Bifrost's model-detail pass-through.
 
 LiteLLM uses the public `ghcr.io/ilkersigirci/homeserver-litellm` image by
 default. Copy `.env.example` to `.env` before running Compose; configurable
@@ -45,8 +45,13 @@ LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
 its key through `OPENAI_GATEWAY_API_KEY` for the default key-based UI setup.
 Chainlit can instead use [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
 This mode starts no gateway container.
-Merge the LGOS routes from `docker/configs/litellm/config.yaml` into the existing
-gateway and make the demo backends reachable from it. See the
+With the gateway running, `make deploy-api API_SERVICE=lgos-demo-api-a` deploys
+that API, waits for health, and runs its model-sync job. Repeat for `lgos-demo-api-b`.
+Use this target in each API's deployment pipeline; ordinary stack startup does
+not sync metadata. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+for external administrator credentials and development overlays.
+Make the demo backends reachable from the gateway.
+Configure its native Files provider separately. See the
 [external LiteLLM setup](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/docker.md#demo-services)
 for networking, Files routing, and SSO ownership.
 
@@ -54,13 +59,12 @@ Current verification exposes narrower upstream normalization limitations.
 The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
 Responses fields, file input, commentary `phase`, and continuation, but not
 LGOS model-detail extensions or upstream error metadata. The bundled LiteLLM
-preserves native wildcard streaming and commentary, and records successful
+preserves native streaming and commentary, and records successful
 managed Responses requests in its spend logs, but rewrites standard error
 metadata.
-Bifrost's raw pass-through and LiteLLM's authenticated pass-through both
-preserve the full tested contract for protocol diagnostics. UI inference does
-not use either pass-through: it exercises LiteLLM's managed Responses route or
-Bifrost's native Responses route according to `OPENAI_GATEWAY_TYPE`. Run
+Direct LGOS and Bifrost's raw pass-through remain protocol references. LiteLLM
+exposes no demo pass-through routes. UI inference uses LiteLLM's managed Responses
+route or Bifrost's native Responses route according to `OPENAI_GATEWAY_TYPE`. Run
 `make test-bifrost` and `make test-litellm` from the repository root for the
 current compatibility matrix.
 

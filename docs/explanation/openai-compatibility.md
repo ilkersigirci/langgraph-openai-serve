@@ -99,8 +99,8 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 `features`. Client-settings schemas remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
 `lgos` extension, even when its feature list is empty and it
-has no client settings. A UI reads catalog descriptions from the list and
-retrieves the selected model details through the same configured OpenAI client.
+has no client settings. A client of this API reads descriptions from the list
+and retrieves the selected model details through the same OpenAI client.
 This keeps large schemas out of list responses and keeps internal or
 secret-bearing runtime context out of discovery.
 
@@ -110,13 +110,16 @@ Direct JavaScript clients can read the property normally, and the
 An intermediary may rebuild a retrieved model from the standard fields and drop
 extensions. For one LGOS deployment, a client can use one OpenAI base URL for
 model listing, model retrieval, Responses, and Chat Completions; that URL may
-be a proxy pass-through such as the demo's LiteLLM `/v1/lgos-a` catalog route. A
+be an authenticated proxy pass-through. A
 federating gateway may expose a normalized catalog for provider and model
 routing, but that catalog is not necessarily a source of LGOS descriptions or
 capabilities. Standard Responses requests do not depend on the extension. A UI
-that offers graph-specific settings or capability controls must retrieve the
-selected provider's detail object through a route that preserves it. Concrete
-gateway configurations and native Responses requirements are documented under
+that offers graph-specific settings or capability controls must obtain the
+selected graph's full metadata through a route that preserves it. The demo's
+LiteLLM clients read native `/model/info`, using `model_name` for routing and
+`model_info.lgos` for the extension. An [LGOS-owned sync](../demo/litellm-sync.md)
+copies the detail into that native field; the UIs never contact LGOS directly.
+Concrete gateway configurations and native Responses requirements are documented under
 [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
 
 !!! warning "Limited functionality signal"

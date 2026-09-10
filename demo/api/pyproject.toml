@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "fastapi[standard]>=0.121.0",
+    "httpx>=0.28.0",
     "langchain>=1.2.0",
     "langchain-openai>=1.2.1",
     "langchain-text-splitters>=1.1.0",
@@ -30,6 +31,7 @@ dependencies = [
 [project.scripts]
 lgos-demo-api = "lgos_demo_api.app:main"
 lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
+lgos-demo-api-sync-litellm = "lgos_demo_api.sync_litellm:main"
 
 [dependency-groups]
 dev = [
@@ -42,7 +44,6 @@ dev = [
 ]
 test = [
     "anyio>=4.14,<5",
-    "httpx>=0.28.0",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
     "openai>=2.0.0,<3.0.0",
     "pytest>=8.3.3",

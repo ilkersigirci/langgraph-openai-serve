@@ -9,7 +9,6 @@ from openai.types.responses import Response, ResponseFunctionToolCall
 from pydantic import BaseModel, ConfigDict, Field
 
 from .api import (
-    _catalog_base_url,
     _client,
     _list_model_ids,
     _model_id,
@@ -24,7 +23,13 @@ from .contracts import (
     PipeResponse,
 )
 from .files import _handle_display_file, _with_response_file_parts
-from .gateway import GatewayConfig, GatewayRoot, GatewayType, gateway_config
+from .gateway import (
+    GatewayConfig,
+    GatewayRoot,
+    GatewayType,
+    gateway_config,
+    litellm_models,
+)
 from .interrupts import (
     _ask_user_to_resume,
     _openwebui_interrupt_chunk,
@@ -81,29 +86,19 @@ class Pipe:
 
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model to Open WebUI."""
-        model_ids = []
         gateway = self._gateway()
-        model_prefixes = gateway.model_prefixes
-        catalogs = (
-            tuple(
-                (
-                    _catalog_base_url(gateway.catalog_detail_base_url, model_prefix),
-                    model_prefix,
+        async with _client(
+            base_url=f"{gateway.root_url}/v1",
+            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+            timeout=self.valves.OPENAI_API_TIMEOUT,
+        ) as client:
+            if gateway.provider_routing:
+                model_ids = await _list_model_ids(client)
+            else:
+                payload = await client.get(
+                    f"{gateway.root_url}/model/info", cast_to=object
                 )
-                for model_prefix in model_prefixes
-            )
-            if model_prefixes
-            else ((gateway.catalog_base_url, None),)
-        )
-        for base_url, model_prefix in catalogs:
-            async with _client(
-                base_url=base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
-                timeout=self.valves.OPENAI_API_TIMEOUT,
-            ) as client:
-                model_ids.extend(
-                    await _list_model_ids(client, model_prefix=model_prefix)
-                )
+                model_ids = [model.id for model in litellm_models(payload)]
         return [
             {"id": model_id, "name": f"Generic / {model_id}"} for model_id in model_ids
         ]
@@ -165,7 +160,6 @@ class Pipe:
                 _request_metadata(__metadata__ or {}),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
-                model_prefixes=gateway.model_prefixes,
                 previous_response_id=previous_response_id,
             )
             async with _client(
@@ -272,7 +266,6 @@ class Pipe:
                 _request_metadata(__metadata__ or {}),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
-                model_prefixes=gateway.model_prefixes,
                 previous_response_id=previous_response_id,
             )
             async with _client(
@@ -328,7 +321,6 @@ class Pipe:
         _model_request(
             model_id,
             provider_routing=gateway.provider_routing,
-            model_prefixes=gateway.model_prefixes,
         )
         raw_messages = body.get("messages")
         messages = raw_messages if isinstance(raw_messages, list) else []

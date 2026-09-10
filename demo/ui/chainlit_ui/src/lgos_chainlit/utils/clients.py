@@ -6,7 +6,7 @@ from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
 from openai.types import Model
 
 from lgos_chainlit.auth.chainlit import gateway_api_key
-from lgos_chainlit.gateway import gateway_config
+from lgos_chainlit.gateway import gateway_config, litellm_models
 from lgos_chainlit.settings import settings
 
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
@@ -23,18 +23,6 @@ openai_client = AsyncOpenAI(
     max_retries=0,
     default_headers={"User-Agent": "lgos-chainlit"},
 )
-catalog_client = AsyncOpenAI(
-    base_url=gateway.catalog_base_url,
-    api_key=gateway_api_key,
-    http_client=gateway_http_client,
-    max_retries=0,
-)
-catalog_detail_client = AsyncOpenAI(
-    base_url=gateway.catalog_detail_base_url,
-    api_key=gateway_api_key,
-    http_client=gateway_http_client,
-    max_retries=0,
-)
 files_client = AsyncOpenAI(
     base_url=gateway.files_base_url,
     api_key=gateway_api_key,
@@ -50,16 +38,16 @@ def files_request() -> tuple[AsyncOpenAI, str]:
 
 async def retrieve_model(model_id: str) -> Model:
     """Retrieve LGOS model metadata through the configured endpoint."""
-    model_prefixes = gateway.model_prefixes
-    if model_prefixes:
-        model_prefix, catalog_model_id = _catalog_model(model_id, model_prefixes)
-        model = await _catalog_client(model_prefix).models.retrieve(
-            model=catalog_model_id
-        )
-    else:
-        model = await catalog_detail_client.models.retrieve(
-            **_provider_model_request(model_id)
-        )
+    if not gateway.provider_routing:
+        for model in await list_models():
+            if model.id == model_id:
+                return model
+        msg = f"Model {model_id!r} is not available in LiteLLM model info."
+        raise OpenAIError(msg)
+
+    model = await _bifrost_detail_client().models.retrieve(
+        **_provider_model_request(model_id)
+    )
     if not isinstance(model, Model):
         msg = "The endpoint returned an invalid model response."
         raise OpenAIError(msg)
@@ -68,18 +56,15 @@ async def retrieve_model(model_id: str) -> Model:
 
 async def list_models() -> list[Model]:
     """List models through the configured OpenAI endpoint."""
-    if model_prefixes := gateway.model_prefixes:
-        models = []
-        for model_prefix in model_prefixes:
-            catalog = await _catalog_client(model_prefix).models.list()
-            models.extend(
-                model.model_copy(update={"id": f"{model_prefix}/{model.id}"})
-                for model in catalog.data
-                if model.owned_by == LGOS_MODEL_OWNER
-            )
-        return models
+    if not gateway.provider_routing:
+        payload = await openai_client.get(
+            f"{gateway.root_url}/model/info", cast_to=object
+        )
+        return litellm_models(payload)
 
-    catalog = await catalog_client.models.list()
+    catalog = await openai_client.with_options(
+        base_url=f"{gateway.root_url}/v1"
+    ).models.list()
     providers = sorted(
         {
             _bifrost_model(model.id)[0]
@@ -89,7 +74,7 @@ async def list_models() -> list[Model]:
     )
     models = []
     for provider in providers:
-        provider_models = await catalog_detail_client.models.list(
+        provider_models = await _bifrost_detail_client().models.list(
             extra_headers={"x-model-provider": provider}
         )
         models.extend(
@@ -105,8 +90,8 @@ def model_request(model_id: str) -> dict[str, Any]:
         msg = "OpenAI model ID is missing."
         raise ValueError(msg)
 
-    if model_prefixes := gateway.model_prefixes:
-        return {"model": _managed_model_id(model_id, model_prefixes)}
+    if not gateway.provider_routing:
+        return {"model": model_id}
 
     return _provider_model_request(model_id)
 
@@ -119,9 +104,9 @@ def _bifrost_model(model_id: str) -> tuple[str, str]:
     return provider, upstream_model
 
 
-def _catalog_client(model_prefix: str) -> AsyncOpenAI:
-    return catalog_detail_client.with_options(
-        base_url=f"{gateway.catalog_detail_base_url}/{model_prefix}"
+def _bifrost_detail_client() -> AsyncOpenAI:
+    return openai_client.with_options(
+        base_url=f"{gateway.root_url}/openai_passthrough/v1"
     )
 
 
@@ -131,24 +116,3 @@ def _provider_model_request(model_id: str) -> dict[str, Any]:
         "model": upstream_model,
         "extra_headers": {"x-model-provider": provider},
     }
-
-
-def _managed_model_id(model_id: str, model_prefixes: tuple[str, ...]) -> str:
-    provider, separator, upstream_model = model_id.partition("/")
-    if not separator:
-        return f"{model_prefixes[0]}/{model_id}"
-    if provider not in model_prefixes or not upstream_model:
-        expected = ", ".join(f"{prefix}/model" for prefix in model_prefixes)
-        msg = f"LiteLLM model ID must use one of [{expected}]: {model_id!r}."
-        raise ValueError(msg)
-    return model_id
-
-
-def _catalog_model(
-    model_id: str,
-    model_prefixes: tuple[str, ...],
-) -> tuple[str, str]:
-    model_prefix, upstream_model = _managed_model_id(model_id, model_prefixes).split(
-        "/", maxsplit=1
-    )
-    return model_prefix, upstream_model

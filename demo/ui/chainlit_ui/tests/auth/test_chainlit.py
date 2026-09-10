@@ -147,9 +147,13 @@ async def test_missing_oauth_user_preserves_login_error_through_sdk(
         pytest.fail("Unauthenticated request reached the gateway")
 
     async with AsyncClient(transport=httpx.MockTransport(gateway)) as http:
-        client = clients.catalog_client.with_options(http_client=http)
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http),
+        )
         with pytest.raises(OAuthLoginRequired, match="sign in again"):
-            await client.models.list()
+            await clients.list_models()
 
 
 async def test_open_chat_uses_new_credentials_and_stops_after_logout(
@@ -211,8 +215,13 @@ async def test_mock_gateway_uses_shared_key_without_a_user_session(
 
     def gateway(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer mock-key"
+        assert request.url.path == "/model/info"
         return httpx.Response(200, json={"object": "list", "data": []})
 
     async with AsyncClient(transport=httpx.MockTransport(gateway)) as http:
-        client = clients.catalog_client.with_options(http_client=http)
-        assert (await client.models.list()).data == []
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http),
+        )
+        assert await clients.list_models() == []

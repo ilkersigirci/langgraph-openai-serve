@@ -1,9 +1,13 @@
 """Guard the files that make the in-tree demo independently extractable."""
 
 import json
+import os
 import re
 import tomllib
 from pathlib import Path
+
+import anyio
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEMO_ROOT = REPOSITORY_ROOT / "demo"
@@ -11,6 +15,47 @@ REPOSITORY_BLOB_LINK = re.compile(
     r"https://github\.com/ilkersigirci/langgraph-openai-serve/blob/main/"
     r"(?P<path>[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)"
 )
+
+
+@pytest.mark.parametrize(("start_exit", "sync_exit"), [(0, 0), (1, 0), (0, 1)])
+async def test_api_deployment_stops_on_health_or_model_sync_failure(
+    tmp_path: Path, start_exit: int, sync_exit: int
+) -> None:
+    compose = tmp_path / "compose"
+    log = tmp_path / "operations"
+    compose.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$DEPLOY_TEST_LOG"\n'
+        'case "$1" in\n'
+        '  up) exit "$DEPLOY_TEST_START_EXIT" ;;\n'
+        '  run) exit "$DEPLOY_TEST_SYNC_EXIT" ;;\n'
+        "  *) exit 99 ;;\n"
+        "esac\n"
+    )
+    compose.chmod(0o755)
+
+    result = await anyio.run_process(
+        [
+            "make",
+            "-C",
+            str(DEMO_ROOT),
+            "deploy-api",
+            "API_SERVICE=lgos-demo-api-b",
+            f"COMPOSE={compose}",
+        ],
+        env={
+            **os.environ,
+            "DEPLOY_TEST_LOG": str(log),
+            "DEPLOY_TEST_START_EXIT": str(start_exit),
+            "DEPLOY_TEST_SYNC_EXIT": str(sync_exit),
+        },
+        check=False,
+    )
+
+    assert (result.returncode == 0) == (start_exit == sync_exit == 0)
+    expected = ["up -d --wait lgos-demo-api-b"]
+    if start_exit == 0:
+        expected.append("run --rm --no-deps --pull never lgos-demo-api-b-sync")
+    assert log.read_text().splitlines() == expected
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:

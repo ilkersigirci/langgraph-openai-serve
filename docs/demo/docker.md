@@ -122,6 +122,11 @@ settings](reference.md#opentelemetry-settings).
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
 
+    For LiteLLM deployments, start the gateway first, then use
+    `make deploy-api API_SERVICE=lgos-demo-api-a` (or `lgos-demo-api-b`) in
+    the API deployment pipeline. It waits for API health and runs the matching
+    one-shot model-sync job. See [model sync](litellm-sync.md#deployment-automation).
+
 === "Files API"
 
     ```bash
@@ -164,13 +169,11 @@ settings](reference.md#opentelemetry-settings).
     gateways; the template normally selects one through
     `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`.
 
-    The existing gateway needs the LGOS entries from
-    [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml).
-    Merge its `model_list`, `litellm_settings`, `files_settings`, and
-    `general_settings.pass_through_endpoints` into the gateway's configuration.
-    These entries keep graph discovery dynamic and use LiteLLM's native
-    [pass-through configuration](https://docs.litellm.ai/docs/proxy/pass_through)
-    for catalog detail. Retain the bundled image's
+    Register LGOS models and metadata with the [model sync command](litellm-sync.md).
+    Enable LiteLLM's native database model storage. For Files, adapt the
+    `files_settings` in [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml)
+    to the shared Files service. No LGOS catalog pass-through
+    is required. Retain the bundled image's
     `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` opt-in when using that image.
 
     On the same Docker host, attach the existing LiteLLM service to the demo's
@@ -192,13 +195,13 @@ settings](reference.md#opentelemetry-settings).
     Create the network by starting the demo backends first, for example with
     `make run-api-a`, `make run-api-b`, and `make run-files` in separate
     terminals. The existing gateway can then resolve `lgos-demo-api-a`,
-    `lgos-demo-api-b`, and `lgos-files-api` using the checked-in routing
-    configuration unchanged. For another host, replace those upstream URLs
+    `lgos-demo-api-b`, and `lgos-files-api` using the bundled sync examples
+    and Files configuration. For another host, replace those upstream URLs
     with addresses reachable from that gateway.
 
     The external deployment continues to own its database, TLS, credentials,
     and Admin UI SSO. The selected credentials must allow the LGOS models, Files
-    operations, and catalog pass-through routes. Chainlit can use
+    operations, and native `/model/info`. Chainlit can use
     [delegated OAuth](chainlit.md#persistence-and-login) without a shared key.
     If the gateway already configures `litellm_proxy` Files,
     reconcile that provider with the demo's shared Files namespace. Then run
@@ -211,28 +214,32 @@ settings](reference.md#opentelemetry-settings).
     make run-litellm
     ```
 
-    LiteLLM is one of the two first-class UI entry points. The UIs split
-    catalog detail from normal inference and Files routing:
+    LiteLLM is one of the two first-class UI entry points. After startup,
+    [sync both demo catalogs](litellm-sync.md#deployment-automation). The UIs use:
 
-    - API A pass-through: `http://localhost:3000/v1/lgos-a`
-    - API B pass-through: `http://localhost:3000/v1/lgos-b`
+    - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
     - managed routing: `http://localhost:3000/v1`
     - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
+    The bundled configuration uses API-key authentication. Chainlit's OAuth
+    login requires a gateway configured to validate delegated access tokens
+    through its trusted SSO ingress; enabling OAuth in Chainlit alone does
+    not configure LiteLLM. See [Chainlit OAuth](chainlit.md#persistence-and-login).
+
     Chainlit and Open WebUI send Responses and Files to managed routing and
-    merge both authenticated catalog pass-throughs. Each graph keeps its
-    `lgos-a/` or `lgos-b/` prefix before inference. The proxy therefore retains
+    read descriptions, capabilities, and settings from `model_info.lgos`.
+    Each graph uses LiteLLM's `model_name` unchanged for inference. The proxy retains
     normal model routing while each API remains the source of its descriptions
     and LGOS capability metadata and the Files service remains the owner of
     file bytes.
     Neither UI connects to an upstream service directly.
-    `OPENAI_GATEWAY_API_KEY` protects all four routes; replace its demo-only
+    `OPENAI_GATEWAY_API_KEY` protects these routes in the default setup; replace its demo-only
     default in any shared deployment. For the local Admin UI, sign in as
     `admin`; unless `UI_PASSWORD` is set separately, the password is the value
     of `OPENAI_GATEWAY_API_KEY` from `.env`.
 
-    The managed-routing surface uses one wildcard route per graph API
+    The managed-routing surface uses concrete database-backed models
     and LiteLLM's native
     [Responses endpoint](https://docs.litellm.ai/docs/response_api). Select an
     API with a provider-qualified model, such as
@@ -243,11 +250,12 @@ settings](reference.md#opentelemetry-settings).
     standard `files_settings` route uses `provider=litellm_proxy` to isolate
     upload, retrieval, content, and deletion from the graph deployments.
 
-    Graph discovery reads each API's `/v1/models`; no graph list is maintained
-    in gateway configuration. Both wildcard routes set
-    `model_info.supports_native_streaming: true`. The default public
+    The LGOS-owned sync reads each API's model list and detail, then registers
+    routing and `model_info.lgos` through LiteLLM's native management API.
+    New deployments set `model_info.supports_native_streaming: true`.
+    The default public
     [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
-    preserves native Responses streaming for these wildcard routes. Compose
+    preserves native Responses streaming. Compose
     reads its tag and digest from `DEMO_LITELLM_IMAGE` in `.env` and enables
     `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` so it honors the deployment
     capability. Normal demo commands use this image without a local build or
@@ -263,7 +271,7 @@ settings](reference.md#opentelemetry-settings).
 
     Keep the override set for subsequent Compose commands. To restore the
     default, copy the image value from `.env.example`. An alternative image must preserve
-    native wildcard Responses streaming, authenticated catalog pass-through,
+    native Responses streaming, authenticated `/model/info` with custom metadata,
     managed Files routing, and the Admin UI migration runtime.
 
     Managed routing also passes the tested Files lifecycle, file-ID input, and
@@ -275,7 +283,8 @@ settings](reference.md#opentelemetry-settings).
 
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference
-    flow, and the complete pass-through contract:
+    flow, and native streaming fidelity against the direct LGOS test endpoints.
+    LiteLLM exposes no demo pass-through routes:
 
     ```bash
     make test-litellm
