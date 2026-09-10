@@ -33,7 +33,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make run-api-b` | Run the published `lgos-b` container on port 3005 |
 | `make run-files` | Run the published Files API container on port 3006 |
 | `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
-| `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3007 |
+| `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3000 |
 | `make run-chainlit` | Run Chainlit on port 3002 and PostgreSQL; start the gateway separately or use `make compose` for the full stack |
 | `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
 | `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
@@ -48,7 +48,11 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make test` | Test all four projects from their lockfiles |
 | `make test-postgres` | Run the interrupt and Store persistence tests against PostgreSQL on port 3001 |
 | `make lint` | Check all four projects with Ruff |
-| `make check` | Run tests, lint, formatting checks, and Compose validation |
+| `make check` | Run tests, lint, formatting, type checks, and Compose validation |
+
+Host-side UI commands require a host-reachable `OPENAI_GATEWAY_BASE_URL`; see
+the [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup)
+client guides for the host-side commands.
 
 From the repository root, `make test-litellm` and `make test-bifrost` run the
 focused OpenAI SDK checks. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
@@ -65,7 +69,7 @@ extensions through authenticated pass-through; UI inference never does.
 | `PGID` | Host group ID used by Compose services |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
-| `OPENAI_GATEWAY_BASE_URL` | Optional gateway root without `/v1`; leave empty for context-aware bundled defaults or set an external HTTPS root |
+| `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
 | `OPENAI_GATEWAY_API_KEY` | Gateway credential shared by Chainlit and Open WebUI; use a key issued by an external gateway |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
@@ -125,16 +129,14 @@ These settings belong only to the independent `demo/files_api` project.
 
 ## Open WebUI Sync Settings
 
-These settings configure the host-side Open WebUI synchronization command.
+These settings configure the host-side Open WebUI synchronization command,
+alongside the shared gateway values under [Stack Settings](#stack-settings).
 
 | Setting | Purpose |
 | --- | --- |
 | `DEMO_OPENWEBUI_URL` | Open WebUI API used by the sync command |
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI sync account |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Open WebUI sync password |
-| `OPENAI_GATEWAY_TYPE` | Exact global selector shared with Chainlit: `litellm` or `bifrost` |
-| `OPENAI_GATEWAY_BASE_URL` | Optional root override; defaults to port 3007 for LiteLLM or 3000 for Bifrost |
-| `OPENAI_GATEWAY_API_KEY` | Gateway credential shared with Chainlit |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the

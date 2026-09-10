@@ -86,10 +86,10 @@ test-bifrost: ## Run the Bifrost normalized and pass-through integration tests
 		uv run --directory $(DEMO_DIR)/api --locked --with-editable ../.. \
 		pytest -m integration tests/integration/test_direct_responses.py
 
-test-litellm: DEMO_TEST_LITELLM_BASE_URL ?= http://localhost:3007/v1
-test-litellm: DEMO_TEST_LITELLM_CATALOG_BASE_URL ?= http://localhost:3007/v1
-test-litellm: DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS ?= http://localhost:3007/v1/lgos-a,http://localhost:3007/v1/lgos-b
-test-litellm: DEMO_TEST_LITELLM_FILES_BASE_URL ?= http://localhost:3007/v1/lgos-files
+test-litellm: DEMO_TEST_LITELLM_BASE_URL ?= http://localhost:3000/v1
+test-litellm: DEMO_TEST_LITELLM_CATALOG_BASE_URL ?= http://localhost:3000/v1
+test-litellm: DEMO_TEST_LITELLM_PASSTHROUGH_BASE_URLS ?= http://localhost:3000/v1/lgos-a,http://localhost:3000/v1/lgos-b
+test-litellm: DEMO_TEST_LITELLM_FILES_BASE_URL ?= http://localhost:3000/v1/lgos-files
 export DEMO_TEST_LITELLM_API_KEY
 test-litellm: ## Run LiteLLM managed-routing and catalog pass-through integration tests
 	DEMO_TEST_LITELLM_BASE_URL=$(DEMO_TEST_LITELLM_BASE_URL) \

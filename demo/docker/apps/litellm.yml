@@ -54,7 +54,7 @@ services:
       - --use_v2_migration_resolver
       - --enforce_prisma_migration_check
     ports:
-      - "3007:4000"
+      - "3000:4000"
     volumes:
       - type: bind
         source: ../configs/litellm/config.yaml

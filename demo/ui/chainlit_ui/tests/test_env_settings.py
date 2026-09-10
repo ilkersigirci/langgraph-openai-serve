@@ -13,44 +13,65 @@ from lgos_chainlit.settings import ChainlitSettings, Settings
 from lgos_chainlit.utils import clients
 
 
-def test_ui_file_rejects_unknown_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DEMO_CHAINLIT_UI_FILE", "../other")
+@pytest.mark.parametrize(
+    ("setting", "value", "field"),
+    [
+        ("DEMO_CHAINLIT_UI_FILE", "../other", "UI_FILE"),
+        ("OPENAI_GATEWAY_TYPE", "unsupported", "OPENAI_GATEWAY_TYPE"),
+        ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example", "OPENAI_GATEWAY_BASE_URL"),
+    ],
+)
+def test_settings_reject_invalid_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    setting: str,
+    value: str,
+    field: str,
+) -> None:
+    monkeypatch.setenv(setting, value)
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as error:
         Settings(_env_file=None)
+    assert error.value.errors()[0]["loc"] == (field,)
 
 
-def test_openai_endpoint_settings(
+def test_gateway_settings_read_environment_and_normalize_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
-    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example/root/")
     monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI_GATEWAY_TYPE == "bifrost"
-    assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example"
+    assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
     assert configured.OPENAI_GATEWAY_API_KEY == "api-key"
 
 
-def test_openai_endpoints_default_to_litellm_managed_responses(
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "OPENAI_GATEWAY_TYPE",
+        "OPENAI_GATEWAY_BASE_URL",
+        "OPENAI_GATEWAY_API_KEY",
+    ],
+)
+@pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
+def test_gateway_settings_require_nonempty_environment(
     monkeypatch: pytest.MonkeyPatch,
+    setting: str,
+    value: str | None,
 ) -> None:
-    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "")
-    configured = Settings(_env_file=None)
+    if value is None:
+        monkeypatch.delenv(setting)
+    else:
+        monkeypatch.setenv(setting, value)
 
-    assert configured.OPENAI_GATEWAY_TYPE == "litellm"
-    assert configured.OPENAI_GATEWAY_BASE_URL is None
-    assert configured.OPENAI_GATEWAY_API_KEY == "sk-lgos-litellm-demo"
-    gateway = gateway_config(configured.OPENAI_GATEWAY_TYPE)
-    assert gateway.responses_base_url == "http://localhost:3007/v1"
-    assert gateway.catalog_detail_base_url == "http://localhost:3007/v1"
-    assert gateway.files_base_url == "http://localhost:3007/v1"
-    assert gateway.files_provider == "litellm_proxy"
+    with pytest.raises(ValidationError, match=setting):
+        Settings(_env_file=None)
 
 
-def test_native_chainlit_settings_require_s3_element_storage(
+def test_native_chainlit_settings_read_s3_element_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@db.example/app")

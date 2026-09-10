@@ -99,6 +99,12 @@ settings](reference.md#opentelemetry-settings).
 
 ## Demo Services
 
+!!! note "One bundled gateway at a time"
+
+    Bifrost and LiteLLM both publish host port `3000`. Enable only the selected
+    gateway's profile, and stop the running gateway before switching. Changing
+    `OPENAI_GATEWAY_TYPE` does not stop the previous gateway container.
+
 === "Graph APIs"
 
     ```bash
@@ -206,11 +212,11 @@ settings](reference.md#opentelemetry-settings).
     LiteLLM is one of the two first-class UI entry points. The UIs split
     catalog detail from normal inference and Files routing:
 
-    - API A pass-through: `http://localhost:3007/v1/lgos-a`
-    - API B pass-through: `http://localhost:3007/v1/lgos-b`
-    - managed Files: `http://localhost:3007/v1`
-    - managed routing: `http://localhost:3007/v1`
-    - LiteLLM Admin UI: `http://localhost:3007/ui/`
+    - API A pass-through: `http://localhost:3000/v1/lgos-a`
+    - API B pass-through: `http://localhost:3000/v1/lgos-b`
+    - managed Files: `http://localhost:3000/v1`
+    - managed routing: `http://localhost:3000/v1`
+    - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
     Chainlit and Open WebUI send Responses and Files to managed routing and
     merge both authenticated catalog pass-throughs. Each graph keeps its
@@ -293,13 +299,13 @@ settings](reference.md#opentelemetry-settings).
 
     ```bash
     docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
-    make sync-openwebui
     ```
 
     Open WebUI: `http://localhost:3003`
 
-    Compose runs the official Open WebUI image. The local sync command updates
-    the bundled Functions and generates Workspace Models from LGOS metadata.
+    Compose runs the official Open WebUI image. Follow the
+    [Open WebUI setup](open-webui.md#setup) to synchronize the bundled
+    Functions and generate Workspace Models from LGOS metadata.
     The Compose service also mounts the temporary raw-upload policy described
     under [Open WebUI file input](open-webui.md#file-input).
 

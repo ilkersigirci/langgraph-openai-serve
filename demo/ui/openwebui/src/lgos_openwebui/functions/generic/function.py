@@ -2,7 +2,7 @@
 title: Generic
 
 author: langgraph-openai-serve
-version: 0.29
+version: 0.30
 """
 
 from .pipe import Pipe

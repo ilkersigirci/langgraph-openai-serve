@@ -1,14 +1,18 @@
 """Gateway-specific endpoint selection shared by sync and the bundled Pipe."""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
+
+from pydantic import AfterValidator, AnyHttpUrl, PlainValidator, TypeAdapter
 
 GatewayType = Literal["litellm", "bifrost"]
+AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
+GatewayRoot = Annotated[
+    str,
+    PlainValidator(AnyHttpUrlAdapter.validate_strings, json_schema_input_type=str),
+    AfterValidator(lambda value: str(value).rstrip("/")),
+]
 LITELLM_MODEL_PREFIXES = ("lgos-a", "lgos-b")
-LOCAL_GATEWAY_URLS: dict[GatewayType, str] = {
-    "litellm": "http://localhost:3007",
-    "bifrost": "http://localhost:3000",
-}
 
 
 @dataclass(frozen=True)
@@ -26,17 +30,10 @@ class GatewayConfig:
 
 def gateway_config(
     gateway_type: GatewayType,
-    gateway_base_url: str | None = None,
-    *,
-    local: bool,
+    gateway_base_url: str,
 ) -> GatewayConfig:
-    """Resolve gateway paths for a host process or the Compose network."""
-    default_root = (
-        LOCAL_GATEWAY_URLS[gateway_type]
-        if local
-        else f"http://lgos-{gateway_type}:4000"
-    )
-    root = (gateway_base_url or default_root).rstrip("/")
+    """Resolve gateway paths from an explicitly configured root."""
+    root = gateway_base_url.rstrip("/")
     if gateway_type == "litellm":
         managed_base_url = f"{root}/v1"
         return GatewayConfig(
@@ -60,4 +57,4 @@ def gateway_config(
     )
 
 
-__all__ = ["GatewayConfig", "GatewayType", "gateway_config"]
+__all__ = ["GatewayConfig", "GatewayRoot", "GatewayType", "gateway_config"]
