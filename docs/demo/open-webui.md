@@ -64,8 +64,13 @@ docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openweb
 Then run the independent synchronization project locally:
 
 ```bash
-make sync-openwebui
+OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
 ```
+
+Both bundled gateways use host port `3000`. The
+override is necessary because the root `.env` configures the Compose DNS name,
+which is not resolvable by this host-side command. An external gateway URL that
+is reachable from both contexts needs no override.
 
 The sync command signs in through `/api/v1/auths/signin`, creates or updates the
 bundled Functions, lists LGOS models through the selected gateway, retrieves
@@ -94,7 +99,8 @@ active state. The sync owns the generated bases' hidden, public, and active
 state.
 
 The command discovers every top-level `.py` file and directory-backed Function
-in that directory, except entries whose names start with `_`. A modular
+under `demo/ui/openwebui/src/lgos_openwebui/functions/`, except entries whose
+names start with `_`. A modular
 Function directory contains `function.py` for its frontmatter and entrypoint;
 the Generic Function's modules are flattened into one executable source string
 at sync time because Open WebUI stores each Function directly in its database.
@@ -102,14 +108,9 @@ The filename stem or directory name is the Function ID, and the required Open
 WebUI frontmatter `title` is its display name. Function IDs must be lowercase
 Python identifiers.
 
-The shared
-[`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
-is the source of truth for the local sync command's demo environment values.
-See [sync settings](reference.md#open-webui-sync-settings) for their purposes.
-Set secrets in the environment
-rather than passing them on the command line. Point the sync client and the
-Function valve below at the same deployment; their hostnames differ when one
-runs on the host and the other runs inside Compose.
+The shared `.env` supplies the sync credentials and gateway selection. See
+[sync settings](reference.md#open-webui-sync-settings) for their purposes. Set
+secrets in the environment rather than passing them on the command line.
 
 Choose a generated entry such as `LGOS / lgos-a/simple-graph` to use Chat
 Variables. Its Workspace Model ID is `lgos.lgos-a/simple-graph`, and its base
@@ -118,19 +119,14 @@ remains active and public but is hidden from the chat selector, following Open
 WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
 
-Configure `OPENAI_GATEWAY_TYPE`, optional `OPENAI_GATEWAY_BASE_URL`,
-`OPENAI_API_KEY`, and `OPENAI_API_TIMEOUT` in the generic Function's admin
-valves. The Pydantic valve model in the Function is the source of truth for
-their defaults and descriptions. Compose supplies `OPENAI_GATEWAY_API_KEY` as
-`OPENAI_API_KEY`; use a key issued by the selected gateway. LiteLLM
+Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
+`OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
+Function's admin valves. Compose initializes the required values from `.env`;
+use a key issued by the selected gateway. LiteLLM
 keeps `lgos-a/` or `lgos-b/` on the managed-routing model ID. Bifrost removes
 that provider prefix and sends it as `x-model-provider` to native Responses.
 Open WebUI stores Function code in its database, so a bind mount of the Python
 file does not update it.
-
-The generic manifold lists the selected gateway's aggregate UI catalog. The
-sync command additionally retrieves detailed LGOS metadata before it generates
-Workspace Models, their Chat Variables, and file-upload capability.
 
 ## File Input
 

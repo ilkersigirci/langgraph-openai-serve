@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from openai import OpenAIError
 from openai.types.responses import Response, ResponseFunctionToolCall
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .api import (
     _catalog_base_url,
@@ -24,7 +24,7 @@ from .contracts import (
     PipeResponse,
 )
 from .files import _handle_display_file, _with_response_file_parts
-from .gateway import GatewayConfig, GatewayType, gateway_config
+from .gateway import GatewayConfig, GatewayRoot, GatewayType, gateway_config
 from .interrupts import (
     _ask_user_to_resume,
     _openwebui_interrupt_chunk,
@@ -42,20 +42,31 @@ from .responses import (
 )
 
 
+def _required_environment(name: str) -> str:
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        msg = f"{name} must be configured."
+        raise RuntimeError(msg)
+    return value
+
+
 class Pipe:
     class Valves(BaseModel):
+        model_config = ConfigDict(validate_default=True)
+
         OPENAI_GATEWAY_TYPE: GatewayType = Field(
-            default=cast(
-                "GatewayType", os.environ.get("OPENAI_GATEWAY_TYPE", "litellm")
+            default_factory=lambda: cast(
+                "GatewayType", _required_environment("OPENAI_GATEWAY_TYPE")
             ),
             description="Gateway used for all OpenAI requests.",
         )
-        OPENAI_GATEWAY_BASE_URL: str | None = Field(
-            default=os.environ.get("OPENAI_GATEWAY_BASE_URL") or None,
-            description="Optional gateway root override.",
+        OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
+            default_factory=lambda: _required_environment("OPENAI_GATEWAY_BASE_URL"),
+            description="Gateway root without the OpenAI API path.",
         )
-        OPENAI_API_KEY: str = Field(
-            default=os.environ.get("OPENAI_API_KEY", "sk-lgos-litellm-demo"),
+        OPENAI_GATEWAY_API_KEY: str = Field(
+            default_factory=lambda: _required_environment("OPENAI_GATEWAY_API_KEY"),
+            min_length=1,
             description="API key sent to the configured OpenAI-compatible endpoints.",
             json_schema_extra={"input": {"type": "password"}},
         )
@@ -87,7 +98,7 @@ class Pipe:
         for base_url, model_prefix in catalogs:
             async with _client(
                 base_url=base_url,
-                api_key=self.valves.OPENAI_API_KEY,
+                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 model_ids.extend(
@@ -159,7 +170,7 @@ class Pipe:
             )
             async with _client(
                 base_url=gateway.responses_base_url,
-                api_key=self.valves.OPENAI_API_KEY,
+                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
@@ -219,7 +230,7 @@ class Pipe:
                             __event_emitter__,
                             __request__,
                             files_base_url=gateway.files_base_url,
-                            api_key=self.valves.OPENAI_API_KEY,
+                            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                             timeout=self.valves.OPENAI_API_TIMEOUT,
                             provider=gateway.files_provider,
                         )
@@ -266,7 +277,7 @@ class Pipe:
             )
             async with _client(
                 base_url=gateway.responses_base_url,
-                api_key=self.valves.OPENAI_API_KEY,
+                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
@@ -294,7 +305,7 @@ class Pipe:
                             __event_emitter__,
                             __request__,
                             files_base_url=gateway.files_base_url,
-                            api_key=self.valves.OPENAI_API_KEY,
+                            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                             timeout=self.valves.OPENAI_API_TIMEOUT,
                             provider=gateway.files_provider,
                         )
@@ -329,7 +340,7 @@ class Pipe:
             files,
             metadata,
             base_url=gateway.files_base_url,
-            api_key=self.valves.OPENAI_API_KEY,
+            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
             timeout=self.valves.OPENAI_API_TIMEOUT,
             provider=gateway.files_provider,
         )
@@ -339,7 +350,6 @@ class Pipe:
         return gateway_config(
             self.valves.OPENAI_GATEWAY_TYPE,
             self.valves.OPENAI_GATEWAY_BASE_URL,
-            local=False,
         )
 
 

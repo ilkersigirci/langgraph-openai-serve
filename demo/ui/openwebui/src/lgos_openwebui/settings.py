@@ -3,7 +3,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from lgos_openwebui.functions.generic.gateway import GatewayType
+from lgos_openwebui.functions.generic.gateway import GatewayRoot, GatewayType
 
 
 class Settings(BaseSettings):
@@ -27,17 +27,15 @@ class Settings(BaseSettings):
         description="Password for the Open WebUI account used by the sync command.",
     )
     OPENAI_GATEWAY_TYPE: GatewayType = Field(
-        default="litellm",
         validation_alias="OPENAI_GATEWAY_TYPE",
-        description="OpenAI gateway used for model sync and Function defaults.",
+        description="OpenAI gateway used for model synchronization.",
     )
-    OPENAI_GATEWAY_BASE_URL: str | None = Field(
-        default=None,
+    OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
         validation_alias="OPENAI_GATEWAY_BASE_URL",
-        description="Optional gateway root override for the host sync command.",
+        description="Gateway root used by the host sync command.",
     )
     OPENAI_GATEWAY_API_KEY: str = Field(
-        default="sk-lgos-litellm-demo",
+        min_length=1,
         validation_alias="OPENAI_GATEWAY_API_KEY",
         description="API key sent to the configured OpenAI-compatible endpoints.",
     )

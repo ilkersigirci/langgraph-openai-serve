@@ -49,17 +49,14 @@ class Settings(BaseSettings):
     )
 
     OPENAI_GATEWAY_TYPE: GatewayType = Field(
-        default="litellm",
         validation_alias="OPENAI_GATEWAY_TYPE",
         description="OpenAI gateway used by every Chainlit OpenAI client.",
     )
-    OPENAI_GATEWAY_BASE_URL: HttpUrlStr | None = Field(
-        default=None,
+    OPENAI_GATEWAY_BASE_URL: HttpUrlStr = Field(
         validation_alias="OPENAI_GATEWAY_BASE_URL",
-        description="Optional gateway root override.",
+        description="Gateway root without the OpenAI API path.",
     )
     OPENAI_GATEWAY_API_KEY: str = Field(
-        default="sk-lgos-litellm-demo",
         min_length=1,
         validation_alias="OPENAI_GATEWAY_API_KEY",
         description="API key sent to the selected gateway.",

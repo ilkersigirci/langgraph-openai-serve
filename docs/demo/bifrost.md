@@ -59,15 +59,13 @@ go to `/openai_passthrough/v1`, so LGOS descriptions and client settings
 survive unchanged. The UI adapter discovers providers from the aggregate
 catalog; it does not contain a provider list.
 
-Select Bifrost for both demo UIs with one environment value:
+Select the Bifrost values in the shared
+[`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
+for both demo UIs.
 
-```dotenv
-OPENAI_GATEWAY_TYPE=bifrost
-```
-
-The clients derive the local or Compose URL, Responses route, catalog-detail
-route, Files provider, and model-header routing from that selector. Their
-optional gateway-root settings remain available for non-demo deployments.
+The clients derive the Responses route, catalog-detail route, Files provider,
+and model-header routing from that explicit configuration. Host-side commands
+must instead receive a URL reachable from the host.
 
 The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
 `file_list`, `file_retrieve`, `file_content`, and `file_delete` operations.

@@ -51,6 +51,9 @@ addopts = [
 ]
 env = [
     "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
+    "OPENAI_GATEWAY_TYPE=litellm",
+    "OPENAI_GATEWAY_BASE_URL=https://gateway.example",
+    "OPENAI_GATEWAY_API_KEY=test-api-key",
     "BUCKET_NAME=lgos-chainlit-test",
     "APP_AWS_ACCESS_KEY=test-access-key",
     "APP_AWS_SECRET_KEY=test-secret-key",

@@ -61,10 +61,10 @@ value before starting the UI; neither service reads the other's S3 settings.
         make run-bifrost
         ```
 
-    Then start Chainlit from a second terminal:
+    Then start Chainlit from a second terminal. Both gateways use host port 3000:
 
     ```bash
-    make run-chainlit-local
+    OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make run-chainlit-local
     ```
 
 Both modes apply pending Chainlit schema migrations before the UI starts. Open
@@ -87,8 +87,8 @@ fields, so it is not the UI catalog. The pass-through base URL forwards
 receives `GraphConfig.description`, features, and detailed client-settings
 schemas while all network traffic still terminates at LiteLLM.
 
-The gateway selector owns routing; users configure only the gateway type and
-optional root URL.
+The gateway selector owns routing; users explicitly configure its type, root
+URL, and credential.
 
 ## File Attachments
 
@@ -195,11 +195,8 @@ See [Authentication](../how-to-guides/authentication.md).
 
 ## Interrupt Demo
 
-Run the dedicated HITL UI:
-
-```bash
-DEMO_CHAINLIT_UI_FILE=hitl make run-chainlit-local
-```
+Run the dedicated HITL UI by adding `DEMO_CHAINLIT_UI_FILE=hitl` to the
+local Chainlit command under [Run The UI](#run-the-ui).
 
 Initial requests need no interrupt metadata. The HITL client implements the
 [Responses interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
@@ -286,13 +283,11 @@ must preserve standard Responses items and events.
 Use [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
 for demo environment values. The tables below explain their roles, not their defaults.
 
-Gateway settings:
+Shared gateway settings are documented in [Stack Settings](reference.md#stack-settings).
+Chainlit-specific settings:
 
 | Setting | Notes |
 | --- | --- |
-| `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost`. |
-| `OPENAI_GATEWAY_BASE_URL` | Gateway root without `/v1`; defaults to port 3007 for LiteLLM or 3000 for Bifrost when unset. |
-| `OPENAI_GATEWAY_API_KEY` | Credential used by both demo UIs; replace demo credentials outside local use. |
 | `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |

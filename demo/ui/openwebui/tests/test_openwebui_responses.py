@@ -31,6 +31,8 @@ from lgos_openwebui.functions.generic.interrupts import (
 from lgos_openwebui.functions.generic.responses import _responses_input
 from lgos_openwebui.functions.uservalves_simple import Filter
 
+pytestmark = pytest.mark.usefixtures("gateway_environment")
+
 MODEL_ID = "interruptible-approval"
 QUALIFIED_MODEL_ID = f"generic.{MODEL_ID}"
 RESPONSE_ID = "resp_lg_725c277af6d54c5295eb8c09e91f7a7c_" + "b" * 32

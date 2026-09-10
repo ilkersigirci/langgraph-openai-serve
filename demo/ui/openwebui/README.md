@@ -46,5 +46,6 @@ This is a temporary workaround until Open WebUI provides native per-model
 control; the detailed removal condition and upstream links are in the
 [integration guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/open-webui.md#file-input).
 
-The typed [settings model](src/lgos_openwebui/settings.py) is the source of
-truth for the sync command's environment names, defaults, and descriptions.
+The [`.env.example`](.env.example) file is the source of truth for configured
+values. The typed [settings model](src/lgos_openwebui/settings.py) validates
+the sync command's required environment.

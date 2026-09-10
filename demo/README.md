@@ -95,12 +95,15 @@ Run the central Files API on port 3006:
 make run-files
 ```
 
-Run either native Responses gateway with its graph API dependencies:
+Run one native Responses gateway with its graph API dependencies:
 
 ```bash
 make run-bifrost
+# Or, with OPENAI_GATEWAY_TYPE=litellm:
 make run-litellm
 ```
+
+Both use host port 3000. Stop the running gateway before switching to the other.
 
 With the gateway running, start Chainlit and PostgreSQL on port 3002:
 
@@ -112,8 +115,11 @@ With Open WebUI running, synchronize the Functions and generated Workspace
 Models:
 
 ```bash
-make sync-openwebui
+OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
 ```
+
+The root `.env` uses the gateway's Compose DNS name, while synchronization
+runs on the host and uses port `3000` for either bundled gateway.
 
 Compose starts each selected service's dependencies. One API setup job
 initializes the LangGraph checkpointer and Store schemas; Chainlit applies its
@@ -134,7 +140,7 @@ overlays the parent LGOS checkout as an editable dependency:
 make run-api-local
 make run-api-b-local
 make run-files-local
-make run-chainlit-local
+OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make run-chainlit-local
 ```
 
 Run each long-lived process in a separate terminal.
@@ -147,9 +153,9 @@ Use the published demo images and pinned service images:
 make compose
 ```
 
-The stack publishes Bifrost on port 3000, PostgreSQL on 3001, Chainlit on
+The stack publishes the selected gateway on port 3000, PostgreSQL on 3001, Chainlit on
 3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, the Files API on
-3006, and LiteLLM on 3007. The selected UI gateway is controlled by
+3006. The selected UI gateway is controlled by
 `OPENAI_GATEWAY_TYPE`.
 
 From the LGOS source checkout, build the project-owned application images

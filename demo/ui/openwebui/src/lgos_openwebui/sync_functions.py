@@ -160,7 +160,6 @@ def main() -> None:
         gateway = gateway_config(
             settings.OPENAI_GATEWAY_TYPE,
             settings.OPENAI_GATEWAY_BASE_URL,
-            local=True,
         )
         with (
             httpx.Client(base_url=settings.URL, timeout=10) as client,
