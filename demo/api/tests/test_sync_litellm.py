@@ -100,6 +100,7 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
             "model": "openai/graph",
             "api_base": "https://graphs.internal/v1",
             "api_key": "source-key",
+            "allowed_openai_params": ["user"],
         }
         deployment["model_info"]["input_cost_per_token"] = 0.00001
         deployment["litellm_params"]["rpm"] = 10

@@ -69,6 +69,38 @@ async def test_litellm_model_info_requires_gateway_authentication() -> None:
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_litellm_native_chat_preserves_user(provider: str, stream: bool) -> None:
+    assert LITELLM_BASE_URL is not None
+    async with AsyncOpenAI(
+        base_url=LITELLM_BASE_URL,
+        api_key=LITELLM_API_KEY,
+        max_retries=0,
+        timeout=10.0,
+    ) as client:
+        response = await client.chat.completions.create(
+            model=f"{provider}/custom-input-output-context",
+            messages=[{"role": "user", "content": "Preserve my request context."}],
+            user="gateway-user",
+            stream=stream,
+        )
+        if stream:
+            assert isinstance(response, AsyncStream)
+            content = "".join(
+                [
+                    chunk.choices[0].delta.content or ""
+                    async for chunk in response
+                    if chunk.choices
+                ]
+            )
+        else:
+            assert not isinstance(response, AsyncStream)
+            content = response.choices[0].message.content
+
+    assert content == "gateway-user asked: Preserve my request context."
+
+
+@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> None:
     assert LITELLM_BASE_URL is not None
     async with AsyncOpenAI(

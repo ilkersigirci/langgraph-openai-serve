@@ -69,8 +69,10 @@ otherwise the command uses `DUMMY` for the unauthenticated demo API.
 - Validates the source catalog before writing. Ambiguous duplicate names and
   config-owned deployments are rejected.
 - Creates missing `<prefix>/<model>` deployments with the full LGOS metadata
-  and native streaming enabled. Models without `model_info.lgos` are not shown
-  by the UI integrations.
+  and native streaming enabled. New deployments also allow Chat `user` forwarding
+  via [`allowed_openai_params: [user]`](https://docs.litellm.ai/docs/completion/drop_params#set-allowed_openai_params-on-configyaml).
+  This is caller-supplied context, not authentication. Models without
+  `model_info.lgos` are not shown by the UI integrations.
 - Updates only changed LGOS and streaming metadata. Existing routing,
   credentials, pricing, and rate limits are preserved.
 - Does not delete removed upstream models. Manage retirement, routing, pricing,
