@@ -197,8 +197,10 @@ settings](reference.md#opentelemetry-settings).
     with addresses reachable from that gateway.
 
     The external deployment continues to own its database, TLS, credentials,
-    and Admin UI SSO. Its key must allow the LGOS models, Files operations, and
-    catalog pass-through routes. If it already configures `litellm_proxy` Files,
+    and Admin UI SSO. The selected credentials must allow the LGOS models, Files
+    operations, and catalog pass-through routes. Chainlit can use
+    [delegated OAuth](chainlit.md#persistence-and-login) without a shared key.
+    If the gateway already configures `litellm_proxy` Files,
     reconcile that provider with the demo's shared Files namespace. Then run
     `make sync-openwebui` and the [LiteLLM SDK checks](#demo-services) against
     the external URL.

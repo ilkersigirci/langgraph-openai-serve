@@ -17,6 +17,9 @@ Keep test setup explicit and assertions focused on observable behavior.
 - `tests/integration/test_demo_*` guards copied wire declarations and the
   distribution boundary without making demo runtime code import the parent
   package checkout.
+- Chainlit authentication tests live in `demo/ui/chainlit_ui/tests/auth/`.
+  Run them from the Chainlit project with `uv run --locked pytest tests/auth`;
+  PostgreSQL credential tests use `make -C demo test-postgres` from the repository root.
 - Fixtures stay in the nearest test-root or subdirectory `conftest.py`.
 - Do not import from a `conftest.py`; request fixtures by name.
 

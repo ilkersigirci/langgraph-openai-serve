@@ -2,9 +2,10 @@
 
 from typing import Any
 
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
 from openai.types import Model
 
+from lgos_chainlit.auth.chainlit import gateway_api_key
 from lgos_chainlit.gateway import gateway_config
 from lgos_chainlit.settings import settings
 
@@ -13,26 +14,31 @@ gateway = gateway_config(
     settings.OPENAI_GATEWAY_TYPE,
     settings.OPENAI_GATEWAY_BASE_URL,
 )
+gateway_http_client = DefaultAsyncHttpxClient()
 
 openai_client = AsyncOpenAI(
     base_url=gateway.responses_base_url,
-    api_key=settings.OPENAI_GATEWAY_API_KEY,
+    api_key=gateway_api_key,
+    http_client=gateway_http_client,
     max_retries=0,
     default_headers={"User-Agent": "lgos-chainlit"},
 )
 catalog_client = AsyncOpenAI(
     base_url=gateway.catalog_base_url,
-    api_key=settings.OPENAI_GATEWAY_API_KEY,
+    api_key=gateway_api_key,
+    http_client=gateway_http_client,
     max_retries=0,
 )
 catalog_detail_client = AsyncOpenAI(
     base_url=gateway.catalog_detail_base_url,
-    api_key=settings.OPENAI_GATEWAY_API_KEY,
+    api_key=gateway_api_key,
+    http_client=gateway_http_client,
     max_retries=0,
 )
 files_client = AsyncOpenAI(
     base_url=gateway.files_base_url,
-    api_key=settings.OPENAI_GATEWAY_API_KEY,
+    api_key=gateway_api_key,
+    http_client=gateway_http_client,
     max_retries=0,
 )
 

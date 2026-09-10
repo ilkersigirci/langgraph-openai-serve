@@ -46,7 +46,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make compose-otel-dev` | Build the checkout and run it with the OTEL overlay |
 | `make sync` | Synchronize all four projects from their lockfiles |
 | `make test` | Test all four projects from their lockfiles |
-| `make test-postgres` | Run the interrupt and Store persistence tests against PostgreSQL on port 3001 |
+| `make test-postgres` | Run API interrupt/Store persistence and Chainlit OAuth token/refresh tests against PostgreSQL on port 3001 |
 | `make lint` | Check all four projects with Ruff |
 | `make check` | Run tests, lint, formatting, type checks, and Compose validation |
 
@@ -70,7 +70,7 @@ extensions through authenticated pass-through; UI inference never does.
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Gateway credential shared by Chainlit and Open WebUI; use a key issued by an external gateway |
+| `OPENAI_GATEWAY_API_KEY` | Gateway credential for Open WebUI and Chainlit mock login. Chainlit OAuth ignores it and uses the user's access token; see [Chainlit login](chainlit.md#persistence-and-login) |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
 | `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |

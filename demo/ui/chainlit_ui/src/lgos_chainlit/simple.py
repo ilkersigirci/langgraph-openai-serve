@@ -14,7 +14,7 @@ from chainlit_utils.chat import (
 )
 from openai.types.responses import Response, ResponseInputParam
 
-from lgos_chainlit.auth import register_auth_callback
+from lgos_chainlit.auth.chainlit import register_auth_callback
 from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
 from lgos_chainlit.utils.chat import (
     LIMITED_FUNCTIONALITY_MESSAGE,

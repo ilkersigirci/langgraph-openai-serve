@@ -87,8 +87,9 @@ fields, so it is not the UI catalog. The pass-through base URL forwards
 receives `GraphConfig.description`, features, and detailed client-settings
 schemas while all network traffic still terminates at LiteLLM.
 
-The gateway selector owns routing; users explicitly configure its type, root
-URL, and credential.
+The gateway selector owns routing; users explicitly configure its type and root
+URL. Mock login uses the shared API key; OAuth uses the signed-in user's access
+token.
 
 ## File Attachments
 
@@ -164,6 +165,11 @@ request that needs them. The underlying contract is documented in
 
 ## Persistence And Login
 
+Authentication code is grouped under `demo/ui/chainlit_ui/src/lgos_chainlit/auth/`,
+with its tests in `demo/ui/chainlit_ui/tests/auth/`. See the
+[Chainlit project README](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/chainlit_ui/README.md)
+for the module layout and targeted test commands.
+
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
@@ -180,15 +186,147 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     `DEMO_CHAINLIT_LOGIN_TYPE=mock` accepts any non-empty username and password
     and maps every session to the shared `demo-user`. This is for local use only.
 
-=== "PocketID OAuth"
+=== "OIDC login"
 
-    Set `DEMO_CHAINLIT_LOGIN_TYPE=oauth` and provide the generic OAuth settings
-    listed below. `OAUTH_GENERIC_USER_IDENTIFIER=sub` uses PocketID's stable
-    subject as the Chainlit user identifier.
+    OAuth uses Authlib's OIDC integration with S256 PKCE, state/nonce validation,
+    and verified ID tokens. The stable `sub` claim identifies users. Set the exact
+    HTTPS issuer for discovery and register
+    `${CHAINLIT_URL}/auth/oauth/${OAUTH_GENERIC_NAME}/callback` in your provider.
+    HTTPS is required for OAuth, including its secure cookies; use mock mode for
+    plain-HTTP local development.
 
-    Register `http://localhost:3002/auth/oauth/PocketID/callback` for local use.
-    Behind a reverse proxy, set `CHAINLIT_URL` to the external HTTPS origin and
-    register `${CHAINLIT_URL}/auth/oauth/${OAUTH_GENERIC_NAME}/callback`.
+    Chainlit's native [OAuth prompt settings](https://docs.chainlit.io/authentication/oauth#prompt-configuration)
+    are honored. Set `OAUTH_PROMPT` globally, or use `OAUTH_GENERIC_PROMPT` when
+    `OAUTH_GENERIC_NAME=generic` to override it for that provider.
+
+    ```dotenv
+    DEMO_CHAINLIT_LOGIN_TYPE=oauth
+    CHAINLIT_URL=https://chat.example.com
+    DEMO_CHAINLIT_OAUTH_ISSUER=https://id.example.com
+    DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD=client_secret_basic
+    DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
+    OAUTH_GENERIC_CLIENT_ID=YOUR_CLIENT_ID
+    OAUTH_GENERIC_CLIENT_SECRET=YOUR_CLIENT_SECRET
+    OAUTH_GENERIC_NAME=generic
+    OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
+    OPENAI_GATEWAY_TYPE=litellm
+    OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com
+    OPENAI_GATEWAY_API_KEY=
+    ```
+
+    Match `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` to the registered client:
+    `client_secret_basic` (default) or `client_secret_post`. Authlib uses it for
+    code exchange, refresh, and revocation. Discovery must advertise S256
+    PKCE and support the selected authentication method.
+
+    Request your gateway's permission (`llm:invoke` in this example). The token's
+    audience must identify the gateway API, not merely the login client.
+    For providers using [RFC 8707 resource indicators](https://www.rfc-editor.org/rfc/rfc8707.html#section-2),
+    set `DEMO_CHAINLIT_OAUTH_RESOURCE`; Chainlit then includes it in authorization,
+    code exchange, and refresh requests. Otherwise leave it unset and configure
+    the audience using the provider's client/scopes settings.
+
+    For example, with PocketID set `DEMO_CHAINLIT_OAUTH_RESOURCE=https://llm.example.com`
+    to the **exact resource identifier** registered under its APIs, and grant the
+    client user-delegated `llm:invoke` access. With Keycloak, an audience mapper
+    and linked client scope can supply the audience and permission without `resource`.
+    PocketID is a deployment example, not a dependency of Chainlit's auth code.
+
+    Chainlit forwards the access token as `Authorization: Bearer ...`.
+    The gateway API key is ignored in OAuth mode, including when it remains
+    configured for another demo service.
+
+    The gateway must accept delegated tokens on Responses, Files, and the
+    authenticated `/v1/lgos-a/models` and `/v1/lgos-b/models` catalog routes,
+    including model detail beneath each catalog. A standard OpenAI route
+    grant alone does not grant access to these custom LiteLLM pass-throughs.
+    In the custom LiteLLM image, set the gateway service environment to
+    `OIDC_PASSTHROUGH_ROUTES='{"GET":["/v1/lgos-a/models","/v1/lgos-b/models"]}'`.
+    This generic method/path allowlist permits reads beneath these catalog paths.
+    The LGOS paths are
+    deployment configuration, not built into LiteLLM. Catalog metadata is visible to all delegated users,
+    while managed Responses still enforces each user's model permissions.
+
+    Chainlit keeps credentials encrypted in `lgos_chainlit_oauth_sessions`, created
+    at startup. Each login has a distinct credential record and an opaque session
+    ID in Chainlit's signed cookie; access/refresh tokens never enter that cookie,
+    user metadata, or chat history. Sessions expire after Chainlit's configured
+    `user_session_timeout`. A new login replaces this browser's previous local
+    grant, without replacing other browsers' grants.
+
+    Authlib computes the access token's absolute expiration when it receives the
+    token. Chainlit stores that timestamp and refreshes shortly before expiry.
+    Valid access tokens need only
+    a database read; refresh uses a row lock and re-reads the latest credentials
+    to serialize rotation across tabs/workers. Database and identity-provider availability
+    are required for the corresponding operations. A failed/lost rotating refresh
+    may require another login; inference requests are not blindly retried.
+    The OpenAI SDK's async API-key provider resolves the credential for every
+    request, including model discovery, streaming, and file transfers. Missing
+    or unreadable credentials require another login; there is no shared-key fallback.
+
+    Profile discovery resolves credentials from the authenticated HTTP request;
+    chat callbacks use Chainlit's native WebSocket session. Both use the same
+    credential store, so an open chat picks up refreshed tokens on its next
+    gateway request without reconnecting. UI callbacks do not manage OAuth
+    state or token refresh. No authentication proxy or token-broker service is
+    required, and LGOS core remains independent of the UI's authentication.
+
+    Chainlit owns UI authentication. The HTTP middleware only exposes the request's
+    cookie/bearer credential to gateway calls; it performs no token-store queries
+    or custom HTTP/WebSocket access checks. Ordinary UI requests and WebSocket
+    handshakes do not consult the OAuth table. Chainlit's native user/history
+    database operations are unchanged.
+
+    Logout deletes the local grant before attempting provider token revocation.
+    A provider outage does not restore gateway credentials. It does not perform
+    global identity-provider logout or cancel in-flight streams. Provider revocation policy
+    may invalidate related grants; local browser grants are otherwise independent.
+    After grant cleanup, Chainlit's native logout handler clears the auth cookie
+    and runs any registered [`@cl.on_logout` hook](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-logout),
+    preserving the hook's response and cookie customizations.
+
+    !!! important "Logout boundary"
+
+        Logout clears the browser cookie and prevents new gateway credential
+        lookups for that login, including from an already-open chat. A request
+        that already obtained an access token may still complete. Chainlit's UI
+        JWT is not denylisted: a copied, unexpired cookie can still authenticate
+        to native UI/history routes until its JWT expires. Gateway-grant expiry
+        or deletion does not revoke that UI JWT. If gateway credentials are lost,
+        sign out and sign in again; profile discovery has no models to offer
+        without them.
+
+    !!! important "Deployment and key rotation"
+
+        Configure a separate encryption key; `CHAINLIT_AUTH_SECRET` signs
+        browser/state cookies only. Generate a key from `demo/ui/chainlit_ui`:
+
+        ```bash
+        uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+        ```
+
+        `DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS` is an ordered JSON list. For a rolling
+        rotation, deploy `[old, new]` everywhere first, then `[new, old]`. New and
+        refreshed grants use the first key. Keep the old key for the maximum
+        session lifetime after the last worker switches, then remove it. Expired
+        records are removed at startup and on subsequent logins.
+
+        This deployment supports one issuer. Changing the issuer requires
+        invalidating existing browser sessions and gateway grants.
+
+    LiteLLM still owns JWT validation, model permissions, budgets, and spending
+    attribution.
+
+    !!! note "Supported protocol contract"
+
+        Chainlit supports a confidential OIDC client with a shared secret and
+        S256 PKCE. Token responses must supply an expiry (`expires_in` or
+        `expires_at`, normalized by Authlib); automatic refresh also requires
+        a refresh token. Private-key client authentication and
+        provider-specific authorization parameters are not implemented.
+        The gateway must separately support the provider's access-token format;
+        OIDC login alone does not guarantee API-token interoperability.
 
 Browser login is separate from bearer-token protection for the LGOS `/v1` API.
 See [Authentication](../how-to-guides/authentication.md).
@@ -291,18 +429,22 @@ Chainlit-specific settings:
 | `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
+| `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 API resource identifier; forwarded without normalization when set. |
+| `DEMO_CHAINLIT_OAUTH_ISSUER` | Required for `oauth`. Exact HTTPS issuer; endpoints and signing keys come from discovery. |
+| `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` | `client_secret_basic` (default) or `client_secret_post`; match the registered client. Used for code exchange, refresh, and revocation. |
+| `DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS` | Required for `oauth`. JSON list of Fernet keys, primary encryption key first. |
 | `CHAINLIT_UTILS_MIGRATIONS_TABLE` | Chainlit-utils schema migration ledger. |
 | `CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY` | Persisted metadata key for UI-only messages. |
 
 See the bundled [Bifrost gateway](bifrost.md) for the Compose endpoint and
 adapter behavior.
 
-Native Chainlit settings:
+Unprefixed Chainlit and OIDC integration settings:
 
 | Setting | Notes |
 | --- | --- |
 | `DATABASE_URL` | Required. PostgreSQL data-layer URL. |
-| `CHAINLIT_AUTH_SECRET` | Required. Browser-session signing secret. |
+| `CHAINLIT_AUTH_SECRET` | Required. Browser-session and temporary OAuth-state signing secret. |
 | `CHAINLIT_APP_ROOT` | Tracked UI configuration and welcome Markdown. |
 | `BUCKET_NAME` | Required. S3-compatible bucket for native elements. |
 | `APP_AWS_ACCESS_KEY` | Required. S3 access key. |
@@ -310,15 +452,11 @@ Native Chainlit settings:
 | `APP_AWS_REGION` | Required. S3 signing region. |
 | `DEV_AWS_ENDPOINT` | Required. Custom S3-compatible endpoint URL. |
 | `STORAGE_EXPIRY_TIME` | Lifetime in seconds for resumed element URLs. |
-| `CHAINLIT_URL` | External origin for OAuth callbacks. |
+| `CHAINLIT_URL` | Required for `oauth`. External HTTPS origin for callbacks. |
 | `OAUTH_GENERIC_CLIENT_ID` | Required for `oauth`. OAuth client ID. |
 | `OAUTH_GENERIC_CLIENT_SECRET` | Required for `oauth`. OAuth client secret. |
-| `OAUTH_GENERIC_AUTH_URL` | Required for `oauth`. Authorization endpoint. |
-| `OAUTH_GENERIC_TOKEN_URL` | Required for `oauth`. Token endpoint. |
-| `OAUTH_GENERIC_USER_INFO_URL` | Required for `oauth`. User-info endpoint. |
 | `OAUTH_GENERIC_SCOPES` | Required for `oauth`. Space-separated scopes. |
 | `OAUTH_GENERIC_NAME` | Provider ID used in the callback path. |
-| `OAUTH_GENERIC_USER_IDENTIFIER` | User identifier claim. |
 
 The element bucket must allow browser CORS `GET` and `HEAD` requests from the
 Chainlit origin. CORS only permits the cross-origin response; the object still
@@ -330,8 +468,8 @@ when updating it because the PostgreSQL schema is release-specific.
 
 ## Production Notes
 
-- Use OAuth or another real callback; mock mode provides no access control or
-  user isolation.
+- Set `DEMO_CHAINLIT_LOGIN_TYPE=oauth` in production; mock login provides no
+  access control or user isolation.
 - Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for

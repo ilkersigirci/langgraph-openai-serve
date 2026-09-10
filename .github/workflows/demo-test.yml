@@ -162,13 +162,11 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: true
-          cache-dependency-glob: demo/api/uv.lock
+          cache-dependency-glob: |
+            demo/api/uv.lock
+            demo/ui/chainlit_ui/uv.lock
 
       - name: Test PostgreSQL persistence
         env:
           DEMO_API_TEST_POSTGRES_URI: postgresql://lgos:lgos@localhost:5432/lgos
-        run: >-
-          uv run --directory demo/api --locked --with-editable ../..
-          pytest -m integration
-          tests/integration/test_postgres_interrupt_runtime.py
-          tests/integration/test_postgres_persistent_plot_agent.py
+        run: make -C demo test-postgres

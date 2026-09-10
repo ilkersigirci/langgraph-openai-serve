@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, call
 
 import pytest
+from cryptography.fernet import Fernet
 from openai import OpenAIError
 from openai.types import Model
 from pydantic import ValidationError
@@ -19,6 +20,24 @@ from lgos_chainlit.utils import clients
         ("DEMO_CHAINLIT_UI_FILE", "../other", "UI_FILE"),
         ("OPENAI_GATEWAY_TYPE", "unsupported", "OPENAI_GATEWAY_TYPE"),
         ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example", "OPENAI_GATEWAY_BASE_URL"),
+        ("DEMO_CHAINLIT_OAUTH_RESOURCE", "relative-resource", "OAUTH_RESOURCE"),
+        (
+            "DEMO_CHAINLIT_OAUTH_RESOURCE",
+            "https://llm.example/#fragment",
+            "OAUTH_RESOURCE",
+        ),
+        ("DEMO_CHAINLIT_OAUTH_ISSUER", "http://id.example", "OAUTH_ISSUER"),
+        ("DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD", "none", "OAUTH_CLIENT_AUTH_METHOD"),
+        (
+            "DEMO_CHAINLIT_OAUTH_ISSUER",
+            "https://id.example?issuer=other",
+            "OAUTH_ISSUER",
+        ),
+        (
+            "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+            '["invalid-secret-key"]',
+            "OAUTH_ENCRYPTION_KEYS",
+        ),
     ],
 )
 def test_settings_reject_invalid_environment(
@@ -32,6 +51,7 @@ def test_settings_reject_invalid_environment(
     with pytest.raises(ValidationError) as error:
         Settings(_env_file=None)
     assert error.value.errors()[0]["loc"] == (field,)
+    assert "invalid-secret-key" not in str(error.value)
 
 
 def test_gateway_settings_read_environment_and_normalize_root(
@@ -46,6 +66,31 @@ def test_gateway_settings_read_environment_and_normalize_root(
     assert configured.OPENAI_GATEWAY_TYPE == "bifrost"
     assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
     assert configured.OPENAI_GATEWAY_API_KEY == "api-key"
+
+
+@pytest.mark.parametrize("api_key", [None, ""])
+def test_oauth_gateway_resource_is_optional_and_needs_no_shared_key(
+    monkeypatch: pytest.MonkeyPatch, api_key: str | None
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_RESOURCE", "https://llm.example/api/")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.setenv(
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        '["' + Fernet.generate_key().decode() + '"]',
+    )
+    if api_key is None:
+        monkeypatch.delenv("OPENAI_GATEWAY_API_KEY")
+    else:
+        monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", api_key)
+
+    configured = Settings(_env_file=None)
+
+    assert configured.OPENAI_GATEWAY_API_KEY is None
+    assert configured.OAUTH_RESOURCE == "https://llm.example/api/"
+
+    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_RESOURCE")
+    assert Settings(_env_file=None).OAUTH_RESOURCE is None
 
 
 @pytest.mark.parametrize(
@@ -86,6 +131,31 @@ def test_native_chainlit_settings_read_s3_element_storage(
 
     assert configured.BUCKET_NAME == "plots"
     assert configured.DEV_AWS_ENDPOINT == "https://s3.example.com"
+
+
+def test_configuration_diagnostics_do_not_expose_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secrets = {
+        "CHAINLIT_AUTH_SECRET": "private-browser-signing-secret",
+        "OAUTH_GENERIC_CLIENT_SECRET": "private-oidc-client-secret",
+        "APP_AWS_ACCESS_KEY": "private-access-key",
+        "APP_AWS_SECRET_KEY": "private-storage-secret",
+        "OPENAI_GATEWAY_API_KEY": "private-gateway-key",
+    }
+    for name, value in secrets.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://user:private-password@db.example/app"
+    )
+    diagnostic = repr(ChainlitSettings(_env_file=None)) + repr(Settings(_env_file=None))
+    assert all(value not in diagnostic for value in secrets.values())
+    assert "private-password" not in diagnostic
+
+    monkeypatch.setenv("DATABASE_URL", "https://user:private-password@db.example/app")
+    with pytest.raises(ValidationError) as error:
+        ChainlitSettings(_env_file=None)
+    assert "private-password" not in str(error.value)
 
 
 async def test_catalog_discovers_providers_and_preserves_model_metadata(

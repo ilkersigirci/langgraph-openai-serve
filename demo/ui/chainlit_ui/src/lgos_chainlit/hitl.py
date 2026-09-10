@@ -25,7 +25,7 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel, Field
 
-from lgos_chainlit.auth import register_auth_callback
+from lgos_chainlit.auth.chainlit import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     GraphFeature,

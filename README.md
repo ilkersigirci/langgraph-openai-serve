@@ -99,7 +99,7 @@ and Open WebUI use normal managed/native Responses and Files routes, plus a
 catalog-detail pass-through for rich model metadata, so neither UI connects
 directly to an LGOS service. The
 PostgreSQL-persistent Chainlit client uses a shared mock login by default, with
-PocketID OAuth available as an opt-in mode. See the
+OIDC login available as an opt-in mode. See the
 [Chainlit demo](docs/demo/chainlit.md).
 
 ## Use In FastAPI

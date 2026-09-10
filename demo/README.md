@@ -42,7 +42,9 @@ defaults live in that template, not in Compose fallbacks. Set
 bundled gateway through Docker Compose's native profiles. To reuse an existing
 LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
 `OPENAI_GATEWAY_BASE_URL` to its HTTPS root (without `/v1`), and provide
-its key through `OPENAI_GATEWAY_API_KEY`. This mode starts no gateway container.
+its key through `OPENAI_GATEWAY_API_KEY` for the default key-based UI setup.
+Chainlit can instead use [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
+This mode starts no gateway container.
 Merge the LGOS routes from `docker/configs/litellm/config.yaml` into the existing
 gateway and make the demo backends reachable from it. See the
 [external LiteLLM setup](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/docker.md#demo-services)
