@@ -24,6 +24,11 @@ from lgos_chainlit.utils import clients
             "OAUTH_RESOURCE",
         ),
         ("DEMO_CHAINLIT_OAUTH_ISSUER", "http://id.example", "OAUTH_ISSUER"),
+        (
+            "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
+            "sometimes",
+            "ENABLE_OAUTH_TOKEN_FORWARDING",
+        ),
         ("DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD", "none", "OAUTH_CLIENT_AUTH_METHOD"),
         (
             "DEMO_CHAINLIT_OAUTH_ISSUER",
@@ -56,38 +61,96 @@ def test_gateway_settings_read_environment_and_normalize_root(
 ) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
     monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example/root/")
-    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "api-key")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI_GATEWAY_TYPE == "bifrost"
     assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
-    assert configured.OPENAI_GATEWAY_API_KEY == "api-key"
+    assert configured.GATEWAY_API_KEY == "api-key"
+
+
+def test_oauth_login_can_use_a_static_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "chainlit-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_RESOURCE", "https://llm.example/api/")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+
+    configured = Settings(_env_file=None)
+
+    assert configured.GATEWAY_API_KEY == "chainlit-key"
+    assert configured.ENABLE_OAUTH_TOKEN_FORWARDING is False
+    assert configured.OAUTH_ENCRYPTION_KEYS == []
+    assert configured.OAUTH_RESOURCE == "https://llm.example/api/"
+
+    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_RESOURCE")
+    assert Settings(_env_file=None).OAUTH_RESOURCE is None
 
 
 @pytest.mark.parametrize("api_key", [None, ""])
-def test_oauth_gateway_resource_is_optional_and_needs_no_shared_key(
+def test_oauth_token_forwarding_needs_no_static_gateway_key(
     monkeypatch: pytest.MonkeyPatch, api_key: str | None
 ) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
     monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
-    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_RESOURCE", "https://llm.example/api/")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
     monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
     monkeypatch.setenv(
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
         '["' + Fernet.generate_key().decode() + '"]',
     )
     if api_key is None:
-        monkeypatch.delenv("OPENAI_GATEWAY_API_KEY")
+        monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
     else:
-        monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", api_key)
+        monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", api_key)
 
     configured = Settings(_env_file=None)
 
-    assert configured.OPENAI_GATEWAY_API_KEY is None
-    assert configured.OAUTH_RESOURCE == "https://llm.example/api/"
+    assert configured.GATEWAY_API_KEY is None
+    assert configured.ENABLE_OAUTH_TOKEN_FORWARDING is True
 
-    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_RESOURCE")
-    assert Settings(_env_file=None).OAUTH_RESOURCE is None
+
+def test_oauth_token_forwarding_rejects_a_static_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.setenv(
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        '["' + Fernet.generate_key().decode() + '"]',
+    )
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "static-key")
+
+    with pytest.raises(ValidationError, match="must be empty when OAuth"):
+        Settings(_env_file=None)
+
+
+def test_oauth_token_forwarding_requires_oauth_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "mock")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
+
+    with pytest.raises(ValidationError, match="requires OAuth login"):
+        Settings(_env_file=None)
+
+
+def test_oauth_token_forwarding_requires_encryption_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
+    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS", raising=False)
+
+    with pytest.raises(ValidationError, match="ENCRYPTION_KEYS must be configured"):
+        Settings(_env_file=None)
 
 
 @pytest.mark.parametrize(
@@ -95,7 +158,7 @@ def test_oauth_gateway_resource_is_optional_and_needs_no_shared_key(
     [
         "OPENAI_GATEWAY_TYPE",
         "OPENAI_GATEWAY_BASE_URL",
-        "OPENAI_GATEWAY_API_KEY",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY",
     ],
 )
 @pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
@@ -104,6 +167,8 @@ def test_gateway_settings_require_nonempty_environment(
     setting: str,
     value: str | None,
 ) -> None:
+    if setting == "DEMO_CHAINLIT_GATEWAY_API_KEY":
+        monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
     if value is None:
         monkeypatch.delenv(setting)
     else:
@@ -138,7 +203,7 @@ def test_configuration_diagnostics_do_not_expose_credentials(
         "OAUTH_GENERIC_CLIENT_SECRET": "private-oidc-client-secret",
         "APP_AWS_ACCESS_KEY": "private-access-key",
         "APP_AWS_SECRET_KEY": "private-storage-secret",
-        "OPENAI_GATEWAY_API_KEY": "private-gateway-key",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY": "private-gateway-key",
     }
     for name, value in secrets.items():
         monkeypatch.setenv(name, value)

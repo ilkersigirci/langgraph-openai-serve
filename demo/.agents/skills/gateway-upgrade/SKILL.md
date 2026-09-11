@@ -72,8 +72,9 @@ Wait for health before testing; do not reset its database or restart unrelated
 services to make a test pass.
 
 From the repository root, use `make test-litellm` or `make test-bifrost`.
-LiteLLM checks native model info and managed routing against direct LGOS streaming;
-Bifrost also runs the shared pass-through contract. Validate the selected Compose profile with
+LiteLLM checks native model info and managed routing against direct LGOS
+streaming; Bifrost also runs the shared pass-through contract. Validate the
+selected Compose profile with
 `make -C demo compose-config OPENAI_GATEWAY_TYPE=litellm` (or `bifrost`).
 
 Cover both graph providers, text, commentary and `phase`, function-output

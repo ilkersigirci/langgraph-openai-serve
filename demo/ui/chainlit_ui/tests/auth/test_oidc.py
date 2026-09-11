@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 import chainlit as cl
 import httpx
+import httpx2
 import jwt
 import pytest
 from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -46,9 +47,9 @@ class OIDCProvider:
     revocation_status: int = 200
     invalid_signature: bool = False
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("openid-configuration"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "issuer": "https://id.example",
@@ -63,7 +64,7 @@ class OIDCProvider:
             )
         if request.url.path == "/jwks":
             key = RSAAlgorithm.to_jwk(self.key.public_key(), as_dict=True)
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={"keys": [{**key, "kid": "test-key", "use": "sig"}]}
             )
         form = parse_qs(request.content.decode(), keep_blank_values=True)
@@ -78,7 +79,7 @@ class OIDCProvider:
             assert "authorization" not in request.headers
         if request.url.path == "/revoke":
             self.revocations.append(form["token"][0])
-            return httpx.Response(self.revocation_status)
+            return httpx2.Response(self.revocation_status)
         assert request.url.path == "/token"
         self.exchanges += 1
         code = form["code"][0]
@@ -102,7 +103,7 @@ class OIDCProvider:
             "nonce": params["nonce"][0],
             **self.claims_override,
         }
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "access_token": f"access-{code}",
@@ -184,21 +185,27 @@ async def oauth_app(
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(settings, "LOGIN_TYPE", "oauth")
     monkeypatch.setattr(settings, "OAUTH_ISSUER", "https://id.example")
-    method, resource = getattr(
-        request, "param", ("client_secret_basic", "https://llm.example/")
+    method, resource, forward_oauth_token = getattr(
+        request,
+        "param",
+        ("client_secret_basic", "https://llm.example/", True),
     )
     monkeypatch.setattr(settings, "OAUTH_CLIENT_AUTH_METHOD", method)
     monkeypatch.setattr(settings, "OAUTH_RESOURCE", resource)
+    monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", forward_oauth_token)
+    monkeypatch.setattr(
+        settings, "GATEWAY_API_KEY", None if forward_oauth_token else "static-key"
+    )
     get_chainlit_settings.cache_clear()
     oauth_client.oidc_client.cache_clear()
     provider = OIDCProvider(auth_method=method, resource=resource)
-    oauth_client.oidc_client().client_kwargs["transport"] = httpx.MockTransport(
+    oauth_client.oidc_client().client_kwargs["transport"] = httpx2.MockTransport(
         provider
     )
     monkeypatch.setattr(
         oauth_client,
         "AsyncOAuth2Client",
-        partial(AsyncOAuth2Client, transport=httpx.MockTransport(provider)),
+        partial(AsyncOAuth2Client, transport=httpx2.MockTransport(provider)),
     )
     sessions: dict[tuple[str, str], OAuthTokens] = {}
     persisted: dict[str, cl.User] = {}
@@ -232,7 +239,7 @@ async def oauth_app(
     monkeypatch.setattr(auth, "access_token", token)
     monkeypatch.setattr(auth, "delete_oauth_session", delete)
     app = FastAPI()
-    auth.configure_oauth(app)
+    auth.configure_auth(app)
     mount_chainlit(
         app=app,
         target=str(Path(__file__).parents[2] / "src/lgos_chainlit/simple.py"),
@@ -287,7 +294,10 @@ async def test_authorization_uses_native_prompt_settings(
 
 @pytest.mark.parametrize(
     "oauth_app",
-    [("client_secret_post", "https://llm.example/"), ("client_secret_basic", None)],
+    [
+        ("client_secret_post", "https://llm.example/", True),
+        ("client_secret_basic", None, True),
+    ],
     indirect=True,
     ids=["post-with-resource", "basic-without-resource"],
 )
@@ -338,6 +348,28 @@ async def test_pkce_login_keeps_grants_server_side_and_separates_same_user_sessi
     assert oauth_app.persisted["alice"].metadata == {"provider": "generic"}
 
 
+@pytest.mark.parametrize(
+    "oauth_app",
+    [("client_secret_basic", None, False)],
+    indirect=True,
+)
+async def test_oidc_login_can_use_a_static_gateway_key(oauth_app: OAuthApp) -> None:
+    async with oauth_app.browser() as browser:
+        response = await oauth_app.login(browser, "static")
+        assert response.status_code == 302
+        assert "success=true" in response.headers["location"]
+        assert not oauth_app.sessions
+
+        user = await browser.get("/user")
+        assert user.json()["metadata"] == {"provider": "generic"}
+        assert (await browser.get("/project/settings")).status_code == 200
+        assert oauth_app.gateway_authorizations == ["Bearer static-key"]
+
+        assert (await browser.post("/logout")).status_code == 200
+        assert not oauth_app.provider.revocations
+        assert "access_token" not in browser.cookies
+
+
 async def test_unsupported_client_auth_fails_before_authorization(
     oauth_app: OAuthApp,
 ) -> None:
@@ -351,16 +383,16 @@ async def test_unsupported_client_auth_fails_before_authorization(
 async def test_oidc_requires_a_validated_id_token_even_with_userinfo(
     oauth_app: OAuthApp,
 ) -> None:
-    def provider(request: httpx.Request) -> httpx.Response:
+    def provider(request: httpx2.Request) -> httpx2.Response:
         response = oauth_app.provider(request)
         if request.url.path == "/token":
             token = response.json()
             token.pop("id_token")
             token["userinfo"] = {"sub": "unverified-subject"}
-            return httpx.Response(200, json=token)
+            return httpx2.Response(200, json=token)
         return response
 
-    oauth_client.oidc_client().client_kwargs["transport"] = httpx.MockTransport(
+    oauth_client.oidc_client().client_kwargs["transport"] = httpx2.MockTransport(
         provider
     )
     async with oauth_app.browser() as browser:

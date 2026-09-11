@@ -6,6 +6,8 @@ from typing import Literal
 from openai.types import Model
 from pydantic import BaseModel, Field, JsonValue
 
+from lgos_chainlit.lgos_protocol import LGOS_MODEL_OWNER
+
 GatewayType = Literal["litellm", "bifrost"]
 
 
@@ -28,7 +30,7 @@ def litellm_models(payload: object) -> list[Model]:
                     "id": item.model_name,
                     "object": "model",
                     "created": 0,
-                    "owned_by": "langgraph-openai-serve",
+                    "owned_by": LGOS_MODEL_OWNER,
                     "lgos": item.model_info["lgos"],
                 }
             )

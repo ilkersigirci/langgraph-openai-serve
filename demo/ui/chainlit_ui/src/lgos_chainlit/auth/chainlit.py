@@ -8,7 +8,7 @@ from typing import cast
 from uuid import uuid4
 
 import chainlit as cl
-import httpx
+import httpx2
 from authlib.common.errors import AuthlibBaseError
 from authlib.oidc.core import UserInfo
 from chainlit.auth import clear_auth_cookie, create_jwt
@@ -76,10 +76,10 @@ class GatewayRequestContextMiddleware:
             _request_token.reset(context_token)
 
 
-async def gateway_api_key() -> str:
-    if settings.LOGIN_TYPE == "mock":
-        assert settings.OPENAI_GATEWAY_API_KEY is not None
-        return settings.OPENAI_GATEWAY_API_KEY
+async def gateway_credential() -> str:
+    if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
+        assert settings.GATEWAY_API_KEY is not None
+        return settings.GATEWAY_API_KEY
     # HTTP discovery has no Chainlit context. Chat callbacks use the native
     # socket session, even when Socket.IO's transport task inherited an HTTP token.
     token = _request_token.get()
@@ -122,17 +122,6 @@ async def oauth_login(*_args: object) -> None:
     raise OAuthLoginRequired()
 
 
-def register_auth_callback() -> None:
-    if settings.LOGIN_TYPE == "mock":
-        cl.password_auth_callback(mock_login)
-    else:
-        config.code.password_auth_callback = None
-        config.code.header_auth_callback = None
-        # Chainlit infers a narrower registry type from its built-in providers.
-        cast(list[OAuthProvider], providers)[:] = [OIDCLoginButton()]
-        cl.oauth_callback(oauth_login)
-
-
 def _check_provider(provider_id: str) -> None:
     if provider_id != get_chainlit_settings().OAUTH_GENERIC_NAME:
         raise HTTPException(404, "Unknown OAuth provider.")
@@ -161,7 +150,11 @@ async def oauth_callback(provider_id: str, request: Request):
             resource=settings.OAUTH_RESOURCE,
             leeway=10,
         )
-        tokens = OAuthTokens.model_validate(result)
+        tokens = (
+            OAuthTokens.model_validate(result)
+            if settings.ENABLE_OAUTH_TOKEN_FORWARDING
+            else None
+        )
         # Only Authlib's parsed ID token, never raw userinfo from a token response.
         identity = result.get("userinfo")
         if not isinstance(identity, UserInfo):
@@ -169,7 +162,7 @@ async def oauth_callback(provider_id: str, request: Request):
         subject = identity.get("sub")
         if not isinstance(subject, str) or not subject:
             raise ValueError("Missing verified subject.")
-    except (AuthlibBaseError, JoseError, ValueError):
+    except (httpx2.HTTPError, AuthlibBaseError, JoseError, ValueError):
         request.session.clear()
         return RedirectResponse(
             f"{get_chainlit_settings().CHAINLIT_URL}/login?error=oauth_callback_error",
@@ -179,18 +172,19 @@ async def oauth_callback(provider_id: str, request: Request):
     layer = get_data_layer()
     assert layer is not None
     await layer.create_user(user)
-    session_id = uuid4().hex
-    await save_oauth_tokens(
-        session_id, subject, tokens, time() + config.project.user_session_timeout
-    )
-    try:
-        previous_identity = session_identity(await _browser_auth(request))
-    except OAuthLoginRequired:
-        pass
-    else:
-        await delete_oauth_session(*previous_identity)
-    # Persist only user identity above. Session identity belongs exclusively to this JWT.
-    user.metadata[SESSION_CLAIM] = session_id
+    if tokens is not None:
+        session_id = uuid4().hex
+        await save_oauth_tokens(
+            session_id, subject, tokens, time() + config.project.user_session_timeout
+        )
+        try:
+            previous_identity = session_identity(await _browser_auth(request))
+        except OAuthLoginRequired:
+            pass
+        else:
+            await delete_oauth_session(*previous_identity)
+        # Add the session after persistence so it stays browser-local.
+        user.metadata[SESSION_CLAIM] = session_id
     response = RedirectResponse(
         f"{get_chainlit_settings().CHAINLIT_URL}/login/callback?success=true",
         status_code=302,
@@ -211,14 +205,16 @@ async def oauth_callback(provider_id: str, request: Request):
 
 @router.post("/logout")
 async def oauth_logout(request: Request, response: Response):
-    try:
-        identity = session_identity(await _browser_auth(request))
-    except OAuthLoginRequired:
-        tokens = None
-    else:
-        tokens = await delete_oauth_session(*identity)
+    tokens: OAuthTokens | None = None
+    if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
+        try:
+            identity = session_identity(await _browser_auth(request))
+        except OAuthLoginRequired:
+            pass
+        else:
+            tokens = await delete_oauth_session(*identity)
     request.session.clear()
-    if tokens:
+    if tokens is not None:
         try:
             metadata = await oidc_metadata()
             if endpoint := metadata.get("revocation_endpoint"):
@@ -231,7 +227,7 @@ async def oauth_logout(request: Request, response: Response):
                         else "access_token",
                     )
                     revoked.raise_for_status()
-        except (httpx.HTTPError, AuthlibBaseError, ValueError):
+        except (httpx2.HTTPError, AuthlibBaseError, ValueError):
             # Never log protocol responses or restore a deleted gateway grant.
             logger.warning(
                 "OAuth provider revocation failed; local gateway grant was removed."
@@ -239,11 +235,20 @@ async def oauth_logout(request: Request, response: Response):
     return await chainlit_logout(request, response)
 
 
-def configure_oauth(app: FastAPI) -> None:
-    if settings.LOGIN_TYPE != "oauth":
+def configure_auth(app: FastAPI) -> None:
+    """Configure the selected Chainlit login mode before mounting the UI."""
+    if settings.LOGIN_TYPE == "mock":
+        cl.password_auth_callback(mock_login)
         return
+
+    config.code.password_auth_callback = None
+    config.code.header_auth_callback = None
+    # Chainlit infers a narrower registry type from its built-in providers.
+    cast(list[OAuthProvider], providers)[:] = [OIDCLoginButton()]
+    cl.oauth_callback(oauth_login)
     app.include_router(router)
-    app.add_middleware(GatewayRequestContextMiddleware)
+    if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
+        app.add_middleware(GatewayRequestContextMiddleware)
     app.add_middleware(
         SessionMiddleware,
         secret_key=get_chainlit_settings().CHAINLIT_AUTH_SECRET,

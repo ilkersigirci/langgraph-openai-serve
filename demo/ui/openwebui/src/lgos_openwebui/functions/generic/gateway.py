@@ -14,6 +14,8 @@ from pydantic import (
     TypeAdapter,
 )
 
+from .contracts import LGOS_MODEL_OWNER
+
 GatewayType = Literal["litellm", "bifrost"]
 AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
 GatewayRoot = Annotated[
@@ -42,7 +44,7 @@ def litellm_models(payload: object) -> list[Model]:
                     "id": item.model_name,
                     "object": "model",
                     "created": 0,
-                    "owned_by": "langgraph-openai-serve",
+                    "owned_by": LGOS_MODEL_OWNER,
                     "lgos": item.model_info["lgos"],
                 }
             )

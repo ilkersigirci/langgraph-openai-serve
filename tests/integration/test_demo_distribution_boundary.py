@@ -214,6 +214,29 @@ def test_files_and_chainlit_s3_are_independently_configured() -> None:
     assert re.search(r"\bBUCKET_NAME: \$\{?BUCKET_NAME\b", chainlit_compose)
 
 
+def test_chainlit_receives_only_its_configuration() -> None:
+    compose = (DEMO_ROOT / "docker/apps/chainlit.yml").read_text(encoding="utf-8")
+
+    assert "env_file:" not in compose
+    for setting in (
+        "CHAINLIT_AUTH_SECRET",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY",
+        "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
+        "DEMO_CHAINLIT_LOGIN_TYPE",
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        "OAUTH_GENERIC_CLIENT_SECRET",
+    ):
+        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
+    for unrelated_secret in (
+        "DEMO_API_OPENAI_API_KEY",
+        "DEMO_OPENWEBUI_ADMIN_PASSWORD",
+        "LANGFUSE_SECRET_KEY",
+        "LITELLM_MASTER_KEY",
+        "OPENAI_GATEWAY_API_KEY",
+    ):
+        assert unrelated_secret not in compose
+
+
 def test_compose_ci_supplies_both_independent_s3_configurations() -> None:
     workflow = (REPOSITORY_ROOT / ".github/workflows/demo-test.yml").read_text(
         encoding="utf-8"

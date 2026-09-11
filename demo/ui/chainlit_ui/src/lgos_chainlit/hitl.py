@@ -25,7 +25,6 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel, Field
 
-from lgos_chainlit.auth.chainlit import register_auth_callback
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     GraphFeature,
@@ -56,8 +55,6 @@ from lgos_chainlit.utils.thread_resume import (
     reuse_persisted_step,
     schedule_after_thread_hydration,
 )
-
-register_auth_callback()
 
 logger = logging.getLogger(__name__)
 

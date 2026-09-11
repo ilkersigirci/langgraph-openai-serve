@@ -47,7 +47,7 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | `make compose-otel-dev` | Build the checkout and run the ordered stack with the OTEL overlay |
 | `make sync` | Synchronize all four projects from their lockfiles |
 | `make test` | Test all four projects from their lockfiles |
-| `make test-postgres` | Run API interrupt/Store persistence and Chainlit OAuth token/refresh tests against PostgreSQL on port 3001 |
+| `make test-postgres` | Run API interrupt/Store persistence and Chainlit delegated-token tests against PostgreSQL on port 3001 |
 | `make lint` | Check all four projects with Ruff |
 | `make check` | Run tests, lint, formatting, type checks, and Compose validation |
 
@@ -71,7 +71,9 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Gateway credential for Open WebUI and Chainlit mock login. Chainlit OAuth ignores it and uses the user's access token; see [Chainlit login](chainlit.md#persistence-and-login) |
+| `OPENAI_GATEWAY_API_KEY` | Static gateway credential used by Open WebUI. The bundled LiteLLM configuration also uses it as its demo master key |
+| `DEMO_CHAINLIT_GATEWAY_API_KEY` | Static Chainlit gateway credential used with mock or OAuth login. Leave empty only when OAuth token forwarding is enabled |
+| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |
 | `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container; may differ from the UI's SSO endpoint |
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `.env` |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import anyio
 import asyncpg
-import httpx
+import httpx2
 import pytest
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
@@ -129,7 +129,7 @@ async def test_concurrent_refresh_is_serialized_and_keeps_latest_refresh_token(
     refreshed: list[str] = []
     second_started = anyio.Event()
 
-    async def oidc(request: httpx.Request) -> httpx.Response:
+    async def oidc(request: httpx2.Request) -> httpx2.Response:
         form = parse_qs(request.content.decode(), keep_blank_values=True)
         if method == "client_secret_basic":
             scheme, credentials = request.headers["authorization"].split()
@@ -145,12 +145,12 @@ async def test_concurrent_refresh_is_serialized_and_keeps_latest_refresh_token(
         result = {"access_token": "access-new", "expires_in": 3600}
         if rotate:
             result["refresh_token"] = "refresh-rotated"
-        return httpx.Response(200, json=result)
+        return httpx2.Response(200, json=result)
 
     monkeypatch.setattr(
         oauth_client,
         "AsyncOAuth2Client",
-        partial(AsyncOAuth2Client, transport=httpx.MockTransport(oidc)),
+        partial(AsyncOAuth2Client, transport=httpx2.MockTransport(oidc)),
     )
 
     async def request_token(second: bool) -> None:
@@ -208,9 +208,9 @@ async def test_unusable_credentials_require_login(
             "UPDATE lgos_chainlit_oauth_sessions SET tokens = $1", encrypted
         )
 
-    def oidc(_request: httpx.Request) -> httpx.Response:
+    def oidc(_request: httpx2.Request) -> httpx2.Response:
         assert failure == "revoked"
-        return httpx.Response(400, json={"error": "invalid_grant"})
+        return httpx2.Response(400, json={"error": "invalid_grant"})
 
     monkeypatch.setattr(
         oauth_tokens,
@@ -219,7 +219,7 @@ async def test_unusable_credentials_require_login(
             client_id="chainlit-client",
             client_secret="client-secret",
             token_endpoint_auth_method="client_secret_post",
-            transport=httpx.MockTransport(oidc),
+            transport=httpx2.MockTransport(oidc),
         ),
     )
     with pytest.raises(OAuthLoginRequired, match="Log out and sign in again"):
@@ -298,10 +298,10 @@ async def test_logout_waits_for_refresh_and_removes_the_rotated_grant(
     deleting = anyio.Event()
     removed: list[OAuthTokens | None] = []
 
-    async def oidc(_request: httpx.Request) -> httpx.Response:
+    async def oidc(_request: httpx2.Request) -> httpx2.Response:
         refreshing.set()
         await deleting.wait()
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "access_token": "new-access",
@@ -314,7 +314,7 @@ async def test_logout_waits_for_refresh_and_removes_the_rotated_grant(
         oauth_tokens,
         "token_client",
         lambda: AsyncOAuth2Client(
-            client_id="client", transport=httpx.MockTransport(oidc)
+            client_id="client", transport=httpx2.MockTransport(oidc)
         ),
     )
 

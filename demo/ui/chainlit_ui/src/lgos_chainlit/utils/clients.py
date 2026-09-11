@@ -5,11 +5,11 @@ from typing import Any
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
 from openai.types import Model
 
-from lgos_chainlit.auth.chainlit import gateway_api_key
+from lgos_chainlit.auth.chainlit import gateway_credential
 from lgos_chainlit.gateway import gateway_config, litellm_models
+from lgos_chainlit.lgos_protocol import LGOS_MODEL_OWNER
 from lgos_chainlit.settings import settings
 
-LGOS_MODEL_OWNER = "langgraph-openai-serve"
 gateway = gateway_config(
     settings.OPENAI_GATEWAY_TYPE,
     settings.OPENAI_GATEWAY_BASE_URL,
@@ -18,14 +18,14 @@ gateway_http_client = DefaultAsyncHttpxClient()
 
 openai_client = AsyncOpenAI(
     base_url=gateway.responses_base_url,
-    api_key=gateway_api_key,
+    api_key=gateway_credential,
     http_client=gateway_http_client,
     max_retries=0,
     default_headers={"User-Agent": "lgos-chainlit"},
 )
 files_client = AsyncOpenAI(
     base_url=gateway.files_base_url,
-    api_key=gateway_api_key,
+    api_key=gateway_credential,
     http_client=gateway_http_client,
     max_retries=0,
 )

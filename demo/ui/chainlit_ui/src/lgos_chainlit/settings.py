@@ -58,13 +58,13 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_GATEWAY_BASE_URL",
         description="Gateway root without the OpenAI API path.",
     )
-    OPENAI_GATEWAY_API_KEY: str | None = Field(
+    GATEWAY_API_KEY: str | None = Field(
         default=None,
         min_length=1,
         repr=False,
-        validation_alias="OPENAI_GATEWAY_API_KEY",
-        description="Shared gateway API key for mock login; ignored in OAuth mode.",
+        description="Static gateway API key used when OAuth token forwarding is disabled.",
     )
+    ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
     HITL_MODEL: str = "lgos-a/interruptible-approval"
     UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"
@@ -115,18 +115,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_gateway_auth(self) -> Self:
-        if self.LOGIN_TYPE == "oauth":
-            if not self.OAUTH_ISSUER:
+        if self.LOGIN_TYPE == "oauth" and not self.OAUTH_ISSUER:
+            raise ValueError("DEMO_CHAINLIT_OAUTH_ISSUER must be an HTTPS issuer URL.")
+
+        if self.ENABLE_OAUTH_TOKEN_FORWARDING:
+            if self.LOGIN_TYPE != "oauth":
                 raise ValueError(
-                    "DEMO_CHAINLIT_OAUTH_ISSUER must be an HTTPS issuer URL."
+                    "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING requires OAuth login."
+                )
+            if self.GATEWAY_API_KEY is not None:
+                raise ValueError(
+                    "DEMO_CHAINLIT_GATEWAY_API_KEY must be empty when OAuth token forwarding is enabled."
                 )
             if not self.OAUTH_ENCRYPTION_KEYS:
                 raise ValueError(
                     "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS must be configured."
                 )
-        elif _is_unconfigured(self.OPENAI_GATEWAY_API_KEY):
+        elif _is_unconfigured(self.GATEWAY_API_KEY):
             raise ValueError(
-                "OPENAI_GATEWAY_API_KEY must be configured for mock login."
+                "DEMO_CHAINLIT_GATEWAY_API_KEY must be configured when OAuth token forwarding is disabled."
             )
         return self
 

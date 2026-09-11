@@ -37,7 +37,7 @@ def _cipher() -> MultiFernet:
 async def _pool() -> asyncpg.Pool:
     layer = get_data_layer()
     if not isinstance(layer, ChainlitDataLayer):
-        raise RuntimeError("OAuth gateway authentication requires Chainlit PostgreSQL.")
+        raise RuntimeError("OAuth token forwarding requires Chainlit PostgreSQL.")
     await layer.connect()
     assert layer.pool is not None
     return layer.pool

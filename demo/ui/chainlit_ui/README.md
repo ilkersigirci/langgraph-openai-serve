@@ -28,20 +28,21 @@ uv run --locked --env-file .env lgos-chainlit
 ```
 
 Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
-`OPENAI_GATEWAY_*` settings. Reusable helper settings use `CHAINLIT_UTILS_`;
+gateway type and base URL. Reusable helper settings use `CHAINLIT_UTILS_`;
 Chainlit's native `DATABASE_URL` and `CHAINLIT_AUTH_SECRET` variables remain
 unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEV_AWS_ENDPOINT` S3 settings so generated files survive thread resume.
 
-With `DEMO_CHAINLIT_LOGIN_TYPE=oauth`, Chainlit sends the signed-in user's
-access token on every gateway request. Request the gateway's API permission and
-`offline_access` alongside the identity scopes, and point
-`OPENAI_GATEWAY_BASE_URL` at the LiteLLM SSO endpoint.
-`OPENAI_GATEWAY_API_KEY` is ignored in OAuth mode and can be unset;
-mock login requires it.
-LiteLLM must authorize `/model/info` as well as Responses and Files for the
-user's credential. See the [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
-for configuration, key rotation, and logout behavior.
+`DEMO_CHAINLIT_LOGIN_TYPE=oauth` enables OIDC browser login independently of
+gateway authorization. By default, mock and OAuth login both use
+`DEMO_CHAINLIT_GATEWAY_API_KEY`. Set
+`DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true` and clear that key to send
+the signed-in user's access token instead. Delegated mode needs the gateway's
+API permission and `offline_access`; point `OPENAI_GATEWAY_BASE_URL` at the
+LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses
+and Files for the user's credential. See the
+[Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
+for both modes, key rotation, and logout behavior.
 
 Authentication code lives in [`src/lgos_chainlit/auth/`](src/lgos_chainlit/auth/):
 `chainlit.py` integrates login and request credentials with Chainlit,
@@ -55,28 +56,30 @@ verified `sub`.
 
 `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` defaults to `client_secret_basic`;
 set `client_secret_post` if that is your registered client's method. The same
-method is used for code exchange, refresh, and revocation. Set
-`DEMO_CHAINLIT_OAUTH_RESOURCE` only for providers using RFC 8707 resource
+method is used for code exchange and, in delegated mode, refresh and revocation.
+Set `DEMO_CHAINLIT_OAUTH_RESOURCE` when the provider uses RFC 8707 resource
 indicators, such as PocketID's API resource. Otherwise configure the gateway
-audience through the provider's client/scopes settings. No provider names or
-access-token claim formats are built into Chainlit; the gateway owns token validation.
+audience through the provider's client/scopes settings.
+No provider names or access-token claim formats are built into Chainlit; the
+gateway owns token validation.
 
-Set `DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS` to a JSON list of Fernet keys, separate
-from `CHAINLIT_AUTH_SECRET`. Generate a key locally:
+Delegated mode requires `DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS`, a JSON list of
+Fernet keys separate from `CHAINLIT_AUTH_SECRET`. Generate a key locally:
 
 ```bash
 uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
-All workers share these encryption keys. PostgreSQL holds a separate encrypted
-grant for each browser login and coordinates token refresh; Chainlit owns UI
-authentication and history. Logout removes the local gateway grant, not the
-identity provider's global session or copied native UI JWTs. The guide above
-documents the lifecycle and security boundaries.
+All workers share these encryption keys. When forwarding is enabled, PostgreSQL
+holds a separate encrypted grant for each browser login and coordinates token
+refresh. Chainlit owns UI authentication and history in either mode. Logout
+removes any local gateway grant, not the identity provider's global session or
+copied native UI JWTs. The guide above documents the lifecycle and security
+boundaries.
 
 Run the regular checks with `uv run --locked pytest`, or only the authentication
-checks with `uv run --locked pytest tests/auth`. OAuth persistence and refresh
-tests use a temporary schema in the configured PostgreSQL database:
+checks with `uv run --locked pytest tests/auth`. Delegated-token persistence and
+refresh tests use a temporary schema in the configured PostgreSQL database:
 
 ```bash
 TEST_CHAINLIT_DATABASE_URL=postgresql://lgos:lgos@localhost:3001/lgos \

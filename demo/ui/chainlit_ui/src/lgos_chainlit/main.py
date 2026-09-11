@@ -9,7 +9,7 @@ from chainlit.data.storage_clients.s3 import S3StorageClient
 from chainlit.utils import mount_chainlit
 from fastapi import FastAPI
 
-from lgos_chainlit.auth.chainlit import configure_oauth
+from lgos_chainlit.auth.chainlit import configure_auth
 from lgos_chainlit.auth.oauth_tokens import initialize_oauth_storage
 from lgos_chainlit.settings import get_chainlit_settings, settings
 from lgos_chainlit.utils.clients import gateway_http_client
@@ -35,7 +35,7 @@ async def _close_chainlit_data_layer() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
-        if settings.LOGIN_TYPE == "oauth":
+        if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
             await initialize_oauth_storage()
         yield
     finally:
@@ -44,7 +44,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(lifespan=lifespan)
-configure_oauth(app)
+configure_auth(app)
 
 CHAINLIT_UI_PATH = f"{settings.UI_FILE}.py"
 

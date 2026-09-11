@@ -162,10 +162,14 @@ settings](reference.md#opentelemetry-settings).
     COMPOSE_PROFILES=
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
+    DEMO_CHAINLIT_GATEWAY_API_KEY=${OPENAI_GATEWAY_API_KEY}
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
     ```
 
-    Use the gateway root without `/v1`. Both UIs and the host-side Open WebUI
-    sync command use these shared settings. An external LiteLLM uses the same
+    Use the gateway root without `/v1`. Both UIs share the gateway type and
+    base URL. Open WebUI uses `OPENAI_GATEWAY_API_KEY`; Chainlit uses its key
+    above with either login type, or delegated OAuth when explicitly enabled.
+    An external LiteLLM uses the same
     Responses, Files, and catalog routes as bundled LiteLLM.
 
     `make compose` (or `make compose-dev`) starts the demo APIs, Files service,
@@ -207,8 +211,8 @@ settings](reference.md#opentelemetry-settings).
 
     The external deployment continues to own its database, TLS, credentials,
     and Admin UI SSO. The selected credentials must allow the LGOS models, Files
-    operations, and native `/model/info`. Chainlit can use
-    [delegated OAuth](chainlit.md#persistence-and-login) without a shared key.
+    operations, and native `/model/info`. Chainlit can enable
+    [delegated OAuth](chainlit.md#persistence-and-login) and clear its static key.
     If the gateway already configures `litellm_proxy` Files,
     reconcile that provider with the demo's shared Files namespace. Then run
     `make sync-openwebui` and the [LiteLLM SDK checks](#demo-services) against
@@ -228,10 +232,11 @@ settings](reference.md#opentelemetry-settings).
     - managed routing: `http://localhost:3000/v1`
     - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
-    The bundled configuration uses API-key authentication. Chainlit's OAuth
-    login requires a gateway configured to validate delegated access tokens
-    through its trusted SSO ingress; enabling OAuth in Chainlit alone does
-    not configure LiteLLM. See [Chainlit OAuth](chainlit.md#persistence-and-login).
+    The bundled configuration uses API-key authentication. Chainlit can still
+    use OAuth for browser login with that key. OAuth token forwarding additionally
+    requires a gateway configured to validate delegated access tokens through its
+    trusted SSO ingress; enabling forwarding in Chainlit alone does not configure
+    LiteLLM. See [Chainlit OAuth](chainlit.md#persistence-and-login).
 
     Chainlit and Open WebUI send Responses and Files to managed routing and
     read descriptions, capabilities, and settings from `model_info.lgos`.
