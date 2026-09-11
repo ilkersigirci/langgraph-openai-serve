@@ -16,3 +16,4 @@ ui/chainlit_ui/src/lgos_chainlit/.chainlit/*
 !ui/chainlit_ui/src/lgos_chainlit/.chainlit/config.toml
 
 .marimo.toml
+.env.backup

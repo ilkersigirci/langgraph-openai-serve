@@ -40,6 +40,7 @@ nav = [
     { "Bifrost Gateway" = "demo/bifrost.md" },
     { "OpenTelemetry Overlay" = "demo/opentelemetry.md" },
     { "Self-hosted Service References" = "demo/self-hosted.md" },
+    { "LiteLLM Model Sync" = "demo/litellm-sync.md" },
     { "Settings and Commands" = "demo/reference.md" },
   ]},
   { Tutorials = [

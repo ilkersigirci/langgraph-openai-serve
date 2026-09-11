@@ -5,9 +5,11 @@ under `demo/`. These commands and `DEMO_*` settings are not part of the
 `langgraph-openai-serve` package API.
 
 [`demo/.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
-is the source of truth for demo environment values. Copy it to `.env` and
-customize it before running the demo. This reference explains settings without
-duplicating their defaults.
+is the source of truth for demo environment values. Copy it to `demo/.env` and
+customize it before starting services or running live integration tests.
+Just loads it when present; exported environment variables take precedence.
+Local tests, lint, formatting, type checks, and dependency synchronization can
+run without it. This reference explains settings without duplicating their defaults.
 
 ## Projects
 
@@ -24,41 +26,63 @@ Each Python project has its own `pyproject.toml`, virtual environment, and
 
 ## Common Commands
 
-Run these from `demo/` after copying `.env.example` to `.env`:
+Run these from the repository root. Configure `demo/.env` for service and
+integration commands:
 
 | Command | Purpose |
 | --- | --- |
-| `make run-postgres` | Start the demo PostgreSQL service on port 3001 |
-| `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
-| `make run-api-b` | Run the published `lgos-b` container on port 3005 |
-| `make run-files` | Run the published Files API container on port 3006 |
-| `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
-| `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3000 |
-| `make run-chainlit` | Run Chainlit on port 3002 and PostgreSQL; start the gateway separately or use `make compose` for the full stack |
-| `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
-| `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
-| `make run-files-local` | Run the independently locked local Files API process |
-| `make run-chainlit-local` | Apply Chainlit migrations and run the local UI process |
-| `make sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
-| `make compose` | Run the stack with published project-owned images |
-| `make compose-dev` | Build the local API, Files API, and Chainlit images; overlay LGOS only into the graph API image |
-| `make compose-otel` | Run published images with the OTEL overlay |
-| `make compose-otel-dev` | Build the checkout and run it with the OTEL overlay |
-| `make sync` | Synchronize all four projects from their lockfiles |
-| `make test` | Test all four projects from their lockfiles |
-| `make test-postgres` | Run the interrupt and Store persistence tests against PostgreSQL on port 3001 |
-| `make lint` | Check all four projects with Ruff |
-| `make check` | Run tests, lint, formatting, type checks, and Compose validation |
+| `just demo/up <service>` | Start one published Compose service and its dependencies; add `--dev` for checkout images or `--wait` to detach |
+| `just demo/api [--editable] [--port <port>]` | Set up checkpoints and run one local graph API process |
+| `just demo/files [--port <port>]` | Run the independently locked local Files API process |
+| `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
+| `just demo/marimo [--editable]` | Open the API notebook workspace |
+| `just demo/sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
+| `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
+| `just demo/compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
+| `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
+| `just demo/compose --otel` | Run the ordered published stack with the OTEL overlay |
+| `just demo/compose --dev --otel` | Build the checkout and run the ordered stack with the OTEL overlay |
+| `just demo/down` | Stop and remove every stack variant |
+| `just demo/sync` | Synchronize all four projects from their lockfiles |
+| `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
+| `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence and Chainlit delegated-token tests against PostgreSQL on port 3001 |
+| `just demo/lint` | Check all four projects with Ruff |
+| `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
+| `just demo/type-check [--editable]` | Type-check all four projects |
+| `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
-Host-side UI commands require a host-reachable `OPENAI_GATEWAY_BASE_URL`; see
+Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
+`lgos-files-api`, `lgos-bifrost`, `lgos-litellm`, `lgos-chainlit`, and
+`lgos-openwebui`. Put arguments for the underlying command after `--` when a
+recipe has its own options, for example
+`just demo/test --editable -- -q`.
+
+Use `just demo/` to list recipes in the `local`, `integration`, `checks`,
+`docker prod`, and `docker dev` groups. Docker recipes use published images by
+default; `--dev` selects builds from the current checkout. Shared recipes appear
+in both Docker groups.
+
+`just --usage demo/api` shows its options and defaults. The `--port` option
+overrides the dotenv value; exported variables work too, for example
+`LGOS_A_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
+inspect commands. To validate Compose using the template without creating an
+environment file, run:
+
+```bash
+just --dotenv-path demo/.env.example demo/compose-config
+```
+
+Host-side UI commands use the host-reachable `DEMO_GATEWAY_HOST_URL`; see
 the [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup)
 client guides for the host-side commands.
 
-From the repository root, `make test-litellm` and `make test-bifrost` run the
-focused OpenAI SDK checks. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
+`just demo/test-litellm --editable` and
+`just demo/test-bifrost --editable` run the focused OpenAI SDK
+checks.
+`OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
 gateway used by both maintained UIs. Responses and Files use its normal
-managed/native routes. A separate catalog-detail client retains LGOS model
-extensions through authenticated pass-through; UI inference never does.
+managed/native routes. LiteLLM metadata comes from native `/model/info` after
+[model sync](litellm-sync.md); only Bifrost uses catalog-detail pass-through.
 
 ## Stack Settings
 
@@ -67,18 +91,40 @@ extensions through authenticated pass-through; UI inference never does.
 | `DEMO_IMAGE_TAG` | Tag selected for all project-owned demo images |
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
+| `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
+| `DEMO_GATEWAY_HOST_URL` | Gateway root used by host-side synchronization and integration tests |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Gateway credential shared by Chainlit and Open WebUI; use a key issued by an external gateway |
-| `DEMO_LITELLM_IMAGE` | Required image reference; change it in `.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
+| `OPENAI_GATEWAY_API_KEY` | Static gateway credential used by Open WebUI. The bundled LiteLLM configuration also uses it as its demo master key |
+| `DEMO_CHAINLIT_GATEWAY_API_KEY` | Static Chainlit gateway credential used with mock or OAuth login. Leave empty only when OAuth token forwarding is enabled |
+| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |
+| `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container; may differ from the UI's SSO endpoint |
+| `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
+| `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
 | `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
 
+## Integration Test Settings
+
+Live test recipes read their endpoints from the `DEMO_TEST_*` values in
+`demo/.env.example`. Their native options can override those defaults:
+
+```bash
+just demo/test-postgres --uri postgresql://lgos:lgos@localhost:5432/lgos --editable
+just demo/test-direct --base-urls http://localhost:3104/v1 --files-url http://localhost:3106/v1
+just demo/test-litellm --base-url https://litellm.example.com/v1 -- --verbose
+```
+
+Use `just --usage demo/test-bifrost` for the normalized, catalog, and
+pass-through endpoint options. `--editable` overlays the parent LGOS checkout;
+arguments after `--` go to pytest. CI can export `DEMO_API_TEST_POSTGRES_URI`
+and run `just demo/test-postgres --editable` without a dotenv file.
+
 ## OpenTelemetry Settings
 
-These settings apply when using `make compose-otel` or
-`make compose-otel-dev`:
+These settings apply when using `just demo/compose --otel`,
+optionally together with `--dev`:
 
 | Setting | Purpose |
 | --- | --- |
@@ -92,7 +138,7 @@ traces are exported without SDK sampling. The selected remote backend owns
 retention.
 
 The OTEL overlay requires both `OTEL_COLLECTOR_GATEWAY_ENDPOINT` and
-`OTEL_HOST_NAME`; set them per machine in `.env`. The endpoint URL scheme
+`OTEL_HOST_NAME`; set them per machine in `demo/.env`. The endpoint URL scheme
 controls transport security: use `https://` for TLS and `http://` only when the
 gateway intentionally accepts cleartext OTLP/HTTP.
 

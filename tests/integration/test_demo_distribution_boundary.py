@@ -1,9 +1,15 @@
-"""Guard the files that make the in-tree demo independently extractable."""
+"""Guard the files that keep the in-tree demo independently extractable."""
 
 import json
+import os
 import re
+import shutil
+import sys
 import tomllib
 from pathlib import Path
+
+import anyio
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEMO_ROOT = REPOSITORY_ROOT / "demo"
@@ -11,6 +17,212 @@ REPOSITORY_BLOB_LINK = re.compile(
     r"https://github\.com/ilkersigirci/langgraph-openai-serve/blob/main/"
     r"(?P<path>[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)"
 )
+
+
+@pytest.mark.parametrize(
+    ("gateway_type", "gateway_service"),
+    [
+        ("litellm", "lgos-litellm"),
+        ("bifrost", "lgos-bifrost"),
+        ("litellm", ""),
+    ],
+)
+@pytest.mark.parametrize("dev", [False, True], ids=["published", "checkout"])
+@pytest.mark.parametrize("otel", [False, True], ids=["base", "otel"])
+async def test_compose_deploys_and_syncs_the_stack_in_order(
+    tmp_path: Path,
+    gateway_type: str,
+    gateway_service: str,
+    dev: bool,
+    otel: bool,
+) -> None:
+    docker = tmp_path / "docker"
+    uv = tmp_path / "uv"
+    log = tmp_path / "operations"
+    docker.write_text(
+        """#!/bin/sh
+printf "docker %s\\n" "$*" >> "$DEPLOY_TEST_LOG"
+test "$1" = compose || exit 98
+shift
+while [ "$1" = "-f" ]; do shift 2; done
+case "$1:$2" in
+  config:--services)
+    test -z "$DEPLOY_TEST_GATEWAY_SERVICE" || printf "%s\\n" "$DEPLOY_TEST_GATEWAY_SERVICE" ;;
+  up:*|run:*) exit 0 ;;
+  *) exit 99 ;;
+esac
+"""
+    )
+    docker.chmod(0o755)
+    uv.write_text(
+        """#!/bin/sh
+printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST_LOG"
+"""
+    )
+    uv.chmod(0o755)
+
+    result = await anyio.run_process(
+        [
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / "compose"),
+            *(["--dev"] if dev else []),
+            *(["--otel"] if otel else []),
+            "--",
+            "--quiet-pull",
+        ],
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "DEPLOY_TEST_LOG": str(log),
+            "OPENAI_GATEWAY_TYPE": gateway_type,
+            "DEPLOY_TEST_GATEWAY_SERVICE": gateway_service,
+            "OPENAI_GATEWAY_BASE_URL": "https://gateway.example",
+            "DEMO_GATEWAY_HOST_URL": "http://localhost:3000"
+            if gateway_service
+            else "https://gateway.example",
+        },
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    compose = "docker compose -f docker/compose/demo.yml"
+    if dev:
+        compose += " -f docker/compose/development.yml"
+    if otel:
+        compose += " -f docker/compose/otel.yml"
+    up_args = "--build --quiet-pull" if dev else "--quiet-pull"
+    first_services = gateway_service or "lgos-demo-api-a lgos-demo-api-b lgos-files-api"
+    expected = [
+        f"{compose} config --services",
+        f"{compose} up --wait {up_args} {first_services}",
+    ]
+    if gateway_type == "litellm":
+        expected.extend(
+            [
+                (
+                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
+                    "--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a"
+                ),
+                (
+                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
+                    "--source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b"
+                ),
+            ]
+        )
+    expected.extend(
+        [
+            f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
+            "uv run --directory ui/openwebui --locked "
+            "lgos-openwebui-sync gateway="
+            + (
+                "http://localhost:3000"
+                if gateway_service
+                else "https://gateway.example"
+            ),
+        ]
+    )
+    assert log.read_text().splitlines() == expected
+
+
+@pytest.fixture
+def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Record task arguments without starting project commands or services."""
+    log = tmp_path / "commands.jsonl"
+    uv = tmp_path / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "with open(os.environ['TASK_TEST_LOG'], 'a') as log:\n"
+        "    log.write(json.dumps({'args': sys.argv[1:], "
+        "'cwd': os.getcwd(), "
+        "'postgres': os.environ.get('TEST_CHAINLIT_DATABASE_URL')}) + '\\n')\n"
+    )
+    uv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    monkeypatch.setenv("TASK_TEST_LOG", str(log))
+    # Noninteractive SSH shells must also preserve the caller's executable PATH.
+    monkeypatch.setenv("SSH_CLIENT", "127.0.0.1 50000 22")
+    return log
+
+
+async def test_demo_tests_forward_quoted_arguments_without_a_dotenv_file(
+    tmp_path: Path, task_log: Path
+) -> None:
+    demo = tmp_path / "standalone demo"
+    demo.mkdir()
+    shutil.copyfile(DEMO_ROOT / "justfile", demo / "justfile")
+    selection = "responses or (files and not slow)"
+
+    result = await anyio.run_process(
+        ["just", str(demo / "test"), "--", "-k", selection],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    content = await anyio.Path(task_log).read_text(encoding="utf-8")
+    commands = [json.loads(line) for line in content.splitlines()]
+    assert [command["args"] for command in commands] == [
+        ["run", "--directory", project, "--locked", "pytest", "-k", selection]
+        for project in ("api", "files_api", "ui/chainlit_ui", "ui/openwebui")
+    ]
+    assert all(command["cwd"] == str(demo) for command in commands)
+
+
+async def test_postgres_task_accepts_ci_environment_without_a_dotenv_file(
+    tmp_path: Path, task_log: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo = tmp_path / "demo"
+    demo.mkdir()
+    shutil.copyfile(DEMO_ROOT / "justfile", demo / "justfile")
+    uri = "postgresql://lgos:lgos@localhost:5432/lgos"
+    monkeypatch.setenv("DEMO_API_TEST_POSTGRES_URI", uri)
+
+    result = await anyio.run_process(
+        ["just", str(demo / "test-postgres"), "--editable", "--", "-x"],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    content = await anyio.Path(task_log).read_text(encoding="utf-8")
+    api, chainlit = [json.loads(line) for line in content.splitlines()]
+    assert api["args"][:7] == [
+        "run",
+        "--directory",
+        "api",
+        "--locked",
+        "--with-editable",
+        "../..",
+        "pytest",
+    ]
+    assert api["args"][-1] == chainlit["args"][-1] == "-x"
+    assert chainlit["postgres"] == uri
+
+
+async def test_notebook_task_passes_host_literally(task_log: Path) -> None:
+    host = "$(printf should-not-run)"
+
+    result = await anyio.run_process(
+        [
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / "marimo"),
+            "--host",
+            host,
+            "--port",
+            "2818",
+        ],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
+    assert command["args"][-5:] == ["--host", host, "--port", "2818", "notebooks"]
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:
@@ -109,6 +321,29 @@ def test_files_and_chainlit_s3_are_independently_configured() -> None:
     assert "APP_AWS_" not in files_compose
     assert "DEV_AWS_ENDPOINT" not in files_compose
     assert re.search(r"\bBUCKET_NAME: \$\{?BUCKET_NAME\b", chainlit_compose)
+
+
+def test_chainlit_receives_only_its_configuration() -> None:
+    compose = (DEMO_ROOT / "docker/apps/chainlit.yml").read_text(encoding="utf-8")
+
+    assert "env_file:" not in compose
+    for setting in (
+        "CHAINLIT_AUTH_SECRET",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY",
+        "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
+        "DEMO_CHAINLIT_LOGIN_TYPE",
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        "OAUTH_GENERIC_CLIENT_SECRET",
+    ):
+        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
+    for unrelated_secret in (
+        "DEMO_API_OPENAI_API_KEY",
+        "DEMO_OPENWEBUI_ADMIN_PASSWORD",
+        "LANGFUSE_SECRET_KEY",
+        "LITELLM_MASTER_KEY",
+        "OPENAI_GATEWAY_API_KEY",
+    ):
+        assert unrelated_secret not in compose
 
 
 def test_compose_ci_supplies_both_independent_s3_configurations() -> None:

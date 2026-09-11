@@ -1122,7 +1122,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.10.1"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1132,9 +1132,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/9d/bbdf3da39df4ae57d5700b0e95d1d2fb973482824b4dec443d441cc94ee1/langgraph_openai_serve-0.10.1.tar.gz", hash = "sha256:899b6dc24dcf424dbc221446485026912dd890e4050ba15f69946a5765c851a9", size = 32917, upload-time = "2026-08-17T11:02:05.905Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/09/0d/9305f80c7c6c500bdcd8d125c64a06d76d92c224b03a0fbf9155027262c0/langgraph_openai_serve-0.18.0.tar.gz", hash = "sha256:434e3cf87922471a9eb0ba126ffaebb662732f59713620e837b067aa68ba47fd", size = 47502, upload-time = "2026-09-09T13:07:39.259Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/60/18a6865c7b0bdd5fa298fd83e6f426760245ac83ed4b489c4a47636196fd/langgraph_openai_serve-0.10.1-py3-none-any.whl", hash = "sha256:f1f20bd296bdcdcb731da438b24f9a82a06b2b6082a530bca67327e992165983", size = 48961, upload-time = "2026-08-17T11:02:04.86Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/63/c36d6e4892b099ada4c94318b6ad2d6dd9ab2b30a819150441c109763e5c/langgraph_openai_serve-0.18.0-py3-none-any.whl", hash = "sha256:a47f3c676716052a2048779149977eae0dad7f1d43a0d947ff78ce0c94cdfc6e", size = 69661, upload-time = "2026-09-09T13:07:37.949Z" },
 ]
 
 [package.optional-dependencies]
@@ -1203,6 +1203,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
@@ -1235,7 +1236,6 @@ dev = [
 ]
 test = [
     { name = "anyio" },
-    { name = "httpx" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "openai" },
     { name = "pytest" },
@@ -1247,12 +1247,13 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "langchain", specifier = ">=1.2.0" },
     { name = "langchain-openai", specifier = ">=1.2.1" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
     { name = "langgraph", specifier = ">=1.1.10,<2.0.0" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.1.0,<4" },
-    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.10.1" },
+    { name = "langgraph-openai-serve", extras = ["tracing"], specifier = ">=0.18.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "opentelemetry-distro", specifier = ">=0.65b0,<0.66" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.44.0,<2" },
@@ -1278,7 +1279,6 @@ dev = [
 ]
 test = [
     { name = "anyio", specifier = ">=4.14,<5" },
-    { name = "httpx", specifier = ">=0.28.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.0,<4" },
     { name = "openai", specifier = ">=2.0.0,<3.0.0" },
     { name = "pytest", specifier = ">=8.3.3" },

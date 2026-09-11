@@ -1,8 +1,9 @@
 # Demo Agent Guidance
 
 Each demo project is independent. Keep its dependencies and lockfile local to
-that project; run demo-wide checks with `make -C demo test` and
-`make -C demo lint type-check`.
+that project. From the repository root, run
+`just demo/check`; add `--editable` when validating the parent LGOS
+checkout.
 
 For live Chainlit or Open WebUI verification, read
 [Browser UI checks](.agents/ui_checks.md). It covers browser setup, login,

@@ -33,7 +33,9 @@ must not silently turn `store: false` into a stored response.
 
 `GET /v1/models` is sufficient for ordinary graph selection. A client that uses
 LGOS descriptions, feature discovery, or runtime-settings forms also needs
-`GET /v1/models/{model}` and the namespaced `lgos` property.
+`GET /v1/models/{model}` and the namespaced `lgos` property, or a gateway
+catalog containing the equivalent metadata. The demo's LiteLLM integration
+reads that extension from native `/model/info` after [model sync](../demo/litellm-sync.md).
 Those extensions improve presentation but are not prerequisites for a standard
 Responses request.
 
@@ -48,8 +50,7 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | Path | Current demo result | Intended use |
 | --- | --- | --- |
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
-| LiteLLM pass-through | Full maintained contract | UI catalog detail and protocol reference |
-| LiteLLM managed routing | Native wildcard streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
+| LiteLLM managed routing | Native streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
 | Bifrost raw pass-through | Full maintained contract | UI catalog detail and protocol reference |
 | Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions are unavailable and error metadata is rewritten | Bifrost-selected UI inference and Files |
 
@@ -72,24 +73,23 @@ gateway configuration and send the unqualified graph name upstream. Clients
 connected directly to LGOS use the registered graph name unchanged.
 
 LiteLLM's documented
-[Responses endpoint](https://docs.litellm.ai/docs/response_api) uses two wildcard
-routes, one per graph API, with `model_info.supports_native_streaming: true`.
-Graph names come from each API's `/v1/models`; adding a graph requires no gateway
-catalog edits or discovery script.
+[Responses endpoint](https://docs.litellm.ai/docs/response_api) uses concrete
+database-backed deployments with `model_info.supports_native_streaming: true`.
+The [LGOS-owned sync command](../demo/litellm-sync.md) registers graph routing
+and metadata through LiteLLM's native management API. Run sync after graph changes.
 
 The demo defaults to the pinned public `homeserver-litellm` image, configured
 to honor the deployment capability and preserve text deltas and commentary
 through managed `/v1/responses`. `DEMO_LITELLM_IMAGE` can select an alternative
 compatible image; see [Docker Compose](../demo/docker.md#demo-services) for
 configuration and validation. The integration suite checks native text deltas
-and commentary through both wildcard routes.
+and commentary through both demo graph providers.
 
 The maintained UIs use `OPENAI_GATEWAY_TYPE=litellm|bifrost`. With LiteLLM,
-their catalog clients read `/models` and `/models/{model}` through authenticated
-`/v1/lgos-a` and `/v1/lgos-b` pass-throughs, then retain the matching prefix and
-send Responses and Files to LiteLLM's managed `/v1` route. Files requests select
-the configured `litellm_proxy` provider. This preserves both LGOS catalogs'
-descriptions and capability extensions while keeping LiteLLM's managed routing,
+their catalog readers use native `/model/info`, take descriptions and capabilities
+from `model_info.lgos`, and send `model_name` unchanged to managed `/v1/responses`.
+Files use managed `/v1` with the configured `litellm_proxy` provider. No per-provider
+catalog routes or implicit model prefixes are needed. This keeps LiteLLM's routing,
 accounting, policy, retry, and fallback features available for inference.
 The error-normalization limitation still applies when LiteLLM is selected.
 

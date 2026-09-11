@@ -47,8 +47,8 @@ It depends on the Generic Pipe for Responses transport. The generated
 
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
-    selected gateway's normal route. Pass-through is limited to catalog detail
-    so LGOS descriptions and settings survive gateway normalization. Neither
+    selected gateway's normal route. Metadata comes from LiteLLM's native
+    `/model/info` or Bifrost's catalog-detail pass-through. Neither
     the Function nor the sync logic connects directly to LGOS.
 
 ## Setup
@@ -56,36 +56,44 @@ It depends on the Generic Pipe for Responses transport. The generated
 Start the official Open WebUI image:
 
 ```bash
-cd demo
-cp .env.example .env
-docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
+cp demo/.env.example demo/.env
+just demo/up lgos-openwebui --wait
 ```
 
-Then run the independent synchronization project locally:
+For independently started components, first [sync LGOS model
+metadata](litellm-sync.md) when using LiteLLM. Then run the Open WebUI
+synchronization project locally:
 
 ```bash
-OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
+just demo/sync-openwebui
 ```
 
-Both bundled gateways use host port `3000`. The
-override is necessary because the root `.env` configures the Compose DNS name,
-which is not resolvable by this host-side command. An external gateway URL that
-is reachable from both contexts needs no override.
+Both bundled gateways use host port `3000`. The recipe reads the host-reachable
+`DEMO_GATEWAY_HOST_URL`, while Compose uses `OPENAI_GATEWAY_BASE_URL` for its
+container network. Set both to the external root when one URL serves both
+contexts.
 
-The sync command signs in through `/api/v1/auths/signin`, creates or updates the
-bundled Functions, lists LGOS models through the selected gateway, retrieves
-their detailed metadata, and bulk-imports each generated Workspace Model with
-an active, public, hidden override for its manifold base. Run it again after
-changing a Function, the configured model catalog, or a graph's client settings
-schema.
+The full-stack `just demo/compose [--dev] [--otel]` variants handle
+synchronization automatically after their dependencies are healthy.
+
+The sync command signs in through `/api/v1/auths/signin` and reads LGOS metadata
+from the selected gateway before changing Functions or Workspace Models.
+An unavailable or malformed catalog stops the command without modifying them.
+It then updates the bundled Functions and bulk-imports each generated Workspace
+Model with an active, public, hidden override for its manifold base. Run it again
+after changing a Function, the configured model catalog, or a graph's client
+settings schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
 `GraphConfig.description`. The sync marks a model as **Limited functionality**
 when the API omits a description.
 
-LiteLLM's managed `/v1/models` response is not the UI catalog. The sync instead
-merges `/v1/lgos-a/models` and `/v1/lgos-b/models`, and retrieves details
-through the matching catalog pass-through. Bifrost uses aggregate `/v1/models`
+LiteLLM's managed `/v1/models` response is not the UI catalog. Both the Generic
+Pipe and Workspace Model sync read native `GET /model/info` using their
+configured gateway key. Entries with `model_info.lgos` supply descriptions,
+features, and complete settings; `model_name` remains the inference ID.
+No provider allowlist, per-provider catalog URL, or LGOS fallback is used.
+Bifrost uses aggregate `/v1/models`
 for discovery and its pass-through only for provider-specific detail. This
 preserves LGOS descriptions, features, and detailed client-settings schemas
 without a direct connection to LGOS. Inference still uses the selected
@@ -108,7 +116,7 @@ The filename stem or directory name is the Function ID, and the required Open
 WebUI frontmatter `title` is its display name. Function IDs must be lowercase
 Python identifiers.
 
-The shared `.env` supplies the sync credentials and gateway selection. See
+The shared `demo/.env` supplies the sync credentials and gateway selection. See
 [sync settings](reference.md#open-webui-sync-settings) for their purposes. Set
 secrets in the environment rather than passing them on the command line.
 
@@ -121,9 +129,9 @@ WebUI's
 
 Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
 `OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
-Function's admin valves. Compose initializes the required values from `.env`;
-use a key issued by the selected gateway. LiteLLM
-keeps `lgos-a/` or `lgos-b/` on the managed-routing model ID. Bifrost removes
+Function's admin valves. Compose initializes the required values from
+`demo/.env`; use a key issued by the selected gateway. LiteLLM
+sends the catalog's `model_name` unchanged for managed routing. Bifrost removes
 that provider prefix and sends it as `x-model-provider` to native Responses.
 Open WebUI stores Function code in its database, so a bind mount of the Python
 file does not update it.
@@ -131,8 +139,8 @@ file does not update it.
 ## File Input
 
 Generated models enable Open WebUI's native file-upload control only when the
-graph advertises `file_inputs`. Select `file-input` to process an attachment.
-Selecting Bifrost also exposes provider-qualified equivalents. The Generic
+graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
+demo to process an attachment. The Generic
 Function receives non-image attachments through Open WebUI's documented
 [`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
 argument and image bytes from their base64 `image_url` content. In the pinned
@@ -225,8 +233,9 @@ for the API Store and Open WebUI persistence boundaries.
 
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
-selector changes, so rerun `make sync-openwebui` after an LGOS schema change.
-Model selection then switches among the already-synchronized native forms.
+selector changes, so rerun `just demo/sync-openwebui` after an LGOS
+schema change. Model selection then switches among the already-synchronized
+native forms.
 
 !!! note "Pinned Open WebUI contract"
 

@@ -78,7 +78,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-gateway:{ .lg .middle } __Use the LiteLLM edge__
 
-    Select the managed UI inference route, catalog-detail pass-through, and
+    Select the managed UI inference route, native model metadata, and
     compatibility tests.
 
     [:octicons-arrow-right-24: LiteLLM in Compose](docker.md)
@@ -104,7 +104,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Chainlit | Persistent Responses client, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold plus dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
-| LiteLLM | Selectable managed UI inference edge plus catalog-detail pass-through | Pinned public `homeserver-litellm` image and Compose configuration |
+| LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
@@ -112,8 +112,9 @@ Only the graph API project imports `langgraph-openai-serve`. The Files API
 implements its independent OpenAI Files contract without importing LGOS.
 Chainlit and Open WebUI exercise the graph API's OpenAI wire contract without
 importing the package. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects their
-shared edge. Responses and Files use its normal managed/native routes; only
-catalog detail uses pass-through to preserve LGOS extensions.
+shared edge. Responses and Files use its normal managed/native routes.
+LiteLLM metadata comes from `/model/info` after [model sync](litellm-sync.md);
+Bifrost uses catalog-detail pass-through.
 
 !!! warning "Pinned managed-routing limitations"
 
@@ -121,9 +122,9 @@ catalog detail uses pass-through to preserve LGOS extensions.
     file-input, and continuation contracts; only normalized model-detail and
     error metadata remain strict expected failures. Its raw pass-through route
     passes the direct contract suite. The bundled `homeserver-litellm` image
-    preserves native streaming through dynamic wildcard routes. Standard
+    preserves native streaming and commentary. Standard
     error metadata remains rewritten.
-    Pass-through routes remain the lossless protocol references. The UIs use
+    Direct LGOS and Bifrost's raw route remain protocol references. The UIs use
     the selected gateway's normal inference route and accept that route's
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
     Gateway](bifrost.md) for the precise boundaries.

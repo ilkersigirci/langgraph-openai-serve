@@ -15,8 +15,9 @@ from pydantic import (
     ValidationError,
 )
 
-from .functions.generic.api import _catalog_base_url, _model_request
+from .functions.generic.api import _model_request
 from .functions.generic.contracts import LGOS_EXTENSION_KEY, LGOS_MODEL_OWNER
+from .functions.generic.gateway import GatewayConfig, litellm_models
 
 FILE_INPUTS_FEATURE = "file_inputs"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
@@ -120,57 +121,44 @@ def _chat_variable_fields(
 
 
 def discover_workspace_model_specs(
-    catalog_client: OpenAI,
-    catalog_detail_client: OpenAI,
+    client: OpenAI,
     *,
-    provider_routing: bool,
-    model_prefixes: tuple[str, ...] = (),
+    gateway: GatewayConfig,
 ) -> tuple[WorkspaceModelSpec, ...]:
     """Build Workspace Models from the configured OpenAI model endpoints."""
-    specs = []
-    for model_prefix in model_prefixes or (None,):
-        current_catalog_client = (
-            catalog_client.with_options(
-                base_url=_catalog_base_url(str(catalog_client.base_url), model_prefix)
-            )
-            if model_prefix is not None
-            else catalog_client
+    models: dict[str, Model | None] = {}
+    if not gateway.provider_routing:
+        payload = client.get(f"{gateway.root_url}/model/info", cast_to=object)
+        models = {model.id: model for model in litellm_models(payload)}
+    else:
+        catalog = client.with_options(base_url=f"{gateway.root_url}/v1").models.list()
+        detail_client = client.with_options(
+            base_url=f"{gateway.root_url}/openai_passthrough/v1"
         )
-        for catalog_model in current_catalog_client.models.list().data:
+        for catalog_model in catalog.data:
             if catalog_model.owned_by != LGOS_MODEL_OWNER:
                 continue
-            catalog_model_id = catalog_model.id
-            model_id = (
-                f"{model_prefix}/{catalog_model_id}"
-                if model_prefix is not None
-                else catalog_model_id
-            )
             try:
-                if model_prefix is not None:
-                    model = current_catalog_client.models.retrieve(
-                        model=catalog_model_id
-                    )
-                else:
-                    model = catalog_detail_client.models.retrieve(
-                        **_model_request(model_id, provider_routing=provider_routing)
-                    )
-            except OpenAIError:
-                model = None
-            extension = _model_extension(model)
-            specs.append(
-                WorkspaceModelSpec(
-                    id=model_id,
-                    fields=_chat_variable_fields(extension),
-                    description=(
-                        extension.description if extension is not None else None
-                    ),
-                    supports_file_inputs=(
-                        extension is not None
-                        and FILE_INPUTS_FEATURE in extension.features
-                    ),
+                models[catalog_model.id] = detail_client.models.retrieve(
+                    **_model_request(catalog_model.id, provider_routing=True)
                 )
+            except OpenAIError:
+                models[catalog_model.id] = None
+
+    specs = []
+    for model_id, model in sorted(models.items()):
+        extension = _model_extension(model)
+        specs.append(
+            WorkspaceModelSpec(
+                id=model_id,
+                fields=_chat_variable_fields(extension),
+                description=extension.description if extension is not None else None,
+                supports_file_inputs=(
+                    extension is not None and FILE_INPUTS_FEATURE in extension.features
+                ),
             )
-    return tuple(sorted(specs, key=lambda spec: spec.id))
+        )
+    return tuple(specs)
 
 
 def sync_workspace_models(

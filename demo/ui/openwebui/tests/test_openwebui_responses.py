@@ -10,7 +10,9 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
+from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
@@ -133,42 +135,43 @@ def install_client(monkeypatch: pytest.MonkeyPatch, **responses: object) -> None
     monkeypatch.setattr(generic_pipe, "_client", lambda **_: FakeClient(**responses))
 
 
-async def test_pipe_lists_both_litellm_catalogs(
+async def test_pipe_lists_native_litellm_model_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    catalog_urls = []
+    deployment = {"model_name": "research/graph", "model_info": {"lgos": {}}}
 
-    @asynccontextmanager
-    async def catalog_client(*, base_url: str, **_: object) -> AsyncIterator[object]:
-        catalog_urls.append(base_url)
-        model_prefix = base_url.rsplit("/", maxsplit=1)[-1]
-        yield SimpleNamespace(
-            models=SimpleNamespace(
-                list=AsyncMock(
-                    return_value=SimpleNamespace(
-                        data=[
-                            SimpleNamespace(
-                                id="simple-graph",
-                                owned_by="langgraph-openai-serve",
-                            )
-                        ]
-                    )
-                )
-            ),
-            model_prefix=model_prefix,
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/model/info"
+        assert request.headers["Authorization"] == "Bearer test-key"
+        assert "x-model-provider" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    deployment,
+                    deployment,
+                    {"model_name": "plain", "model_info": {"lgos": {}}},
+                    {"model_name": "gpt-5", "model_info": {}},
+                ]
+            },
         )
 
+    @asynccontextmanager
+    async def catalog_client(**kwargs: Any) -> AsyncIterator[AsyncOpenAI]:
+        async with AsyncOpenAI(
+            **kwargs,
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+        ) as client:
+            yield client
+
     monkeypatch.setattr(generic_pipe, "_client", catalog_client)
-
-    models = await generic_pipe.Pipe().pipes()
-
-    assert catalog_urls == [
-        "http://lgos-litellm:4000/v1/lgos-a",
-        "http://lgos-litellm:4000/v1/lgos-b",
-    ]
+    pipe = generic_pipe.Pipe()
+    pipe.valves.OPENAI_GATEWAY_API_KEY = "test-key"
+    models = await pipe.pipes()
     assert models == [
-        {"id": "lgos-a/simple-graph", "name": "Generic / lgos-a/simple-graph"},
-        {"id": "lgos-b/simple-graph", "name": "Generic / lgos-b/simple-graph"},
+        {"id": "research/graph", "name": "Generic / research/graph"},
+        {"id": "plain", "name": "Generic / plain"},
     ]
 
 
@@ -303,7 +306,7 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 
     assert result == "Approved."
     request = create.await_args.kwargs
-    assert request["model"] == "lgos-a/interruptible-approval"
+    assert request["model"] == "interruptible-approval"
     assert "extra_headers" not in request
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
@@ -1073,6 +1076,5 @@ def test_hosted_tool_request_enables_server_execution(model: str) -> None:
         None,
         None,
         provider_routing=False,
-        model_prefixes=("lgos-a", "lgos-b"),
     )
     assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

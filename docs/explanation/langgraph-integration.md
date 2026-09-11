@@ -187,7 +187,8 @@ and every resume. The helpers delegate to the same `prepare_run()`, `invoke_run(
 and `stream_run()` used by both HTTP routes.
 
 The demo's `api/notebooks/graph_runner.py` compares direct execution with
-Responses SDK calls. Open it with `make -C demo marimo-local`.
+Responses SDK calls. Open it with
+`just demo/marimo --editable`.
 
 ## Request Cancellation
 

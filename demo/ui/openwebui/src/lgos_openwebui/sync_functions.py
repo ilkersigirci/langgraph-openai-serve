@@ -164,24 +164,17 @@ def main() -> None:
         with (
             httpx.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
-                base_url=gateway.catalog_base_url,
+                base_url=f"{gateway.root_url}/v1",
                 api_key=settings.OPENAI_GATEWAY_API_KEY,
                 timeout=10,
-            ) as catalog_client,
-            OpenAI(
-                base_url=gateway.catalog_detail_base_url,
-                api_key=settings.OPENAI_GATEWAY_API_KEY,
-                timeout=10,
-            ) as catalog_detail_client,
+            ) as openai_client,
         ):
             sign_in(client, settings.ADMIN_EMAIL, settings.ADMIN_PASSWORD)
-            function_results = sync_functions(client)
             model_specs = discover_workspace_model_specs(
-                catalog_client,
-                catalog_detail_client,
-                provider_routing=gateway.provider_routing,
-                model_prefixes=gateway.model_prefixes,
+                openai_client,
+                gateway=gateway,
             )
+            function_results = sync_functions(client)
             sync_workspace_models(client, model_specs)
     except httpx.HTTPStatusError as exc:
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"

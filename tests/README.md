@@ -8,15 +8,20 @@ Keep test setup explicit and assertions focused on observable behavior.
 - `tests/api/interrupt/` keeps the Responses interrupt codec, response, HTTP
   contract, durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
-  `make test-demo`, or use `make test-demo-local` to overlay the current LGOS
-  checkout into the demo API test run.
+  `just demo/test`; add `--editable` to overlay the current LGOS
+  checkout into the API test run.
 - Live demo integration tests are excluded from default pytest runs. Start the
-  required services and use the dedicated root target, such as
-  `make test-bifrost` or `make test-litellm`, to select the `integration`
+  required services and use the dedicated recipe, such as
+  `just demo/test-bifrost --editable` or
+  `just demo/test-litellm --editable`, to select the `integration`
   marker explicitly.
 - `tests/integration/test_demo_*` guards copied wire declarations and the
   distribution boundary without making demo runtime code import the parent
   package checkout.
+- Chainlit authentication tests live in `demo/ui/chainlit_ui/tests/auth/`.
+  Run them from the Chainlit project with `uv run --locked pytest tests/auth`;
+  PostgreSQL credential tests use
+  `just demo/test-postgres --editable`.
 - Fixtures stay in the nearest test-root or subdirectory `conftest.py`.
 - Do not import from a `conftest.py`; request fixtures by name.
 
@@ -134,8 +139,8 @@ timer only masks the environment failure.
 Real PostgreSQL tests use unique persistence scopes, close and recreate the
 runtime, and delete their exact checkpoints or Store documents in teardown.
 Keep them excluded from default runs and invoke them through
-`make -C demo test-postgres` so ordinary and parallel unit runs never share an
-external database.
+`just demo/test-postgres --editable` so ordinary and parallel unit
+runs never share an external database.
 
 ## Client Event Tests
 

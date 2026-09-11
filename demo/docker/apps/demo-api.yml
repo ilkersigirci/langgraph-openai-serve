@@ -54,7 +54,7 @@ services:
       lgos-demo-api-setup:
         condition: service_completed_successfully
     ports:
-      - "3004:8000"
+      - "$LGOS_A_PORT:8000"
 
   lgos-demo-api-b:
     <<: *lgos-demo-api
@@ -63,7 +63,7 @@ services:
       lgos-demo-api-setup:
         condition: service_completed_successfully
     ports:
-      - "3005:8000"
+      - "$LGOS_B_PORT:8000"
 
   lgos-demo-api-setup:
     <<: *lgos-demo-api
@@ -74,3 +74,15 @@ services:
         condition: service_healthy
     healthcheck:
       disable: true
+
+  lgos-model-sync:
+    <<: *lgos-demo-api
+    profiles: [model-sync]
+    environment:
+      LITELLM_MASTER_KEY: $LITELLM_MASTER_KEY
+    healthcheck:
+      disable: true
+    entrypoint:
+      - lgos-demo-api-sync-litellm
+      - --gateway-url
+      - $LITELLM_SYNC_BASE_URL

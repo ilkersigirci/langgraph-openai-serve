@@ -90,14 +90,12 @@ def _responses_request(
     user_id: str | None,
     *,
     provider_routing: bool,
-    model_prefixes: tuple[str, ...] = (),
     previous_response_id: str | None = None,
 ) -> dict[str, Any]:
     request = {
         **_model_request(
             model_id,
             provider_routing=provider_routing,
-            model_prefixes=model_prefixes,
         ),
         "input": input_items,
         "store": False,

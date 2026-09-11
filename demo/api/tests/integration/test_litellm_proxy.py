@@ -8,7 +8,7 @@ from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
 
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
-LITELLM_CATALOG_BASE_URL = os.getenv("DEMO_TEST_LITELLM_CATALOG_BASE_URL")
+DIRECT_BASE_URLS = os.getenv("DEMO_TEST_DIRECT_BASE_URLS", "").split(",")
 LITELLM_API_KEY = os.getenv("DEMO_TEST_LITELLM_API_KEY") or os.getenv(
     "OPENAI_GATEWAY_API_KEY", ""
 )
@@ -56,54 +56,78 @@ async def test_litellm_chat_catalog_discovers_lgos_models() -> None:
     assert {"lgos-a/simple-graph", "lgos-b/simple-graph"} <= model_groups
 
 
-async def test_litellm_passthrough_requires_gateway_authentication() -> None:
-    if LITELLM_CATALOG_BASE_URL is None:
-        pytest.skip("set the LiteLLM catalog root URL")
-
+async def test_litellm_model_info_requires_gateway_authentication() -> None:
+    assert LITELLM_BASE_URL is not None
     async with httpx.AsyncClient(
-        base_url=f"{LITELLM_CATALOG_BASE_URL}/lgos-a",
+        base_url=LITELLM_BASE_URL.removesuffix("/v1"),
         timeout=10.0,
     ) as client:
-        response = await client.get("/models")
+        response = await client.get("/model/info")
 
     assert response.status_code == 401
     assert response.json()["error"]["type"] == "auth_error"
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> None:
-    if LITELLM_CATALOG_BASE_URL is None:
-        pytest.skip("set the LiteLLM catalog root URL")
+@pytest.mark.parametrize("stream", [False, True])
+async def test_litellm_native_chat_preserves_user(provider: str, stream: bool) -> None:
     assert LITELLM_BASE_URL is not None
-
-    async with (
-        AsyncOpenAI(
-            base_url=f"{LITELLM_CATALOG_BASE_URL}/{provider}",
-            api_key=LITELLM_API_KEY,
-            max_retries=0,
-            timeout=10.0,
-        ) as catalog_client,
-        AsyncOpenAI(
-            base_url=LITELLM_BASE_URL,
-            api_key=LITELLM_API_KEY,
-            max_retries=0,
-            timeout=10.0,
-        ) as responses_client,
-    ):
-        catalog = await catalog_client.models.list()
-        model = next(
-            item for item in catalog.data if item.id == "custom-input-output-context"
+    async with AsyncOpenAI(
+        base_url=LITELLM_BASE_URL,
+        api_key=LITELLM_API_KEY,
+        max_retries=0,
+        timeout=10.0,
+    ) as client:
+        response = await client.chat.completions.create(
+            model=f"{provider}/custom-input-output-context",
+            messages=[{"role": "user", "content": "Preserve my request context."}],
+            user="gateway-user",
+            stream=stream,
         )
-        detail = await catalog_client.models.retrieve(model.id)
-        response = await responses_client.responses.create(
-            model=f"{provider}/{model.id}",
+        if stream:
+            assert isinstance(response, AsyncStream)
+            content = "".join(
+                [
+                    chunk.choices[0].delta.content or ""
+                    async for chunk in response
+                    if chunk.choices
+                ]
+            )
+        else:
+            assert not isinstance(response, AsyncStream)
+            content = response.choices[0].message.content
+
+    assert content == "gateway-user asked: Preserve my request context."
+
+
+@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
+async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> None:
+    assert LITELLM_BASE_URL is not None
+    async with AsyncOpenAI(
+        base_url=LITELLM_BASE_URL,
+        api_key=LITELLM_API_KEY,
+        max_retries=0,
+        timeout=10.0,
+    ) as client:
+        catalog = await client.get(
+            f"{LITELLM_BASE_URL.removesuffix('/v1')}/model/info",
+            cast_to=object,
+        )
+        model = next(
+            item
+            for item in catalog["data"]
+            if item["model_name"] == f"{provider}/custom-input-output-context"
+        )
+        extension = model["model_info"]["lgos"]
+        assert extension["schema_version"] == 1
+        assert extension["description"]
+        response = await client.responses.create(
+            model=model["model_name"],
             input="Use the catalog model through managed routing.",
             store=False,
             user="gateway-user",
         )
 
-    extension = (detail.model_extra or {})["lgos"]
-    assert extension["description"]
     assert response.output_text == (
         "gateway-user asked: Use the catalog model through managed routing."
     )
@@ -262,20 +286,30 @@ async def test_litellm_native_stream_preserves_commentary(
     ]
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_preserves_upstream_text_deltas(provider: str) -> None:
-    if LITELLM_CATALOG_BASE_URL is None:
-        pytest.skip("set the LiteLLM catalog root URL")
+@pytest.mark.parametrize("provider,source_index", [("lgos-a", 0), ("lgos-b", 1)])
+async def test_litellm_preserves_upstream_text_deltas(
+    provider: str,
+    source_index: int,
+) -> None:
+    if (
+        len(DIRECT_BASE_URLS) <= source_index
+        or not DIRECT_BASE_URLS[source_index].strip()
+    ):
+        pytest.skip("set the comma-separated direct LGOS test URLs")
     assert LITELLM_BASE_URL is not None
 
     deltas_by_route: list[list[str]] = []
-    for base_url, model in (
-        (f"{LITELLM_CATALOG_BASE_URL}/{provider}", "multi-node-streaming"),
-        (LITELLM_BASE_URL, f"{provider}/multi-node-streaming"),
+    for base_url, model, api_key in (
+        (
+            DIRECT_BASE_URLS[source_index].strip(),
+            "multi-node-streaming",
+            os.getenv("DEMO_TEST_OPENAI_API_KEY", "DUMMY"),
+        ),
+        (LITELLM_BASE_URL, f"{provider}/multi-node-streaming", LITELLM_API_KEY),
     ):
         async with AsyncOpenAI(
             base_url=base_url,
-            api_key=LITELLM_API_KEY,
+            api_key=api_key,
             max_retries=0,
             timeout=10.0,
         ) as client:

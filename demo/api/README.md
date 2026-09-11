@@ -10,9 +10,9 @@ uv run --locked --env-file .env lgos-demo-api
 ```
 
 The API writes JSON logs to stdout. LGOS log records include correlation fields
-such as `request_id`, `model`, `stream`, and `operation_id` when available. From
-`demo/`, the optional `docker/compose/otel.yml` deployment overlay also exports
-the same standard-library records as native OpenTelemetry logs over OTLP.
+such as `request_id`, `model`, `stream`, and `operation_id` when available. The
+optional `demo/docker/compose/otel.yml` deployment overlay also exports the same
+standard-library records as native OpenTelemetry logs over OTLP.
 
 Configuration uses the `DEMO_API_` prefix. For example,
 `DEMO_API_POSTGRES_URI` selects the shared database for the LangGraph
@@ -29,6 +29,20 @@ The `lgos-rag` graph reads a compact Markdown corpus packaged under
 `src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
 external documentation checkout.
 
-From `demo/`, `make marimo-local` opens the notebook workspace. `custom_api.py`
-demonstrates synchronous, streaming, and asynchronous Responses calls;
-`graph_runner.py` compares the Responses endpoint with direct graph execution.
+`just demo/marimo --editable` opens the notebook workspace.
+`custom_api.py` demonstrates synchronous, streaming, and asynchronous Responses
+calls; `graph_runner.py` compares the Responses endpoint with direct graph
+execution.
+
+## LiteLLM Model Sync
+
+`lgos-demo-api-sync-litellm` registers LGOS model metadata through LiteLLM's
+native management API. Run
+`just demo/sync-litellm -- --source-url ... --prefix ...`;
+see the [model sync guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+for usage. The full-stack
+`just demo/compose [--dev] [--otel]` variants run the shared
+`lgos-model-sync` job for both demo APIs before starting the UIs. Other deployment
+systems should run it after their own API health check.
+Provide `LITELLM_MASTER_KEY` only to this operator command, not to UI clients.
+The command and its tests belong to this project; LiteLLM does not load them.

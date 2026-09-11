@@ -87,13 +87,9 @@ def test_gateway_url_has_a_string_schema_for_the_valves_form() -> None:
     assert schema["properties"]["OPENAI_GATEWAY_BASE_URL"]["type"] == "string"
 
 
-def test_bifrost_uses_native_responses_and_catalog_only_passthrough() -> None:
+def test_bifrost_uses_native_responses_and_files() -> None:
     gateway = gateway_config("bifrost", "https://gateway.example")
 
     assert gateway.responses_base_url == "https://gateway.example/openai/v1"
-    assert gateway.catalog_base_url == "https://gateway.example/v1"
-    assert gateway.catalog_detail_base_url == (
-        "https://gateway.example/openai_passthrough/v1"
-    )
     assert gateway.files_base_url == "https://gateway.example/v1"
     assert gateway.files_provider == "lgos-files"

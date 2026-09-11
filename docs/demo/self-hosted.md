@@ -80,10 +80,10 @@ and connect these three integration paths.
     the infrastructure host and is reachable on port `4318` only through its
     Compose networks unless that port is published.
 
-Start the demo itself from `demo/` with `make compose` or
-`make compose-otel`, depending on whether the OTEL overlay is enabled. The
-application services remain owned by this repository; the referenced project
-owns the edge, storage, Langfuse, and observability services.
+Start the demo itself with `just demo/compose` or
+`just demo/compose --otel`, depending on whether the OTEL overlay
+is enabled. The application services remain owned by this repository; the
+referenced project owns the edge, storage, Langfuse, and observability services.
 
 ## Deployment Boundary
 

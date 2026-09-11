@@ -37,4 +37,4 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "3006:8000"
+      - "$LGOS_FILES_PORT:8000"

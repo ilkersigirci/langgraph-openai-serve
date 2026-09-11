@@ -107,8 +107,8 @@ def _(mo):
     mo.md(r"""
     ## Official OpenAI client
 
-    Start the demo API with `make run-api-local` from `demo/`. It serves LGOS at
-    `http://localhost:3004/v1`.
+    Start the demo API with `just demo/api --editable`. It serves
+    LGOS at `http://localhost:3004/v1`.
     """)
     return
 

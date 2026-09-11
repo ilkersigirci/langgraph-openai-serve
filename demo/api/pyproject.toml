@@ -7,12 +7,13 @@ license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "fastapi[standard]>=0.121.0",
+    "httpx>=0.28.0",
     "langchain>=1.2.0",
     "langchain-openai>=1.2.1",
     "langchain-text-splitters>=1.1.0",
     "langgraph>=1.1.10,<2.0.0",
     "langgraph-checkpoint-postgres>=3.1.0,<4",
-    "langgraph-openai-serve[tracing]>=0.10.1",
+    "langgraph-openai-serve[tracing]>=0.18.0",
     "numpy>=2.4.6",
     "opentelemetry-distro>=0.65b0,<0.66",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
@@ -30,6 +31,7 @@ dependencies = [
 [project.scripts]
 lgos-demo-api = "lgos_demo_api.app:main"
 lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
+lgos-demo-api-sync-litellm = "lgos_demo_api.sync_litellm:main"
 
 [dependency-groups]
 dev = [
@@ -42,7 +44,6 @@ dev = [
 ]
 test = [
     "anyio>=4.14,<5",
-    "httpx>=0.28.0",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
     "openai>=2.0.0,<3.0.0",
     "pytest>=8.3.3",
@@ -67,6 +68,7 @@ addopts = [
 ]
 env = [
     "ENVIRONMENT=test",
+    "LANGGRAPH_STRICT_MSGPACK=False",
     "LGOS_ENABLE_LANGFUSE=False",
 ]
 testpaths = ["tests"]

@@ -1,11 +1,14 @@
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, call
 
 import httpx
 import pytest
+from openai import OpenAI
 
 import lgos_openwebui.sync_functions as sync_functions_module
 from lgos_openwebui.bundle import bundle_function
+from lgos_openwebui.functions.generic.gateway import gateway_config
 from lgos_openwebui.sync_functions import (
     FUNCTIONS_DIR,
     FunctionSpec,
@@ -174,6 +177,43 @@ def test_openwebui_client_signs_in_with_admin_credentials() -> None:
     )
 
 
+@pytest.mark.parametrize("catalog_status", [200, 503])
+def test_catalog_failure_does_not_modify_openwebui(
+    monkeypatch: pytest.MonkeyPatch, gateway_environment, catalog_status: int
+) -> None:
+    requests: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path == "/api/v1/auths/signin":
+            return httpx.Response(200, json={"token": "admin-token"})
+        if request.url.path == "/model/info":
+            # Both unavailable and malformed catalogs must abort before writes.
+            return httpx.Response(catalog_status, json={})
+        pytest.fail(f"Catalog failure must not modify Open WebUI: {request.url}")
+
+    transport = httpx.MockTransport(respond)
+    with (
+        closing(
+            httpx.Client(base_url="http://openwebui.test", transport=transport)
+        ) as client,
+        closing(
+            OpenAI(
+                api_key="test-api-key",
+                http_client=httpx.Client(transport=transport),
+                max_retries=0,
+            )
+        ) as gateway,
+    ):
+        monkeypatch.setattr(sync_functions_module.httpx, "Client", lambda **_: client)
+        monkeypatch.setattr(sync_functions_module, "OpenAI", lambda **_: gateway)
+
+        with pytest.raises(SystemExit, match="Open WebUI sync failed"):
+            sync_functions_module.main()
+
+    assert requests == ["/api/v1/auths/signin", "/model/info"]
+
+
 @pytest.mark.parametrize("server_error", [None, "No module named 'plotly'"])
 def test_main_reads_demo_openwebui_environment(
     monkeypatch,
@@ -192,12 +232,8 @@ def test_main_reads_demo_openwebui_environment(
     catalog_client = Mock()
     catalog_context = MagicMock()
     catalog_context.__enter__.return_value = catalog_client
-    api_client = Mock()
-    api_context = MagicMock()
-    api_context.__enter__.return_value = api_client
     openai_contexts = {
         "https://bifrost.example/v1": catalog_context,
-        "https://bifrost.example/openai_passthrough/v1": api_context,
     }
     openai_factory = Mock(
         side_effect=lambda *, base_url, **_: openai_contexts[base_url]
@@ -250,27 +286,14 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
-    openai_factory.assert_has_calls(
-        [
-            call(
-                base_url="https://bifrost.example/v1",
-                api_key="api-key",
-                timeout=10,
-            ),
-            call(
-                base_url="https://bifrost.example/openai_passthrough/v1",
-                api_key="api-key",
-                timeout=10,
-            ),
-        ],
-        any_order=True,
+    openai_factory.assert_called_once_with(
+        base_url="https://bifrost.example/v1",
+        api_key="api-key",
+        timeout=10,
     )
-    assert openai_factory.call_count == 2
     discover_workspace_models_mock.assert_called_once_with(
         catalog_client,
-        api_client,
-        provider_routing=True,
-        model_prefixes=(),
+        gateway=gateway_config("bifrost", "https://bifrost.example"),
     )
     sync_workspace_models_mock.assert_called_once_with(
         client,

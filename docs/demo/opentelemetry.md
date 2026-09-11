@@ -35,7 +35,7 @@ native export path from the API processes.
 
 ## Run The Overlay
 
-From `demo/`, copy `.env.example` to `.env`, then configure the required values:
+Copy `demo/.env.example` to `demo/.env`, then configure the required values:
 
 ```dotenv
 OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.com
@@ -49,13 +49,13 @@ Use `https://` unless the gateway deliberately accepts cleartext traffic.
 === "Published images"
 
     ```bash
-    make compose-otel
+    just demo/compose --otel
     ```
 
 === "Current checkout"
 
     ```bash
-    make compose-otel-dev
+    just demo/compose --dev --otel
     ```
 
 Generate a provider-free request after the stack becomes healthy:

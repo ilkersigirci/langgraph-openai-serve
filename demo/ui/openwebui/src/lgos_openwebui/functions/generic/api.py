@@ -36,34 +36,21 @@ def _model_id(body: dict[str, Any]) -> str:
     return model_id
 
 
-async def _list_model_ids(
-    client: AsyncOpenAI,
-    *,
-    model_prefix: str | None = None,
-) -> list[str]:
+async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
     models = await client.models.list()
-    model_ids = [
-        model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER
-    ]
-    if model_prefix is None:
-        return model_ids
-    return [_managed_model_id(model_id, (model_prefix,)) for model_id in model_ids]
+    return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]
 
 
 def _model_request(
     model_id: str,
     *,
     provider_routing: bool,
-    model_prefixes: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if not model_id:
         msg = "OpenAI model ID is missing."
         raise ValueError(msg)
-    if model_prefixes:
-        return {"model": _managed_model_id(model_id, model_prefixes)}
     if not provider_routing:
-        msg = "Gateway model routing is not configured."
-        raise ValueError(msg)
+        return {"model": model_id}
 
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
@@ -74,18 +61,3 @@ def _model_request(
         "model": upstream_model,
         "extra_headers": {"x-model-provider": provider},
     }
-
-
-def _catalog_base_url(catalog_root: str, model_prefix: str) -> str:
-    return f"{catalog_root.rstrip('/')}/{model_prefix}"
-
-
-def _managed_model_id(model_id: str, model_prefixes: tuple[str, ...]) -> str:
-    provider, separator, upstream_model = model_id.partition("/")
-    if not separator:
-        return f"{model_prefixes[0]}/{model_id}"
-    if provider not in model_prefixes or not upstream_model:
-        expected = ", ".join(f"{prefix}/model" for prefix in model_prefixes)
-        msg = f"LiteLLM model ID must use one of [{expected}]: {model_id!r}."
-        raise ValueError(msg)
-    return model_id

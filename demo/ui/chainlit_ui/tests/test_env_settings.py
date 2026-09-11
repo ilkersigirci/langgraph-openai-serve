@@ -1,11 +1,9 @@
 """Environment settings coverage for the standalone Chainlit application."""
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, call
-
+import httpx
 import pytest
+from cryptography.fernet import Fernet
 from openai import OpenAIError
-from openai.types import Model
 from pydantic import ValidationError
 
 from lgos_chainlit.gateway import gateway_config
@@ -19,6 +17,29 @@ from lgos_chainlit.utils import clients
         ("DEMO_CHAINLIT_UI_FILE", "../other", "UI_FILE"),
         ("OPENAI_GATEWAY_TYPE", "unsupported", "OPENAI_GATEWAY_TYPE"),
         ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example", "OPENAI_GATEWAY_BASE_URL"),
+        ("DEMO_CHAINLIT_OAUTH_RESOURCE", "relative-resource", "OAUTH_RESOURCE"),
+        (
+            "DEMO_CHAINLIT_OAUTH_RESOURCE",
+            "https://llm.example/#fragment",
+            "OAUTH_RESOURCE",
+        ),
+        ("DEMO_CHAINLIT_OAUTH_ISSUER", "http://id.example", "OAUTH_ISSUER"),
+        (
+            "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
+            "sometimes",
+            "ENABLE_OAUTH_TOKEN_FORWARDING",
+        ),
+        ("DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD", "none", "OAUTH_CLIENT_AUTH_METHOD"),
+        (
+            "DEMO_CHAINLIT_OAUTH_ISSUER",
+            "https://id.example?issuer=other",
+            "OAUTH_ISSUER",
+        ),
+        (
+            "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+            '["invalid-secret-key"]',
+            "OAUTH_ENCRYPTION_KEYS",
+        ),
     ],
 )
 def test_settings_reject_invalid_environment(
@@ -32,6 +53,7 @@ def test_settings_reject_invalid_environment(
     with pytest.raises(ValidationError) as error:
         Settings(_env_file=None)
     assert error.value.errors()[0]["loc"] == (field,)
+    assert "invalid-secret-key" not in str(error.value)
 
 
 def test_gateway_settings_read_environment_and_normalize_root(
@@ -39,13 +61,96 @@ def test_gateway_settings_read_environment_and_normalize_root(
 ) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
     monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example/root/")
-    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "api-key")
 
     configured = Settings(_env_file=None)
 
     assert configured.OPENAI_GATEWAY_TYPE == "bifrost"
     assert configured.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
-    assert configured.OPENAI_GATEWAY_API_KEY == "api-key"
+    assert configured.GATEWAY_API_KEY == "api-key"
+
+
+def test_oauth_login_can_use_a_static_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "chainlit-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_RESOURCE", "https://llm.example/api/")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+
+    configured = Settings(_env_file=None)
+
+    assert configured.GATEWAY_API_KEY == "chainlit-key"
+    assert configured.ENABLE_OAUTH_TOKEN_FORWARDING is False
+    assert configured.OAUTH_ENCRYPTION_KEYS == []
+    assert configured.OAUTH_RESOURCE == "https://llm.example/api/"
+
+    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_RESOURCE")
+    assert Settings(_env_file=None).OAUTH_RESOURCE is None
+
+
+@pytest.mark.parametrize("api_key", [None, ""])
+def test_oauth_token_forwarding_needs_no_static_gateway_key(
+    monkeypatch: pytest.MonkeyPatch, api_key: str | None
+) -> None:
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.setenv(
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        '["' + Fernet.generate_key().decode() + '"]',
+    )
+    if api_key is None:
+        monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
+    else:
+        monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", api_key)
+
+    configured = Settings(_env_file=None)
+
+    assert configured.GATEWAY_API_KEY is None
+    assert configured.ENABLE_OAUTH_TOKEN_FORWARDING is True
+
+
+def test_oauth_token_forwarding_rejects_a_static_gateway_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.setenv(
+        "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
+        '["' + Fernet.generate_key().decode() + '"]',
+    )
+    monkeypatch.setenv("DEMO_CHAINLIT_GATEWAY_API_KEY", "static-key")
+
+    with pytest.raises(ValidationError, match="must be empty when OAuth"):
+        Settings(_env_file=None)
+
+
+def test_oauth_token_forwarding_requires_oauth_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "mock")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
+
+    with pytest.raises(ValidationError, match="requires OAuth login"):
+        Settings(_env_file=None)
+
+
+def test_oauth_token_forwarding_requires_encryption_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
+    monkeypatch.delenv("DEMO_CHAINLIT_GATEWAY_API_KEY")
+    monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS", raising=False)
+
+    with pytest.raises(ValidationError, match="ENCRYPTION_KEYS must be configured"):
+        Settings(_env_file=None)
 
 
 @pytest.mark.parametrize(
@@ -53,7 +158,7 @@ def test_gateway_settings_read_environment_and_normalize_root(
     [
         "OPENAI_GATEWAY_TYPE",
         "OPENAI_GATEWAY_BASE_URL",
-        "OPENAI_GATEWAY_API_KEY",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY",
     ],
 )
 @pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
@@ -62,6 +167,8 @@ def test_gateway_settings_require_nonempty_environment(
     setting: str,
     value: str | None,
 ) -> None:
+    if setting == "DEMO_CHAINLIT_GATEWAY_API_KEY":
+        monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "openwebui-only-key")
     if value is None:
         monkeypatch.delenv(setting)
     else:
@@ -88,123 +195,83 @@ def test_native_chainlit_settings_read_s3_element_storage(
     assert configured.DEV_AWS_ENDPOINT == "https://s3.example.com"
 
 
-async def test_catalog_discovers_providers_and_preserves_model_metadata(
+def test_configuration_diagnostics_do_not_expose_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secrets = {
+        "CHAINLIT_AUTH_SECRET": "private-browser-signing-secret",
+        "OAUTH_GENERIC_CLIENT_SECRET": "private-oidc-client-secret",
+        "APP_AWS_ACCESS_KEY": "private-access-key",
+        "APP_AWS_SECRET_KEY": "private-storage-secret",
+        "DEMO_CHAINLIT_GATEWAY_API_KEY": "private-gateway-key",
+    }
+    for name, value in secrets.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://user:private-password@db.example/app"
+    )
+    diagnostic = repr(ChainlitSettings(_env_file=None)) + repr(Settings(_env_file=None))
+    assert all(value not in diagnostic for value in secrets.values())
+    assert "private-password" not in diagnostic
+
+    monkeypatch.setenv("DATABASE_URL", "https://user:private-password@db.example/app")
+    with pytest.raises(ValidationError) as error:
+        ChainlitSettings(_env_file=None)
+    assert "private-password" not in str(error.value)
+
+
+async def test_bifrost_catalog_preserves_provider_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("bifrost", "https://gateway.example"),
+        clients, "gateway", gateway_config("bifrost", "https://gateway.example")
     )
-    catalog_list = AsyncMock(
-        return_value=SimpleNamespace(
-            data=[
-                Model(
-                    id="lgos-a/graph-a",
-                    object="model",
-                    created=1,
-                    owned_by="langgraph-openai-serve",
-                ),
-                Model(
-                    id="lgos-future/graph-b",
-                    object="model",
-                    created=1,
-                    owned_by="langgraph-openai-serve",
-                ),
-                Model(
-                    id="gpt-5",
-                    object="model",
-                    created=1,
-                    owned_by="openai",
-                ),
+    graph = {
+        "id": "graph",
+        "object": "model",
+        "created": 1,
+        "owned_by": "langgraph-openai-serve",
+        "lgos": {"schema_version": 1, "description": "Graph", "features": []},
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            data = [
+                {**graph, "id": "team/graph"},
+                {**graph, "id": "other/graph"},
+                {**graph, "id": "gpt-5", "owned_by": "openai"},
             ]
+        else:
+            assert request.url.path == "/openai_passthrough/v1/models"
+            assert request.headers["x-model-provider"] in {"team", "other"}
+            data = [graph]
+        return httpx.Response(200, json={"object": "list", "data": data})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http),
         )
-    )
-    provider_models = {
-        "lgos-a": SimpleNamespace(
-            data=[
-                Model(
-                    id="graph-a",
-                    object="model",
-                    created=1,
-                    owned_by="langgraph-openai-serve",
-                    lgos={
-                        "schema_version": 1,
-                        "description": "DUMMY",
-                        "features": [],
-                    },
-                )
-            ]
-        ),
-        "lgos-future": SimpleNamespace(
-            data=[
-                Model(
-                    id="graph-b",
-                    object="model",
-                    created=1,
-                    owned_by="langgraph-openai-serve",
-                )
-            ]
-        ),
-    }
+        models = await clients.list_models()
 
-    def list_provider_models(*, extra_headers: dict[str, str]) -> SimpleNamespace:
-        return provider_models[extra_headers["x-model-provider"]]
-
-    api_list = AsyncMock(side_effect=list_provider_models)
-    monkeypatch.setattr(clients.catalog_client.models, "list", catalog_list)
-    monkeypatch.setattr(clients.catalog_detail_client.models, "list", api_list)
-
-    models = await clients.list_models()
-
-    assert [model.id for model in models] == [
-        "lgos-a/graph-a",
-        "lgos-future/graph-b",
-    ]
-    assert (models[0].model_extra or {})["lgos"] == {
-        "schema_version": 1,
-        "description": "DUMMY",
-        "features": [],
-    }
-    catalog_list.assert_awaited_once_with()
-    api_list.assert_has_awaits(
-        [
-            call(extra_headers={"x-model-provider": "lgos-a"}),
-            call(extra_headers={"x-model-provider": "lgos-future"}),
-        ],
-        any_order=True,
-    )
-    assert api_list.await_count == 2
+    assert [model.id for model in models] == ["other/graph", "team/graph"]
+    assert (models[0].model_extra or {})["lgos"] == graph["lgos"]
 
 
-def test_bifrost_uses_native_responses_and_catalog_only_passthrough(
+def test_bifrost_uses_native_responses_and_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = gateway_config("bifrost", "https://gateway.example")
     monkeypatch.setattr(clients, "gateway", gateway)
 
     assert gateway.responses_base_url == "https://gateway.example/openai/v1"
-    assert gateway.catalog_base_url == "https://gateway.example/v1"
-    assert gateway.catalog_detail_base_url == (
-        "https://gateway.example/openai_passthrough/v1"
-    )
     assert gateway.files_base_url == "https://gateway.example/v1"
     assert gateway.files_provider == "lgos-files"
     assert clients.model_request("lgos-b/namespace/graph-b") == {
         "model": "namespace/graph-b",
         "extra_headers": {"x-model-provider": "lgos-b"},
     }
-
-
-def test_bifrost_model_request_requires_a_provider(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("bifrost", "https://gateway.example"),
-    )
-
     with pytest.raises(ValueError, match="provider/model"):
         clients.model_request("graph-b")
 
@@ -217,85 +284,86 @@ async def test_model_retrieval_rejects_a_non_model_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("bifrost", "https://gateway.example"),
+        clients, "gateway", gateway_config("bifrost", "https://gateway.example")
     )
-    monkeypatch.setattr(
-        clients.catalog_detail_client.models,
-        "retrieve",
-        AsyncMock(return_value="unsupported model detail"),
-    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json="unsupported model detail")
+        )
+    ) as http:
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http),
+        )
+        with pytest.raises(OpenAIError, match="invalid model"):
+            await clients.retrieve_model("lgos-a/simple-graph")
 
-    with pytest.raises(OpenAIError, match="invalid model"):
-        await clients.retrieve_model("lgos-a/simple-graph")
 
-
-async def test_litellm_catalog_prefixes_models_and_owns_metadata(
+async def test_litellm_model_info_owns_catalog_and_preserves_public_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("litellm", "https://gateway.example"),
+        clients, "gateway", gateway_config("litellm", "https://gateway.example")
     )
-    catalog_clients = {}
-    for model_prefix in ("lgos-a", "lgos-b"):
-        model = Model(
-            id="graph",
-            object="model",
-            created=1,
-            owned_by="langgraph-openai-serve",
-            lgos={
-                "schema_version": 1,
-                "description": f"Graph {model_prefix}",
-                "features": [],
+    metadata = {"schema_version": 1, "description": "Graph", "features": []}
+    names = ["graph", "research/namespace/graph"]
+    deployments = [
+        {"model_name": name, "model_info": {"lgos": metadata}} for name in names
+    ]
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/model/info"
+        assert request.headers["Authorization"] == "Bearer test-key"
+        assert "x-model-provider" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    *deployments,
+                    deployments[0],
+                    {"model_name": "gpt-5", "model_info": {}},
+                ]
             },
         )
-        catalog_clients[model_prefix] = SimpleNamespace(
-            models=SimpleNamespace(
-                list=AsyncMock(
-                    return_value=SimpleNamespace(
-                        data=[
-                            model,
-                            Model(
-                                id="gpt-5",
-                                object="model",
-                                created=1,
-                                owned_by="openai",
-                            ),
-                        ]
-                    )
-                ),
-                retrieve=AsyncMock(return_value=model),
-            )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http, api_key="test-key"),
         )
-    monkeypatch.setattr(
-        clients,
-        "_catalog_client",
-        lambda model_prefix: catalog_clients[model_prefix],
-    )
+        models = await clients.list_models()
+        retrieved = await clients.retrieve_model(names[1])
+        with pytest.raises(OpenAIError, match="not available"):
+            await clients.retrieve_model("removed")
 
-    models = await clients.list_models()
-    retrieved = await clients.retrieve_model("lgos-b/graph")
-
-    assert [listed.id for listed in models] == ["lgos-a/graph", "lgos-b/graph"]
-    assert retrieved.id == "graph"
-    assert clients.model_request("graph") == {"model": "lgos-a/graph"}
-    assert clients.model_request("lgos-b/graph") == {"model": "lgos-b/graph"}
-    for catalog in catalog_clients.values():
-        catalog.models.list.assert_awaited_once_with()
-    catalog_clients["lgos-b"].models.retrieve.assert_awaited_once_with(model="graph")
+    assert [model.id for model in models] == names
+    assert retrieved.id == names[1]
+    assert (retrieved.model_extra or {})["lgos"] == metadata
+    for name in names:
+        assert clients.model_request(name) == {"model": name}
 
 
-def test_litellm_model_request_rejects_an_unknown_prefix(
+@pytest.mark.parametrize("status", [403, 200], ids=["forbidden", "invalid-payload"])
+async def test_litellm_catalog_errors_do_not_fall_back_to_other_routes(
     monkeypatch: pytest.MonkeyPatch,
+    status: int,
 ) -> None:
     monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("litellm", "https://gateway.example"),
+        clients, "gateway", gateway_config("litellm", "https://gateway.example")
     )
 
-    with pytest.raises(ValueError, match="lgos-a/model, lgos-b/model"):
-        clients.model_request("lgos-c/graph-c")
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/model/info"
+        return httpx.Response(status, json={"error": "unavailable"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        monkeypatch.setattr(
+            clients,
+            "openai_client",
+            clients.openai_client.with_options(http_client=http),
+        )
+        with pytest.raises(OpenAIError if status == 403 else ValidationError):
+            await clients.list_models()

@@ -3,7 +3,18 @@
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, AnyHttpUrl, PlainValidator, TypeAdapter
+from openai.types import Model
+from pydantic import (
+    AfterValidator,
+    AnyHttpUrl,
+    BaseModel,
+    Field,
+    JsonValue,
+    PlainValidator,
+    TypeAdapter,
+)
+
+from .contracts import LGOS_MODEL_OWNER
 
 GatewayType = Literal["litellm", "bifrost"]
 AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
@@ -12,17 +23,43 @@ GatewayRoot = Annotated[
     PlainValidator(AnyHttpUrlAdapter.validate_strings, json_schema_input_type=str),
     AfterValidator(lambda value: str(value).rstrip("/")),
 ]
-LITELLM_MODEL_PREFIXES = ("lgos-a", "lgos-b")
+
+
+class _LiteLLMDeployment(BaseModel):
+    model_name: str = Field(min_length=1)
+    model_info: dict[str, JsonValue]
+
+
+class _LiteLLMCatalog(BaseModel):
+    data: list[_LiteLLMDeployment]
+
+
+def litellm_models(payload: object) -> list[Model]:
+    """Expose LGOS metadata once per public LiteLLM model name."""
+    catalog = _LiteLLMCatalog.model_validate(payload)
+    return list(
+        {
+            item.model_name: Model.model_validate(
+                {
+                    "id": item.model_name,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": LGOS_MODEL_OWNER,
+                    "lgos": item.model_info["lgos"],
+                }
+            )
+            for item in catalog.data
+            if item.model_info.get("lgos") is not None
+        }.values()
+    )
 
 
 @dataclass(frozen=True)
 class GatewayConfig:
     """Resolved URLs and routing behavior for one supported gateway."""
 
+    root_url: str
     responses_base_url: str
-    catalog_base_url: str
-    catalog_detail_base_url: str
-    model_prefixes: tuple[str, ...]
     provider_routing: bool
     files_base_url: str
     files_provider: str
@@ -37,24 +74,26 @@ def gateway_config(
     if gateway_type == "litellm":
         managed_base_url = f"{root}/v1"
         return GatewayConfig(
+            root_url=root,
             responses_base_url=managed_base_url,
-            catalog_base_url=managed_base_url,
-            catalog_detail_base_url=managed_base_url,
-            model_prefixes=LITELLM_MODEL_PREFIXES,
             provider_routing=False,
             files_base_url=managed_base_url,
             files_provider="litellm_proxy",
         )
 
     return GatewayConfig(
+        root_url=root,
         responses_base_url=f"{root}/openai/v1",
-        catalog_base_url=f"{root}/v1",
-        catalog_detail_base_url=f"{root}/openai_passthrough/v1",
-        model_prefixes=(),
         provider_routing=True,
         files_base_url=f"{root}/v1",
         files_provider="lgos-files",
     )
 
 
-__all__ = ["GatewayConfig", "GatewayRoot", "GatewayType", "gateway_config"]
+__all__ = [
+    "GatewayConfig",
+    "GatewayRoot",
+    "GatewayType",
+    "gateway_config",
+    "litellm_models",
+]
