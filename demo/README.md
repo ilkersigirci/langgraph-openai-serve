@@ -6,7 +6,8 @@ application or integration tool has its own `pyproject.toml`, `.venv`, and
 `uv.lock`. Locked installs, tests, published Docker builds, and the published
 Compose stack need no files outside this directory.
 
-Commands below run from the repository root and require Just 1.58.0 or newer:
+Commands below run from the repository root and require Bash and Just 1.58.0
+or newer:
 
 ```bash
 cp demo/.env.example demo/.env
@@ -15,7 +16,9 @@ just demo/
 
 The default command lists recipes grouped by local, published Docker,
 development Docker, and validation workflows. In a standalone copy of this
-directory, use `just` instead.
+directory, use `just` instead. `just --usage demo/up` shows recipe options and
+defaults. Local development checks can run without a `.env` file; configure it
+before starting services or running live integration tests.
 
 The API resolves `langgraph-openai-serve` from PyPI and packages the default
 `lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
@@ -162,6 +165,10 @@ just demo/chainlit
 
 Run each long-lived process in a separate terminal.
 
+Just loads `demo/.env` into the process environment. Exported variables take
+precedence, so `LGOS_A_PORT=3104 just demo/api` overrides the default port.
+The equivalent recipe option is `just demo/api --port 3104`.
+
 ## Run the stack
 
 Use the published demo images and pinned service images:
@@ -232,5 +239,9 @@ just demo/check
 
 Use `just demo/check --editable` to run the API tests and type
 checks against the parent source tree.
+
+Use `just demo/format` to format the Justfile and fix Python style in all four
+projects. Pass pytest options after `--`, for example
+`just demo/test --editable -- -x` or `just demo/test-bifrost --editable -- -vv`.
 
 The directory is licensed under the included [MIT License](LICENSE).

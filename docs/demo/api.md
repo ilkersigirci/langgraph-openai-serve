@@ -7,6 +7,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 
 - Python 3.11 or newer
 - `uv`
+- Bash and Just 1.58.0 or newer
 - PostgreSQL (the included Compose service requires Docker)
 - An OpenAI-compatible upstream model only if you call the LLM-backed graphs
 

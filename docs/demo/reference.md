@@ -6,8 +6,10 @@ under `demo/`. These commands and `DEMO_*` settings are not part of the
 
 [`demo/.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
 is the source of truth for demo environment values. Copy it to `demo/.env` and
-customize it before running any demo recipe; the demo Justfile requires it.
-This reference explains settings without duplicating their defaults.
+customize it before starting services or running live integration tests.
+Just loads it when present; exported environment variables take precedence.
+Local tests, lint, formatting, type checks, and dependency synchronization can
+run without it. This reference explains settings without duplicating their defaults.
 
 ## Projects
 
@@ -24,8 +26,8 @@ Each Python project has its own `pyproject.toml`, virtual environment, and
 
 ## Common Commands
 
-Run these from the repository root after copying `demo/.env.example` to
-`demo/.env`:
+Run these from the repository root. Configure `demo/.env` for service and
+integration commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -45,6 +47,7 @@ Run these from the repository root after copying `demo/.env.example` to
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence and Chainlit delegated-token tests against PostgreSQL on port 3001 |
 | `just demo/lint` | Check all four projects with Ruff |
+| `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check all four projects |
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
@@ -53,6 +56,21 @@ Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
 `lgos-openwebui`. Put arguments for the underlying command after `--` when a
 recipe has its own options, for example
 `just demo/test --editable -- -q`.
+
+Use `just demo/` to list recipes in the `local`, `integration`, `checks`,
+`docker prod`, and `docker dev` groups. Docker recipes use published images by
+default; `--dev` selects builds from the current checkout. Shared recipes appear
+in both Docker groups.
+
+`just --usage demo/api` shows its options and defaults. The `--port` option
+overrides the dotenv value; exported variables work too, for example
+`LGOS_A_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
+inspect commands. To validate Compose using the template without creating an
+environment file, run:
+
+```bash
+just --dotenv-path demo/.env.example demo/compose-config
+```
 
 Host-side UI commands use the host-reachable `DEMO_GATEWAY_HOST_URL`; see
 the [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup)
@@ -86,6 +104,22 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
 | `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
+
+## Integration Test Settings
+
+Live test recipes read their endpoints from the `DEMO_TEST_*` values in
+`demo/.env.example`. Their native options can override those defaults:
+
+```bash
+just demo/test-postgres --uri postgresql://lgos:lgos@localhost:5432/lgos --editable
+just demo/test-direct --base-urls http://localhost:3104/v1 --files-url http://localhost:3106/v1
+just demo/test-litellm --base-url https://litellm.example.com/v1 -- --verbose
+```
+
+Use `just --usage demo/test-bifrost` for the normalized, catalog, and
+pass-through endpoint options. `--editable` overlays the parent LGOS checkout;
+arguments after `--` go to pytest. CI can export `DEMO_API_TEST_POSTGRES_URI`
+and run `just demo/test-postgres --editable` without a dotenv file.
 
 ## OpenTelemetry Settings
 

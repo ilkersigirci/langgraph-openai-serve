@@ -41,8 +41,9 @@ each deployable application in an independent uv project with its own lockfile.
 Its `lgos-rag` example indexes a small corpus packaged with the demo API, so the
 entire directory can be copied and run without files from this repository.
 
-Repository tasks require Just 1.58.0 or newer. Run `just` for package recipes
-and `just demo/<recipe>` for independent demo workflows.
+Repository tasks require Bash and [Just 1.58.0 or newer](https://just.systems/).
+Run `just` for package recipes and `just demo/` for independent demo workflows.
+Use `just --usage <recipe>` to see a recipe's options and defaults.
 
 ## Quick Demo
 

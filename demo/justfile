@@ -1,9 +1,11 @@
 set default-list
-set dotenv-required
+set dotenv-load
 set indentation := "    "
 set minimum-version := "1.58.0"
 set positional-arguments
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set script-interpreter := ["bash", "-euo", "pipefail"]
+# Preserve the caller's environment when Bash is launched over SSH.
+set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
 
 api_run := "uv run --directory api --locked"
 editable_api_run := api_run + " --with-editable ../.."
@@ -11,6 +13,7 @@ files_run := "uv run --directory files_api --locked"
 chainlit_run := "uv run --directory ui/chainlit_ui --locked"
 openwebui_run := "uv run --directory ui/openwebui --locked"
 compose_command := "docker compose -f docker/compose/demo.yml"
+compose_dev_command := compose_command + " -f docker/compose/development.yml"
 
 # Synchronize all four projects from their lockfiles.
 [group('local')]
@@ -24,32 +27,28 @@ sync:
 # Test every project; add --editable to overlay the parent LGOS checkout.
 [arg('editable', long, value='true')]
 [group('local')]
-[script('bash')]
 [timestamp]
 test editable='false' *args:
-    set -euo pipefail
-    api=({{ if editable == "true" { editable_api_run } else { api_run } }})
-    shift
-    "${api[@]}" pytest "$@"
-    {{ files_run }} pytest "$@"
-    {{ chainlit_run }} pytest "$@"
-    {{ openwebui_run }} pytest "$@"
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest "${@:2}"
+    {{ files_run }} pytest "${@:2}"
+    {{ chainlit_run }} pytest "${@:2}"
+    {{ openwebui_run }} pytest "${@:2}"
 
 # Open the API notebooks; add --editable to use the parent LGOS checkout.
 [arg('editable', long, value='true')]
 [arg('host', long)]
 [arg('port', long)]
 [group('local')]
-marimo editable='false' host='0.0.0.0' port='2718':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} marimo edit --no-token --host "{{ host }}" --port "{{ port }}" notebooks
+marimo editable='false' host='0.0.0.0' port='2718' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} marimo edit --no-token --host "$2" --port "$3" "${@:4}" notebooks
 
 # Test demo persistence against PostgreSQL.
 [arg('editable', long, value='true')]
 [arg('DEMO_API_TEST_POSTGRES_URI', long='uri')]
-[group('local')]
-test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py
-    TEST_CHAINLIT_DATABASE_URL="$DEMO_API_TEST_POSTGRES_URI" {{ chainlit_run }} pytest -m integration tests/auth/test_oauth_tokens.py
+[group('integration')]
+test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
+    TEST_CHAINLIT_DATABASE_URL="$DEMO_API_TEST_POSTGRES_URI" {{ chainlit_run }} pytest -m integration tests/auth/test_oauth_tokens.py "${@:3}"
 
 # Check lint and formatting for all four projects.
 [group('local')]
@@ -65,6 +64,19 @@ lint:
     {{ openwebui_run }} ruff check src tests
     {{ openwebui_run }} ruff format --check src tests
 
+# Format and fix all four projects; accepts Ruff check flags such as --unsafe-fixes.
+[group('local')]
+format *args:
+    just --fmt
+    {{ api_run }} ruff format src tests
+    {{ api_run }} ruff check --fix src tests "$@"
+    {{ files_run }} ruff format src tests
+    {{ files_run }} ruff check --fix src tests "$@"
+    {{ chainlit_run }} ruff format src tests
+    {{ chainlit_run }} ruff check --fix src tests "$@"
+    {{ openwebui_run }} ruff format src tests
+    {{ openwebui_run }} ruff check --fix src tests "$@"
+
 # Type-check every project; add --editable to use the parent LGOS source.
 [arg('editable', long, value='true')]
 [group('local')]
@@ -79,9 +91,9 @@ type-check editable='false':
 [timestamp]
 compose-config:
     {{ compose_command }} --profile model-sync config --quiet
-    {{ compose_command }} -f docker/compose/development.yml --profile model-sync config --quiet
+    {{ compose_dev_command }} --profile model-sync config --quiet
     {{ compose_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
-    {{ compose_command }} -f docker/compose/development.yml -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_dev_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
 
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]
@@ -115,8 +127,8 @@ chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
 [arg('editable', long, value='true')]
 [arg('DEMO_TEST_FILES_BASE_URL', long='files-url')]
 [group('integration')]
-test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py
+test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:4}"
 
 # Run Bifrost normalized and pass-through integration tests.
 [arg('DEMO_TEST_BIFROST_BASE_URL', long='base-url')]
@@ -125,32 +137,25 @@ test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_
 [arg('DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL', long='passthrough-url')]
 [group('integration')]
 [timestamp]
-test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py
-    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py
+test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
+    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
 [arg('DEMO_TEST_DIRECT_BASE_URLS', long='direct-urls')]
 [arg('editable', long, value='true')]
 [group('integration')]
-test-litellm $DEMO_TEST_LITELLM_BASE_URL=env("DEMO_TEST_LITELLM_BASE_URL") $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_litellm_proxy.py
+test-litellm $DEMO_TEST_LITELLM_BASE_URL=env("DEMO_TEST_LITELLM_BASE_URL") $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_litellm_proxy.py "${@:4}"
 
 # Start one Compose service; add --dev to build this checkout or --wait to detach.
 [arg('dev', long, value='true')]
 [arg('wait', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
-[script('bash')]
 up service dev='false' wait='false' *args:
-    set -euo pipefail
-    service=$1
-    shift 3
-    compose=({{ compose_command }})
-    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
-    up_args=({{ if dev == "true" { "--build" } else { "" } }} {{ if wait == "true" { "--wait" } else { "" } }} "$@")
-    "${compose[@]}" up "${up_args[@]}" "$service"
+    {{ if dev == "true" { compose_dev_command } else { compose_command } }} up {{ if dev == "true" { "--build" } else { "" } }} {{ if wait == "true" { "--wait" } else { "" } }} "${@:4}" "$1"
 
 # Reset LiteLLM's PostgreSQL schema.
 [group('docker dev')]
@@ -169,33 +174,21 @@ sync-openwebui *args:
 [arg('dev', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
-[script('bash')]
 sync-litellm dev='false' *args:
-    set -euo pipefail
-    shift
-    compose=({{ compose_command }})
-    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
-    "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync "$@"
+    {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-model-sync "${@:2}"
 
 # Start and synchronize the stack; add --dev and/or --otel as needed.
 [arg('dev', long, value='true')]
 [arg('otel', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
-[script('bash')]
+[script]
 compose dev='false' otel='false' *up_args:
-    set -euo pipefail
-
-    compose=({{ compose_command }})
-    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
-    {{ if otel == "true" { "compose+=(-f docker/compose/otel.yml)" } else { ":" } }}
-
-    shift 2
-    up_args=({{ if dev == "true" { "--build" } else { "" } }} "$@")
-    gateway_type="$("${compose[@]}" config --environment | sed -n 's/^OPENAI_GATEWAY_TYPE=//p')"
+    compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
+    up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
     gateway_service="$("${compose[@]}" config --services | sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p')"
 
-    case "$gateway_type:$gateway_service" in
+    case "$OPENAI_GATEWAY_TYPE:$gateway_service" in
         litellm:lgos-litellm|bifrost:lgos-bifrost)
             "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service"
             ;;
@@ -208,16 +201,13 @@ compose dev='false' otel='false' *up_args:
             ;;
     esac
 
-    if [[ "$gateway_type" == "litellm" ]]; then
+    if [[ "$OPENAI_GATEWAY_TYPE" == "litellm" ]]; then
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
     fi
 
-    "${compose[@]}" up --wait "${up_args[@]}" lgos-chainlit lgos-openwebui
-    if [[ -n "$gateway_service" ]]; then
-        export OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL"
-    fi
-    {{ openwebui_run }} lgos-openwebui-sync
+    "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
+    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} lgos-openwebui-sync
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

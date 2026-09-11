@@ -28,6 +28,10 @@ The API package includes the compact Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
 
+Commands use Bash and Just 1.58.0 or newer and run from the repository root.
+In a standalone copy of `demo/`, use `just <recipe>` in place of
+`just demo/<recipe>`.
+
 !!! note "Docker Compose 5.3.0 or newer"
 
     Chainlit uses `pre_start` for its private schema migrations. The two API
@@ -62,8 +66,8 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     The command waits for the gateway and its dependencies, syncs LiteLLM when
-    selected, waits for both UIs, and syncs Open WebUI. Services remain running
-    in the background. Compose still owns [dependency order and
+    selected, starts both UIs without recreating the healthy backends, and syncs
+    Open WebUI. Services remain running in the background. Compose owns [dependency order and
     readiness](https://docs.docker.com/compose/how-tos/startup-order/); `just` only
     sequences the repeatable sync jobs.
 
@@ -96,12 +100,12 @@ settings](reference.md#opentelemetry-settings).
     editable overlay:
 
     ```bash
-    uv run --directory demo/api --locked --with-editable ../.. pytest
+    just demo/test --editable
     ```
 
-    This command does not rewrite `api/pyproject.toml` or `api/uv.lock`.
-    Chainlit and Open WebUI remain standalone clients and exercise whichever API
-    their OpenAI base URL targets.
+    This tests all four projects and does not rewrite `api/pyproject.toml` or
+    `api/uv.lock`. Chainlit and Open WebUI remain standalone clients and exercise
+    whichever API their OpenAI base URL targets.
 
 ## Demo Services
 

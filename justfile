@@ -3,17 +3,15 @@ set dotenv-load
 set indentation := "    "
 set minimum-version := "1.58.0"
 set positional-arguments
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set script-interpreter := ["bash", "-euo", "pipefail"]
+# Preserve the caller's environment when Bash is launched over SSH.
+set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
 
-package := "src/langgraph_openai_serve"
-lint_targets := package + " tests"
-
-# Install the locked development environment and Git hooks.
-[arg('no_cache', long='no-cache', value='true')]
+# Install the locked development environment and Git hooks; accepts uv sync flags.
 [group('setup')]
-install no_cache='false':
-    uv sync --frozen {{ if no_cache == "true" { "--no-cache" } else { "" } }}
-    uv run prek install
+install *args:
+    uv sync --locked "$@"
+    uv run --locked prek install
 
 # Upgrade dependencies and refresh the lockfile.
 [group('setup')]
@@ -29,16 +27,12 @@ test *args:
 [group('clean')]
 clean:
     rm -rf ./build ./dist ./coverage ./htmlcov ./.coverage ./.coverage.* ./.pytest_cache ./.ruff_cache ./src/*.egg-info ./*.egg-info
-    find src tests -type f -iname "*.so" -delete
-    find src tests -type f -iname "*.pyc" -delete
-    find src tests -type d -name "*.egg-info" -prune -exec rm -rf {} +
     find src tests -type d -name "__pycache__" -prune -exec rm -rf {} +
-    find src tests -type d -name ".ruff_cache" -prune -exec rm -rf {} +
 
-# Build distributions; pass --sdist or --wheel to restrict the formats.
+# Build fresh distributions; pass --sdist or --wheel to restrict the formats.
 [group('package')]
-build *args: clean
-    uv build --out-dir dist "$@"
+build *args:
+    uv build --clear "$@"
 
 # Publish distributions from dist, followed by optional uv arguments.
 [group('package')]
@@ -49,8 +43,8 @@ publish *args:
 [arg('address', long)]
 [arg('serve', long, value='true')]
 [group('docs')]
-docs serve='false' address='0.0.0.0:7999':
-    {{ if serve == "true" { "uv run zensical serve --dev-addr " + quote(address) } else { "uv run zensical build --clean --strict" } }}
+docs serve='false' address='0.0.0.0:7999' *args:
+    uv run --locked zensical {{ if serve == "true" { "serve --dev-addr " + quote(address) } else { "build --clean --strict" } }} "${@:3}"
 
 # Run Git hooks; defaults to every tracked file.
 [group('quality')]
@@ -59,12 +53,11 @@ hooks *args='--all-files':
 
 # Check Just formatting and Ruff against selected or default paths.
 [group('quality')]
-[script('bash')]
+[script]
 lint *targets:
-    set -euo pipefail
     just --fmt --check
     if (( $# == 0 )); then
-        set -- {{ lint_targets }}
+        set -- src tests
     fi
     uv run --locked --module ruff format "$@" --check --diff
     uv run --locked --module ruff check "$@"
@@ -82,12 +75,12 @@ check: lint type-check
 # Format and fix selected or default paths; add --unsafe for unsafe Ruff fixes.
 [arg('unsafe', long, value='true')]
 [group('quality')]
-[script('bash')]
+[script]
 format unsafe='false' *targets:
-    set -euo pipefail
+    just --fmt
     shift
     if (( $# == 0 )); then
-        set -- {{ lint_targets }}
+        set -- src tests
     fi
     uv run --locked --module ruff format "$@"
     uv run --locked --module ruff check "$@" --fix --show-fixes {{ if unsafe == "true" { "--unsafe-fixes" } else { "" } }}

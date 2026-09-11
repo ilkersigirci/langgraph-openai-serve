@@ -14,7 +14,7 @@ chart.” Keep credentials, tokens, and browser auth state out of logs and Git.
   `http://localhost:3003`; use the actual deployment settings if overridden.
 - After Open WebUI Function changes, run
   `just demo/sync-openwebui`
-  with a host-reachable `OPENAI_GATEWAY_BASE_URL` as shown in
+  with a host-reachable `DEMO_GATEWAY_HOST_URL` as shown in
   [Open WebUI setup](../../docs/demo/open-webui.md#setup). After Chainlit source
   changes, rebuild and recreate only
   `lgos-chainlit`, using the running stack's Compose files and development
