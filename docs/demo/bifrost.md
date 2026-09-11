@@ -21,9 +21,8 @@ package.
 ## Run The Gateway
 
 ```bash
-cd demo
-cp .env.example .env
-docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-bifrost
+cp demo/.env.example demo/.env
+just demo/up lgos-bifrost
 ```
 
 Bifrost exposes each service as a custom provider:
@@ -113,7 +112,7 @@ aggregate catalog, and add `x-model-provider` to native inference and
 catalog-detail requests. Neither client contains a provider list or uses raw
 pass-through for inference.
 
-From the package checkout, run `make test-bifrost` after starting the gateway.
+Run `just demo/test-bifrost --editable` after starting the gateway.
 The command requires the native Responses data-plane contracts to pass, records
 only the normalized model-detail and error-metadata gaps as strict expected
 failures, and then requires the complete raw pass-through OpenAI SDK suite to

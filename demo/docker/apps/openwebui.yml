@@ -38,7 +38,7 @@ services:
       - --ws-per-message-deflate
       - "true"
     ports:
-      - "3003:8080"
+      - "$LGOS_OPENWEBUI_PORT:8080"
     volumes:
       - type: bind
         source: ../volumes/open-webui

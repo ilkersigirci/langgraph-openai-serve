@@ -6,6 +6,17 @@ application or integration tool has its own `pyproject.toml`, `.venv`, and
 `uv.lock`. Locked installs, tests, published Docker builds, and the published
 Compose stack need no files outside this directory.
 
+Commands below run from the repository root and require Just 1.58.0 or newer:
+
+```bash
+cp demo/.env.example demo/.env
+just demo/
+```
+
+The default command lists recipes grouped by local, published Docker,
+development Docker, and validation workflows. In a standalone copy of this
+directory, use `just` instead.
+
 The API resolves `langgraph-openai-serve` from PyPI and packages the default
 `lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
 override builds a local API image and installs both the API and parent LGOS
@@ -34,22 +45,24 @@ gateway's normal OpenAI routes. Metadata comes from LiteLLM's native
 `/model/info` or Bifrost's model-detail pass-through.
 
 LiteLLM uses the public `ghcr.io/ilkersigirci/homeserver-litellm` image by
-default. Copy `.env.example` to `.env` before running Compose; configurable
-defaults live in that template, not in Compose fallbacks. Set
-`DEMO_LITELLM_IMAGE` in `.env` to another compatible image if needed.
+default. Configurable defaults live in `demo/.env.example`, not in task-runner or
+Compose fallbacks. Set
+`DEMO_LITELLM_IMAGE` in `demo/.env` to another compatible image if needed.
 
-`COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}` in `.env.example` starts the selected
+`COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}` in `demo/.env.example` starts the selected
 bundled gateway through Docker Compose's native profiles. To reuse an existing
 LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
-`OPENAI_GATEWAY_BASE_URL` to its HTTPS root (without `/v1`), and provide
+`OPENAI_GATEWAY_BASE_URL` and `DEMO_GATEWAY_HOST_URL` to its HTTPS root (without
+`/v1`), and provide
 its key through `OPENAI_GATEWAY_API_KEY` for Open WebUI and
 `DEMO_CHAINLIT_GATEWAY_API_KEY` for Chainlit. Chainlit can use that key with
 mock or SSO login, or enable [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
 This mode starts no gateway container.
 
-The full-stack `make compose` variants wait for the selected gateway and its
-dependencies, sync both catalogs when using LiteLLM, start the UIs, then sync
-Open WebUI. For an independently deployed API, run `make sync-litellm` after
+The `just demo/compose [--dev] [--otel]` variants wait for the
+selected gateway and its dependencies, sync both catalogs when using LiteLLM,
+start the UIs, then sync Open WebUI. For an independently deployed API, run
+`just demo/sync-litellm` after
 its health check. The source URL and public namespace are explicit arguments;
 no per-API sync service is needed. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
 for usage and external administrator credentials.
@@ -67,9 +80,10 @@ managed Responses requests in its spend logs, but rewrites standard error
 metadata.
 Direct LGOS and Bifrost's raw pass-through remain protocol references. LiteLLM
 exposes no demo pass-through routes. UI inference uses LiteLLM's managed Responses
-route or Bifrost's native Responses route according to `OPENAI_GATEWAY_TYPE`. Run
-`make test-bifrost` and `make test-litellm` from the repository root for the
-current compatibility matrix.
+route or Bifrost's native Responses route according to `OPENAI_GATEWAY_TYPE`.
+Run `just demo/test-bifrost --editable` and
+`just demo/test-litellm --editable` for the current compatibility
+matrix.
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
@@ -80,36 +94,30 @@ limits.
 
 ## Run containers independently
 
-Copy the shared environment template and configure any required credentials:
-
-```bash
-cp .env.example .env
-```
-
 Run the published `lgos-a` container on port 3004:
 
 ```bash
-make run-api-a
+just demo/up lgos-demo-api-a
 ```
 
 Run the same published image as `lgos-b` on port 3005:
 
 ```bash
-make run-api-b
+just demo/up lgos-demo-api-b
 ```
 
 Run the central Files API on port 3006:
 
 ```bash
-make run-files
+just demo/up lgos-files-api
 ```
 
 Run one native Responses gateway with its graph API dependencies:
 
 ```bash
-make run-bifrost
+just demo/up lgos-bifrost
 # Or, with OPENAI_GATEWAY_TYPE=litellm:
-make run-litellm
+just demo/up lgos-litellm
 ```
 
 Both use host port 3000. Stop the running gateway before switching to the other.
@@ -117,18 +125,18 @@ Both use host port 3000. Stop the running gateway before switching to the other.
 With the gateway running, start Chainlit and PostgreSQL on port 3002:
 
 ```bash
-make run-chainlit
+just demo/up lgos-chainlit
 ```
 
 With Open WebUI running, synchronize the Functions and generated Workspace
 Models:
 
 ```bash
-OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
+just demo/sync-openwebui
 ```
 
-The root `.env` uses the gateway's Compose DNS name, while synchronization
-runs on the host and uses port `3000` for either bundled gateway.
+The host-side recipe uses `DEMO_GATEWAY_HOST_URL`; its template value selects
+port `3000` for either bundled gateway.
 
 Compose starts each selected service's dependencies. One API setup job
 initializes the LangGraph checkpointer and Store schemas; Chainlit applies its
@@ -139,17 +147,17 @@ own migrations through `pre_start`.
 Start PostgreSQL for the local API and UI processes:
 
 ```bash
-docker compose --env-file .env -f docker/compose/demo.yml up -d lgos-db
+just demo/up lgos-db --wait
 ```
 
-The local targets use the independently locked projects. The API additionally
-overlays the parent LGOS checkout as an editable dependency:
+The local recipes use the independently locked projects. Add `--editable`, as
+shown for the API processes, to overlay the parent LGOS checkout:
 
 ```bash
-make run-api-a-local
-make run-api-b-local
-make run-files-local
-OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make run-chainlit-local
+just demo/api --editable
+just demo/api --editable --port 3005
+just demo/files
+just demo/chainlit
 ```
 
 Run each long-lived process in a separate terminal.
@@ -159,7 +167,7 @@ Run each long-lived process in a separate terminal.
 Use the published demo images and pinned service images:
 
 ```bash
-make compose
+just demo/compose
 ```
 
 The command leaves a healthy stack running in the background. It starts the
@@ -173,23 +181,24 @@ From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:
 
 ```bash
-make compose-dev
+just demo/compose --dev
 ```
 
 Run the published stack with the optional local OpenTelemetry Collector:
 
 ```bash
-make compose-otel
+just demo/compose --otel
 ```
 
-For local source changes with the same overlay, use `make compose-otel-dev`.
+For local source changes with the same overlay, use
+`just demo/compose --dev --otel`.
 See the repository's [demo OpenTelemetry guide](../docs/demo/opentelemetry.md)
 for signal ownership and the external gateway contract.
 
 For deployment-specific infrastructure references, see the
 [self-hosted service references](../docs/demo/self-hosted.md).
 
-Set `PUID` and `PGID` in `.env` to the host identity that owns
+Set `PUID` and `PGID` in `demo/.env` to the host identity that owns
 `docker/volumes/`; the example values are `1000:1000`.
 
 ## Automation
@@ -218,7 +227,10 @@ GHCR write permission is granted only to publishing jobs.
 Run every locked test, lint, formatting, and Compose check with:
 
 ```bash
-make check
+just demo/check
 ```
+
+Use `just demo/check --editable` to run the API tests and type
+checks against the parent source tree.
 
 The directory is licensed under the included [MIT License](LICENSE).

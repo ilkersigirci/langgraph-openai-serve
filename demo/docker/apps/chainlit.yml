@@ -29,7 +29,7 @@ services:
     pre_start:
       - command: ["lgos-chainlit-setup"]
     ports:
-      - "3002:5000"
+      - "$LGOS_CHAINLIT_PORT:5000"
     environment:
       CHAINLIT_APP_ROOT: /app/src/lgos_chainlit
       CHAINLIT_AUTH_SECRET: $CHAINLIT_AUTH_SECRET

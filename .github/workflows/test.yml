@@ -46,6 +46,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
@@ -56,4 +61,4 @@ jobs:
         run: uv sync --frozen --only-group test
 
       - name: Test the project
-        run: make test-all-parallel
+        run: just test -n auto

@@ -29,7 +29,7 @@ services:
       lgos-files-api:
         condition: service_healthy
     ports:
-      - "3000:4000"
+      - "$LGOS_GATEWAY_PORT:4000"
     volumes:
       - type: bind
         source: ../volumes/bifrost

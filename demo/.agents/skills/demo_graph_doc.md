@@ -147,7 +147,7 @@ After editing:
 
 1. Re-read the implementation and tests against every behavioral claim.
 2. Search for inbound links to renamed headings and for stale terminology.
-3. Run `make doc-build` and resolve every strict-build issue.
+3. Run `just docs` from the repository root and resolve every strict-build issue.
 4. Run `git diff --check`.
 5. Preview every changed Mermaid diagram in the browser and confirm it renders
    correctly, because the strict build does not parse Mermaid syntax.

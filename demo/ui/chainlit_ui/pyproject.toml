@@ -63,6 +63,7 @@ env = [
     "OPENAI_GATEWAY_TYPE=litellm",
     "OPENAI_GATEWAY_BASE_URL=https://gateway.example",
     "DEMO_CHAINLIT_GATEWAY_API_KEY=test-api-key",
+    "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS=[]",
     "BUCKET_NAME=lgos-chainlit-test",
     "APP_AWS_ACCESS_KEY=test-access-key",
     "APP_AWS_SECRET_KEY=test-secret-key",

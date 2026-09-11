@@ -4,10 +4,10 @@ This independent demo project exposes the OpenAI-compatible Files API over an
 S3-compatible object store. It does not depend on `langgraph-openai-serve`,
 LangGraph, or the demo graph API.
 
-From `demo/`, configure the `DEMO_API_FILES_*` values in `.env`, then run:
+Configure the `DEMO_API_FILES_*` values in `demo/.env`, then run:
 
 ```bash
-make run-files-local
+just demo/files
 ```
 
 The OpenAI base URL is `http://localhost:3006/v1`. The service supports upload,

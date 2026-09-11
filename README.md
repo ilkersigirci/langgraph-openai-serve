@@ -41,15 +41,17 @@ each deployable application in an independent uv project with its own lockfile.
 Its `lgos-rag` example indexes a small corpus packaged with the demo API, so the
 entire directory can be copied and run without files from this repository.
 
+Repository tasks require Just 1.58.0 or newer. Run `just` for package recipes
+and `just demo/<recipe>` for independent demo workflows.
+
 ## Quick Demo
 
 From this repository, prepare the demo environment and PostgreSQL:
 
 ```bash
-cd demo
-cp .env.example .env
-make run-postgres
-make run-api-a-local
+cp demo/.env.example demo/.env
+just demo/up lgos-db --wait
+just demo/api --editable
 ```
 
 Then call the demo with the OpenAI Python client:
@@ -88,10 +90,10 @@ is the compatibility path for existing Chat-only clients.
 Use `curl http://localhost:3004/v1/models` only as a diagnostic to inspect the
 registered demo graph names.
 
-`make run-api-a-local` overlays this checkout without changing the self-contained
-demo project or its lockfile. The demo publishes independent API and Chainlit
-images and uses official images for third-party services such as Open WebUI.
-See the [demo Docker Compose guide](docs/demo/docker.md).
+`just demo/api --editable` overlays this checkout without changing
+the self-contained demo project or its lockfile. The demo publishes independent
+API and Chainlit images and uses official images for third-party services such
+as Open WebUI. See the [demo Docker Compose guide](docs/demo/docker.md).
 
 The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`
 setting place either gateway in front of both maintained UI clients. Chainlit

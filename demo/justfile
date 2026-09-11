@@ -1,0 +1,226 @@
+set default-list
+set dotenv-required
+set indentation := "    "
+set minimum-version := "1.58.0"
+set positional-arguments
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+api_run := "uv run --directory api --locked"
+editable_api_run := api_run + " --with-editable ../.."
+files_run := "uv run --directory files_api --locked"
+chainlit_run := "uv run --directory ui/chainlit_ui --locked"
+openwebui_run := "uv run --directory ui/openwebui --locked"
+compose_command := "docker compose -f docker/compose/demo.yml"
+
+# Synchronize all four projects from their lockfiles.
+[group('local')]
+[timestamp]
+sync:
+    uv --directory api sync --locked
+    uv --directory files_api sync --locked
+    uv --directory ui/chainlit_ui sync --locked
+    uv --directory ui/openwebui sync --locked
+
+# Test every project; add --editable to overlay the parent LGOS checkout.
+[arg('editable', long, value='true')]
+[group('local')]
+[script('bash')]
+[timestamp]
+test editable='false' *args:
+    set -euo pipefail
+    api=({{ if editable == "true" { editable_api_run } else { api_run } }})
+    shift
+    "${api[@]}" pytest "$@"
+    {{ files_run }} pytest "$@"
+    {{ chainlit_run }} pytest "$@"
+    {{ openwebui_run }} pytest "$@"
+
+# Open the API notebooks; add --editable to use the parent LGOS checkout.
+[arg('editable', long, value='true')]
+[arg('host', long)]
+[arg('port', long)]
+[group('local')]
+marimo editable='false' host='0.0.0.0' port='2718':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} marimo edit --no-token --host "{{ host }}" --port "{{ port }}" notebooks
+
+# Test demo persistence against PostgreSQL.
+[arg('editable', long, value='true')]
+[arg('DEMO_API_TEST_POSTGRES_URI', long='uri')]
+[group('local')]
+test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py
+    TEST_CHAINLIT_DATABASE_URL="$DEMO_API_TEST_POSTGRES_URI" {{ chainlit_run }} pytest -m integration tests/auth/test_oauth_tokens.py
+
+# Check lint and formatting for all four projects.
+[group('local')]
+[timestamp]
+lint:
+    just --fmt --check
+    {{ api_run }} ruff check src tests
+    {{ api_run }} ruff format --check src tests
+    {{ files_run }} ruff check src tests
+    {{ files_run }} ruff format --check src tests
+    {{ chainlit_run }} ruff check src tests
+    {{ chainlit_run }} ruff format --check src tests
+    {{ openwebui_run }} ruff check src tests
+    {{ openwebui_run }} ruff format --check src tests
+
+# Type-check every project; add --editable to use the parent LGOS source.
+[arg('editable', long, value='true')]
+[group('local')]
+type-check editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} ty check src {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
+    {{ files_run }} ty check src
+    {{ chainlit_run }} ty check src
+    {{ openwebui_run }} ty check src
+
+# Validate published, development, and OTEL Compose models.
+[group('checks')]
+[timestamp]
+compose-config:
+    {{ compose_command }} --profile model-sync config --quiet
+    {{ compose_command }} -f docker/compose/development.yml --profile model-sync config --quiet
+    {{ compose_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_command }} -f docker/compose/development.yml -f docker/compose/otel.yml --profile model-sync config --quiet
+
+# Run every demo check; add --editable inside the package checkout.
+[arg('editable', long, value='true')]
+[group('checks')]
+check editable='false': (test editable) lint (type-check editable) compose-config
+
+# Run one API process; add --editable to use the parent LGOS checkout.
+[arg('editable', long, value='true')]
+[arg('DEMO_API_PORT', long='port')]
+[group('local')]
+api $DEMO_API_PORT=env("LGOS_A_PORT") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api-setup
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api
+
+# Run the OpenAI Files service locally.
+[arg('DEMO_API_FILES_PORT', long='port')]
+[group('local')]
+files $DEMO_API_FILES_PORT=env("LGOS_FILES_PORT"):
+    {{ files_run }} lgos-files-api
+
+# Run the Chainlit UI locally.
+[arg('LGOS_CHAINLIT_PORT', long='port')]
+[env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
+[group('local')]
+chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
+    {{ chainlit_run }} lgos-chainlit-setup
+    {{ chainlit_run }} uvicorn lgos_chainlit.main:app --host 0.0.0.0 --port "$LGOS_CHAINLIT_PORT"
+
+# Run optional live direct Responses integration tests.
+[arg('DEMO_TEST_DIRECT_BASE_URLS', long='base-urls')]
+[arg('editable', long, value='true')]
+[arg('DEMO_TEST_FILES_BASE_URL', long='files-url')]
+[group('integration')]
+test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py
+
+# Run Bifrost normalized and pass-through integration tests.
+[arg('DEMO_TEST_BIFROST_BASE_URL', long='base-url')]
+[arg('DEMO_TEST_BIFROST_CATALOG_BASE_URL', long='catalog-url')]
+[arg('editable', long, value='true')]
+[arg('DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL', long='passthrough-url')]
+[group('integration')]
+[timestamp]
+test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py
+    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py
+
+# Run LiteLLM managed-routing and native model-info integration tests.
+[arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
+[arg('DEMO_TEST_DIRECT_BASE_URLS', long='direct-urls')]
+[arg('editable', long, value='true')]
+[group('integration')]
+test-litellm $DEMO_TEST_LITELLM_BASE_URL=env("DEMO_TEST_LITELLM_BASE_URL") $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_litellm_proxy.py
+
+# Start one Compose service; add --dev to build this checkout or --wait to detach.
+[arg('dev', long, value='true')]
+[arg('wait', long, value='true')]
+[group('docker dev')]
+[group('docker prod')]
+[script('bash')]
+up service dev='false' wait='false' *args:
+    set -euo pipefail
+    service=$1
+    shift 3
+    compose=({{ compose_command }})
+    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
+    up_args=({{ if dev == "true" { "--build" } else { "" } }} {{ if wait == "true" { "--wait" } else { "" } }} "$@")
+    "${compose[@]}" up "${up_args[@]}" "$service"
+
+# Reset LiteLLM's PostgreSQL schema.
+[group('docker dev')]
+[group('docker prod')]
+reset-litellm-db:
+    @{{ compose_command }} exec -T lgos-db psql -U lgos -d lgos -v ON_ERROR_STOP=1 -c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
+
+# Sync Open WebUI Functions and LGOS Workspace Models.
+[env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
+[group('docker dev')]
+[group('docker prod')]
+sync-openwebui *args:
+    {{ openwebui_run }} lgos-openwebui-sync "$@"
+
+# Register one LGOS catalog in LiteLLM; add --dev for the checkout image.
+[arg('dev', long, value='true')]
+[group('docker dev')]
+[group('docker prod')]
+[script('bash')]
+sync-litellm dev='false' *args:
+    set -euo pipefail
+    shift
+    compose=({{ compose_command }})
+    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
+    "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync "$@"
+
+# Start and synchronize the stack; add --dev and/or --otel as needed.
+[arg('dev', long, value='true')]
+[arg('otel', long, value='true')]
+[group('docker dev')]
+[group('docker prod')]
+[script('bash')]
+compose dev='false' otel='false' *up_args:
+    set -euo pipefail
+
+    compose=({{ compose_command }})
+    {{ if dev == "true" { "compose+=(-f docker/compose/development.yml)" } else { ":" } }}
+    {{ if otel == "true" { "compose+=(-f docker/compose/otel.yml)" } else { ":" } }}
+
+    shift 2
+    up_args=({{ if dev == "true" { "--build" } else { "" } }} "$@")
+    gateway_type="$("${compose[@]}" config --environment | sed -n 's/^OPENAI_GATEWAY_TYPE=//p')"
+    gateway_service="$("${compose[@]}" config --services | sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p')"
+
+    case "$gateway_type:$gateway_service" in
+        litellm:lgos-litellm|bifrost:lgos-bifrost)
+            "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service"
+            ;;
+        litellm:|bifrost:)
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-demo-api-a lgos-demo-api-b lgos-files-api
+            ;;
+        *)
+            echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "$gateway_type" == "litellm" ]]; then
+        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a
+        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
+    fi
+
+    "${compose[@]}" up --wait "${up_args[@]}" lgos-chainlit lgos-openwebui
+    if [[ -n "$gateway_service" ]]; then
+        export OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL"
+    fi
+    {{ openwebui_run }} lgos-openwebui-sync
+
+# Stop and remove every demo stack variant.
+[group('docker dev')]
+[group('docker prod')]
+down *args:
+    {{ compose_command }} --profile "*" down --remove-orphans "$@"

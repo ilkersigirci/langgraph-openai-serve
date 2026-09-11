@@ -45,7 +45,8 @@ If you are proposing a new feature:
 # Get Started!
 
 Ready to contribute? Here's how to set up `langgraph-openai-serve` for local development.
-Please note this documentation assumes you already have `uv` and `Git` installed and ready to go.
+This documentation assumes you already have `uv`, `Git`, and `just` 1.58.0 or
+newer installed and ready to go.
 
 1. Fork the `langgraph-openai-serve` repo on GitHub.
 
@@ -87,8 +88,8 @@ Now you can make your changes locally.
 7. When you're done, run the lint and test suites:
 
 ```bash
-make lint
-make test
+just lint
+just test
 ```
 
 For changes under `demo/`, run its locked standalone checks. If the change also
@@ -96,14 +97,13 @@ touches the LGOS API or graph contract, test the demo API with the current
 checkout overlay:
 
 ```bash
-make check-demo
-make test-demo-local
+just demo/check --editable
 ```
 
 For documentation changes, also run the strict documentation build:
 
 ```bash
-make doc-build
+just docs
 ```
 
 8. Commit your changes and push your branch to GitHub:

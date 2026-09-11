@@ -40,6 +40,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2.3.0
         with:
@@ -53,11 +58,10 @@ jobs:
           cp "$DESTINATION/.env.example" "$DESTINATION/.env"
 
       - name: Render all Compose models
-        working-directory: ${{ runner.temp }}/lgos-demo
         run: |
           export OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal
           export OTEL_HOST_NAME=github-actions
-          make compose-config
+          just "${{ runner.temp }}/lgos-demo/compose-config"
 
       - name: Check API Dockerfile
         run: docker buildx build --check demo/api
@@ -163,7 +167,12 @@ jobs:
             demo/api/uv.lock
             demo/ui/chainlit_ui/uv.lock
 
+      - name: Set up just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+
       - name: Test PostgreSQL persistence
         env:
           DEMO_API_TEST_POSTGRES_URI: postgresql://lgos:lgos@localhost:5432/lgos
-        run: make -C demo test-postgres
+        run: just demo/test-postgres --editable

@@ -11,10 +11,10 @@ assessment-only request does not authorize changing the running gateway.
 Paths below are relative to the repository root.
 
 LiteLLM defaults to the public `ghcr.io/ilkersigirci/homeserver-litellm` image;
-`DEMO_LITELLM_IMAGE` in `.env.example` owns its default pin; users can change
-the value in `.env`. Upgrade that image in
-place unless the user requests a different distribution. Bifrost uses its
-official image. Keep image builds and patch maintenance outside this repository.
+`DEMO_LITELLM_IMAGE` in `demo/.env.example` owns its default pin; users can
+change the value in `demo/.env`. Upgrade that image in place unless the user
+requests a different distribution. Bifrost uses its official image. Keep image
+builds and patch maintenance outside this repository.
 
 ## Establish the Baseline
 
@@ -71,11 +71,14 @@ Compose overlays and recreate only the affected gateway with `--no-deps`.
 Wait for health before testing; do not reset its database or restart unrelated
 services to make a test pass.
 
-From the repository root, use `make test-litellm` or `make test-bifrost`.
+From the repository root, use
+`just demo/test-litellm --editable` or
+`just demo/test-bifrost --editable`.
 LiteLLM checks native model info and managed routing against direct LGOS
 streaming; Bifrost also runs the shared pass-through contract. Validate the
 selected Compose profile with
-`make -C demo compose-config OPENAI_GATEWAY_TYPE=litellm` (or `bifrost`).
+`OPENAI_GATEWAY_TYPE=litellm just demo/compose-config` (or
+`bifrost`).
 
 Cover both graph providers, text, commentary and `phase`, function-output
 continuation, Files lifecycle and input IDs, catalog metadata, and OpenAI

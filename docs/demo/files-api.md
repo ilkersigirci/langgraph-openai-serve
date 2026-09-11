@@ -12,15 +12,13 @@ Configure the `DEMO_API_FILES_*` values in `demo/.env`, then choose one mode:
 === "Local process"
 
     ```bash
-    cd demo
-    make run-files-local
+    just demo/files
     ```
 
 === "Published container"
 
     ```bash
-    cd demo
-    make run-files
+    just demo/up lgos-files-api
     ```
 
 The OpenAI base URL is `http://localhost:3006/v1`; health is available at

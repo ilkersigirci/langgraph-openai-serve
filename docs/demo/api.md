@@ -18,9 +18,8 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 ## Start PostgreSQL And The API
 
 ```bash title="Prepare the demo"
-cd demo
-cp .env.example .env
-make run-postgres
+cp demo/.env.example demo/.env
+just demo/up lgos-db --wait
 ```
 
 === "Test this checkout"
@@ -28,7 +27,7 @@ make run-postgres
     Overlay the parent LGOS checkout without changing the demo lockfile:
 
     ```bash
-    make run-api-a-local
+    just demo/api --editable
     ```
 
 === "Use the published image"
@@ -36,7 +35,7 @@ make run-postgres
     Run the published API container and its PostgreSQL dependency:
 
     ```bash
-    make run-api-a
+    just demo/up lgos-demo-api-a
     ```
 
 ??? info "Demo environment settings"

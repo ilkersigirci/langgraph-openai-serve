@@ -22,9 +22,8 @@ model metadata and link to their authoritative source files.
 Create the local environment file and a Chainlit signing secret:
 
 ```bash
-cd demo
-cp .env.example .env
-uv run --directory ui/chainlit_ui --locked chainlit create-secret
+cp demo/.env.example demo/.env
+uv run --directory demo/ui/chainlit_ui --locked chainlit create-secret
 ```
 
 Put the generated value in `CHAINLIT_AUTH_SECRET`. Configure Chainlit's native
@@ -38,12 +37,13 @@ value before starting the UI; neither service reads the other's S3 settings.
     Start the complete stack, including the gateway selected by `COMPOSE_PROFILES`:
 
     ```bash
-    make compose
+    just demo/compose
     ```
 
     With LiteLLM selected, this syncs model metadata before starting Chainlit.
 
-    If the gateway and backends are already running, `make run-chainlit`
+    If the gateway and backends are already running,
+    `just demo/up lgos-chainlit`
     starts only Chainlit and PostgreSQL.
 
 === "Local processes"
@@ -54,19 +54,19 @@ value before starting the UI; neither service reads the other's S3 settings.
     === "LiteLLM"
 
         ```bash
-        make run-litellm
+        just demo/up lgos-litellm
         ```
 
     === "Bifrost"
 
         ```bash
-        make run-bifrost
+        just demo/up lgos-bifrost
         ```
 
     Then start Chainlit from a second terminal. Both gateways use host port 3000:
 
     ```bash
-    OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make run-chainlit-local
+    just demo/chainlit
     ```
 
 Both modes apply pending Chainlit schema migrations before the UI starts. Open
@@ -224,6 +224,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     OAUTH_GENERIC_SCOPES="openid profile email groups"
     OPENAI_GATEWAY_TYPE=litellm
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
+    DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     DEMO_CHAINLIT_GATEWAY_API_KEY=${OPENAI_GATEWAY_API_KEY}
     DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
     ```
@@ -239,6 +240,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
     OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com
+    DEMO_GATEWAY_HOST_URL=https://litellm-sso.example.com
     ```
 
     The shared `OPENAI_GATEWAY_API_KEY` can remain set for Open WebUI; Compose

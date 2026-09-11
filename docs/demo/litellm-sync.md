@@ -5,20 +5,22 @@ The command belongs to LGOS; both UIs read the gateway's `/model/info` endpoint.
 
 ## Usage
 
-The full-stack `make compose` variants sync both demo catalogs after LiteLLM
-and the APIs are healthy, before starting the UIs.
+`just demo/compose` syncs both demo catalogs after LiteLLM and the
+APIs are healthy, before starting the UIs. The `--dev` and `--otel` flags keep
+the same sequence.
 
-To sync any other healthy LGOS API, run from `demo/`:
+To sync any other healthy LGOS API:
 
 ```bash
-make sync-litellm \
-  SYNC_ARGS='--source-url http://lgos-api:8000/v1 --prefix team-a'
+just demo/sync-litellm -- \
+  --source-url http://lgos-api:8000/v1 \
+  --prefix team-a
 ```
 
 The shared `lgos-model-sync` job starts no dependencies. The deployment system
 owns rollout and health checks; this command only copies the catalog. Use a
 unique prefix for each API. After a manual sync, reconnect Chainlit and run
-`make sync-openwebui` with a
+`just demo/sync-openwebui` with a
 [host-reachable gateway URL](open-webui.md#setup).
 
 ## Gateway Credentials
@@ -26,23 +28,27 @@ unique prefix for each API. After a manual sync, reconnect Chainlit and run
 - `LITELLM_SYNC_BASE_URL`: the native administrator-key root reachable from
   the sync container, not the delegated SSO endpoint.
 - `LITELLM_MASTER_KEY`: export an external gateway's admin key from CI or the
-  operator environment. Do not put it in the shared UI `.env` file.
+  operator environment. Do not put it in the shared UI `demo/.env` file.
 
 The bundled defaults in `demo/.env.example` use `OPENAI_GATEWAY_BASE_URL` and
-`OPENAI_GATEWAY_API_KEY`. Keep an existing `.env` in sync with those settings.
-External gateways are not started or reconfigured. Use HTTPS outside trusted
-local networks.
+`OPENAI_GATEWAY_API_KEY`. Keep an existing `demo/.env` in sync with those
+settings. External gateways are not started or reconfigured. Use HTTPS outside
+trusted local networks.
 
 ## Options
 
 Preview changes with:
 
 ```bash
-make sync-litellm SYNC_ARGS='--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a --dry-run'
+just demo/sync-litellm -- \
+  --source-url http://lgos-demo-api-a:8000/v1 \
+  --prefix lgos-a \
+  --dry-run
 ```
 
-Remove `--dry-run` to apply. Use `make sync-litellm SYNC_ARGS='--help'` for all
-options. The job uses the already pulled or built demo API image.
+Remove `--dry-run` to apply. Use
+`just demo/sync-litellm -- --help` for all options. The job uses the
+already pulled or built demo API image.
 
 `--source-url` must be reachable from the sync container. LiteLLM uses the same
 URL for new deployments unless you pass `--api-base` with a different
@@ -52,10 +58,10 @@ and provide that variable to the job through Compose's `environment` or
 
 ??? note "Running without Docker"
 
-    From `demo/`, run the CLI directly with host-reachable URLs:
+    Run the CLI directly with host-reachable URLs:
 
     ```bash
-    uv run --directory api --locked --with-editable ../.. --env-file ../.env \
+    uv run --directory demo/api --locked --with-editable ../.. --env-file ../.env \
       lgos-demo-api-sync-litellm --gateway-url http://localhost:3000 \
       --source-url http://localhost:3004/v1 --prefix lgos-a \
       --api-base http://lgos-demo-api-a:8000/v1

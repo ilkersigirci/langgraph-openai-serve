@@ -56,9 +56,8 @@ It depends on the Generic Pipe for Responses transport. The generated
 Start the official Open WebUI image:
 
 ```bash
-cd demo
-cp .env.example .env
-docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
+cp demo/.env.example demo/.env
+just demo/up lgos-openwebui --wait
 ```
 
 For independently started components, first [sync LGOS model
@@ -66,16 +65,16 @@ metadata](litellm-sync.md) when using LiteLLM. Then run the Open WebUI
 synchronization project locally:
 
 ```bash
-OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
+just demo/sync-openwebui
 ```
 
-Both bundled gateways use host port `3000`. The
-override is necessary because the root `.env` configures the Compose DNS name,
-which is not resolvable by this host-side command. An external gateway URL that
-is reachable from both contexts needs no override.
+Both bundled gateways use host port `3000`. The recipe reads the host-reachable
+`DEMO_GATEWAY_HOST_URL`, while Compose uses `OPENAI_GATEWAY_BASE_URL` for its
+container network. Set both to the external root when one URL serves both
+contexts.
 
-The full-stack `make compose` variants handle synchronization automatically
-after their dependencies are healthy.
+The full-stack `just demo/compose [--dev] [--otel]` variants handle
+synchronization automatically after their dependencies are healthy.
 
 The sync command signs in through `/api/v1/auths/signin` and reads LGOS metadata
 from the selected gateway before changing Functions or Workspace Models.
@@ -117,7 +116,7 @@ The filename stem or directory name is the Function ID, and the required Open
 WebUI frontmatter `title` is its display name. Function IDs must be lowercase
 Python identifiers.
 
-The shared `.env` supplies the sync credentials and gateway selection. See
+The shared `demo/.env` supplies the sync credentials and gateway selection. See
 [sync settings](reference.md#open-webui-sync-settings) for their purposes. Set
 secrets in the environment rather than passing them on the command line.
 
@@ -130,8 +129,8 @@ WebUI's
 
 Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
 `OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
-Function's admin valves. Compose initializes the required values from `.env`;
-use a key issued by the selected gateway. LiteLLM
+Function's admin valves. Compose initializes the required values from
+`demo/.env`; use a key issued by the selected gateway. LiteLLM
 sends the catalog's `model_name` unchanged for managed routing. Bifrost removes
 that provider prefix and sends it as `x-model-provider` to native Responses.
 Open WebUI stores Function code in its database, so a bind mount of the Python
@@ -234,8 +233,9 @@ for the API Store and Open WebUI persistence boundaries.
 
 The Workspace Model schema is a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
-selector changes, so rerun `make sync-openwebui` after an LGOS schema change.
-Model selection then switches among the already-synchronized native forms.
+selector changes, so rerun `just demo/sync-openwebui` after an LGOS
+schema change. Model selection then switches among the already-synchronized
+native forms.
 
 !!! note "Pinned Open WebUI contract"
 

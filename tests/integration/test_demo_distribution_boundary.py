@@ -1,4 +1,4 @@
-"""Guard the files that make the in-tree demo independently extractable."""
+"""Guard the files that keep the in-tree demo independently extractable."""
 
 import json
 import os
@@ -37,12 +37,14 @@ async def test_compose_deploys_and_syncs_the_stack_in_order(
     first_services: str,
     syncs_models: bool,
 ) -> None:
-    compose = tmp_path / "compose"
+    docker = tmp_path / "docker"
     uv = tmp_path / "uv"
     log = tmp_path / "operations"
-    compose.write_text(
+    docker.write_text(
         """#!/bin/sh
-printf "compose %s\\n" "$*" >> "$DEPLOY_TEST_LOG"
+printf "docker %s\\n" "$*" >> "$DEPLOY_TEST_LOG"
+test "$1" = compose || exit 98
+shift
 while [ "$1" = "-f" ]; do shift 2; done
 case "$1:$2" in
   config:--environment)
@@ -54,7 +56,7 @@ case "$1:$2" in
 esac
 """
     )
-    compose.chmod(0o755)
+    docker.chmod(0o755)
     uv.write_text(
         """#!/bin/sh
 printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST_LOG"
@@ -64,12 +66,13 @@ printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST
 
     result = await anyio.run_process(
         [
-            "make",
-            "-C",
-            str(DEMO_ROOT),
-            "compose",
-            f"COMPOSE={compose}",
-            "UP_ARGS=--build --quiet-pull",
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / "compose"),
+            "--dev",
+            "--",
+            "--quiet-pull",
         ],
         env={
             **os.environ,
@@ -83,28 +86,31 @@ printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST
     )
 
     assert result.returncode == 0, result.stderr.decode()
+    compose = (
+        "docker compose -f docker/compose/demo.yml -f docker/compose/development.yml"
+    )
     expected = [
-        "compose config --environment",
-        "compose config --services",
-        f"compose up --wait --build --quiet-pull {first_services}",
+        f"{compose} config --environment",
+        f"{compose} config --services",
+        f"{compose} up --wait --build --quiet-pull {first_services}",
     ]
     if syncs_models:
         expected.extend(
             [
                 (
-                    "compose run --rm --no-deps --pull never lgos-model-sync "
+                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
                     "--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a"
                 ),
                 (
-                    "compose run --rm --no-deps --pull never lgos-model-sync "
+                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
                     "--source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b"
                 ),
             ]
         )
     expected.extend(
         [
-            ("compose up --wait --build --quiet-pull lgos-chainlit lgos-openwebui"),
-            "uv run --directory ui/openwebui --locked --env-file ../../.env "
+            f"{compose} up --wait --build --quiet-pull lgos-chainlit lgos-openwebui",
+            "uv run --directory ui/openwebui --locked "
             "lgos-openwebui-sync gateway="
             + (
                 "http://localhost:3000"

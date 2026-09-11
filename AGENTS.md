@@ -48,7 +48,7 @@ entry point.
   verify them in the browser because the strict build does not parse Mermaid.
 - Add language identifiers to code fences and use code annotations or tooltips
   only when they clarify details that do not belong in the main flow.
-- Preview documentation with `make doc-serve`, then run `make doc-build` before
+- Preview documentation with `just docs --serve`, then run `just docs` before
   finishing a docs change.
 
 ## Do Not

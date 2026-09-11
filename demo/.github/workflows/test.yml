@@ -29,12 +29,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+
       - name: Render all Compose models
         run: |
           cp .env.example .env
           export OTEL_COLLECTOR_GATEWAY_ENDPOINT=https://otel-gateway.example.internal
           export OTEL_HOST_NAME=github-actions
-          make compose-config
+          just compose-config
 
   test:
     name: Test ${{ matrix.name }}

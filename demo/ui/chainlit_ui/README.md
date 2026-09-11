@@ -11,7 +11,8 @@ route. Both use their normal Files route. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
 extension. Bifrost uses its aggregate catalog and model-detail pass-through.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
-The full-stack `make compose` variants do this before starting Chainlit.
+The full-stack `just demo/compose [--dev] [--otel]` variants do this
+before starting Chainlit.
 
 Before starting, replace the example signing secret and configure the required
 S3-compatible bucket and credentials in `.env`.
@@ -86,8 +87,8 @@ TEST_CHAINLIT_DATABASE_URL=postgresql://lgos:lgos@localhost:3001/lgos \
   uv run --locked pytest -m integration tests/auth
 ```
 
-From the repository root, `make -C demo test-postgres` runs these checks together
-with the demo API's PostgreSQL tests. Login and request-isolation tests run in the
+`just demo/test-postgres --editable` runs these checks together with
+the demo API's PostgreSQL tests. Login and request-isolation tests run in the
 regular suite; neither suite needs a live identity provider.
 
 User attachments are uploaded separately through the selected gateway's normal

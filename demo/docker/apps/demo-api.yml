@@ -54,7 +54,7 @@ services:
       lgos-demo-api-setup:
         condition: service_completed_successfully
     ports:
-      - "3004:8000"
+      - "$LGOS_A_PORT:8000"
 
   lgos-demo-api-b:
     <<: *lgos-demo-api
@@ -63,7 +63,7 @@ services:
       lgos-demo-api-setup:
         condition: service_completed_successfully
     ports:
-      - "3005:8000"
+      - "$LGOS_B_PORT:8000"
 
   lgos-demo-api-setup:
     <<: *lgos-demo-api

@@ -68,6 +68,7 @@ addopts = [
 ]
 env = [
     "ENVIRONMENT=test",
+    "LANGGRAPH_STRICT_MSGPACK=False",
     "LGOS_ENABLE_LANGFUSE=False",
 ]
 testpaths = ["tests"]
