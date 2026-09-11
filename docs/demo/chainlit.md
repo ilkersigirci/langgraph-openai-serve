@@ -232,6 +232,13 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     This authenticates users with SSO while sending the static Chainlit key to
     the gateway. Chainlit does not store or refresh provider tokens in this mode.
 
+    !!! note "Scopes still apply when token forwarding is disabled"
+
+        `OAUTH_GENERIC_SCOPES` is always requested during OAuth login. For login
+        only, use `openid profile email groups`. Disabling token forwarding does
+        not remove gateway scopes such as `llm:invoke`; unsupported scopes can
+        still prevent sign-in.
+
     To delegate gateway authorization to the signed-in user instead:
 
     ```dotenv
