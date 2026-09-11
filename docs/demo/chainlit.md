@@ -41,6 +41,8 @@ value before starting the UI; neither service reads the other's S3 settings.
     make compose
     ```
 
+    With LiteLLM selected, this syncs model metadata before starting Chainlit.
+
     If the gateway and backends are already running, `make run-chainlit`
     starts only Chainlit and PostgreSQL.
 
@@ -71,7 +73,9 @@ Both modes apply pending Chainlit schema migrations before the UI starts. Open
 `http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
-With LiteLLM selected, [sync model metadata](litellm-sync.md) before using the UI.
+When starting components independently with LiteLLM, [sync model
+metadata](litellm-sync.md) before using the UI. The full-stack Compose targets
+do this automatically.
 Profile discovery and settings read `GET /model/info` with the current gateway
 credential. Entries with `model_info.lgos` become profiles; `model_name` is
 sent unchanged to managed `/v1/responses`. There are no provider allowlists,

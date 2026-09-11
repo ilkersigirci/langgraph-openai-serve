@@ -38,9 +38,8 @@ demonstrates synchronous, streaming, and asynchronous Responses calls;
 `lgos-demo-api-sync-litellm` registers LGOS model metadata through LiteLLM's
 native management API. Run `make sync-litellm SYNC_ARGS='...'` from `demo/`;
 see the [model sync guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
-for arguments and deployment examples.
-For deployment automation, use `make deploy-api API_SERVICE=lgos-demo-api-a`
-from `demo/` with LiteLLM already running. Its one-shot Compose job reuses the
-API image and runs only after the deployed API is healthy.
+for usage. The full-stack `make compose` variants run the shared
+`lgos-model-sync` job for both demo APIs before starting the UIs. Other
+deployment systems should run it after their own API health check.
 Provide `LITELLM_MASTER_KEY` only to this operator command, not to UI clients.
 The command and its tests belong to this project; LiteLLM does not load them.

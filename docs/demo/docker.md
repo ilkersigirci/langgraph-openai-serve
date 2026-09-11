@@ -61,6 +61,12 @@ settings](reference.md#opentelemetry-settings).
     make compose
     ```
 
+    The command waits for the gateway and its dependencies, syncs LiteLLM when
+    selected, waits for both UIs, and syncs Open WebUI. Services remain running
+    in the background. Compose still owns [dependency order and
+    readiness](https://docs.docker.com/compose/how-tos/startup-order/); Make only
+    sequences the repeatable sync jobs.
+
     Set `DEMO_IMAGE_TAG` in `.env` to select one
     release tag for all project-owned demo images. To add the published OTEL
     overlay, use `make compose-otel`.
@@ -108,7 +114,7 @@ settings](reference.md#opentelemetry-settings).
 === "Graph APIs"
 
     ```bash
-    make run-api
+    make run-api-a
     make run-api-b
     ```
 
@@ -122,10 +128,8 @@ settings](reference.md#opentelemetry-settings).
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
 
-    For LiteLLM deployments, start the gateway first, then use
-    `make deploy-api API_SERVICE=lgos-demo-api-a` (or `lgos-demo-api-b`) in
-    the API deployment pipeline. It waits for API health and runs the matching
-    one-shot model-sync job. See [model sync](litellm-sync.md#deployment-automation).
+    For an independently deployed LiteLLM API, run the shared one-shot
+    [model-sync job](litellm-sync.md) after the deployment's health check.
 
 === "Files API"
 
@@ -165,11 +169,13 @@ settings](reference.md#opentelemetry-settings).
     Responses, Files, and catalog routes as bundled LiteLLM.
 
     `make compose` (or `make compose-dev`) starts the demo APIs, Files service,
-    PostgreSQL, and UIs. An empty `COMPOSE_PROFILES` disables both bundled
-    gateways; the template normally selects one through
-    `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`.
+    and PostgreSQL, syncs both catalogs to the external LiteLLM, then starts and
+    syncs the UIs. An empty `COMPOSE_PROFILES` disables both bundled gateways;
+    the template normally selects one through
+    `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`. The external gateway and its
+    administrator credentials must be reachable by the
+    [model-sync job](litellm-sync.md).
 
-    Register LGOS models and metadata with the [model sync command](litellm-sync.md).
     Enable LiteLLM's native database model storage. For Files, adapt the
     `files_settings` in [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml)
     to the shared Files service. No LGOS catalog pass-through
@@ -215,7 +221,7 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     LiteLLM is one of the two first-class UI entry points. After startup,
-    [sync both demo catalogs](litellm-sync.md#deployment-automation). The UIs use:
+    [sync both demo catalogs](litellm-sync.md#usage). The UIs use:
 
     - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
@@ -266,7 +272,7 @@ settings](reference.md#opentelemetry-settings).
 
     ```bash
     DEMO_LITELLM_IMAGE='registry.example.com/team/litellm:tag' \
-      make compose-otel-dev UP_ARGS=-d
+      make compose-otel-dev
     ```
 
     Keep the override set for subsequent Compose commands. To restore the

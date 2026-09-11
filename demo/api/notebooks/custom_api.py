@@ -19,7 +19,7 @@ def _(mo):
     mo.md(r"""
     # Call LGOS with the official OpenAI Responses client
 
-    Start the demo with `make run-api-local` from `demo/`. These examples use
+    Start the demo with `make run-api-a-local` from `demo/`. These examples use
     the deterministic custom-schema graph, so no upstream model key is needed.
     Each call is stateless: send `store=False` and carry any history in `input`.
     """)

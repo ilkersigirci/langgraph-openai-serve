@@ -28,7 +28,7 @@ make run-postgres
     Overlay the parent LGOS checkout without changing the demo lockfile:
 
     ```bash
-    make run-api-local
+    make run-api-a-local
     ```
 
 === "Use the published image"
@@ -36,7 +36,7 @@ make run-postgres
     Run the published API container and its PostgreSQL dependency:
 
     ```bash
-    make run-api
+    make run-api-a
     ```
 
 ??? info "Demo environment settings"

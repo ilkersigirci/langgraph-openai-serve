@@ -17,44 +17,102 @@ REPOSITORY_BLOB_LINK = re.compile(
 )
 
 
-@pytest.mark.parametrize(("start_exit", "sync_exit"), [(0, 0), (1, 0), (0, 1)])
-async def test_api_deployment_stops_on_health_or_model_sync_failure(
-    tmp_path: Path, start_exit: int, sync_exit: int
+@pytest.mark.parametrize(
+    ("gateway_type", "gateway_service", "first_services", "syncs_models"),
+    [
+        ("litellm", "lgos-litellm", "lgos-litellm", True),
+        ("bifrost", "lgos-bifrost", "lgos-bifrost", False),
+        (
+            "litellm",
+            "",
+            "lgos-demo-api-a lgos-demo-api-b lgos-files-api",
+            True,
+        ),
+    ],
+)
+async def test_compose_deploys_and_syncs_the_stack_in_order(
+    tmp_path: Path,
+    gateway_type: str,
+    gateway_service: str,
+    first_services: str,
+    syncs_models: bool,
 ) -> None:
     compose = tmp_path / "compose"
+    uv = tmp_path / "uv"
     log = tmp_path / "operations"
     compose.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$DEPLOY_TEST_LOG"\n'
-        'case "$1" in\n'
-        '  up) exit "$DEPLOY_TEST_START_EXIT" ;;\n'
-        '  run) exit "$DEPLOY_TEST_SYNC_EXIT" ;;\n'
-        "  *) exit 99 ;;\n"
-        "esac\n"
+        """#!/bin/sh
+printf "compose %s\\n" "$*" >> "$DEPLOY_TEST_LOG"
+while [ "$1" = "-f" ]; do shift 2; done
+case "$1:$2" in
+  config:--environment)
+    printf "OPENAI_GATEWAY_TYPE=%s\\n" "$DEPLOY_TEST_GATEWAY_TYPE" ;;
+  config:--services)
+    test -z "$DEPLOY_TEST_GATEWAY_SERVICE" || printf "%s\\n" "$DEPLOY_TEST_GATEWAY_SERVICE" ;;
+  up:*|run:*) exit 0 ;;
+  *) exit 99 ;;
+esac
+"""
     )
     compose.chmod(0o755)
+    uv.write_text(
+        """#!/bin/sh
+printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST_LOG"
+"""
+    )
+    uv.chmod(0o755)
 
     result = await anyio.run_process(
         [
             "make",
             "-C",
             str(DEMO_ROOT),
-            "deploy-api",
-            "API_SERVICE=lgos-demo-api-b",
+            "compose",
             f"COMPOSE={compose}",
+            "UP_ARGS=--build --quiet-pull",
         ],
         env={
             **os.environ,
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "DEPLOY_TEST_LOG": str(log),
-            "DEPLOY_TEST_START_EXIT": str(start_exit),
-            "DEPLOY_TEST_SYNC_EXIT": str(sync_exit),
+            "DEPLOY_TEST_GATEWAY_TYPE": gateway_type,
+            "DEPLOY_TEST_GATEWAY_SERVICE": gateway_service,
+            "OPENAI_GATEWAY_BASE_URL": "https://gateway.example",
         },
         check=False,
     )
 
-    assert (result.returncode == 0) == (start_exit == sync_exit == 0)
-    expected = ["up -d --wait lgos-demo-api-b"]
-    if start_exit == 0:
-        expected.append("run --rm --no-deps --pull never lgos-demo-api-b-sync")
+    assert result.returncode == 0, result.stderr.decode()
+    expected = [
+        "compose config --environment",
+        "compose config --services",
+        f"compose up --wait --build --quiet-pull {first_services}",
+    ]
+    if syncs_models:
+        expected.extend(
+            [
+                (
+                    "compose run --rm --no-deps --pull never lgos-model-sync "
+                    "--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a"
+                ),
+                (
+                    "compose run --rm --no-deps --pull never lgos-model-sync "
+                    "--source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b"
+                ),
+            ]
+        )
+    expected.extend(
+        [
+            ("compose up --wait --build --quiet-pull lgos-chainlit lgos-openwebui"),
+            "uv run --directory ui/openwebui --locked --env-file ../../.env "
+            "lgos-openwebui-sync gateway="
+            + (
+                "http://localhost:3000"
+                if gateway_service
+                else "https://gateway.example"
+            ),
+        ]
+    )
     assert log.read_text().splitlines() == expected
 
 

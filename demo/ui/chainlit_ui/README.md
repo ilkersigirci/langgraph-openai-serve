@@ -10,7 +10,8 @@ LiteLLM uses managed Responses routing; Bifrost uses its native Responses
 route. Both use their normal Files route. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
 extension. Bifrost uses its aggregate catalog and model-detail pass-through.
-Before using LiteLLM, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
+Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
+The full-stack `make compose` variants do this before starting Chainlit.
 
 Before starting, replace the example signing secret and configure the required
 S3-compatible bucket and credentials in `.env`.

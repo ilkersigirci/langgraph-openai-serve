@@ -3,38 +3,23 @@
 Sync LGOS model metadata into LiteLLM's native `model_info.lgos` field.
 The command belongs to LGOS; both UIs read the gateway's `/model/info` endpoint.
 
-## Deployment Automation
+## Usage
 
-From `demo/`, start LiteLLM with database model storage enabled
-(`make run-litellm` for the bundled gateway). Then deploy each API:
+The full-stack `make compose` variants sync both demo catalogs after LiteLLM
+and the APIs are healthy, before starting the UIs.
+
+To sync any other healthy LGOS API, run from `demo/`:
 
 ```bash
-make deploy-api API_SERVICE=lgos-demo-api-a
-make deploy-api API_SERVICE=lgos-demo-api-b
+make sync-litellm \
+  SYNC_ARGS='--source-url http://lgos-api:8000/v1 --prefix team-a'
 ```
 
-Each command waits for API health, then runs a fresh, one-shot sync container
-using the same API image. Use it as the API's CI/CD deployment step; ordinary
-`compose up`, restarts, and development watch do not sync metadata.
-
-A failed health check skips sync. A sync failure fails the command without
-stopping or rolling back the API. The temporary sync container is removed.
-
-After syncing, reload Chainlit's profiles and run `make sync-openwebui` with a
-[host-reachable gateway URL](open-webui.md#setup) to refresh its Workspace Models.
-
-For another API, add its matching `<service>-sync` job alongside its Compose
-service, using the same image and a unique namespace. Follow
-[`docker/apps/demo-api.yml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/apps/demo-api.yml).
-
-??? note "Deploying development images"
-
-    ```bash
-    make deploy-api API_SERVICE=lgos-demo-api-a \
-      COMPOSE='docker compose --env-file .env -f docker/compose/demo.yml -f docker/compose/development.yml'
-    ```
-
-    Also include `-f docker/compose/otel.yml` if that overlay is already in use.
+The shared `lgos-model-sync` job starts no dependencies. The deployment system
+owns rollout and health checks; this command only copies the catalog. Use a
+unique prefix for each API. After a manual sync, reconnect Chainlit and run
+`make sync-openwebui` with a
+[host-reachable gateway URL](open-webui.md#setup).
 
 ## Gateway Credentials
 
@@ -48,21 +33,33 @@ The bundled defaults in `demo/.env.example` use `OPENAI_GATEWAY_BASE_URL` and
 External gateways are not started or reconfigured. Use HTTPS outside trusted
 local networks.
 
-## Manual Sync
+## Options
 
-From `demo/`, with `LITELLM_MASTER_KEY` configured:
+Preview changes with:
 
 ```bash
-make sync-litellm SYNC_ARGS='--gateway-url https://litellm.example.com --source-url http://localhost:3004/v1 --prefix lgos-a --api-base http://graph-host:3004/v1 --dry-run'
+make sync-litellm SYNC_ARGS='--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a --dry-run'
 ```
 
 Remove `--dry-run` to apply. Use `make sync-litellm SYNC_ARGS='--help'` for all
-options. This host-side command overlays the current LGOS checkout.
+options. The job uses the already pulled or built demo API image.
 
-`--source-url` must be reachable from the sync process; `--api-base` must be
-reachable from LiteLLM. Both point to LGOS `/v1` and may differ. For authenticated
-upstreams, pass `--api-key-env` with the key's environment variable name;
-otherwise the command uses `DUMMY` for the unauthenticated demo API.
+`--source-url` must be reachable from the sync container. LiteLLM uses the same
+URL for new deployments unless you pass `--api-base` with a different
+gateway-reachable LGOS `/v1` URL. For authenticated upstreams, use `--api-key-env`
+and provide that variable to the job through Compose's `environment` or
+`docker compose run -e`; otherwise the demo uses `DUMMY`.
+
+??? note "Running without Docker"
+
+    From `demo/`, run the CLI directly with host-reachable URLs:
+
+    ```bash
+    uv run --directory api --locked --with-editable ../.. --env-file ../.env \
+      lgos-demo-api-sync-litellm --gateway-url http://localhost:3000 \
+      --source-url http://localhost:3004/v1 --prefix lgos-a \
+      --api-base http://lgos-demo-api-a:8000/v1
+    ```
 
 ## Sync Behavior
 

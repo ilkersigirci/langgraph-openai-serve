@@ -29,23 +29,22 @@ Run these from `demo/` after copying `.env.example` to `.env`:
 | Command | Purpose |
 | --- | --- |
 | `make run-postgres` | Start the demo PostgreSQL service on port 3001 |
-| `make run-api` / `make run-api-a` | Run the published `lgos-a` container on port 3004 |
+| `make run-api-a` | Run the published `lgos-a` container on port 3004 |
 | `make run-api-b` | Run the published `lgos-b` container on port 3005 |
-| `make deploy-api API_SERVICE=lgos-demo-api-a` | Deploy one API, wait for health, and register its metadata in the running LiteLLM gateway |
 | `make run-files` | Run the published Files API container on port 3006 |
 | `make run-bifrost` | Run Bifrost and its graph and Files API dependencies on port 3000 |
 | `make run-litellm` | Run the LiteLLM UI edge and compatibility gateway with its API and Files dependencies on port 3000 |
 | `make run-chainlit` | Run Chainlit on port 3002 and PostgreSQL; start the gateway separately or use `make compose` for the full stack |
-| `make run-api-local` / `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
+| `make run-api-a-local` | Set up checkpoints and run the editable local `lgos-a` process |
 | `make run-api-b-local` | Set up checkpoints and run the editable local `lgos-b` process |
 | `make run-files-local` | Run the independently locked local Files API process |
 | `make run-chainlit-local` | Apply Chainlit migrations and run the local UI process |
 | `make sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
-| `make sync-litellm SYNC_ARGS='...'` | Register one LGOS catalog in LiteLLM's native model metadata; see [LiteLLM model sync](litellm-sync.md) |
-| `make compose` | Run the stack with published project-owned images |
-| `make compose-dev` | Build the local API, Files API, and Chainlit images; overlay LGOS only into the graph API image |
-| `make compose-otel` | Run published images with the OTEL overlay |
-| `make compose-otel-dev` | Build the checkout and run it with the OTEL overlay |
+| `make sync-litellm SYNC_ARGS='...'` | Run the shared one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
+| `make compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
+| `make compose-dev` | Build this checkout and run the same ordered startup and sync |
+| `make compose-otel` | Run the ordered published stack with the OTEL overlay |
+| `make compose-otel-dev` | Build the checkout and run the ordered stack with the OTEL overlay |
 | `make sync` | Synchronize all four projects from their lockfiles |
 | `make test` | Test all four projects from their lockfiles |
 | `make test-postgres` | Run API interrupt/Store persistence and Chainlit OAuth token/refresh tests against PostgreSQL on port 3001 |

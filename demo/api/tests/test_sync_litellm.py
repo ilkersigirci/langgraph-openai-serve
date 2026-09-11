@@ -50,8 +50,9 @@ def source(model: ModelDetails) -> Iterator[httpx.Client]:
         yield client
 
 
+@pytest.mark.parametrize("api_base", [None, "https://graphs.internal/v1"])
 def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
-    source: httpx.Client, model: ModelDetails
+    source: httpx.Client, model: ModelDetails, api_base: str | None
 ) -> None:
     deployments: list[dict[str, Any]] = []
     writes: list[dict[str, Any]] = []
@@ -90,15 +91,16 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
     ) as gateway:
         args = {
             "prefix": "research",
-            "api_base": "https://graphs.internal/v1",
             "api_key": "source-key",
         }
+        if api_base is not None:
+            args["api_base"] = api_base
         assert sync_models(source, gateway, **args) == {"research/graph": "created"}
         deployment = deployments[0]
         assert deployment["model_info"]["lgos"] == model.lgos.model_dump(mode="json")
         assert deployment["litellm_params"] == {
             "model": "openai/graph",
-            "api_base": "https://graphs.internal/v1",
+            "api_base": api_base or "https://source.invalid/v1",
             "api_key": "source-key",
             "allowed_openai_params": ["user"],
         }

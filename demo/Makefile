@@ -7,15 +7,14 @@ LGOS_A_PORT ?= 3004
 LGOS_B_PORT ?= 3005
 LGOS_FILES_PORT ?= 3006
 UP_ARGS ?=
-API_SERVICE ?= lgos-demo-api-a
 
-.PHONY: help sync test test-postgres lint check compose-config \
-	run-postgres reset-litellm-db run-api-local run-api-a-local run-api-b-local run-files-local \
-	run-chainlit-local \
-	run-api run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
-	deploy-api sync-litellm sync-openwebui compose compose-down compose-dev compose-otel compose-otel-dev \
-	marimo marimo-local
 .DEFAULT_GOAL := help
+
+.PHONY: help sync test test-postgres lint type-check-ui type-check type-check-local \
+	compose-config check marimo marimo-local run-postgres reset-litellm-db \
+	run-api-a-local run-api-b-local run-files-local run-chainlit-local \
+	run-api-a run-api-b run-files run-bifrost run-litellm run-chainlit \
+	sync-openwebui sync-litellm compose compose-down compose-dev compose-otel compose-otel-dev
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -58,7 +57,7 @@ lint: ## Check lint and formatting for all standalone projects
 	uv run --directory ui/openwebui --locked ruff check src tests
 	uv run --directory ui/openwebui --locked ruff format --check src tests
 
-type-check-ui: ## Run type checking for the UI projects
+type-check-ui:
 	uv run --directory ui/chainlit_ui --locked ty check src
 	uv run --directory ui/openwebui --locked ty check src
 
@@ -79,14 +78,12 @@ compose-config: ## Validate published, development, and OTEL Compose models
 check: test lint type-check compose-config ## Run every standalone validation
 
 run-postgres: ## Start the demo PostgreSQL service in the background
-	$(COMPOSE) up -d lgos-db
+	$(COMPOSE) up --wait lgos-db
 
 reset-litellm-db: ## Reset LiteLLM's PostgreSQL schema
 	@$(COMPOSE) exec -T lgos-db \
 		psql -U lgos -d lgos -v ON_ERROR_STOP=1 \
 		-c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
-
-run-api-local: run-api-a-local ## Run lgos-a locally
 
 run-api-a-local: ## Run lgos-a locally
 	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-setup
@@ -107,8 +104,6 @@ run-chainlit-local: ## Run the Chainlit UI locally
 	uv run --directory ui/chainlit_ui --locked --env-file ../../.env \
 		uvicorn lgos_chainlit.main:app --host 0.0.0.0 \
 		--port $(LGOS_CHAINLIT_PORT)
-
-run-api: run-api-a ## Run the lgos-a container
 
 run-api-a: ## Run the lgos-a container
 	$(COMPOSE) up lgos-demo-api-a
@@ -131,25 +126,43 @@ run-chainlit: ## Run Chainlit and PostgreSQL; start the gateway separately
 sync-openwebui: ## Sync the Open WebUI Functions and LGOS Workspace Models
 	uv run --directory ui/openwebui --locked --env-file ../../.env lgos-openwebui-sync
 
-sync-litellm: ## Sync one LGOS catalog into LiteLLM (pass CLI options in SYNC_ARGS)
-	$(LOCAL_API_RUN) --env-file ../.env lgos-demo-api-sync-litellm $(SYNC_ARGS)
+sync-litellm: ## Sync one LGOS catalog from a one-shot container (pass CLI options in SYNC_ARGS)
+	$(COMPOSE) run --rm --no-deps --pull never lgos-model-sync $(SYNC_ARGS)
 
-deploy-api: ## Deploy API_SERVICE, wait for health, and sync its models to LiteLLM
-	$(COMPOSE) up -d --wait "$(API_SERVICE)"
-	$(COMPOSE) run --rm --no-deps --pull never "$(API_SERVICE)-sync"
-
-compose: ## Run the stack from published images
-	$(COMPOSE) up $(UP_ARGS)
+compose: ## Start the stack in order, run required syncs, and leave services running
+	@set -eu; \
+		gateway_type="$$( $(COMPOSE) config --environment | sed -n 's/^OPENAI_GATEWAY_TYPE=//p' )"; \
+		gateway_service="$$( $(COMPOSE) config --services | \
+			sed -n -e '/^lgos-litellm$$/p' -e '/^lgos-bifrost$$/p' )"; \
+		case "$$gateway_type:$$gateway_service" in \
+			litellm:lgos-litellm|bifrost:lgos-bifrost) \
+				$(COMPOSE) up --wait $(UP_ARGS) "$$gateway_service" ;; \
+			litellm:|bifrost:) \
+				$(COMPOSE) up --wait $(UP_ARGS) \
+					lgos-demo-api-a lgos-demo-api-b lgos-files-api ;; \
+			*) echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2; exit 1 ;; \
+		esac; \
+		if [ "$$gateway_type" = litellm ]; then \
+			$(MAKE) sync-litellm SYNC_ARGS='--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a'; \
+			$(MAKE) sync-litellm SYNC_ARGS='--source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b'; \
+		fi; \
+		$(COMPOSE) up --wait $(UP_ARGS) lgos-chainlit lgos-openwebui; \
+		if [ -n "$$gateway_service" ]; then \
+			OPENAI_GATEWAY_BASE_URL=http://localhost:3000 $(MAKE) sync-openwebui; \
+		else \
+			$(MAKE) sync-openwebui; \
+		fi
 
 compose-down: ## Stop and remove any demo stack variant
 	$(COMPOSE) --profile "*" down --remove-orphans
 
-compose-dev: ## Build the Python application images and run the stack
-	$(COMPOSE) -f docker/compose/development.yml up --build $(UP_ARGS)
+compose-dev: ## Build this checkout, start the stack in order, and run required syncs
+	$(MAKE) compose COMPOSE='$(COMPOSE) -f docker/compose/development.yml' \
+		UP_ARGS='--build $(UP_ARGS)'
 
-compose-otel: ## Run published images with the OpenTelemetry Collector overlay
-	$(COMPOSE) -f docker/compose/otel.yml up $(UP_ARGS)
+compose-otel: ## Start the stack with OpenTelemetry and run required syncs
+	$(MAKE) compose COMPOSE='$(COMPOSE) -f docker/compose/otel.yml'
 
-compose-otel-dev: ## Build this checkout and run it with the OpenTelemetry overlay
-	$(COMPOSE) -f docker/compose/development.yml \
-		-f docker/compose/otel.yml up --build $(UP_ARGS)
+compose-otel-dev: ## Build and start this checkout with OpenTelemetry, then sync
+	$(MAKE) compose COMPOSE='$(COMPOSE) -f docker/compose/development.yml -f docker/compose/otel.yml' \
+		UP_ARGS='--build $(UP_ARGS)'

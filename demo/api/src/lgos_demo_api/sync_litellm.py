@@ -31,8 +31,8 @@ def sync_models(
     gateway: httpx.Client,
     *,
     prefix: str,
-    api_base: str,
     api_key: str,
+    api_base: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, str]:
     """Create missing models and update metadata without changing operator settings."""
@@ -94,7 +94,7 @@ def sync_models(
                         "model_name": name,
                         "litellm_params": {
                             "model": f"openai/{model.id}",
-                            "api_base": api_base,
+                            "api_base": api_base or str(source.base_url).rstrip("/"),
                             "api_key": api_key,
                             # LiteLLM does not assume custom models accept Chat's user.
                             "allowed_openai_params": ["user"],
@@ -126,7 +126,7 @@ def main() -> None:
     )
     parser.add_argument("--prefix", required=True, help="Public model namespace")
     parser.add_argument(
-        "--api-base", required=True, help="LGOS /v1 URL reachable from LiteLLM"
+        "--api-base", help="LGOS /v1 URL reachable from LiteLLM (default: --source-url)"
     )
     parser.add_argument(
         "--api-key-env", help="Environment variable holding the upstream API key"

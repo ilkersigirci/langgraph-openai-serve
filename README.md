@@ -49,7 +49,7 @@ From this repository, prepare the demo environment and PostgreSQL:
 cd demo
 cp .env.example .env
 make run-postgres
-make run-api-local
+make run-api-a-local
 ```
 
 Then call the demo with the OpenAI Python client:
@@ -88,7 +88,7 @@ is the compatibility path for existing Chat-only clients.
 Use `curl http://localhost:3004/v1/models` only as a diagnostic to inspect the
 registered demo graph names.
 
-`make run-api-local` overlays this checkout without changing the self-contained
+`make run-api-a-local` overlays this checkout without changing the self-contained
 demo project or its lockfile. The demo publishes independent API and Chainlit
 images and uses official images for third-party services such as Open WebUI.
 See the [demo Docker Compose guide](docs/demo/docker.md).

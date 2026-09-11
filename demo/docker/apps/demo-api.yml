@@ -46,14 +46,6 @@ x-lgos-demo-api: &lgos-demo-api
     timeout: 5s
     retries: 10
 
-x-lgos-model-sync: &lgos-model-sync
-  <<: *lgos-demo-api
-  profiles: [model-sync]
-  environment:
-    LITELLM_MASTER_KEY: $LITELLM_MASTER_KEY
-  healthcheck:
-    disable: true
-
 services:
   lgos-demo-api-a:
     <<: *lgos-demo-api
@@ -83,34 +75,14 @@ services:
     healthcheck:
       disable: true
 
-  lgos-demo-api-a-sync:
-    <<: *lgos-model-sync
-    depends_on:
-      lgos-demo-api-a:
-        condition: service_healthy
-    command:
+  lgos-model-sync:
+    <<: *lgos-demo-api
+    profiles: [model-sync]
+    environment:
+      LITELLM_MASTER_KEY: $LITELLM_MASTER_KEY
+    healthcheck:
+      disable: true
+    entrypoint:
       - lgos-demo-api-sync-litellm
       - --gateway-url
       - $LITELLM_SYNC_BASE_URL
-      - --source-url
-      - http://lgos-demo-api-a:8000/v1
-      - --prefix
-      - lgos-a
-      - --api-base
-      - http://lgos-demo-api-a:8000/v1
-
-  lgos-demo-api-b-sync:
-    <<: *lgos-model-sync
-    depends_on:
-      lgos-demo-api-b:
-        condition: service_healthy
-    command:
-      - lgos-demo-api-sync-litellm
-      - --gateway-url
-      - $LITELLM_SYNC_BASE_URL
-      - --source-url
-      - http://lgos-demo-api-b:8000/v1
-      - --prefix
-      - lgos-b
-      - --api-base
-      - http://lgos-demo-api-b:8000/v1

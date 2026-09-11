@@ -45,11 +45,13 @@ LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
 its key through `OPENAI_GATEWAY_API_KEY` for the default key-based UI setup.
 Chainlit can instead use [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
 This mode starts no gateway container.
-With the gateway running, `make deploy-api API_SERVICE=lgos-demo-api-a` deploys
-that API, waits for health, and runs its model-sync job. Repeat for `lgos-demo-api-b`.
-Use this target in each API's deployment pipeline; ordinary stack startup does
-not sync metadata. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
-for external administrator credentials and development overlays.
+
+The full-stack `make compose` variants wait for the selected gateway and its
+dependencies, sync both catalogs when using LiteLLM, start the UIs, then sync
+Open WebUI. For an independently deployed API, run `make sync-litellm` after
+its health check. The source URL and public namespace are explicit arguments;
+no per-API sync service is needed. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+for usage and external administrator credentials.
 Make the demo backends reachable from the gateway.
 Configure its native Files provider separately. See the
 [external LiteLLM setup](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/docker.md#demo-services)
@@ -86,7 +88,7 @@ cp .env.example .env
 Run the published `lgos-a` container on port 3004:
 
 ```bash
-make run-api
+make run-api-a
 ```
 
 Run the same published image as `lgos-b` on port 3005:
@@ -143,7 +145,7 @@ The local targets use the independently locked projects. The API additionally
 overlays the parent LGOS checkout as an editable dependency:
 
 ```bash
-make run-api-local
+make run-api-a-local
 make run-api-b-local
 make run-files-local
 OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make run-chainlit-local
@@ -159,10 +161,12 @@ Use the published demo images and pinned service images:
 make compose
 ```
 
-The stack publishes the selected gateway on port 3000, PostgreSQL on 3001, Chainlit on
-3002, Open WebUI on 3003, `lgos-a` on 3004, `lgos-b` on 3005, the Files API on
-3006. The selected UI gateway is controlled by
-`OPENAI_GATEWAY_TYPE`.
+The command leaves a healthy stack running in the background. It starts the
+selected gateway and its dependencies, syncs LiteLLM when selected, starts the
+UIs, and syncs Open WebUI. The stack publishes the gateway on port 3000,
+PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003, `lgos-a` on 3004,
+`lgos-b` on 3005, and the Files API on 3006. `OPENAI_GATEWAY_TYPE` selects the
+UI gateway.
 
 From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:

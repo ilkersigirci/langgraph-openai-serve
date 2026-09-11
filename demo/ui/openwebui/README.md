@@ -17,7 +17,9 @@ The Function uses Responses exclusively and never connects directly to LGOS.
 Files. LiteLLM uses managed Responses routing; Bifrost uses its native
 Responses route. LiteLLM metadata comes from native `/model/info`; Bifrost uses
 its aggregate catalog and model-detail pass-through.
-Before using LiteLLM, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
+Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
+The full-stack `make compose` variants do this and run the Open WebUI sync
+automatically.
 
 ```bash
 cp .env.example .env

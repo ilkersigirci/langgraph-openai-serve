@@ -61,8 +61,9 @@ cp .env.example .env
 docker compose --env-file .env -f docker/compose/demo.yml up --wait lgos-openwebui
 ```
 
-For LiteLLM, [sync LGOS model metadata](litellm-sync.md) into the gateway first.
-Then run the independent Open WebUI synchronization project locally:
+For independently started components, first [sync LGOS model
+metadata](litellm-sync.md) when using LiteLLM. Then run the Open WebUI
+synchronization project locally:
 
 ```bash
 OPENAI_GATEWAY_BASE_URL=http://localhost:3000 make sync-openwebui
@@ -72,6 +73,9 @@ Both bundled gateways use host port `3000`. The
 override is necessary because the root `.env` configures the Compose DNS name,
 which is not resolvable by this host-side command. An external gateway URL that
 is reachable from both contexts needs no override.
+
+The full-stack `make compose` variants handle synchronization automatically
+after their dependencies are healthy.
 
 The sync command signs in through `/api/v1/auths/signin` and reads LGOS metadata
 from the selected gateway before changing Functions or Workspace Models.
