@@ -109,6 +109,9 @@ jobs:
         include:
           - name: API
             directory: api
+          - name: API (checkout)
+            directory: api
+            editable: true
           - name: Files API
             directory: files_api
           - name: Chainlit
@@ -130,7 +133,7 @@ jobs:
         uses: ./demo/.github/actions/check-project
         with:
           directory: ${{ runner.temp }}/lgos-demo/${{ matrix.directory }}
-          editable-package: ${{ matrix.name == 'API' && github.workspace || '' }}
+          editable-package: ${{ matrix.editable && github.workspace || '' }}
           cache-dependency-glob: demo/${{ matrix.directory }}/uv.lock
           verify-api-corpus: ${{ matrix.name == 'API' }}
 

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
 name: Check demo project
-description: Test and lint one locked demo project.
+description: Test, type-check, and lint one locked demo project.
 
 inputs:
   directory:
@@ -28,17 +28,20 @@ runs:
         enable-cache: true
         cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
 
-    - name: Run tests
+    - name: Run tests and type checking
       shell: bash
       env:
         EDITABLE_PACKAGE: ${{ inputs.editable-package }}
         PROJECT_DIR: ${{ inputs.directory }}
       run: |
         uv_args=(--directory "$PROJECT_DIR" --locked)
+        ty_args=(src)
         if [[ -n "$EDITABLE_PACKAGE" ]]; then
           uv_args+=(--with-editable "$EDITABLE_PACKAGE")
+          ty_args+=(--extra-search-path "$EDITABLE_PACKAGE/src")
         fi
         uv run "${uv_args[@]}" pytest
+        uv run "${uv_args[@]}" ty check "${ty_args[@]}"
 
     - name: Check lint and formatting
       shell: bash
