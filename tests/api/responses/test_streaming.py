@@ -300,6 +300,7 @@ async def test_stream_matches_openai_wire_contract(
         body = (await response.aread()).decode()
 
     assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"].startswith("text/event-stream")
     assert normalize_stream_payloads(body) == load_stream_fixture(fixture_name)
 
 

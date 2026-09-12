@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal, TypeAlias
 
+from openai.types.responses.response_output_text import Annotation
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
 
 from langgraph_openai_serve.api.metadata import (
@@ -61,19 +62,30 @@ class ResponseInputMessage(_ResponsesRequestModel):
 class ResponseOutputTextInput(_ResponsesRequestModel):
     """Plain output text replayed from a previous assistant message."""
 
-    annotations: list[JsonValue]
+    annotations: list[Annotation]
     text: str
     type: Literal["output_text"]
     logprobs: list[JsonValue] | None = None
+    # responses.stream().get_final_response() adds this even without a text format.
+    parsed: None = None
+
+
+class ResponseRefusalInput(_ResponsesRequestModel):
+    """A model refusal replayed from an assistant message."""
+
+    type: Literal["refusal"]
+    refusal: str
 
 
 class ResponseOutputMessageInput(_ResponsesRequestModel):
-    """A completed assistant output message replayed as input."""
+    """A terminal assistant output message replayed as input."""
 
     id: str
-    content: Annotated[list[ResponseOutputTextInput], Field(min_length=1)]
+    content: Annotated[
+        list[ResponseOutputTextInput | ResponseRefusalInput], Field(min_length=1)
+    ]
     role: Literal["assistant"]
-    status: Literal["completed"]
+    status: Literal["completed", "incomplete"]
     type: Literal["message"]
     phase: Literal["commentary", "final_answer"] | None = None
 
@@ -121,7 +133,7 @@ ResponseInput: TypeAlias = (
 class ResponseFunctionTool(_ResponsesRequestModel):
     """A client-supplied function available to the graph."""
 
-    type: Literal["function"] = "function"
+    type: Literal["function"]
     name: str
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
@@ -210,6 +222,7 @@ __all__ = [
     "ResponseNamedToolChoice",
     "ResponseOutputMessageInput",
     "ResponseOutputTextInput",
+    "ResponseRefusalInput",
     "ResponseTextConfig",
     "ResponseTextFormat",
     "ResponseToolChoice",

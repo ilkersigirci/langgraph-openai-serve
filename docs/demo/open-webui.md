@@ -261,6 +261,13 @@ preserves explicit phase values, following OpenAI's
 [assistant phase guidance](https://developers.openai.com/api/docs/guides/reasoning#phase-parameter).
 Inline citation markers remain part of assistant content.
 
+Status descriptions remain active while the Responses/tool loop runs and are
+finalized when it completes or stops, using Open WebUI's native
+[`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
+Both response modes display native refusals. Failed and incomplete streaming
+events are handled directly so their reason remains visible; incomplete
+responses never trigger client functions.
+
 !!! note "Keep streaming enabled"
 
     In Open WebUI v0.11.3, native citation sources, tool calls, and `ask_user`

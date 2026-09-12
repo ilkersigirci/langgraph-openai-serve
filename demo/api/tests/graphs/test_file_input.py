@@ -1,11 +1,14 @@
 """Behavior tests for the file-input demo graph."""
 
+import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, call
 
+import httpx
 import pytest
 from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
 from langgraph_openai_serve import GraphFeature
 
 from lgos_demo_api.graphs import file_input as file_input_module
@@ -15,8 +18,10 @@ def test_graph_advertises_file_inputs() -> None:
     assert file_input_module.file_input_graph_config.supports(GraphFeature.FILE_INPUTS)
 
 
-async def test_file_ids_are_resolved_and_sent_as_responses_inputs(
+@pytest.mark.parametrize("outcome", ["completed", "refusal", "incomplete"])
+async def test_file_inputs_use_responses_and_preserve_provider_output(
     monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
 ) -> None:
     downloads = {
         "file-image": SimpleNamespace(
@@ -34,7 +39,6 @@ async def test_file_ids_are_resolved_and_sent_as_responses_inputs(
         "file-image": SimpleNamespace(filename="chart.png"),
         "file-document": SimpleNamespace(filename="report.pdf"),
     }
-    create_response = AsyncMock(return_value=SimpleNamespace(output_text="Summary"))
     clients: list[Any] = []
 
     class FakeOpenAI:
@@ -44,7 +48,6 @@ async def test_file_ids_are_resolved_and_sent_as_responses_inputs(
                 retrieve=AsyncMock(side_effect=lambda file_id: filenames[file_id]),
                 content=AsyncMock(side_effect=lambda file_id: downloads[file_id]),
             )
-            self.responses = SimpleNamespace(create=create_response)
             clients.append(self)
 
         async def __aenter__(self) -> "FakeOpenAI":
@@ -55,21 +58,81 @@ async def test_file_ids_are_resolved_and_sent_as_responses_inputs(
 
     monkeypatch.setattr(file_input_module, "AsyncOpenAI", FakeOpenAI)
 
-    result = await file_input_module.file_input_graph.ainvoke(
-        file_input_module.FileInputState(
-            messages=[
-                HumanMessage(
-                    content=[
-                        {"type": "text", "text": "What do these show?"},
-                        {"type": "file", "file": {"file_id": "file-image"}},
-                        {"type": "file", "file": {"file_id": "file-document"}},
-                    ]
-                )
-            ]
-        )
-    )
+    requests = []
+    status = "incomplete" if outcome == "incomplete" else "completed"
 
-    assert result["messages"][-1].content == "Summary"
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/responses"
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_file",
+                "object": "response",
+                "created_at": 1,
+                "model": "file-model",
+                "status": status,
+                "incomplete_details": (
+                    {"reason": "max_output_tokens"} if status == "incomplete" else None
+                ),
+                "output": [
+                    {
+                        "id": "msg_file",
+                        "type": "message",
+                        "role": "assistant",
+                        "status": status,
+                        "content": [
+                            {"type": "refusal", "refusal": "I cannot read that."}
+                            if outcome == "refusal"
+                            else {
+                                "type": "output_text",
+                                "text": "Summary",
+                                "annotations": [],
+                            }
+                        ],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 2,
+                    "output_tokens": 3,
+                    "total_tokens": 5,
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        model = ChatOpenAI(
+            model="file-model",
+            base_url="https://model.test/v1",
+            api_key="DUMMY",
+            http_async_client=client,
+            use_responses_api=True,
+        )
+        monkeypatch.setattr(file_input_module, "ChatOpenAI", lambda **_: model)
+        result = await file_input_module.file_input_graph.ainvoke(
+            file_input_module.FileInputState(
+                messages=[
+                    HumanMessage(
+                        content=[
+                            {"type": "text", "text": "What do these show?"},
+                            {"type": "file", "file": {"file_id": "file-image"}},
+                            {"type": "file", "file": {"file_id": "file-document"}},
+                        ]
+                    )
+                ]
+            )
+        )
+
+    answer = result["messages"][-1]
+    assert answer.text == ("" if outcome == "refusal" else "Summary")
+    assert answer.response_metadata["status"] == status
+    assert answer.usage_metadata["total_tokens"] == 5
+    if outcome == "refusal":
+        assert answer.content_blocks[0]["value"]["refusal"] == "I cannot read that."
+    if outcome == "incomplete":
+        assert answer.response_metadata["incomplete_details"] == {
+            "reason": "max_output_tokens"
+        }
     assert clients[0].kwargs == {
         "base_url": file_input_module.settings.FILES_BASE_URL,
         "api_key": "DUMMY",
@@ -81,28 +144,30 @@ async def test_file_ids_are_resolved_and_sent_as_responses_inputs(
     clients[0].files.content.assert_has_awaits(
         [call("file-image"), call("file-document")]
     )
-    create_response.assert_awaited_once_with(
-        model=file_input_module.settings.OPENAI_MODEL,
-        instructions=file_input_module.INSTRUCTIONS,
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "What do these show?"},
-                    {
-                        "type": "input_image",
-                        "detail": "auto",
-                        "image_url": "data:image/png;base64,aW1hZ2U=",
-                    },
-                    {
-                        "type": "input_file",
-                        "filename": "report.pdf",
-                        "file_data": "data:application/pdf;base64,ZG9jdW1lbnQ=",
-                    },
-                ],
-            }
-        ],
-    )
+    assert len(requests) == 1
+    assert requests[0]["input"] == [
+        {
+            "type": "message",
+            "role": "system",
+            "content": file_input_module.INSTRUCTIONS,
+        },
+        {
+            "type": "message",
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "What do these show?"},
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,aW1hZ2U=",
+                },
+                {
+                    "type": "input_file",
+                    "filename": "report.pdf",
+                    "file_data": "data:application/pdf;base64,ZG9jdW1lbnQ=",
+                },
+            ],
+        },
+    ]
 
 
 async def test_missing_file_returns_actionable_message(

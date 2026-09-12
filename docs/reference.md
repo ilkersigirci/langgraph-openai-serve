@@ -27,7 +27,6 @@ streaming. Replayed assistant output messages preserve `phase`; complete
 `function_call` items and matching string-valued `function_call_output` items
 support ordinary client-tool continuation. Interrupt continuation sends only
 matching `function_call_output` items with `previous_response_id`.
-
 LGOS does not persist completed Responses for retrieve or deletion. Omitted `store` and
 `store=false` are accepted; `store=true`, `conversation`, and background mode are
 rejected. `previous_response_id` is supported for interruptible graphs to resume execution
@@ -396,11 +395,11 @@ from annotation indices.
 
 LangChain citation indices refer to their containing text block. LGOS offsets
 them into the final response text and preserves OpenAI's inclusive `end_index`.
-Use `citation_slice(start_index, end_index, text)` to validate received indices and convert
-them to a Python slice. Responses maps citations to `output_text.annotations`
-and emits the typed annotation event while streaming. Chat maps them to
-completed `message.annotations`; its final streaming delta uses the
-compatibility extension.
+Use `citation_slice(start_index, end_index, text)` to validate them and create a
+Python slice. Responses maps citations to `output_text.annotations` and emits
+the typed annotation event while streaming. Chat maps them to completed
+`message.annotations`; its final streaming delta uses the compatibility
+extension.
 
 See [Citation ownership](explanation/openai-compatibility.md#citation-ownership)
 for transport and client behavior.

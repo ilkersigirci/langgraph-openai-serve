@@ -150,6 +150,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     ]
     assistant = messages[0]
     assert isinstance(assistant, AIMessage)
+    assert [part["id"] for part in assistant.content] == ["fc_weather", "fc_clock"]
     assert assistant.tool_calls == [
         {
             "name": "weather",
@@ -166,6 +167,48 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
         "call_weather",
         "call_clock",
     ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_truncated_function_arguments_are_incomplete_not_server_errors(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    stream: bool,
+) -> None:
+    config = graph_registry.get_graph("test")
+    config.streamable_node_names = []
+    config.output_to_message = lambda _: AIMessage(
+        content="",
+        invalid_tool_calls=[
+            {"id": "call_weather", "name": "weather", "args": '{"city":"Ista'}
+        ],
+        response_metadata={"finish_reason": "length"},
+    )
+
+    if stream:
+        async with openai_client.responses.stream(
+            model="test", input="Weather?"
+        ) as response_stream:
+            events = [event async for event in response_stream]
+        assert events[-1].type == "response.incomplete"
+        response = events[-1].response
+        assert [
+            event.delta
+            for event in events
+            if event.type == "response.function_call_arguments.delta"
+        ] == ['{"city":"Ista']
+    else:
+        response = await openai_client.responses.create(model="test", input="Weather?")
+
+    assert response.status == "incomplete"
+    assert response.incomplete_details.reason == "max_output_tokens"
+    assert len(response.output) == 1
+    call = response.output[0]
+    assert call.type == "function_call"
+    assert call.status == "incomplete"
+    assert call.call_id == "call_weather"
+    assert call.name == "weather"
+    assert call.arguments == '{"city":"Ista'
 
 
 @pytest.mark.parametrize(

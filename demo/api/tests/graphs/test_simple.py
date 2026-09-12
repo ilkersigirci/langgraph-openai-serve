@@ -47,7 +47,11 @@ async def test_runtime_context_controls_model_input(
 
     async def respond(messages: Any) -> AIMessage:
         model_inputs.append(messages)
-        return AIMessage(content="Fake answer")
+        return AIMessage(
+            content="Fake answer",
+            response_metadata={"finish_reason": "length"},
+            usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+        )
 
     monkeypatch.setattr(
         simple_module,
@@ -70,3 +74,9 @@ async def test_runtime_context_controls_model_input(
         expected_messages
     )
     assert result["messages"][-1].content == "Fake answer"
+    assert result["messages"][-1].response_metadata == {"finish_reason": "length"}
+    assert result["messages"][-1].usage_metadata == {
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "total_tokens": 5,
+    }

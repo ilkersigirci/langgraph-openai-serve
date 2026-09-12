@@ -251,10 +251,13 @@ turn instead of using a server-side Conversation.
 
 When continuing a function call, append every item from `response.output`
 unchanged and then append a matching `function_call_output`. Replaying complete
-SDK items preserves message and call IDs plus assistant `phase`. The current
-SDK may serialize optional function-call `caller` and `namespace` fields as
-null; LGOS accepts those null values but rejects non-null program or namespace
-semantics. This state model follows OpenAI's documented manual item replay while
+SDK items preserves message and call IDs, citations, refusals, and assistant
+`phase` in the LangChain content consumed by model adapters. Completed and
+incomplete assistant message items can both be replayed. The current SDK may
+serialize optional function-call `caller` and `namespace` fields and
+the stream helper's output-text `parsed` field as null; LGOS accepts those null
+values but rejects non-null program, namespace, or parsed-output semantics.
+This state model follows OpenAI's documented manual item replay while
 keeping storage in the client.
 
 Each replayed function call requires one matching output. Missing, duplicate,
@@ -282,19 +285,35 @@ Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 | Graph result | Responses representation |
 | --- | --- |
 | Final assistant text | Completed message item with `phase="final_answer"` and `output_text` content |
+| Model refusal | Message `refusal` content and native `response.refusal.delta` / `done` events |
+| Truncated or filtered final model output | `status="incomplete"`, `incomplete_details`, and a terminal `response.incomplete` event |
 | Visible streaming status | Separate completed message item with `phase="commentary"` |
 | Client tool or interrupt | One `function_call` item per call |
 | Tool result on the next request | Matching `function_call_output` item |
 | URL citation | `url_citation` annotation on `output_text` |
-| Provider-reported usage | `usage` on the completed Response |
+| Provider-reported usage | `usage` on the completed or incomplete Response |
 
-Function arguments are complete JSON strings. The graph runner does not emit
-incremental arguments, so the Responses stream sends one argument delta before
-the corresponding done event. IDs and output indices remain stable throughout
-the typed event lifecycle.
+Completed function arguments are JSON strings. Truncated arguments remain raw
+strings on incomplete function-call items; clients must not execute them. The
+graph runner does not emit incremental arguments, so the Responses stream sends
+one argument delta before the corresponding done event. IDs and output indices
+remain stable throughout the typed event lifecycle.
 
 On failure, the terminal `response.failed` object retains any partial answer
 already streamed, with unfinished output items marked `incomplete`.
+
+LGOS reads refusals from LangChain content blocks or the OpenAI Chat provider's
+`additional_kwargs.refusal`. It reads incomplete Responses metadata and Chat
+`finish_reason` values `length` and `content_filter` from the final assistant
+message. Graph output adapters must retain that metadata when returning model
+output. Refusals remain distinct from ordinary text on the wire; the maintained
+UIs display their explanation. An incomplete response is not eligible for
+automatic client-tool execution.
+
+Consumers must handle `response.incomplete` and `response.failed` directly to
+retain their terminal status and reason instead of assuming every stream ends
+with `response.completed`. See the official
+[streaming event reference](https://developers.openai.com/api/reference/resources/responses/streaming-events).
 
 ## Streaming
 
@@ -305,8 +324,8 @@ for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
 LGOS aggregates usage reported by LangChain model calls across the graph run.
-Complete Responses include it in `usage`, and a Responses stream carries it on
-the terminal `response.completed` object. Chat streams add the standard final
+Completed and incomplete Responses include it in `usage`, and a Responses stream
+carries it on its terminal Response object. Chat streams add the standard final
 empty-choices usage chunk only when the request sets
 `stream_options={"include_usage": true}`. When underlying providers report no
 usage, LGOS omits it rather than estimating tokens.
@@ -380,7 +399,8 @@ status describes backend work already in progress.
 
 OpenAI `url_citation` annotations are the canonical citation contract. Their
 URL, title, and text span associate a source with the answer. `end_index` is
-inclusive, matching OpenAI's last-character convention.
+the cited span's inclusive last-character index. LGOS validates each span
+against its containing text block and checks `cited_text` when present.
 
 Graphs attach LangChain citation annotations to their final `AIMessage`.
 Responses returns them on `output_text.annotations` and emits

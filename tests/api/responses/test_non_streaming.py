@@ -44,7 +44,7 @@ async def test_async_openai_creates_stateless_text_response(
     assert response.text is not None
     assert response.text.format is not None
     assert response.text.format.type == "text"
-    assert (response.model_extra or {})["store"] is False
+    assert "store" not in (response.model_extra or {})
 
     message = response.output[0]
     assert message.type == "message"
@@ -222,6 +222,165 @@ async def test_empty_final_text_remains_a_completed_message(
     assert not response.output_text
     assert response.output[0].type == "message"
     assert not response.output[0].content[0].text
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "message",
+    [
+        AIMessage(
+            content="", additional_kwargs={"refusal": "I cannot help with that."}
+        ),
+        AIMessage(content=[{"type": "refusal", "refusal": "I cannot help with that."}]),
+        AIMessage(
+            content=[
+                {
+                    "type": "non_standard",
+                    "value": {"type": "refusal", "refusal": "I cannot help with that."},
+                }
+            ]
+        ),
+    ],
+    ids=["chat-provider", "responses-provider", "langchain-v1"],
+)
+async def test_refusal_survives_response_stream_and_sdk_item_replay(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    message: AIMessage,
+    stream: bool,
+) -> None:
+    config = graph_registry.get_graph("test")
+    config.streamable_node_names = []
+    config.output_to_message = lambda _output: message
+    if stream:
+        async with openai_client.responses.stream(
+            model="test", input="Hi"
+        ) as response_stream:
+            events = [event async for event in response_stream]
+            response = await response_stream.get_final_response()
+        assert [
+            event.delta for event in events if event.type == "response.refusal.delta"
+        ] == ["I cannot help with that."]
+        assert not any(event.type == "response.output_text.delta" for event in events)
+        assert [event.sequence_number for event in events] == list(range(len(events)))
+    else:
+        response = await openai_client.responses.create(model="test", input="Hi")
+
+    assert response.status == "completed"
+    assert not response.output_text
+    assert response.output[0].content[0].model_dump() == {
+        "type": "refusal",
+        "refusal": "I cannot help with that.",
+    }
+    received: list[BaseMessage] = []
+
+    def capture(
+        _request: GraphRequest, messages: list[BaseMessage]
+    ) -> dict[str, list[BaseMessage]]:
+        received.extend(messages)
+        return {"messages": messages}
+
+    config.request_to_input = capture
+    await openai_client.responses.create(model="test", input=response.output)
+    assert received[0].content[0]["refusal"] == "I cannot help with that."
+    assert received[0].content[0]["phase"] == "final_answer"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("metadata", "reason"),
+    [
+        ({"finish_reason": "length"}, "max_output_tokens"),
+        ({"finish_reason": "content_filter"}, "content_filter"),
+        (
+            {
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+            },
+            "max_output_tokens",
+        ),
+    ],
+)
+async def test_truncated_output_finishes_as_incomplete(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    metadata: dict[str, object],
+    reason: str,
+    stream: bool,
+) -> None:
+    config = graph_registry.get_graph("test")
+    config.streamable_node_names = []
+    config.output_to_message = lambda _output: AIMessage(
+        content="Partial answer", response_metadata=metadata
+    )
+    if stream:
+        async with openai_client.responses.stream(
+            model="test", input="Hi"
+        ) as response_stream:
+            events = [event async for event in response_stream]
+        assert events[-1].type == "response.incomplete"
+        response = events[-1].response
+        assert not any(event.type == "response.completed" for event in events)
+        assert (
+            next(
+                event.item
+                for event in events
+                if event.type == "response.output_item.done"
+            ).status
+            == "incomplete"
+        )
+    else:
+        response = await openai_client.responses.create(model="test", input="Hi")
+
+    assert response.status == "incomplete"
+    assert response.incomplete_details.reason == reason
+    assert response.completed_at is None
+    assert response.output_text == "Partial answer"
+    assert response.output[0].status == "incomplete"
+    await openai_client.responses.create(model="test", input=response.output)
+
+
+async def test_replayed_citations_and_phase_reach_langchain_content(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    config = graph_registry.get_graph("test")
+    message = AIMessage(
+        content=[
+            {
+                "type": "text",
+                "text": "Source",
+                "annotations": [
+                    {
+                        "type": "citation",
+                        "url": "https://example.com/source",
+                        "title": "Source",
+                        "start_index": 0,
+                        "end_index": 5,
+                    }
+                ],
+            }
+        ]
+    )
+    config.output_to_message = lambda _output: message
+    first = await openai_client.responses.create(model="test", input="Hi")
+    received: list[BaseMessage] = []
+
+    def capture(
+        _request: GraphRequest, messages: list[BaseMessage]
+    ) -> dict[str, list[BaseMessage]]:
+        received.extend(messages)
+        return {"messages": messages}
+
+    config.request_to_input = capture
+    config.output_to_message = lambda _output: received[0]
+    replay = await openai_client.responses.create(model="test", input=first.output)
+    assert received[0].content[0]["id"] == first.output[0].id
+    assert received[0].content[0]["phase"] == "final_answer"
+    assert (
+        replay.output[0].content[0].annotations
+        == first.output[0].content[0].annotations
+    )
 
 
 @pytest.mark.parametrize("stream", [False, True])

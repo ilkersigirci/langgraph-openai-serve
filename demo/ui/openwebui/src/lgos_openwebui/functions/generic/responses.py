@@ -116,7 +116,10 @@ def _responses_final_text(response: Response) -> str:
     for item in response.output:
         if item.type != "message" or item.phase == "commentary":
             continue
-        parts.extend(part.text for part in item.content if part.type == "output_text")
+        parts.extend(
+            part.text if part.type == "output_text" else part.refusal
+            for part in item.content
+        )
     return "".join(parts)
 
 

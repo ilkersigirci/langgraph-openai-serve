@@ -31,8 +31,11 @@ def load_stream_fixture(fixture_name: str) -> list[dict[str, Any]]:
 def _parse_sse(body: str) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for frame in filter(None, body.split("\n\n")):
-        _, data_line = frame.splitlines()
+        event_line, data_line = frame.splitlines()
+        assert event_line.startswith("event: ")
+        assert data_line.startswith("data: ")
         payload = json.loads(data_line.removeprefix("data: "))
+        assert payload["type"] == event_line.removeprefix("event: ")
         payloads.append(payload)
     return payloads
 

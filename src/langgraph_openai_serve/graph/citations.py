@@ -17,7 +17,6 @@ def citation_slice(start_index: int, end_index: int, content: str) -> slice:
 
 def citations_from_message(message: AIMessage) -> list[Citation]:
     """Extract URL citations with validated offsets into the complete text."""
-    text = str(message.text)
     citations: list[Citation] = []
     text_offset = 0
     for block in message.content_blocks:
@@ -30,13 +29,15 @@ def citations_from_message(message: AIMessage) -> list[Citation]:
             if not required.issubset(raw_citation):
                 continue
             citation = cast("Citation", raw_citation).copy()
-            citation["start_index"] += text_offset
-            citation["end_index"] += text_offset
-            span = citation_slice(citation["start_index"], citation["end_index"], text)
             cited_text = citation.get("cited_text")
-            if cited_text is not None and text[span] != cited_text:
+            span = citation_slice(
+                citation["start_index"], citation["end_index"], block["text"]
+            )
+            if cited_text is not None and block["text"][span] != cited_text:
                 msg = "citation indices must match cited_text"
                 raise ValueError(msg)
+            citation["start_index"] += text_offset
+            citation["end_index"] += text_offset
             citations.append(citation)
         text_offset += len(block["text"])
     return citations
