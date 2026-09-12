@@ -16,7 +16,13 @@ from pydantic import (
 )
 
 from .functions.generic.api import _model_request
-from .functions.generic.contracts import LGOS_EXTENSION_KEY, LGOS_MODEL_OWNER
+from .functions.generic.contracts import (
+    CURRENT_TIME_TOOL_NAME,
+    LGOS_EXTENSION_KEY,
+    LGOS_MODEL_OWNER,
+    WEB_SEARCH_TOOL_NAME,
+    is_hosted_tool_model,
+)
 from .functions.generic.gateway import GatewayConfig, litellm_models
 
 FILE_INPUTS_FEATURE = "file_inputs"
@@ -35,6 +41,20 @@ LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
     "lgos model metadata. Runtime settings, file inputs, and "
     "interrupt profile checks may be unavailable."
+)
+HOSTED_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
+    {
+        "key": CURRENT_TIME_TOOL_NAME,
+        "type": "checkbox",
+        "label": "Current time",
+        "default": False,
+    },
+    {
+        "key": WEB_SEARCH_TOOL_NAME,
+        "type": "checkbox",
+        "label": "Web search",
+        "default": False,
+    },
 )
 
 
@@ -301,13 +321,16 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
     # Open WebUI reads this native schema from Workspace Model metadata.
     # Keeping it out of params.system prevents settings UI data from becoming
     # an LGOS system prompt.
+    fields = list(spec.fields)
+    if is_hosted_tool_model(spec.id):
+        fields.extend(HOSTED_TOOL_FIELDS)
     return {
         "id": spec.workspace_model_id,
         "base_model_id": spec.base_model_id,
         "name": spec.name,
         "meta": {
             "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
-            CHAT_VARIABLES_META_KEY: {"fields": list(spec.fields)},
+            CHAT_VARIABLES_META_KEY: {"fields": fields},
             "capabilities": {
                 "file_upload": spec.supports_file_inputs,
                 "file_context": False,

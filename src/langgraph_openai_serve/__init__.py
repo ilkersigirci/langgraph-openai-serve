@@ -17,6 +17,7 @@ from langgraph_openai_serve.graph.request import (
     ClientFunctionTool,
     ClientToolChoice,
     GraphRequest,
+    NamedCustomToolChoice,
     NamedFunctionToolChoice,
 )
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
@@ -32,6 +33,7 @@ __all__ = [
     "GraphRegistry",
     "GraphRequest",
     "LanggraphOpenaiServe",
+    "NamedCustomToolChoice",
     "NamedFunctionToolChoice",
     "citation_slice",
     "client_event",

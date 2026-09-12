@@ -23,8 +23,20 @@ The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
+The generated `hosted-tool` models add fixed **Current time** and **Web search**
+Chat Variable checkboxes. The Pipe maps enabled boxes to native `custom` and
+`web_search` declarations; the names are client constants, not discovered
+metadata. Open WebUI's request `tools` remain its client-function mechanism and
+are not reinterpreted as LGOS hosted tools.
 When `lgos-a/simple-graph` is available with valid metadata, sync also creates
 the dedicated UserValves example over the same manifold base.
+
+## Hosted Tool Switches
+
+Select **LGOS / ... / hosted-tool**, open the Chat Variables control beside the
+chat input, and enable **Current time**, **Web search**, or both. The checkboxes
+default to off and their values belong to the chat. LGOS executes the selected
+tools server-side without a client-tool continuation.
 
 ## Simple Per-User Settings
 
@@ -264,6 +276,8 @@ Inline citation markers remain part of assistant content.
 Status descriptions remain active while the Responses/tool loop runs and are
 finalized when it completes or stops, using Open WebUI's native
 [`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
+Native `response.web_search_call.completed` events appear as completed
+"Web search completed." statuses, separate from running commentary.
 Both response modes display native refusals. Failed and incomplete streaming
 events are handled directly so their reason remains visible; incomplete
 responses never trigger client functions.
@@ -288,6 +302,9 @@ HTML and chart bytes stay out of the upstream model transcript. Image files
 still use authenticated Open WebUI file storage and the native `files` event. Each continuation retains the original input, including instructions
 and file references, then appends complete Response output items and matching
 tool results. Final-answer text from every call is retained in both modes.
+
+Hosted custom call/result items stay server-owned; the Pipe does not execute
+them or send another result. The chat displays their final assistant answer.
 
 The Pipe returns plain text for non-streaming answers and uses the OpenAI SDK's
 typed chunk schema for streamed text. Open WebUI JSON-encodes these chunks, so

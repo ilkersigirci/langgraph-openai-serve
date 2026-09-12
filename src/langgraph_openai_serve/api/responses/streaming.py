@@ -1,26 +1,32 @@
 """Assemble SDK-typed OpenAI Responses streaming events."""
 
 import uuid
-from collections.abc import AsyncGenerator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Collection, Iterator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
+from langgraph.types import CustomStreamPart, UpdatesStreamPart
 from openai.types.responses import (
     Response,
     ResponseCompletedEvent,
     ResponseContentPartAddedEvent,
     ResponseContentPartDoneEvent,
     ResponseCreatedEvent,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallInputDeltaEvent,
+    ResponseCustomToolCallInputDoneEvent,
     ResponseError,
     ResponseErrorEvent,
     ResponseFailedEvent,
     ResponseFunctionCallArgumentsDeltaEvent,
     ResponseFunctionCallArgumentsDoneEvent,
     ResponseFunctionToolCall,
+    ResponseFunctionWebSearch,
     ResponseIncompleteEvent,
     ResponseInProgressEvent,
+    ResponseOutputItem,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseOutputMessage,
@@ -33,9 +39,11 @@ from openai.types.responses import (
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
     ResponseUsage,
+    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.response import IncompleteDetails
 
+from langgraph_openai_serve.api.responses.request import selected_hosted_tools
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
@@ -47,12 +55,16 @@ from langgraph_openai_serve.api.responses.service import (
     response_refusals,
     response_usage,
 )
+from langgraph_openai_serve.api.responses.utils.hosted_tools import (
+    HostedToolItem,
+    HostedToolTracker,
+    update_messages,
+)
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.events import parse_status_event
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import (
-    LangGraphStreamEvent,
     invoke_run,
     stream_run,
 )
@@ -83,10 +95,13 @@ class ResponsesStreamBuilder:
         request: ResponseCreateRequest,
         *,
         run_id: str | None = None,
+        hosted_tools: Collection[str] = (),
     ) -> None:
         self._context = ResponseContext.for_run(request, run_id=run_id)
         self._sequence_number = 0
-        self._output: list[ResponseOutputMessage | ResponseFunctionToolCall] = []
+        self._output: list[ResponseOutputItem] = []
+        self._hosted_tools = hosted_tools
+        self._hosted_tool_tracker = HostedToolTracker(request, hosted_tools)
         self._final_item: _TextItem | None = None
 
     def created(self) -> ResponseCreatedEvent:
@@ -149,14 +164,10 @@ class ResponsesStreamBuilder:
             Typed terminal events for a successful Response.
 
         """
-        calls = response_function_calls(message)
-        incomplete_details = response_incomplete_details(message)
-        item_status = "incomplete" if incomplete_details is not None else "completed"
+        calls, item_status, incomplete_details = self._completion(message)
         yield from self._finish_answer(message, status=item_status)
         for call in calls:
-            yield from self._function_call(
-                call.model_copy(update={"status": item_status})
-            )
+            yield from self._tool_item(call.model_copy(update={"status": item_status}))
         response = self._response(
             status=item_status,
             usage=response_usage(message.usage_metadata),
@@ -174,6 +185,22 @@ class ResponsesStreamBuilder:
                 sequence_number=self._sequence(),
                 response=response,
             )
+
+    def _completion(
+        self, message: AIMessage
+    ) -> tuple[
+        list[ResponseFunctionToolCall],
+        Literal["completed", "incomplete"],
+        IncompleteDetails | None,
+    ]:
+        self._hosted_tool_tracker.ensure_complete()
+        calls = response_function_calls(message)
+        if any(call.name in self._hosted_tools for call in calls):
+            msg = "Hosted output contains a call without its server-executed result."
+            raise UnsupportedResponsesOutputError(msg)
+        incomplete_details = response_incomplete_details(message)
+        status = "incomplete" if incomplete_details is not None else "completed"
+        return calls, status, incomplete_details
 
     def _finish_answer(
         self, message: AIMessage, *, status: Literal["completed", "incomplete"]
@@ -217,13 +244,14 @@ class ResponsesStreamBuilder:
             Typed function-call and terminal events.
 
         """
+        self._hosted_tool_tracker.ensure_complete()
         if self._final_item is not None:
             yield from self._finish_text_item(
                 self._final_item,
                 response_output_text(AIMessage(content=self._final_item.text)),
             )
         for call in interrupt_output_items(batch, response_id=self._context.id):
-            yield from self._function_call(call)
+            yield from self._tool_item(call)
         yield ResponseCompletedEvent(
             type="response.completed",
             sequence_number=self._sequence(),
@@ -427,18 +455,25 @@ class ResponsesStreamBuilder:
             part=part,
         )
 
-    def _function_call(
+    def _tool_item(
         self,
-        completed: ResponseFunctionToolCall,
+        completed: ResponseFunctionToolCall | HostedToolItem,
     ) -> Iterator[ResponseStreamEvent]:
         output_index = len(self._output)
         if completed.id is None:
-            msg = "Responses function-call items must include an id."
+            msg = "Responses tool items must include an id."
             raise RuntimeError(msg)
 
-        pending = completed.model_copy(
-            update={"arguments": "", "status": "in_progress"}
-        )
+        if isinstance(completed, ResponseFunctionToolCall):
+            pending = completed.model_copy(
+                update={"arguments": "", "status": "in_progress"}
+            )
+        elif isinstance(completed, ResponseCustomToolCall):
+            pending = completed.model_copy(
+                update={"input": "", "status": "in_progress"}
+            )
+        else:
+            pending = completed
         self._output.append(pending)
         yield ResponseOutputItemAddedEvent(
             type="response.output_item.added",
@@ -446,21 +481,47 @@ class ResponsesStreamBuilder:
             output_index=output_index,
             item=pending,
         )
-        yield ResponseFunctionCallArgumentsDeltaEvent(
-            type="response.function_call_arguments.delta",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=completed.id,
-            delta=completed.arguments,
-        )
-        yield ResponseFunctionCallArgumentsDoneEvent(
-            type="response.function_call_arguments.done",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=completed.id,
-            name=completed.name,
-            arguments=completed.arguments,
-        )
+        if isinstance(completed, ResponseFunctionToolCall):
+            yield ResponseFunctionCallArgumentsDeltaEvent(
+                type="response.function_call_arguments.delta",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=completed.id,
+                delta=completed.arguments,
+            )
+            yield ResponseFunctionCallArgumentsDoneEvent(
+                type="response.function_call_arguments.done",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=completed.id,
+                name=completed.name,
+                arguments=completed.arguments,
+            )
+        elif isinstance(completed, ResponseCustomToolCall):
+            yield ResponseCustomToolCallInputDeltaEvent(
+                type="response.custom_tool_call_input.delta",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=completed.id,
+                delta=completed.input,
+            )
+            yield ResponseCustomToolCallInputDoneEvent(
+                type="response.custom_tool_call_input.done",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=completed.id,
+                input=completed.input,
+            )
+        elif (
+            isinstance(completed, ResponseFunctionWebSearch)
+            and completed.status == "completed"
+        ):
+            yield ResponseWebSearchCallCompletedEvent(
+                type="response.web_search_call.completed",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=completed.id,
+            )
         self._output[output_index] = completed
         yield ResponseOutputItemDoneEvent(
             type="response.output_item.done",
@@ -468,6 +529,17 @@ class ResponsesStreamBuilder:
             output_index=output_index,
             item=completed,
         )
+
+    def hosted_tool(self, message: BaseMessage) -> Iterator[ResponseStreamEvent]:
+        """
+        Expose selected tool activity from a native agent update.
+
+        Yields:
+            Native custom input and output-item lifecycle events.
+
+        """
+        for item in self._hosted_tool_tracker.items(message):
+            yield from self._tool_item(item)
 
     def _response(
         self,
@@ -498,11 +570,28 @@ def encode_event(event: ResponseStreamEvent) -> str:
 
 async def collect_response(request: ResponseCreateRequest, run: GraphRun) -> Response:
     """Build one non-streaming Response from the graph's durable output."""
-    builder = ResponsesStreamBuilder(request, run_id=run.run_id)
-    output = await invoke_run(run)
-    for event in _finish_events(builder, output, run):
-        if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
-            return event.response
+    hosted_tools = selected_hosted_tools(request)
+    builder = ResponsesStreamBuilder(
+        request,
+        run_id=run.run_id,
+        hosted_tools=hosted_tools,
+    )
+    if not hosted_tools:
+        output = await invoke_run(run)
+        for event in _finish_events(builder, output, run):
+            if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
+                return event.response
+    else:
+        events = _successful_events(
+            builder,
+            run,
+            stream_updates=True,
+            streaming=False,
+        )
+        async with aclosing(events):
+            async for event in events:
+                if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
+                    return event.response
     msg = "Graph execution completed without a final Response."
     raise UnsupportedResponsesOutputError(msg)
 
@@ -518,8 +607,13 @@ async def stream_response(
         Named, compact Responses SSE frames.
 
     """
-    builder = ResponsesStreamBuilder(request, run_id=run.run_id)
-    events = _successful_events(builder, run)
+    hosted_tools = selected_hosted_tools(request)
+    builder = ResponsesStreamBuilder(
+        request,
+        run_id=run.run_id,
+        hosted_tools=hosted_tools,
+    )
+    events = _successful_events(builder, run, stream_updates=bool(hosted_tools))
     try:
         async with aclosing(events):
             async for event in events:
@@ -533,6 +627,9 @@ async def stream_response(
 async def _successful_events(
     builder: ResponsesStreamBuilder,
     run: GraphRun,
+    *,
+    stream_updates: bool,
+    streaming: bool = True,
 ) -> AsyncGenerator[ResponseStreamEvent, None]:
     """
     Adapt one successful graph stream to typed Responses events.
@@ -545,14 +642,18 @@ async def _successful_events(
     yield builder.in_progress()
 
     final_output: AIMessage | LangGraphInterruptBatch | None = None
-    expose_status = run.config.supports(GraphFeature.CLIENT_EVENTS)
-    run_events = stream_run(run)
+    expose_status = streaming and run.config.supports(GraphFeature.CLIENT_EVENTS)
+    run_events = stream_run(
+        run,
+        stream_messages=streaming and not stream_updates,
+        stream_updates=stream_updates,
+    )
     async with aclosing(run_events):
         async for graph_event in run_events:
             if isinstance(graph_event, (AIMessage, LangGraphInterruptBatch)):
                 final_output = graph_event
                 continue
-            for event in _response_events(
+            for event in _graph_response_events(
                 builder,
                 graph_event,
                 expose_status=expose_status,
@@ -577,12 +678,13 @@ def _finish_events(
         if output is None:
             msg = "LangGraph stream completed without a final assistant message."
             raise RuntimeError(msg)
+        yield from builder.hosted_tool(output)
         yield from builder.finish(output)
 
 
-def _response_events(
+def _graph_response_events(
     builder: ResponsesStreamBuilder,
-    event: LangGraphStreamEvent,
+    event: str | CustomStreamPart | UpdatesStreamPart,
     *,
     expose_status: bool,
 ) -> Iterator[ResponseStreamEvent]:
@@ -596,7 +698,11 @@ def _response_events(
     if isinstance(event, str):
         yield from builder.final_delta(event)
         return
-    if not isinstance(event, dict) or not expose_status:
+    if event["type"] == "updates":
+        for message in update_messages(event):
+            yield from builder.hosted_tool(message)
+        return
+    if not expose_status:
         return
 
     status_data = parse_status_event(event["data"])

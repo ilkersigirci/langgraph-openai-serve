@@ -97,24 +97,31 @@ documentation for the underlying conventions.
 
 ## Runner Behavior
 
-LGOS uses the LangGraph interface that matches the OpenAI response mode. Both
-paths use LangGraph's stable v2 output wrapper so interrupt handling remains
-durable.
+LGOS uses LangGraph's stable v2 output wrapper so interrupt handling remains
+durable. Ordinary requests choose invocation or streaming according to the
+OpenAI response mode; hosted tools additionally need intermediate updates.
 
 === "Complete response"
 
-    When `stream` is omitted or `false`, the route awaits `invoke_run()`. The
-    runner calls `graph.ainvoke(version="v2")`. It does not subscribe to custom
-    events. After execution it reads durable pending state for interrupts;
-    otherwise it renders the returned value as the final `AIMessage`.
+    When `stream` is omitted or `false`, ordinary requests use
+    `graph.ainvoke(version="v2")`. Requests selecting hosted tools use
+    `stream_run()` so LGOS can collect native call/result updates. That path
+    does not subscribe to message deltas, encode SSE, or include transient
+    commentary. Both paths use the same Responses item builder and read durable
+    pending state for interrupts.
 
 === "SSE response"
 
     When `stream=true`, the route returns an SSE response backed by
-    `stream_run()`. The runner consumes `messages`, `custom`, and `values`. Only
+    `stream_run()`. The runner consumes `custom` and `values`, plus `updates` for
+    requests selecting hosted tools. It consumes `messages` only for ordinary
+    live text. Only
     `AIMessageChunk` values from configured streamable nodes become text chunks;
     the list may include nodes in nested subgraphs. Returning a message through
     the graph's `messages` state is not a live-streaming signal.
+    Hosted-tool requests do not subscribe to message chunks. Their completed
+    updates expose tool activity, and the final root value becomes one answer
+    delta after the tool loop finishes.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
     events. The final root value supplies durable citations, tool calls, and

@@ -11,7 +11,6 @@ from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
-    ToolParam,
 )
 from plotly import io as pio
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -44,33 +43,32 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
 }
 
 
-def response_tools(model: str) -> list[ToolParam]:
-    """Supply hosted selectors or function tools for the selected model."""
-    if model.rsplit("/", 1)[-1] == "hosted-tool":
-        return [{"type": "custom", "name": "lgos_current_time"}]
-    return [DISPLAY_FILE_TOOL]
-
-
 class CommentaryTaskList:
-    """Render streamed commentary as one native Chainlit task list."""
+    """Render commentary and completed searches as one native Chainlit task list."""
 
     def __init__(self) -> None:
         self._task_list: cl.TaskList | None = None
         self._active_task: cl.Task | None = None
 
-    async def add(self, content: str) -> None:
-        """Complete the prior task and append the latest status as running."""
+    async def add(self, content: str, *, done: bool = False) -> None:
+        """Append a status without letting completed tools finish active commentary."""
         if not content:
             return
         if self._task_list is None:
             self._task_list = cl.TaskList()
-        if self._active_task is not None:
+        if not done and self._active_task is not None:
             self._active_task.status = cl.TaskStatus.DONE
 
-        task = cl.Task(title=content, status=cl.TaskStatus.RUNNING)
+        task = cl.Task(
+            title=content,
+            status=cl.TaskStatus.DONE if done else cl.TaskStatus.RUNNING,
+        )
         await self._task_list.add_task(task)
-        self._task_list.status = "Running..."
-        self._active_task = task
+        if not done:
+            self._active_task = task
+        self._task_list.status = (
+            "Running..." if self._active_task is not None else "Done"
+        )
         await self._task_list.send()
 
     async def complete(self) -> None:

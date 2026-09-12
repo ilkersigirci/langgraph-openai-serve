@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from anyio import CancelScope
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.constants import TAG_NOSTREAM
-from langgraph.types import CustomStreamPart, GraphOutput, StreamMode
+from langgraph.types import (
+    CustomStreamPart,
+    GraphOutput,
+    StreamMode,
+    UpdatesStreamPart,
+)
 
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -30,7 +35,11 @@ logger = get_logger(__name__)
 
 LangGraphOutput = AIMessage | interrupt_models.LangGraphInterruptBatch
 LangGraphStreamEvent = (
-    str | AIMessage | interrupt_models.LangGraphInterruptBatch | CustomStreamPart
+    str
+    | AIMessage
+    | interrupt_models.LangGraphInterruptBatch
+    | CustomStreamPart
+    | UpdatesStreamPart
 )
 
 _MISSING = object()
@@ -162,6 +171,9 @@ async def run_langgraph_stream(
 
 async def stream_run(
     run: GraphRun,
+    *,
+    stream_messages: bool = True,
+    stream_updates: bool = False,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
     Stream an already prepared LangGraph invocation.
@@ -181,7 +193,6 @@ async def stream_run(
             yield interrupt_batch
             return
 
-        stream_mode: list[StreamMode] = ["messages", "custom", "values"]
         final_output: Any = _MISSING
 
         graph_stream = cast(
@@ -190,26 +201,26 @@ async def stream_run(
                 run.inputs,
                 config=run.runnable_config,
                 context=run.context,
-                stream_mode=stream_mode,
-                **_astream_options(run),
+                **_astream_options(
+                    run,
+                    stream_messages=stream_messages,
+                    stream_updates=stream_updates,
+                ),
             ),
         )
         async with aclosing(graph_stream):
             async for event in graph_stream:
-                if event.get("type") == "custom":
-                    yield cast("CustomStreamPart", event)
-                    continue
-
-                if event.get("type") == "values" and not event.get("ns"):
+                event_type = event.get("type")
+                if event_type == "values" and not event.get("ns"):
                     final_output = event.get("data")
                     continue
-
-                if event.get("type") != "messages":
-                    continue
-
-                content = text_from_message_event(event, run)
-                if content:
-                    yield content
+                part = _visible_stream_part(
+                    event,
+                    run,
+                    stream_updates=stream_updates,
+                )
+                if part is not None:
+                    yield part
 
         if run.config.supports(GraphFeature.INTERRUPTS):
             interrupt_batch = await _durable_interrupt_batch(run)
@@ -223,6 +234,22 @@ async def stream_run(
         yield await _render_stream_output(final_output, run)
     finally:
         await finalize_run(run, checkpoint_disposition)
+
+
+def _visible_stream_part(
+    event: dict[str, Any],
+    run: GraphRun,
+    *,
+    stream_updates: bool,
+) -> LangGraphStreamEvent | None:
+    event_type = event.get("type")
+    if event_type == "custom":
+        return cast("CustomStreamPart", event)
+    if event_type == "updates" and stream_updates:
+        return cast("UpdatesStreamPart", event)
+    if event_type == "messages":
+        return text_from_message_event(event, run)
+    return None
 
 
 def text_from_message_event(event: dict, run: GraphRun) -> str | None:
@@ -247,9 +274,20 @@ def _invoke_options(run: GraphRun) -> dict[str, Any]:
     return options
 
 
-def _astream_options(run: GraphRun) -> dict[str, Any]:
+def _astream_options(
+    run: GraphRun,
+    *,
+    stream_messages: bool,
+    stream_updates: bool,
+) -> dict[str, Any]:
     """Build LangGraph streaming options."""
+    stream_mode: list[StreamMode] = ["custom", "values"]
+    if stream_messages:
+        stream_mode.insert(0, "messages")
+    if stream_updates:
+        stream_mode.append("updates")
     return {
+        "stream_mode": stream_mode,
         "subgraphs": True,
         "output_keys": run.graph.output_channels,
         **_invoke_options(run),

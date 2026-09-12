@@ -22,16 +22,22 @@ and `{prefix}/openapi.json`.
 
 The route accepts string or ordered message input, instructions, plain
 `input_text`, `input_file.file_id`, string-valued metadata, `user`, flat
-function tools and choices, `parallel_tool_calls`, plain text output, and
-streaming. Replayed assistant output messages preserve `phase`; complete
+function tools, registered hosted custom tools, standard `web_search`, and their
+choices, `parallel_tool_calls`, plain text output, and streaming. Replayed
+assistant output messages preserve `phase`; complete
 `function_call` items and matching string-valued `function_call_output` items
 support ordinary client-tool continuation. Interrupt continuation sends only
 matching `function_call_output` items with `previous_response_id`.
+Hosted execution returns custom call/output pairs or a `web_search_call` in the
+same response; complete output items can also be replayed as history.
+The public `web_search` shape does not prescribe the graph's search backend;
+the bundled demo chooses a self-hosted or upstream provider backend.
+
 LGOS does not persist completed Responses for retrieve or deletion. Omitted `store` and
 `store=false` are accepted; `store=true`, `conversation`, and background mode are
 rejected. `previous_response_id` is supported for interruptible graphs to resume execution
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
-those resumes. The route also rejects OpenAI-hosted tools, structured output, image/audio
+those resumes. The route also rejects other hosted tools, structured output, image/audio
 input, URL or inline file input, result-content lists, reasoning and generation
 controls, `include`, stream options, service tiers, reusable prompts,
 prompt-cache controls, and truncation. Unknown fields are not silently ignored.
@@ -89,10 +95,11 @@ belong to an external OpenAI Files API, not the LGOS package. See
   adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior or
   advertise a graph input capability.
-- `hosted_tools`: allowlisted `lgos_...` tool identifiers accepted by Responses;
-  the graph owns their schemas and execution. See [hosted tools](explanation/openai-compatibility.md#hosted-tools).
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
+- `hosted_tools`: internal allowlist of server-tool names supported by this graph.
+  Clients select tools explicitly in each Responses request; model retrieval does
+  not advertise them. See [Hosted Tools](explanation/openai-compatibility.md#hosted-tools).
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
@@ -119,10 +126,10 @@ creates. Graphs should access context from an injected `Runtime[Context]`.
 
 Graph adapters receive an immutable, protocol-neutral `GraphRequest` from either
 API's decoder. It exposes
-only the shared `model`, `metadata`, `user`, normalized function `tools`,
-`tool_choice`, `parallel_tool_calls`, and `hosted_tools` values.
-`hosted_tools` is a tuple of selected LGOS identifiers, separate from function
-`tools`; Chat requests leave it empty. Raw OpenAI transport models are
+the shared `model`, `metadata`, `user`, normalized function `tools`, selected
+server-tool names in `hosted_tools`, `tool_choice`, and `parallel_tool_calls` values.
+`NamedCustomToolChoice` identifies a required hosted tool, distinct from
+`NamedFunctionToolChoice`. Raw OpenAI transport models are
 not part of the graph-adapter interface.
 
 Runtime context is separate from `RunnableConfig`:

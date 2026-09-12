@@ -2,8 +2,9 @@
 
 from typing import Annotated, Literal, TypeAlias
 
+from openai.types.responses.response_function_web_search import Action
 from openai.types.responses.response_output_text import Annotation
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
@@ -115,11 +116,49 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
     status: Literal["in_progress", "completed", "incomplete"] | None = None
 
 
+class ResponseCustomToolCallInput(_ResponsesRequestModel):
+    """A custom call replayed with its server-executed result."""
+
+    type: Literal["custom_tool_call"]
+    call_id: str
+    name: str
+    input: str
+    id: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+    caller: None = None
+    namespace: None = None
+    created_by: str | None = None
+
+
+class ResponseCustomToolCallOutputInput(_ResponsesRequestModel):
+    """A text result from an LGOS-owned custom tool."""
+
+    type: Literal["custom_tool_call_output"]
+    call_id: str
+    output: str
+    id: str | None = None
+    status: Literal["completed"] | None = None
+    caller: None = None
+    created_by: str | None = None
+
+
+class ResponseWebSearchCallInput(_ResponsesRequestModel):
+    """A web-search call replayed from a previous Response."""
+
+    id: str
+    action: Action
+    status: Literal["in_progress", "searching", "completed", "failed"]
+    type: Literal["web_search_call"]
+
+
 ResponseInputItem: TypeAlias = (
     ResponseOutputMessageInput
     | ResponseInputMessage
     | ResponseFunctionCallInput
     | ResponseFunctionCallOutputInput
+    | ResponseCustomToolCallInput
+    | ResponseCustomToolCallOutputInput
+    | ResponseWebSearchCallInput
 )
 ResponseInput: TypeAlias = (
     str
@@ -140,37 +179,40 @@ class ResponseFunctionTool(_ResponsesRequestModel):
     strict: bool | None = None
 
 
-class ResponseHostedTool(_ResponsesRequestModel):
-    """Select a graph-owned LGOS tool without supplying its function schema."""
+class ResponseCustomToolFormat(_ResponsesRequestModel):
+    """Freeform text accepted by an LGOS-owned tool."""
 
-    type: Literal["custom"] = "custom"
-    name: Annotated[str, Field(pattern=r"^lgos_[a-z][a-z0-9_]*$")]
-    description: str | None = None
+    type: Literal["text"]
 
 
-def _parse_tool(value: object) -> ResponseFunctionTool | ResponseHostedTool:
-    if isinstance(value, (ResponseFunctionTool, ResponseHostedTool)):
-        return value
-    if isinstance(value, dict) and value.get("type") == "custom":
-        return ResponseHostedTool.model_validate(value)
-    return ResponseFunctionTool.model_validate(value)
+class ResponseCustomTool(_ResponsesRequestModel):
+    """Select a registered tool without supplying executable code."""
+
+    type: Literal["custom"]
+    name: Annotated[str, Field(min_length=1)]
+    format: ResponseCustomToolFormat | None = None
 
 
-ResponseTool: TypeAlias = Annotated[
-    ResponseFunctionTool | ResponseHostedTool, BeforeValidator(_parse_tool)
-]
+class ResponseWebSearchTool(_ResponsesRequestModel):
+    """Select the graph's OpenAI-compatible web-search capability."""
+
+    type: Literal["web_search"]
 
 
 class ResponseNamedToolChoice(_ResponsesRequestModel):
-    """Require one named function tool."""
+    """Require one named function or custom tool."""
 
-    type: Literal["function"]
+    type: Literal["function", "custom"]
     name: str
 
 
 ResponseToolChoice: TypeAlias = (
     Literal["none", "auto", "required"] | ResponseNamedToolChoice
 )
+ResponseTool: TypeAlias = Annotated[
+    ResponseFunctionTool | ResponseCustomTool | ResponseWebSearchTool,
+    Field(discriminator="type"),
+]
 
 
 class ResponseTextFormat(_ResponsesRequestModel):
@@ -212,6 +254,10 @@ class ResponseCreateRequest(_ResponsesRequestModel):
 
 __all__ = [
     "ResponseCreateRequest",
+    "ResponseCustomTool",
+    "ResponseCustomToolCallInput",
+    "ResponseCustomToolCallOutputInput",
+    "ResponseCustomToolFormat",
     "ResponseFunctionCallInput",
     "ResponseFunctionCallOutputInput",
     "ResponseFunctionTool",
@@ -225,5 +271,8 @@ __all__ = [
     "ResponseRefusalInput",
     "ResponseTextConfig",
     "ResponseTextFormat",
+    "ResponseTool",
     "ResponseToolChoice",
+    "ResponseWebSearchCallInput",
+    "ResponseWebSearchTool",
 ]

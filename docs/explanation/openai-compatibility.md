@@ -28,7 +28,8 @@ The implemented endpoints are listed in [Reference](../reference.md).
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
 feature discovery in a namespaced, versioned extension on model-list and
-model-retrieval responses. Runtime-settings discovery remains detail-only:
+model-retrieval responses. Runtime settings remain detail-only. Server-tool
+declarations are deliberately absent; clients select known tools per request:
 
 ```json
 {
@@ -219,9 +220,10 @@ interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
 
 ## Supported Responses Subset
 
-`POST /v1/responses` implements stateless text, files, function calls, and
-streaming over the same graph runner as Chat Completions. It intentionally does
-not claim every field in the upstream OpenAI API.
+`POST /v1/responses` implements stateless text, files, function calls, hosted
+custom tools, OpenAI-shaped web search, and streaming over the same graph runner as
+Chat Completions. It intentionally does not claim every field in the upstream
+OpenAI API.
 
 | Request field or item | LGOS behavior |
 | --- | --- |
@@ -229,12 +231,15 @@ not claim every field in the upstream OpenAI API.
 | `input_text` | Supported. |
 | `input_file.file_id` | Supported and normalized to the existing graph file block. |
 | function `tools`, `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. |
+| custom `tools` and named custom `tool_choice` | Select LGOS-registered hosted tools. Freeform text input is supported; client descriptions, grammar formats, and tool loading/caller controls are rejected. |
+| `tools=[{"type":"web_search"}]` | Selects a graph-owned web search that uses the standard OpenAI declaration. Optional filters and location fields are outside the current subset. |
+| `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together for server execution; complete pairs may be replayed as history. |
+| `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `function_call` and string-valued `function_call_output` | Supported for ordinary client-tool continuation. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events. |
 | `store` | Omitted and false mean false; true is rejected. |
 | `text.format.type="text"` | Supported. |
-| `tools=[{"type": "custom", "name": "lgos_..."}]` | LGOS hosted-tool selector; selected graph must declare each identifier. |
 | `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible graphs. |
 | `conversation`, `background: true` | Rejected because LGOS has no Responses conversation store or background lifecycle. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
@@ -252,15 +257,17 @@ turn instead of using a server-side Conversation.
 When continuing a function call, append every item from `response.output`
 unchanged and then append a matching `function_call_output`. Replaying complete
 SDK items preserves message and call IDs, citations, refusals, and assistant
-`phase` in the LangChain content consumed by model adapters. Completed and
-incomplete assistant message items can both be replayed. The current SDK may
-serialize optional function-call `caller` and `namespace` fields and
+`phase` in the LangChain content consumed by model adapters. Replayed
+`web_search_call` items also retain their ID, action, and status. Completed and
+incomplete assistant message items can both be replayed. The current
+SDK may serialize optional function-call `caller` and `namespace` fields and
 the stream helper's output-text `parsed` field as null; LGOS accepts those null
 values but rejects non-null program, namespace, or parsed-output semantics.
 This state model follows OpenAI's documented manual item replay while
 keeping storage in the client.
 
-Each replayed function call requires one matching output. Missing, duplicate,
+Each replayed function or custom call requires one matching output of the same
+kind. Missing, duplicate,
 or unmatched results fail validation before graph execution, including when the
 client requests streaming.
 
@@ -290,6 +297,8 @@ Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 | Visible streaming status | Separate completed message item with `phase="commentary"` |
 | Client tool or interrupt | One `function_call` item per call |
 | Tool result on the next request | Matching `function_call_output` item |
+| LGOS-hosted custom tool | `custom_tool_call` and matching `custom_tool_call_output` in the same response |
+| LGOS-hosted web search | `web_search_call` followed by a cited assistant message |
 | URL citation | `url_citation` annotation on `output_text` |
 | Provider-reported usage | `usage` on the completed or incomplete Response |
 
@@ -333,13 +342,13 @@ usage, LGOS omits it rather than estimating tokens.
 ### Assistant Text Parity
 
 The final rendered `AIMessage.text` is the canonical assistant text.
-Non-streaming returns it directly. Streaming emits eligible message chunks
-immediately and retains them until the final message arrives. It then
-concatenates the chunks and compares them with the final text. If no text
-streamed, LGOS emits the final text as a fallback; a mismatch instead produces
-the protocol's failure sequence rather than a successful terminal event. This
-check covers one graph run, not two independent LLM executions. Transient
-status events are excluded.
+Non-streaming returns it directly. Ordinary streaming emits eligible message
+chunks immediately, then compares their concatenation with the final text.
+If no text streamed, LGOS emits the final text as a fallback; a mismatch instead
+produces the protocol's failure sequence. Requests selecting server tools use
+completed LangGraph updates instead of message chunks and emit that fallback as
+one delta after the tool loop. This check covers one graph run, not two
+independent LLM executions. Transient status events are excluded.
 
 When multiple streamable nodes contribute text, the graph's
 `output_to_message` adapter must render their messages in the same order.
@@ -371,20 +380,20 @@ custom server event.
 
 ### Chat Completions vs Responses Boundary
 
-Complex workflow features—such as streaming status commentary, checkpointed
-persistence, and human-in-the-loop interrupts—are exclusively available through
-the native Responses API (`/v1/responses`).
+Complex workflow features—such as streaming status commentary, selecting
+server-hosted tools, checkpointed persistence, and human-in-the-loop
+interrupts—are available through the native Responses API (`/v1/responses`).
 
 The Chat Completions API (`/v1/chat/completions`) provides strict, standard OpenAI
-compatibility for simple graphs and tool calling. It streams plain text
-`delta.content` chunks and ignores custom streaming events. Interrupt-enabled
-models requested via Chat Completions fail fast with HTTP 400 Bad Request
-indicating that interrupts require the Responses API.
+compatibility for assistant text and client tool calling. It streams plain text
+`delta.content` chunks, ignores custom streaming events, and never selects
+server-hosted tools. Only interrupt-enabled models fail fast with HTTP 400.
 
 | Graph result | Responses | Chat Completions |
 | --- | --- | --- |
 | Assistant text | `final_answer` message | `delta.content` |
 | Interrupt requiring input | `function_call` item | Unsupported (HTTP 400) |
+| LGOS-hosted custom tool | Custom call and result items | Not selectable |
 | Citation | `output_text.annotations` | message/final-delta annotations |
 | Passive status | `commentary` message | Ignored |
 | Diagnostic progress or artifact | Ignored | Ignored |
@@ -486,33 +495,63 @@ Chat Completions returns HTTP 400 Bad Request.
 
 ### Hosted Tools
 
-Responses accepts LGOS hosted-tool selectors matching the OpenAI custom tool shape,
-such as `tools=[{"type": "custom", "name": "lgos_current_time"}]`. Function schemas and
-execution remain server-owned.
+`GraphConfig.hosted_tools` is an internal allowlist of graph-enabled tool names for a
+graph. It is not model metadata and there is no discovery protocol. Clients know
+the public tool declarations and select them per request with
+`tools=[{"type":"custom","name":"…"}]` or `tools=[{"type":"web_search"}]`;
+unknown selections fail before execution. `GraphRequest.hosted_tools` carries
+only the selected names. `tool_choice` retains `none`, `auto`, `required`, or a
+named custom choice. Graphs own binding and execution.
 
-A graph declares its supported identifiers in `GraphConfig.hosted_tools` and
-reads the selected identifiers from `GraphRequest.hosted_tools`. Identifiers
-must match `lgos_[a-z][a-z0-9_]*`. Unknown or unavailable selectors return HTTP
-400 with the offending `tools.N.name` parameter before execution or streaming.
-The package validates selection; the graph binds and executes its own tools
-using its native agent implementation. Internal calls do not become client-owned
-`function_call` items. Responses echoes the selectors as standard `CustomTool`
-objects in `tools`.
+OpenAI [custom tools](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)
+use freeform string input. LGOS uses their native `custom_tool_call` and
+`custom_tool_call_output` shapes for server-owned execution, with a shared
+`call_id`. This is an LGOS execution policy, not an OpenAI-hosted built-in or a
+client execution request. A completed response contains both items and the final
+answer; clients must not execute the tool again.
 
-Responses accepts the selector directly in the standard `tools` parameter:
+`web_search` has a standard declaration and output shape in the OpenAI Responses
+contract, but that does not prescribe the search backend. An LGOS graph may
+execute an ordinary LangChain search tool or bind a provider-native
+`{"type":"web_search"}` tool. LGOS translates both the local
+call/`ToolMessage` pair and LangChain's standard
+`server_tool_call`/`server_tool_result` pair to the same completed
+`web_search_call`. The client remains outside the execution loop. The demo can
+use a compatible SearXNG or Degoog endpoint, or its upstream OpenAI Responses
+model. Self-hosted results retained as exact Markdown links become standard URL
+citations; provider-native citations pass through the normalized message.
 
-```python
-response = client.responses.create(
-    model="hosted-tool",
-    input="What time is it in Istanbul?",
-    tools=[{"type": "custom", "name": "lgos_current_time"}],
-    store=False,
-)
-```
+For requests selecting hosted tools, LGOS consumes completed LangGraph `updates`,
+including nested agent updates. Selected calls and their matching `ToolMessage`
+results become typed Responses items and item added/done plus
+`response.custom_tool_call_input.delta` / `done` events. Each completed input
+is sent as one delta. The graph returns its final assistant message normally.
+Local `web_search` function calls and provider-native server-tool blocks become
+`web_search_call`; backend result payloads stay private. Web-search calls and
+custom-tool results use item added/done events with their completed payloads.
+Completed searches also emit `response.web_search_call.completed` before item
+done. LangChain exposes completed node results, so LGOS does not synthesize
+intermediate search progress.
 
-Because `custom` is a standard OpenAI Responses tool type, proxies such as
-Bifrost preserve this selection across normalized `/openai/v1` routes as well
-as passthrough routes. See the [hosted-tool demo](../demo/graphs/hosted-tool.md).
+The same hosted-tool request does not subscribe to LangGraph `messages`; its
+final answer is emitted once after the graph finishes. This prevents an
+intermediate model preamble from becoming final answer text and avoids parsing
+partial tool-call chunks. Requests without hosted tools keep token streaming.
+
+All Responses requests use this assembler. The non-streaming path collects the
+terminal Response without upstream message streaming, SSE encoding, or transient
+commentary. Repeated parent/subgraph messages are
+deduplicated, and replayed input calls are excluded from new output. Calls must
+have results before successful completion; streaming errors retain partial
+activity on `response.failed`, never a successful unresolved call. Unselected
+internal tools and ordinary private graph custom data stay private.
+
+Replay complete call/result pairs as history without adding a new result.
+The [hosted-tool demo](../demo/graphs/hosted-tool.md) uses LangChain's native
+custom-tool decorator, ordinary tool decorator, and agent loop. Its
+middleware applies the requested tool choice on the first model call of each
+request, then permits automatic selection on subsequent calls. Chat Completions
+can still invoke the graph, but its request cannot enable hosted tools.
 
 ### Files And `display_file`
 
@@ -661,8 +700,9 @@ for the underlying checkpoint model.
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
 - Responses implements the explicit subset above; response storage,
   Conversations, general previous-response chaining, background work,
-  OpenAI-hosted tools, structured output, and unconsumed generation controls are
-  rejected. `previous_response_id` is reserved for interrupt continuation.
+  server tools other than registered custom tools and the documented `web_search` subset,
+  structured output, and unconsumed generation controls are rejected.
+  `previous_response_id` is reserved for interrupt continuation.
 - Chat Completions remains a direct compatibility surface, while maintained
   demo UIs use Responses for every graph.
 - The package exposes model listing/retrieval and health, but no Files storage;

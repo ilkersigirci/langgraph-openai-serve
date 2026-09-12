@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, AnyHttpUrl, PlainValidator, TypeAdapter
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
+    WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
 
 

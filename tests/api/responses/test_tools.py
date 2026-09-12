@@ -75,8 +75,8 @@ async def test_function_tools_and_choices_reach_graph_adapter(
     assert response.tools[0].name == "get_weather"
 
 
-@pytest.mark.parametrize("tool_type", ["web_search_preview", "lgos_clock"])
-async def test_unsupported_tool_types_are_rejected_explicitly(
+@pytest.mark.parametrize("tool_type", ["web_search_preview", "unsupported_tool"])
+async def test_unsupported_tool_type_is_rejected_explicitly(
     openai_client: AsyncOpenAI,
     tool_type: str,
 ) -> None:
@@ -89,7 +89,64 @@ async def test_unsupported_tool_types_are_rejected_explicitly(
 
     error = exc_info.value.response.json()["error"]
     assert error["type"] == "invalid_request_error"
-    assert error["param"] == "tools.0.type"
+    assert error["param"] == "tools.0"
+
+
+@pytest.mark.parametrize(
+    ("fields", "param"),
+    [
+        ({"tools": [{"type": "custom", "name": "unknown"}]}, "tools.0.name"),
+        (
+            {"tools": [{"type": "custom", "name": "web_search"}]},
+            "tools.0.type",
+        ),
+        ({"tools": [{"type": "web_search"}]}, "tools.0.type"),
+        (
+            {
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "clock",
+                        "description": "Client-owned description",
+                    }
+                ]
+            },
+            "tools.0.custom.description",
+        ),
+        (
+            {"tool_choice": {"type": "custom", "name": "clock"}},
+            "tool_choice",
+        ),
+        ({"tool_choice": "required"}, "tool_choice"),
+        ({"tools": [{"type": "custom", "name": "clock"}] * 2}, "tools"),
+        (
+            {
+                "tools": [
+                    {"type": "function", "name": "clock"},
+                    {"type": "custom", "name": "clock"},
+                ]
+            },
+            "tools",
+        ),
+    ],
+)
+async def test_invalid_hosted_tool_selection_fails_before_execution(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    fields,
+    param,
+) -> None:
+    config = graph_registry.get_graph("test")
+    config.hosted_tools = {"clock"}
+
+    def unexpected_run(request: GraphRequest, messages: list[BaseMessage]):
+        pytest.fail("Invalid tool selection must fail before graph preparation.")
+
+    config.request_to_input = unexpected_run
+    with pytest.raises(BadRequestError) as error:
+        await openai_client.responses.create(model="test", input="Time?", **fields)
+
+    assert error.value.response.json()["error"]["param"] == param
 
 
 @pytest.mark.parametrize("invalid_arguments", ["{", '{"value":NaN}', '{"value":1e999}'])
@@ -222,7 +279,7 @@ async def test_truncated_function_arguments_are_incomplete_not_server_errors(
                     "output": "result",
                 }
             ],
-            "must match an earlier function call",
+            "must match an earlier tool call",
             id="unmatched-output",
         ),
         pytest.param(
@@ -372,79 +429,3 @@ async def test_function_call_stream_has_complete_lifecycle(
     assert [item.id for item in events[-1].response.output] == [
         event.item.id for event in done
     ]
-
-
-@pytest.mark.parametrize("stream", [False, True])
-async def test_hosted_selector_reaches_graph_without_a_function_schema(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-    stream: bool,
-) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(
-        request: GraphRequest, messages: list[BaseMessage]
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    config = graph_registry.get_graph("test")
-    config.hosted_tools = {"lgos_clock"}
-    config.request_to_input = capture
-    response = await openai_client.responses.create(
-        model="test",
-        input="Time?",
-        stream=stream,
-        tools=[
-            {"type": "custom", "name": "lgos_clock"},
-            {"type": "function", "name": "client_tool"},
-        ],
-    )
-    if stream:
-        events = [event async for event in response]
-        response = next(
-            event.response for event in events if event.type == "response.completed"
-        )
-    assert received[0].hosted_tools == ("lgos_clock",)
-    assert [tool.name for tool in received[0].tools] == ["client_tool"]
-    assert response.tools[0].type == "custom"
-    assert response.tools[0].name == "lgos_clock"
-    assert response.tools[1].name == "client_tool"
-
-
-@pytest.mark.parametrize("stream", [False, True])
-async def test_unregistered_hosted_tool_is_rejected_before_execution(
-    openai_client: AsyncOpenAI, stream: bool
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(
-            model="test",
-            input="Time?",
-            stream=stream,
-            tools=[{"type": "custom", "name": "lgos_unknown"}],
-        )
-    assert exc_info.value.response.json()["error"]["param"] == "tools.0.name"
-
-
-async def test_hosted_tool_rejects_client_supplied_parameters(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(
-            model="test",
-            input="Time?",
-            tools=[{"type": "custom", "name": "lgos_clock", "parameters": {}}],
-        )
-    assert exc_info.value.response.json()["error"]["param"] == "tools.0.parameters"
-
-
-async def test_custom_tool_with_invalid_name_is_rejected(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(
-            model="test",
-            input="Time?",
-            tools=[{"type": "custom", "name": "not_an_lgos_tool"}],
-        )
-    assert exc_info.value.response.json()["error"]["param"] == "tools.0.name"

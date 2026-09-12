@@ -4,7 +4,7 @@ import importlib
 import json
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, call
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputRefusal,
     ResponseOutputText,
+    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
 from openai.types.responses.response_output_text import AnnotationURLCitation
@@ -76,6 +77,7 @@ async def test_commentary_is_rendered_as_a_native_task_list(
 async def test_response_stream_routes_commentary_to_the_task_list(
     monkeypatch: pytest.MonkeyPatch,
     phase: str | None,
+    chainlit_context,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     completed = Response.model_construct(status="completed", output=[])
@@ -99,6 +101,12 @@ async def test_response_stream_routes_commentary_to_the_task_list(
             type="response.output_text.done",
             output_index=0,
             text="Generating audio",
+        ),
+        ResponseWebSearchCallCompletedEvent(
+            type="response.web_search_call.completed",
+            item_id="ws_123",
+            output_index=1,
+            sequence_number=4,
         ),
         SimpleNamespace(
             type="response.output_item.added",
@@ -133,24 +141,35 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     )
 
     assert response is completed
-    commentary_tasks.add.assert_awaited_once_with("Generating audio")
+    assert commentary_tasks.add.await_args_list == [
+        call("Generating audio"),
+        call("Web search completed.", done=True),
+    ]
     assistant_message.stream_token.assert_awaited_once_with("Media ready.")
 
 
-async def test_stopped_commentary_marks_the_active_task_failed(
+@pytest.mark.parametrize("with_commentary", [False, True])
+async def test_completed_search_stays_done_when_commentary_stops(
     monkeypatch: pytest.MonkeyPatch,
+    with_commentary: bool,
 ) -> None:
     task_list = Mock(status="Ready", add_task=AsyncMock(), send=AsyncMock())
-    task = Mock()
     monkeypatch.setattr(responses.cl, "TaskList", Mock(return_value=task_list))
-    monkeypatch.setattr(responses.cl, "Task", Mock(return_value=task))
     renderer = responses.CommentaryTaskList()
 
-    await renderer.add("Generating audio")
+    if with_commentary:
+        await renderer.add("Generating audio")
+    await renderer.add("Web search completed.", done=True)
+    tasks = [call.args[0] for call in task_list.add_task.await_args_list]
+    assert tasks[-1].status == responses.cl.TaskStatus.DONE
+    if with_commentary:
+        assert tasks[0].status == responses.cl.TaskStatus.RUNNING
     await renderer.stop()
 
-    assert task.status == responses.cl.TaskStatus.FAILED
-    assert task_list.status == "Stopped"
+    assert tasks[-1].status == responses.cl.TaskStatus.DONE
+    if with_commentary:
+        assert tasks[0].status == responses.cl.TaskStatus.FAILED
+    assert task_list.status == ("Stopped" if with_commentary else "Done")
 
 
 @pytest.mark.parametrize("send_delta", [False, True])
@@ -536,18 +555,6 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    assert responses.response_tools(model) == [
-        {"type": "custom", "name": "lgos_current_time"}
-    ]
-    assert responses.response_tools("lgos-a/simple-graph") == [
-        responses.DISPLAY_FILE_TOOL
-    ]
 
 
 async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(

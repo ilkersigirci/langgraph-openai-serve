@@ -350,8 +350,8 @@ print(completion.choices[0].message.content)
 
 This route shares the same graph runner but has its own protocol adapter. Chat
 Completions is suited for simple graphs and tool calls. For advanced workflows
-such as streaming status commentary, checkpointed persistence, or interrupts,
-use the Responses API (`/v1/responses`).
+such as streaming status commentary, checkpointed persistence, selecting
+server-hosted tools, or interrupts, use the Responses API (`/v1/responses`).
 
 ## Diagnostics
 

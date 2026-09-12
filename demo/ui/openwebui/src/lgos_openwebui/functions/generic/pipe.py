@@ -22,6 +22,7 @@ from .contracts import (
     InterruptCancelled,
     PipeChunk,
     PipeResponse,
+    is_hosted_tool_model,
 )
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
@@ -45,6 +46,7 @@ from .responses import (
     _responses_function_calls,
     _responses_input,
     _responses_request,
+    _responses_tools,
 )
 
 
@@ -150,9 +152,13 @@ class Pipe:
             request = _responses_request(
                 model_id,
                 input_items,
-                _request_metadata(metadata),
+                _request_metadata(
+                    metadata,
+                    include_runtime_settings=not is_hosted_tool_model(model_id),
+                ),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
+                tools=_responses_tools(model_id, metadata),
                 previous_response_id=previous_response_id,
             )
             async with _client(
@@ -180,6 +186,12 @@ class Pipe:
                                     or event.type == "response.failed"
                                 ):
                                     _raise_for_response(event.response)
+                                elif event.type == "response.web_search_call.completed":
+                                    await _emit_status(
+                                        __event_emitter__,
+                                        "Web search completed.",
+                                        done=True,
+                                    )
                                 elif (
                                     event.type == "response.output_text.done"
                                     and phases.get(event.output_index) == "commentary"

@@ -16,10 +16,13 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
     ResponseOutputText,
+    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
 from openai.types.responses.response_output_text import AnnotationURLCitation
@@ -240,6 +243,76 @@ async def test_deployed_bundle_runs_responses_inference(
     assert request["store"] is False
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_bundle_maps_hosted_controls_without_forwarding_openwebui_tools(
+    bundled_generic, streaming
+):
+    openwebui_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "client_tool",
+                "description": "An OpenWebUI client tool.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    completed = final_response("It is noon.")
+    completed.output[:0] = [
+        ResponseCustomToolCall(
+            type="custom_tool_call",
+            id="ctc_clock",
+            call_id="call_clock",
+            name="lgos_current_time",
+            input="UTC",
+        ),
+        ResponseCustomToolCallOutputItem(
+            type="custom_tool_call_output",
+            id="ctco_clock",
+            call_id="call_clock",
+            status="completed",
+            output="Noon",
+        ),
+    ]
+    requests = []
+
+    async def create(**request):
+        requests.append(request)
+        return completed
+
+    @asynccontextmanager
+    async def stream(**request):
+        requests.append(request)
+        yield FakeResponseStream([], completed)
+
+    bundled_generic._client = lambda **_: FakeClient(create=create, stream=stream)
+    result = await collect(
+        bundled_generic.Pipe().pipe(
+            {
+                **body(stream=streaming),
+                "model": "generic.lgos-a/hosted-tool",
+                "tools": openwebui_tools,
+            },
+            __metadata__={
+                "chat_id": "thread-123",
+                "chat_variables": {
+                    "lgos_current_time": True,
+                    "web_search": True,
+                },
+            },
+        )
+    )
+    assert len(requests) == 1
+    assert requests[0]["tools"] == [
+        {"type": "custom", "name": "lgos_current_time"},
+        {"type": "web_search"},
+    ]
+    assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
+    assert (
+        result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
+    ) == "It is noon."
+
+
 async def test_deployed_bundle_runs_non_streaming_interrupt(
     bundled_generic: ModuleType,
 ) -> None:
@@ -441,6 +514,12 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         [
             commentary,
             commentary_done,
+            ResponseWebSearchCallCompletedEvent(
+                type="response.web_search_call.completed",
+                item_id="ws_123",
+                output_index=1,
+                sequence_number=2,
+            ),
             final_added,
             final_delta,
         ],
@@ -466,6 +545,10 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         {
             "type": "status",
             "data": {"description": "Checking policy", "done": False},
+        },
+        {
+            "type": "status",
+            "data": {"description": "Web search completed.", "done": True},
         },
         {
             "type": "status",
@@ -1148,21 +1231,3 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
-
-
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos-b/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    from lgos_openwebui.functions.generic.responses import (
-        _responses_request,
-    )
-
-    request = _responses_request(
-        model,
-        [],
-        None,
-        None,
-        provider_routing=False,
-    )
-    assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

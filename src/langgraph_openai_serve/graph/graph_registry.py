@@ -76,10 +76,10 @@ class GraphConfig(BaseModel):
     ]
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
-    hosted_tools: set[
-        Annotated[str, StringConstraints(pattern=r"^lgos_[a-z][a-z0-9_]*$")]
-    ] = Field(default_factory=set)
     client_settings: type[ClientSettings] | None = None
+    hosted_tools: set[Annotated[str, StringConstraints(min_length=1)]] = Field(
+        default_factory=set
+    )
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None

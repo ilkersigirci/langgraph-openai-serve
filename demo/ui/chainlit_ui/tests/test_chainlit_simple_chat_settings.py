@@ -119,6 +119,40 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
+async def test_hosted_tool_profile_uses_fixed_opt_in_tools(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_client_settings: ModelClientSettings,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session(
+        {
+            "chat_profile": "provider/hosted-tool",
+            "chat_settings": {
+                chat_settings.CLOCK_SETTING_ID: False,
+                chat_settings.WEB_SEARCH_SETTING_ID: True,
+            },
+        }
+    )
+    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(
+        chat_settings,
+        "retrieve_model",
+        AsyncMock(return_value=configured_model(runtime_client_settings)),
+    )
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+
+    await chat_settings.configure_chat_settings()
+
+    assert [widget.id for widget in factory.call_args.args[0]][:3] == [
+        chat_settings.STREAMING_SETTING_ID,
+        chat_settings.CLOCK_SETTING_ID,
+        chat_settings.WEB_SEARCH_SETTING_ID,
+    ]
+    assert chat_settings.response_tools() == [{"type": "web_search"}]
+    session.values["chat_profile"] = "simple"
+    assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
+
+
 async def test_chat_profiles_use_list_capabilities_for_file_uploads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

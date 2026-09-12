@@ -108,8 +108,8 @@ that route only for provider-specific catalog detail. Responses use native
 Chat Completions remains available for direct compatibility clients running
 simple graphs. If such a client is placed behind a proxy, verify modern tool
 calls, metadata, usage, and stream cancellation separately. Complex features
-such as streaming status commentary, checkpointed persistence, and interrupts
-are exclusive to the Responses API.
+such as streaming status commentary, checkpointed persistence, selecting
+server-hosted tools, and interrupts use the Responses API.
 
 ## Request Correlation
 

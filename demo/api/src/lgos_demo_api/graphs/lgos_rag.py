@@ -1,7 +1,6 @@
 """Agentic RAG graph over the bundled LGOS corpus."""
 
 import asyncio
-import re
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -17,7 +16,6 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.messages.content import create_citation
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
@@ -32,6 +30,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 from pydantic import BaseModel, Field, SecretStr
 
 from lgos_demo_api.settings import settings
+from lgos_demo_api.utils.citations import cite_markdown_links
 
 DOCS_ROOT = Path(__file__).resolve().parents[1] / "corpus"
 DOCS_BASE_URL = (
@@ -237,27 +236,7 @@ def _answer_message(answer: AIMessage, documents: list[Document]) -> AIMessage:
         str(document.metadata["url"]): str(document.metadata["title"])
         for document in documents
     }
-    blocks = []
-    for block in answer.content_blocks:
-        if block["type"] != "text":
-            blocks.append(block)
-            continue
-        citations = [
-            create_citation(
-                url=match.group("url"),
-                title=sources[match.group("url")],
-                start_index=match.start("label"),
-                end_index=match.end("label") - 1,
-            )
-            for match in re.finditer(
-                r"(?<!!)\[(?P<label>[^]\r\n]+)\]\((?P<url>[^)\r\n]+)\)", block["text"]
-            )
-            if match.group("url") in sources
-        ]
-        blocks.append(
-            {**block, "annotations": [*block.get("annotations", []), *citations]}
-        )
-    return answer.model_copy(update={"content": blocks})
+    return cite_markdown_links(answer, sources)
 
 
 @tool(response_format="content_and_artifact")
