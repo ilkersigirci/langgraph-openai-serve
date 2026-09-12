@@ -3,7 +3,6 @@
 from typing import Annotated, Literal, Sequence
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -64,9 +63,8 @@ async def generate(
         *messages,
     ]
 
-    response = await (model | StrOutputParser()).ainvoke(conversation)
-
-    return {"messages": [AIMessage(content=response)]}
+    response = await model.ainvoke(conversation)
+    return {"messages": [response]}
 
 
 workflow = StateGraph(AgentState, context_schema=SimpleContext)

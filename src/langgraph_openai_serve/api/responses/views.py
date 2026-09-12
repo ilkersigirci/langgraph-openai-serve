@@ -21,11 +21,11 @@ from langgraph_openai_serve.api.responses.request import (
     validate_hosted_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.api.responses.service import (
-    UnsupportedResponsesOutputError,
-    generate_response,
+from langgraph_openai_serve.api.responses.service import UnsupportedResponsesOutputError
+from langgraph_openai_serve.api.responses.streaming import (
+    collect_response,
+    stream_response,
 )
-from langgraph_openai_serve.api.responses.streaming import stream_response
 from langgraph_openai_serve.api.streaming import _StreamOwner
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.core.logging import bind_log_context
@@ -103,7 +103,7 @@ async def create_response(
             )
             return StreamingResponse(body, media_type="text/event-stream")
         try:
-            return await generate_response(response_request, run)
+            return await collect_response(response_request, run)
         except UnsupportedResponsesOutputError as exc:
             raise OpenAIHTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

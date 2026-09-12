@@ -1,7 +1,8 @@
 """Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from typing import Any, cast
 
 from openai import OpenAIError
@@ -113,16 +114,7 @@ class Pipe:
         __request__: Any = None,
     ) -> PipeResponse:
         """Run the selected graph through OpenAI Responses."""
-        if body.get("stream") is True:
-            return self._stream(
-                body,
-                __event_emitter__=__event_emitter__,
-                __metadata__=__metadata__,
-                __user__=__user__,
-                __files__=__files__,
-                __request__=__request__,
-            )
-        return await self._complete(
+        results = self._run(
             body,
             __event_emitter__=__event_emitter__,
             __metadata__=__metadata__,
@@ -130,8 +122,12 @@ class Pipe:
             __files__=__files__,
             __request__=__request__,
         )
+        if body.get("stream") is True:
+            return results
+        async with aclosing(results):
+            return await anext(results)
 
-    async def _stream(
+    async def _run(
         self,
         body: dict[str, Any],
         __event_emitter__: Any = None,
@@ -139,25 +135,22 @@ class Pipe:
         __user__: dict[str, Any] | None = None,
         __files__: list[dict[str, Any]] | None = None,
         __request__: Any = None,
-    ) -> AsyncIterator[PipeChunk]:
-        """Yield Open WebUI chunks while the SDK owns Response accumulation."""
+    ) -> AsyncGenerator[PipeChunk, None]:
+        """Own one Responses/tool loop for both Pipe response modes."""
+        streaming = body.get("stream") is True
+        answer_parts: list[str] = []
+        latest_status = ""
+        finished = False
         try:
+            metadata = __metadata__ or {}
             model_id, input_items, previous_response_id = await self._request_input(
                 body, __metadata__, __files__
             )
-        except InterruptCancelled:
-            yield INTERRUPT_CANCELLED_MESSAGE
-            return
-        except ValueError as exc:
-            yield _error(str(exc))
-            return
-
-        try:
             gateway = self._gateway()
             request = _responses_request(
                 model_id,
                 input_items,
-                _request_metadata(__metadata__ or {}),
+                _request_metadata(metadata),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
                 previous_response_id=previous_response_id,
@@ -170,53 +163,66 @@ class Pipe:
                 while True:
                     final_text_streamed = False
                     phases: dict[int, str | None] = {}
-                    async with client.responses.stream(**request) as stream:
-                        async for event in stream:
-                            if event.type == "response.output_item.added":
-                                if event.item.type == "message":
-                                    phases[event.output_index] = event.item.phase
-                            elif (
-                                event.type == "response.output_text.delta"
-                                and phases.get(event.output_index) != "commentary"
-                            ):
-                                final_text_streamed = True
-                                yield _openwebui_text_chunk(model_id, event.delta)
-                            elif (
-                                event.type == "response.output_text.done"
-                                and phases.get(event.output_index) == "commentary"
-                                and __event_emitter__ is not None
-                                and event.text
-                            ):
-                                await __event_emitter__(
-                                    {
-                                        "type": "status",
-                                        "data": {
-                                            "description": event.text,
-                                            "done": True,
-                                        },
-                                    }
-                                )
-                        response = cast("Response", await stream.get_final_response())
+                    if streaming:
+                        async with client.responses.stream(**request) as stream:
+                            async for event in stream:
+                                if event.type == "response.output_item.added":
+                                    if event.item.type == "message":
+                                        phases[event.output_index] = event.item.phase
+                                elif (
+                                    event.type == "response.output_text.delta"
+                                    or event.type == "response.refusal.delta"
+                                ) and phases.get(event.output_index) != "commentary":
+                                    final_text_streamed = True
+                                    yield _openwebui_text_chunk(model_id, event.delta)
+                                elif (
+                                    event.type == "response.incomplete"
+                                    or event.type == "response.failed"
+                                ):
+                                    _raise_for_response(event.response)
+                                elif (
+                                    event.type == "response.output_text.done"
+                                    and phases.get(event.output_index) == "commentary"
+                                    and event.text
+                                ):
+                                    latest_status = event.text
+                                    await _emit_status(
+                                        __event_emitter__, latest_status, done=False
+                                    )
+                            response = cast(
+                                "Response", await stream.get_final_response()
+                            )
+                    else:
+                        response = await client.responses.create(**request)
 
                     _raise_for_response(response)
                     await _emit_response_sources(response, __event_emitter__)
+                    final_text = _responses_final_text(response)
+                    if streaming and not final_text_streamed and final_text:
+                        yield _openwebui_text_chunk(model_id, final_text)
+                    answer_parts.append(final_text)
                     calls = _responses_function_calls(response)
                     if not calls:
-                        if not final_text_streamed:
-                            yield _openwebui_text_chunk(
-                                model_id, _responses_final_text(response)
-                            )
+                        finished = True
+                        if not streaming:
+                            yield "".join(answer_parts)
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
-                        yield _openwebui_interrupt_chunk(
-                            model_id,
-                            response.id,
-                            calls,
+                        finished = True
+                        yield (
+                            _openwebui_interrupt_chunk(model_id, response.id, calls)
+                            if streaming
+                            else _openwebui_interrupt_completion(
+                                model_id,
+                                response.id,
+                                calls,
+                                content="".join(answer_parts),
+                            )
                         )
                         return
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
                         raise ValueError(
-                            "LangGraph API returned a mixed function-call batch."
+                            "LangGraph API returned an unsupported or mixed function-call batch."
                         )
                     outputs = [
                         await _handle_display_file(
@@ -235,80 +241,17 @@ class Pipe:
                         # Client tools continue from the UI's transcript instead.
                         request["input"] = _responses_input(body["messages"])
                     request["input"].extend(_responses_continuation(response, outputs))
+        except InterruptCancelled:
+            yield INTERRUPT_CANCELLED_MESSAGE
         except (ValueError, RuntimeError, OpenAIError) as exc:
             yield _error(f"Responses request failed: {exc}")
-
-    async def _complete(
-        self,
-        body: dict[str, Any],
-        __event_emitter__: Any,
-        __metadata__: dict[str, Any] | None,
-        __user__: dict[str, Any] | None,
-        __files__: list[dict[str, Any]] | None,
-        __request__: Any,
-    ) -> PipeChunk:
-        """Return native Pipe text or an ask-user call from Responses output."""
-        answer_parts: list[str] = []
-        try:
-            model_id, input_items, previous_response_id = await self._request_input(
-                body, __metadata__, __files__
-            )
-        except InterruptCancelled:
-            return INTERRUPT_CANCELLED_MESSAGE
-        except ValueError as exc:
-            return _error(str(exc))
-
-        try:
-            gateway = self._gateway()
-            request = _responses_request(
-                model_id,
-                input_items,
-                _request_metadata(__metadata__ or {}),
-                _user_id(__user__),
-                provider_routing=gateway.provider_routing,
-                previous_response_id=previous_response_id,
-            )
-            async with _client(
-                base_url=gateway.responses_base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
-                timeout=self.valves.OPENAI_API_TIMEOUT,
-            ) as client:
-                while True:
-                    response = await client.responses.create(**request)
-                    _raise_for_response(response)
-                    await _emit_response_sources(response, __event_emitter__)
-                    answer_parts.append(_responses_final_text(response))
-                    calls = _responses_function_calls(response)
-                    if not calls:
-                        return "".join(answer_parts)
-                    if _all_calls(calls, INTERRUPT_TOOL_NAME):
-                        return _openwebui_interrupt_completion(
-                            model_id,
-                            response.id,
-                            calls,
-                            content="".join(answer_parts),
-                        )
-                    if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
-                        raise ValueError(
-                            "LangGraph API returned a mixed function-call batch."
-                        )
-                    outputs = [
-                        await _handle_display_file(
-                            call,
-                            __event_emitter__,
-                            __request__,
-                            files_base_url=gateway.files_base_url,
-                            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
-                            timeout=self.valves.OPENAI_API_TIMEOUT,
-                            provider=gateway.files_provider,
-                        )
-                        for call in calls
-                    ]
-                    if request.pop("previous_response_id", None) is not None:
-                        request["input"] = _responses_input(body["messages"])
-                    request["input"].extend(_responses_continuation(response, outputs))
-        except (ValueError, RuntimeError, OpenAIError) as exc:
-            return _error(f"Responses request failed: {exc}")
+        finally:
+            if latest_status:
+                await _emit_status(
+                    __event_emitter__,
+                    latest_status if finished else f"Stopped: {latest_status}",
+                    done=True,
+                )
 
     async def _request_input(
         self,
@@ -352,8 +295,20 @@ def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:
 def _raise_for_response(response: Response) -> None:
     if response.status == "completed":
         return
+    if response.status == "incomplete":
+        reason = response.incomplete_details
+        raise RuntimeError(
+            f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
+        )
     detail = response.error
     raise RuntimeError(detail.message if detail is not None else "Response failed.")
+
+
+async def _emit_status(event_emitter: Any, description: str, *, done: bool) -> None:
+    if event_emitter is not None:
+        await event_emitter(
+            {"type": "status", "data": {"description": description, "done": done}}
+        )
 
 
 def _user_id(user: dict[str, Any] | None) -> str | None:

@@ -1,7 +1,7 @@
 """Assemble SDK-typed OpenAI Responses streaming events."""
 
 import uuid
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Iterator, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
@@ -19,32 +19,43 @@ from openai.types.responses import (
     ResponseFunctionCallArgumentsDeltaEvent,
     ResponseFunctionCallArgumentsDoneEvent,
     ResponseFunctionToolCall,
+    ResponseIncompleteEvent,
     ResponseInProgressEvent,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseOutputMessage,
+    ResponseOutputRefusal,
     ResponseOutputText,
     ResponseOutputTextAnnotationAddedEvent,
+    ResponseRefusalDeltaEvent,
+    ResponseRefusalDoneEvent,
     ResponseStreamEvent,
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
     ResponseUsage,
 )
+from openai.types.responses.response import IncompleteDetails
 
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
+    UnsupportedResponsesOutputError,
     interrupt_output_items,
     response_function_calls,
-    response_object,
+    response_incomplete_details,
     response_output_text,
+    response_refusals,
     response_usage,
 )
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.events import parse_status_event
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
-from langgraph_openai_serve.graph.runner import LangGraphStreamEvent, stream_run
+from langgraph_openai_serve.graph.runner import (
+    LangGraphStreamEvent,
+    invoke_run,
+    stream_run,
+)
 from langgraph_openai_serve.graph.utils import GraphRun
 
 logger = get_logger(__name__)
@@ -139,11 +150,44 @@ class ResponsesStreamBuilder:
 
         """
         calls = response_function_calls(message)
+        incomplete_details = response_incomplete_details(message)
+        item_status = "incomplete" if incomplete_details is not None else "completed"
+        yield from self._finish_answer(message, status=item_status)
+        for call in calls:
+            yield from self._function_call(
+                call.model_copy(update={"status": item_status})
+            )
+        response = self._response(
+            status=item_status,
+            usage=response_usage(message.usage_metadata),
+            incomplete_details=incomplete_details,
+        )
+        if incomplete_details is not None:
+            yield ResponseIncompleteEvent(
+                type="response.incomplete",
+                sequence_number=self._sequence(),
+                response=response,
+            )
+        else:
+            yield ResponseCompletedEvent(
+                type="response.completed",
+                sequence_number=self._sequence(),
+                response=response,
+            )
+
+    def _finish_answer(
+        self, message: AIMessage, *, status: Literal["completed", "incomplete"]
+    ) -> Iterator[ResponseStreamEvent]:
+        refusals = response_refusals(message)
+        has_text = bool(
+            message.text
+            or not (message.tool_calls or message.invalid_tool_calls or refusals)
+        )
         item = self._final_item
-        if item is None and (message.text or not message.tool_calls):
+        if item is None and (has_text or refusals):
             item = self._new_text_item("final_answer")
             self._final_item = item
-            yield from self._start_text_item(item)
+            yield from self._start_text_item(item, with_text=has_text)
             if message.text:
                 text = str(message.text)
                 item.text_parts.append(text)
@@ -153,18 +197,12 @@ class ResponsesStreamBuilder:
             raise RuntimeError(msg)
 
         if item is not None:
-            part = response_output_text(message)
-            yield from self._finish_text_item(item, part)
-        for call in calls:
-            yield from self._function_call(call)
-        yield ResponseCompletedEvent(
-            type="response.completed",
-            sequence_number=self._sequence(),
-            response=self._response(
-                status="completed",
-                usage=response_usage(message.usage_metadata),
-            ),
-        )
+            yield from self._finish_text_item(
+                item,
+                response_output_text(message) if has_text else None,
+                refusals=refusals,
+                status=status,
+            )
 
     def finish_interrupt(
         self,
@@ -203,7 +241,11 @@ class ResponsesStreamBuilder:
         # Keep the items already exposed to the client in the terminal snapshot.
         # The SDK replaces its accumulated Response with response.failed.
         item = self._final_item
-        if item is not None and self._output[item.output_index].status == "in_progress":
+        if (
+            item is not None
+            and getattr(self._output[item.output_index], "status", None)
+            == "in_progress"
+        ):
             self._output[item.output_index] = self._output[
                 item.output_index
             ].model_copy(
@@ -211,7 +253,7 @@ class ResponsesStreamBuilder:
             )
         self._output = [
             item.model_copy(update={"status": "incomplete"})
-            if item.status == "in_progress"
+            if getattr(item, "status", None) == "in_progress"
             else item
             for item in self._output
         ]
@@ -238,7 +280,9 @@ class ResponsesStreamBuilder:
             phase=phase,
         )
 
-    def _start_text_item(self, item: _TextItem) -> Iterator[ResponseStreamEvent]:
+    def _start_text_item(
+        self, item: _TextItem, *, with_text: bool = True
+    ) -> Iterator[ResponseStreamEvent]:
         message = ResponseOutputMessage(
             id=item.id,
             content=[],
@@ -254,6 +298,8 @@ class ResponsesStreamBuilder:
             output_index=item.output_index,
             item=message,
         )
+        if not with_text:
+            return
         yield ResponseContentPartAddedEvent(
             type="response.content_part.added",
             sequence_number=self._sequence(),
@@ -282,7 +328,36 @@ class ResponsesStreamBuilder:
     def _finish_text_item(
         self,
         item: _TextItem,
-        part: ResponseOutputText,
+        part: ResponseOutputText | None,
+        *,
+        refusals: Sequence[ResponseOutputRefusal] = (),
+        status: Literal["completed", "incomplete"] = "completed",
+    ) -> Iterator[ResponseStreamEvent]:
+        content: list[ResponseOutputText | ResponseOutputRefusal] = []
+        if part is not None:
+            content.append(part)
+            yield from self._finish_text_part(item, part)
+        for refusal in refusals:
+            yield from self._refusal_part(item, refusal, content_index=len(content))
+            content.append(refusal)
+        completed = ResponseOutputMessage(
+            id=item.id,
+            content=content,
+            role="assistant",
+            status=status,
+            type="message",
+            phase=item.phase,
+        )
+        self._output[item.output_index] = completed
+        yield ResponseOutputItemDoneEvent(
+            type="response.output_item.done",
+            sequence_number=self._sequence(),
+            output_index=item.output_index,
+            item=completed,
+        )
+
+    def _finish_text_part(
+        self, item: _TextItem, part: ResponseOutputText
     ) -> Iterator[ResponseStreamEvent]:
         for annotation_index, annotation in enumerate(part.annotations):
             yield ResponseOutputTextAnnotationAddedEvent(
@@ -311,20 +386,45 @@ class ResponsesStreamBuilder:
             content_index=0,
             part=part,
         )
-        completed = ResponseOutputMessage(
-            id=item.id,
-            content=[part],
-            role="assistant",
-            status="completed",
-            type="message",
-            phase=item.phase,
-        )
-        self._output[item.output_index] = completed
-        yield ResponseOutputItemDoneEvent(
-            type="response.output_item.done",
+
+    def _refusal_part(
+        self,
+        item: _TextItem,
+        part: ResponseOutputRefusal,
+        *,
+        content_index: int,
+    ) -> Iterator[ResponseStreamEvent]:
+        yield ResponseContentPartAddedEvent(
+            type="response.content_part.added",
             sequence_number=self._sequence(),
             output_index=item.output_index,
-            item=completed,
+            item_id=item.id,
+            content_index=content_index,
+            part=ResponseOutputRefusal(type="refusal", refusal=""),
+        )
+        yield ResponseRefusalDeltaEvent(
+            type="response.refusal.delta",
+            sequence_number=self._sequence(),
+            output_index=item.output_index,
+            item_id=item.id,
+            content_index=content_index,
+            delta=part.refusal,
+        )
+        yield ResponseRefusalDoneEvent(
+            type="response.refusal.done",
+            sequence_number=self._sequence(),
+            output_index=item.output_index,
+            item_id=item.id,
+            content_index=content_index,
+            refusal=part.refusal,
+        )
+        yield ResponseContentPartDoneEvent(
+            type="response.content_part.done",
+            sequence_number=self._sequence(),
+            output_index=item.output_index,
+            item_id=item.id,
+            content_index=content_index,
+            part=part,
         )
 
     def _function_call(
@@ -372,16 +472,17 @@ class ResponsesStreamBuilder:
     def _response(
         self,
         *,
-        status: Literal["in_progress", "completed", "failed"],
+        status: Literal["in_progress", "completed", "failed", "incomplete"],
         error: ResponseError | None = None,
         usage: ResponseUsage | None = None,
+        incomplete_details: IncompleteDetails | None = None,
     ) -> Response:
-        return response_object(
-            self._context,
+        return self._context.response(
             status=status,
             output=self._output,
             error=error,
             usage=usage,
+            incomplete_details=incomplete_details,
         )
 
     def _sequence(self) -> int:
@@ -393,6 +494,17 @@ class ResponsesStreamBuilder:
 def encode_event(event: ResponseStreamEvent) -> str:
     """Encode one Responses event using the official named SSE framing."""
     return f"event: {event.type}\ndata: {event.model_dump_json()}\n\n"
+
+
+async def collect_response(request: ResponseCreateRequest, run: GraphRun) -> Response:
+    """Build one non-streaming Response from the graph's durable output."""
+    builder = ResponsesStreamBuilder(request, run_id=run.run_id)
+    output = await invoke_run(run)
+    for event in _finish_events(builder, output, run):
+        if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
+            return event.response
+    msg = "Graph execution completed without a final Response."
+    raise UnsupportedResponsesOutputError(msg)
 
 
 async def stream_response(
@@ -447,15 +559,25 @@ async def _successful_events(
             ):
                 yield event
 
-    if isinstance(final_output, LangGraphInterruptBatch):
-        for event in builder.finish_interrupt(
-            final_output,
-            usage=response_usage(run.usage_metadata()),
-        ):
-            yield event
-        return
-    for event in builder.finish(_require_final_message(final_output)):
+    for event in _finish_events(builder, final_output, run):
         yield event
+
+
+def _finish_events(
+    builder: ResponsesStreamBuilder,
+    output: AIMessage | LangGraphInterruptBatch | None,
+    run: GraphRun,
+) -> Iterator[ResponseStreamEvent]:
+    if isinstance(output, LangGraphInterruptBatch):
+        yield from builder.finish_interrupt(
+            output,
+            usage=response_usage(run.usage_metadata()),
+        )
+    else:
+        if output is None:
+            msg = "LangGraph stream completed without a final assistant message."
+            raise RuntimeError(msg)
+        yield from builder.finish(output)
 
 
 def _response_events(
@@ -483,11 +605,9 @@ def _response_events(
     yield from builder.commentary(status_data.description)
 
 
-def _require_final_message(message: AIMessage | None) -> AIMessage:
-    if message is None:
-        msg = "LangGraph stream completed without a final assistant message."
-        raise RuntimeError(msg)
-    return message
-
-
-__all__ = ["ResponsesStreamBuilder", "encode_event", "stream_response"]
+__all__ = [
+    "ResponsesStreamBuilder",
+    "collect_response",
+    "encode_event",
+    "stream_response",
+]

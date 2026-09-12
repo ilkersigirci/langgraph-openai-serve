@@ -19,7 +19,6 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseInputItem,
     ResponseInputText,
     ResponseOutputMessageInput,
-    ResponseOutputTextInput,
 )
 from langgraph_openai_serve.api.tools import decode_function_call
 
@@ -108,11 +107,16 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
     if isinstance(item, ResponseOutputMessageInput):
         return AIMessage(
             id=item.id,
-            content=_output_content(item.content),
+            content=_output_content(item),
             additional_kwargs={"id": item.id, "phase": item.phase},
+            response_metadata={"model_provider": "openai"},
         )
     if isinstance(item, ResponseFunctionCallOutputInput):
-        return ToolMessage(content=item.output, tool_call_id=item.call_id)
+        return ToolMessage(
+            id=item.id,
+            content=item.output,
+            tool_call_id=item.call_id,
+        )
     if isinstance(item, ResponseFunctionCallInput):
         msg = "Function calls must be grouped before message conversion."
         raise TypeError(msg)
@@ -121,8 +125,16 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
     match item.role:
         case "assistant":
             return AIMessage(
-                content=content,
+                content=[
+                    {**cast("dict[str, Any]", part), "phase": item.phase}
+                    for part in (
+                        [{"type": "text", "text": content}]
+                        if isinstance(content, str)
+                        else content
+                    )
+                ],
                 additional_kwargs={"phase": item.phase},
+                response_metadata={"model_provider": "openai"},
             )
         case "user":
             return HumanMessage(content=content)
@@ -148,7 +160,10 @@ def _function_call_message(calls: list[ResponseFunctionCallInput]) -> AIMessage:
             invalid_tool_calls.append(parsed)
 
     return AIMessage(
-        content="",
+        # LangChain's Responses adapter reads item IDs from content blocks;
+        # tool_calls alone preserves call_id but loses the distinct item id.
+        content=[call.model_dump(mode="json", exclude_none=True) for call in calls],
+        response_metadata={"model_provider": "openai"},
         tool_calls=tool_calls,
         invalid_tool_calls=invalid_tool_calls,
     )
@@ -173,11 +188,19 @@ def _input_content(
 
 
 def _output_content(
-    content: list[ResponseOutputTextInput],
+    item: ResponseOutputMessageInput,
 ) -> list[str | dict[Any, Any]]:
     return cast(
         "list[str | dict[Any, Any]]",
-        [{"type": "text", "text": part.text} for part in content],
+        [
+            {
+                **part.model_dump(mode="json", exclude_none=True),
+                "type": "text" if part.type == "output_text" else part.type,
+                "id": item.id,
+                "phase": item.phase,
+            }
+            for part in item.content
+        ],
     )
 
 

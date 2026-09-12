@@ -7,17 +7,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from langchain_core.messages import AIMessage, UsageMetadata
+from langchain_core.messages import AIMessage, InvalidToolCall, UsageMetadata
 from langchain_core.messages.tool import ToolCall
 from openai.types.responses import (
     Response,
     ResponseError,
     ResponseFunctionToolCall,
     ResponseOutputItem,
-    ResponseOutputMessage,
+    ResponseOutputRefusal,
     ResponseOutputText,
     ResponseUsage,
 )
+from openai.types.responses.response import IncompleteDetails
 from openai.types.responses.response_output_text import AnnotationURLCitation
 from openai.types.responses.response_usage import (
     InputTokensDetails,
@@ -31,8 +32,6 @@ from langgraph_openai_serve.api.responses.interrupts import (
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
-from langgraph_openai_serve.graph.runner import invoke_run
-from langgraph_openai_serve.graph.utils import GraphRun
 from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 
@@ -60,63 +59,77 @@ class ResponseContext:
             return cls(request=request)
         return cls(request=request, id=interrupt_response_id(run_id))
 
-
-async def generate_response(
-    request: ResponseCreateRequest,
-    run: GraphRun,
-) -> Response:
-    """Invoke a graph and serialize its durable Responses output."""
-    context = ResponseContext.for_run(request, run_id=run.run_id)
-    output = await invoke_run(run)
-    if isinstance(output, AIMessage):
-        items = response_output_items(output)
-        usage = output.usage_metadata
-    else:
-        items = interrupt_output_items(output, response_id=context.id)
-        usage = run.usage_metadata()
-    return response_object(
-        context,
-        status="completed",
-        output=items,
-        usage=response_usage(usage),
-    )
-
-
-def response_output_items(message: AIMessage) -> list[ResponseOutputItem]:
-    """Serialize one assistant message into ordered Responses output items."""
-    calls = response_function_calls(message)
-    output: list[ResponseOutputItem] = []
-    if message.text or not message.tool_calls:
-        output.append(
-            ResponseOutputMessage(
-                id=f"msg_{uuid.uuid4().hex}",
-                content=[response_output_text(message)],
-                role="assistant",
-                status="completed",
-                type="message",
-                phase="final_answer",
-            )
+    def response(
+        self,
+        *,
+        status: Literal["in_progress", "completed", "failed", "incomplete"],
+        output: Sequence[ResponseOutputItem],
+        error: ResponseError | None = None,
+        usage: ResponseUsage | None = None,
+        incomplete_details: IncompleteDetails | None = None,
+    ) -> Response:
+        """Build one SDK-typed Response with the route's stable defaults."""
+        request = self.request
+        return Response.model_validate(
+            {
+                "id": self.id,
+                "object": "response",
+                "created_at": self.created_at,
+                "status": status,
+                "background": False,
+                "completed_at": time.time() if status == "completed" else None,
+                "error": error,
+                "incomplete_details": incomplete_details,
+                "instructions": request.instructions,
+                "metadata": dict(request.metadata or {}),
+                "model": request.model,
+                "output": list(output),
+                "parallel_tool_calls": (
+                    request.parallel_tool_calls
+                    if request.parallel_tool_calls is not None
+                    else True
+                ),
+                "previous_response_id": request.previous_response_id,
+                "service_tier": "default",
+                "text": {"format": {"type": "text"}},
+                "tool_choice": (
+                    request.tool_choice.model_dump(mode="json")
+                    if request.tool_choice is not None
+                    and not isinstance(request.tool_choice, str)
+                    else request.tool_choice or "auto"
+                ),
+                "tools": [tool.model_dump(mode="json") for tool in request.tools or ()],
+                "top_logprobs": 0,
+                "truncation": "disabled",
+                "usage": usage,
+                "user": request.user,
+            }
         )
-    output.extend(calls)
-    return output
 
 
 def response_function_calls(message: AIMessage) -> list[ResponseFunctionToolCall]:
     """Serialize and validate all client tool calls from an assistant message."""
-    if message.invalid_tool_calls:
+    if message.invalid_tool_calls and response_incomplete_details(message) is None:
         msg = "The final assistant message contains invalid tool calls."
         raise UnsupportedResponsesOutputError(msg)
 
-    calls: list[ResponseFunctionToolCall] = []
+    calls = [response_function_call(call) for call in message.tool_calls]
+    calls.extend(_incomplete_function_call(call) for call in message.invalid_tool_calls)
     seen_call_ids: set[str] = set()
-    for call in message.tool_calls:
-        output = response_function_call(call)
+    for output in calls:
         if output.call_id in seen_call_ids:
             msg = f"The final assistant message repeats call id '{output.call_id}'."
             raise UnsupportedResponsesOutputError(msg)
         seen_call_ids.add(output.call_id)
-        calls.append(output)
     return calls
+
+
+def _incomplete_function_call(call: InvalidToolCall) -> ResponseFunctionToolCall:
+    call_id, name, arguments = call.get("id"), call.get("name"), call.get("args")
+    if not call_id or not name or arguments is None:
+        msg = "The incomplete tool call must include an id, name, and arguments."
+        raise UnsupportedResponsesOutputError(msg)
+    return _function_call_item(call_id=call_id, name=name, arguments=arguments)
 
 
 def response_function_call(call: ToolCall) -> ResponseFunctionToolCall:
@@ -184,61 +197,6 @@ def _dump_arguments(arguments: dict[str, Any]) -> str:
         raise UnsupportedResponsesOutputError(msg) from exc
 
 
-def response_object(
-    context: ResponseContext,
-    *,
-    status: Literal["in_progress", "completed", "failed"],
-    output: Sequence[ResponseOutputItem],
-    error: ResponseError | None = None,
-    usage: ResponseUsage | None = None,
-) -> Response:
-    """Build one SDK-typed Response with the route's stable defaults."""
-    request = context.request
-    return Response.model_validate(
-        {
-            "id": context.id,
-            "object": "response",
-            "created_at": context.created_at,
-            "status": status,
-            "background": False,
-            "completed_at": time.time() if status == "completed" else None,
-            "error": error,
-            "incomplete_details": None,
-            "instructions": request.instructions,
-            "max_output_tokens": None,
-            "max_tool_calls": None,
-            "metadata": dict(request.metadata or {}),
-            "model": request.model,
-            "output": list(output),
-            "parallel_tool_calls": (
-                request.parallel_tool_calls
-                if request.parallel_tool_calls is not None
-                else True
-            ),
-            "previous_response_id": request.previous_response_id,
-            "prompt_cache_key": None,
-            "reasoning": None,
-            "safety_identifier": None,
-            "service_tier": "default",
-            "store": False,
-            "temperature": None,
-            "text": {"format": {"type": "text"}},
-            "tool_choice": (
-                request.tool_choice.model_dump(mode="json")
-                if request.tool_choice is not None
-                and not isinstance(request.tool_choice, str)
-                else request.tool_choice or "auto"
-            ),
-            "tools": [tool.model_dump(mode="json") for tool in request.tools or ()],
-            "top_logprobs": 0,
-            "top_p": None,
-            "truncation": "disabled",
-            "usage": usage,
-            "user": request.user,
-        }
-    )
-
-
 def response_output_text(message: AIMessage) -> ResponseOutputText:
     """Build final Responses text and validated native URL annotations."""
     return ResponseOutputText(
@@ -256,6 +214,37 @@ def response_output_text(message: AIMessage) -> ResponseOutputText:
         text=str(message.text),
         type="output_text",
     )
+
+
+def response_refusals(message: AIMessage) -> list[ResponseOutputRefusal]:
+    """Read refusals through LangChain's normalized content boundary."""
+    refusals = []
+    for block in message.content_blocks:
+        value = block.get("value")
+        if block["type"] != "non_standard" or not isinstance(value, dict):
+            continue
+        refusal = value.get("refusal")
+        if value.get("type") == "refusal" and isinstance(refusal, str):
+            refusals.append(ResponseOutputRefusal(type="refusal", refusal=refusal))
+    fallback = message.additional_kwargs.get("refusal")
+    if not refusals and isinstance(fallback, str):
+        refusals.append(ResponseOutputRefusal(type="refusal", refusal=fallback))
+    return refusals
+
+
+def response_incomplete_details(message: AIMessage) -> IncompleteDetails | None:
+    """Keep the final provider's truncation or filtering outcome visible."""
+    metadata = message.response_metadata
+    if metadata.get("status") == "incomplete":
+        return IncompleteDetails.model_validate(
+            metadata.get("incomplete_details") or {}
+        )
+    reason = metadata.get("finish_reason")
+    if reason == "length":
+        return IncompleteDetails(reason="max_output_tokens")
+    if reason == "content_filter":
+        return IncompleteDetails(reason="content_filter")
+    return None
 
 
 def response_usage(usage: UsageMetadata | None) -> ResponseUsage | None:
@@ -281,12 +270,11 @@ def response_usage(usage: UsageMetadata | None) -> ResponseUsage | None:
 __all__ = [
     "ResponseContext",
     "UnsupportedResponsesOutputError",
-    "generate_response",
     "interrupt_output_items",
     "response_function_call",
     "response_function_calls",
-    "response_object",
-    "response_output_items",
+    "response_incomplete_details",
     "response_output_text",
+    "response_refusals",
     "response_usage",
 ]

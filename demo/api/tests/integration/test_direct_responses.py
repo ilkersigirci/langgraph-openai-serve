@@ -137,7 +137,7 @@ async def test_direct_responses_preserve_text_and_stream(
         assert response.output_text == (
             "direct-user asked: Where is the routing boundary?"
         )
-        assert response.store is False
+        assert "store" not in (response.model_extra or {})
         assert response.output[0].phase == "final_answer"
 
         stream = await client.responses.create(

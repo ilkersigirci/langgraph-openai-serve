@@ -8,6 +8,9 @@ The Chainlit project intentionally does not install or import the
 needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
+Native URL-citation annotations become clickable Chainlit source elements
+containing Markdown links, without changing the replayed answer text.
+
 !!! info "Select one first-class gateway"
 
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
@@ -410,6 +413,11 @@ closes the Responses stream; incomplete assistant text remains visible but is
 excluded from later model context. Both streaming and non-streaming requests
 require a completed Response before displaying files or accepting a successful
 turn. Failed interrupt resumes leave the saved continuation intact.
+
+Native refusal text is displayed as the assistant's explanation. Incomplete
+responses report their native reason, retain any already streamed text for the
+user, and do not execute client functions. Failure and incomplete events are
+handled directly because the SDK's final-response helper requires completion.
 
 Transcript replay labels assistant answers as `final_answer` and preserves
 explicit phase values, following OpenAI's
