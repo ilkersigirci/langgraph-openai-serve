@@ -1,33 +1,34 @@
 # Server Tool
 
-`server-tool` demonstrates two client-selected tools executed by LGOS through
+`server-tool` demonstrates two client-selected, server-executed tools through
 one standard Responses request:
 
-- `lgos_current_time` is an OpenAI custom tool backed by Python's system clock.
-  Its free-form input is an IANA timezone string.
+- `lgos_current_time` uses the Responses custom-tool shape but is executed by
+  LGOS rather than the client. Its free-form input is an IANA timezone string.
 - `web_search` always uses the standard OpenAI declaration. The graph can run
-  it through a self-managed SearXNG or Degoog endpoint, or pass it to an upstream
-  OpenAI Responses model as a native server tool.
+  it through a self-managed SearXNG or Degoog endpoint, or use an upstream
+  OpenAI Responses model's native search as its backend.
 
-The graph is a real model-backed agent with no persistence. Clients own
+The graph is a model-backed workflow with no persistence. Clients own
 conversation history and opt in to either tool on each request.
 
 ## LangGraph Topology
 
 ```mermaid
-graph TD
-    __start__ --> model
-    model -.-> add_search_citations_after_agent["add_search_citations.after_agent"]
-    model -.-> tools
-    tools -.-> model
-    add_search_citations_after_agent --> __end__
+graph TD;
+    __start__ -.-> answer;
+    __start__ -.-> select_tools;
+    select_tools -. no calls .-> answer;
+    select_tools -. calls .-> tools;
+    tools --> answer;
+    answer --> __end__;
 ```
 
-LangChain's agent owns the model/tool loop. Its `tools` node executes the clock
-and the HTTP search adapter. Upstream OpenAI search executes inside the
-model call. The final middleware node adds citation annotations only for exact
-HTTP result links that the model retained in its answer; provider-native
-citations pass through LangChain's standard content blocks.
+The `StateGraph` separates private tool selection from public answer generation.
+Its `tools` node delegates execution to a native `ToolNode` containing only the
+tools selected for this request. Both search backends return text and source
+metadata through the same tool. The `answer` node streams text and then adds
+citation annotations for exact source links retained in that text.
 
 ## Request Flow
 
@@ -36,7 +37,7 @@ sequenceDiagram
   participant UI as Chainlit / Open WebUI
   box LGOS API process
     participant API as /v1/responses
-    participant Agent as server-tool agent
+    participant Graph as server-tool graph
     participant Tools as clock / web_search
   end
   participant Search as SearXNG / Degoog
@@ -44,28 +45,28 @@ sequenceDiagram
 
   UI->>API: input + explicit tools
   API->>API: Validate graph allowlist
-  API->>Agent: Messages + GraphRequest context
-  Agent->>Model: Messages + selected tools
-  alt upstream OpenAI web search
-    Model->>Model: Execute provider search
-    Model-->>Agent: Server-tool call/result + cited answer
-  else graph-executed tool
-    alt current time
-      Model-->>Agent: custom tool call with timezone
-      Agent->>Tools: Execute lgos_current_time
-      Tools-->>Agent: Timestamp
-    else HTTP web search
-      Model-->>Agent: function call with query
-      Agent->>Tools: Execute web_search
+  API->>Graph: Messages + GraphRequest context
+  Graph->>Model: Private tool selection
+  Model-->>Graph: Tool calls or none
+  Graph-->>API: Tool-call updates + status events
+  opt Tool calls requested
+    Graph->>Tools: Execute selected tools
+    alt HTTP web search
       Tools->>Search: GET configured URL?q=...&format=json
       Search-->>Tools: JSON results
-      Tools-->>Agent: Result text + source metadata
+    else upstream OpenAI web search
+      Tools->>Model: Native web_search request
+      Model-->>Tools: Search summary + citations
     end
-    Agent->>Model: Tool result
-    Model-->>Agent: Final answer with exact Markdown links
+    Tools-->>Graph: Tool results + source metadata
+    Graph-->>API: Tool-result updates
   end
-  Agent-->>API: Tool updates + cited final message
-  API-->>UI: OpenAI tool items, citations, and answer
+  Graph->>Model: Generate answer from collected results
+  Model-->>Graph: Answer tokens
+  Graph-->>API: LangGraph messages
+  API-->>UI: Native tool items, progress commentary, answer tokens
+  Graph-->>API: Final message with citation annotations
+  API-->>UI: Annotations + response.completed
 ```
 
 1. The client includes `{"type":"custom","name":"lgos_current_time"}` and/or
@@ -76,32 +77,37 @@ sequenceDiagram
    only its configured tools. `auto` lets the model decide, `required` requires
    a supplied tool, and a named custom choice can force the clock. Omitting a
    tool, or using `tool_choice="none"`, leaves it unavailable.
-3. LangChain's `create_agent` registers the clock with native `@custom_tool` and
-   local search with `@tool`. Middleware filters the tools for each
-   request and checks the selected names again before execution. The requested
-   choice applies to the first model turn; later turns use `auto` so the agent
-   can finish. The client never enters this tool loop.
+3. The graph binds the selected LangChain `@custom_tool` and `@tool` objects in
+   `select_tools` and supplies the same selection to `ToolNode` for execution.
+   The model selects every needed tool in one turn; `ToolNode` executes parallel
+   calls using LangGraph's normal behavior. Requests without enabled tools go
+   directly to `answer`.
 4. Clock use returns `custom_tool_call`, `custom_tool_call_output`, and a message.
    Search use returns `web_search_call` followed by a message with standard
    URL-citation annotations. Clients replay the complete output and execute only
    `function_call` items. Backend-specific search payloads remain private.
 
-LGOS subscribes to LangGraph `updates` only when the request selects a
-server-side tool. Those completed node updates provide the call/result boundary
-needed to build OpenAI output items. The same request does not subscribe to
-LangGraph `messages`, so its final answer is sent as one text delta after the
-tool loop finishes. Requests without server-side tools retain incremental token
-streaming. This avoids merging speculative model preambles with the durable
-answer and avoids parsing partial tool calls.
+Streaming combines native LangGraph `updates` for completed tool calls/results,
+`custom` for existing `status_event()` progress, and `messages` for answer tokens.
+Only `answer` is streamable. Private selection calls use `stream=False` and the
+`nostream` tag, so intermediate model text never enters the public answer.
+The graph declares `GraphFeature.CLIENT_EVENTS`; progress appears as Responses
+commentary. Non-streaming responses omit this transient commentary.
+
+The selection stage only gathers information; the answer stage has no bound
+tools. Citations are attached after generation without changing or buffering
+the streamed text. Clients rendering the transcript select
+`phase="final_answer"` messages and present commentary separately.
 
 The `http` backend is one JSON `GET` implemented with the demo's existing
 `httpx` dependency. Both SearXNG and Degoog return the small `results` shape the
 adapter consumes, so there are no provider classes. The adapter validates
 HTTP(S) result URLs, removes duplicates, limits the result set, and gives the
 model compact title, URL, and snippet text. Search content is treated as
-untrusted data. The `openai` backend instead gives LangChain
-`{"type":"web_search"}` and consumes its standard `server_tool_call` and
-`server_tool_result` blocks.
+untrusted data. The `openai` backend makes a private model call with
+`{"type":"web_search"}` and `tool_choice="required"`. Its cited URLs become
+the same source metadata consumed by the answer node. Internal provider calls
+stay private; the outer response records the graph's `web_search` invocation.
 
 ## Try It
 
@@ -136,7 +142,7 @@ response = client.responses.create(
     store=False,
     tools=[{"type": "custom", "name": "lgos_current_time"}],
     tool_choice="required",
-    parallel_tool_calls=False,
+    parallel_tool_calls=True,
 )
 for item in response.output:
     print(item.type)
@@ -159,14 +165,16 @@ from the server.
 !!! note "One public contract"
 
     The clock's name selects its server-owned implementation and input contract.
+    It uses standard Responses custom-tool items, while LGOS deliberately owns
+    execution instead of returning the call for client execution.
     `web_search` uses the standard built-in declaration and output shape with
     every backend. The LGOS graph chooses where search runs; the client never
     names SearXNG, Degoog, or OpenAI as a provider. See the
     [server-tool contract](../../explanation/openai-compatibility.md#server-tools).
 
-The implementation uses standard [OpenAI custom tools](https://developers.openai.com/api/docs/guides/function-calling#custom-tools),
+The implementation uses standard [OpenAI custom-tool call and output shapes](https://developers.openai.com/api/docs/guides/function-calling#custom-tools),
 [web-search response shapes](https://developers.openai.com/api/docs/guides/tools-web-search?api-mode=responses),
-LangChain [`create_agent` and tools](https://docs.langchain.com/oss/python/langchain/agents),
+LangGraph [`ToolNode` and tool routing](https://docs.langchain.com/oss/python/langchain/tools#toolnode),
 LangChain's [OpenAI built-in tools](https://docs.langchain.com/oss/python/integrations/chat/openai#web-search),
 the [SearXNG Search API](https://docs.searxng.org/dev/search_api.html),
 [Degoog Search API](https://degoog-org.github.io/docs/api.html), and

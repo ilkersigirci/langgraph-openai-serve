@@ -197,9 +197,9 @@ paused interrupts.
 ## Continue Function Calls
 
 LGOS accepts the flat Responses function-tool shape for client-owned tools.
-Registered server tools use distinct native `custom` or `web_search` types, so
-every returned `function_call` belongs to the client. Execute those calls, replay
-the complete output, and append each matching string-valued result:
+Registered server tools use distinct Responses `custom` or `web_search` types,
+so every returned `function_call` belongs to the client. Execute those calls,
+replay the complete output, and append each matching string-valued result:
 
 ```python
 import json

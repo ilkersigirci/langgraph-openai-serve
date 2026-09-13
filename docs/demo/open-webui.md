@@ -278,8 +278,6 @@ Inline citation markers remain part of assistant content.
 Status descriptions remain active while the Responses/tool loop runs and are
 finalized when it completes or stops, using Open WebUI's native
 [`status` events](https://docs.openwebui.com/features/extensibility/plugin/development/events/#status).
-Native `response.web_search_call.completed` events appear as completed
-"Web search completed." statuses, separate from running commentary.
 Both response modes display native refusals. Failed and incomplete streaming
 events are handled directly so their reason remains visible; incomplete
 responses never trigger client functions.
@@ -305,7 +303,7 @@ still use authenticated Open WebUI file storage and the native `files` event. Ea
 and file references, then appends complete Response output items and matching
 tool results. Final-answer text from every call is retained in both modes.
 
-Server custom call/result items are already application-executed; the Pipe does
+Server custom call/result items have already been executed by LGOS; the Pipe does
 not execute them or send another result. The chat displays their final assistant
 answer.
 

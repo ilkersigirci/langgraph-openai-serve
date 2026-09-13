@@ -6,7 +6,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage
 from langgraph.types import CustomStreamPart, UpdatesStreamPart
 from openai.types.responses import (
     Response,
@@ -45,6 +45,10 @@ from openai.types.responses.response import IncompleteDetails
 
 from langgraph_openai_serve.api.responses.request import selected_server_tools
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.api.responses.server_tools import (
+    ServerToolItem,
+    ServerToolTracker,
+)
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
     UnsupportedResponsesOutputError,
@@ -53,11 +57,6 @@ from langgraph_openai_serve.api.responses.service import (
     response_output_text,
     response_refusals,
     response_usage,
-)
-from langgraph_openai_serve.api.responses.utils.server_tools import (
-    ServerToolItem,
-    ServerToolTracker,
-    update_messages,
 )
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.events import parse_status_event
@@ -99,7 +98,7 @@ class ResponsesStreamBuilder:
         self._context = ResponseContext.for_run(request, run_id=run_id)
         self._sequence_number = 0
         self._output: list[ResponseOutputItem] = []
-        self._server_tool_tracker = ServerToolTracker(request, server_tools)
+        self._server_tool_tracker = ServerToolTracker(server_tools)
         self._final_item: _TextItem | None = None
 
     def created(self) -> ResponseCreatedEvent:
@@ -524,15 +523,15 @@ class ResponsesStreamBuilder:
             item=completed,
         )
 
-    def server_tool(self, message: BaseMessage) -> Iterator[ResponseStreamEvent]:
+    def server_tools(self, event: UpdatesStreamPart) -> Iterator[ResponseStreamEvent]:
         """
-        Expose selected tool activity from a native agent update.
+        Expose selected tool activity from one root graph update.
 
         Yields:
             Native application-tool item lifecycle events.
 
         """
-        for item in self._server_tool_tracker.items(message):
+        for item in self._server_tool_tracker.items(event):
             yield from self._tool_item(item)
 
     def _response(
@@ -639,7 +638,7 @@ async def _successful_events(
     expose_status = streaming and run.config.supports(GraphFeature.CLIENT_EVENTS)
     run_events = stream_run(
         run,
-        stream_messages=streaming and not stream_updates,
+        stream_messages=streaming,
         stream_updates=stream_updates,
     )
     async with aclosing(run_events):
@@ -672,7 +671,6 @@ def _finish_events(
         if output is None:
             msg = "LangGraph stream completed without a final assistant message."
             raise RuntimeError(msg)
-        yield from builder.server_tool(output)
         yield from builder.finish(output)
 
 
@@ -693,8 +691,7 @@ def _graph_response_events(
         yield from builder.final_delta(event)
         return
     if event["type"] == "updates":
-        for message in update_messages(event):
-            yield from builder.server_tool(message)
+        yield from builder.server_tools(event)
         return
     if not expose_status:
         return

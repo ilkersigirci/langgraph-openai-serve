@@ -5,15 +5,17 @@ from typing import Any
 
 from .contracts import (
     CONVERSATION_METADATA_KEY,
-    CURRENT_TIME_TOOL_NAME,
     OPENAI_METADATA_VALUE_MAX_LENGTH,
     SETTINGS_METADATA_KEY,
-    WEB_SEARCH_TOOL_NAME,
 )
 
 
-def _request_metadata(metadata: dict[str, Any]) -> dict[str, str]:
-    request_metadata = _runtime_settings_metadata(metadata)
+def _request_metadata(
+    metadata: dict[str, Any], *, include_runtime_settings: bool = True
+) -> dict[str, str]:
+    request_metadata = (
+        _runtime_settings_metadata(metadata) if include_runtime_settings else {}
+    )
     chat_id = metadata.get("chat_id")
     if isinstance(chat_id, str) and chat_id:
         request_metadata[CONVERSATION_METADATA_KEY] = chat_id
@@ -22,19 +24,11 @@ def _request_metadata(metadata: dict[str, Any]) -> dict[str, str]:
 
 def _runtime_settings_metadata(metadata: dict[str, Any]) -> dict[str, str]:
     values = metadata.get("chat_variables")
-    if not isinstance(values, dict):
-        return {}
-    # Tool controls share Open WebUI's chat variables with graph settings.
-    settings = {
-        key: value
-        for key, value in values.items()
-        if key not in (CURRENT_TIME_TOOL_NAME, WEB_SEARCH_TOOL_NAME)
-    }
-    if not settings:
+    if not isinstance(values, dict) or not values:
         return {}
     try:
         encoded = json.dumps(
-            settings,
+            values,
             allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),

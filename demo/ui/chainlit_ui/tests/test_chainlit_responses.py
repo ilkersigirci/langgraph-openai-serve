@@ -18,7 +18,6 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputRefusal,
     ResponseOutputText,
-    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
 from openai.types.responses.response_output_text import AnnotationURLCitation
@@ -104,12 +103,6 @@ async def test_response_stream_routes_commentary_to_the_task_list(
             output_index=0,
             text="Generating audio",
         ),
-        ResponseWebSearchCallCompletedEvent(
-            type="response.web_search_call.completed",
-            item_id="ws_123",
-            output_index=1,
-            sequence_number=4,
-        ),
         SimpleNamespace(
             type="response.output_item.added",
             output_index=1,
@@ -143,35 +136,8 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     )
 
     assert response is completed
-    assert commentary_tasks.add.await_args_list == [
-        call("Generating audio"),
-        call("Web search completed.", done=True),
-    ]
+    assert commentary_tasks.add.await_args_list == [call("Generating audio")]
     assistant_message.stream_token.assert_awaited_once_with("Media ready.")
-
-
-@pytest.mark.parametrize("with_commentary", [False, True])
-async def test_completed_search_stays_done_when_commentary_stops(
-    monkeypatch: pytest.MonkeyPatch,
-    with_commentary: bool,
-) -> None:
-    task_list = Mock(status="Ready", add_task=AsyncMock(), send=AsyncMock())
-    monkeypatch.setattr(responses.cl, "TaskList", Mock(return_value=task_list))
-    renderer = responses.CommentaryTaskList()
-
-    if with_commentary:
-        await renderer.add("Generating audio")
-    await renderer.add("Web search completed.", done=True)
-    tasks = [call.args[0] for call in task_list.add_task.await_args_list]
-    assert tasks[-1].status == responses.cl.TaskStatus.DONE
-    if with_commentary:
-        assert tasks[0].status == responses.cl.TaskStatus.RUNNING
-    await renderer.stop()
-
-    assert tasks[-1].status == responses.cl.TaskStatus.DONE
-    if with_commentary:
-        assert tasks[0].status == responses.cl.TaskStatus.FAILED
-    assert task_list.status == ("Stopped" if with_commentary else "Done")
 
 
 @pytest.mark.parametrize("send_delta", [False, True])

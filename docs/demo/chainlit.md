@@ -12,8 +12,8 @@ The `server-tool` profile has fixed opt-in switches for `lgos_current_time` and
 `web_search`. Chainlit knows these public names and includes only selected tools
 in the native Responses `tools` array; it does not discover them from model
 metadata. The clock uses a name-only custom declaration, while search uses
-`{"type":"web_search"}`. LGOS returns each server call with its matching result,
-so Chainlit executes only unresolved client functions.
+`{"type":"web_search"}`. LGOS completes selected server tools inside the same
+Response, so Chainlit executes only returned `function_call` items.
 Native URL-citation annotations become
 clickable Chainlit source elements containing Markdown links, without changing
 the replayed answer text.
@@ -420,9 +420,6 @@ closes the Responses stream; incomplete assistant text remains visible but is
 excluded from later model context. Both streaming and non-streaming requests
 require a completed Response before displaying files or accepting a successful
 turn. Failed interrupt resumes leave the saved continuation intact.
-
-Native `response.web_search_call.completed` events add already-completed tasks
-without finishing any running commentary task.
 
 Native refusal text is displayed as the assistant's explanation. Incomplete
 responses report their native reason, retain any already streamed text for the

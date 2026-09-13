@@ -351,18 +351,25 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
 
     def respond(request: Request) -> Response:
         body = json.loads(request.content)
+        selecting = not requests
         requests.append(body)
         assert request.url.path.endswith("/responses")
-        # Server-tool requests use complete model turns, not token streaming.
-        assert not body.get("stream")
         assert body["store"] is False
-        assert body["tools"][0]["type"] == "custom"
-        assert body["tools"][0]["name"] == "lgos_current_time"
-        assert body["parallel_tool_calls"] is False
-        first_call = len(requests) == 1
-        assert body["tool_choice"] == (choice if first_call else "auto")
-        if not first_call:
-            result = body["input"][-1]
+        if selecting:
+            assert not body.get("stream")
+            assert body["tools"][0]["type"] == "custom"
+            assert body["tools"][0]["name"] == "lgos_current_time"
+            assert body["parallel_tool_calls"] is False
+            assert body["tool_choice"] == choice
+        else:
+            assert "tools" not in body
+            assert bool(body.get("stream")) == stream
+            result = next(
+                item
+                for item in body["input"]
+                if item.get("call_id") == "call_new"
+                and item["type"] == "custom_tool_call_output"
+            )
             assert result["type"] == "custom_tool_call_output"
             assert result["call_id"] == "call_new"
             assert result["output"].startswith("Europe/Istanbul: ")
@@ -376,15 +383,15 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                 "content": [
                     {
                         "type": "output_text",
-                        "text": "Checking the clock."
-                        if first_call
-                        else result["output"],
+                        "text": (
+                            "Checking the clock." if selecting else result["output"]
+                        ),
                         "annotations": [],
                     }
                 ],
             }
         ]
-        if first_call:
+        if selecting:
             output.append(
                 {
                     "id": "ctc_new",
@@ -395,17 +402,53 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     "status": "completed",
                 }
             )
-        return Response(
-            200,
-            json={
-                "id": f"resp_{len(requests)}",
-                "object": "response",
-                "created_at": 1,
-                "model": "test-model",
-                "status": "completed",
-                "output": output,
-            },
-        )
+        payload = {
+            "id": f"resp_{len(requests)}",
+            "object": "response",
+            "created_at": 1,
+            "model": "test-model",
+            "status": "completed",
+            "output": output,
+        }
+        if body.get("stream"):
+            text = result["output"]
+            item = output[0]
+            events = [
+                {
+                    "type": "response.created",
+                    "response": {**payload, "output": [], "status": "in_progress"},
+                },
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": {**item, "content": [], "status": "in_progress"},
+                },
+                {
+                    "type": "response.content_part.added",
+                    "output_index": 0,
+                    "content_index": 0,
+                    "item_id": item["id"],
+                    "part": {"type": "output_text", "text": "", "annotations": []},
+                },
+                *[
+                    {
+                        "type": "response.output_text.delta",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "item_id": item["id"],
+                        "delta": delta,
+                    }
+                    for delta in (text[:10], text[10:])
+                ],
+                {"type": "response.output_item.done", "output_index": 0, "item": item},
+                {"type": "response.completed", "response": payload},
+            ]
+            return Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text="".join(f"data: {json.dumps(event)}\n\n" for event in events),
+            )
+        return Response(200, json=payload)
 
     async with AsyncClient(transport=MockTransport(respond)) as provider:
         monkeypatch.setattr(
@@ -448,15 +491,25 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
 
     assert len(requests) == 2
     assert response.status == "completed"
-    assert [item.type for item in response.output] == [
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == [
         "custom_tool_call",
         "custom_tool_call_output",
         "message",
     ]
-    assert response.output[0].call_id == response.output[1].call_id == "call_new"
-    assert response.output[0].name == "lgos_current_time"
-    assert response.output[0].input == "Europe/Istanbul"
-    assert response.output[1].output == response.output_text
+    assert output[0].call_id == output[1].call_id == "call_new"
+    assert output[0].name == "lgos_current_time"
+    assert output[0].input == "Europe/Istanbul"
+    assert output[1].output == output[-1].content[0].text
+    if stream:
+        assert [
+            event.delta
+            for event in events
+            if event.type == "response.output_text.delta"
+            and event.item_id == output[-1].id
+        ] == [output[1].output[:10], output[1].output[10:]]
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -471,12 +524,9 @@ async def test_server_web_search_runs_through_http_backend(
     from langchain_core.messages import AIMessage
 
     class SearchModel(FakeMessagesListChatModel):
-        calls: int = 0
-
         def bind_tools(self, tools, **kwargs):
-            self.calls += 1
             assert tools == [server_tool.web_search]
-            assert kwargs["tool_choice"] == ("required" if self.calls == 1 else "auto")
+            assert kwargs["tool_choice"] == "required"
             return self
 
     model = SearchModel(
@@ -535,19 +585,18 @@ async def test_server_web_search_runs_through_http_backend(
             event.item.type
             for event in events
             if event.type == "response.output_item.done"
+            and getattr(event.item, "phase", None) != "commentary"
         ] == ["web_search_call", "message"]
-        assert [
-            event.delta
-            for event in events
-            if event.type == "response.output_text.delta"
-        ] == [response.output_text]
 
-    assert [item.type for item in response.output] == ["web_search_call", "message"]
-    assert response.output[0].action.query == "OpenAI Responses API"
-    assert response.output_text == (
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == ["web_search_call", "message"]
+    assert output[0].action.query == "OpenAI Responses API"
+    assert output[-1].content[0].text == (
         "See [OpenAI API](https://developers.openai.com/api/) docs."
     )
-    assert response.output[1].content[0].annotations[0].url == (
+    assert output[1].content[0].annotations[0].url == (
         "https://developers.openai.com/api/"
     )
 
@@ -556,6 +605,7 @@ async def test_server_web_search_runs_through_http_backend(
 async def test_server_web_search_can_use_the_upstream_openai_tool(
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
+    make_tool_calling_model,
     stream: bool,
 ) -> None:
     from langchain_core.language_models.fake_chat_models import (
@@ -569,7 +619,7 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
             assert kwargs["tool_choice"] == "required"
             return self
 
-    model = SearchModel(
+    provider = SearchModel(
         responses=[
             AIMessage(
                 content=[
@@ -587,14 +637,40 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
                         "tool_call_id": "ws_demo_provider",
                         "status": "success",
                     },
-                    {"type": "text", "text": "OpenAI docs"},
+                    {
+                        "type": "text",
+                        "text": "Private search summary",
+                        "annotations": [
+                            {
+                                "type": "citation",
+                                "url": "https://developers.openai.com/api/",
+                                "title": "OpenAI API",
+                                "start_index": 0,
+                                "end_index": 6,
+                            },
+                        ],
+                    },
                 ]
             )
         ]
     )
 
+    model = make_tool_calling_model(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_demo_search",
+                    "name": "web_search",
+                    "args": {"query": "OpenAI Responses API"},
+                }
+            ],
+        ),
+        AIMessage(content="See [OpenAI API](https://developers.openai.com/api/)."),
+    )
+    models = iter([model, provider])
     monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
-    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: next(models))
     _rebuild_server_tool_graph(monkeypatch)
 
     response = await openai_client.responses.create(
@@ -609,7 +685,15 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
         events = [event async for event in response]
         response = events[-1].response
 
-    assert [item.type for item in response.output] == ["web_search_call", "message"]
-    assert response.output[0].id == "ws_demo_provider"
-    assert response.output[0].action.query == "OpenAI Responses API"
-    assert response.output_text == "OpenAI docs"
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == ["web_search_call", "message"]
+    assert output[0].action.query == "OpenAI Responses API"
+    assert (
+        output[-1].content[0].text
+        == "See [OpenAI API](https://developers.openai.com/api/)."
+    )
+    assert (
+        output[-1].content[0].annotations[0].url == "https://developers.openai.com/api/"
+    )

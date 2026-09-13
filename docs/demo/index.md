@@ -11,7 +11,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 !!! tip "Watch the demo showcase"
 
-    Watch the [complete demo showcase](https://example.com/otdn) to see
+    Watch the [complete demo showcase](https://go.ilkerflix.com/otdn) to see
     the demo stack in action.
 
 !!! info "Package and demo have different owners"

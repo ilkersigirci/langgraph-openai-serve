@@ -34,7 +34,7 @@ async def test_unknown_timezone_is_actionable() -> None:
     ]
 
 
-async def test_agent_does_not_execute_an_unselected_tool(
+async def test_graph_does_not_execute_an_unselected_tool(
     monkeypatch: pytest.MonkeyPatch, make_tool_calling_model
 ) -> None:
     async def unexpected_search(*args):
@@ -71,8 +71,9 @@ async def test_agent_does_not_execute_an_unselected_tool(
         context=server_tool.context_factory(request, None),
     )
 
-    tool_result = result["messages"][-2]
+    tool_result = next(m for m in result["messages"] if isinstance(m, ToolMessage))
     assert isinstance(tool_result, ToolMessage)
     assert tool_result.status == "error"
     assert tool_result.tool_call_id == "call_unselected"
-    assert "not enabled" in tool_result.text
+    assert "web_search" in tool_result.text
+    assert result["messages"][-1].text == "Search is not enabled."

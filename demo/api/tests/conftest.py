@@ -10,7 +10,7 @@ from langgraph_openai_serve import GraphRequest
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
-    """Deterministic model with the tool-binding surface used by create_agent."""
+    """Deterministic model with the tool-binding surface used by demo graphs."""
 
     def bind_tools(
         self, tools: list[BaseTool], **kwargs: Any
@@ -59,7 +59,7 @@ def make_graph_input() -> Callable[..., tuple[GraphRequest, list[BaseMessage]]]:
 
 @pytest.fixture
 def make_tool_calling_model() -> Callable[..., MockToolCallingChatModel]:
-    """Build a deterministic sequence model for agent tests."""
+    """Build a deterministic sequence model for tool-calling graph tests."""
 
     def _make(*responses: AIMessage) -> MockToolCallingChatModel:
         return MockToolCallingChatModel(responses=list(responses))

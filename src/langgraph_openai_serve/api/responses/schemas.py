@@ -2,7 +2,11 @@
 
 from typing import Annotated, Literal, TypeAlias
 
-from openai.types.responses.response_function_web_search import Action
+from openai.types.responses import (
+    ResponseCustomToolCall as ResponseCustomToolCallInput,
+    ResponseCustomToolCallOutput as ResponseCustomToolCallOutputInput,
+    ResponseFunctionWebSearch as ResponseWebSearchCallInput,
+)
 from openai.types.responses.response_output_text import Annotation
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -118,41 +122,6 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
     created_by: str | None = None
 
 
-class ResponseCustomToolCallInput(_ResponsesRequestModel):
-    """A custom-tool call replayed from a previous Response."""
-
-    call_id: str
-    input: str
-    name: str
-    type: Literal["custom_tool_call"] = "custom_tool_call"
-    id: str | None = None
-    status: Literal["in_progress", "completed", "incomplete"] | None = None
-    caller: None = None
-    namespace: None = None
-    created_by: str | None = None
-
-
-class ResponseCustomToolCallOutputInput(_ResponsesRequestModel):
-    """A custom-tool result replayed from a previous Response."""
-
-    call_id: str
-    output: str
-    type: Literal["custom_tool_call_output"] = "custom_tool_call_output"
-    id: str | None = None
-    status: Literal["in_progress", "completed", "incomplete"] | None = None
-    caller: None = None
-    created_by: str | None = None
-
-
-class ResponseWebSearchCallInput(_ResponsesRequestModel):
-    """A web-search call replayed from a previous Response."""
-
-    id: str
-    action: Action
-    status: Literal["in_progress", "searching", "completed", "failed"]
-    type: Literal["web_search_call"]
-
-
 ResponseInputItem: TypeAlias = (
     ResponseOutputMessageInput
     | ResponseInputMessage
@@ -182,7 +151,7 @@ class ResponseFunctionTool(_ResponsesRequestModel):
 
 
 class ResponseCustomTool(_ResponsesRequestModel):
-    """Select one registered server tool by its native custom-tool name."""
+    """Select one registered server tool with the Responses custom-tool shape."""
 
     type: Literal["custom"]
     name: Annotated[str, Field(min_length=1)]

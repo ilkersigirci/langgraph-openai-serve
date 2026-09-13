@@ -212,9 +212,6 @@ async def _stream_response(
                 continue
             if event.type == "response.incomplete" or event.type == "response.failed":
                 raise_for_response(event.response)
-            if event.type == "response.web_search_call.completed":
-                await commentary_tasks.add("Web search completed.", done=True)
-                continue
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":
                     await commentary_tasks.add(event.text)

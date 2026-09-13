@@ -114,14 +114,15 @@ OpenAI response mode; server tools additionally need intermediate updates.
 
     When `stream=true`, the route returns an SSE response backed by
     `stream_run()`. The runner consumes `custom` and `values`, plus `updates` for
-    requests selecting server tools. It consumes `messages` only for ordinary
-    live text. Only
+    requests selecting server tools. It also consumes `messages` for live text
+    whether or not server tools are selected. Only
     `AIMessageChunk` values from configured streamable nodes become text chunks;
     the list may include nodes in nested subgraphs. Returning a message through
     the graph's `messages` state is not a live-streaming signal.
-    Server-tool requests do not subscribe to message chunks. Their completed
-    updates expose tool activity, and the final root value becomes one answer
-    delta after the tool loop finishes.
+    Root-node updates expose selected tool activity while eligible answer tokens
+    stream immediately; nested updates remain private. Graphs keep intermediate
+    model text private through node
+    selection or the `nostream` tag; tool selection does not disable streaming.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
     events. The final root value supplies durable citations, tool calls, and

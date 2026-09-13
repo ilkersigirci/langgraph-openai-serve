@@ -44,31 +44,25 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
 
 
 class CommentaryTaskList:
-    """Render commentary and completed searches as one native Chainlit task list."""
+    """Render streamed commentary as one native Chainlit task list."""
 
     def __init__(self) -> None:
         self._task_list: cl.TaskList | None = None
         self._active_task: cl.Task | None = None
 
-    async def add(self, content: str, *, done: bool = False) -> None:
-        """Append a status without letting completed tools finish active commentary."""
+    async def add(self, content: str) -> None:
+        """Complete the prior task and append the latest status as running."""
         if not content:
             return
         if self._task_list is None:
             self._task_list = cl.TaskList()
-        if not done and self._active_task is not None:
+        if self._active_task is not None:
             self._active_task.status = cl.TaskStatus.DONE
 
-        task = cl.Task(
-            title=content,
-            status=cl.TaskStatus.DONE if done else cl.TaskStatus.RUNNING,
-        )
+        task = cl.Task(title=content, status=cl.TaskStatus.RUNNING)
         await self._task_list.add_task(task)
-        if not done:
-            self._active_task = task
-        self._task_list.status = (
-            "Running..." if self._active_task is not None else "Done"
-        )
+        self._task_list.status = "Running..."
+        self._active_task = task
         await self._task_list.send()
 
     async def complete(self) -> None:

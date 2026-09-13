@@ -22,7 +22,6 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputRefusal,
     ResponseOutputText,
-    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
 from openai.types.responses.response_output_text import AnnotationURLCitation
@@ -244,9 +243,8 @@ async def test_deployed_bundle_runs_responses_inference(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-@pytest.mark.parametrize("runtime_settings", [{}, {"audience": "expert"}])
 async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
-    bundled_generic, streaming, runtime_settings
+    bundled_generic, streaming
 ):
     openwebui_tools = [
         {
@@ -300,7 +298,6 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
             __metadata__={
                 "chat_id": "thread-123",
                 "chat_variables": {
-                    **runtime_settings,
                     "lgos_current_time": True,
                     "web_search": True,
                 },
@@ -312,10 +309,7 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
         {"type": "custom", "name": "lgos_current_time"},
         {"type": "web_search"},
     ]
-    expected_metadata = {"conversation_id": "thread-123"}
-    if runtime_settings:
-        expected_metadata["lgos_settings"] = '{"audience":"expert"}'
-    assert requests[0]["metadata"] == expected_metadata
+    assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
     assert (
         result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
     ) == "It is noon."
@@ -379,11 +373,7 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
         body(stream=False),
         __metadata__={
             "chat_id": "thread-123",
-            "chat_variables": {
-                "audience": "expert",
-                "lgos_current_time": False,
-                "web_search": True,
-            },
+            "chat_variables": {"audience": "expert"},
         },
         __user__={"id": "user-123"},
     )
@@ -532,12 +522,6 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         [
             commentary,
             commentary_done,
-            ResponseWebSearchCallCompletedEvent(
-                type="response.web_search_call.completed",
-                item_id="ws_123",
-                output_index=1,
-                sequence_number=2,
-            ),
             final_added,
             final_delta,
         ],
@@ -563,10 +547,6 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         {
             "type": "status",
             "data": {"description": "Checking policy", "done": False},
-        },
-        {
-            "type": "status",
-            "data": {"description": "Web search completed.", "done": True},
         },
         {
             "type": "status",

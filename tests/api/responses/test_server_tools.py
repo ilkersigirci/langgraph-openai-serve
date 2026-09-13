@@ -1,9 +1,11 @@
-"""Native Responses contracts for application-executed server tools."""
+"""Responses-compatible contracts for server-executed tools."""
 
 import json
 from typing import Any
 
 import pytest
+from anyio import Event, fail_after
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, MessagesState, StateGraph
@@ -16,7 +18,12 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
+from langgraph_openai_serve.api.responses.request import decode_responses_request
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.api.responses.server_tools import ServerToolTracker
+from langgraph_openai_serve.api.responses.streaming import stream_response
 from langgraph_openai_serve.graph.events import status_event
+from langgraph_openai_serve.graph.utils import prepare_run
 
 CALL = {
     "id": "call_clock",
@@ -44,6 +51,16 @@ WEB_SEARCH = {
     "status": "completed",
     "action": {"type": "search", "query": "OpenAI Responses API"},
 }
+
+
+def test_nested_updates_do_not_expose_server_tool_activity() -> None:
+    event: Any = {
+        "type": "updates",
+        "ns": ("subgraph:run",),
+        "data": {"tools": {"messages": [AIMessage(content="", tool_calls=[CALL])]}},
+    }
+
+    assert list(ServerToolTracker({"clock"}).items(event)) == []
 
 
 def _register_single_node(
@@ -330,9 +347,8 @@ async def test_server_custom_tool_exchange_events_and_replay(
             ]
         }
 
-    async def answer(state: MessagesState):
-        # Parent graph updates may repeat a subgraph's completed messages.
-        return {"messages": [*state["messages"], AIMessage(content="It is noon.")]}
+    async def answer(_state: MessagesState):
+        return {"messages": [AIMessage(content="It is noon.")]}
 
     graph = (
         StateGraph(MessagesState)
@@ -473,7 +489,7 @@ async def test_web_search_output_events_and_replay(
 
 
 @pytest.mark.parametrize("stream", [False, True])
-async def test_provider_web_search_uses_the_same_public_output(
+async def test_provider_native_search_blocks_are_not_public_server_activity(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     stream: bool,
@@ -517,23 +533,21 @@ async def test_provider_web_search_uses_the_same_public_output(
         stream=stream,
     )
 
-    assert [item.type for item in response.output] == ["web_search_call", "message"]
-    assert response.output[0].id == "ws_provider_search"
-    assert response.output[0].action.query == "OpenAI Responses API"
+    assert [item.type for item in response.output] == ["message"]
     assert response.output_text == "OpenAI docs"
     if stream:
-        assert [
+        assert not [
             event.type
             for event in events
             if event.type.startswith("response.web_search_call.")
-        ] == ["response.web_search_call.completed"]
+        ]
 
 
 @pytest.mark.parametrize(
     ("tool_status", "search_status"),
     [("success", "completed"), ("error", "failed")],
 )
-async def test_server_search_streams_one_final_delta_after_tool_updates(
+async def test_server_search_reports_its_terminal_status(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     tool_status: str,
@@ -584,6 +598,76 @@ async def test_server_search_streams_one_final_delta_after_tool_updates(
     )
 
 
+@pytest.mark.parametrize("fail", [False, True])
+async def test_server_answer_streams_before_graph_finishes_and_retains_partial_output(
+    graph_registry: GraphRegistry, fail: bool
+) -> None:
+    finish = Event()
+
+    async def search(_state: MessagesState):
+        get_stream_writer()(status_event("Searching"))
+        return {
+            "messages": [
+                AIMessage(content="Private preamble", tool_calls=[SEARCH_CALL]),
+                ToolMessage(content="Results", tool_call_id="call_search"),
+            ]
+        }
+
+    async def answer(state: MessagesState):
+        message = await FakeListChatModel(responses=["Docs"]).ainvoke(state["messages"])
+        await finish.wait()
+        if fail:
+            message = "Answer finalization failed"
+            raise RuntimeError(message)
+        return {"messages": [message]}
+
+    graph = (
+        StateGraph(MessagesState)
+        .add_node("search", search)
+        .add_node("answer", answer)
+        .set_entry_point("search")
+        .add_edge("search", "answer")
+        .set_finish_point("answer")
+        .compile()
+    )
+    graph_registry.register(
+        "live-search",
+        GraphConfig(
+            graph=graph,
+            description="Live search",
+            server_tools={"web_search"},
+            features={GraphFeature.CLIENT_EVENTS},
+            streamable_node_names=["answer"],
+        ),
+    )
+    request = ResponseCreateRequest(
+        model="live-search", input="Find docs", tools=SEARCH_TOOLS
+    )
+    decoded, messages, _ = decode_responses_request(request, {"web_search"})
+    run = await prepare_run(decoded, messages, graph_registry)
+    events = []
+    with fail_after(5):
+        async for frame in stream_response(request, run):
+            event = json.loads(frame.split("data: ", 1)[1])
+            events.append(event)
+            if event["type"] == "response.output_text.delta" and event["delta"] == "D":
+                # The graph cannot finish until the first answer token reaches us.
+                finish.set()
+
+    assert finish.is_set()
+    terminal = events[-1]
+    assert terminal["type"] == ("response.failed" if fail else "response.completed")
+    response = terminal["response"]
+    assert [item["type"] for item in response["output"]] == [
+        "message",
+        "web_search_call",
+        "message",
+    ]
+    assert response["output"][0]["phase"] == "commentary"
+    assert response["output"][-1]["content"][0]["text"] == "Docs"
+    assert response["output"][-1]["status"] == ("incomplete" if fail else "completed")
+
+
 @pytest.mark.parametrize("stream", [False, True])
 async def test_unfinished_server_execution_fails(
     openai_client: AsyncOpenAI,
@@ -620,3 +704,34 @@ async def test_unfinished_server_execution_fails(
     assert failed.status == "failed"
     assert [item.type for item in failed.output] == ["custom_tool_call"]
     assert failed.output[0].call_id == "call_clock"
+
+
+async def test_repeated_server_tool_call_id_fails(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    async def repeated(_state: MessagesState):
+        result = ToolMessage(content="12:00 +03:00", tool_call_id="call_clock")
+        return {
+            "messages": [
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content="Done."),
+            ]
+        }
+
+    _register_single_node(
+        graph_registry,
+        "clock",
+        repeated,
+        server_tools={"clock"},
+    )
+
+    with pytest.raises(InternalServerError):
+        await openai_client.responses.create(
+            model="clock",
+            input="Time?",
+            tools=CLOCK_TOOLS,
+        )
