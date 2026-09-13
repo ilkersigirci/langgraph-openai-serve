@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from chainlit.context import init_http_context
+from chainlit.user_session import user_sessions
 
 from lgos_chainlit.lgos_protocol import ModelClientSettings
 
@@ -19,6 +21,16 @@ def chainlit_app_root(
 def anyio_backend() -> str:
     """Run the Chainlit test suite on its supported async backend."""
     return "asyncio"
+
+
+@pytest.fixture
+async def chainlit_context():
+    """Own a fresh native session for response rendering and model selection."""
+    context = init_http_context()
+    try:
+        yield context
+    finally:
+        user_sessions.pop(context.session.id, None)
 
 
 @pytest.fixture

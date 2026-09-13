@@ -17,3 +17,4 @@ ui/chainlit_ui/src/lgos_chainlit/.chainlit/*
 
 .marimo.toml
 .env.backup
+.env.sso

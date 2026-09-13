@@ -4,13 +4,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import chainlit as cl
+from chainlit.element import Element
 from chainlit_utils.chat import mark_model_context_excluded
 from openai.types.responses import (
     FunctionToolParam,
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
-    ToolParam,
 )
 from plotly import io as pio
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -41,13 +41,6 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
-
-
-def response_tools(model: str) -> list[ToolParam]:
-    """Supply hosted selectors or function tools for the selected model."""
-    if model.rsplit("/", 1)[-1] == "hosted-tool":
-        return [{"type": "custom", "name": "lgos_current_time"}]
-    return [DISPLAY_FILE_TOOL]
 
 
 class CommentaryTaskList:
@@ -113,14 +106,46 @@ def final_answer(response: Response) -> str:
     for item in response.output:
         if item.type != "message" or item.phase == "commentary":
             continue
-        parts.extend(part.text for part in item.content if part.type == "output_text")
+        parts.extend(
+            part.text if part.type == "output_text" else part.refusal
+            for part in item.content
+        )
     return "".join(parts)
+
+
+def citation_elements(response: Response) -> list[Element]:
+    """Make final-answer URL citations clickable without changing the transcript."""
+    elements: list[Element] = []
+    for item in response.output:
+        if item.type != "message" or item.phase == "commentary":
+            continue
+        for part in item.content:
+            if part.type != "output_text":
+                continue
+            for annotation in part.annotations:
+                if annotation.type != "url_citation":
+                    continue
+                stop = annotation.end_index + 1
+                if 0 <= annotation.start_index < stop <= len(part.text):
+                    elements.append(
+                        cl.Text(
+                            name=part.text[annotation.start_index : stop],
+                            content=f"[Open source](<{annotation.url}>)",
+                            display="side",
+                        )
+                    )
+    return elements
 
 
 def raise_for_response(response: Response) -> None:
     """Only completed Responses may be rendered or continued as successful."""
     if response.status == "completed":
         return
+    if response.status == "incomplete":
+        reason = response.incomplete_details
+        raise RuntimeError(
+            f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
+        )
     detail = response.error
     raise RuntimeError(detail.message if detail is not None else "Response failed.")
 

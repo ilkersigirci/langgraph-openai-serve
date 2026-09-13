@@ -22,6 +22,7 @@ from lgos_chainlit.utils.chat import (
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
+    response_tools,
     streaming_enabled,
 )
 from lgos_chainlit.utils.clients import list_models, model_request, openai_client
@@ -31,13 +32,13 @@ from lgos_chainlit.utils.files import (
 )
 from lgos_chainlit.utils.responses import (
     CommentaryTaskList,
+    citation_elements,
     continuation_input,
     display_file,
     final_answer,
     function_calls,
     raise_for_response,
     response_input,
-    response_tools,
 )
 
 
@@ -125,12 +126,15 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     extra_headers=extra_headers,
                     input=cast("ResponseInputParam", input_items),
                     store=False,
-                    tools=response_tools(upstream_model),
+                    tools=response_tools(),
                     user=user,
                     metadata=metadata,
                 )
 
             raise_for_response(response)
+            assistant_message.elements.extend(
+                cast("list[Any]", citation_elements(response))
+            )
             calls = function_calls(response)
             if not streaming:
                 assistant_message.content += final_answer(response)
@@ -181,12 +185,13 @@ async def _stream_response(
 ) -> Response:
     """Render final text and commentary while retaining the terminal Response."""
     phases: dict[int, str | None] = {}
+    final_text_streamed = False
     async with openai_client.responses.stream(
         model=model,
         extra_headers=extra_headers,
         input=cast("ResponseInputParam", input_items),
         store=False,
-        tools=response_tools(model),
+        tools=response_tools(),
         user=user,
         metadata=metadata,
     ) as stream:
@@ -196,15 +201,27 @@ async def _stream_response(
                 if item.type == "message":
                     phases[event.output_index] = item.phase
                 continue
-            if event.type == "response.output_text.delta":
+            if (
+                event.type == "response.output_text.delta"
+                or event.type == "response.refusal.delta"
+            ):
                 phase = phases.get(event.output_index)
                 if phase != "commentary":
+                    final_text_streamed = True
                     await assistant_message.stream_token(event.delta)
                 continue
+            if event.type == "response.incomplete" or event.type == "response.failed":
+                raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":
                     await commentary_tasks.add(event.text)
                 continue
         completed = await stream.get_final_response()
 
+    if (
+        completed.status == "completed"
+        and not final_text_streamed
+        and (text := final_answer(completed))
+    ):
+        await assistant_message.stream_token(text)
     return cast("Response", completed)

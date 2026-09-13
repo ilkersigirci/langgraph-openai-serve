@@ -327,6 +327,55 @@ async def test_direct_response_skips_retrieval(
     ]
 
 
+@pytest.mark.parametrize(
+    ("relevant", "refusal"),
+    [(True, False), (False, False), (True, True)],
+)
+async def test_retrieval_answer_preserves_provider_content_and_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    relevant: bool,
+    refusal: bool,
+) -> None:
+    async def retrieve_documents(_: str) -> list[Document]:
+        return [_source_document("Use the OpenAI client.", "Second")]
+
+    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
+    _stub_runnable(monkeypatch, "_retrieval_decider", _tool_call("LGOS client"))
+    _stub_runnable(
+        monkeypatch,
+        "_document_grader",
+        lgos_rag_module.GradeDocuments(binary_score="yes" if relevant else "no"),
+    )
+    answer = AIMessage(
+        content=(
+            [{"type": "refusal", "refusal": "I cannot provide that."}]
+            if refusal
+            else ANSWER
+        ),
+        response_metadata={"finish_reason": "stop" if refusal else "length"},
+        usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+    )
+    _stub_runnable(monkeypatch, "_chat_model", answer)
+
+    result = await lgos_rag_module.lgos_rag.ainvoke(
+        {
+            "messages": [HumanMessage(content="How do I use LGOS?")],
+            "rewrite_count": lgos_rag_module.MAX_REWRITES,
+        }
+    )
+
+    final_message = result["messages"][-1]
+    assert final_message.response_metadata["finish_reason"] == (
+        "stop" if refusal else "length"
+    )
+    assert final_message.usage_metadata == answer.usage_metadata
+    if refusal:
+        assert final_message.content_blocks == answer.content_blocks
+    else:
+        assert final_message.text == ANSWER
+        assert len(citations_from_message(final_message)) == int(relevant)
+
+
 async def test_irrelevant_retrieval_rewrites_once_then_stops(
     make_graph_input,
     monkeypatch: pytest.MonkeyPatch,

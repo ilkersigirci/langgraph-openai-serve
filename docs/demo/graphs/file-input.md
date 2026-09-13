@@ -23,8 +23,9 @@ graph TD;
 3. The graph retrieves the filename and bytes from `DEMO_API_FILES_BASE_URL`.
 4. Images become inline `input_image` data URLs. Other files become inline
    `input_file` data URLs with their original filename.
-5. The graph calls `responses.create` and returns `response.output_text` as the
-   assistant message.
+5. LangChain `ChatOpenAI(use_responses_api=True)` calls the Responses API and
+   returns the native assistant message, preserving text, refusals, token usage,
+   and incomplete-response details.
 
 The Responses API accepts Base64 data in `input_file` items. Supported parsing
 depends on the file type; see the official OpenAI
@@ -47,9 +48,9 @@ sequenceDiagram
   Graph->>Files: GET metadata and content
   Files-->>Graph: Filename and bytes
   Graph->>Model: Inline input_file or input_image
-  Model-->>Graph: output_text
-  Graph-->>API: Assistant message
-  API-->>UI: Assistant text
+  Model-->>Graph: Native Response
+  Graph-->>API: Assistant message with provider metadata
+  API-->>UI: Text or refusal and terminal response status
 ```
 
 ## Try It

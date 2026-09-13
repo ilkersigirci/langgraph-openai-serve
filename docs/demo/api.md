@@ -48,8 +48,10 @@ just demo/up lgos-db --wait
     LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
     `DEMO_API_OPENAI_API_KEY`, and `DEMO_API_OPENAI_MODEL`. The
     `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL`. Its corpus is
-    packaged with the API. These settings and dependencies belong to the API
-    project and are not installed with the library.
+    packaged with the API. The `server-tool` graph reads
+    `DEMO_API_WEB_SEARCH_BACKEND` and `DEMO_API_WEB_SEARCH_URL` to choose its
+    web-search execution backend. These settings and dependencies belong to the
+    API project and are not installed with the library.
 
 The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
 the same image as independently addressable `lgos-b` on port 3005; the two

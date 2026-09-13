@@ -85,7 +85,10 @@ def _chat_tool_choice(tool_choice: ClientToolChoice) -> str | dict[str, object]:
             "type": "function",
             "function": {"name": tool_choice.name},
         }
-    return tool_choice
+    if isinstance(tool_choice, str):
+        return tool_choice
+    msg = "This graph only supports client-owned function tools."
+    raise ValueError(msg)
 
 
 workflow = StateGraph(ExternalToolsState)

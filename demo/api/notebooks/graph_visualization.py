@@ -36,13 +36,13 @@ def _():
     from lgos_demo_api.graphs.citations import citation_graph
     from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph
     from lgos_demo_api.graphs.custom_io import custom_io_graph
-    from lgos_demo_api.graphs.hosted_tool import hosted_tool_graph
     from lgos_demo_api.graphs.interruptible import create_interruptible_graph
     from lgos_demo_api.graphs.lgos_rag import lgos_rag
     from lgos_demo_api.graphs.multi_node_streaming import multi_node_streaming_graph
     from lgos_demo_api.graphs.persistent_plot_agent import (
         create_persistent_plot_agent,
     )
+    from lgos_demo_api.graphs.server_tool import server_tool_graph
     from lgos_demo_api.graphs.simple import simple_graph
     from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
     from lgos_demo_api.graphs.status_events import status_event_graph
@@ -62,7 +62,7 @@ def _():
         custom_io_graph,
         lgos_rag,
         multi_node_streaming_graph,
-        hosted_tool_graph,
+        server_tool_graph,
         simple_graph,
         simple_external_tools_graph,
         status_event_graph,
@@ -82,7 +82,7 @@ async def _(
     custom_io_graph,
     lgos_rag,
     multi_node_streaming_graph,
-    hosted_tool_graph,
+    server_tool_graph,
     simple_graph,
     simple_external_tools_graph,
     status_event_graph,
@@ -97,7 +97,7 @@ async def _(
         "multi-node-streaming": multi_node_streaming_graph,
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),
-        "hosted-tool": hosted_tool_graph,
+        "server-tool": server_tool_graph,
         "simple-graph": simple_graph,
         "simple-graph-external-tools": simple_external_tools_graph,
         "lgos-rag": lgos_rag,

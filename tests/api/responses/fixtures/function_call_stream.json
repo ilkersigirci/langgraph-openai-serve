@@ -50,8 +50,7 @@
       "top_logprobs": 0,
       "truncation": "disabled",
       "usage": null,
-      "user": null,
-      "store": false
+      "user": null
     },
     "sequence_number": 0,
     "type": "response.created"
@@ -107,8 +106,7 @@
       "top_logprobs": 0,
       "truncation": "disabled",
       "usage": null,
-      "user": null,
-      "store": false
+      "user": null
     },
     "sequence_number": 1,
     "type": "response.in_progress"
@@ -220,8 +218,7 @@
       "top_logprobs": 0,
       "truncation": "disabled",
       "usage": null,
-      "user": null,
-      "store": false
+      "user": null
     },
     "sequence_number": 6,
     "type": "response.completed"

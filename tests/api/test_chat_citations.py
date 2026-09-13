@@ -135,7 +135,8 @@ async def test_streaming_completion_emits_annotations_on_final_delta(
     assert all("lgos" not in (chunk.model_extra or {}) for chunk in chunks)
 
 
-def test_citation_must_refer_to_final_assistant_text() -> None:
+@pytest.mark.parametrize("trailing_text", ["", " Another text block."])
+def test_citation_must_refer_to_its_own_text_block(trailing_text: str) -> None:
     message = AIMessage(
         content_blocks=[
             create_text_block(
@@ -148,7 +149,8 @@ def test_citation_must_refer_to_final_assistant_text() -> None:
                         end_index=len(ANSWER),
                     )
                 ],
-            )
+            ),
+            create_text_block(text=trailing_text),
         ]
     )
 

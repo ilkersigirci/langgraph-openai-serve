@@ -16,8 +16,11 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
+    ResponseOutputRefusal,
     ResponseOutputText,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
@@ -135,6 +138,15 @@ def install_client(monkeypatch: pytest.MonkeyPatch, **responses: object) -> None
     monkeypatch.setattr(generic_pipe, "_client", lambda **_: FakeClient(**responses))
 
 
+@pytest.fixture
+def bundled_generic(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    source = bundle_function(Path(generic_pipe.__file__).parent)
+    module = ModuleType("bundled_generic")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(compile(source, "<generic>", "exec"), module.__dict__)
+    return module
+
+
 async def test_pipe_lists_native_litellm_model_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -217,17 +229,12 @@ async def test_pipe_uses_bifrost_aggregate_catalog(
 
 
 async def test_deployed_bundle_runs_responses_inference(
-    monkeypatch: pytest.MonkeyPatch,
+    bundled_generic: ModuleType,
 ) -> None:
-    function_dir = Path(generic_pipe.__file__).parent
-    source = bundle_function(function_dir)
-    module = ModuleType("bundled_generic")
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    exec(compile(source, "<generic>", "exec"), module.__dict__)
     create = AsyncMock(return_value=final_response("Bundle answer."))
-    module._client = lambda **_: FakeClient(create=create)
+    bundled_generic._client = lambda **_: FakeClient(create=create)
 
-    result = await module.Pipe().pipe(body(stream=False))
+    result = await bundled_generic.Pipe().pipe(body(stream=False))
 
     assert result == "Bundle answer."
     request = create.await_args.kwargs
@@ -235,18 +242,86 @@ async def test_deployed_bundle_runs_responses_inference(
     assert request["store"] is False
 
 
-async def test_deployed_bundle_runs_non_streaming_interrupt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    function_dir = Path(generic_pipe.__file__).parent
-    source = bundle_function(function_dir)
-    module = ModuleType("bundled_generic")
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    exec(compile(source, "<generic>", "exec"), module.__dict__)
-    create = AsyncMock(return_value=response(interrupt_call()))
-    module._client = lambda **_: FakeClient(create=create)
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
+    bundled_generic, streaming
+):
+    openwebui_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "client_tool",
+                "description": "An OpenWebUI client tool.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    completed = final_response("openai==installed-version")
+    completed.output[:0] = [
+        ResponseCustomToolCall.model_validate(
+            {
+                "type": "custom_tool_call",
+                "id": "ctc_package",
+                "call_id": "call_package",
+                "name": "lgos_package_version",
+                "input": "openai",
+                "status": "completed",
+            }
+        ),
+        ResponseCustomToolCallOutputItem(
+            type="custom_tool_call_output",
+            id="ctco_package",
+            call_id="call_package",
+            status="completed",
+            output="openai==installed-version",
+        ),
+    ]
+    requests = []
 
-    result = await module.Pipe().pipe(body(stream=False))
+    async def create(**request):
+        requests.append(request)
+        return completed
+
+    @asynccontextmanager
+    async def stream(**request):
+        requests.append(request)
+        yield FakeResponseStream([], completed)
+
+    bundled_generic._client = lambda **_: FakeClient(create=create, stream=stream)
+    result = await collect(
+        bundled_generic.Pipe().pipe(
+            {
+                **body(stream=streaming),
+                "model": "generic.lgos-a/server-tool",
+                "tools": openwebui_tools,
+            },
+            __metadata__={
+                "chat_id": "thread-123",
+                "chat_variables": {
+                    "lgos_package_version": True,
+                    "web_search": True,
+                },
+            },
+        )
+    )
+    assert len(requests) == 1
+    assert requests[0]["tools"] == [
+        {"type": "custom", "name": "lgos_package_version"},
+        {"type": "web_search"},
+    ]
+    assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
+    assert (
+        result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
+    ) == "openai==installed-version"
+
+
+async def test_deployed_bundle_runs_non_streaming_interrupt(
+    bundled_generic: ModuleType,
+) -> None:
+    create = AsyncMock(return_value=response(interrupt_call()))
+    bundled_generic._client = lambda **_: FakeClient(create=create)
+
+    result = await bundled_generic.Pipe().pipe(body(stream=False))
 
     assert (
         result["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
@@ -258,7 +333,7 @@ async def test_deployed_bundle_runs_non_streaming_interrupt(
 
 @pytest.mark.parametrize("deltas", [False, True])
 async def test_bundled_stream_keeps_sse_looking_text_as_content(
-    monkeypatch: pytest.MonkeyPatch, deltas: bool
+    bundled_generic: ModuleType, deltas: bool
 ) -> None:
     chunks = ["data: [DONE]", '\n\ndata: {"error":"example"}', "\nStill text."]
     answer = "".join(chunks)
@@ -277,13 +352,9 @@ async def test_bundled_stream_keeps_sse_looking_text_as_content(
     async def scripted_stream(**_: object) -> AsyncIterator[FakeResponseStream]:
         yield FakeResponseStream(events, final_response(answer))
 
-    source = bundle_function(Path(generic_pipe.__file__).parent)
-    module = ModuleType("bundled_generic")
-    monkeypatch.setitem(sys.modules, module.__name__, module)
-    exec(compile(source, "<generic>", "exec"), module.__dict__)
-    module._client = lambda **_: FakeClient(stream=scripted_stream)
+    bundled_generic._client = lambda **_: FakeClient(stream=scripted_stream)
 
-    output = await collect(module.Pipe().pipe(body(stream=True)))
+    output = await collect(bundled_generic.Pipe().pipe(body(stream=True)))
 
     # The host JSON-encodes objects; raw strings beginning with data: bypass it.
     decoded = [ChatCompletionChunk.model_validate(chunk) for chunk in output]
@@ -300,7 +371,10 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 
     result = await pipe.pipe(
         body(stream=False),
-        __metadata__={"chat_id": "thread-123"},
+        __metadata__={
+            "chat_id": "thread-123",
+            "chat_variables": {"audience": "expert"},
+        },
         __user__={"id": "user-123"},
     )
 
@@ -311,7 +385,10 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
     assert request["user"] == "user-123"
-    assert request["metadata"] == {"conversation_id": "thread-123"}
+    assert request["metadata"] == {
+        "conversation_id": "thread-123",
+        "lgos_settings": '{"audience":"expert"}',
+    }
     assert request["tools"][0]["name"] == "display_file"
 
 
@@ -442,7 +519,12 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
         delta="Approved.",
     )
     stream = FakeResponseStream(
-        [commentary, commentary_done, final_added, final_delta],
+        [
+            commentary,
+            commentary_done,
+            final_added,
+            final_delta,
+        ],
         final_response("Approved."),
     )
 
@@ -461,12 +543,99 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
 
     assert len(chunks) == 1
     assert chunks[0]["choices"][0]["delta"]["content"] == "Approved."
-    emit.assert_awaited_once_with(
+    assert [call.args[0] for call in emit.await_args_list] == [
+        {
+            "type": "status",
+            "data": {"description": "Checking policy", "done": False},
+        },
         {
             "type": "status",
             "data": {"description": "Checking policy", "done": True},
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    ("streaming", "send_delta"),
+    [(False, False), (True, False), (True, True)],
+)
+async def test_refusal_is_visible_in_both_response_modes(
+    monkeypatch, streaming, send_delta
+):
+    completed = final_response("")
+    completed.output[0].content = [
+        ResponseOutputRefusal(type="refusal", refusal="Cannot answer this request.")
+    ]
+    events = (
+        [
+            SimpleNamespace(
+                type="response.refusal.delta",
+                output_index=0,
+                delta="Cannot answer this request.",
+            )
+        ]
+        if send_delta
+        else []
+    )
+
+    @asynccontextmanager
+    async def scripted_stream(**_):
+        yield FakeResponseStream(events, completed)
+
+    install_client(
+        monkeypatch, stream=scripted_stream, create=AsyncMock(return_value=completed)
+    )
+    chunks = await collect(generic_pipe.Pipe().pipe(body(stream=streaming)))
+    assert len(chunks) == 1
+    assert (
+        chunks[0]["choices"][0]["delta"]["content"] if streaming else chunks[0]
+    ) == "Cannot answer this request."
+
+
+async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
+    monkeypatch,
+):
+    from openai.types.responses.response import IncompleteDetails
+
+    completed = response(function_call("display_file", {})).model_copy(
+        update={
+            "status": "incomplete",
+            "incomplete_details": IncompleteDetails(reason="max_output_tokens"),
         }
     )
+    events = [
+        SimpleNamespace(
+            type="response.output_item.added",
+            output_index=0,
+            item=SimpleNamespace(type="message", phase="commentary"),
+        ),
+        SimpleNamespace(
+            type="response.output_text.done", output_index=0, text="Making chart"
+        ),
+        SimpleNamespace(type="response.incomplete", response=completed),
+    ]
+
+    @asynccontextmanager
+    async def scripted_stream(**_):
+        stream = FakeResponseStream(events, completed)
+        stream.get_final_response = AsyncMock(
+            side_effect=RuntimeError("No completed response")
+        )
+        yield stream
+
+    install_client(monkeypatch, stream=scripted_stream)
+    display = AsyncMock()
+    monkeypatch.setattr(generic_pipe, "_handle_display_file", display)
+    emit = AsyncMock()
+    chunks = await collect(
+        generic_pipe.Pipe().pipe(body(stream=True), __event_emitter__=emit)
+    )
+    assert "max_output_tokens" in chunks[0]["error"]["detail"]
+    assert [call.args[0]["data"] for call in emit.await_args_list] == [
+        {"description": "Making chart", "done": False},
+        {"description": "Stopped: Making chart", "done": True},
+    ]
+    display.assert_not_awaited()
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -481,7 +650,7 @@ async def test_response_maps_final_answer_annotations_to_persistent_sources(
         url="https://example.com/source",
         title="Example source",
         start_index=text.index(cited_text),
-        end_index=text.index(cited_text) + len(cited_text) - 1,
+        end_index=len(text) - 1,
     )
     final_added = SimpleNamespace(
         type="response.output_item.added",
@@ -554,7 +723,29 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
             "alt": "Q4 is highest.",
         },
     )
-    first = response(*final_response("Here is the chart. ").output, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_package",
+            "call_id": "call_package",
+            "name": "lgos_package_version",
+            "input": "openai",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_package",
+        call_id=server_call.call_id,
+        output="openai==installed-version",
+        status="completed",
+    )
+    first = response(
+        *final_response("Here is the chart. ").output,
+        server_call,
+        server_output,
+        call,
+    )
     expected_output = [
         item.model_dump(mode="json", exclude_none=True) for item in first.output
     ]
@@ -655,6 +846,7 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         *expected_output,
         output,
     ]
+    handle.assert_awaited_once()
     assert handle.await_args.args == (call, emitter, request)
 
 
@@ -1060,21 +1252,3 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
-
-
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos-b/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    from lgos_openwebui.functions.generic.responses import (
-        _responses_request,
-    )
-
-    request = _responses_request(
-        model,
-        [],
-        None,
-        None,
-        provider_routing=False,
-    )
-    assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

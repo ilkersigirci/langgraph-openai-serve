@@ -10,8 +10,12 @@ from .contracts import (
 )
 
 
-def _request_metadata(metadata: dict[str, Any]) -> dict[str, str]:
-    request_metadata = _runtime_settings_metadata(metadata)
+def _request_metadata(
+    metadata: dict[str, Any], *, include_runtime_settings: bool = True
+) -> dict[str, str]:
+    request_metadata = (
+        _runtime_settings_metadata(metadata) if include_runtime_settings else {}
+    )
     chat_id = metadata.get("chat_id")
     if isinstance(chat_id, str) and chat_id:
         request_metadata[CONVERSATION_METADATA_KEY] = chat_id

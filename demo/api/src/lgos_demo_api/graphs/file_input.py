@@ -5,12 +5,18 @@ from collections.abc import Mapping, Sequence
 from mimetypes import guess_type
 from typing import Annotated
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages.content import (
+    ContentBlock,
+    create_file_block,
+    create_image_block,
+    create_text_block,
+)
+from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from openai import AsyncOpenAI
-from openai.types.responses import ResponseInputContentParam
 from pydantic import BaseModel
 
 from lgos_demo_api.settings import settings
@@ -52,11 +58,6 @@ def _file_ids(message: HumanMessage) -> list[str]:
     return file_ids
 
 
-def _data_url(content_type: str, content: bytes) -> str:
-    encoded = b64encode(content).decode("ascii")
-    return f"data:{content_type};base64,{encoded}"
-
-
 async def process_files(state: FileInputState) -> dict[str, list[AIMessage]]:
     """Resolve attached file IDs and send their bytes to OpenAI Responses."""
     message = _latest_human_message(state.messages)
@@ -68,9 +69,7 @@ async def process_files(state: FileInputState) -> dict[str, list[AIMessage]]:
         return {"messages": [AIMessage(content="Attach a file and try again.")]}
 
     prompt = message.text.strip() or DEFAULT_PROMPT
-    input_content: list[ResponseInputContentParam] = [
-        {"type": "input_text", "text": prompt}
-    ]
+    input_content: list[ContentBlock] = [create_text_block(text=prompt)]
 
     async with AsyncOpenAI(
         base_url=settings.FILES_BASE_URL,
@@ -85,31 +84,34 @@ async def process_files(state: FileInputState) -> dict[str, list[AIMessage]]:
             ).partition(";")[0]
             if content_type == "application/octet-stream":
                 content_type = guess_type(metadata.filename)[0] or content_type
-            data_url = _data_url(content_type, await download.aread())
+            encoded = b64encode(await download.aread()).decode("ascii")
             if content_type.startswith("image/"):
                 input_content.append(
-                    {"type": "input_image", "detail": "auto", "image_url": data_url}
+                    create_image_block(base64=encoded, mime_type=content_type)
                 )
             else:
                 input_content.append(
-                    {
-                        "type": "input_file",
-                        "filename": metadata.filename,
-                        "file_data": data_url,
-                    }
+                    create_file_block(
+                        base64=encoded,
+                        mime_type=content_type,
+                        filename=metadata.filename,
+                    )
                 )
 
-    async with AsyncOpenAI(
+    model = ChatOpenAI(
+        model=settings.OPENAI_MODEL,
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
-    ) as model_client:
-        response = await model_client.responses.create(
-            model=settings.OPENAI_MODEL,
-            instructions=INSTRUCTIONS,
-            input=[{"role": "user", "content": input_content}],
-        )
-
-    return {"messages": [AIMessage(content=response.output_text)]}
+        use_responses_api=True,
+        store=False,
+    )
+    response = await model.ainvoke(
+        [
+            SystemMessage(content=INSTRUCTIONS),
+            HumanMessage(content_blocks=input_content),
+        ]
+    )
+    return {"messages": [response]}
 
 
 workflow = StateGraph(FileInputState)
@@ -122,6 +124,7 @@ file_input_graph = workflow.compile()
 file_input_graph_config = GraphConfig(
     graph=file_input_graph,
     description="Analyzes attached files with the OpenAI Responses API.",
+    streamable_node_names=["process_files"],
     features={GraphFeature.FILE_INPUTS},
 )
 

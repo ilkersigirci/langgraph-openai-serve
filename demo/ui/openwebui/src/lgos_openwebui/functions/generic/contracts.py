@@ -28,8 +28,16 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
+SERVER_TOOL_MODEL_NAME = "server-tool"
+PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
+WEB_SEARCH_TOOL_NAME = "web_search"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
+
+
+def is_server_tool_model(model_id: str) -> bool:
+    """Return whether a model is the fixed server-tool showcase."""
+    return model_id.rsplit("/", 1)[-1] == SERVER_TOOL_MODEL_NAME
 
 
 class InterruptCancelled(Exception):

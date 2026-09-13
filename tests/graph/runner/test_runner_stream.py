@@ -3,7 +3,7 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
-from langgraph.types import CustomStreamPart
+from langgraph.types import CustomStreamPart, UpdatesStreamPart
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import (
@@ -162,15 +162,23 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
     assert closed.is_set()
 
 
-async def test_stream_run_preserves_generic_custom_events() -> None:
+async def test_stream_run_preserves_generic_event_order() -> None:
     payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
 
     async def graph_events():
+        yield {
+            "type": "messages",
+            "data": (
+                AIMessageChunk(content="token"),
+                {"langgraph_node": "generate"},
+            ),
+        }
         yield {
             "type": "custom",
             "ns": ("research:task-id",),
             "data": payload,
         }
+        yield {"type": "updates", "ns": (), "data": {"answer": "done"}}
         yield {"type": "values", "ns": (), "data": {"messages": []}}
 
     class Graph:
@@ -185,6 +193,7 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
             graph=lambda: graph,
             description="DUMMY",
             output_to_message=lambda _output: AIMessage(content=""),
+            streamable_node_names=["generate"],
         ),
         graph=graph,
         inputs={},
@@ -193,11 +202,17 @@ async def test_stream_run_preserves_generic_custom_events() -> None:
         run_id=None,
     )
 
-    assert [event async for event in stream_run(run)] == [
+    assert [event async for event in stream_run(run, stream_updates=True)] == [
+        "token",
         CustomStreamPart(
             type="custom",
             ns=("research:task-id",),
             data=payload,
+        ),
+        UpdatesStreamPart(
+            type="updates",
+            ns=(),
+            data={"answer": "done"},
         ),
         AIMessage(content=""),
     ]

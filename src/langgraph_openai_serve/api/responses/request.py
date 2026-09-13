@@ -6,15 +6,18 @@ from langgraph_openai_serve.api.responses.interrupts import parse_responses_resu
 from langgraph_openai_serve.api.responses.messages import convert_responses_input
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseCreateRequest,
+    ResponseCustomTool,
     ResponseFunctionTool,
-    ResponseHostedTool,
+    ResponseTool,
     ResponseToolChoice,
+    ResponseWebSearchTool,
 )
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
 from langgraph_openai_serve.graph.request import (
     ClientFunctionTool,
     ClientToolChoice,
     GraphRequest,
+    NamedCustomToolChoice,
     NamedFunctionToolChoice,
 )
 
@@ -29,6 +32,7 @@ class UnsupportedResponsesRequestError(ValueError):
 
 def decode_responses_request(
     request: ResponseCreateRequest,
+    server_tools: set[str],
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     """Normalize one supported, stateless Responses request."""
     _validate_supported_semantics(request)
@@ -53,11 +57,7 @@ def decode_responses_request(
                 for tool in request.tools or ()
                 if isinstance(tool, ResponseFunctionTool)
             ),
-            hosted_tools=tuple(
-                tool.name
-                for tool in request.tools or ()
-                if isinstance(tool, ResponseHostedTool)
-            ),
+            server_tools=selected_server_tools(request, server_tools),
             tool_choice=_decode_tool_choice(request.tool_choice),
             parallel_tool_calls=request.parallel_tool_calls,
         ),
@@ -73,20 +73,70 @@ def decode_responses_request(
     )
 
 
-def validate_hosted_tools(request: ResponseCreateRequest, supported: set[str]) -> None:
-    """Reject unavailable hosted tools before graph execution or SSE starts."""
-    for index, tool in enumerate(request.tools or ()):
-        if isinstance(tool, ResponseHostedTool) and tool.name not in supported:
-            message = f"Hosted tool '{tool.name}' is not supported by model '{request.model}'."
-            raise UnsupportedResponsesRequestError(message, param=f"tools.{index}.name")
-
-
 def _decode_tool_choice(
     tool_choice: ResponseToolChoice | None,
 ) -> ClientToolChoice | None:
     if tool_choice is None or isinstance(tool_choice, str):
         return tool_choice
+    if tool_choice.type == "custom":
+        return NamedCustomToolChoice(name=tool_choice.name)
     return NamedFunctionToolChoice(name=tool_choice.name)
+
+
+def selected_server_tools(
+    request: ResponseCreateRequest, server_tools: set[str]
+) -> tuple[str, ...]:
+    """Return the registered server tools selected for this response."""
+    if request.tool_choice == "none":
+        return ()
+    return tuple(
+        _tool_name(tool)
+        for tool in request.tools or ()
+        if isinstance(tool, (ResponseCustomTool, ResponseWebSearchTool))
+        and _tool_name(tool) in server_tools
+    )
+
+
+def validate_tools(request: ResponseCreateRequest, server_tools: set[str]) -> None:
+    """Reject unknown server-tool selectors before execution or SSE starts."""
+    declarations: dict[str, str] = {}
+    for index, tool in enumerate(request.tools or ()):
+        name = _tool_name(tool)
+        if isinstance(tool, ResponseFunctionTool) and name in server_tools:
+            expected_type = "web_search" if name == "web_search" else "custom"
+            msg = f"Registered server tool '{name}' must use type '{expected_type}'."
+            raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
+        if isinstance(tool, ResponseCustomTool) and name == "web_search":
+            msg = "The standard web_search tool must use type 'web_search'."
+            raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
+        if isinstance(tool, (ResponseCustomTool, ResponseWebSearchTool)) and (
+            name not in server_tools
+        ):
+            msg = f"Tool '{name}' is not registered by model '{request.model}'."
+            raise UnsupportedResponsesRequestError(
+                msg,
+                param=(
+                    f"tools.{index}.name"
+                    if isinstance(tool, ResponseCustomTool)
+                    else f"tools.{index}.type"
+                ),
+            )
+        if name in declarations:
+            msg = f"Tool '{name}' is declared more than once."
+            raise UnsupportedResponsesRequestError(msg, param="tools")
+        declarations[name] = tool.type
+    choice = request.tool_choice
+    if choice is not None and not isinstance(choice, str):
+        if declarations.get(choice.name) != choice.type:
+            msg = "The named tool_choice must be declared in tools."
+            raise UnsupportedResponsesRequestError(msg, param="tool_choice")
+    elif choice == "required" and not declarations:
+        msg = "tool_choice='required' needs at least one tool."
+        raise UnsupportedResponsesRequestError(msg, param="tool_choice")
+
+
+def _tool_name(tool: ResponseTool) -> str:
+    return tool.type if isinstance(tool, ResponseWebSearchTool) else tool.name
 
 
 def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
@@ -110,5 +160,6 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
 __all__ = [
     "UnsupportedResponsesRequestError",
     "decode_responses_request",
-    "validate_hosted_tools",
+    "selected_server_tools",
+    "validate_tools",
 ]

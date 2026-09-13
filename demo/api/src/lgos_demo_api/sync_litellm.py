@@ -14,6 +14,7 @@ class ModelInfo(BaseModel):
     id: str
     db_model: bool
     lgos: dict[str, JsonValue] | None = None
+    lgos_sync: bool = False
     supports_native_streaming: bool | None = None
 
 
@@ -26,6 +27,15 @@ class Deployments(BaseModel):
     data: list[Deployment]
 
 
+def _is_owned(deployment: Deployment, *, prefix: str) -> bool:
+    """Identify models owned by this sync within the requested namespace."""
+    return (
+        deployment.model_name.startswith(f"{prefix}/")
+        and deployment.model_info.db_model
+        and deployment.model_info.lgos_sync
+    )
+
+
 def sync_models(
     source: httpx.Client,
     gateway: httpx.Client,
@@ -35,7 +45,7 @@ def sync_models(
     api_base: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, str]:
-    """Create missing models and update metadata without changing operator settings."""
+    """Reconcile namespaced LGOS models without changing other deployments."""
     if not prefix or any(char.isspace() or char in "/*" for char in prefix):
         msg = "Model namespace must be non-empty, without whitespace, / or *"
         raise ValueError(msg)
@@ -43,7 +53,7 @@ def sync_models(
     response = source.get("models")
     response.raise_for_status()
     catalog = ModelList.model_validate(response.json())
-    models: list[ModelDetails] = []
+    desired: dict[str, ModelDetails] = {}
     for summary in catalog.data:
         response = source.get(f"models/{quote(summary.id, safe='')}")
         response.raise_for_status()
@@ -51,28 +61,27 @@ def sync_models(
         if model.id != summary.id or model.owned_by != "langgraph-openai-serve":
             msg = f"Invalid model detail for {summary.id}"
             raise ValueError(msg)
-        models.append(model)
+        name = f"{prefix}/{model.id}"
+        if name in desired:
+            msg = f"Duplicate upstream model: {model.id}"
+            raise ValueError(msg)
+        desired[name] = model
 
     response = gateway.get("model/info")
     response.raise_for_status()
     deployments = Deployments.model_validate(response.json()).data
-    # Validate the whole catalog before writing; ambiguous/config-owned names
-    # need an operator decision, not an extra deployment or a guessed target.
+    # Validate every desired name before writing. Ambiguous or independently
+    # managed matches need an operator decision, not a guessed target.
     existing: dict[str, Deployment | None] = {}
-    for model in models:
-        name = f"{prefix}/{model.id}"
+    for name in desired:
         matches = [item for item in deployments if item.model_name == name]
-        if len(matches) > 1 or (matches and not matches[0].model_info.db_model):
-            msg = f"{name}: expected at most one database-backed deployment"
-            raise ValueError(msg)
-        if name in existing:
-            msg = f"Duplicate upstream model: {model.id}"
+        if len(matches) > 1 or (matches and not _is_owned(matches[0], prefix=prefix)):
+            msg = f"{name}: conflicts with ambiguous or non-sync-owned deployment"
             raise ValueError(msg)
         existing[name] = matches[0] if matches else None
 
     results: dict[str, str] = {}
-    for model in models:
-        name = f"{prefix}/{model.id}"
+    for name, model in desired.items():
         current = existing[name]
         # LiteLLM's ModelInfo supplies a random ID and db_model=False when
         # omitted, even on PATCH. Preserve the deployment identity explicitly.
@@ -83,6 +92,7 @@ def sync_models(
             else str(uuid5(NAMESPACE_URL, f"lgos:{name}")),
             "db_model": True,
             "lgos": extension,
+            "lgos_sync": True,
             "supports_native_streaming": True,
         }
         if current is None:
@@ -114,6 +124,18 @@ def sync_models(
                 ).raise_for_status()
         else:
             results[name] = "unchanged"
+
+    for deployment in sorted(
+        deployments, key=lambda item: (item.model_name, item.model_info.id)
+    ):
+        name = deployment.model_name
+        if name in desired or not _is_owned(deployment, prefix=prefix):
+            continue
+        results[name] = "deleted"
+        if not dry_run:
+            gateway.post(
+                "model/delete", json={"id": deployment.model_info.id}
+            ).raise_for_status()
     return results
 
 

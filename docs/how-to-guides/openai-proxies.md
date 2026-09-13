@@ -13,11 +13,13 @@ part of the package.
 Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
 
 - `POST /v1/responses`, including `store: false`, `user`, string-valued
-  `metadata`, and function tools;
+  `metadata`, client function tools, registered custom tools, and `web_search`;
 - typed Responses SSE events, item IDs, output indices, sequence numbers, and
   assistant `phase` values;
 - complete `function_call` items and matching `function_call_output` items for
   stateless tool continuation;
+- complete `custom_tool_call` and `custom_tool_call_output` items for
+  LGOS-executed custom tools;
 - `previous_response_id` plus matching `function_call_output` items for
   interrupt continuation;
 - standard OpenAI error `type`, `param`, and `code` values;
@@ -108,8 +110,8 @@ that route only for provider-specific catalog detail. Responses use native
 Chat Completions remains available for direct compatibility clients running
 simple graphs. If such a client is placed behind a proxy, verify modern tool
 calls, metadata, usage, and stream cancellation separately. Complex features
-such as streaming status commentary, checkpointed persistence, and interrupts
-are exclusive to the Responses API.
+such as streaming status commentary, checkpointed persistence, selecting
+server tools, and interrupts use the Responses API.
 
 ## Request Correlation
 

@@ -225,7 +225,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
         assert response.output_text == (
             "gateway-user asked: Where is the routing boundary?"
         )
-        assert response.store is False
+        assert "store" not in (response.model_extra or {})
         assert response.output[0].phase == "final_answer"
 
         stream = await client.responses.create(

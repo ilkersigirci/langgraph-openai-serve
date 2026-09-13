@@ -1,7 +1,6 @@
 """Agentic RAG graph over the bundled LGOS corpus."""
 
 import asyncio
-import re
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -17,8 +16,6 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.messages.content import create_citation, create_text_block
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
@@ -33,6 +30,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 from pydantic import BaseModel, Field, SecretStr
 
 from lgos_demo_api.settings import settings
+from lgos_demo_api.utils.citations import cite_markdown_links
 
 DOCS_ROOT = Path(__file__).resolve().parents[1] / "corpus"
 DOCS_BASE_URL = (
@@ -232,31 +230,13 @@ def _format_context(documents: list[Document]) -> str:
     )
 
 
-def _answer_message(answer: str, documents: list[Document]) -> AIMessage:
+def _answer_message(answer: AIMessage, documents: list[Document]) -> AIMessage:
     """Cite direct Markdown links that exactly match retrieved source URLs."""
     sources = {
         str(document.metadata["url"]): str(document.metadata["title"])
         for document in documents
     }
-    citations = []
-    for match in re.finditer(
-        r"(?<!!)\[(?P<label>[^]\r\n]+)\]\((?P<url>[^)\r\n]+)\)", answer
-    ):
-        url = match.group("url")
-        title = sources.get(url)
-        if title is None:
-            continue
-        citations.append(
-            create_citation(
-                url=url,
-                title=title,
-                start_index=match.start("label"),
-                end_index=match.end("label") - 1,
-            )
-        )
-    return AIMessage(
-        content_blocks=[create_text_block(text=answer, annotations=citations)]
-    )
+    return cite_markdown_links(answer, sources)
 
 
 @tool(response_format="content_and_artifact")
@@ -415,7 +395,7 @@ async def generate_answer(
             ),
         ]
     )
-    answer = await (prompt | _chat_model() | StrOutputParser()).ainvoke(
+    answer = await (prompt | _chat_model()).ainvoke(
         {
             "question": _original_question(state),
             "query": _retrieval_query(state),
@@ -437,11 +417,11 @@ async def answer_no_results(
             ("human", "Question:\n{question}"),
         ]
     )
-    answer = await (prompt | _chat_model() | StrOutputParser()).ainvoke(
+    answer = await (prompt | _chat_model()).ainvoke(
         {"question": _original_question(state)},
     )
     _emit_status("Answer ready", done=True)
-    return {"messages": [AIMessage(content=answer)]}
+    return {"messages": [answer]}
 
 
 workflow = StateGraph(LgosRagState)

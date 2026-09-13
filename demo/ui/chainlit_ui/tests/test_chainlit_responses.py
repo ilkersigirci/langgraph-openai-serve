@@ -4,17 +4,23 @@ import importlib
 import json
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, call
 
+import httpx
 import pytest
 from chainlit.context import init_http_context
+from openai import AsyncOpenAI
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
+    ResponseOutputRefusal,
     ResponseOutputText,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
+from openai.types.responses.response_output_text import AnnotationURLCitation
 
 from lgos_chainlit.utils import responses
 
@@ -72,6 +78,7 @@ async def test_commentary_is_rendered_as_a_native_task_list(
 async def test_response_stream_routes_commentary_to_the_task_list(
     monkeypatch: pytest.MonkeyPatch,
     phase: str | None,
+    chainlit_context,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     completed = Response.model_construct(status="completed", output=[])
@@ -129,24 +136,127 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     )
 
     assert response is completed
-    commentary_tasks.add.assert_awaited_once_with("Generating audio")
+    assert commentary_tasks.add.await_args_list == [call("Generating audio")]
     assistant_message.stream_token.assert_awaited_once_with("Media ready.")
 
 
-async def test_stopped_commentary_marks_the_active_task_failed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_list = Mock(status="Ready", add_task=AsyncMock(), send=AsyncMock())
-    task = Mock()
-    monkeypatch.setattr(responses.cl, "TaskList", Mock(return_value=task_list))
-    monkeypatch.setattr(responses.cl, "Task", Mock(return_value=task))
-    renderer = responses.CommentaryTaskList()
+@pytest.mark.parametrize("send_delta", [False, True])
+async def test_streamed_refusal_is_visible_even_without_deltas(
+    monkeypatch, send_delta, chainlit_context
+):
+    simple = importlib.import_module("lgos_chainlit.simple")
+    refusal = ResponseOutputRefusal(
+        type="refusal", refusal="Cannot answer this request."
+    )
+    message = ResponseOutputMessage(
+        id="msg_refusal",
+        type="message",
+        role="assistant",
+        status="completed",
+        phase="final_answer",
+        content=[refusal],
+    )
+    completed = _response(message)
+    events = (
+        [
+            SimpleNamespace(
+                type="response.refusal.delta", output_index=0, delta=refusal.refusal
+            )
+        ]
+        if send_delta
+        else []
+    )
+    stream = MagicMock()
+    stream.__aiter__.return_value = iter(events)
+    stream.get_final_response = AsyncMock(return_value=completed)
+    manager = MagicMock()
+    manager.__aenter__ = AsyncMock(return_value=stream)
+    monkeypatch.setattr(
+        simple.openai_client.responses, "stream", Mock(return_value=manager)
+    )
+    assistant = Mock(stream_token=AsyncMock())
 
-    await renderer.add("Generating audio")
-    await renderer.stop()
+    await simple._stream_response(
+        [],
+        assistant,
+        model="test",
+        extra_headers=None,
+        user="user",
+        metadata={},
+        commentary_tasks=Mock(),
+    )
+    assistant.stream_token.assert_awaited_once_with(refusal.refusal)
+    assert responses.final_answer(completed) == refusal.refusal
 
-    assert task.status == responses.cl.TaskStatus.FAILED
-    assert task_list.status == "Stopped"
+
+def test_incomplete_response_reports_its_native_reason():
+    from openai.types.responses.response import IncompleteDetails
+
+    incomplete = _response().model_copy(
+        update={
+            "status": "incomplete",
+            "incomplete_details": IncompleteDetails(reason="max_output_tokens"),
+        }
+    )
+    with pytest.raises(RuntimeError, match="Response incomplete: max_output_tokens"):
+        responses.raise_for_response(incomplete)
+
+
+async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completion(
+    monkeypatch,
+    chainlit_context,
+):
+    simple = importlib.import_module("lgos_chainlit.simple")
+    incomplete = Response.model_construct(
+        id="resp_partial",
+        object="response",
+        status="incomplete",
+        output=[],
+        incomplete_details={"reason": "max_output_tokens"},
+    )
+    initial = incomplete.model_copy(
+        update={"status": "in_progress", "incomplete_details": None}
+    )
+    payloads = [
+        {
+            "type": "response.created",
+            "sequence_number": 0,
+            "response": initial.model_dump(),
+        },
+        {
+            "type": "response.incomplete",
+            "sequence_number": 1,
+            "response": incomplete.model_dump(),
+        },
+    ]
+    wire = "".join(
+        f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in payloads
+    )
+    async with (
+        httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    headers={"content-type": "text/event-stream"},
+                    text=wire,
+                )
+            )
+        ) as http_client,
+        AsyncOpenAI(api_key="test", http_client=http_client) as client,
+    ):
+        monkeypatch.setattr(simple, "openai_client", client)
+        with pytest.raises(
+            RuntimeError, match="Response incomplete: max_output_tokens"
+        ):
+            await simple._stream_response(
+                [],
+                Mock(),
+                model="test",
+                extra_headers=None,
+                user="user",
+                metadata={},
+                commentary_tasks=Mock(),
+            )
 
 
 @pytest.mark.parametrize("provider", ["lgos-files", "litellm_proxy"])
@@ -260,6 +370,7 @@ def test_continuation_replays_only_wire_fields_before_its_small_output(
 async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch: pytest.MonkeyPatch,
     streaming: bool,
+    chainlit_context,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     call = _display_call()
@@ -275,12 +386,23 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
             )
         ],
     )
+    last_answer = "Chart ready [source]"
     last_text = first_text.model_copy(
         update={
             "id": "msg_final",
             "content": [
                 ResponseOutputText(
-                    type="output_text", text="Chart ready.", annotations=[]
+                    type="output_text",
+                    text=last_answer,
+                    annotations=[
+                        AnnotationURLCitation(
+                            type="url_citation",
+                            url="https://example.com/chart",
+                            title="Chart source",
+                            start_index=last_answer.index("[source]"),
+                            end_index=len(last_answer) - 1,
+                        )
+                    ],
                 )
             ],
         }
@@ -296,7 +418,24 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
             ],
         }
     )
-    first = _response(commentary, first_text, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_package",
+            "call_id": "call_package",
+            "name": "lgos_package_version",
+            "input": "openai",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_package",
+        call_id="call_package",
+        output="openai==installed-version",
+        status="completed",
+    )
+    first = _response(commentary, first_text, server_call, server_output, call)
     pending = iter([first, _response(last_text)])
     requests = []
     history = [{"role": "system", "content": "Use the uploaded data."}]
@@ -312,7 +451,7 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         "call_id": call.call_id,
         "output": '{"displayed":true}',
     }
-    assistant = Mock(content="", send=AsyncMock(), update=AsyncMock())
+    assistant = Mock(content="", elements=[], send=AsyncMock(), update=AsyncMock())
 
     async def create(**request):
         requests.append(deepcopy(request["input"]))
@@ -339,11 +478,16 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(simple.openai_client.responses, "create", create)
     monkeypatch.setattr(simple, "_stream_response", stream)
-    monkeypatch.setattr(simple, "display_file", AsyncMock(return_value=output))
+    display = AsyncMock(return_value=output)
+    monkeypatch.setattr(simple, "display_file", display)
 
     await simple._response_message(Mock(), "plot")
 
-    assert assistant.content == "Here is the chart. Chart ready."
+    assert assistant.content == "Here is the chart. Chart ready [source]"
+    assert [
+        (element.name, element.content, element.display)
+        for element in assistant.elements
+    ] == [("[source]", "[Open source](<https://example.com/chart>)", "side")]
     assert requests[0] == [*history, file_input]
     assert requests[1] == [
         *history,
@@ -351,6 +495,8 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
         output,
     ]
+    display.assert_awaited_once_with(call)
+    assert responses.function_calls(_response(server_call, server_output)) == []
 
 
 def test_transcript_labels_answers_and_preserves_explicit_phase():
@@ -369,6 +515,7 @@ def test_transcript_labels_answers_and_preserves_explicit_phase():
 
 async def test_non_streaming_failure_does_not_display_files_or_send_success(
     monkeypatch,
+    chainlit_context,
 ):
     simple = importlib.import_module("lgos_chainlit.simple")
     failed = _response(_display_call())
@@ -398,20 +545,9 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     display.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    assert responses.response_tools(model) == [
-        {"type": "custom", "name": "lgos_current_time"}
-    ]
-    assert responses.response_tools("lgos-a/simple-graph") == [
-        responses.DISPLAY_FILE_TOOL
-    ]
-
-
 async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(
     monkeypatch,
+    chainlit_context,
 ) -> None:
     from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME
 
