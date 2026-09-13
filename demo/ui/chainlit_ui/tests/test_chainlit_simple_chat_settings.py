@@ -155,7 +155,55 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
     session.values["chat_settings"][chat_settings.PACKAGE_VERSION_SETTING_ID] = False
     assert chat_settings.response_tools() == [{"type": "web_search"}]
     session.values["chat_profile"] = "simple"
+    assert chat_settings.response_tools() == []
+    session.values["chat_profile"] = "provider/persistent-plot-agent"
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
+
+
+async def test_advanced_graph_separates_web_search_from_runtime_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    advanced_settings = ModelClientSettings.model_validate(
+        {
+            "schema_version": 1,
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "save_note": {
+                        "type": "boolean",
+                        "title": "Save a research note",
+                    }
+                },
+            },
+            "defaults": {"save_note": False},
+        }
+    )
+    session = Session(
+        {
+            "chat_profile": "lgos-a/advanced-graph",
+            "chat_settings": {"web_search": True, "save_note": True},
+        }
+    )
+    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(
+        chat_settings,
+        "retrieve_model",
+        AsyncMock(return_value=configured_model(advanced_settings)),
+    )
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+
+    await chat_settings.configure_chat_settings()
+
+    assert [widget.id for widget in factory.call_args.args[0]] == [
+        chat_settings.STREAMING_SETTING_ID,
+        chat_settings.WEB_SEARCH_SETTING_ID,
+        "save_note",
+    ]
+    assert chat_settings.response_tools() == [{"type": "web_search"}]
+    assert chat_settings.chat_settings_metadata() == {
+        "lgos_settings": '{"save_note":true}'
+    }
 
 
 async def test_chat_profiles_use_list_capabilities_for_file_uploads(
@@ -364,7 +412,7 @@ async def test_selected_settings_reach_the_openai_request(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[DISPLAY_FILE_TOOL],
+        tools=[],
         user="demo-user",
         metadata={
             "lgos_settings": (
@@ -423,7 +471,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[DISPLAY_FILE_TOOL],
+        tools=[],
         user="demo-user",
         metadata={
             "lgos_settings": '{"mode":"detailed"}',

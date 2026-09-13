@@ -24,10 +24,12 @@ LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
 The generated `server-tool` models add fixed **Package version** and **Web
-search** Chat Variable checkboxes. The Pipe maps enabled boxes to a name-only
-`{"type":"custom","name":"lgos_package_version"}` declaration and
-`{"type":"web_search"}`; the names are client constants, not discovered
-metadata. The server registry determines which names execute in LGOS.
+search** Chat Variable checkboxes. Generated `advanced-graph` models add **Web
+search** alongside **Save a research note**. The Pipe maps enabled tool boxes to
+a name-only `{"type":"custom","name":"lgos_package_version"}` declaration or
+`{"type":"web_search"}`; it keeps them out of `metadata.lgos_settings`. The
+names are client constants, not discovered metadata. The server registry
+determines which names execute in LGOS.
 The Pipe executes only native `function_call` items. Server custom calls and
 searches have distinct native types and are already complete.
 When `lgos-a/simple-graph` is available with valid metadata, sync also creates
@@ -39,6 +41,10 @@ Select **LGOS / ... / server-tool**, open the Chat Variables control beside the
 chat input, and enable **Package version**, **Web search**, or both. The
 checkboxes default to off and their values belong to the chat. LGOS executes
 the selected tools server-side without a client-tool continuation.
+
+For **LGOS / ... / advanced-graph**, the same control contains **Web search**
+and **Save a research note**. Search is sent as a standard Responses tool;
+note-saving remains graph settings metadata.
 
 ## Simple Per-User Settings
 
@@ -157,7 +163,9 @@ graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
 demo to process an attachment. The Generic
 Function receives non-image attachments through Open WebUI's documented
 [`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
-argument and image bytes from their base64 `image_url` content. In the pinned
+argument and image bytes from their base64 `image_url` content. Raw uploads can
+omit the documented hydrated `file.path`; the Function then reads the original
+bytes through Open WebUI's authenticated file-content endpoint. In the pinned
 release, `__metadata__["user_message"]` identifies the message that started this
 turn. Because `__files__` also includes files from earlier turns, the Function
 intersects it with that current message, uploads each current attachment's
@@ -333,6 +341,13 @@ The deliberately small UI profile is an object containing a non-empty
 **Other** input. This is a demo-client presentation convention, not an LGOS
 payload restriction. Responses carries each resume value as a string, and this
 adapter maps Open WebUI choices and free-form answers directly to those strings.
+
+The [advanced graph](graphs/advanced-graph.md) includes exact note bytes in its
+review payload. When details exceed the native question's 500-character limit,
+the Pipe renders the complete payload above the question card; nothing is
+truncated from the saved interrupt cursor. Knowledge citations remain ordinary
+answer text with filenames and provider file IDs. The Pipe does not add a
+knowledge-base selector or bridge the demo S3 Files namespace.
 
 After the user answers, the Pipe decodes the paused Response ID and original
 calls from the opaque cursor. It sends the Response ID as `previous_response_id`

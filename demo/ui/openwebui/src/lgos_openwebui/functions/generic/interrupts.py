@@ -149,13 +149,29 @@ def _interrupts_to_ask_user(
     streaming: bool = False,
 ) -> dict[str, Any]:
     """Present one atomic LGOS interrupt batch as one native question card."""
-    cursor = InterruptCursor(previous_response_id=response_id, calls=calls)
+    payloads = [_interrupt_payload(call) for call in calls]
     questions = [
-        _interrupt_question(_interrupt_payload(call), index)
-        for index, call in enumerate(cursor.calls)
+        _interrupt_question(payload, index) for index, payload in enumerate(payloads)
     ]
+    cursor = InterruptCursor(
+        previous_response_id=response_id,
+        calls=[
+            call.model_copy(
+                update={
+                    "arguments": json.dumps(
+                        {
+                            "choices": payload["choices"],
+                            "allow_other": payload.get("allow_other", False),
+                        },
+                        separators=(",", ":"),
+                    )
+                }
+            )
+            for call, payload in zip(calls, payloads, strict=True)
+        ],
+    )
     # The Pipe host only returns its native ask-user call and answer on resume.
-    # Persist the upstream IDs here so reconnects need no separate state store.
+    # Persist only upstream IDs and answer mappings here; review data can be large.
     encoded = cursor.model_dump_json(exclude_none=True).encode()
     result = {
         "id": ASK_USER_CALL_ID_PREFIX
@@ -194,13 +210,18 @@ def _openwebui_interrupt_chunk(
             {
                 "index": 0,
                 "delta": {
+                    **(
+                        {"content": details}
+                        if (details := _interrupt_review_details(calls))
+                        else {}
+                    ),
                     "tool_calls": [
                         _interrupts_to_ask_user(
                             response_id,
                             calls,
                             streaming=True,
                         )
-                    ]
+                    ],
                 },
                 "finish_reason": "tool_calls",
             }
@@ -215,6 +236,8 @@ def _openwebui_interrupt_completion(
     content: str = "",
 ) -> dict[str, Any]:
     ask_user = _interrupts_to_ask_user(response_id, calls)
+    if details := _interrupt_review_details(calls):
+        content = f"{content}\n\n{details}".strip()
     output: list[dict[str, Any]] = []
     if content:
         output.append(
@@ -296,6 +319,10 @@ def _interrupt_question(payload: object, index: int) -> dict[str, Any]:
     prompt = question.strip()
     if details:
         prompt = f"{prompt}\n\n{json.dumps(details, ensure_ascii=False, indent=2)}"
+        if len(prompt) > ASK_USER_QUESTION_MAX_LENGTH:
+            prompt = (
+                question.strip() + "\n\nReview the full details above before choosing."
+            )
     if len(prompt) > ASK_USER_QUESTION_MAX_LENGTH:
         msg = (
             "Open WebUI interrupt question exceeds "
@@ -312,6 +339,26 @@ def _interrupt_question(payload: object, index: int) -> dict[str, Any]:
         ],
         "allow_other": allow_other,
     }
+
+
+def _interrupt_review_details(calls: list[ResponseFunctionToolCall]) -> str:
+    """Keep full review data visible outside the native card's 500-char limit."""
+    sections = []
+    for call in calls:
+        payload = _interrupt_payload(call)
+        details = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"question", "choices", "allow_other"}
+        }
+        encoded = json.dumps(details, ensure_ascii=False, indent=2)
+        question = str(payload.get("question", ""))
+        if (
+            details
+            and len(question.strip() + "\n\n" + encoded) > ASK_USER_QUESTION_MAX_LENGTH
+        ):
+            sections.append(f"{question}\n\n```json\n{encoded}\n```")
+    return "\n\n".join(sections)
 
 
 def _resume_value(answer: object, payload: object) -> str:

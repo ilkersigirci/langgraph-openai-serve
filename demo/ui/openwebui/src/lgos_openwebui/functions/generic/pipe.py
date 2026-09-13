@@ -19,10 +19,12 @@ from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
+    WEB_SEARCH_TOOL_NAME,
     InterruptCancelled,
     PipeChunk,
     PipeResponse,
     is_server_tool_model,
+    supports_web_search,
 )
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
@@ -146,7 +148,7 @@ class Pipe:
         try:
             metadata = __metadata__ or {}
             model_id, input_items, previous_response_id = await self._request_input(
-                body, __metadata__, __files__
+                body, __metadata__, __files__, __request__
             )
             gateway = self._gateway()
             request = _responses_request(
@@ -155,6 +157,9 @@ class Pipe:
                 _request_metadata(
                     metadata,
                     include_runtime_settings=not is_server_tool_model(model_id),
+                    excluded_runtime_settings=(
+                        {WEB_SEARCH_TOOL_NAME} if supports_web_search(model_id) else ()
+                    ),
                 ),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
@@ -264,6 +269,7 @@ class Pipe:
         body: dict[str, Any],
         metadata: dict[str, Any] | None,
         files: list[dict[str, Any]] | None,
+        request: Any,
     ) -> tuple[str, list[dict[str, Any]], str | None]:
         model_id = _model_id(body)
         gateway = self._gateway()
@@ -280,6 +286,7 @@ class Pipe:
             messages,
             files,
             metadata,
+            request,
             base_url=gateway.files_base_url,
             api_key=self.valves.OPENAI_GATEWAY_API_KEY,
             timeout=self.valves.OPENAI_API_TIMEOUT,

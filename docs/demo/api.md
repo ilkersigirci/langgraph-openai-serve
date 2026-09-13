@@ -51,7 +51,9 @@ just demo/up lgos-db --wait
     packaged with the API. The `server-tool` graph reads
     `DEMO_API_WEB_SEARCH_BACKEND` and `DEMO_API_WEB_SEARCH_URL` to choose its
     web-search execution backend. These settings and dependencies belong to the
-    API project and are not installed with the library.
+    API project and are not installed with the library. `advanced-graph` can
+    connect separately to an OpenAI-compatible vector service; document search
+    and note saving need `DEMO_API_VECTOR_STORE_ID`.
 
 The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
 the same image as independently addressable `lgos-b` on port 3005; the two
@@ -181,6 +183,97 @@ for event in stream:
 See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
 refusal differs from an incomplete response and which terminal events clients
 must handle.
+
+## Advanced Research And Note Review
+
+The [advanced graph](graphs/advanced-graph.md) is Responses-only. It can use a
+real web-search backend and an optional private knowledge base. Configure the
+knowledge base independently from the model provider:
+
+```dotenv
+DEMO_API_VECTOR_STORE_BASE_URL=https://api.openai.com/v1
+DEMO_API_VECTOR_STORE_API_KEY=...
+DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME=
+DEMO_API_VECTOR_STORE_ID=vs_...
+```
+
+Omit the vector base URL to reuse the model endpoint; its key also falls back to
+the model key. An explicit vector base URL never inherits the model key: set its
+own key, or leave it blank to use `DUMMY` for an unauthenticated local service.
+The service must expose compatible Files and vector-store upload, polling, and
+search endpoints. This can point to OpenAI today or a future LGOS vector
+service. Without a vector-store ID, plain answers and web search still work,
+while `save_note=true` is rejected.
+
+If a Bifrost passthrough has multiple OpenAI keys, set
+`DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` so every stateful vector-store request
+uses the same managed key. Leave it blank for direct OpenAI and other compatible
+services.
+
+```python title="Read-only research with live status and answer streaming"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
+with client.responses.stream(
+    model="advanced-graph",
+    input="Explain durable LangGraph interrupts using our notes and current official docs.",
+    tools=[{"type": "web_search"}],
+    store=False,
+) as stream:
+    for event in stream:
+        if event.type == "response.output_text.delta":
+            print(event.delta, end="", flush=True)
+    result = stream.get_final_response()
+print("\nOutcome:", result.status, result.incomplete_details)
+```
+
+Private document search is graph-internal and becomes available when the server
+has a vector store configured. Clients do not send a new `file_search` tool:
+LGOS's public Responses contract is unchanged. Add `web_search` to make public
+research available, or use `tool_choice="none"` to disable all search. Status
+text is emitted as commentary; rich clients can use each message's `phase` to
+render it separately from the final answer.
+
+```python title="Review exact note bytes before saving"
+import json
+
+settings = {"lgos_settings": '{"save_note":true}'}
+result = client.responses.create(
+    model="advanced-graph",
+    input="Research LangGraph interrupt durability and prepare a note for our library.",
+    tools=[{"type": "web_search"}],
+    metadata=settings,
+    store=False,
+)
+while calls := [
+    item for item in result.output
+    if item.type == "function_call" and item.name == "lgos_interrupt"
+]:
+    for call in calls:
+        print(json.dumps(json.loads(call.arguments), indent=2))
+    decision = input("approve, reject, or revision feedback: ")
+    result = client.responses.create(
+        model="advanced-graph",
+        previous_response_id=result.id,
+        input=[
+            {"type": "function_call_output", "call_id": call.call_id, "output": decision}
+            for call in calls
+        ],
+        tools=[{"type": "web_search"}],
+        metadata=settings,
+        store=False,
+    )
+print(result.status, result.output_text)
+```
+
+Review arguments include the full content and destination. No file is uploaded
+on rejection, and revision feedback produces a new approval request. Send the
+decision as a plain string, not a JSON-encoded string. Keep the current response
+ID and resend settings/tools on resume, including after an API restart. Both
+initial and resumed requests also support `stream=True`.
+
+See [storage boundaries](graphs/advanced-graph.md#storage-boundaries) for
+checkpoint, upload, and indexing behavior.
 
 ## Try A Demo Client
 

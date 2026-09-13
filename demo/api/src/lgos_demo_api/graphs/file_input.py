@@ -1,15 +1,11 @@
 """File-input graph backed by the central demo Files service."""
 
-from base64 import b64encode
 from collections.abc import Mapping, Sequence
-from mimetypes import guess_type
 from typing import Annotated
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.messages.content import (
     ContentBlock,
-    create_file_block,
-    create_image_block,
     create_text_block,
 )
 from langchain_openai import ChatOpenAI
@@ -20,6 +16,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from lgos_demo_api.settings import settings
+from lgos_demo_api.utils.file_inputs import load_file_block
 
 DEFAULT_PROMPT = "Describe the attached file."
 INSTRUCTIONS = "Answer the user's request using the attached files."
@@ -77,26 +74,7 @@ async def process_files(state: FileInputState) -> dict[str, list[AIMessage]]:
         max_retries=0,
     ) as files_client:
         for file_id in file_ids:
-            metadata = await files_client.files.retrieve(file_id)
-            download = await files_client.files.content(file_id)
-            content_type = download.response.headers.get(
-                "content-type", "application/octet-stream"
-            ).partition(";")[0]
-            if content_type == "application/octet-stream":
-                content_type = guess_type(metadata.filename)[0] or content_type
-            encoded = b64encode(await download.aread()).decode("ascii")
-            if content_type.startswith("image/"):
-                input_content.append(
-                    create_image_block(base64=encoded, mime_type=content_type)
-                )
-            else:
-                input_content.append(
-                    create_file_block(
-                        base64=encoded,
-                        mime_type=content_type,
-                        filename=metadata.filename,
-                    )
-                )
+            input_content.append(await load_file_block(files_client, file_id))
 
     model = ChatOpenAI(
         model=settings.OPENAI_MODEL,

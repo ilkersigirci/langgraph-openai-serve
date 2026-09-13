@@ -25,6 +25,7 @@ nav = [
     { "Run the Files API" = "demo/files-api.md" },
     { "Example Graphs" = [
       "demo/graphs/index.md",
+      { "Advanced Graph" = "demo/graphs/advanced-graph.md" },
       { "Core Graph Patterns" = "demo/graphs/core-patterns.md" },
       { "Server Tool" = "demo/graphs/server-tool.md" },
       { "File Input" = "demo/graphs/file-input.md" },

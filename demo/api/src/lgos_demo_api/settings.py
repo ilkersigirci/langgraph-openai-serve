@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
+    VECTOR_STORE_BASE_URL: str | None = None
+    VECTOR_STORE_API_KEY: str | None = None
+    VECTOR_STORE_BIFROST_KEY_NAME: str | None = None
+    VECTOR_STORE_ID: str | None = None
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"

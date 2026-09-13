@@ -425,6 +425,34 @@ def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
     ]
 
 
+def test_advanced_graph_workspace_model_adds_web_search_to_graph_settings() -> None:
+    client = _client([])
+    save_note = {
+        "key": "save_note",
+        "type": "checkbox",
+        "label": "Save a research note",
+        "default": False,
+    }
+    spec = WorkspaceModelSpec(
+        id="lgos-a/advanced-graph",
+        description="Advanced graph",
+        fields=(save_note,),
+    )
+
+    sync_workspace_models(client, (spec,))
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
+        save_note,
+        {
+            "key": "web_search",
+            "type": "checkbox",
+            "label": "Web search",
+            "default": False,
+        },
+    ]
+
+
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(id="proxy-model", fields=())

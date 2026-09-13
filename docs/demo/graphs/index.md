@@ -7,6 +7,7 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
+| [`advanced-graph`](advanced-graph.md) | Real web and document research, cited streaming answers, and approval before saving a searchable note | `client_events`, `file_inputs`, `interrupts` | Responses model, OpenAI-compatible vector service, and PostgreSQL |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
@@ -28,8 +29,9 @@ PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 
 `persistent-plot-agent` stores application data with a LangGraph Store.
-`interruptible-approval` checkpoints graph execution. Neither mechanism makes
-LGOS the owner of UI conversation history.
+`interruptible-approval` checkpoints graph execution. `advanced-graph` uses both:
+checkpoints for human review and Store receipts for vector-service uploads. None
+makes LGOS the owner of UI conversation history.
 
 ## Source Map
 

@@ -9,11 +9,13 @@ needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
 The `server-tool` profile has fixed opt-in switches for `lgos_package_version`
-and `web_search`. Chainlit knows these public names and includes only selected
-tools in the native Responses `tools` array; it does not discover them from
-model metadata. Package lookup uses a name-only custom declaration, while
-search uses `{"type":"web_search"}`. LGOS completes selected server tools inside
-the same Response, so Chainlit executes only returned `function_call` items.
+and `web_search`; `advanced-graph` has the same **Web search** switch alongside
+its discovered graph settings. Chainlit knows these public names and includes
+only selected tools in the native Responses `tools` array; it does not discover
+them from model metadata. Package lookup uses a name-only custom declaration,
+while search uses `{"type":"web_search"}`. LGOS completes selected server tools
+inside the same Response, so Chainlit executes only returned `function_call`
+items.
 Native URL-citation annotations become
 clickable Chainlit source elements containing Markdown links, without changing
 the replayed answer text.
@@ -375,6 +377,12 @@ and a small custom element. Choice buttons and the allowed free-text field submi
 one `{resume: ...}` value, so the client depends only on the standard tool-call
 batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md).
+
+The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
+note uploads. The payload displays the exact note content and destination before
+approval. Knowledge citations stay in the answer as filenames and provider file
+IDs; the default S3 Files connection is not a bridge to the graph's configured
+vector service.
 
 ![Chainlit human review form with approve, reject, and custom-response controls](../static/hitl_chainlit.png)
 

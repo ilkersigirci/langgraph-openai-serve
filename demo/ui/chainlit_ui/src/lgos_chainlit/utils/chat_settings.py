@@ -29,6 +29,8 @@ MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
 STREAMING_SETTING_ID = "lgos_chainlit_stream"
 PACKAGE_VERSION_SETTING_ID = "lgos_package_version"
 WEB_SEARCH_SETTING_ID = "web_search"
+WEB_SEARCH_PROFILES = {"advanced-graph", "server-tool"}
+DISPLAY_FILE_PROFILES = {"persistent-plot-agent"}
 PACKAGE_VERSION_TOOL: CustomToolParam = {
     "type": "custom",
     "name": PACKAGE_VERSION_SETTING_ID,
@@ -50,21 +52,22 @@ async def configure_chat_settings() -> None:
         )
     ]
     if _is_server_tool_profile(model_id):
-        widgets.extend(
-            [
-                Switch(
-                    id=PACKAGE_VERSION_SETTING_ID,
-                    label="Package version",
-                    description="Let LGOS inspect selected server package versions.",
-                    initial=_selected(candidates, PACKAGE_VERSION_SETTING_ID),
-                ),
-                Switch(
-                    id=WEB_SEARCH_SETTING_ID,
-                    label="Web search",
-                    description="Let LGOS use its configured web-search backend.",
-                    initial=_selected(candidates, WEB_SEARCH_SETTING_ID),
-                ),
-            ]
+        widgets.append(
+            Switch(
+                id=PACKAGE_VERSION_SETTING_ID,
+                label="Package version",
+                description="Let LGOS inspect selected server package versions.",
+                initial=_selected(candidates, PACKAGE_VERSION_SETTING_ID),
+            )
+        )
+    if _supports_web_search(model_id):
+        widgets.append(
+            Switch(
+                id=WEB_SEARCH_SETTING_ID,
+                label="Web search",
+                description="Let LGOS use its configured web-search backend.",
+                initial=_selected(candidates, WEB_SEARCH_SETTING_ID),
+            )
         )
     _store_runtime_settings_defaults(None)
     _store_model_features(None)
@@ -109,15 +112,19 @@ async def configure_chat_settings() -> None:
 
 def response_tools() -> list[ToolParam]:
     """Return the tools available to the selected graph."""
-    if not _is_server_tool_profile(cl.user_session.get("chat_profile")):
-        return [DISPLAY_FILE_TOOL]
+    model_id = cl.user_session.get("chat_profile")
+    tools: list[ToolParam] = (
+        [DISPLAY_FILE_TOOL] if _supports_display_file(model_id) else []
+    )
     selected = cl.user_session.get("chat_settings")
     if not isinstance(selected, dict):
-        return []
-    tools: list[ToolParam] = []
-    if selected.get(PACKAGE_VERSION_SETTING_ID) is True:
+        return tools
+    if (
+        _is_server_tool_profile(model_id)
+        and selected.get(PACKAGE_VERSION_SETTING_ID) is True
+    ):
         tools.append(PACKAGE_VERSION_TOOL)
-    if selected.get(WEB_SEARCH_SETTING_ID) is True:
+    if _supports_web_search(model_id) and selected.get(WEB_SEARCH_SETTING_ID) is True:
         tools.append({"type": "web_search"})
     return tools
 
@@ -168,3 +175,16 @@ def _selected(settings: dict[str, object] | None, key: str) -> bool:
 
 def _is_server_tool_profile(model_id: object) -> bool:
     return isinstance(model_id, str) and model_id.rsplit("/", 1)[-1] == "server-tool"
+
+
+def _supports_web_search(model_id: object) -> bool:
+    return (
+        isinstance(model_id, str) and model_id.rsplit("/", 1)[-1] in WEB_SEARCH_PROFILES
+    )
+
+
+def _supports_display_file(model_id: object) -> bool:
+    return (
+        isinstance(model_id, str)
+        and model_id.rsplit("/", 1)[-1] in DISPLAY_FILE_PROFILES
+    )

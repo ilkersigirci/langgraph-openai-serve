@@ -25,6 +25,8 @@ from .contracts import (
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     is_server_tool_model,
+    supports_display_file,
+    supports_web_search,
 )
 
 RESPONSE_OUTPUT = TypeAdapter(list[ResponseOutputItem])
@@ -44,16 +46,18 @@ PACKAGE_VERSION_TOOL: CustomToolParam = {
 
 def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]:
     """Build the tools owned by the selected demo client and graph."""
-    if not is_server_tool_model(model_id):
-        return [DISPLAY_FILE_TOOL]
-
+    tools: list[ToolParam] = (
+        [DISPLAY_FILE_TOOL] if supports_display_file(model_id) else []
+    )
     variables = metadata.get("chat_variables")
     if not isinstance(variables, dict):
-        return []
-    tools: list[ToolParam] = []
-    if variables.get(PACKAGE_VERSION_TOOL_NAME) is True:
+        return tools
+    if (
+        is_server_tool_model(model_id)
+        and variables.get(PACKAGE_VERSION_TOOL_NAME) is True
+    ):
         tools.append(PACKAGE_VERSION_TOOL)
-    if variables.get(WEB_SEARCH_TOOL_NAME) is True:
+    if supports_web_search(model_id) and variables.get(WEB_SEARCH_TOOL_NAME) is True:
         tools.append({"type": "web_search"})
     return tools
 

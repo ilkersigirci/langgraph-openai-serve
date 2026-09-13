@@ -22,6 +22,7 @@ from .functions.generic.contracts import (
     PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     is_server_tool_model,
+    supports_web_search,
 )
 from .functions.generic.gateway import GatewayConfig, litellm_models
 
@@ -42,20 +43,18 @@ LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "lgos model metadata. Runtime settings, file inputs, and "
     "interrupt profile checks may be unavailable."
 )
-SERVER_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
-    {
-        "key": PACKAGE_VERSION_TOOL_NAME,
-        "type": "checkbox",
-        "label": "Package version",
-        "default": False,
-    },
-    {
-        "key": WEB_SEARCH_TOOL_NAME,
-        "type": "checkbox",
-        "label": "Web search",
-        "default": False,
-    },
-)
+PACKAGE_VERSION_FIELD: dict[str, JsonValue] = {
+    "key": PACKAGE_VERSION_TOOL_NAME,
+    "type": "checkbox",
+    "label": "Package version",
+    "default": False,
+}
+WEB_SEARCH_FIELD: dict[str, JsonValue] = {
+    "key": WEB_SEARCH_TOOL_NAME,
+    "type": "checkbox",
+    "label": "Web search",
+    "default": False,
+}
 
 
 class _ModelExtension(BaseModel):
@@ -323,7 +322,9 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
     # an LGOS system prompt.
     fields = list(spec.fields)
     if is_server_tool_model(spec.id):
-        fields.extend(SERVER_TOOL_FIELDS)
+        fields.append(PACKAGE_VERSION_FIELD)
+    if supports_web_search(spec.id):
+        fields.append(WEB_SEARCH_FIELD)
     return {
         "id": spec.workspace_model_id,
         "base_model_id": spec.base_model_id,

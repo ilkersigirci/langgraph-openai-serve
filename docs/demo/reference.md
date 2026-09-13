@@ -150,6 +150,10 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
 | `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | Upstream generation model |
+| `DEMO_API_VECTOR_STORE_BASE_URL` | OpenAI-compatible vector-service base URL for `advanced-graph`; falls back to the model base URL |
+| `DEMO_API_VECTOR_STORE_API_KEY` | Vector-service API key; uses the model key only when the vector base URL is omitted, otherwise defaults to `DUMMY` |
+| `DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` | Optional Bifrost managed-key pin for stateful vector-store passthrough requests |
+| `DEMO_API_VECTOR_STORE_ID` | Shared knowledge-base ID searched by `advanced-graph`; required for document search and saved notes |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
