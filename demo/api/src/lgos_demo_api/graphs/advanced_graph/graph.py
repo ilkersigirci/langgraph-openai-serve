@@ -12,7 +12,6 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.config import get_stream_writer
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -23,7 +22,6 @@ from langgraph_openai_serve import (
     GraphFeature,
     GraphRequest,
     NamedFunctionToolChoice,
-    status_event,
 )
 from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 from openai import AsyncOpenAI
@@ -243,7 +241,6 @@ def create_advanced_graph(
         state: AdvancedState,
         runtime: Runtime[AdvancedContext],
     ) -> AdvancedState:
-        get_stream_writer()(status_event("Writing the answer"))
         request = runtime.context.request
         writer = model
         if request.tools and request.tool_choice != "none":

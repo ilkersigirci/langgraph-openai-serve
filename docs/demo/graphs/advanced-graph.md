@@ -36,7 +36,7 @@ with `just demo/compose --dev`. Select `lgos-a/advanced-graph` in Chainlit or
 
 | Feature | What to do | What to expect |
 | --- | --- | --- |
-| Generic chat | Ask `Explain why idempotency matters in two short paragraphs.` | A normal streamed answer; no research or write |
+| Generic chat | Ask `Explain why idempotency matters in two short paragraphs.` | A normal streamed answer; no research, write, or synthetic status |
 | File understanding | Attach a text or Markdown file, then ask `Summarize the attached file and repeat every identifier marked IMPORTANT exactly.` | The UI uploads the file to the central Files API; the graph reads it by `file_id` |
 | Web search, status, and citations | Enable **Web search**, then ask `Search the current official LangGraph documentation for interrupt durability. Summarize it and cite the exact source URL.` | Live search status, a server-side search, and clickable citations |
 | Subgraphs and human review | Keep Web search enabled and ask `Research the official LangGraph interrupt guidance, then save a concise cited note to shared knowledge. Ask me before writing.` | Research runs first, then an approval card shows the exact proposed note |
@@ -134,7 +134,9 @@ to the caller to execute—they never run inside this graph.
 
 The OpenAI SDK's `response.output_text` convenience property can concatenate
 commentary and final text. Streaming clients should use each message's `phase`,
-as the helper in [Try It](#try-it) does.
+as the helper in [Try It](#try-it) does. Plain chat emits no commentary;
+statuses are reserved for work with a meaningful intermediate state, such as
+searching, preparing a review, saving, or indexing.
 
 ## LangGraph Topology
 

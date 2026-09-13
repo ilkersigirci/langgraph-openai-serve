@@ -486,6 +486,25 @@ async def test_client_function_remains_client_owned(sqlite_checkpointer):
     assert output_call.arguments == '{"order_id":"123"}'
 
 
+async def test_plain_chat_stream_has_no_synthetic_status(sqlite_checkpointer):
+    provider = ModelProvider(
+        intent_response("chat"),
+        model_response("Hello from the assistant."),
+    )
+    async with graph_client(sqlite_checkpointer, provider) as client:
+        stream = await client.responses.create(
+            model="advanced-graph",
+            input="Hello",
+            stream=True,
+        )
+        events = [event async for event in stream]
+
+    final = events[-1].response
+    messages = [item for item in final.output if item.type == "message"]
+    assert [message.phase for message in messages] == ["final_answer"]
+    assert final.output_text == "Hello from the assistant."
+
+
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 async def test_exact_note_review_survives_restart(tmp_path, decision):
     database = str(tmp_path / "approval.sqlite")
