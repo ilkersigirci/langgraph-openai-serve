@@ -32,6 +32,7 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     create_persistent_plot_agent,
     create_persistent_plot_agent_config,
 )
+from lgos_demo_api.graphs.response_outcomes import response_outcome_graph_config
 from lgos_demo_api.graphs.server_tool import server_tool_graph_config
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.simple_external_tools import (
@@ -105,6 +106,7 @@ def create_custom_app() -> FastAPI:
             "multi-node-streaming": multi_node_streaming_graph_config,
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
+            "response-outcomes": response_outcome_graph_config,
             "persistent-plot-agent": create_persistent_plot_agent_config(
                 lambda: app.state.persistent_plot_agent,
             ),

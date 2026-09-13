@@ -157,6 +157,31 @@ for event in stream:
 See [Events And Citations](graphs/events-and-citations.md) for the status and
 custom-event flows and their client behavior.
 
+Try the deterministic response-outcome showcase:
+
+```python
+refusal = client.responses.create(
+    model="response-outcomes",
+    input="refusal",
+    store=False,
+)
+print(refusal.status, refusal.output[0].content[0].refusal)
+
+stream = client.responses.create(
+    model="response-outcomes",
+    input="incomplete",
+    store=False,
+    stream=True,
+)
+for event in stream:
+    if event.type == "response.incomplete":
+        print(event.response.incomplete_details.reason)
+```
+
+See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
+refusal differs from an incomplete response and which terminal events clients
+must handle.
+
 ## Try A Demo Client
 
 The demo includes optional [Chainlit](chainlit.md) and

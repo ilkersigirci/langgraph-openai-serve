@@ -42,6 +42,7 @@ def _():
     from lgos_demo_api.graphs.persistent_plot_agent import (
         create_persistent_plot_agent,
     )
+    from lgos_demo_api.graphs.response_outcomes import response_outcome_graph
     from lgos_demo_api.graphs.server_tool import server_tool_graph
     from lgos_demo_api.graphs.simple import simple_graph
     from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
@@ -62,6 +63,7 @@ def _():
         custom_io_graph,
         lgos_rag,
         multi_node_streaming_graph,
+        response_outcome_graph,
         server_tool_graph,
         simple_graph,
         simple_external_tools_graph,
@@ -82,6 +84,7 @@ async def _(
     custom_io_graph,
     lgos_rag,
     multi_node_streaming_graph,
+    response_outcome_graph,
     server_tool_graph,
     simple_graph,
     simple_external_tools_graph,
@@ -95,6 +98,7 @@ async def _(
         "status-events": status_event_graph,
         "custom-event-showcase": custom_event_showcase_graph,
         "multi-node-streaming": multi_node_streaming_graph,
+        "response-outcomes": response_outcome_graph,
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),
         "server-tool": server_tool_graph,

@@ -28,6 +28,7 @@ DOCUMENTED_MODEL_IDS = {
     "lgos-rag",
     "persistent-plot-agent",
     "multi-node-streaming",
+    "response-outcomes",
     "simple-graph",
     "server-tool",
     "simple-graph-external-tools",
@@ -202,6 +203,44 @@ async def test_file_input_demo_prompts_for_an_attachment(
     )
 
     assert response.output_text == "Attach a file and try again."
+
+
+async def test_response_outcomes_exposes_native_refusal(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.responses.create(
+        store=False,
+        model="response-outcomes",
+        input="refusal",
+    )
+
+    assert response.status == "completed"
+    assert response.output_text == ""
+    assert response.output[0].content[0].model_dump() == {
+        "type": "refusal",
+        "refusal": "I cannot help with bypassing safety controls.",
+    }
+
+
+async def test_response_outcomes_finishes_incomplete_stream_natively(
+    openai_client: AsyncOpenAI,
+) -> None:
+    stream = await openai_client.responses.create(
+        store=False,
+        model="response-outcomes",
+        input="incomplete",
+        stream=True,
+    )
+    events = [event async for event in stream]
+
+    assert events[-1].type == "response.incomplete"
+    assert not any(event.type == "response.completed" for event in events)
+    response = events[-1].response
+    assert response.status == "incomplete"
+    assert response.completed_at is None
+    assert response.incomplete_details.reason == "max_output_tokens"
+    assert response.output_text == "This answer stopped before it could finish."
+    assert response.output[0].status == "incomplete"
 
 
 async def test_complex_subgraphs_preserve_streaming_parity(
