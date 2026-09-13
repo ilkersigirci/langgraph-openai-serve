@@ -1,4 +1,4 @@
-"""State and runtime context shared by the advanced graph and its subgraph."""
+"""State and runtime context shared by the advanced graph and its subgraphs."""
 
 from dataclasses import dataclass
 from typing import Annotated, Literal
@@ -6,23 +6,26 @@ from typing import Annotated, Literal
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import add_messages
 from langgraph.graph.state import CompiledStateGraph
-from langgraph_openai_serve import ClientSettings, GraphRequest
-from pydantic import Field
+from langgraph_openai_serve import GraphRequest
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
+Intent = Literal["chat", "research", "save", "research_and_save"]
 
-class AdvancedSettings(ClientSettings):
-    save_note: bool = Field(
-        default=False,
-        title="Save a research note",
-        description="Review a Markdown note before adding it to the knowledge base.",
+
+class IntentDecision(BaseModel):
+    """Private structured output used to route one user turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Intent = Field(
+        description="The single workflow that best matches the latest user request."
     )
 
 
 @dataclass(frozen=True, slots=True)
 class AdvancedContext:
     request: GraphRequest
-    settings: AdvancedSettings
 
 
 class Note(TypedDict):
@@ -42,10 +45,13 @@ class NoteReceipt(TypedDict):
 
 class AdvancedState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
-    note: Note
-    feedback: str
-    decision: Literal["approve", "reject", "revise"]
-    receipt: NoteReceipt
+    intent: Intent
+    note: Note | None
+    feedback: str | None
+    decision: Literal["approve", "reject", "revise"] | None
+    receipt: NoteReceipt | None
+    research_used: bool
+    web_search_used: bool
     terminal: bool
 
 
@@ -85,8 +91,9 @@ AdvancedGraph = CompiledStateGraph[
 __all__ = [
     "AdvancedContext",
     "AdvancedGraph",
-    "AdvancedSettings",
     "AdvancedState",
+    "Intent",
+    "IntentDecision",
     "Note",
     "NoteReceipt",
     "terminal_message",

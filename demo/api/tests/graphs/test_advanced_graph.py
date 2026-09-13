@@ -28,7 +28,6 @@ from lgos_demo_api.graphs.advanced_graph import (
 from lgos_demo_api.graphs.advanced_graph.knowledge import KnowledgeResult
 
 WEB_TOOL = [{"type": "web_search"}]
-SAVE = {"lgos_settings": '{"save_note":true}'}
 SOURCE_URL = "https://docs.langchain.com/oss/python/langgraph/interrupts"
 
 
@@ -64,6 +63,21 @@ def model_response(text="", *, calls=(), refusal=None, incomplete=False):
             "output_tokens_details": {"reasoning_tokens": 0},
         },
     }
+
+
+def intent_response(intent):
+    return model_response(
+        calls=[
+            {
+                "type": "function_call",
+                "id": "fc_intent",
+                "call_id": "call_intent",
+                "name": "IntentDecision",
+                "arguments": json.dumps({"intent": intent}),
+                "status": "completed",
+            }
+        ]
+    )
 
 
 def response_events(response):
@@ -134,13 +148,15 @@ class ModelProvider:
         payload = json.loads(request.content)
         self.requests.append(payload)
         assert request.url.path.endswith("/responses")
-        assert payload["stream"] is True
         assert payload["store"] is False
         assert payload["temperature"] == 0.7
+        response = self.responses.popleft()
+        if not payload.get("stream", False):
+            return httpx.Response(200, json=response)
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            content=response_events(self.responses.popleft()),
+            content=response_events(response),
         )
 
 
@@ -214,7 +230,6 @@ async def graph_client(
         config = create_advanced_graph_config(
             lambda: graph,
             InMemoryRunCoordinator(),
-            knowledge_available=knowledge is not None,
         )
         app = (
             LanggraphOpenaiServe(
@@ -272,7 +287,11 @@ async def test_research_uses_existing_web_contract_and_internal_vector_search(
         },
     ]
     answer = f"See [LangGraph]({SOURCE_URL}) and policy.md (file_policy) [K1]."
-    provider = ModelProvider(model_response(calls=calls), model_response(answer))
+    provider = ModelProvider(
+        intent_response("research"),
+        model_response(calls=calls),
+        model_response(answer),
+    )
     knowledge = FixtureKnowledgeBase()
     async with graph_client(
         sqlite_checkpointer, provider, knowledge=knowledge
@@ -299,6 +318,49 @@ async def test_research_uses_existing_web_contract_and_internal_vector_search(
     assert any(
         item.type == "message" and item.phase == "commentary" for item in final.output
     )
+
+
+async def test_research_and_save_runs_both_subgraphs(sqlite_checkpointer):
+    web_call = {
+        "type": "function_call",
+        "id": "fc_web",
+        "call_id": "call_web",
+        "name": "web_search",
+        "arguments": '{"query":"LangGraph interrupts"}',
+        "status": "completed",
+    }
+    provider = ModelProvider(
+        intent_response("research_and_save"),
+        model_response(calls=[web_call]),
+        model_response("# Durable finding"),
+        model_response("The reviewed finding is now searchable."),
+    )
+    knowledge = FixtureKnowledgeBase()
+    async with graph_client(
+        sqlite_checkpointer, provider, knowledge=knowledge
+    ) as client:
+        paused = await client.responses.create(
+            model="advanced-graph",
+            input="Research LangGraph interrupts and save the result for later.",
+            tools=WEB_TOOL,
+        )
+        completed = await client.responses.create(
+            model="advanced-graph",
+            previous_response_id=paused.id,
+            input=resume_input(paused, "approve"),
+            tools=WEB_TOOL,
+        )
+
+    review_call = next(
+        item
+        for item in paused.output
+        if item.type == "function_call" and item.name == "lgos_interrupt"
+    )
+    reviewed = json.loads(review_call.arguments)
+    assert reviewed["content"] == "# Durable finding"
+    assert knowledge.uploads == [(reviewed["filename"], b"# Durable finding")]
+    assert knowledge.indexed == ["file_saved"]
+    assert completed.output_text == "The reviewed finding is now searchable."
 
 
 async def test_file_ids_are_resolved_through_the_compatible_files_api(
@@ -330,7 +392,10 @@ async def test_file_ids_are_resolved_through_the_compatible_files_api(
             },
         )
 
-    provider = ModelProvider(model_response("FILE_INPUT_E2E"))
+    provider = ModelProvider(
+        intent_response("chat"),
+        model_response("FILE_INPUT_E2E"),
+    )
     async with graph_client(
         sqlite_checkpointer,
         provider,
@@ -355,8 +420,13 @@ async def test_file_ids_are_resolved_through_the_compatible_files_api(
         f"/v1/files/{file_id}",
         f"/v1/files/{file_id}/content",
     ]
-    user_input = next(
+    router_input = next(
         item for item in provider.requests[0]["input"] if item["role"] == "user"
+    )
+    assert isinstance(router_input["content"], str)
+    assert "attached one or more files" in router_input["content"]
+    user_input = next(
+        item for item in provider.requests[1]["input"] if item["role"] == "user"
     )
     file_input = next(
         item for item in user_input["content"] if item["type"] == "input_file"
@@ -422,7 +492,7 @@ async def test_exact_note_review_survives_restart(tmp_path, decision):
     store = InMemoryStore()
     knowledge = FixtureKnowledgeBase()
     first_provider = ModelProvider(
-        model_response("No search needed"),
+        intent_response("save"),
         model_response("# Exact note"),
     )
     async with (
@@ -435,7 +505,7 @@ async def test_exact_note_review_survives_restart(tmp_path, decision):
         ) as client,
     ):
         paused = await client.responses.create(
-            model="advanced-graph", input="Prepare a note", metadata=SAVE
+            model="advanced-graph", input="Remember this in a note: exact content"
         )
     reviewed = json.loads(paused.output[0].arguments)
     assert reviewed["content"] == "# Exact note"
@@ -455,14 +525,12 @@ async def test_exact_note_review_survives_restart(tmp_path, decision):
             model="advanced-graph",
             previous_response_id=paused.id,
             input=resume_input(paused, decision),
-            metadata=SAVE,
         )
         with pytest.raises(ConflictError):
             await client.responses.create(
                 model="advanced-graph",
                 previous_response_id=paused.id,
                 input=resume_input(paused, decision),
-                metadata=SAVE,
             )
     assert completed.status == "completed"
     assert len(knowledge.uploads) == (1 if decision == "approve" else 0)
@@ -479,7 +547,7 @@ async def test_exact_note_review_survives_restart(tmp_path, decision):
 
 async def test_review_feedback_redrafts_before_upload(sqlite_checkpointer):
     provider = ModelProvider(
-        model_response("No search needed"),
+        intent_response("save"),
         model_response("# First draft"),
         model_response("# Revised draft"),
         model_response("The revised note was saved."),
@@ -489,19 +557,17 @@ async def test_review_feedback_redrafts_before_upload(sqlite_checkpointer):
         sqlite_checkpointer, provider, knowledge=knowledge
     ) as client:
         first_review = await client.responses.create(
-            model="advanced-graph", input="Prepare a note", metadata=SAVE
+            model="advanced-graph", input="Remember this as a note."
         )
         second_review = await client.responses.create(
             model="advanced-graph",
             previous_response_id=first_review.id,
             input=resume_input(first_review, "Add a clearer title."),
-            metadata=SAVE,
         )
         completed = await client.responses.create(
             model="advanced-graph",
             previous_response_id=second_review.id,
             input=resume_input(second_review, "approve"),
-            metadata=SAVE,
         )
 
     first_note = json.loads(first_review.output[0].arguments)
@@ -537,29 +603,31 @@ async def test_private_model_outcomes_are_preserved(sqlite_checkpointer, outcome
 async def test_uncertain_upload_is_not_repeated(sqlite_checkpointer):
     knowledge = FixtureKnowledgeBase(upload_error=True)
     store = InMemoryStore()
-    provider = ModelProvider(model_response("No search"), model_response("Note"))
+    provider = ModelProvider(intent_response("save"), model_response("Note"))
     async with graph_client(
         sqlite_checkpointer, provider, knowledge=knowledge, store=store
     ) as client:
         paused = await client.responses.create(
-            model="advanced-graph", input="Save", metadata=SAVE
+            model="advanced-graph", input="Save this as a note."
         )
         with pytest.raises(InternalServerError):
             await client.responses.create(
                 model="advanced-graph",
                 previous_response_id=paused.id,
                 input=resume_input(paused, "approve"),
-                metadata=SAVE,
             )
     assert len(knowledge.uploads) == 1
     receipts = await store.asearch(("advanced-graph", "notes", "vs_docs"))
     assert receipts[0].value["status"] == "upload_pending"
 
 
-async def test_unchanged_public_contract_rejects_chat_file_search_and_missing_storage(
+async def test_unchanged_public_contract_and_unavailable_storage(
     sqlite_checkpointer,
 ):
-    provider = ModelProvider()
+    provider = ModelProvider(
+        intent_response("save"),
+        model_response("Persistent storage is unavailable, so nothing was saved."),
+    )
     async with graph_client(sqlite_checkpointer, provider) as client:
         with pytest.raises(BadRequestError):
             await client.chat.completions.create(
@@ -571,11 +639,14 @@ async def test_unchanged_public_contract_rejects_chat_file_search_and_missing_st
                 input="Search",
                 tools=[{"type": "file_search", "vector_store_ids": ["vs_docs"]}],
             )
-        with pytest.raises(InternalServerError):
-            await client.responses.create(
-                model="advanced-graph", input="Save", metadata=SAVE
-            )
-    assert not provider.requests
+        response = await client.responses.create(
+            model="advanced-graph", input="Remember this for later."
+        )
+    assert response.output_text == (
+        "Persistent storage is unavailable, so nothing was saved."
+    )
+    assert len(provider.requests) == 2
+    assert "Persistent note storage is unavailable" in json.dumps(provider.requests[-1])
 
 
 async def test_compatible_storage_adapter_uses_configured_endpoint():
@@ -662,6 +733,7 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
     release = Event()
     closed = Event()
     completed = Event()
+    request_count = 0
 
     class GatedStream(httpx.AsyncByteStream):
         async def __aiter__(self):
@@ -679,6 +751,14 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
             closed.set()
 
     async def handle(_request):
+        nonlocal request_count
+        request_count += 1
+        if request_count == 1:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=response_events(intent_response("chat")),
+            )
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
@@ -705,7 +785,6 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
                 "advanced-graph": create_advanced_graph_config(
                     lambda: graph,
                     InMemoryRunCoordinator(),
-                    knowledge_available=False,
                 )
             }
         )
@@ -729,6 +808,7 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
                             break
                         release.set()
             await closed.wait()
+    assert request_count == 2
     assert completed.is_set() is not cancel
     if not cancel:
         assert events[-1]["type"] == "response.completed"

@@ -48,18 +48,20 @@ def completed_response(content: str) -> Response:
     )
 
 
-def configured_model(settings: ModelClientSettings) -> Model:
+def configured_model(settings: ModelClientSettings | None) -> Model:
+    extension: dict[str, object] = {
+        "schema_version": 1,
+        "description": "DUMMY",
+        "features": [],
+    }
+    if settings is not None:
+        extension["client_settings"] = settings.model_dump(mode="json")
     return Model(
         id="simple",
         object="model",
         created=1,
         owned_by="test",
-        lgos={
-            "schema_version": 1,
-            "description": "DUMMY",
-            "features": [],
-            "client_settings": settings.model_dump(mode="json"),
-        },
+        lgos=extension,
     )
 
 
@@ -160,36 +162,21 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
 
 
-async def test_advanced_graph_separates_web_search_from_runtime_settings(
+async def test_advanced_graph_uses_web_search_without_runtime_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
-    advanced_settings = ModelClientSettings.model_validate(
-        {
-            "schema_version": 1,
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "save_note": {
-                        "type": "boolean",
-                        "title": "Save a research note",
-                    }
-                },
-            },
-            "defaults": {"save_note": False},
-        }
-    )
     session = Session(
         {
             "chat_profile": "lgos-a/advanced-graph",
-            "chat_settings": {"web_search": True, "save_note": True},
+            "chat_settings": {"web_search": True},
         }
     )
     factory, _ = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
         chat_settings,
         "retrieve_model",
-        AsyncMock(return_value=configured_model(advanced_settings)),
+        AsyncMock(return_value=configured_model(None)),
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
 
@@ -198,12 +185,9 @@ async def test_advanced_graph_separates_web_search_from_runtime_settings(
     assert [widget.id for widget in factory.call_args.args[0]] == [
         chat_settings.STREAMING_SETTING_ID,
         chat_settings.WEB_SEARCH_SETTING_ID,
-        "save_note",
     ]
     assert chat_settings.response_tools() == [{"type": "web_search"}]
-    assert chat_settings.chat_settings_metadata() == {
-        "lgos_settings": '{"save_note":true}'
-    }
+    assert chat_settings.chat_settings_metadata() == {}
 
 
 async def test_chat_profiles_use_list_capabilities_for_file_uploads(

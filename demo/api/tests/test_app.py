@@ -86,6 +86,15 @@ async def test_app_lists_exactly_the_documented_models(
     }
     assert features["file-input"] == ["file_inputs"]
 
+    advanced_model = await openai_client.models.retrieve("advanced-graph")
+    advanced_extension = (advanced_model.model_extra or {})["lgos"]
+    assert advanced_extension["features"] == [
+        "client_events",
+        "file_inputs",
+        "interrupts",
+    ]
+    assert "client_settings" not in advanced_extension
+
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["lgos"]
     assert extension == {

@@ -381,17 +381,14 @@ async def test_bundle_maps_advanced_web_search_outside_graph_settings(
         },
         __metadata__={
             "chat_id": "thread-123",
-            "chat_variables": {"save_note": True, "web_search": True},
+            "chat_variables": {"web_search": True},
         },
     )
 
     assert result == "Research complete."
     request = create.await_args.kwargs
     assert request["tools"] == [{"type": "web_search"}]
-    assert request["metadata"] == {
-        "conversation_id": "thread-123",
-        "lgos_settings": '{"save_note":true}',
-    }
+    assert request["metadata"] == {"conversation_id": "thread-123"}
 
 
 async def test_deployed_bundle_runs_non_streaming_interrupt(

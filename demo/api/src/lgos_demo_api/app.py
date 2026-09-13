@@ -154,7 +154,6 @@ def create_custom_app() -> FastAPI:
             "advanced-graph": create_advanced_graph_config(
                 lambda: app.state.advanced_graph,
                 lambda key: app.state.run_coordinator(key),
-                knowledge_available=bool(settings.VECTOR_STORE_ID),
             ),
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,

@@ -158,7 +158,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
-| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` graph. |
+| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
