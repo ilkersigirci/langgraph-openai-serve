@@ -9,11 +9,13 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import GraphRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module
 from lgos_demo_api.checkpointer import PostgresRuntime
+from lgos_demo_api.graphs import server_tool
 from lgos_demo_api.graphs.simple import SimpleContext
+from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
     "advanced-mcp-tools",
@@ -27,11 +29,19 @@ DOCUMENTED_MODEL_IDS = {
     "persistent-plot-agent",
     "multi-node-streaming",
     "simple-graph",
-    "hosted-tool",
+    "server-tool",
     "simple-graph-external-tools",
     "status-events",
 }
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
+
+
+def _rebuild_server_tool_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        server_tool.server_tool_graph_config,
+        "graph",
+        server_tool.create_server_tool_graph(),
+    )
 
 
 @pytest.fixture
@@ -272,66 +282,418 @@ def test_main_leaves_access_logging_to_the_deployment(
     assert run.call_args.kwargs["access_log"] is False
 
 
-@pytest.mark.parametrize("stream", [False, True])
-async def test_hosted_tool_runs_on_lgos(
-    openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, stream: bool
+@pytest.mark.parametrize(
+    "tools", [[], [{"type": "custom", "name": "lgos_current_time"}]]
+)
+async def test_server_time_lookup_is_not_bound_when_unselected_or_disabled(
+    openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, tools
 ) -> None:
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel,
     )
-    from langchain_core.messages import AIMessage, ToolMessage
+    from langchain_core.messages import AIMessage
 
-    from lgos_demo_api.graphs import hosted_tool
-
-    class TimeModel(FakeMessagesListChatModel):
+    class NoToolsModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
-            assert [tool.name for tool in tools] == ["get_current_time"]
-            return self
+            pytest.fail("Time lookup must not be bound when disabled.")
 
-        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-            if isinstance(messages[-1], ToolMessage):
-                assert messages[-1].name == "get_current_time"
-                self.responses = [AIMessage(content=messages[-1].content)]
-                self.i = 0
-            return super()._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
+    model = NoToolsModel(responses=[AIMessage(content="Time lookup is disabled.")])
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    _rebuild_server_tool_graph(monkeypatch)
+    details = await openai_client.models.retrieve("server-tool")
+    assert "client_settings" not in details.lgos
+    assert "server_tools" not in details.lgos
+    response = await openai_client.responses.create(
+        model="server-tool",
+        input="What time is it?",
+        store=False,
+        tools=tools,
+        tool_choice="none" if tools else "auto",
+    )
+    assert response.output_text == "Time lookup is disabled."
+    assert [item.type for item in response.output] == ["message"]
+
+
+async def test_server_tool_graph_rejects_client_functions(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as error:
+        await openai_client.responses.create(
+            model="server-tool",
+            input="Run this function.",
+            tools=[{"type": "function", "name": "client_function"}],
+        )
+
+    assert error.value.response.json()["error"]["param"] == "tools"
+
+
+@pytest.mark.parametrize(
+    ("stream", "choice"),
+    [
+        (False, "auto"),
+        (False, "required"),
+        (True, "required"),
+        (False, {"type": "custom", "name": "lgos_current_time"}),
+    ],
+)
+async def test_server_custom_tool_executes_a_fresh_native_exchange(
+    openai_client: AsyncOpenAI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    choice: str | dict[str, str],
+) -> None:
+    import json
+
+    from httpx import MockTransport, Request, Response
+    from langchain_openai import ChatOpenAI
+
+    requests = []
+
+    def respond(request: Request) -> Response:
+        body = json.loads(request.content)
+        selecting = not requests
+        requests.append(body)
+        assert request.url.path.endswith("/responses")
+        assert body["store"] is False
+        if selecting:
+            assert not body.get("stream")
+            assert body["tools"][0]["type"] == "custom"
+            assert body["tools"][0]["name"] == "lgos_current_time"
+            assert body["parallel_tool_calls"] is False
+            assert body["tool_choice"] == choice
+        else:
+            assert "tools" not in body
+            assert bool(body.get("stream")) == stream
+            result = next(
+                item
+                for item in body["input"]
+                if item.get("call_id") == "call_new"
+                and item["type"] == "custom_tool_call_output"
+            )
+            assert result["type"] == "custom_tool_call_output"
+            assert result["call_id"] == "call_new"
+            assert result["output"].startswith("Europe/Istanbul: ")
+            assert result["output"].endswith("+03:00")
+        output = [
+            {
+                "id": f"msg_{len(requests)}",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": (
+                            "Checking the clock." if selecting else result["output"]
+                        ),
+                        "annotations": [],
+                    }
+                ],
+            }
+        ]
+        if selecting:
+            output.append(
+                {
+                    "id": "ctc_new",
+                    "type": "custom_tool_call",
+                    "call_id": "call_new",
+                    "name": "lgos_current_time",
+                    "input": "Europe/Istanbul",
+                    "status": "completed",
+                }
+            )
+        payload = {
+            "id": f"resp_{len(requests)}",
+            "object": "response",
+            "created_at": 1,
+            "model": "test-model",
+            "status": "completed",
+            "output": output,
+        }
+        if body.get("stream"):
+            text = result["output"]
+            item = output[0]
+            events = [
+                {
+                    "type": "response.created",
+                    "response": {**payload, "output": [], "status": "in_progress"},
+                },
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": {**item, "content": [], "status": "in_progress"},
+                },
+                {
+                    "type": "response.content_part.added",
+                    "output_index": 0,
+                    "content_index": 0,
+                    "item_id": item["id"],
+                    "part": {"type": "output_text", "text": "", "annotations": []},
+                },
+                *[
+                    {
+                        "type": "response.output_text.delta",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "item_id": item["id"],
+                        "delta": delta,
+                    }
+                    for delta in (text[:10], text[10:])
+                ],
+                {"type": "response.output_item.done", "output_index": 0, "item": item},
+                {"type": "response.completed", "response": payload},
+            ]
+            return Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text="".join(f"data: {json.dumps(event)}\n\n" for event in events),
+            )
+        return Response(200, json=payload)
+
+    async with AsyncClient(transport=MockTransport(respond)) as provider:
+        monkeypatch.setattr(
+            server_tool,
+            "ChatOpenAI",
+            lambda **kwargs: ChatOpenAI(http_async_client=provider, **kwargs),
+        )
+        _rebuild_server_tool_graph(monkeypatch)
+        response = await openai_client.responses.create(
+            model="server-tool",
+            input=[
+                {
+                    "type": "custom_tool_call",
+                    "call_id": "call_old",
+                    "name": "lgos_current_time",
+                    "input": "Europe/Istanbul",
+                },
+                {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call_old",
+                    "output": "An old timestamp",
+                },
+            ],
+            tools=[{"type": "custom", "name": "lgos_current_time"}],
+            tool_choice=choice,
+            parallel_tool_calls=False,
+            stream=stream,
+        )
+        if stream:
+            events = [event async for event in response]
+            response = events[-1].response
+            assert (
+                "".join(
+                    event.delta
+                    for event in events
+                    if event.type == "response.output_text.delta"
+                )
+                == response.output_text
             )
 
-    model = TimeModel(
+    assert len(requests) == 2
+    assert response.status == "completed"
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == [
+        "custom_tool_call",
+        "custom_tool_call_output",
+        "message",
+    ]
+    assert output[0].call_id == output[1].call_id == "call_new"
+    assert output[0].name == "lgos_current_time"
+    assert output[0].input == "Europe/Istanbul"
+    assert output[1].output == output[-1].content[0].text
+    if stream:
+        assert [
+            event.delta
+            for event in events
+            if event.type == "response.output_text.delta"
+            and event.item_id == output[-1].id
+        ] == [output[1].output[:10], output[1].output[10:]]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_server_web_search_runs_through_http_backend(
+    openai_client: AsyncOpenAI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+) -> None:
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
+    from langchain_core.messages import AIMessage
+
+    class SearchModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            assert tools == [server_tool.web_search]
+            assert kwargs["tool_choice"] == "required"
+            return self
+
+    model = SearchModel(
         responses=[
             AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "name": "get_current_time",
-                        "args": {"timezone": "Europe/Istanbul"},
-                        "id": "call_time",
+                        "type": "tool_call",
+                        "id": "call_demo_search",
+                        "name": "web_search",
+                        "args": {"query": "OpenAI Responses API"},
                     }
                 ],
-            )
+            ),
+            AIMessage(
+                content=("See [OpenAI API](https://developers.openai.com/api/) docs."),
+                response_metadata={"model_provider": "openai"},
+            ),
         ]
     )
-    monkeypatch.setattr(hosted_tool, "ChatOpenAI", lambda **kwargs: model)
+
+    async def search(_client, url, query):
+        assert url == "https://searxng.example.com/search"
+        assert query == "OpenAI Responses API"
+        return [
+            WebSearchResult.model_validate(
+                {
+                    "title": "OpenAI API",
+                    "url": "https://developers.openai.com/api/",
+                    "content": "Build with the OpenAI API.",
+                }
+            )
+        ]
+
+    monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "http")
+    monkeypatch.setattr(
+        server_tool.settings, "WEB_SEARCH_URL", "https://searxng.example.com/search"
+    )
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    _rebuild_server_tool_graph(monkeypatch)
+    monkeypatch.setattr(server_tool, "search_web", search)
+
     response = await openai_client.responses.create(
-        model="hosted-tool",
-        input="What time is it in Istanbul?",
+        model="server-tool",
+        input="Find the Responses API documentation.",
         store=False,
-        tools=[{"type": "custom", "name": "lgos_current_time"}],
         stream=stream,
+        tools=[{"type": "web_search"}],
+        tool_choice="required",
     )
     if stream:
         events = [event async for event in response]
-        response = next(
-            event.response for event in events if event.type == "response.completed"
-        )
-        assert (
-            "".join(
-                event.delta
-                for event in events
-                if event.type == "response.output_text.delta"
+        response = events[-1].response
+        assert [
+            event.item.type
+            for event in events
+            if event.type == "response.output_item.done"
+            and getattr(event.item, "phase", None) != "commentary"
+        ] == ["web_search_call", "message"]
+
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == ["web_search_call", "message"]
+    assert output[0].action.query == "OpenAI Responses API"
+    assert output[-1].content[0].text == (
+        "See [OpenAI API](https://developers.openai.com/api/) docs."
+    )
+    assert output[1].content[0].annotations[0].url == (
+        "https://developers.openai.com/api/"
+    )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_server_web_search_can_use_the_upstream_openai_tool(
+    openai_client: AsyncOpenAI,
+    monkeypatch: pytest.MonkeyPatch,
+    make_tool_calling_model,
+    stream: bool,
+) -> None:
+    from langchain_core.language_models.fake_chat_models import (
+        FakeMessagesListChatModel,
+    )
+    from langchain_core.messages import AIMessage
+
+    class SearchModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            assert tools == [{"type": "web_search"}]
+            assert kwargs["tool_choice"] == "required"
+            return self
+
+    provider = SearchModel(
+        responses=[
+            AIMessage(
+                content=[
+                    {
+                        "type": "server_tool_call",
+                        "name": "web_search",
+                        "id": "ws_demo_provider",
+                        "args": {
+                            "type": "search",
+                            "query": "OpenAI Responses API",
+                        },
+                    },
+                    {
+                        "type": "server_tool_result",
+                        "tool_call_id": "ws_demo_provider",
+                        "status": "success",
+                    },
+                    {
+                        "type": "text",
+                        "text": "Private search summary",
+                        "annotations": [
+                            {
+                                "type": "citation",
+                                "url": "https://developers.openai.com/api/",
+                                "title": "OpenAI API",
+                                "start_index": 0,
+                                "end_index": 6,
+                            },
+                        ],
+                    },
+                ]
             )
-            == response.output_text
-        )
-    assert response.output_text.startswith("Europe/Istanbul: ")
-    assert response.output_text.endswith("+03:00")
-    assert all(item.type == "message" for item in response.output)
+        ]
+    )
+
+    model = make_tool_calling_model(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_demo_search",
+                    "name": "web_search",
+                    "args": {"query": "OpenAI Responses API"},
+                }
+            ],
+        ),
+        AIMessage(content="See [OpenAI API](https://developers.openai.com/api/)."),
+    )
+    models = iter([model, provider])
+    monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: next(models))
+    _rebuild_server_tool_graph(monkeypatch)
+
+    response = await openai_client.responses.create(
+        model="server-tool",
+        input="Find the Responses API documentation.",
+        store=False,
+        stream=stream,
+        tools=[{"type": "web_search"}],
+        tool_choice="required",
+    )
+    if stream:
+        events = [event async for event in response]
+        response = events[-1].response
+
+    output = [
+        item for item in response.output if getattr(item, "phase", None) != "commentary"
+    ]
+    assert [item.type for item in output] == ["web_search_call", "message"]
+    assert output[0].action.query == "OpenAI Responses API"
+    assert (
+        output[-1].content[0].text
+        == "See [OpenAI API](https://developers.openai.com/api/)."
+    )
+    assert (
+        output[-1].content[0].annotations[0].url == "https://developers.openai.com/api/"
+    )

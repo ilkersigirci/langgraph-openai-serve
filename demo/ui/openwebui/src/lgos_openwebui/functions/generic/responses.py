@@ -8,32 +8,54 @@ from openai.types.chat.chat_completion_chunk import (
     ChoiceDelta,
 )
 from openai.types.responses import (
+    CustomToolParam,
+    FunctionToolParam,
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
+    ToolParam,
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
 from pydantic import TypeAdapter
 
 from .api import _model_request
-from .contracts import DISPLAY_FILE_TOOL_NAME, DisplayFileArguments
+from .contracts import (
+    CURRENT_TIME_TOOL_NAME,
+    DISPLAY_FILE_TOOL_NAME,
+    WEB_SEARCH_TOOL_NAME,
+    DisplayFileArguments,
+    is_server_tool_model,
+)
 
 RESPONSE_OUTPUT = TypeAdapter(list[ResponseOutputItem])
 
-DISPLAY_FILE_TOOL = {
+DISPLAY_FILE_TOOL: FunctionToolParam = {
     "type": "function",
     "name": DISPLAY_FILE_TOOL_NAME,
     "description": "Display a file stored in the configured OpenAI Files API.",
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
+CURRENT_TIME_TOOL: CustomToolParam = {
+    "type": "custom",
+    "name": CURRENT_TIME_TOOL_NAME,
+}
 
 
-def _response_tools(model: str) -> list[dict[str, Any]]:
-    """Supply hosted selectors or function tools for the selected model."""
-    if model.rsplit("/", 1)[-1] == "hosted-tool":
-        return [{"type": "custom", "name": "lgos_current_time"}]
-    return [DISPLAY_FILE_TOOL]
+def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]:
+    """Build the tools owned by the selected demo client and graph."""
+    if not is_server_tool_model(model_id):
+        return [DISPLAY_FILE_TOOL]
+
+    variables = metadata.get("chat_variables")
+    if not isinstance(variables, dict):
+        return []
+    tools: list[ToolParam] = []
+    if variables.get(CURRENT_TIME_TOOL_NAME) is True:
+        tools.append(CURRENT_TIME_TOOL)
+    if variables.get(WEB_SEARCH_TOOL_NAME) is True:
+        tools.append({"type": "web_search"})
+    return tools
 
 
 def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
@@ -90,6 +112,7 @@ def _responses_request(
     user_id: str | None,
     *,
     provider_routing: bool,
+    tools: list[ToolParam],
     previous_response_id: str | None = None,
 ) -> dict[str, Any]:
     request = {
@@ -99,7 +122,7 @@ def _responses_request(
         ),
         "input": input_items,
         "store": False,
-        "tools": _response_tools(model_id),
+        "tools": tools,
     }
     if metadata:
         request["metadata"] = metadata
@@ -126,6 +149,7 @@ def _responses_final_text(response: Response) -> str:
 def _responses_function_calls(
     response: Response,
 ) -> list[ResponseFunctionToolCall]:
+    """Return client-owned function calls from a completed Response."""
     return [
         item for item in response.output if isinstance(item, ResponseFunctionToolCall)
     ]

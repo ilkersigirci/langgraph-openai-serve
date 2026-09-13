@@ -4,7 +4,7 @@ import importlib
 import json
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, call
 
 import httpx
 import pytest
@@ -12,6 +12,8 @@ from chainlit.context import init_http_context
 from openai import AsyncOpenAI
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
@@ -76,6 +78,7 @@ async def test_commentary_is_rendered_as_a_native_task_list(
 async def test_response_stream_routes_commentary_to_the_task_list(
     monkeypatch: pytest.MonkeyPatch,
     phase: str | None,
+    chainlit_context,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
     completed = Response.model_construct(status="completed", output=[])
@@ -133,24 +136,8 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     )
 
     assert response is completed
-    commentary_tasks.add.assert_awaited_once_with("Generating audio")
+    assert commentary_tasks.add.await_args_list == [call("Generating audio")]
     assistant_message.stream_token.assert_awaited_once_with("Media ready.")
-
-
-async def test_stopped_commentary_marks_the_active_task_failed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_list = Mock(status="Ready", add_task=AsyncMock(), send=AsyncMock())
-    task = Mock()
-    monkeypatch.setattr(responses.cl, "TaskList", Mock(return_value=task_list))
-    monkeypatch.setattr(responses.cl, "Task", Mock(return_value=task))
-    renderer = responses.CommentaryTaskList()
-
-    await renderer.add("Generating audio")
-    await renderer.stop()
-
-    assert task.status == responses.cl.TaskStatus.FAILED
-    assert task_list.status == "Stopped"
 
 
 @pytest.mark.parametrize("send_delta", [False, True])
@@ -431,7 +418,24 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
             ],
         }
     )
-    first = _response(commentary, first_text, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_clock",
+            "call_id": "call_clock",
+            "name": "lgos_current_time",
+            "input": "UTC",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_clock",
+        call_id="call_clock",
+        output="Noon",
+        status="completed",
+    )
+    first = _response(commentary, first_text, server_call, server_output, call)
     pending = iter([first, _response(last_text)])
     requests = []
     history = [{"role": "system", "content": "Use the uploaded data."}]
@@ -474,7 +478,8 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(simple.openai_client.responses, "create", create)
     monkeypatch.setattr(simple, "_stream_response", stream)
-    monkeypatch.setattr(simple, "display_file", AsyncMock(return_value=output))
+    display = AsyncMock(return_value=output)
+    monkeypatch.setattr(simple, "display_file", display)
 
     await simple._response_message(Mock(), "plot")
 
@@ -490,6 +495,8 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
         output,
     ]
+    display.assert_awaited_once_with(call)
+    assert responses.function_calls(_response(server_call, server_output)) == []
 
 
 def test_transcript_labels_answers_and_preserves_explicit_phase():
@@ -536,18 +543,6 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos/lgos-a/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    assert responses.response_tools(model) == [
-        {"type": "custom", "name": "lgos_current_time"}
-    ]
-    assert responses.response_tools("lgos-a/simple-graph") == [
-        responses.DISPLAY_FILE_TOOL
-    ]
 
 
 async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(

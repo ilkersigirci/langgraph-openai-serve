@@ -2,8 +2,13 @@
 
 from typing import Annotated, Literal, TypeAlias
 
+from openai.types.responses import (
+    ResponseCustomToolCall as ResponseCustomToolCallInput,
+    ResponseCustomToolCallOutput as ResponseCustomToolCallOutputInput,
+    ResponseFunctionWebSearch as ResponseWebSearchCallInput,
+)
 from openai.types.responses.response_output_text import Annotation
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
@@ -113,6 +118,8 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
     type: Literal["function_call_output"] = "function_call_output"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
+    caller: None = None
+    created_by: str | None = None
 
 
 ResponseInputItem: TypeAlias = (
@@ -120,6 +127,9 @@ ResponseInputItem: TypeAlias = (
     | ResponseInputMessage
     | ResponseFunctionCallInput
     | ResponseFunctionCallOutputInput
+    | ResponseCustomToolCallInput
+    | ResponseCustomToolCallOutputInput
+    | ResponseWebSearchCallInput
 )
 ResponseInput: TypeAlias = (
     str
@@ -134,43 +144,39 @@ class ResponseFunctionTool(_ResponsesRequestModel):
     """A client-supplied function available to the graph."""
 
     type: Literal["function"]
-    name: str
+    name: Annotated[str, Field(min_length=1)]
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
     strict: bool | None = None
 
 
-class ResponseHostedTool(_ResponsesRequestModel):
-    """Select a graph-owned LGOS tool without supplying its function schema."""
+class ResponseCustomTool(_ResponsesRequestModel):
+    """Select one registered server tool with the Responses custom-tool shape."""
 
-    type: Literal["custom"] = "custom"
-    name: Annotated[str, Field(pattern=r"^lgos_[a-z][a-z0-9_]*$")]
-    description: str | None = None
-
-
-def _parse_tool(value: object) -> ResponseFunctionTool | ResponseHostedTool:
-    if isinstance(value, (ResponseFunctionTool, ResponseHostedTool)):
-        return value
-    if isinstance(value, dict) and value.get("type") == "custom":
-        return ResponseHostedTool.model_validate(value)
-    return ResponseFunctionTool.model_validate(value)
+    type: Literal["custom"]
+    name: Annotated[str, Field(min_length=1)]
 
 
-ResponseTool: TypeAlias = Annotated[
-    ResponseFunctionTool | ResponseHostedTool, BeforeValidator(_parse_tool)
-]
+class ResponseWebSearchTool(_ResponsesRequestModel):
+    """Select the graph's OpenAI-compatible web-search capability."""
+
+    type: Literal["web_search"]
 
 
 class ResponseNamedToolChoice(_ResponsesRequestModel):
-    """Require one named function tool."""
+    """Require one named function or custom tool."""
 
-    type: Literal["function"]
+    type: Literal["function", "custom"]
     name: str
 
 
 ResponseToolChoice: TypeAlias = (
     Literal["none", "auto", "required"] | ResponseNamedToolChoice
 )
+ResponseTool: TypeAlias = Annotated[
+    ResponseFunctionTool | ResponseCustomTool | ResponseWebSearchTool,
+    Field(discriminator="type"),
+]
 
 
 class ResponseTextFormat(_ResponsesRequestModel):
@@ -212,6 +218,9 @@ class ResponseCreateRequest(_ResponsesRequestModel):
 
 __all__ = [
     "ResponseCreateRequest",
+    "ResponseCustomTool",
+    "ResponseCustomToolCallInput",
+    "ResponseCustomToolCallOutputInput",
     "ResponseFunctionCallInput",
     "ResponseFunctionCallOutputInput",
     "ResponseFunctionTool",
@@ -225,5 +234,8 @@ __all__ = [
     "ResponseRefusalInput",
     "ResponseTextConfig",
     "ResponseTextFormat",
+    "ResponseTool",
     "ResponseToolChoice",
+    "ResponseWebSearchCallInput",
+    "ResponseWebSearchTool",
 ]

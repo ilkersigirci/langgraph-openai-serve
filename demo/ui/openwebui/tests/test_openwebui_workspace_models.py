@@ -398,6 +398,33 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
     assert wrapper["meta"]["builtinTools"] == {"files": False}
 
 
+def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
+    client = _client([])
+    spec = WorkspaceModelSpec(
+        id="lgos-a/server-tool",
+        description="Server tools",
+        fields=(),
+    )
+
+    sync_workspace_models(client, (spec,))
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
+        {
+            "key": "lgos_current_time",
+            "type": "checkbox",
+            "label": "Current time",
+            "default": False,
+        },
+        {
+            "key": "web_search",
+            "type": "checkbox",
+            "label": "Web search",
+            "default": False,
+        },
+    ]
+
+
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(id="proxy-model", fields=())

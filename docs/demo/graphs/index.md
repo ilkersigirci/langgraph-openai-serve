@@ -19,7 +19,7 @@ demo model catalogs.
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
-| [`hosted-tool`](hosted-tool.md) | A client-requested time tool executed on LGOS | None | Upstream chat model |
+| [`server-tool`](server-tool.md) | Client-selected server clock and OpenAI-compatible web search | None | Upstream model plus SearXNG, Degoog, or upstream OpenAI search |
 | [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | `client_events` | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so

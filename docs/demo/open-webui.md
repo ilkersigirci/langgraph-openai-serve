@@ -23,8 +23,22 @@ The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
+The generated `server-tool` models add fixed **Current time** and **Web search**
+Chat Variable checkboxes. The Pipe maps enabled boxes to a name-only
+`{"type":"custom","name":"lgos_current_time"}` declaration and
+`{"type":"web_search"}`; the names are client constants, not discovered
+metadata. The server registry determines which names execute in LGOS.
+The Pipe executes only native `function_call` items. Server custom calls and
+searches have distinct native types and are already complete.
 When `lgos-a/simple-graph` is available with valid metadata, sync also creates
 the dedicated UserValves example over the same manifold base.
+
+## Server Tool Switches
+
+Select **LGOS / ... / server-tool**, open the Chat Variables control beside the
+chat input, and enable **Current time**, **Web search**, or both. The checkboxes
+default to off and their values belong to the chat. LGOS executes the selected
+tools server-side without a client-tool continuation.
 
 ## Simple Per-User Settings
 
@@ -288,6 +302,10 @@ HTML and chart bytes stay out of the upstream model transcript. Image files
 still use authenticated Open WebUI file storage and the native `files` event. Each continuation retains the original input, including instructions
 and file references, then appends complete Response output items and matching
 tool results. Final-answer text from every call is retained in both modes.
+
+Server custom call/result items have already been executed by LGOS; the Pipe does
+not execute them or send another result. The chat displays their final assistant
+answer.
 
 The Pipe returns plain text for non-streaming answers and uses the OpenAI SDK's
 typed chunk schema for streamed text. Open WebUI JSON-encodes these chunks, so

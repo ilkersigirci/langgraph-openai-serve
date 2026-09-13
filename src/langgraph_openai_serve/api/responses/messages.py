@@ -13,12 +13,16 @@ from langchain_core.messages import (
 )
 
 from langgraph_openai_serve.api.responses.schemas import (
+    ResponseCustomToolCallInput,
+    ResponseCustomToolCallOutputInput,
     ResponseFunctionCallInput,
     ResponseFunctionCallOutputInput,
     ResponseInputFile,
     ResponseInputItem,
+    ResponseInputMessage,
     ResponseInputText,
     ResponseOutputMessageInput,
+    ResponseWebSearchCallInput,
 )
 from langgraph_openai_serve.api.tools import decode_function_call
 
@@ -42,21 +46,17 @@ def convert_responses_input(
         return messages
 
     _validate_replay_ids(input_value)
-    index = 0
-    while index < len(input_value):
-        item = input_value[index]
-        if isinstance(item, ResponseFunctionCallInput):
-            calls: list[ResponseFunctionCallInput] = []
-            while index < len(input_value) and isinstance(
-                input_value[index],
-                ResponseFunctionCallInput,
-            ):
-                calls.append(cast("ResponseFunctionCallInput", input_value[index]))
-                index += 1
-            messages.append(_function_call_message(calls))
+    calls: list[ResponseFunctionCallInput | ResponseCustomToolCallInput] = []
+    for item in input_value:
+        if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
+            calls.append(item)
             continue
+        if calls:
+            messages.append(_tool_call_message(calls))
+            calls = []
         messages.append(_message_from_item(item))
-        index += 1
+    if calls:
+        messages.append(_tool_call_message(calls))
     return messages
 
 
@@ -64,7 +64,7 @@ def _validate_replay_ids(
     items: list[ResponseInputItem],
 ) -> None:
     seen_item_ids: set[str] = set()
-    seen_call_ids: set[str] = set()
+    seen_call_ids: dict[str, str] = {}
     seen_output_call_ids: set[str] = set()
     for item in items:
         item_id = getattr(item, "id", None)
@@ -74,36 +74,44 @@ def _validate_replay_ids(
                 raise InvalidResponsesInputError(msg)
             seen_item_ids.add(item_id)
 
-        if isinstance(item, ResponseFunctionCallInput):
+        if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
             if item.call_id in seen_call_ids:
                 msg = f"Responses input contains duplicate call_id '{item.call_id}'."
                 raise InvalidResponsesInputError(msg)
-            seen_call_ids.add(item.call_id)
-        elif isinstance(item, ResponseFunctionCallOutputInput):
+            seen_call_ids[item.call_id] = item.type
+        elif isinstance(
+            item, (ResponseFunctionCallOutputInput, ResponseCustomToolCallOutputInput)
+        ):
             if item.call_id in seen_output_call_ids:
                 msg = (
-                    "Responses input contains duplicate function output call_id "
+                    "Responses input contains duplicate tool output call_id "
                     f"'{item.call_id}'."
                 )
                 raise InvalidResponsesInputError(msg)
-            if item.call_id not in seen_call_ids:
+            if item.type != f"{seen_call_ids.get(item.call_id)}_output":
                 msg = (
-                    "Responses function output call_id must match an earlier "
-                    f"function call; got '{item.call_id}'."
+                    "Responses tool output call_id and type must match an earlier "
+                    f"tool call; got '{item.call_id}'."
                 )
                 raise InvalidResponsesInputError(msg)
             seen_output_call_ids.add(item.call_id)
 
-    unanswered = seen_call_ids - seen_output_call_ids
+    unanswered = seen_call_ids.keys() - seen_output_call_ids
     if unanswered:
         msg = (
-            "Responses function calls require matching function_call_output items; "
+            "Responses tool calls require matching tool output items; "
             f"missing outputs for {', '.join(sorted(unanswered))}."
         )
         raise InvalidResponsesInputError(msg)
 
 
 def _message_from_item(item: ResponseInputItem) -> BaseMessage:
+    if isinstance(item, ResponseWebSearchCallInput):
+        return AIMessage(
+            id=item.id,
+            content=[item.model_dump(mode="json", exclude_none=True)],
+            response_metadata={"model_provider": "openai"},
+        )
     if isinstance(item, ResponseOutputMessageInput):
         return AIMessage(
             id=item.id,
@@ -111,16 +119,25 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
             additional_kwargs={"id": item.id, "phase": item.phase},
             response_metadata={"model_provider": "openai"},
         )
-    if isinstance(item, ResponseFunctionCallOutputInput):
+    if isinstance(
+        item, (ResponseFunctionCallOutputInput, ResponseCustomToolCallOutputInput)
+    ):
         return ToolMessage(
             id=item.id,
-            content=item.output,
+            content=(
+                [{"type": "custom_tool_call_output", "output": item.output}]
+                if isinstance(item, ResponseCustomToolCallOutputInput)
+                else item.output
+            ),
             tool_call_id=item.call_id,
         )
-    if isinstance(item, ResponseFunctionCallInput):
-        msg = "Function calls must be grouped before message conversion."
+    if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
+        msg = "Tool calls must be grouped before message conversion."
         raise TypeError(msg)
+    return _input_message(item)
 
+
+def _input_message(item: ResponseInputMessage) -> BaseMessage:
     content = _input_content(item.content)
     match item.role:
         case "assistant":
@@ -147,10 +164,22 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
             return SystemMessage(content=content)
 
 
-def _function_call_message(calls: list[ResponseFunctionCallInput]) -> AIMessage:
+def _tool_call_message(
+    calls: list[ResponseFunctionCallInput | ResponseCustomToolCallInput],
+) -> AIMessage:
     tool_calls: list[ToolCall] = []
     invalid_tool_calls: list[InvalidToolCall] = []
     for call in calls:
+        if isinstance(call, ResponseCustomToolCallInput):
+            tool_calls.append(
+                ToolCall(
+                    name=call.name,
+                    args={"__arg1": call.input},
+                    id=call.call_id,
+                    type="tool_call",
+                )
+            )
+            continue
         parsed = decode_function_call(
             name=call.name, arguments=call.arguments, call_id=call.call_id
         )

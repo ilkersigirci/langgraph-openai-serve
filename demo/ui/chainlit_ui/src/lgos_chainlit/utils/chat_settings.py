@@ -10,6 +10,7 @@ from chainlit_utils.chat_settings import (
     settings_widgets,
 )
 from openai import OpenAIError
+from openai.types.responses import CustomToolParam, ToolParam
 
 from lgos_chainlit.lgos_protocol import (
     OPENAI_METADATA_VALUE_MAX_LENGTH,
@@ -20,11 +21,18 @@ from lgos_chainlit.lgos_protocol import (
 )
 from lgos_chainlit.utils.chat import send_limited_functionality_warning
 from lgos_chainlit.utils.clients import retrieve_model
+from lgos_chainlit.utils.responses import DISPLAY_FILE_TOOL
 
 logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
 STREAMING_SETTING_ID = "lgos_chainlit_stream"
+CLOCK_SETTING_ID = "lgos_current_time"
+WEB_SEARCH_SETTING_ID = "web_search"
+CURRENT_TIME_TOOL: CustomToolParam = {
+    "type": "custom",
+    "name": CLOCK_SETTING_ID,
+}
 
 
 async def configure_chat_settings() -> None:
@@ -41,6 +49,23 @@ async def configure_chat_settings() -> None:
             initial=streaming if type(streaming) is bool else True,
         )
     ]
+    if _is_server_tool_profile(model_id):
+        widgets.extend(
+            [
+                Switch(
+                    id=CLOCK_SETTING_ID,
+                    label="Current time",
+                    description="Let LGOS read its server clock.",
+                    initial=_selected(candidates, CLOCK_SETTING_ID),
+                ),
+                Switch(
+                    id=WEB_SEARCH_SETTING_ID,
+                    label="Web search",
+                    description="Let LGOS use its configured web-search backend.",
+                    initial=_selected(candidates, WEB_SEARCH_SETTING_ID),
+                ),
+            ]
+        )
     _store_runtime_settings_defaults(None)
     _store_model_features(None)
     if not isinstance(model_id, str) or not model_id:
@@ -82,6 +107,21 @@ async def configure_chat_settings() -> None:
     _store_runtime_settings_defaults(client_settings.defaults)
 
 
+def response_tools() -> list[ToolParam]:
+    """Return the tools available to the selected graph."""
+    if not _is_server_tool_profile(cl.user_session.get("chat_profile")):
+        return [DISPLAY_FILE_TOOL]
+    selected = cl.user_session.get("chat_settings")
+    if not isinstance(selected, dict):
+        return []
+    tools: list[ToolParam] = []
+    if selected.get(CLOCK_SETTING_ID) is True:
+        tools.append(CURRENT_TIME_TOOL)
+    if selected.get(WEB_SEARCH_SETTING_ID) is True:
+        tools.append({"type": "web_search"})
+    return tools
+
+
 def model_feature_enabled(feature: GraphFeature) -> bool:
     """Return whether the selected model advertised a feature."""
     features = cl.user_session.get(MODEL_FEATURES_SESSION_KEY)
@@ -120,3 +160,11 @@ def _store_runtime_settings_defaults(
 def _store_model_features(features: list[str] | None) -> None:
     """Store model capabilities returned by the OpenAI endpoint."""
     cl.user_session.set(MODEL_FEATURES_SESSION_KEY, features)
+
+
+def _selected(settings: dict[str, object] | None, key: str) -> bool:
+    return settings is not None and settings.get(key) is True
+
+
+def _is_server_tool_profile(model_id: object) -> bool:
+    return isinstance(model_id, str) and model_id.rsplit("/", 1)[-1] == "server-tool"

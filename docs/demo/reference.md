@@ -151,6 +151,8 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | Upstream generation model |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
+| `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
+| `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` graph. |
 

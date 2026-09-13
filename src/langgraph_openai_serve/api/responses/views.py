@@ -18,7 +18,7 @@ from langgraph_openai_serve.api.responses.messages import InvalidResponsesInputE
 from langgraph_openai_serve.api.responses.request import (
     UnsupportedResponsesRequestError,
     decode_responses_request,
-    validate_hosted_tools,
+    validate_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import UnsupportedResponsesOutputError
@@ -43,6 +43,7 @@ def _validate_responses_request(
     graph_registry: GraphRegistry,
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     graph_config = graph_registry.get_graph(request.model)
+    validate_tools(request, graph_config.server_tools)
     if request.previous_response_id is not None and not graph_config.supports(
         GraphFeature.INTERRUPTS
     ):
@@ -52,9 +53,7 @@ def _validate_responses_request(
             "'previous_response_id'."
         )
         raise UnsupportedResponsesRequestError(message, param="previous_response_id")
-    graph_request, messages, resume = decode_responses_request(request)
-    validate_hosted_tools(request, graph_config.hosted_tools)
-    return graph_request, messages, resume
+    return decode_responses_request(request, graph_config.server_tools)
 
 
 @router.post("/responses", response_model=Response)

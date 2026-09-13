@@ -26,7 +26,7 @@ nav = [
     { "Example Graphs" = [
       "demo/graphs/index.md",
       { "Core Graph Patterns" = "demo/graphs/core-patterns.md" },
-      { "Hosted Tool" = "demo/graphs/hosted-tool.md" },
+      { "Server Tool" = "demo/graphs/server-tool.md" },
       { "File Input" = "demo/graphs/file-input.md" },
       { "Events and Citations" = "demo/graphs/events-and-citations.md" },
       { "LGOS RAG" = "demo/graphs/lgos-rag.md" },

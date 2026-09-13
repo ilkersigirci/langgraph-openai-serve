@@ -85,7 +85,10 @@ async def _(
     run_langgraph,
     run_langgraph_stream,
 ):
-    _request, _messages, _ = decode_responses_request(request)
+    _request, _messages, _ = decode_responses_request(
+        request,
+        graph_registry.get_graph(request.model).server_tools,
+    )
     _complete = await run_langgraph(_request, _messages, graph_registry)
     _events = [
         event

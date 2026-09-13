@@ -16,6 +16,8 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
@@ -240,6 +242,79 @@ async def test_deployed_bundle_runs_responses_inference(
     assert request["store"] is False
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
+    bundled_generic, streaming
+):
+    openwebui_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "client_tool",
+                "description": "An OpenWebUI client tool.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    completed = final_response("It is noon.")
+    completed.output[:0] = [
+        ResponseCustomToolCall.model_validate(
+            {
+                "type": "custom_tool_call",
+                "id": "ctc_clock",
+                "call_id": "call_clock",
+                "name": "lgos_current_time",
+                "input": "UTC",
+                "status": "completed",
+            }
+        ),
+        ResponseCustomToolCallOutputItem(
+            type="custom_tool_call_output",
+            id="ctco_clock",
+            call_id="call_clock",
+            status="completed",
+            output="Noon",
+        ),
+    ]
+    requests = []
+
+    async def create(**request):
+        requests.append(request)
+        return completed
+
+    @asynccontextmanager
+    async def stream(**request):
+        requests.append(request)
+        yield FakeResponseStream([], completed)
+
+    bundled_generic._client = lambda **_: FakeClient(create=create, stream=stream)
+    result = await collect(
+        bundled_generic.Pipe().pipe(
+            {
+                **body(stream=streaming),
+                "model": "generic.lgos-a/server-tool",
+                "tools": openwebui_tools,
+            },
+            __metadata__={
+                "chat_id": "thread-123",
+                "chat_variables": {
+                    "lgos_current_time": True,
+                    "web_search": True,
+                },
+            },
+        )
+    )
+    assert len(requests) == 1
+    assert requests[0]["tools"] == [
+        {"type": "custom", "name": "lgos_current_time"},
+        {"type": "web_search"},
+    ]
+    assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
+    assert (
+        result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
+    ) == "It is noon."
+
+
 async def test_deployed_bundle_runs_non_streaming_interrupt(
     bundled_generic: ModuleType,
 ) -> None:
@@ -296,7 +371,10 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 
     result = await pipe.pipe(
         body(stream=False),
-        __metadata__={"chat_id": "thread-123"},
+        __metadata__={
+            "chat_id": "thread-123",
+            "chat_variables": {"audience": "expert"},
+        },
         __user__={"id": "user-123"},
     )
 
@@ -307,7 +385,10 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
     assert request["user"] == "user-123"
-    assert request["metadata"] == {"conversation_id": "thread-123"}
+    assert request["metadata"] == {
+        "conversation_id": "thread-123",
+        "lgos_settings": '{"audience":"expert"}',
+    }
     assert request["tools"][0]["name"] == "display_file"
 
 
@@ -642,7 +723,29 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
             "alt": "Q4 is highest.",
         },
     )
-    first = response(*final_response("Here is the chart. ").output, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_clock",
+            "call_id": "call_clock",
+            "name": "lgos_current_time",
+            "input": "UTC",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_clock",
+        call_id=server_call.call_id,
+        output="Noon",
+        status="completed",
+    )
+    first = response(
+        *final_response("Here is the chart. ").output,
+        server_call,
+        server_output,
+        call,
+    )
     expected_output = [
         item.model_dump(mode="json", exclude_none=True) for item in first.output
     ]
@@ -743,6 +846,7 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         *expected_output,
         output,
     ]
+    handle.assert_awaited_once()
     assert handle.await_args.args == (call, emitter, request)
 
 
@@ -1148,21 +1252,3 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
-
-
-@pytest.mark.parametrize(
-    "model", ["hosted-tool", "lgos-a/hosted-tool", "lgos-b/hosted-tool"]
-)
-def test_hosted_tool_request_enables_server_execution(model: str) -> None:
-    from lgos_openwebui.functions.generic.responses import (
-        _responses_request,
-    )
-
-    request = _responses_request(
-        model,
-        [],
-        None,
-        None,
-        provider_routing=False,
-    )
-    assert request["tools"] == [{"type": "custom", "name": "lgos_current_time"}]

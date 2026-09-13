@@ -97,24 +97,32 @@ documentation for the underlying conventions.
 
 ## Runner Behavior
 
-LGOS uses the LangGraph interface that matches the OpenAI response mode. Both
-paths use LangGraph's stable v2 output wrapper so interrupt handling remains
-durable.
+LGOS uses LangGraph's stable v2 output wrapper so interrupt handling remains
+durable. Ordinary requests choose invocation or streaming according to the
+OpenAI response mode; server tools additionally need intermediate updates.
 
 === "Complete response"
 
-    When `stream` is omitted or `false`, the route awaits `invoke_run()`. The
-    runner calls `graph.ainvoke(version="v2")`. It does not subscribe to custom
-    events. After execution it reads durable pending state for interrupts;
-    otherwise it renders the returned value as the final `AIMessage`.
+    When `stream` is omitted or `false`, ordinary requests use
+    `graph.ainvoke(version="v2")`. Requests selecting server tools use
+    `stream_run()` so LGOS can collect native call/result updates. That path
+    does not subscribe to message deltas, encode SSE, or include transient
+    commentary. Both paths use the same Responses item builder and read durable
+    pending state for interrupts.
 
 === "SSE response"
 
     When `stream=true`, the route returns an SSE response backed by
-    `stream_run()`. The runner consumes `messages`, `custom`, and `values`. Only
+    `stream_run()`. The runner consumes `custom` and `values`, plus `updates` for
+    requests selecting server tools. It also consumes `messages` for live text
+    whether or not server tools are selected. Only
     `AIMessageChunk` values from configured streamable nodes become text chunks;
     the list may include nodes in nested subgraphs. Returning a message through
     the graph's `messages` state is not a live-streaming signal.
+    Root-node updates expose selected tool activity while eligible answer tokens
+    stream immediately; nested updates remain private. Graphs keep intermediate
+    model text private through node
+    selection or the `nostream` tag; tool selection does not disable streaming.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
     events. The final root value supplies durable citations, tool calls, and

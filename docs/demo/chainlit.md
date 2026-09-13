@@ -8,8 +8,15 @@ The Chainlit project intentionally does not install or import the
 needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
-Native URL-citation annotations become clickable Chainlit source elements
-containing Markdown links, without changing the replayed answer text.
+The `server-tool` profile has fixed opt-in switches for `lgos_current_time` and
+`web_search`. Chainlit knows these public names and includes only selected tools
+in the native Responses `tools` array; it does not discover them from model
+metadata. The clock uses a name-only custom declaration, while search uses
+`{"type":"web_search"}`. LGOS completes selected server tools inside the same
+Response, so Chainlit executes only returned `function_call` items.
+Native URL-citation annotations become
+clickable Chainlit source elements containing Markdown links, without changing
+the replayed answer text.
 
 !!! info "Select one first-class gateway"
 

@@ -19,13 +19,22 @@ class ClientFunctionTool:
 
 @dataclass(frozen=True, slots=True)
 class NamedFunctionToolChoice:
-    """Require one named client-supplied function."""
+    """Require one named function."""
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class NamedCustomToolChoice:
+    """Require one named custom tool."""
 
     name: str
 
 
 ClientToolChoice: TypeAlias = (
-    Literal["none", "auto", "required"] | NamedFunctionToolChoice
+    Literal["none", "auto", "required"]
+    | NamedFunctionToolChoice
+    | NamedCustomToolChoice
 )
 
 
@@ -39,12 +48,13 @@ class GraphRequest:
     tools: tuple[ClientFunctionTool, ...]
     tool_choice: ClientToolChoice | None
     parallel_tool_calls: bool | None
-    hosted_tools: tuple[str, ...] = ()
+    server_tools: tuple[str, ...] = ()
 
 
 __all__ = [
     "ClientFunctionTool",
     "ClientToolChoice",
     "GraphRequest",
+    "NamedCustomToolChoice",
     "NamedFunctionToolChoice",
 ]

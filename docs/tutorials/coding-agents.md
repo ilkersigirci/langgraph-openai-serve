@@ -27,9 +27,9 @@ subset.
 
 ## Client Compatibility
 
-LGOS implements a deliberately bounded Responses surface. A client that always
-sends hosted tools, reasoning configuration, `include`, prompt-cache options,
-or another unsupported field will receive an explicit
+LGOS implements a deliberately bounded Responses surface. A client that sends
+tools unsupported by the selected graph, reasoning configuration, `include`,
+prompt-cache options, or another unsupported field will receive an explicit
 OpenAI `invalid_request_error`. Do not place a Responses-to-Chat translator in
 front of LGOS to hide that mismatch.
 

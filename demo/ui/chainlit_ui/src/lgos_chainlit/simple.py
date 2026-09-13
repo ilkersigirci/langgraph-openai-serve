@@ -22,6 +22,7 @@ from lgos_chainlit.utils.chat import (
 from lgos_chainlit.utils.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
+    response_tools,
     streaming_enabled,
 )
 from lgos_chainlit.utils.clients import list_models, model_request, openai_client
@@ -38,7 +39,6 @@ from lgos_chainlit.utils.responses import (
     function_calls,
     raise_for_response,
     response_input,
-    response_tools,
 )
 
 
@@ -126,7 +126,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     extra_headers=extra_headers,
                     input=cast("ResponseInputParam", input_items),
                     store=False,
-                    tools=response_tools(upstream_model),
+                    tools=response_tools(),
                     user=user,
                     metadata=metadata,
                 )
@@ -191,7 +191,7 @@ async def _stream_response(
         extra_headers=extra_headers,
         input=cast("ResponseInputParam", input_items),
         store=False,
-        tools=response_tools(model),
+        tools=response_tools(),
         user=user,
         metadata=metadata,
     ) as stream:
