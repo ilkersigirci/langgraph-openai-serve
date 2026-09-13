@@ -504,7 +504,7 @@ request:
 ```json
 {
   "tools": [
-    {"type": "custom", "name": "lgos_current_time"},
+    {"type": "custom", "name": "lgos_package_version"},
     {"type": "web_search"}
   ]
 }

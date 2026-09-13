@@ -421,18 +421,18 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     server_call = ResponseCustomToolCall.model_validate(
         {
             "type": "custom_tool_call",
-            "id": "ctc_clock",
-            "call_id": "call_clock",
-            "name": "lgos_current_time",
-            "input": "UTC",
+            "id": "ctc_package",
+            "call_id": "call_package",
+            "name": "lgos_package_version",
+            "input": "openai",
             "status": "completed",
         }
     )
     server_output = ResponseCustomToolCallOutputItem(
         type="custom_tool_call_output",
-        id="ctco_clock",
-        call_id="call_clock",
-        output="Noon",
+        id="ctco_package",
+        call_id="call_package",
+        output="openai==installed-version",
         status="completed",
     )
     first = _response(commentary, first_text, server_call, server_output, call)

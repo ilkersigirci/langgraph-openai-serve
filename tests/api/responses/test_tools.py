@@ -104,14 +104,14 @@ async def test_server_and_client_tools_are_separated_by_registration(
         return {"messages": messages}
 
     config = graph_registry.get_graph("test")
-    config.server_tools = {"clock", "web_search"}
+    config.server_tools = {"package_version", "web_search"}
     config.request_to_input = capture
 
     response = await openai_client.responses.create(
         model="test",
-        input="What time is it and what is the weather?",
+        input="Check a package version and the weather.",
         tools=[
-            {"type": "custom", "name": "clock"},
+            {"type": "custom", "name": "package_version"},
             {"type": "web_search"},
             {
                 "type": "function",
@@ -121,10 +121,10 @@ async def test_server_and_client_tools_are_separated_by_registration(
                 "strict": True,
             },
         ],
-        tool_choice={"type": "custom", "name": "clock"},
+        tool_choice={"type": "custom", "name": "package_version"},
     )
 
-    assert received[0].server_tools == ("clock", "web_search")
+    assert received[0].server_tools == ("package_version", "web_search")
     assert received[0].tools == (
         ClientFunctionTool(
             name="get_weather",
@@ -133,7 +133,7 @@ async def test_server_and_client_tools_are_separated_by_registration(
             strict=True,
         ),
     )
-    assert received[0].tool_choice == NamedCustomToolChoice(name="clock")
+    assert received[0].tool_choice == NamedCustomToolChoice(name="package_version")
     assert [tool.type for tool in response.tools] == [
         "custom",
         "web_search",
@@ -185,7 +185,7 @@ async def test_required_web_search_choice_reaches_graph_adapter(
                 "tools": [
                     {
                         "type": "function",
-                        "name": "clock",
+                        "name": "package_version",
                         "parameters": {"type": "object", "properties": {}},
                         "strict": True,
                     }
@@ -202,7 +202,10 @@ async def test_required_web_search_choice_reaches_graph_adapter(
             "tools.0.type",
         ),
         ({"tool_choice": "required"}, "tool_choice"),
-        ({"tools": [{"type": "custom", "name": "clock"}] * 2}, "tools"),
+        (
+            {"tools": [{"type": "custom", "name": "package_version"}] * 2},
+            "tools",
+        ),
         (
             {
                 "tools": [
@@ -231,14 +234,14 @@ async def test_invalid_server_tool_selection_fails_before_execution(
     param,
 ) -> None:
     config = graph_registry.get_graph("test")
-    config.server_tools = {"clock"}
+    config.server_tools = {"package_version"}
 
     def unexpected_run(request: GraphRequest, messages: list[BaseMessage]):
         pytest.fail("Invalid tool selection must fail before graph preparation.")
 
     config.request_to_input = unexpected_run
     with pytest.raises(BadRequestError) as error:
-        await openai_client.responses.create(model="test", input="Time?", **fields)
+        await openai_client.responses.create(model="test", input="Run tools.", **fields)
 
     assert error.value.response.json()["error"]["param"] == param
 
@@ -273,9 +276,9 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
             },
             {
                 "type": "function_call",
-                "id": "fc_clock",
-                "call_id": "call_clock",
-                "name": "clock",
+                "id": "fc_calculator",
+                "call_id": "call_calculator",
+                "name": "calculator",
                 "arguments": invalid_arguments,
                 "status": "completed",
             },
@@ -286,8 +289,8 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
             },
             {
                 "type": "function_call_output",
-                "call_id": "call_clock",
-                "output": "noon",
+                "call_id": "call_calculator",
+                "output": "42",
             },
         ],
     )
@@ -301,7 +304,10 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     ]
     assistant = messages[0]
     assert isinstance(assistant, AIMessage)
-    assert [part["id"] for part in assistant.content] == ["fc_weather", "fc_clock"]
+    assert [part["id"] for part in assistant.content] == [
+        "fc_weather",
+        "fc_calculator",
+    ]
     assert assistant.tool_calls == [
         {
             "name": "weather",
@@ -311,12 +317,12 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
         }
     ]
     assert len(assistant.invalid_tool_calls) == 1
-    assert assistant.invalid_tool_calls[0]["id"] == "call_clock"
+    assert assistant.invalid_tool_calls[0]["id"] == "call_calculator"
     assert assistant.invalid_tool_calls[0]["args"] == invalid_arguments
     assert "not valid JSON" in (assistant.invalid_tool_calls[0]["error"] or "")
     assert [message.tool_call_id for message in messages[1:]] == [
         "call_weather",
-        "call_clock",
+        "call_calculator",
     ]
 
 
@@ -438,9 +444,9 @@ def tool_openai_client(
                 "type": "tool_call",
             },
             {
-                "name": "clock",
-                "args": {"timezone": "Europe/Istanbul"},
-                "id": "call_clock",
+                "name": "translate",
+                "args": {"text": "hello"},
+                "id": "call_translate",
                 "type": "tool_call",
             },
         ],
@@ -467,12 +473,12 @@ async def test_multiple_tool_calls_are_distinct_response_output_items(
     ]
     assert [item.call_id for item in response.output] == [
         "call_weather",
-        "call_clock",
+        "call_translate",
     ]
-    assert [item.name for item in response.output] == ["weather", "clock"]
+    assert [item.name for item in response.output] == ["weather", "translate"]
     assert [json.loads(item.arguments) for item in response.output] == [
         {"city": "Istanbul"},
-        {"timezone": "Europe/Istanbul"},
+        {"text": "hello"},
     ]
     assert all(item.id.startswith("fc_") for item in response.output)
 
@@ -511,12 +517,12 @@ async def test_function_call_stream_has_complete_lifecycle(
     assert [event.output_index for event in added] == [0, 1]
     assert [event.item.call_id for event in added] == [
         "call_weather",
-        "call_clock",
+        "call_translate",
     ]
     assert [event.item.arguments for event in added] == ["", ""]
     assert [json.loads(event.delta) for event in deltas] == [
         {"city": "Istanbul"},
-        {"timezone": "Europe/Istanbul"},
+        {"text": "hello"},
     ]
     assert [event.item.id for event in done] == [event.item.id for event in added]
     assert events[-1].type == "response.completed"

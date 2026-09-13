@@ -26,19 +26,19 @@ from langgraph_openai_serve.graph.events import status_event
 from langgraph_openai_serve.graph.utils import prepare_run
 
 CALL = {
-    "id": "call_clock",
-    "name": "clock",
-    "args": {"__arg1": "Europe/Istanbul"},
+    "id": "call_package",
+    "name": "package_version",
+    "args": {"__arg1": "langgraph"},
 }
 CALL_ITEM = {
-    "id": "ctc_clock",
+    "id": "ctc_package",
     "type": "custom_tool_call",
     "status": "completed",
-    "call_id": "call_clock",
-    "name": "clock",
-    "input": "Europe/Istanbul",
+    "call_id": "call_package",
+    "name": "package_version",
+    "input": "langgraph",
 }
-CLOCK_TOOLS = [{"type": "custom", "name": "clock"}]
+PACKAGE_TOOLS = [{"type": "custom", "name": "package_version"}]
 SEARCH_TOOLS = [{"type": "web_search"}]
 SEARCH_CALL = {
     "id": "call_search",
@@ -60,7 +60,7 @@ def test_nested_updates_do_not_expose_server_tool_activity() -> None:
         "data": {"tools": {"messages": [AIMessage(content="", tool_calls=[CALL])]}},
     }
 
-    assert list(ServerToolTracker({"clock"}).items(event)) == []
+    assert list(ServerToolTracker({"package_version"}).items(event)) == []
 
 
 def _register_single_node(
@@ -114,7 +114,7 @@ async def test_chat_completions_can_use_a_server_tool_graph_without_tools(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.get_graph("test").server_tools = {"clock"}
+    graph_registry.get_graph("test").server_tools = {"package_version"}
 
     response = await openai_client.chat.completions.create(
         model="test",
@@ -136,10 +136,10 @@ async def test_server_output_contains_only_selected_executed_calls(
                     content=[
                         {
                             "type": "custom_tool_call_output",
-                            "output": "12:00 +03:00",
+                            "output": "langgraph==installed-version",
                         }
                     ],
-                    tool_call_id="call_clock",
+                    tool_call_id="call_package",
                 ),
                 ToolMessage(
                     content="search results",
@@ -154,13 +154,13 @@ async def test_server_output_contains_only_selected_executed_calls(
         graph_registry,
         "tools",
         answer,
-        server_tools={"clock", "web_search"},
+        server_tools={"package_version", "web_search"},
     )
     response, _ = await _create(
         openai_client,
         model="tools",
         input="Help.",
-        tools=[*CLOCK_TOOLS, *SEARCH_TOOLS],
+        tools=[*PACKAGE_TOOLS, *SEARCH_TOOLS],
     )
 
     assert [item.type for item in response.output] == [
@@ -169,9 +169,9 @@ async def test_server_output_contains_only_selected_executed_calls(
         "web_search_call",
         "message",
     ]
-    assert response.output[0].input == "Europe/Istanbul"
+    assert response.output[0].input == "langgraph"
     assert response.output[1].call_id == response.output[0].call_id
-    assert response.output[1].output == "12:00 +03:00"
+    assert response.output[1].output == "langgraph==installed-version"
 
 
 async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
@@ -185,13 +185,13 @@ async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
         return {"messages": messages}
 
     config = graph_registry.get_graph("test")
-    config.server_tools = {"clock"}
+    config.server_tools = {"package_version"}
     config.request_to_input = capture
 
     await openai_client.responses.create(
         model="test",
         input="Hello.",
-        tools=CLOCK_TOOLS,
+        tools=PACKAGE_TOOLS,
         tool_choice="none",
     )
 
@@ -212,18 +212,18 @@ async def test_server_execution_can_finish_with_a_client_function_call(
                     content=[
                         {
                             "type": "custom_tool_call_output",
-                            "output": "12:00 +03:00",
+                            "output": "langgraph==installed-version",
                         }
                     ],
-                    tool_call_id="call_clock",
+                    tool_call_id="call_package",
                 ),
                 AIMessage(
                     content="",
                     tool_calls=[
                         {
-                            "id": "call_reminder",
-                            "name": "set_reminder",
-                            "args": {"time": "12:30 +03:00"},
+                            "id": "call_report",
+                            "name": "save_report",
+                            "args": {"title": "Dependency report"},
                         }
                     ],
                 ),
@@ -232,23 +232,23 @@ async def test_server_execution_can_finish_with_a_client_function_call(
 
     _register_single_node(
         graph_registry,
-        "clock",
+        "package",
         answer,
-        server_tools={"clock"},
+        server_tools={"package_version"},
     )
     response, _ = await _create(
         openai_client,
-        model="clock",
-        input="Remind me in half an hour.",
+        model="package",
+        input="Save a dependency report.",
         tools=[
-            *CLOCK_TOOLS,
+            *PACKAGE_TOOLS,
             {
                 "type": "function",
-                "name": "set_reminder",
+                "name": "save_report",
                 "parameters": {
                     "type": "object",
-                    "properties": {"time": {"type": "string"}},
-                    "required": ["time"],
+                    "properties": {"title": {"type": "string"}},
+                    "required": ["title"],
                     "additionalProperties": False,
                 },
                 "strict": True,
@@ -264,12 +264,12 @@ async def test_server_execution_can_finish_with_a_client_function_call(
         "function_call",
     ]
     assert [item.call_id for item in response.output] == [
-        "call_clock",
-        "call_clock",
-        "call_reminder",
+        "call_package",
+        "call_package",
+        "call_report",
     ]
-    assert response.output[1].output == "12:00 +03:00"
-    assert json.loads(response.output[2].arguments) == {"time": "12:30 +03:00"}
+    assert response.output[1].output == "langgraph==installed-version"
+    assert json.loads(response.output[2].arguments) == {"title": "Dependency report"}
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -299,17 +299,17 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
 
     _register_single_node(
         graph_registry,
-        "clock",
+        "package",
         answer,
-        server_tools={"clock"},
+        server_tools={"package_version"},
     )
-    graph_registry.get_graph("clock").features = {GraphFeature.CLIENT_EVENTS}
+    graph_registry.get_graph("package").features = {GraphFeature.CLIENT_EVENTS}
 
     response, _ = await _create(
         openai_client,
-        model="clock",
+        model="package",
         input="Help.",
-        tools=CLOCK_TOOLS,
+        tools=PACKAGE_TOOLS,
         stream=stream,
     )
 
@@ -330,8 +330,8 @@ async def test_server_custom_tool_exchange_events_and_replay(
     async def choose(state: MessagesState):
         if len(state["messages"]) > 1:
             replayed.append(state["messages"])
-            return {"messages": AIMessage(content="The previous result was noon.")}
-        executions.append("clock")
+            return {"messages": AIMessage(content="The previous result was preserved.")}
+        executions.append("package_version")
         return {
             "messages": [
                 AIMessage(content=[{**CALL_ITEM, "index": 0}], tool_calls=[CALL]),
@@ -339,16 +339,16 @@ async def test_server_custom_tool_exchange_events_and_replay(
                     content=[
                         {
                             "type": "custom_tool_call_output",
-                            "output": "12:00 +03:00",
+                            "output": "langgraph==installed-version",
                         }
                     ],
-                    tool_call_id="call_clock",
+                    tool_call_id="call_package",
                 ),
             ]
         }
 
     async def answer(_state: MessagesState):
-        return {"messages": [AIMessage(content="It is noon.")]}
+        return {"messages": [AIMessage(content="The package version was found.")]}
 
     graph = (
         StateGraph(MessagesState)
@@ -359,7 +359,7 @@ async def test_server_custom_tool_exchange_events_and_replay(
             "choose",
             lambda state: (
                 END
-                if state["messages"][-1].text == "The previous result was noon."
+                if state["messages"][-1].text == "The previous result was preserved."
                 else "answer"
             ),
         )
@@ -367,15 +367,19 @@ async def test_server_custom_tool_exchange_events_and_replay(
         .compile()
     )
     graph_registry.register(
-        "clock",
-        GraphConfig(graph=graph, description="Clock", server_tools={"clock"}),
+        "package",
+        GraphConfig(
+            graph=graph,
+            description="Package",
+            server_tools={"package_version"},
+        ),
     )
 
     response, events = await _create(
         openai_client,
-        model="clock",
-        input="Time?",
-        tools=CLOCK_TOOLS,
+        model="package",
+        input="Version?",
+        tools=PACKAGE_TOOLS,
         stream=True,
     )
 
@@ -395,27 +399,30 @@ async def test_server_custom_tool_exchange_events_and_replay(
         event.input
         for event in events
         if event.type == "response.custom_tool_call_input.done"
-    ] == ["Europe/Istanbul"]
+    ] == ["langgraph"]
 
     second = await openai_client.responses.create(
-        model="clock",
-        tools=CLOCK_TOOLS,
+        model="package",
+        tools=PACKAGE_TOOLS,
         input=[
-            {"role": "user", "content": "Time?"},
+            {"role": "user", "content": "Version?"},
             *response.output,
-            {"role": "user", "content": "What did the clock say?"},
+            {"role": "user", "content": "What version was found?"},
         ],
     )
 
-    assert second.output_text == "The previous result was noon."
-    assert executions == ["clock"]
+    assert second.output_text == "The previous result was preserved."
+    assert executions == ["package_version"]
     call_message, tool_message = replayed[0][1:3]
     assert isinstance(call_message, AIMessage)
     assert call_message.content[0]["id"] == response.output[0].id
-    assert call_message.tool_calls[0]["args"] == {"__arg1": "Europe/Istanbul"}
+    assert call_message.tool_calls[0]["args"] == {"__arg1": "langgraph"}
     assert isinstance(tool_message, ToolMessage)
     assert tool_message.content == [
-        {"type": "custom_tool_call_output", "output": "12:00 +03:00"}
+        {
+            "type": "custom_tool_call_output",
+            "output": "langgraph==installed-version",
+        }
     ]
 
 
@@ -679,31 +686,31 @@ async def test_unfinished_server_execution_fails(
 
     _register_single_node(
         graph_registry,
-        "clock",
+        "package",
         unfinished,
-        server_tools={"clock"},
+        server_tools={"package_version"},
     )
 
     if not stream:
         with pytest.raises(InternalServerError):
             await openai_client.responses.create(
-                model="clock",
-                input="Time?",
-                tools=CLOCK_TOOLS,
+                model="package",
+                input="Version?",
+                tools=PACKAGE_TOOLS,
             )
         return
 
     failed, events = await _create(
         openai_client,
-        model="clock",
-        input="Time?",
-        tools=CLOCK_TOOLS,
+        model="package",
+        input="Version?",
+        tools=PACKAGE_TOOLS,
         stream=True,
     )
     assert [event.type for event in events][-2:] == ["error", "response.failed"]
     assert failed.status == "failed"
     assert [item.type for item in failed.output] == ["custom_tool_call"]
-    assert failed.output[0].call_id == "call_clock"
+    assert failed.output[0].call_id == "call_package"
 
 
 async def test_repeated_server_tool_call_id_fails(
@@ -711,7 +718,9 @@ async def test_repeated_server_tool_call_id_fails(
     graph_registry: GraphRegistry,
 ) -> None:
     async def repeated(_state: MessagesState):
-        result = ToolMessage(content="12:00 +03:00", tool_call_id="call_clock")
+        result = ToolMessage(
+            content="langgraph==installed-version", tool_call_id="call_package"
+        )
         return {
             "messages": [
                 AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
@@ -724,14 +733,14 @@ async def test_repeated_server_tool_call_id_fails(
 
     _register_single_node(
         graph_registry,
-        "clock",
+        "package",
         repeated,
-        server_tools={"clock"},
+        server_tools={"package_version"},
     )
 
     with pytest.raises(InternalServerError):
         await openai_client.responses.create(
-            model="clock",
-            input="Time?",
-            tools=CLOCK_TOOLS,
+            model="package",
+            input="Version?",
+            tools=PACKAGE_TOOLS,
         )

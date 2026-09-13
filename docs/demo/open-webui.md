@@ -23,9 +23,9 @@ The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
-The generated `server-tool` models add fixed **Current time** and **Web search**
-Chat Variable checkboxes. The Pipe maps enabled boxes to a name-only
-`{"type":"custom","name":"lgos_current_time"}` declaration and
+The generated `server-tool` models add fixed **Package version** and **Web
+search** Chat Variable checkboxes. The Pipe maps enabled boxes to a name-only
+`{"type":"custom","name":"lgos_package_version"}` declaration and
 `{"type":"web_search"}`; the names are client constants, not discovered
 metadata. The server registry determines which names execute in LGOS.
 The Pipe executes only native `function_call` items. Server custom calls and
@@ -36,9 +36,9 @@ the dedicated UserValves example over the same manifold base.
 ## Server Tool Switches
 
 Select **LGOS / ... / server-tool**, open the Chat Variables control beside the
-chat input, and enable **Current time**, **Web search**, or both. The checkboxes
-default to off and their values belong to the chat. LGOS executes the selected
-tools server-side without a client-tool continuation.
+chat input, and enable **Package version**, **Web search**, or both. The
+checkboxes default to off and their values belong to the chat. LGOS executes
+the selected tools server-side without a client-tool continuation.
 
 ## Simple Per-User Settings
 

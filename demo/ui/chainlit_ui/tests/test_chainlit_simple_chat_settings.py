@@ -128,7 +128,7 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
         {
             "chat_profile": "provider/server-tool",
             "chat_settings": {
-                chat_settings.CLOCK_SETTING_ID: True,
+                chat_settings.PACKAGE_VERSION_SETTING_ID: True,
                 chat_settings.WEB_SEARCH_SETTING_ID: True,
             },
         }
@@ -145,14 +145,14 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
 
     assert [widget.id for widget in factory.call_args.args[0]][:3] == [
         chat_settings.STREAMING_SETTING_ID,
-        chat_settings.CLOCK_SETTING_ID,
+        chat_settings.PACKAGE_VERSION_SETTING_ID,
         chat_settings.WEB_SEARCH_SETTING_ID,
     ]
     assert chat_settings.response_tools() == [
-        {"type": "custom", "name": "lgos_current_time"},
+        {"type": "custom", "name": "lgos_package_version"},
         {"type": "web_search"},
     ]
-    session.values["chat_settings"][chat_settings.CLOCK_SETTING_ID] = False
+    session.values["chat_settings"][chat_settings.PACKAGE_VERSION_SETTING_ID] = False
     assert chat_settings.response_tools() == [{"type": "web_search"}]
     session.values["chat_profile"] = "simple"
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]

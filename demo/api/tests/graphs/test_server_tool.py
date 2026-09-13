@@ -1,34 +1,34 @@
-from datetime import datetime, timezone
+from importlib.metadata import version
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph_openai_serve import GraphRequest
 
 from lgos_demo_api.graphs import server_tool
-from lgos_demo_api.graphs.server_tool import lgos_current_time
+from lgos_demo_api.graphs.server_tool import lgos_package_version
 
 
-async def test_current_time_uses_the_lgos_clock() -> None:
-    before = datetime.now(timezone.utc).replace(microsecond=0)
-    result = await lgos_current_time.ainvoke("Asia/Tokyo")
-    after = datetime.now(timezone.utc)
-    assert isinstance(result, list)
-    assert result[0]["type"] == "custom_tool_call_output"
-    output = result[0]["output"]
-    assert isinstance(output, str)
-    actual = datetime.fromisoformat(output.removeprefix("Asia/Tokyo: "))
-    assert before <= actual <= after
-    assert actual.utcoffset().total_seconds() == 9 * 3600
+async def test_package_version_reads_the_server_environment() -> None:
+    result = await lgos_package_version.ainvoke(" OpenAI ")
+
+    assert result == [
+        {
+            "type": "custom_tool_call_output",
+            "output": f"openai=={version('openai')}",
+        }
+    ]
 
 
-async def test_unknown_timezone_is_actionable() -> None:
-    result = await lgos_current_time.ainvoke("not/a/timezone")
+async def test_unsupported_package_is_actionable() -> None:
+    result = await lgos_package_version.ainvoke("requests")
+
     assert result == [
         {
             "type": "custom_tool_call_output",
             "output": (
-                "Unknown timezone: not/a/timezone. "
-                "Use an IANA name such as Europe/Istanbul."
+                "Unsupported package: requests. Choose one of: "
+                "langgraph-openai-serve, langgraph, langchain, "
+                "langchain-openai, openai."
             ),
         }
     ]
@@ -46,7 +46,7 @@ async def test_graph_does_not_execute_an_unselected_tool(
             tool_calls=[
                 {
                     "name": "web_search",
-                    "args": {"query": "current time"},
+                    "args": {"query": "latest OpenAI Python SDK release"},
                     "id": "call_unselected",
                 }
             ],
@@ -61,13 +61,13 @@ async def test_graph_does_not_execute_an_unselected_tool(
         metadata={},
         user=None,
         tools=(),
-        server_tools=("lgos_current_time",),
+        server_tools=("lgos_package_version",),
         tool_choice="auto",
         parallel_tool_calls=None,
     )
 
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content="What time is it?")]},
+        {"messages": [HumanMessage(content="Is this OpenAI SDK current?")]},
         context=server_tool.context_factory(request, None),
     )
 

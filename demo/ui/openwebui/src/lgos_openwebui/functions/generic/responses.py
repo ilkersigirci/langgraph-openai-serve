@@ -20,8 +20,8 @@ from pydantic import TypeAdapter
 
 from .api import _model_request
 from .contracts import (
-    CURRENT_TIME_TOOL_NAME,
     DISPLAY_FILE_TOOL_NAME,
+    PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     is_server_tool_model,
@@ -36,9 +36,9 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
-CURRENT_TIME_TOOL: CustomToolParam = {
+PACKAGE_VERSION_TOOL: CustomToolParam = {
     "type": "custom",
-    "name": CURRENT_TIME_TOOL_NAME,
+    "name": PACKAGE_VERSION_TOOL_NAME,
 }
 
 
@@ -51,8 +51,8 @@ def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]
     if not isinstance(variables, dict):
         return []
     tools: list[ToolParam] = []
-    if variables.get(CURRENT_TIME_TOOL_NAME) is True:
-        tools.append(CURRENT_TIME_TOOL)
+    if variables.get(PACKAGE_VERSION_TOOL_NAME) is True:
+        tools.append(PACKAGE_VERSION_TOOL)
     if variables.get(WEB_SEARCH_TOOL_NAME) is True:
         tools.append({"type": "web_search"})
     return tools

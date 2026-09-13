@@ -411,9 +411,9 @@ def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
         {
-            "key": "lgos_current_time",
+            "key": "lgos_package_version",
             "type": "checkbox",
-            "label": "Current time",
+            "label": "Package version",
             "default": False,
         },
         {

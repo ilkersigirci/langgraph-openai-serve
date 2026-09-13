@@ -3,8 +3,9 @@
 `server-tool` demonstrates two client-selected, server-executed tools through
 one standard Responses request:
 
-- `lgos_current_time` uses the Responses custom-tool shape but is executed by
-  LGOS rather than the client. Its free-form input is an IANA timezone string.
+- `lgos_package_version` uses the Responses custom-tool shape but is executed
+  by LGOS rather than the client. Its free-form input names a supported Python
+  distribution installed in the API runtime.
 - `web_search` always uses the standard OpenAI declaration. The graph can run
   it through a self-managed SearXNG or Degoog endpoint, or use an upstream
   OpenAI Responses model's native search as its backend.
@@ -38,7 +39,7 @@ sequenceDiagram
   box LGOS API process
     participant API as /v1/responses
     participant Graph as server-tool graph
-    participant Tools as clock / web_search
+    participant Tools as package metadata / web_search
   end
   participant Search as SearXNG / Degoog
   participant Model as Upstream model
@@ -51,7 +52,9 @@ sequenceDiagram
   Graph-->>API: Tool-call updates + status events
   opt Tool calls requested
     Graph->>Tools: Execute selected tools
-    alt HTTP web search
+    alt Installed package version
+      Tools->>Tools: Read distribution metadata
+    else HTTP web search
       Tools->>Search: GET configured URL?q=...&format=json
       Search-->>Tools: JSON results
     else upstream OpenAI web search
@@ -69,21 +72,21 @@ sequenceDiagram
   API-->>UI: Annotations + response.completed
 ```
 
-1. The client includes `{"type":"custom","name":"lgos_current_time"}` and/or
-   `{"type":"web_search"}` in `tools`. There is no tool discovery through the
-   model endpoint and no automatic server-side enablement.
+1. The client includes `{"type":"custom","name":"lgos_package_version"}`
+   and/or `{"type":"web_search"}` in `tools`. There is no tool discovery
+   through the model endpoint and no automatic server-side enablement.
 2. LGOS recognizes registered custom names as server selectors. Unregistered
    functions remain client-owned; this demo rejects those because it handles
    only its configured tools. `auto` lets the model decide, `required` requires
-   a supplied tool, and a named custom choice can force the clock. Omitting a
-   tool, or using `tool_choice="none"`, leaves it unavailable.
+   a supplied tool, and a named custom choice can force package lookup. Omitting
+   a tool, or using `tool_choice="none"`, leaves it unavailable.
 3. The graph binds the selected LangChain `@custom_tool` and `@tool` objects in
    `select_tools` and supplies the same selection to `ToolNode` for execution.
    The model selects every needed tool in one turn; `ToolNode` executes parallel
    calls using LangGraph's normal behavior. Requests without enabled tools go
    directly to `answer`.
-4. Clock use returns `custom_tool_call`, `custom_tool_call_output`, and a message.
-   Search use returns `web_search_call` followed by a message with standard
+4. Package lookup returns `custom_tool_call`, `custom_tool_call_output`, and a
+   message. Search returns `web_search_call` followed by a message with standard
    URL-citation annotations. Clients replay the complete output and execute only
    `function_call` items. Backend-specific search payloads remain private.
 
@@ -138,9 +141,15 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 response = client.responses.create(
     model="server-tool",
-    input="What time is it in Istanbul and Tokyo?",
+    input=(
+        "Compare this server's installed LangGraph and OpenAI SDK versions "
+        "with their latest stable releases."
+    ),
     store=False,
-    tools=[{"type": "custom", "name": "lgos_current_time"}],
+    tools=[
+        {"type": "custom", "name": "lgos_package_version"},
+        {"type": "web_search"},
+    ],
     tool_choice="required",
     parallel_tool_calls=True,
 )
@@ -149,7 +158,13 @@ for item in response.output:
 print(response.output_text)
 ```
 
-For web search, change the request fields to:
+`lgos_package_version` accepts `langgraph-openai-serve`, `langgraph`,
+`langchain`, `langchain-openai`, or `openai`. This allowlist keeps arbitrary
+environment inventory private. The tool reads installed distribution metadata;
+it does not embed version numbers that can go stale. In the combined request,
+`web_search` supplies current public release information.
+
+To exercise only web search, use:
 
 ```python
 tools=[{"type": "web_search"}],
@@ -164,9 +179,10 @@ from the server.
 
 !!! note "One public contract"
 
-    The clock's name selects its server-owned implementation and input contract.
-    It uses standard Responses custom-tool items, while LGOS deliberately owns
-    execution instead of returning the call for client execution.
+    The package tool's name selects its server-owned implementation and input
+    contract. It uses standard Responses custom-tool items, while LGOS
+    deliberately owns execution instead of returning the call for client
+    execution.
     `web_search` uses the standard built-in declaration and output shape with
     every backend. The LGOS graph chooses where search runs; the client never
     names SearXNG, Degoog, or OpenAI as a provider. See the
@@ -178,4 +194,4 @@ LangGraph [`ToolNode` and tool routing](https://docs.langchain.com/oss/python/la
 LangChain's [OpenAI built-in tools](https://docs.langchain.com/oss/python/integrations/chat/openai#web-search),
 the [SearXNG Search API](https://docs.searxng.org/dev/search_api.html),
 [Degoog Search API](https://degoog-org.github.io/docs/api.html), and
-[Python `zoneinfo`](https://docs.python.org/3/library/zoneinfo.html).
+[Python distribution metadata](https://docs.python.org/3/library/importlib.metadata.html#distribution-versions).

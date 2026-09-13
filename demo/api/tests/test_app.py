@@ -283,9 +283,9 @@ def test_main_leaves_access_logging_to_the_deployment(
 
 
 @pytest.mark.parametrize(
-    "tools", [[], [{"type": "custom", "name": "lgos_current_time"}]]
+    "tools", [[], [{"type": "custom", "name": "lgos_package_version"}]]
 )
-async def test_server_time_lookup_is_not_bound_when_unselected_or_disabled(
+async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
     openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, tools
 ) -> None:
     from langchain_core.language_models.fake_chat_models import (
@@ -295,9 +295,9 @@ async def test_server_time_lookup_is_not_bound_when_unselected_or_disabled(
 
     class NoToolsModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
-            pytest.fail("Time lookup must not be bound when disabled.")
+            pytest.fail("Package lookup must not be bound when disabled.")
 
-    model = NoToolsModel(responses=[AIMessage(content="Time lookup is disabled.")])
+    model = NoToolsModel(responses=[AIMessage(content="Package lookup is disabled.")])
     monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
     _rebuild_server_tool_graph(monkeypatch)
     details = await openai_client.models.retrieve("server-tool")
@@ -305,12 +305,12 @@ async def test_server_time_lookup_is_not_bound_when_unselected_or_disabled(
     assert "server_tools" not in details.lgos
     response = await openai_client.responses.create(
         model="server-tool",
-        input="What time is it?",
+        input="Which OpenAI SDK version is installed?",
         store=False,
         tools=tools,
         tool_choice="none" if tools else "auto",
     )
-    assert response.output_text == "Time lookup is disabled."
+    assert response.output_text == "Package lookup is disabled."
     assert [item.type for item in response.output] == ["message"]
 
 
@@ -333,7 +333,7 @@ async def test_server_tool_graph_rejects_client_functions(
         (False, "auto"),
         (False, "required"),
         (True, "required"),
-        (False, {"type": "custom", "name": "lgos_current_time"}),
+        (False, {"type": "custom", "name": "lgos_package_version"}),
     ],
 )
 async def test_server_custom_tool_executes_a_fresh_native_exchange(
@@ -358,7 +358,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         if selecting:
             assert not body.get("stream")
             assert body["tools"][0]["type"] == "custom"
-            assert body["tools"][0]["name"] == "lgos_current_time"
+            assert body["tools"][0]["name"] == "lgos_package_version"
             assert body["parallel_tool_calls"] is False
             assert body["tool_choice"] == choice
         else:
@@ -372,8 +372,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
             )
             assert result["type"] == "custom_tool_call_output"
             assert result["call_id"] == "call_new"
-            assert result["output"].startswith("Europe/Istanbul: ")
-            assert result["output"].endswith("+03:00")
+            assert result["output"].startswith("openai==")
         output = [
             {
                 "id": f"msg_{len(requests)}",
@@ -384,7 +383,9 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     {
                         "type": "output_text",
                         "text": (
-                            "Checking the clock." if selecting else result["output"]
+                            "Checking installed packages."
+                            if selecting
+                            else result["output"]
                         ),
                         "annotations": [],
                     }
@@ -397,8 +398,8 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     "id": "ctc_new",
                     "type": "custom_tool_call",
                     "call_id": "call_new",
-                    "name": "lgos_current_time",
-                    "input": "Europe/Istanbul",
+                    "name": "lgos_package_version",
+                    "input": "openai",
                     "status": "completed",
                 }
             )
@@ -463,16 +464,16 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                 {
                     "type": "custom_tool_call",
                     "call_id": "call_old",
-                    "name": "lgos_current_time",
-                    "input": "Europe/Istanbul",
+                    "name": "lgos_package_version",
+                    "input": "langgraph",
                 },
                 {
                     "type": "custom_tool_call_output",
                     "call_id": "call_old",
-                    "output": "An old timestamp",
+                    "output": "langgraph==previous-version",
                 },
             ],
-            tools=[{"type": "custom", "name": "lgos_current_time"}],
+            tools=[{"type": "custom", "name": "lgos_package_version"}],
             tool_choice=choice,
             parallel_tool_calls=False,
             stream=stream,
@@ -500,8 +501,8 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         "message",
     ]
     assert output[0].call_id == output[1].call_id == "call_new"
-    assert output[0].name == "lgos_current_time"
-    assert output[0].input == "Europe/Istanbul"
+    assert output[0].name == "lgos_package_version"
+    assert output[0].input == "openai"
     assert output[1].output == output[-1].content[0].text
     if stream:
         assert [

@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
 STREAMING_SETTING_ID = "lgos_chainlit_stream"
-CLOCK_SETTING_ID = "lgos_current_time"
+PACKAGE_VERSION_SETTING_ID = "lgos_package_version"
 WEB_SEARCH_SETTING_ID = "web_search"
-CURRENT_TIME_TOOL: CustomToolParam = {
+PACKAGE_VERSION_TOOL: CustomToolParam = {
     "type": "custom",
-    "name": CLOCK_SETTING_ID,
+    "name": PACKAGE_VERSION_SETTING_ID,
 }
 
 
@@ -53,10 +53,10 @@ async def configure_chat_settings() -> None:
         widgets.extend(
             [
                 Switch(
-                    id=CLOCK_SETTING_ID,
-                    label="Current time",
-                    description="Let LGOS read its server clock.",
-                    initial=_selected(candidates, CLOCK_SETTING_ID),
+                    id=PACKAGE_VERSION_SETTING_ID,
+                    label="Package version",
+                    description="Let LGOS inspect selected server package versions.",
+                    initial=_selected(candidates, PACKAGE_VERSION_SETTING_ID),
                 ),
                 Switch(
                     id=WEB_SEARCH_SETTING_ID,
@@ -115,8 +115,8 @@ def response_tools() -> list[ToolParam]:
     if not isinstance(selected, dict):
         return []
     tools: list[ToolParam] = []
-    if selected.get(CLOCK_SETTING_ID) is True:
-        tools.append(CURRENT_TIME_TOOL)
+    if selected.get(PACKAGE_VERSION_SETTING_ID) is True:
+        tools.append(PACKAGE_VERSION_TOOL)
     if selected.get(WEB_SEARCH_SETTING_ID) is True:
         tools.append({"type": "web_search"})
     return tools

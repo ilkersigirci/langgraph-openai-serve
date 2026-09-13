@@ -256,24 +256,24 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
             },
         }
     ]
-    completed = final_response("It is noon.")
+    completed = final_response("openai==installed-version")
     completed.output[:0] = [
         ResponseCustomToolCall.model_validate(
             {
                 "type": "custom_tool_call",
-                "id": "ctc_clock",
-                "call_id": "call_clock",
-                "name": "lgos_current_time",
-                "input": "UTC",
+                "id": "ctc_package",
+                "call_id": "call_package",
+                "name": "lgos_package_version",
+                "input": "openai",
                 "status": "completed",
             }
         ),
         ResponseCustomToolCallOutputItem(
             type="custom_tool_call_output",
-            id="ctco_clock",
-            call_id="call_clock",
+            id="ctco_package",
+            call_id="call_package",
             status="completed",
-            output="Noon",
+            output="openai==installed-version",
         ),
     ]
     requests = []
@@ -298,7 +298,7 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
             __metadata__={
                 "chat_id": "thread-123",
                 "chat_variables": {
-                    "lgos_current_time": True,
+                    "lgos_package_version": True,
                     "web_search": True,
                 },
             },
@@ -306,13 +306,13 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
     )
     assert len(requests) == 1
     assert requests[0]["tools"] == [
-        {"type": "custom", "name": "lgos_current_time"},
+        {"type": "custom", "name": "lgos_package_version"},
         {"type": "web_search"},
     ]
     assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
     assert (
         result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
-    ) == "It is noon."
+    ) == "openai==installed-version"
 
 
 async def test_deployed_bundle_runs_non_streaming_interrupt(
@@ -726,18 +726,18 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
     server_call = ResponseCustomToolCall.model_validate(
         {
             "type": "custom_tool_call",
-            "id": "ctc_clock",
-            "call_id": "call_clock",
-            "name": "lgos_current_time",
-            "input": "UTC",
+            "id": "ctc_package",
+            "call_id": "call_package",
+            "name": "lgos_package_version",
+            "input": "openai",
             "status": "completed",
         }
     )
     server_output = ResponseCustomToolCallOutputItem(
         type="custom_tool_call_output",
-        id="ctco_clock",
+        id="ctco_package",
         call_id=server_call.call_id,
-        output="Noon",
+        output="openai==installed-version",
         status="completed",
     )
     first = response(

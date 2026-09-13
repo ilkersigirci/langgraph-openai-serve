@@ -17,9 +17,9 @@ from pydantic import (
 
 from .functions.generic.api import _model_request
 from .functions.generic.contracts import (
-    CURRENT_TIME_TOOL_NAME,
     LGOS_EXTENSION_KEY,
     LGOS_MODEL_OWNER,
+    PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     is_server_tool_model,
 )
@@ -44,9 +44,9 @@ LIMITED_FUNCTIONALITY_DESCRIPTION = (
 )
 SERVER_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
     {
-        "key": CURRENT_TIME_TOOL_NAME,
+        "key": PACKAGE_VERSION_TOOL_NAME,
         "type": "checkbox",
-        "label": "Current time",
+        "label": "Package version",
         "default": False,
     },
     {
