@@ -1,11 +1,12 @@
-# Hosted Tool
+# Server Tool
 
-`hosted-tool` demonstrates two client-selected tools executed by LGOS through
+`server-tool` demonstrates two client-selected tools executed by LGOS through
 one standard Responses request:
 
 - `lgos_current_time` is an OpenAI custom tool backed by Python's system clock.
+  Its free-form input is an IANA timezone string.
 - `web_search` always uses the standard OpenAI declaration. The graph can run
-  it through a self-hosted SearXNG or Degoog endpoint, or pass it to an upstream
+  it through a self-managed SearXNG or Degoog endpoint, or pass it to an upstream
   OpenAI Responses model as a native server tool.
 
 The graph is a real model-backed agent with no persistence. Clients own
@@ -23,9 +24,9 @@ graph TD
 ```
 
 LangChain's agent owns the model/tool loop. Its `tools` node executes the clock
-and the self-hosted search adapter. Upstream OpenAI search executes inside the
+and the HTTP search adapter. Upstream OpenAI search executes inside the
 model call. The final middleware node adds citation annotations only for exact
-self-hosted result links that the model retained in its answer; provider-native
+HTTP result links that the model retained in its answer; provider-native
 citations pass through LangChain's standard content blocks.
 
 ## Request Flow
@@ -35,7 +36,7 @@ sequenceDiagram
   participant UI as Chainlit / Open WebUI
   box LGOS API process
     participant API as /v1/responses
-    participant Agent as hosted-tool agent
+    participant Agent as server-tool agent
     participant Tools as clock / web_search
   end
   participant Search as SearXNG / Degoog
@@ -50,10 +51,10 @@ sequenceDiagram
     Model-->>Agent: Server-tool call/result + cited answer
   else graph-executed tool
     alt current time
-      Model-->>Agent: custom call with timezone
+      Model-->>Agent: custom tool call with timezone
       Agent->>Tools: Execute lgos_current_time
       Tools-->>Agent: Timestamp
-    else self-hosted web search
+    else HTTP web search
       Model-->>Agent: function call with query
       Agent->>Tools: Execute web_search
       Tools->>Search: GET configured URL?q=...&format=json
@@ -70,15 +71,20 @@ sequenceDiagram
 1. The client includes `{"type":"custom","name":"lgos_current_time"}` and/or
    `{"type":"web_search"}` in `tools`. There is no tool discovery through the
    model endpoint and no automatic server-side enablement.
-2. LGOS rejects tools not registered for this graph. `auto` lets the model decide;
-   `required` requires one of the supplied tools. A named custom choice can force
-   the clock. Omitting a tool, or using `tool_choice="none"`, leaves it unavailable.
-3. LangChain's `create_agent` pre-registers the clock and the configured search
-   implementation. Middleware filters the model-visible set for each request.
-   The client never enters the tool loop.
+2. LGOS recognizes registered custom names as server selectors. Unregistered
+   functions remain client-owned; this demo rejects those because it handles
+   only its configured tools. `auto` lets the model decide, `required` requires
+   a supplied tool, and a named custom choice can force the clock. Omitting a
+   tool, or using `tool_choice="none"`, leaves it unavailable.
+3. LangChain's `create_agent` registers the clock with native `@custom_tool` and
+   local search with `@tool`. Middleware filters the tools for each
+   request and checks the selected names again before execution. The requested
+   choice applies to the first model turn; later turns use `auto` so the agent
+   can finish. The client never enters this tool loop.
 4. Clock use returns `custom_tool_call`, `custom_tool_call_output`, and a message.
    Search use returns `web_search_call` followed by a message with standard
-   URL-citation annotations. Backend-specific calls and payloads remain private.
+   URL-citation annotations. Clients replay the complete output and execute only
+   `function_call` items. Backend-specific search payloads remain private.
 
 LGOS subscribes to LangGraph `updates` only when the request selects a
 server-side tool. Those completed node updates provide the call/result boundary
@@ -125,7 +131,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
 response = client.responses.create(
-    model="hosted-tool",
+    model="server-tool",
     input="What time is it in Istanbul and Tokyo?",
     store=False,
     tools=[{"type": "custom", "name": "lgos_current_time"}],
@@ -145,20 +151,20 @@ tool_choice="required",
 ```
 
 With only `web_search` supplied, `required` forces a search. In Chainlit, select
-the `hosted-tool` profile and enable either tool in chat settings. The generated
+the `server-tool` profile and enable either tool in chat settings. The generated
 Open WebUI Workspace Model exposes the same choices as Chat Variable checkboxes.
 The declarations are fixed client knowledge; neither UI discovers tool names
 from the server.
 
 !!! note "One public contract"
 
-    `custom` describes the clock's freeform model input. `web_search` uses the
-    standard built-in declaration and output shape with every backend. The LGOS
-    graph chooses where search runs; the client never names SearXNG, Degoog, or
-    OpenAI as a provider. See the
-    [hosted-tool contract](../../explanation/openai-compatibility.md#hosted-tools).
+    The clock's name selects its server-owned implementation and input contract.
+    `web_search` uses the standard built-in declaration and output shape with
+    every backend. The LGOS graph chooses where search runs; the client never
+    names SearXNG, Degoog, or OpenAI as a provider. See the
+    [server-tool contract](../../explanation/openai-compatibility.md#server-tools).
 
-The implementation uses native [OpenAI custom tools](https://developers.openai.com/api/docs/guides/function-calling#custom-tools),
+The implementation uses standard [OpenAI custom tools](https://developers.openai.com/api/docs/guides/function-calling#custom-tools),
 [web-search response shapes](https://developers.openai.com/api/docs/guides/tools-web-search?api-mode=responses),
 LangChain [`create_agent` and tools](https://docs.langchain.com/oss/python/langchain/agents),
 LangChain's [OpenAI built-in tools](https://docs.langchain.com/oss/python/integrations/chat/openai#web-search),

@@ -119,16 +119,16 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
-async def test_hosted_tool_profile_uses_fixed_opt_in_tools(
+async def test_server_tool_profile_uses_fixed_opt_in_tools(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
     session = Session(
         {
-            "chat_profile": "provider/hosted-tool",
+            "chat_profile": "provider/server-tool",
             "chat_settings": {
-                chat_settings.CLOCK_SETTING_ID: False,
+                chat_settings.CLOCK_SETTING_ID: True,
                 chat_settings.WEB_SEARCH_SETTING_ID: True,
             },
         }
@@ -148,6 +148,11 @@ async def test_hosted_tool_profile_uses_fixed_opt_in_tools(
         chat_settings.CLOCK_SETTING_ID,
         chat_settings.WEB_SEARCH_SETTING_ID,
     ]
+    assert chat_settings.response_tools() == [
+        {"type": "custom", "name": "lgos_current_time"},
+        {"type": "web_search"},
+    ]
+    session.values["chat_settings"][chat_settings.CLOCK_SETTING_ID] = False
     assert chat_settings.response_tools() == [{"type": "web_search"}]
     session.values["chat_profile"] = "simple"
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]

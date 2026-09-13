@@ -114,15 +114,17 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
     type: Literal["function_call_output"] = "function_call_output"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
+    caller: None = None
+    created_by: str | None = None
 
 
 class ResponseCustomToolCallInput(_ResponsesRequestModel):
-    """A custom call replayed with its server-executed result."""
+    """A custom-tool call replayed from a previous Response."""
 
-    type: Literal["custom_tool_call"]
     call_id: str
-    name: str
     input: str
+    name: str
+    type: Literal["custom_tool_call"] = "custom_tool_call"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
     caller: None = None
@@ -131,13 +133,13 @@ class ResponseCustomToolCallInput(_ResponsesRequestModel):
 
 
 class ResponseCustomToolCallOutputInput(_ResponsesRequestModel):
-    """A text result from an LGOS-owned custom tool."""
+    """A custom-tool result replayed from a previous Response."""
 
-    type: Literal["custom_tool_call_output"]
     call_id: str
     output: str
+    type: Literal["custom_tool_call_output"] = "custom_tool_call_output"
     id: str | None = None
-    status: Literal["completed"] | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
     caller: None = None
     created_by: str | None = None
 
@@ -173,24 +175,17 @@ class ResponseFunctionTool(_ResponsesRequestModel):
     """A client-supplied function available to the graph."""
 
     type: Literal["function"]
-    name: str
+    name: Annotated[str, Field(min_length=1)]
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
     strict: bool | None = None
 
 
-class ResponseCustomToolFormat(_ResponsesRequestModel):
-    """Freeform text accepted by an LGOS-owned tool."""
-
-    type: Literal["text"]
-
-
 class ResponseCustomTool(_ResponsesRequestModel):
-    """Select a registered tool without supplying executable code."""
+    """Select one registered server tool by its native custom-tool name."""
 
     type: Literal["custom"]
     name: Annotated[str, Field(min_length=1)]
-    format: ResponseCustomToolFormat | None = None
 
 
 class ResponseWebSearchTool(_ResponsesRequestModel):
@@ -257,7 +252,6 @@ __all__ = [
     "ResponseCustomTool",
     "ResponseCustomToolCallInput",
     "ResponseCustomToolCallOutputInput",
-    "ResponseCustomToolFormat",
     "ResponseFunctionCallInput",
     "ResponseFunctionCallOutputInput",
     "ResponseFunctionTool",

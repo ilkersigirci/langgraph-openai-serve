@@ -77,7 +77,7 @@ class GraphConfig(BaseModel):
     streamable_node_names: list[str] = Field(default_factory=list)
     features: set[GraphFeature] = Field(default_factory=set)
     client_settings: type[ClientSettings] | None = None
-    hosted_tools: set[Annotated[str, StringConstraints(min_length=1)]] = Field(
+    server_tools: set[Annotated[str, StringConstraints(min_length=1)]] = Field(
         default_factory=set
     )
     runtime_callbacks: Callbacks = None

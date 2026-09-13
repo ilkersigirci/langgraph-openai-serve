@@ -244,8 +244,9 @@ async def test_deployed_bundle_runs_responses_inference(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_bundle_maps_hosted_controls_without_forwarding_openwebui_tools(
-    bundled_generic, streaming
+@pytest.mark.parametrize("runtime_settings", [{}, {"audience": "expert"}])
+async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
+    bundled_generic, streaming, runtime_settings
 ):
     openwebui_tools = [
         {
@@ -259,12 +260,15 @@ async def test_bundle_maps_hosted_controls_without_forwarding_openwebui_tools(
     ]
     completed = final_response("It is noon.")
     completed.output[:0] = [
-        ResponseCustomToolCall(
-            type="custom_tool_call",
-            id="ctc_clock",
-            call_id="call_clock",
-            name="lgos_current_time",
-            input="UTC",
+        ResponseCustomToolCall.model_validate(
+            {
+                "type": "custom_tool_call",
+                "id": "ctc_clock",
+                "call_id": "call_clock",
+                "name": "lgos_current_time",
+                "input": "UTC",
+                "status": "completed",
+            }
         ),
         ResponseCustomToolCallOutputItem(
             type="custom_tool_call_output",
@@ -290,12 +294,13 @@ async def test_bundle_maps_hosted_controls_without_forwarding_openwebui_tools(
         bundled_generic.Pipe().pipe(
             {
                 **body(stream=streaming),
-                "model": "generic.lgos-a/hosted-tool",
+                "model": "generic.lgos-a/server-tool",
                 "tools": openwebui_tools,
             },
             __metadata__={
                 "chat_id": "thread-123",
                 "chat_variables": {
+                    **runtime_settings,
                     "lgos_current_time": True,
                     "web_search": True,
                 },
@@ -307,7 +312,10 @@ async def test_bundle_maps_hosted_controls_without_forwarding_openwebui_tools(
         {"type": "custom", "name": "lgos_current_time"},
         {"type": "web_search"},
     ]
-    assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
+    expected_metadata = {"conversation_id": "thread-123"}
+    if runtime_settings:
+        expected_metadata["lgos_settings"] = '{"audience":"expert"}'
+    assert requests[0]["metadata"] == expected_metadata
     assert (
         result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
     ) == "It is noon."
@@ -369,7 +377,14 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 
     result = await pipe.pipe(
         body(stream=False),
-        __metadata__={"chat_id": "thread-123"},
+        __metadata__={
+            "chat_id": "thread-123",
+            "chat_variables": {
+                "audience": "expert",
+                "lgos_current_time": False,
+                "web_search": True,
+            },
+        },
         __user__={"id": "user-123"},
     )
 
@@ -380,7 +395,10 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
     assert request["user"] == "user-123"
-    assert request["metadata"] == {"conversation_id": "thread-123"}
+    assert request["metadata"] == {
+        "conversation_id": "thread-123",
+        "lgos_settings": '{"audience":"expert"}',
+    }
     assert request["tools"][0]["name"] == "display_file"
 
 
@@ -725,7 +743,29 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
             "alt": "Q4 is highest.",
         },
     )
-    first = response(*final_response("Here is the chart. ").output, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_clock",
+            "call_id": "call_clock",
+            "name": "lgos_current_time",
+            "input": "UTC",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_clock",
+        call_id=server_call.call_id,
+        output="Noon",
+        status="completed",
+    )
+    first = response(
+        *final_response("Here is the chart. ").output,
+        server_call,
+        server_output,
+        call,
+    )
     expected_output = [
         item.model_dump(mode="json", exclude_none=True) for item in first.output
     ]
@@ -826,6 +866,7 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         *expected_output,
         output,
     ]
+    handle.assert_awaited_once()
     assert handle.await_args.args == (call, emitter, request)
 
 

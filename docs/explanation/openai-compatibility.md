@@ -220,22 +220,22 @@ interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
 
 ## Supported Responses Subset
 
-`POST /v1/responses` implements stateless text, files, function calls, hosted
-custom tools, OpenAI-shaped web search, and streaming over the same graph runner as
-Chat Completions. It intentionally does not claim every field in the upstream
-OpenAI API.
+`POST /v1/responses` implements stateless text, files, client functions,
+application-executed custom tools, OpenAI-shaped web search, and
+streaming over the same graph runner as Chat Completions. It intentionally does
+not claim every field in the upstream OpenAI API.
 
 | Request field or item | LGOS behavior |
 | --- | --- |
 | `model`, `input`, `instructions` | Supported. String input and ordered user, system, developer, and replayed assistant messages become LangChain messages. New `instructions` are rejected on interrupt resumes because a paused invocation cannot consume them. |
 | `input_text` | Supported. |
 | `input_file.file_id` | Supported and normalized to the existing graph file block. |
-| function `tools`, `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. |
-| custom `tools` and named custom `tool_choice` | Select LGOS-registered hosted tools. Freeform text input is supported; client descriptions, grammar formats, and tool loading/caller controls are rejected. |
-| `tools=[{"type":"web_search"}]` | Selects a graph-owned web search that uses the standard OpenAI declaration. Optional filters and location fields are outside the current subset. |
-| `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together for server execution; complete pairs may be replayed as history. |
+| function `tools`, named function `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. A function whose name is registered as a server tool is rejected so ownership stays unambiguous. |
+| name-only custom `tools` and named custom `tool_choice` | Select a custom tool registered in `GraphConfig.server_tools`. The graph owns its description, format, and implementation; arbitrary client-defined custom tools are outside this subset. |
+| `tools=[{"type":"web_search"}]` | Selects a registered graph-owned web search. Use `tool_choice="required"` with only this tool to force search. Named built-in choices, optional filters, and location fields are outside the current subset. |
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
-| `function_call` and string-valued `function_call_output` | Supported for ordinary client-tool continuation. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
+| `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
+| `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events. |
 | `store` | Omitted and false mean false; true is rejected. |
@@ -254,10 +254,12 @@ There are no response retrieve, delete, cancel, compact, or input-item routes.
 Clients therefore keep an input ledger and resend the items needed by the next
 turn instead of using a server-side Conversation.
 
-When continuing a function call, append every item from `response.output`
-unchanged and then append a matching `function_call_output`. Replaying complete
-SDK items preserves message and call IDs, citations, refusals, and assistant
-`phase` in the LangChain content consumed by model adapters. Replayed
+When continuing a response, append every item from `response.output` unchanged.
+Execute returned client function calls, then append their `function_call_output`
+items. Registered custom calls already have matching outputs. Replaying complete
+SDK items preserves custom and function exchanges, message and call IDs,
+citations, refusals, and assistant `phase` in the LangChain content consumed by
+model adapters. Replayed
 `web_search_call` items also retain their ID, action, and status. Completed and
 incomplete assistant message items can both be replayed. The current
 SDK may serialize optional function-call `caller` and `namespace` fields and
@@ -267,9 +269,8 @@ This state model follows OpenAI's documented manual item replay while
 keeping storage in the client.
 
 Each replayed function or custom call requires one matching output of the same
-kind. Missing, duplicate,
-or unmatched results fail validation before graph execution, including when the
-client requests streaming.
+type. Missing, duplicate, mismatched, or unmatched results fail validation
+before graph execution, including when the client requests streaming.
 
 An interrupt continuation uses a narrower stateful path. The client sends the
 paused Response ID as `previous_response_id` and sends only matching
@@ -297,8 +298,8 @@ Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 | Visible streaming status | Separate completed message item with `phase="commentary"` |
 | Client tool or interrupt | One `function_call` item per call |
 | Tool result on the next request | Matching `function_call_output` item |
-| LGOS-hosted custom tool | `custom_tool_call` and matching `custom_tool_call_output` in the same response |
-| LGOS-hosted web search | `web_search_call` followed by a cited assistant message |
+| LGOS server custom tool | `custom_tool_call` and matching `custom_tool_call_output` in the same response |
+| LGOS server web search | `web_search_call` followed by a cited assistant message |
 | URL citation | `url_citation` annotation on `output_text` |
 | Provider-reported usage | `usage` on the completed or incomplete Response |
 
@@ -381,19 +382,19 @@ custom server event.
 ### Chat Completions vs Responses Boundary
 
 Complex workflow features—such as streaming status commentary, selecting
-server-hosted tools, checkpointed persistence, and human-in-the-loop
+server tools, checkpointed persistence, and human-in-the-loop
 interrupts—are available through the native Responses API (`/v1/responses`).
 
 The Chat Completions API (`/v1/chat/completions`) provides strict, standard OpenAI
 compatibility for assistant text and client tool calling. It streams plain text
 `delta.content` chunks, ignores custom streaming events, and never selects
-server-hosted tools. Only interrupt-enabled models fail fast with HTTP 400.
+server tools. Only interrupt-enabled models fail fast with HTTP 400.
 
 | Graph result | Responses | Chat Completions |
 | --- | --- | --- |
 | Assistant text | `final_answer` message | `delta.content` |
 | Interrupt requiring input | `function_call` item | Unsupported (HTTP 400) |
-| LGOS-hosted custom tool | Custom call and result items | Not selectable |
+| LGOS server tool | Native call and result items | Not selectable |
 | Citation | `output_text.annotations` | message/final-delta annotations |
 | Passive status | `commentary` message | Ignored |
 | Diagnostic progress or artifact | Ignored | Ignored |
@@ -401,7 +402,7 @@ server-hosted tools. Only interrupt-enabled models fail fast with HTTP 400.
 
 Status is deliberately not a tool call. In OpenAI
 [function calling](https://developers.openai.com/api/docs/guides/function-calling),
-a function call asks the client to execute work and return a result. A passive
+a client-owned function call asks the client to execute work and return a result. A passive
 status describes backend work already in progress.
 
 ## Citation Ownership
@@ -493,65 +494,78 @@ results. Interrupts and checkpoint resumes are supported exclusively via
 the Responses API (`/v1/responses`). Requesting an interrupt-enabled model via
 Chat Completions returns HTTP 400 Bad Request.
 
-### Hosted Tools
+### Server Tools
 
-`GraphConfig.hosted_tools` is an internal allowlist of graph-enabled tool names for a
-graph. It is not model metadata and there is no discovery protocol. Clients know
-the public tool declarations and select them per request with
-`tools=[{"type":"custom","name":"…"}]` or `tools=[{"type":"web_search"}]`;
-unknown selections fail before execution. `GraphRequest.hosted_tools` carries
-only the selected names. `tool_choice` retains `none`, `auto`, `required`, or a
-named custom choice. Graphs own binding and execution.
+`GraphConfig.server_tools` is an internal allowlist of tool names executed by a
+graph. It is not model metadata, and LGOS has no tool discovery protocol. The
+client already knows each public name and native OpenAI type, then selects it per
+request:
 
-OpenAI [custom tools](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)
-use freeform string input. LGOS uses their native `custom_tool_call` and
-`custom_tool_call_output` shapes for server-owned execution, with a shared
-`call_id`. This is an LGOS execution policy, not an OpenAI-hosted built-in or a
-client execution request. A completed response contains both items and the final
-answer; clients must not execute the tool again.
+```json
+{
+  "tools": [
+    {"type": "custom", "name": "lgos_current_time"},
+    {"type": "web_search"}
+  ]
+}
+```
 
-`web_search` has a standard declaration and output shape in the OpenAI Responses
-contract, but that does not prescribe the search backend. An LGOS graph may
-execute an ordinary LangChain search tool or bind a provider-native
-`{"type":"web_search"}` tool. LGOS translates both the local
-call/`ToolMessage` pair and LangChain's standard
-`server_tool_call`/`server_tool_result` pair to the same completed
-`web_search_call`. The client remains outside the execution loop. The demo can
-use a compatible SearXNG or Degoog endpoint, or its upstream OpenAI Responses
-model. Self-hosted results retained as exact Markdown links become standard URL
-citations; provider-native citations pass through the normalized message.
+A registered custom selector contains only `type` and `name`; the graph owns its
+description, optional input format, binding, and implementation. Client overrides
+are rejected. An unregistered custom name is rejected, while a function remains
+client-owned unless its name collides with a registered server tool.
+Selecting `web_search` also requires that name in the graph's allowlist.
 
-For requests selecting hosted tools, LGOS consumes completed LangGraph `updates`,
-including nested agent updates. Selected calls and their matching `ToolMessage`
-results become typed Responses items and item added/done plus
-`response.custom_tool_call_input.delta` / `done` events. Each completed input
-is sent as one delta. The graph returns its final assistant message normally.
-Local `web_search` function calls and provider-native server-tool blocks become
-`web_search_call`; backend result payloads stay private. Web-search calls and
-custom-tool results use item added/done events with their completed payloads.
-Completed searches also emit `response.web_search_call.completed` before item
-done. LangChain exposes completed node results, so LGOS does not synthesize
-intermediate search progress.
+`GraphRequest.server_tools` contains only the selected registered names, while
+`GraphRequest.tools` contains normalized client functions. `tool_choice`
+preserves `none`, `auto`, `required`, or a named function or custom choice. The
+graph uses those values to bind its own LangChain tools.
 
-The same hosted-tool request does not subscribe to LangGraph `messages`; its
-final answer is emitted once after the graph finishes. This prevents an
-intermediate model preamble from becoming final answer text and avoids parsing
-partial tool-call chunks. Requests without hosted tools keep token streaming.
+This uses OpenAI's native tool representations, not an LGOS tool envelope:
 
-All Responses requests use this assembler. The non-streaming path collects the
-terminal Response without upstream message streaming, SSE encoding, or transient
-commentary. Repeated parent/subgraph messages are
-deduplicated, and replayed input calls are excluded from new output. Calls must
-have results before successful completion; streaming errors retain partial
-activity on `response.failed`, never a successful unresolved call. Unselected
-internal tools and ordinary private graph custom data stay private.
+- A server `custom` tool has free-form string input. LGOS returns its
+  `custom_tool_call` and matching `custom_tool_call_output` in the same response.
+- A client `function` retains JSON object arguments and client-side execution.
+- `web_search` uses OpenAI's built-in declaration and `web_search_call` output.
 
-Replay complete call/result pairs as history without adding a new result.
-The [hosted-tool demo](../demo/graphs/hosted-tool.md) uses LangChain's native
-custom-tool decorator, ordinary tool decorator, and agent loop. Its
-middleware applies the requested tool choice on the first model call of each
-request, then permits automatic selection on subsequent calls. Chat Completions
-can still invoke the graph, but its request cannot enable hosted tools.
+OpenAI's [custom tools guide](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)
+defines free-form tool inputs. LGOS owns the application loop for registered
+custom tools: the model emits a call, LGOS runs it, and LGOS returns the result to
+the model before completing the outer Response. The client replays the completed
+pair and executes only returned function calls.
+
+The `web_search` declaration does not prescribe a backend. A graph may execute
+an ordinary LangChain search tool or bind a provider-native
+`{"type":"web_search"}` tool. LGOS maps a local call/`ToolMessage` pair and
+LangChain's `server_tool_call`/`server_tool_result` blocks to the same completed
+`web_search_call`. The demo supports a compatible SearXNG or Degoog endpoint or
+an upstream OpenAI Responses model. Exact links retained from HTTP search become
+standard URL citations; provider citations pass through the normalized message.
+With only `web_search` selected, `tool_choice="required"` forces search. Named
+built-in choices are outside LGOS's supported `tool_choice` subset.
+
+Requests selecting server tools consume completed LangGraph `updates`, including
+nested agent updates. Calls and matching `ToolMessage` results become typed
+Responses items. Custom inputs produce native
+`response.custom_tool_call_input.delta` and `done` events;
+completed searches emit
+`response.web_search_call.completed`. Backend result payloads stay private.
+
+These requests do not subscribe to LangGraph `messages`; the final answer is
+emitted once after the graph finishes. That avoids exposing intermediate model
+preambles or parsing partial tool-call chunks. Requests without server tools
+retain token streaming.
+
+Repeated parent/subgraph updates are deduplicated, and replayed input calls are
+excluded from new output. A selected server call must have a result before
+successful completion. Streaming failures retain partial activity on
+`response.failed`; unselected internal tools and private graph data stay private.
+
+The [server-tool demo](../demo/graphs/server-tool.md) uses LangChain
+`@custom_tool`, `@tool`, and `create_agent`. Middleware binds only the selected
+tools, applies the outer choice on the first model call, and checks the selected
+names again before execution. Chat Completions can still invoke the graph but
+cannot select server tools.
 
 ### Files And `display_file`
 
@@ -700,8 +714,9 @@ for the underlying checkpoint model.
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
 - Responses implements the explicit subset above; response storage,
   Conversations, general previous-response chaining, background work,
-  server tools other than registered custom tools and the documented `web_search` subset,
-  structured output, and unconsumed generation controls are rejected.
+  arbitrary client-defined custom tools and formats, built-in tools beyond the
+  documented `web_search` subset, structured output, and unconsumed generation
+  controls are rejected.
   `previous_response_id` is reserved for interrupt continuation.
 - Chat Completions remains a direct compatibility surface, while maintained
   demo UIs use Responses for every graph.

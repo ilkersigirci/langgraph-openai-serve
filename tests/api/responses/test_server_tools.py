@@ -1,5 +1,6 @@
-"""Native Responses contracts for server-owned tools."""
+"""Native Responses contracts for application-executed server tools."""
 
+import json
 from typing import Any
 
 import pytest
@@ -50,7 +51,7 @@ def _register_single_node(
     name: str,
     node: Any,
     *,
-    hosted_tools: set[str],
+    server_tools: set[str],
     streamable: bool = False,
 ) -> None:
     graph = (
@@ -65,7 +66,7 @@ def _register_single_node(
         GraphConfig(
             graph=graph,
             description=name,
-            hosted_tools=hosted_tools,
+            server_tools=server_tools,
             streamable_node_names=["answer"] if streamable else [],
         ),
     )
@@ -92,11 +93,11 @@ async def _create(
     return terminal.response, events
 
 
-async def test_chat_completions_can_use_a_hosted_tool_graph_without_tools(
+async def test_chat_completions_can_use_a_server_tool_graph_without_tools(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.get_graph("test").hosted_tools = {"clock"}
+    graph_registry.get_graph("test").server_tools = {"clock"}
 
     response = await openai_client.chat.completions.create(
         model="test",
@@ -106,7 +107,7 @@ async def test_chat_completions_can_use_a_hosted_tool_graph_without_tools(
     assert response.choices[0].message.content == "hello"
 
 
-async def test_hosted_output_contains_only_selected_executed_calls(
+async def test_server_output_contains_only_selected_executed_calls(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
@@ -114,7 +115,15 @@ async def test_hosted_output_contains_only_selected_executed_calls(
         return {
             "messages": [
                 AIMessage(content=[CALL_ITEM], tool_calls=[CALL, SEARCH_CALL]),
-                ToolMessage(content="12:00 +03:00", tool_call_id="call_clock"),
+                ToolMessage(
+                    content=[
+                        {
+                            "type": "custom_tool_call_output",
+                            "output": "12:00 +03:00",
+                        }
+                    ],
+                    tool_call_id="call_clock",
+                ),
                 ToolMessage(
                     content="search results",
                     name="web_search",
@@ -128,7 +137,7 @@ async def test_hosted_output_contains_only_selected_executed_calls(
         graph_registry,
         "tools",
         answer,
-        hosted_tools={"clock", "web_search"},
+        server_tools={"clock", "web_search"},
     )
     response, _ = await _create(
         openai_client,
@@ -143,9 +152,12 @@ async def test_hosted_output_contains_only_selected_executed_calls(
         "web_search_call",
         "message",
     ]
+    assert response.output[0].input == "Europe/Istanbul"
+    assert response.output[1].call_id == response.output[0].call_id
+    assert response.output[1].output == "12:00 +03:00"
 
 
-async def test_tool_choice_none_exposes_no_hosted_tools_to_the_graph(
+async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
@@ -156,7 +168,7 @@ async def test_tool_choice_none_exposes_no_hosted_tools_to_the_graph(
         return {"messages": messages}
 
     config = graph_registry.get_graph("test")
-    config.hosted_tools = {"clock"}
+    config.server_tools = {"clock"}
     config.request_to_input = capture
 
     await openai_client.responses.create(
@@ -166,7 +178,81 @@ async def test_tool_choice_none_exposes_no_hosted_tools_to_the_graph(
         tool_choice="none",
     )
 
-    assert received[0].hosted_tools == ()
+    assert received[0].server_tools == ()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_server_execution_can_finish_with_a_client_function_call(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    stream: bool,
+) -> None:
+    async def answer(_state: MessagesState):
+        return {
+            "messages": [
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                ToolMessage(
+                    content=[
+                        {
+                            "type": "custom_tool_call_output",
+                            "output": "12:00 +03:00",
+                        }
+                    ],
+                    tool_call_id="call_clock",
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "call_reminder",
+                            "name": "set_reminder",
+                            "args": {"time": "12:30 +03:00"},
+                        }
+                    ],
+                ),
+            ]
+        }
+
+    _register_single_node(
+        graph_registry,
+        "clock",
+        answer,
+        server_tools={"clock"},
+    )
+    response, _ = await _create(
+        openai_client,
+        model="clock",
+        input="Remind me in half an hour.",
+        tools=[
+            *CLOCK_TOOLS,
+            {
+                "type": "function",
+                "name": "set_reminder",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"time": {"type": "string"}},
+                    "required": ["time"],
+                    "additionalProperties": False,
+                },
+                "strict": True,
+            },
+        ],
+        stream=stream,
+    )
+
+    assert response.status == "completed"
+    assert [item.type for item in response.output] == [
+        "custom_tool_call",
+        "custom_tool_call_output",
+        "function_call",
+    ]
+    assert [item.call_id for item in response.output] == [
+        "call_clock",
+        "call_clock",
+        "call_reminder",
+    ]
+    assert response.output[1].output == "12:00 +03:00"
+    assert json.loads(response.output[2].arguments) == {"time": "12:30 +03:00"}
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -198,7 +284,7 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
         graph_registry,
         "clock",
         answer,
-        hosted_tools={"clock"},
+        server_tools={"clock"},
     )
     graph_registry.get_graph("clock").features = {GraphFeature.CLIENT_EVENTS}
 
@@ -217,7 +303,7 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
     assert response.output_text == ("Checking.Done." if stream else "Done.")
 
 
-async def test_custom_exchange_events_and_replay(
+async def test_server_custom_tool_exchange_events_and_replay(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
@@ -231,12 +317,14 @@ async def test_custom_exchange_events_and_replay(
         executions.append("clock")
         return {
             "messages": [
-                AIMessage(
-                    content=[{**CALL_ITEM, "index": 0}],
-                    tool_calls=[CALL],
-                ),
+                AIMessage(content=[{**CALL_ITEM, "index": 0}], tool_calls=[CALL]),
                 ToolMessage(
-                    content="12:00 +03:00",
+                    content=[
+                        {
+                            "type": "custom_tool_call_output",
+                            "output": "12:00 +03:00",
+                        }
+                    ],
                     tool_call_id="call_clock",
                 ),
             ]
@@ -264,7 +352,7 @@ async def test_custom_exchange_events_and_replay(
     )
     graph_registry.register(
         "clock",
-        GraphConfig(graph=graph, description="Clock", hosted_tools={"clock"}),
+        GraphConfig(graph=graph, description="Clock", server_tools={"clock"}),
     )
 
     response, events = await _create(
@@ -281,14 +369,17 @@ async def test_custom_exchange_events_and_replay(
         "message",
     ]
     assert all(item.status == "completed" for item in response.output)
-    assert response.output[0].id == "ctc_clock"
-    assert "index" not in response.output[0].model_dump()
     assert [
         event.item.status
         for event in events
         if event.type == "response.output_item.added"
         and event.item.type in {"custom_tool_call", "custom_tool_call_output"}
     ] == ["in_progress", "completed"]
+    assert [
+        event.input
+        for event in events
+        if event.type == "response.custom_tool_call_input.done"
+    ] == ["Europe/Istanbul"]
 
     second = await openai_client.responses.create(
         model="clock",
@@ -304,7 +395,7 @@ async def test_custom_exchange_events_and_replay(
     assert executions == ["clock"]
     call_message, tool_message = replayed[0][1:3]
     assert isinstance(call_message, AIMessage)
-    assert call_message.content[0]["id"] == "ctc_clock"
+    assert call_message.content[0]["id"] == response.output[0].id
     assert call_message.tool_calls[0]["args"] == {"__arg1": "Europe/Istanbul"}
     assert isinstance(tool_message, ToolMessage)
     assert tool_message.content == [
@@ -341,7 +432,7 @@ async def test_web_search_output_events_and_replay(
         graph_registry,
         "search",
         answer,
-        hosted_tools={"web_search"},
+        server_tools={"web_search"},
     )
     response, events = await _create(
         openai_client,
@@ -416,7 +507,7 @@ async def test_provider_web_search_uses_the_same_public_output(
         graph_registry,
         "provider-search",
         answer,
-        hosted_tools={"web_search"},
+        server_tools={"web_search"},
     )
     response, events = await _create(
         openai_client,
@@ -442,7 +533,7 @@ async def test_provider_web_search_uses_the_same_public_output(
     ("tool_status", "search_status"),
     [("success", "completed"), ("error", "failed")],
 )
-async def test_hosted_search_streams_one_final_delta_after_tool_updates(
+async def test_server_search_streams_one_final_delta_after_tool_updates(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     tool_status: str,
@@ -466,7 +557,7 @@ async def test_hosted_search_streams_one_final_delta_after_tool_updates(
         graph_registry,
         "search",
         answer,
-        hosted_tools={"web_search"},
+        server_tools={"web_search"},
         streamable=True,
     )
     response, events = await _create(
@@ -494,7 +585,7 @@ async def test_hosted_search_streams_one_final_delta_after_tool_updates(
 
 
 @pytest.mark.parametrize("stream", [False, True])
-async def test_unfinished_hosted_execution_fails(
+async def test_unfinished_server_execution_fails(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     stream: bool,
@@ -506,7 +597,7 @@ async def test_unfinished_hosted_execution_fails(
         graph_registry,
         "clock",
         unfinished,
-        hosted_tools={"clock"},
+        server_tools={"clock"},
     )
 
     if not stream:

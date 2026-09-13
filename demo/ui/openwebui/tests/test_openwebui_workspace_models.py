@@ -398,11 +398,11 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
     assert wrapper["meta"]["builtinTools"] == {"files": False}
 
 
-def test_hosted_tool_workspace_model_has_fixed_chat_controls() -> None:
+def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="lgos-a/hosted-tool",
-        description="Hosted tools",
+        id="lgos-a/server-tool",
+        description="Server tools",
         fields=(),
     )
 

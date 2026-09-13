@@ -189,16 +189,17 @@ second = client.responses.create(
 ```
 
 Replay complete SDK output items instead of rebuilding assistant text. This
-preserves item IDs, function-call IDs, and assistant `phase`. Keep every earlier
+preserves item IDs, tool-call IDs, and assistant `phase`. Keep every earlier
 user, system, or developer item that the next turn needs. This is application
 conversation state; LangGraph checkpoints remain a separate temporary store for
 paused interrupts.
 
 ## Continue Function Calls
 
-LGOS accepts the flat Responses function-tool shape. When a graph returns a
-`function_call`, execute only a function your client owns, then replay the
-complete output and append the matching string-valued result:
+LGOS accepts the flat Responses function-tool shape for client-owned tools.
+Registered server tools use distinct native `custom` or `web_search` types, so
+every returned `function_call` belongs to the client. Execute those calls, replay
+the complete output, and append each matching string-valued result:
 
 ```python
 import json
@@ -230,6 +231,8 @@ input_items.extend(item.model_dump(mode="json") for item in response.output)
 for item in response.output:
     if item.type != "function_call":
         continue
+    if item.name != "lookup_order":
+        raise ValueError(f"Unknown client function: {item.name}")
     result = lookup_order(**json.loads(item.arguments))
     input_items.append(
         {
@@ -280,7 +283,11 @@ paused = client.responses.create(
     metadata=metadata,
     store=False,
 )
-calls = [item for item in paused.output if item.type == "function_call"]
+calls = [
+    item
+    for item in paused.output
+    if item.type == "function_call" and item.name == "lgos_interrupt"
+]
 if not calls:
     raise RuntimeError("The graph completed without interrupting")
 # Resume using standard previous_response_id:
@@ -351,7 +358,7 @@ print(completion.choices[0].message.content)
 This route shares the same graph runner but has its own protocol adapter. Chat
 Completions is suited for simple graphs and tool calls. For advanced workflows
 such as streaming status commentary, checkpointed persistence, selecting
-server-hosted tools, or interrupts, use the Responses API (`/v1/responses`).
+server tools, or interrupts, use the Responses API (`/v1/responses`).
 
 ## Diagnostics
 

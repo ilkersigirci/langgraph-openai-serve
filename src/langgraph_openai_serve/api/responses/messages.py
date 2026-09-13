@@ -46,30 +46,17 @@ def convert_responses_input(
         return messages
 
     _validate_replay_ids(input_value)
-    index = 0
-    while index < len(input_value):
-        item = input_value[index]
-        if isinstance(item, ResponseWebSearchCallInput):
-            messages.append(_web_search_message(item))
-            index += 1
-            continue
+    calls: list[ResponseFunctionCallInput | ResponseCustomToolCallInput] = []
+    for item in input_value:
         if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
-            calls: list[ResponseFunctionCallInput | ResponseCustomToolCallInput] = []
-            while index < len(input_value) and isinstance(
-                input_value[index],
-                (ResponseFunctionCallInput, ResponseCustomToolCallInput),
-            ):
-                calls.append(
-                    cast(
-                        "ResponseFunctionCallInput | ResponseCustomToolCallInput",
-                        input_value[index],
-                    )
-                )
-                index += 1
-            messages.append(_tool_call_message(calls))
+            calls.append(item)
             continue
+        if calls:
+            messages.append(_tool_call_message(calls))
+            calls = []
         messages.append(_message_from_item(item))
-        index += 1
+    if calls:
+        messages.append(_tool_call_message(calls))
     return messages
 
 
@@ -119,6 +106,12 @@ def _validate_replay_ids(
 
 
 def _message_from_item(item: ResponseInputItem) -> BaseMessage:
+    if isinstance(item, ResponseWebSearchCallInput):
+        return AIMessage(
+            id=item.id,
+            content=[item.model_dump(mode="json", exclude_none=True)],
+            response_metadata={"model_provider": "openai"},
+        )
     if isinstance(item, ResponseOutputMessageInput):
         return AIMessage(
             id=item.id,
@@ -141,10 +134,10 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
     if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
         msg = "Tool calls must be grouped before message conversion."
         raise TypeError(msg)
-    if not isinstance(item, ResponseInputMessage):
-        msg = "Web-search calls must be converted before message conversion."
-        raise TypeError(msg)
+    return _input_message(item)
 
+
+def _input_message(item: ResponseInputMessage) -> BaseMessage:
     content = _input_content(item.content)
     match item.role:
         case "assistant":
@@ -169,14 +162,6 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
             )
         case "system":
             return SystemMessage(content=content)
-
-
-def _web_search_message(item: ResponseWebSearchCallInput) -> AIMessage:
-    return AIMessage(
-        id=item.id,
-        content=[item.model_dump(mode="json", exclude_none=True)],
-        response_metadata={"model_provider": "openai"},
-    )
 
 
 def _tool_call_message(

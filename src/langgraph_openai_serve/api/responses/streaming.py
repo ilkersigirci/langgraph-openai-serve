@@ -43,21 +43,20 @@ from openai.types.responses import (
 )
 from openai.types.responses.response import IncompleteDetails
 
-from langgraph_openai_serve.api.responses.request import selected_hosted_tools
+from langgraph_openai_serve.api.responses.request import selected_server_tools
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     ResponseContext,
     UnsupportedResponsesOutputError,
     interrupt_output_items,
-    response_function_calls,
     response_incomplete_details,
     response_output_text,
     response_refusals,
     response_usage,
 )
-from langgraph_openai_serve.api.responses.utils.hosted_tools import (
-    HostedToolItem,
-    HostedToolTracker,
+from langgraph_openai_serve.api.responses.utils.server_tools import (
+    ServerToolItem,
+    ServerToolTracker,
     update_messages,
 )
 from langgraph_openai_serve.core.logging import get_logger
@@ -95,13 +94,12 @@ class ResponsesStreamBuilder:
         request: ResponseCreateRequest,
         *,
         run_id: str | None = None,
-        hosted_tools: Collection[str] = (),
+        server_tools: Collection[str] = (),
     ) -> None:
         self._context = ResponseContext.for_run(request, run_id=run_id)
         self._sequence_number = 0
         self._output: list[ResponseOutputItem] = []
-        self._hosted_tools = hosted_tools
-        self._hosted_tool_tracker = HostedToolTracker(request, hosted_tools)
+        self._server_tool_tracker = ServerToolTracker(request, server_tools)
         self._final_item: _TextItem | None = None
 
     def created(self) -> ResponseCreatedEvent:
@@ -193,11 +191,7 @@ class ResponsesStreamBuilder:
         Literal["completed", "incomplete"],
         IncompleteDetails | None,
     ]:
-        self._hosted_tool_tracker.ensure_complete()
-        calls = response_function_calls(message)
-        if any(call.name in self._hosted_tools for call in calls):
-            msg = "Hosted output contains a call without its server-executed result."
-            raise UnsupportedResponsesOutputError(msg)
+        calls = self._server_tool_tracker.client_function_calls(message)
         incomplete_details = response_incomplete_details(message)
         status = "incomplete" if incomplete_details is not None else "completed"
         return calls, status, incomplete_details
@@ -244,7 +238,7 @@ class ResponsesStreamBuilder:
             Typed function-call and terminal events.
 
         """
-        self._hosted_tool_tracker.ensure_complete()
+        self._server_tool_tracker.ensure_complete()
         if self._final_item is not None:
             yield from self._finish_text_item(
                 self._final_item,
@@ -457,7 +451,7 @@ class ResponsesStreamBuilder:
 
     def _tool_item(
         self,
-        completed: ResponseFunctionToolCall | HostedToolItem,
+        completed: ResponseFunctionToolCall | ServerToolItem,
     ) -> Iterator[ResponseStreamEvent]:
         output_index = len(self._output)
         if completed.id is None:
@@ -530,15 +524,15 @@ class ResponsesStreamBuilder:
             item=completed,
         )
 
-    def hosted_tool(self, message: BaseMessage) -> Iterator[ResponseStreamEvent]:
+    def server_tool(self, message: BaseMessage) -> Iterator[ResponseStreamEvent]:
         """
         Expose selected tool activity from a native agent update.
 
         Yields:
-            Native custom input and output-item lifecycle events.
+            Native application-tool item lifecycle events.
 
         """
-        for item in self._hosted_tool_tracker.items(message):
+        for item in self._server_tool_tracker.items(message):
             yield from self._tool_item(item)
 
     def _response(
@@ -570,13 +564,13 @@ def encode_event(event: ResponseStreamEvent) -> str:
 
 async def collect_response(request: ResponseCreateRequest, run: GraphRun) -> Response:
     """Build one non-streaming Response from the graph's durable output."""
-    hosted_tools = selected_hosted_tools(request)
+    server_tools = selected_server_tools(request, run.config.server_tools)
     builder = ResponsesStreamBuilder(
         request,
         run_id=run.run_id,
-        hosted_tools=hosted_tools,
+        server_tools=server_tools,
     )
-    if not hosted_tools:
+    if not server_tools:
         output = await invoke_run(run)
         for event in _finish_events(builder, output, run):
             if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
@@ -607,13 +601,13 @@ async def stream_response(
         Named, compact Responses SSE frames.
 
     """
-    hosted_tools = selected_hosted_tools(request)
+    server_tools = selected_server_tools(request, run.config.server_tools)
     builder = ResponsesStreamBuilder(
         request,
         run_id=run.run_id,
-        hosted_tools=hosted_tools,
+        server_tools=server_tools,
     )
-    events = _successful_events(builder, run, stream_updates=bool(hosted_tools))
+    events = _successful_events(builder, run, stream_updates=bool(server_tools))
     try:
         async with aclosing(events):
             async for event in events:
@@ -678,7 +672,7 @@ def _finish_events(
         if output is None:
             msg = "LangGraph stream completed without a final assistant message."
             raise RuntimeError(msg)
-        yield from builder.hosted_tool(output)
+        yield from builder.server_tool(output)
         yield from builder.finish(output)
 
 
@@ -700,7 +694,7 @@ def _graph_response_events(
         return
     if event["type"] == "updates":
         for message in update_messages(event):
-            yield from builder.hosted_tool(message)
+            yield from builder.server_tool(message)
         return
     if not expose_status:
         return

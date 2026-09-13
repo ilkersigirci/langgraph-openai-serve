@@ -43,7 +43,7 @@ def _validate_responses_request(
     graph_registry: GraphRegistry,
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     graph_config = graph_registry.get_graph(request.model)
-    validate_tools(request, graph_config.hosted_tools)
+    validate_tools(request, graph_config.server_tools)
     if request.previous_response_id is not None and not graph_config.supports(
         GraphFeature.INTERRUPTS
     ):
@@ -53,7 +53,7 @@ def _validate_responses_request(
             "'previous_response_id'."
         )
         raise UnsupportedResponsesRequestError(message, param="previous_response_id")
-    return decode_responses_request(request)
+    return decode_responses_request(request, graph_config.server_tools)
 
 
 @router.post("/responses", response_model=Response)

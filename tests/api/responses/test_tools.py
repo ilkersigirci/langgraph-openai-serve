@@ -9,6 +9,7 @@ from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
     GraphRequest,
+    NamedCustomToolChoice,
     NamedFunctionToolChoice,
 )
 from tests.graph.support.message import make_message_graph
@@ -92,52 +93,145 @@ async def test_unsupported_tool_type_is_rejected_explicitly(
     assert error["param"] == "tools.0"
 
 
+async def test_server_and_client_tools_are_separated_by_registration(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture(request: GraphRequest, messages: list[BaseMessage]):
+        received.append(request)
+        return {"messages": messages}
+
+    config = graph_registry.get_graph("test")
+    config.server_tools = {"clock", "web_search"}
+    config.request_to_input = capture
+
+    response = await openai_client.responses.create(
+        model="test",
+        input="What time is it and what is the weather?",
+        tools=[
+            {"type": "custom", "name": "clock"},
+            {"type": "web_search"},
+            {
+                "type": "function",
+                "name": "get_weather",
+                "description": "Look up weather on the client.",
+                "parameters": {"type": "object", "properties": {}},
+                "strict": True,
+            },
+        ],
+        tool_choice={"type": "custom", "name": "clock"},
+    )
+
+    assert received[0].server_tools == ("clock", "web_search")
+    assert received[0].tools == (
+        ClientFunctionTool(
+            name="get_weather",
+            description="Look up weather on the client.",
+            parameters={"type": "object", "properties": {}},
+            strict=True,
+        ),
+    )
+    assert received[0].tool_choice == NamedCustomToolChoice(name="clock")
+    assert [tool.type for tool in response.tools] == [
+        "custom",
+        "web_search",
+        "function",
+    ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_required_web_search_choice_reaches_graph_adapter(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    stream: bool,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture(request: GraphRequest, messages: list[BaseMessage]):
+        received.append(request)
+        return {"messages": messages}
+
+    config = graph_registry.get_graph("test")
+    config.server_tools = {"web_search"}
+    config.request_to_input = capture
+
+    result = await openai_client.responses.create(
+        model="test",
+        input="Search for the latest news.",
+        tools=[{"type": "web_search"}],
+        tool_choice="required",
+        stream=stream,
+    )
+    if stream:
+        events = [event async for event in result]
+        assert events[-1].type == "response.completed"
+        response = events[-1].response
+    else:
+        response = result
+
+    assert received[0].server_tools == ("web_search",)
+    assert received[0].tool_choice == "required"
+    assert response.tool_choice == "required"
+
+
 @pytest.mark.parametrize(
     ("fields", "param"),
     [
-        ({"tools": [{"type": "custom", "name": "unknown"}]}, "tools.0.name"),
-        (
-            {"tools": [{"type": "custom", "name": "web_search"}]},
-            "tools.0.type",
-        ),
         ({"tools": [{"type": "web_search"}]}, "tools.0.type"),
         (
             {
                 "tools": [
                     {
-                        "type": "custom",
+                        "type": "function",
                         "name": "clock",
-                        "description": "Client-owned description",
+                        "parameters": {"type": "object", "properties": {}},
+                        "strict": True,
                     }
                 ]
             },
-            "tools.0.custom.description",
+            "tools.0.type",
         ),
         (
-            {"tool_choice": {"type": "custom", "name": "clock"}},
-            "tool_choice",
+            {"tools": [{"type": "custom", "name": "missing"}]},
+            "tools.0.name",
+        ),
+        (
+            {"tools": [{"type": "custom", "name": "web_search"}]},
+            "tools.0.type",
         ),
         ({"tool_choice": "required"}, "tool_choice"),
         ({"tools": [{"type": "custom", "name": "clock"}] * 2}, "tools"),
         (
             {
                 "tools": [
-                    {"type": "function", "name": "clock"},
-                    {"type": "custom", "name": "clock"},
+                    {
+                        "type": "function",
+                        "name": "get_weather",
+                        "parameters": {"type": "object", "properties": {}},
+                        "strict": True,
+                    },
+                    {
+                        "type": "function",
+                        "name": "get_weather",
+                        "parameters": {"type": "object", "properties": {}},
+                        "strict": True,
+                    },
                 ]
             },
             "tools",
         ),
     ],
 )
-async def test_invalid_hosted_tool_selection_fails_before_execution(
+async def test_invalid_server_tool_selection_fails_before_execution(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     fields,
     param,
 ) -> None:
     config = graph_registry.get_graph("test")
-    config.hosted_tools = {"clock"}
+    config.server_tools = {"clock"}
 
     def unexpected_run(request: GraphRequest, messages: list[BaseMessage]):
         pytest.fail("Invalid tool selection must fail before graph preparation.")

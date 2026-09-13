@@ -13,7 +13,7 @@ from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module
 from lgos_demo_api.checkpointer import PostgresRuntime
-from lgos_demo_api.graphs import hosted_tool
+from lgos_demo_api.graphs import server_tool
 from lgos_demo_api.graphs.simple import SimpleContext
 from lgos_demo_api.utils.web_search import WebSearchResult
 
@@ -29,18 +29,18 @@ DOCUMENTED_MODEL_IDS = {
     "persistent-plot-agent",
     "multi-node-streaming",
     "simple-graph",
-    "hosted-tool",
+    "server-tool",
     "simple-graph-external-tools",
     "status-events",
 }
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
-def _rebuild_hosted_tool_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+def _rebuild_server_tool_graph(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        hosted_tool.hosted_tool_graph_config,
+        server_tool.server_tool_graph_config,
         "graph",
-        hosted_tool.create_hosted_tool_graph(),
+        server_tool.create_server_tool_graph(),
     )
 
 
@@ -285,7 +285,7 @@ def test_main_leaves_access_logging_to_the_deployment(
 @pytest.mark.parametrize(
     "tools", [[], [{"type": "custom", "name": "lgos_current_time"}]]
 )
-async def test_hosted_time_lookup_is_not_bound_when_unselected_or_disabled(
+async def test_server_time_lookup_is_not_bound_when_unselected_or_disabled(
     openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, tools
 ) -> None:
     from langchain_core.language_models.fake_chat_models import (
@@ -298,13 +298,13 @@ async def test_hosted_time_lookup_is_not_bound_when_unselected_or_disabled(
             pytest.fail("Time lookup must not be bound when disabled.")
 
     model = NoToolsModel(responses=[AIMessage(content="Time lookup is disabled.")])
-    monkeypatch.setattr(hosted_tool, "ChatOpenAI", lambda **kwargs: model)
-    _rebuild_hosted_tool_graph(monkeypatch)
-    details = await openai_client.models.retrieve("hosted-tool")
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    _rebuild_server_tool_graph(monkeypatch)
+    details = await openai_client.models.retrieve("server-tool")
     assert "client_settings" not in details.lgos
-    assert "hosted_tools" not in details.lgos
+    assert "server_tools" not in details.lgos
     response = await openai_client.responses.create(
-        model="hosted-tool",
+        model="server-tool",
         input="What time is it?",
         store=False,
         tools=tools,
@@ -314,12 +314,12 @@ async def test_hosted_time_lookup_is_not_bound_when_unselected_or_disabled(
     assert [item.type for item in response.output] == ["message"]
 
 
-async def test_hosted_tool_rejects_client_functions(
+async def test_server_tool_graph_rejects_client_functions(
     openai_client: AsyncOpenAI,
 ) -> None:
     with pytest.raises(BadRequestError) as error:
         await openai_client.responses.create(
-            model="hosted-tool",
+            model="server-tool",
             input="Run this function.",
             tools=[{"type": "function", "name": "client_function"}],
         )
@@ -336,7 +336,7 @@ async def test_hosted_tool_rejects_client_functions(
         (False, {"type": "custom", "name": "lgos_current_time"}),
     ],
 )
-async def test_hosted_tool_executes_a_fresh_call_and_returns_only_the_final_answer(
+async def test_server_custom_tool_executes_a_fresh_native_exchange(
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
@@ -409,13 +409,13 @@ async def test_hosted_tool_executes_a_fresh_call_and_returns_only_the_final_answ
 
     async with AsyncClient(transport=MockTransport(respond)) as provider:
         monkeypatch.setattr(
-            hosted_tool,
+            server_tool,
             "ChatOpenAI",
             lambda **kwargs: ChatOpenAI(http_async_client=provider, **kwargs),
         )
-        _rebuild_hosted_tool_graph(monkeypatch)
+        _rebuild_server_tool_graph(monkeypatch)
         response = await openai_client.responses.create(
-            model="hosted-tool",
+            model="server-tool",
             input=[
                 {
                     "type": "custom_tool_call",
@@ -460,7 +460,7 @@ async def test_hosted_tool_executes_a_fresh_call_and_returns_only_the_final_answ
 
 
 @pytest.mark.parametrize("stream", [False, True])
-async def test_hosted_web_search_runs_through_http_backend(
+async def test_server_web_search_runs_through_http_backend(
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
@@ -475,7 +475,7 @@ async def test_hosted_web_search_runs_through_http_backend(
 
         def bind_tools(self, tools, **kwargs):
             self.calls += 1
-            assert tools == [hosted_tool.web_search]
+            assert tools == [server_tool.web_search]
             assert kwargs["tool_choice"] == ("required" if self.calls == 1 else "auto")
             return self
 
@@ -512,12 +512,16 @@ async def test_hosted_web_search_runs_through_http_backend(
             )
         ]
 
-    monkeypatch.setattr(hosted_tool, "ChatOpenAI", lambda **kwargs: model)
-    _rebuild_hosted_tool_graph(monkeypatch)
-    monkeypatch.setattr(hosted_tool, "search_web", search)
+    monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "http")
+    monkeypatch.setattr(
+        server_tool.settings, "WEB_SEARCH_URL", "https://searxng.example.com/search"
+    )
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    _rebuild_server_tool_graph(monkeypatch)
+    monkeypatch.setattr(server_tool, "search_web", search)
 
     response = await openai_client.responses.create(
-        model="hosted-tool",
+        model="server-tool",
         input="Find the Responses API documentation.",
         store=False,
         stream=stream,
@@ -549,7 +553,7 @@ async def test_hosted_web_search_runs_through_http_backend(
 
 
 @pytest.mark.parametrize("stream", [False, True])
-async def test_hosted_web_search_can_use_the_upstream_openai_tool(
+async def test_server_web_search_can_use_the_upstream_openai_tool(
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
@@ -589,12 +593,12 @@ async def test_hosted_web_search_can_use_the_upstream_openai_tool(
         ]
     )
 
-    monkeypatch.setattr(hosted_tool.settings, "WEB_SEARCH_BACKEND", "openai")
-    monkeypatch.setattr(hosted_tool, "ChatOpenAI", lambda **kwargs: model)
-    _rebuild_hosted_tool_graph(monkeypatch)
+    monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
+    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    _rebuild_server_tool_graph(monkeypatch)
 
     response = await openai_client.responses.create(
-        model="hosted-tool",
+        model="server-tool",
         input="Find the Responses API documentation.",
         store=False,
         stream=stream,

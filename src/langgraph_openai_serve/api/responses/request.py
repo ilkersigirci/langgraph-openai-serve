@@ -32,6 +32,7 @@ class UnsupportedResponsesRequestError(ValueError):
 
 def decode_responses_request(
     request: ResponseCreateRequest,
+    server_tools: set[str],
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     """Normalize one supported, stateless Responses request."""
     _validate_supported_semantics(request)
@@ -56,7 +57,7 @@ def decode_responses_request(
                 for tool in request.tools or ()
                 if isinstance(tool, ResponseFunctionTool)
             ),
-            hosted_tools=selected_hosted_tools(request),
+            server_tools=selected_server_tools(request, server_tools),
             tool_choice=_decode_tool_choice(request.tool_choice),
             parallel_tool_calls=request.parallel_tool_calls,
         ),
@@ -77,14 +78,14 @@ def _decode_tool_choice(
 ) -> ClientToolChoice | None:
     if tool_choice is None or isinstance(tool_choice, str):
         return tool_choice
-    return (
-        NamedCustomToolChoice(name=tool_choice.name)
-        if tool_choice.type == "custom"
-        else NamedFunctionToolChoice(name=tool_choice.name)
-    )
+    if tool_choice.type == "custom":
+        return NamedCustomToolChoice(name=tool_choice.name)
+    return NamedFunctionToolChoice(name=tool_choice.name)
 
 
-def selected_hosted_tools(request: ResponseCreateRequest) -> tuple[str, ...]:
+def selected_server_tools(
+    request: ResponseCreateRequest, server_tools: set[str]
+) -> tuple[str, ...]:
     """Return the registered server tools selected for this response."""
     if request.tool_choice == "none":
         return ()
@@ -92,21 +93,26 @@ def selected_hosted_tools(request: ResponseCreateRequest) -> tuple[str, ...]:
         _tool_name(tool)
         for tool in request.tools or ()
         if isinstance(tool, (ResponseCustomTool, ResponseWebSearchTool))
+        and _tool_name(tool) in server_tools
     )
 
 
-def validate_tools(request: ResponseCreateRequest, hosted_tools: set[str]) -> None:
+def validate_tools(request: ResponseCreateRequest, server_tools: set[str]) -> None:
     """Reject unknown server-tool selectors before execution or SSE starts."""
     declarations: dict[str, str] = {}
     for index, tool in enumerate(request.tools or ()):
         name = _tool_name(tool)
+        if isinstance(tool, ResponseFunctionTool) and name in server_tools:
+            expected_type = "web_search" if name == "web_search" else "custom"
+            msg = f"Registered server tool '{name}' must use type '{expected_type}'."
+            raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
         if isinstance(tool, ResponseCustomTool) and name == "web_search":
             msg = "The standard web_search tool must use type 'web_search'."
             raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
         if isinstance(tool, (ResponseCustomTool, ResponseWebSearchTool)) and (
-            name not in hosted_tools
+            name not in server_tools
         ):
-            msg = f"Tool '{name}' is not hosted by model '{request.model}'."
+            msg = f"Tool '{name}' is not registered by model '{request.model}'."
             raise UnsupportedResponsesRequestError(
                 msg,
                 param=(
@@ -154,6 +160,6 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
 __all__ = [
     "UnsupportedResponsesRequestError",
     "decode_responses_request",
-    "selected_hosted_tools",
+    "selected_server_tools",
     "validate_tools",
 ]

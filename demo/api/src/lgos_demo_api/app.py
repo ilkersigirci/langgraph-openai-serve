@@ -20,7 +20,6 @@ from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_grap
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
 from lgos_demo_api.graphs.file_input import file_input_graph_config
-from lgos_demo_api.graphs.hosted_tool import hosted_tool_graph_config
 from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph,
     create_interruptible_graph_config,
@@ -33,6 +32,7 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     create_persistent_plot_agent,
     create_persistent_plot_agent_config,
 )
+from lgos_demo_api.graphs.server_tool import server_tool_graph_config
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
@@ -97,7 +97,7 @@ def create_custom_app() -> FastAPI:
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,
-            "hosted-tool": hosted_tool_graph_config,
+            "server-tool": server_tool_graph_config,
             "lgos-rag": lgos_rag_graph_config,
             "custom-input-output-context": custom_io_graph_config,
             "advanced-mcp-tools": advanced_mcp_graph_config,

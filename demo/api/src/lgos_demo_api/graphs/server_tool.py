@@ -1,18 +1,21 @@
-"""Client-selected tools executed by the LGOS demo graph."""
+"""Client-selected tools executed by the LGOS demo application."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from langchain.agents import AgentState, create_agent
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ModelRequest,
     ModelResponse,
+    ToolCallRequest,
     after_agent,
     wrap_model_call,
+    wrap_tool_call,
 )
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, ToolMessage
@@ -20,6 +23,7 @@ from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, custom_tool
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
+from langgraph.types import Command
 from langgraph_openai_serve import (
     GraphConfig,
     GraphRequest,
@@ -72,22 +76,13 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
     return "\n\n".join(sections), sources
 
 
-def _server_tools() -> dict[str, BaseTool | dict[str, str]]:
-    search: BaseTool | dict[str, str] = (
-        {"type": "web_search"}
-        if settings.WEB_SEARCH_BACKEND == "openai"
-        else web_search
-    )
-    return {lgos_current_time.name: lgos_current_time, web_search.name: search}
-
-
 @dataclass
-class HostedToolContext:
+class ServerToolContext:
     request: GraphRequest
     model_called: bool = False
 
 
-def context_factory(request: GraphRequest, _settings: None) -> HostedToolContext:
+def context_factory(request: GraphRequest, _settings: None) -> ServerToolContext:
     """Reject client functions that this graph cannot execute."""
     if request.tools and request.tool_choice != "none":
         raise OpenAIHTTPException(
@@ -98,22 +93,31 @@ def context_factory(request: GraphRequest, _settings: None) -> HostedToolContext
                 message="This graph supports only its configured tools.",
             ),
         )
-    return HostedToolContext(request)
+    return ServerToolContext(request)
+
+
+def _server_tools() -> dict[str, BaseTool | dict[str, str]]:
+    search: BaseTool | dict[str, str] = (
+        {"type": "web_search"}
+        if settings.WEB_SEARCH_BACKEND == "openai"
+        else web_search
+    )
+    return {lgos_current_time.name: lgos_current_time, web_search.name: search}
 
 
 @wrap_model_call
-async def configure_model_call(
-    model_request: ModelRequest[HostedToolContext],
-    handler: Callable[[ModelRequest[HostedToolContext]], Awaitable[ModelResponse]],
+async def select_server_tools(
+    model_request: ModelRequest[ServerToolContext],
+    handler: Callable[[ModelRequest[ServerToolContext]], Awaitable[ModelResponse]],
 ) -> ModelResponse:
-    """Apply the outer Responses tool selection to each agent model call."""
+    """Bind only the server tools selected on the outer Responses request."""
     context = model_request.runtime.context
-    request = context.request
-    server_tools = _server_tools()
-    tools = [server_tools[name] for name in request.hosted_tools]
+    selection = context.request
+    registered = _server_tools()
+    tools = [registered[name] for name in selection.server_tools]
 
     # A required choice applies to the outer Response, not every agent turn.
-    choice = "auto" if context.model_called else request.tool_choice
+    choice = "auto" if context.model_called else selection.tool_choice
     if isinstance(choice, NamedCustomToolChoice):
         choice = {"type": "custom", "name": choice.name}
     response = await handler(
@@ -121,8 +125,8 @@ async def configure_model_call(
             tools=tools,
             tool_choice=choice,
             model_settings=(
-                {"parallel_tool_calls": request.parallel_tool_calls}
-                if request.parallel_tool_calls is not None and tools
+                {"parallel_tool_calls": selection.parallel_tool_calls}
+                if selection.parallel_tool_calls is not None and tools
                 else {}
             ),
         )
@@ -131,10 +135,28 @@ async def configure_model_call(
     return response
 
 
+@wrap_tool_call
+async def enforce_server_tool_selection(
+    tool_request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+) -> ToolMessage | Command:
+    """Prevent a model from executing a tool omitted by the client."""
+    context = cast(ServerToolContext, tool_request.runtime.context)
+    call = tool_request.tool_call
+    if call["name"] not in context.request.server_tools:
+        return ToolMessage(
+            content=f"Tool {call['name']} is not enabled for this request.",
+            name=call["name"],
+            tool_call_id=call["id"],
+            status="error",
+        )
+    return await handler(tool_request)
+
+
 @after_agent
 def add_search_citations(
     state: AgentState,
-    _runtime: Runtime[HostedToolContext],
+    _runtime: Runtime[ServerToolContext],
 ) -> dict[str, list[AIMessage]] | None:
     """Convert exact result links in the final answer to native citations."""
     sources: dict[str, str] = {}
@@ -154,7 +176,7 @@ def add_search_citations(
     return {"messages": [cite_markdown_links(final, sources)]}
 
 
-def create_hosted_tool_graph() -> CompiledStateGraph[Any, HostedToolContext, Any, Any]:
+def create_server_tool_graph() -> CompiledStateGraph[Any, ServerToolContext, Any, Any]:
     """Build the native LangChain agent used by the graph registry."""
     return create_agent(
         model=ChatOpenAI(
@@ -165,7 +187,14 @@ def create_hosted_tool_graph() -> CompiledStateGraph[Any, HostedToolContext, Any
             store=False,
         ),
         tools=list(_server_tools().values()),
-        middleware=[configure_model_call, add_search_citations],
+        middleware=[
+            select_server_tools,
+            cast(
+                "AgentMiddleware[AgentState, ServerToolContext]",
+                enforce_server_tool_selection,
+            ),
+            add_search_citations,
+        ],
         system_prompt=(
             "Help the user check current times and answer questions from the web. "
             "Use lgos_current_time for current times; never guess them. "
@@ -174,26 +203,26 @@ def create_hosted_tool_graph() -> CompiledStateGraph[Any, HostedToolContext, Any
             "sources with Markdown links using their exact URLs. Only use tools "
             "made available by the client and keep answers concise."
         ),
-        context_schema=HostedToolContext,
+        context_schema=ServerToolContext,
     )
 
 
-hosted_tool_graph = create_hosted_tool_graph()
+server_tool_graph = create_server_tool_graph()
 
 
-hosted_tool_graph_config = GraphConfig(
-    graph=hosted_tool_graph,
+server_tool_graph_config = GraphConfig(
+    graph=server_tool_graph,
     description="Demonstrates LGOS-owned clock and OpenAI-compatible web search.",
     streamable_node_names=["model"],
-    hosted_tools={lgos_current_time.name, web_search.name},
+    server_tools={lgos_current_time.name, web_search.name},
     context_factory=context_factory,
 )
 
 
 __all__ = [
-    "create_hosted_tool_graph",
-    "hosted_tool_graph",
-    "hosted_tool_graph_config",
+    "create_server_tool_graph",
     "lgos_current_time",
+    "server_tool_graph",
+    "server_tool_graph_config",
     "web_search",
 ]

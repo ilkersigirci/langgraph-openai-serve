@@ -21,6 +21,8 @@ async def test_search_uses_json_and_filters_bad_results() -> None:
                         "url": "https://docs.langchain.com/oss/python/langgraph/",
                     },
                     {"title": "Invalid", "url": "file:///etc/passwd"},
+                    {"title": "Missing URL"},
+                    None,
                 ]
             },
         )

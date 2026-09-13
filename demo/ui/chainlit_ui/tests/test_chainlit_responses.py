@@ -12,6 +12,8 @@ from chainlit.context import init_http_context
 from openai import AsyncOpenAI
 from openai.types.responses import (
     Response,
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
@@ -450,7 +452,24 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
             ],
         }
     )
-    first = _response(commentary, first_text, call)
+    server_call = ResponseCustomToolCall.model_validate(
+        {
+            "type": "custom_tool_call",
+            "id": "ctc_clock",
+            "call_id": "call_clock",
+            "name": "lgos_current_time",
+            "input": "UTC",
+            "status": "completed",
+        }
+    )
+    server_output = ResponseCustomToolCallOutputItem(
+        type="custom_tool_call_output",
+        id="ctco_clock",
+        call_id="call_clock",
+        output="Noon",
+        status="completed",
+    )
+    first = _response(commentary, first_text, server_call, server_output, call)
     pending = iter([first, _response(last_text)])
     requests = []
     history = [{"role": "system", "content": "Use the uploaded data."}]
@@ -493,7 +512,8 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(simple.openai_client.responses, "create", create)
     monkeypatch.setattr(simple, "_stream_response", stream)
-    monkeypatch.setattr(simple, "display_file", AsyncMock(return_value=output))
+    display = AsyncMock(return_value=output)
+    monkeypatch.setattr(simple, "display_file", display)
 
     await simple._response_message(Mock(), "plot")
 
@@ -509,6 +529,8 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
         output,
     ]
+    display.assert_awaited_once_with(call)
+    assert responses.function_calls(_response(server_call, server_output)) == []
 
 
 def test_transcript_labels_answers_and_preserves_explicit_phase():

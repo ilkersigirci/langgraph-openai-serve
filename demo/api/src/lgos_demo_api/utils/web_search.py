@@ -1,17 +1,9 @@
 """Typed access to a self-hosted web-search JSON endpoint."""
 
-from typing import Any
-
 import httpx
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AnyHttpUrl, BaseModel, Field, OnErrorOmit
 
 _RESULT_LIMIT = 5
-
-
-class _SearchResponse(BaseModel):
-    results: list[dict[str, Any]] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="ignore")
 
 
 class WebSearchResult(BaseModel):
@@ -21,7 +13,9 @@ class WebSearchResult(BaseModel):
     title: str = ""
     content: str = ""
 
-    model_config = ConfigDict(extra="ignore")
+
+class _SearchResponse(BaseModel):
+    results: list[OnErrorOmit[WebSearchResult]] = Field(default_factory=list)
 
 
 async def search_web(
@@ -36,11 +30,7 @@ async def search_web(
 
     results: list[WebSearchResult] = []
     seen_urls: set[str] = set()
-    for raw_result in payload.results:
-        try:
-            result = WebSearchResult.model_validate(raw_result)
-        except ValidationError:
-            continue
+    for result in payload.results:
         url = str(result.url)
         if url in seen_urls:
             continue

@@ -21,7 +21,7 @@ from .functions.generic.contracts import (
     LGOS_EXTENSION_KEY,
     LGOS_MODEL_OWNER,
     WEB_SEARCH_TOOL_NAME,
-    is_hosted_tool_model,
+    is_server_tool_model,
 )
 from .functions.generic.gateway import GatewayConfig, litellm_models
 
@@ -42,7 +42,7 @@ LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "lgos model metadata. Runtime settings, file inputs, and "
     "interrupt profile checks may be unavailable."
 )
-HOSTED_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
+SERVER_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
     {
         "key": CURRENT_TIME_TOOL_NAME,
         "type": "checkbox",
@@ -322,8 +322,8 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
     # Keeping it out of params.system prevents settings UI data from becoming
     # an LGOS system prompt.
     fields = list(spec.fields)
-    if is_hosted_tool_model(spec.id):
-        fields.extend(HOSTED_TOOL_FIELDS)
+    if is_server_tool_model(spec.id):
+        fields.extend(SERVER_TOOL_FIELDS)
     return {
         "id": spec.workspace_model_id,
         "base_model_id": spec.base_model_id,

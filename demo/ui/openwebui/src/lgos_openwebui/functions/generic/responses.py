@@ -8,6 +8,7 @@ from openai.types.chat.chat_completion_chunk import (
     ChoiceDelta,
 )
 from openai.types.responses import (
+    CustomToolParam,
     FunctionToolParam,
     Response,
     ResponseFunctionToolCall,
@@ -23,7 +24,7 @@ from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
-    is_hosted_tool_model,
+    is_server_tool_model,
 )
 
 RESPONSE_OUTPUT = TypeAdapter(list[ResponseOutputItem])
@@ -35,11 +36,15 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
+CURRENT_TIME_TOOL: CustomToolParam = {
+    "type": "custom",
+    "name": CURRENT_TIME_TOOL_NAME,
+}
 
 
 def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]:
     """Build the tools owned by the selected demo client and graph."""
-    if not is_hosted_tool_model(model_id):
+    if not is_server_tool_model(model_id):
         return [DISPLAY_FILE_TOOL]
 
     variables = metadata.get("chat_variables")
@@ -47,7 +52,7 @@ def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]
         return []
     tools: list[ToolParam] = []
     if variables.get(CURRENT_TIME_TOOL_NAME) is True:
-        tools.append({"type": "custom", "name": CURRENT_TIME_TOOL_NAME})
+        tools.append(CURRENT_TIME_TOOL)
     if variables.get(WEB_SEARCH_TOOL_NAME) is True:
         tools.append({"type": "web_search"})
     return tools
@@ -144,6 +149,7 @@ def _responses_final_text(response: Response) -> str:
 def _responses_function_calls(
     response: Response,
 ) -> list[ResponseFunctionToolCall]:
+    """Return client-owned function calls from a completed Response."""
     return [
         item for item in response.output if isinstance(item, ResponseFunctionToolCall)
     ]

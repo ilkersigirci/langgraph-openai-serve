@@ -22,7 +22,6 @@ from .contracts import (
     InterruptCancelled,
     PipeChunk,
     PipeResponse,
-    is_hosted_tool_model,
 )
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
@@ -152,10 +151,7 @@ class Pipe:
             request = _responses_request(
                 model_id,
                 input_items,
-                _request_metadata(
-                    metadata,
-                    include_runtime_settings=not is_hosted_tool_model(model_id),
-                ),
+                _request_metadata(metadata),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
                 tools=_responses_tools(model_id, metadata),
