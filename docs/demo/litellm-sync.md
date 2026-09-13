@@ -1,7 +1,8 @@
 # LiteLLM Model Sync
 
-Sync LGOS model metadata into LiteLLM's native `model_info.lgos` field.
-The command belongs to LGOS; both UIs read the gateway's `/model/info` endpoint.
+Reconcile an LGOS model catalog into LiteLLM and copy its metadata into the
+native `model_info.lgos` field. The command belongs to LGOS; both UIs read the
+gateway's `/model/info` endpoint.
 
 ## Usage
 
@@ -70,7 +71,7 @@ and provide that variable to the job through Compose's `environment` or
 ## Sync Behavior
 
 - Validates the source catalog before writing. Ambiguous duplicate names and
-  config-owned deployments are rejected.
+  conflicting deployments not owned by this sync are rejected.
 - Creates missing `<prefix>/<model>` deployments with the full LGOS metadata
   and native streaming enabled. New deployments also allow Chat `user` forwarding
   via [`allowed_openai_params: [user]`](https://docs.litellm.ai/docs/completion/drop_params#set-allowed_openai_params-on-configyaml).
@@ -78,6 +79,10 @@ and provide that variable to the job through Compose's `environment` or
   `model_info.lgos` are not shown by the UI integrations.
 - Updates only changed LGOS and streaming metadata. Existing routing,
   credentials, pricing, and rate limits are preserved.
-- Does not delete removed upstream models. Manage retirement, routing, pricing,
-  and credential rotation through [LiteLLM's Admin UI](https://docs.litellm.ai/docs/proxy/model_management).
+- Deletes database-backed models under the requested prefix when they are no
+  longer in the LGOS source catalog. The prefix and explicit
+  `model_info.lgos_sync` marker define ownership; unmarked models, config models,
+  and models under other prefixes are not changed or removed.
+- Leaves routing, pricing, credentials, and independently managed model
+  retirement under [LiteLLM's Admin UI](https://docs.litellm.ai/docs/proxy/model_management).
 - Stops on a failed write; earlier successful writes remain. Rerunning is safe.
