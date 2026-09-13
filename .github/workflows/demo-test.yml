@@ -109,8 +109,6 @@ jobs:
         include:
           - name: API
             directory: api
-          - name: API (checkout)
-            directory: api
             editable: true
           - name: Files API
             directory: files_api
