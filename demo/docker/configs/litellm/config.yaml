@@ -20,3 +20,20 @@ files_settings:
   - custom_llm_provider: litellm_proxy
     api_base: http://lgos-files-api:8000/v1
     api_key: DUMMY
+
+litellm_settings:
+  # Bundled models target LGOS on the private Compose network, so preserve the
+  # caller's W3C trace across the gateway-to-API hop.
+  forward_traceparent_to_llm_provider: true
+
+# Keep Prometheus cardinality bounded to attributes LiteLLM always populates.
+# The pinned release passes a null request model for some preflight and
+# non-inference paths, which makes its OTLP encoder repeat an error for every
+# cumulative export. Model names remain available on the model-call spans.
+# Token type and error type are attached independently of this allowlist.
+callback_settings:
+  otel:
+    attributes:
+      include_list:
+        - gen_ai.operation.name
+        - gen_ai.provider.name

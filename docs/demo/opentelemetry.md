@@ -16,12 +16,12 @@ flowchart LR
   subgraph demo["Demo Compose deployment"]
     direction TB
     clients["Chainlit and Open WebUI"]
-    bifrost["Bifrost"]
+    gateways["Bifrost or LiteLLM"]
     apis["LGOS API A and B"]
     collector["Local OpenTelemetry Collector"]
 
     clients -->|"traces"| collector
-    bifrost -->|"traces"| collector
+    gateways -->|"traces; LiteLLM metrics"| collector
     apis -->|"traces, metrics, and logs"| collector
   end
 
@@ -76,6 +76,7 @@ Exact environment settings are listed in
 | Chainlit | Traces | Python auto-instrumentation; long-lived Socket.IO traffic and prompt-recording OpenAI instrumentors are excluded |
 | Open WebUI | Traces | Open WebUI's native OpenTelemetry settings |
 | Bifrost | Traces | Bifrost's OpenTelemetry plugin with content logging disabled |
+| LiteLLM | Traces and GenAI metrics | LiteLLM's native OpenTelemetry v2 integration with message-content capture disabled |
 | Local Collector | Its own metrics | Direct OTLP/HTTP export to the configured gateway |
 
 The package itself remains instrumentation-neutral. The demo API instruments
@@ -88,6 +89,29 @@ Bifrost's managed Responses route forwards `traceparent`, `tracestate`, and
 `demo/docker/configs/bifrost/config.json`. The API receives `lgos-chainlit` or
 `lgos-openwebui` as the user agent, which allows dashboards to distinguish the
 originating UI.
+
+LiteLLM continues an incoming W3C `traceparent` and forwards it to its bundled
+LGOS model targets, so its HTTP, authentication, database, and model-call spans
+stay in the same UI-to-LGOS trace. Do not copy that forwarding setting to a
+deployment whose models target third-party APIs without confirming they accept
+the header. LiteLLM's native GenAI histograms cover operation duration, token
+usage, cost, time to first token, time per output token, and provider response
+duration. The bundled configuration limits metric labels to operation and
+provider; requested model remains on model-call spans. LiteLLM adds token type
+and error type where applicable. This keeps the Prometheus series bounded while
+retaining the dimensions used by gateway dashboards.
+
+Prompt and response bodies remain excluded from spans through
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. LiteLLM's
+database spend-log setting is independent of this OTLP policy.
+
+!!! note "LiteLLM exception events remain disabled"
+
+    The bundled image can create correlated OpenTelemetry log events for failed
+    model operations, but its pinned OTLP encoder drops the current body-less
+    events. The overlay therefore leaves event export disabled while the
+    upstream [bug](https://github.com/BerriAI/litellm/issues/36863) remains.
+    Operational LiteLLM logs remain available on stdout.
 
 Use these values when querying Responses telemetry for `lgos-demo-api`:
 
