@@ -48,11 +48,15 @@ def completed_response(content: str) -> Response:
     )
 
 
-def configured_model(settings: ModelClientSettings | None) -> Model:
+def configured_model(
+    settings: ModelClientSettings | None,
+    *,
+    features: list[str] | None = None,
+) -> Model:
     extension: dict[str, object] = {
         "schema_version": 1,
         "description": "DUMMY",
-        "features": [],
+        "features": features or [],
     }
     if settings is not None:
         extension["client_settings"] = settings.model_dump(mode="json")
@@ -182,7 +186,7 @@ def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
     assert chat_settings.response_tools() == []
 
 
-async def test_advanced_graph_uses_web_search_without_runtime_settings(
+async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
@@ -196,9 +200,11 @@ async def test_advanced_graph_uses_web_search_without_runtime_settings(
     monkeypatch.setattr(
         chat_settings,
         "retrieve_model",
-        AsyncMock(return_value=configured_model(None)),
+        AsyncMock(return_value=configured_model(None, features=["mcp_tools"])),
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    gateway_tools = [{"type": "function", "name": "database_report"}]
+    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
 
     await chat_settings.configure_chat_settings()
 
@@ -206,7 +212,10 @@ async def test_advanced_graph_uses_web_search_without_runtime_settings(
         chat_settings.STREAMING_SETTING_ID,
         chat_settings.WEB_SEARCH_SETTING_ID,
     ]
-    assert chat_settings.response_tools() == [{"type": "web_search"}]
+    assert chat_settings.response_tools() == [
+        *gateway_tools,
+        {"type": "web_search"},
+    ]
     assert chat_settings.chat_settings_metadata() == {}
 
 

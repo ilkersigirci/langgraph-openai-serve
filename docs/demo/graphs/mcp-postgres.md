@@ -122,10 +122,10 @@ proxy, and it exposes no PostgreSQL tuning or administration tools.
 
 Each UI has one aggregate MCP connection derived from its existing gateway root
 and credential. Adding another MCP server is a gateway change; a graph that may
-use those tools declares `GraphFeature.MCP_TOOLS` and adds its own explicit
-allowlist. Repeating tool names at the graph, gateway, and database boundaries
-is intentional because each is an independent authorization layer, not shared
-client configuration.
+use those tools declares `GraphFeature.MCP_TOOLS`. A specialized graph can add
+its own explicit allowlist, as this one does. Repeating these report names at
+the graph, gateway, and database boundaries is intentional because each is an
+independent authorization layer, not shared client configuration.
 
 ## Read-Only Boundary
 

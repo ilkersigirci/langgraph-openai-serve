@@ -146,6 +146,8 @@ The real `mcp-postgres` graph expects its OpenAI client to discover and execute
 tools through the selected gateway's MCP endpoint. Use the maintained Chainlit
 or Open WebUI client for the complete native tool loop; see
 [PostgreSQL Through Native MCP](graphs/mcp-postgres.md#try-it).
+`advanced-graph` uses the same client-owned loop for any tools authorized by the
+gateway; `mcp-postgres` remains the narrower database-focused example.
 
 Try the deterministic status-event showcase:
 

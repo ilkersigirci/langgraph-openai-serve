@@ -9,14 +9,15 @@ needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
 The `server-tool` profile has fixed opt-in switches for `lgos_package_version`
-and `web_search`; `advanced-graph` has only the **Web search** switch. Chainlit
-knows these public names and includes only selected tools in the native Responses
-`tools` array; it does not discover them from model metadata. Package lookup
-uses a name-only custom declaration, while search uses
-`{"type":"web_search"}`. LGOS completes selected server tools inside the same
-Response, so Chainlit executes only returned `function_call` items. The advanced
-graph enters note review when the user asks to remember or save something, not
-through a UI setting.
+and `web_search`; `advanced-graph` has only the **Web search** Chat Settings
+switch and receives gateway MCP tools separately through its advertised
+capability. Chainlit knows the server-tool names and includes only selected
+tools in the native Responses `tools` array; it does not discover those names
+from model metadata. Package lookup uses a name-only custom declaration, while
+search uses `{"type":"web_search"}`. LGOS completes selected server tools inside
+the same Response, so Chainlit executes only returned `function_call` items. The
+advanced graph enters note review when the user asks to remember or save
+something, not through a UI setting.
 Native URL-citation annotations become
 clickable Chainlit source elements containing Markdown links, without changing
 the replayed answer text.
@@ -118,8 +119,9 @@ root and uses the same credential as Responses and Files. The browser receives
 no URL or bearer token, and user-provided servers remain disabled. After you
 click **Connect**, Chainlit owns the session and discovers the tools authorized
 by the gateway. It sends them only when the selected model advertises the
-`mcp_tools` capability; the graph applies its fixed report allowlist at the
-API boundary.
+`mcp_tools` capability. `mcp-postgres` applies a fixed report allowlist at the
+API boundary, while general-purpose graphs can use the gateway-authorized tool
+catalog without knowing which MCP servers provide it.
 
 The current database example is
 [PostgreSQL Through Native MCP](graphs/mcp-postgres.md); see it for the complete

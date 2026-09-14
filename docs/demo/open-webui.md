@@ -25,8 +25,9 @@ projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
 The generated `server-tool` models add fixed **Package version** and **Web
 search** Chat Variable checkboxes. Generated `advanced-graph` models add only
-**Web search**. The Pipe maps enabled tool boxes to a name-only
-`{"type":"custom","name":"lgos_package_version"}` declaration or
+the **Web search** checkbox; their gateway MCP tools are attached separately
+from the discovered `mcp_tools` capability. The Pipe maps enabled tool boxes to
+a name-only `{"type":"custom","name":"lgos_package_version"}` declaration or
 `{"type":"web_search"}`; it keeps them out of `metadata.lgos_settings`. The
 names are client constants, not discovered metadata. The server registry
 determines which names execute in LGOS. Asking the advanced graph to remember or
@@ -78,7 +79,9 @@ The sync command reconciles one managed Streamable HTTP connection. It attaches
 `lgos-gateway` to each generated Workspace Model whose gateway metadata
 advertises `mcp_tools`. The Generic Pipe forwards the gateway tools from
 Open WebUI's native `__tools__` map through Responses and returns matching calls
-to the native tool loop; each graph owns its tool allowlist at the API boundary.
+to the native tool loop. `mcp-postgres` adds its fixed report allowlist at the
+API boundary, while general-purpose graphs can use the gateway-authorized tool
+catalog without knowing which MCP servers provide it.
 
 The connection derives `/mcp` from `OPENAI_GATEWAY_BASE_URL` and stores
 `OPENAI_GATEWAY_API_KEY` as native bearer authentication. The same values drive

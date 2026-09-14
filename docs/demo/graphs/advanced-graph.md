@@ -2,10 +2,11 @@
 
 `advanced-graph` is the demo's production-style, all-in-one, model-backed
 chatbot. Use it like a normal assistant: chat, ask it to reason or write, attach
-a file, request source-backed research, or explicitly ask it to remember
-something. The graph routes only the turns that need research or durable
-storage into small LangGraph subgraphs. Its implementation is an explicit
-`StateGraph` with ordinary nodes, not a prebuilt `create_agent` loop.
+a file, query live data through gateway-provided MCP tools, request source-backed
+research, or explicitly ask it to remember something. The graph routes only the
+turns that need research or durable storage into small LangGraph subgraphs. Its
+implementation is an explicit `StateGraph` with ordinary nodes, not a prebuilt
+`create_agent` loop.
 
 Clients call it as the model `advanced-graph` through `POST /v1/responses`.
 This model does not support Chat Completions or a graph-specific request
@@ -18,7 +19,7 @@ The intent router chooses one of four paths from the user's latest request:
 
 | What the user asks for | Intent | Graph path |
 | --- | --- | --- |
-| Conversation, reasoning, writing, coding, or attached-file Q&A | `chat` | Answer directly |
+| Conversation, reasoning, writing, coding, attached-file Q&A, or client tools | `chat` | Answer directly or return a tool call |
 | Current, externally verified, cited, or shared-knowledge information | `research` | Select and search sources, then answer |
 | “Remember,” “save,” or “add this to shared knowledge” | `save` | Draft a note, pause for review, then save or discard it |
 | Research followed by durable storage | `research_and_save` | Run research, then the same reviewed save flow |
@@ -37,6 +38,7 @@ with `just demo/compose --dev`. Select `lgos-a/advanced-graph` in Chainlit or
 | Feature | What to do | What to expect |
 | --- | --- | --- |
 | Generic chat | Ask `Explain why idempotency matters in two short paragraphs.` | A normal streamed answer; no research, write, or synthetic status |
+| Gateway MCP | In Chainlit, connect `lgos-gateway`; then ask `How many Chainlit users do I have? How many conversations does each of them have?` | The UI executes read-only reports through the selected gateway, then returns their evidence to the graph |
 | File understanding | Attach a text or Markdown file, then ask `Summarize the attached file and repeat every identifier marked IMPORTANT exactly.` | The UI uploads the file to the central Files API; the graph reads it by `file_id` |
 | Web search, status, and citations | Enable **Web search**, then ask `Search the current official LangGraph documentation for interrupt durability. Summarize it and cite the exact source URL.` | Live search status, a server-side search, and clickable citations |
 | Subgraphs and human review | Keep Web search enabled and ask `Research the official LangGraph interrupt guidance, then save a concise cited note to shared knowledge. Ask me before writing.` | Research runs first, then an approval card shows the exact proposed note |
@@ -57,6 +59,7 @@ exercise:
 | Capability | Required service |
 | --- | --- |
 | All requests | Responses-capable model and the demo PostgreSQL runtime |
+| Gateway MCP tools | Selected gateway with its configured MCP servers |
 | Attached-file Q&A | Central OpenAI-compatible Files API |
 | Public research | Configured HTTP search endpoint or upstream Responses web search |
 | Shared-knowledge search and saving | OpenAI-compatible Files and vector-store service plus a vector-store ID |
@@ -121,6 +124,11 @@ functions; `required` with the public Web-search tool forces the research path;
 a named client function forces the answer path. Client functions are returned
 to the caller to execute—they never run inside this graph.
 
+The `mcp_tools` capability tells maintained UIs to attach tools discovered from
+their selected gateway. The graph treats those schemas like any other
+client-owned function: it can request a call and consume the returned evidence,
+but it never opens an MCP connection or handles gateway credentials.
+
 ### What The Client Sees
 
 | Graph behavior | Responses representation |
@@ -128,7 +136,7 @@ to the caller to execute—they never run inside this graph.
 | Progress such as source selection or indexing | Streaming message with `phase="commentary"` |
 | Chatbot answer | Message with `phase="final_answer"`; token deltas come only from `answer` |
 | Public search | `web_search_call` plus `url_citation` annotations on supported answer text |
-| Client function or human review | `function_call`; the next request sends matching `function_call_output` items |
+| Client function, MCP tool, or human review | `function_call`; the next request sends matching `function_call_output` items |
 | Model refusal | Native `refusal` message content |
 | Output limit reached | `status="incomplete"` with `incomplete_details` |
 
@@ -197,6 +205,7 @@ execution, and durable knowledge:
 | --- | --- | --- |
 | Completed conversation ledger | Calling client or UI | Defined by the client |
 | User attachments | Configured central Files API | Defined by that service |
+| MCP discovery and execution | Client UI and selected gateway | UI session and gateway configuration |
 | Pending review and resume position | PostgreSQL LangGraph checkpointer | Across API restarts |
 | Approved note contents and vector index | Configured OpenAI-compatible vector service | Until deleted there |
 | Upload ID, digest, and indexing status | PostgreSQL LangGraph Store | Durable save receipt |
@@ -405,6 +414,9 @@ implementation detail; clients never send a non-standard file-search tool.
 The graph binds client function definitions to the answer model but never
 executes them. Execute the returned call locally, append its output to the same
 ledger, and resend the prior Response items in their accepted wire form.
+Maintained UIs use this same loop for gateway MCP tools; discovery, credentials,
+and execution remain outside LGOS. See the
+[`mcp-postgres` walkthrough](mcp-postgres.md#try-it) for UI prompts.
 
 ??? example "Execute a client function and continue"
 

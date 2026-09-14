@@ -445,12 +445,13 @@ def test_client_tool_model_selects_the_gateway_connection() -> None:
     assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
 
 
-def test_advanced_graph_workspace_model_has_only_web_search() -> None:
+def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
         id="lgos-a/advanced-graph",
         description="Advanced graph",
         fields=(),
+        supports_mcp_tools=True,
     )
 
     sync_workspace_models(client, (spec,))
@@ -464,6 +465,7 @@ def test_advanced_graph_workspace_model_has_only_web_search() -> None:
             "default": False,
         },
     ]
+    assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
 
 
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:

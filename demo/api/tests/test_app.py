@@ -93,6 +93,7 @@ async def test_app_lists_exactly_the_documented_models(
         "client_events",
         "file_inputs",
         "interrupts",
+        "mcp_tools",
     ]
     assert "client_settings" not in advanced_extension
 

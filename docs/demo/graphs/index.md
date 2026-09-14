@@ -7,7 +7,7 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
-| [`advanced-graph`](advanced-graph.md) | General chat, uploaded-file Q&A, routed cited research, and approval before saving a searchable note | `client_events`, `file_inputs`, `interrupts` | Responses model, OpenAI-compatible vector service, and PostgreSQL |
+| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note | `client_events`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
