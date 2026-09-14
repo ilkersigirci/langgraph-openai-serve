@@ -175,3 +175,20 @@ services:
     depends_on:
       lgos-otel-collector:
         condition: service_started
+
+  lgos-litellm:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-environment
+      LITELLM_OTEL_V2: "true"
+      LITELLM_OTEL_INTEGRATION_ENABLE_METRICS: "true"
+      # Body-less exception events fail in the pinned OTLP encoder. Revisit
+      # https://github.com/BerriAI/litellm/issues/36863 before enabling them.
+      LITELLM_OTEL_LEGACY_COMPAT: "false"
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: no_content
+      OTEL_SERVICE_NAME: lgos-litellm
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started

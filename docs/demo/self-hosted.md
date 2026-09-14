@@ -20,7 +20,10 @@ runtime configuration, and persistence layout for the surrounding services.
 | Per-host OTLP relay used by Traefik and other host services | [`apps/otel-collector-agent.yml`](https://github.com/ilkersigirci/homeserver-docker/blob/main/apps/otel-collector-agent.yml) | [`configs/otel-collector/`](https://github.com/ilkersigirci/homeserver-docker/tree/main/configs/otel-collector) | [`compose/gpu_coding.yml`](https://github.com/ilkersigirci/homeserver-docker/blob/main/compose/gpu_coding.yml) (`core`) |
 
 The Grafana configuration includes the [LGOS end-to-end dashboard](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/LGOS-End-to-End-Tracing.json)
-and the [Traefik OpenTelemetry dashboard](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/Traefik-Opentelemetry.json).
+and dedicated [LiteLLM](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/LiteLLM.json),
+[Bifrost](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/Bifrost.json),
+and [Traefik](https://github.com/ilkersigirci/homeserver-docker/blob/main/configs/grafana-lgtm/grafana/provisioning/dashboards/OTEL/Traefik-Opentelemetry.json)
+OpenTelemetry dashboards.
 
 ![Grafana LGOS end-to-end OpenTelemetry dashboard showing Responses traffic, HTTP failures, graph latency, and requests by UI](../static/grafana_otel.png)
 
