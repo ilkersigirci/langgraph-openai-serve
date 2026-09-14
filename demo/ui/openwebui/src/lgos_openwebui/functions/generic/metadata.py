@@ -1,6 +1,7 @@
 """Build standard Responses metadata from Open WebUI chat state."""
 
 import json
+from collections.abc import Collection
 from typing import Any
 
 from .contracts import (
@@ -11,10 +12,15 @@ from .contracts import (
 
 
 def _request_metadata(
-    metadata: dict[str, Any], *, include_runtime_settings: bool = True
+    metadata: dict[str, Any],
+    *,
+    include_runtime_settings: bool = True,
+    excluded_runtime_settings: Collection[str] = (),
 ) -> dict[str, str]:
     request_metadata = (
-        _runtime_settings_metadata(metadata) if include_runtime_settings else {}
+        _runtime_settings_metadata(metadata, excluded=excluded_runtime_settings)
+        if include_runtime_settings
+        else {}
     )
     chat_id = metadata.get("chat_id")
     if isinstance(chat_id, str) and chat_id:
@@ -22,13 +28,18 @@ def _request_metadata(
     return request_metadata
 
 
-def _runtime_settings_metadata(metadata: dict[str, Any]) -> dict[str, str]:
+def _runtime_settings_metadata(
+    metadata: dict[str, Any], *, excluded: Collection[str] = ()
+) -> dict[str, str]:
     values = metadata.get("chat_variables")
     if not isinstance(values, dict) or not values:
         return {}
+    settings = {name: value for name, value in values.items() if name not in excluded}
+    if not settings:
+        return {}
     try:
         encoded = json.dumps(
-            values,
+            settings,
             allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),

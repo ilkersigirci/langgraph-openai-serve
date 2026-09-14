@@ -92,4 +92,5 @@ def test_bifrost_uses_native_responses_and_files() -> None:
 
     assert gateway.responses_base_url == "https://gateway.example/openai/v1"
     assert gateway.files_base_url == "https://gateway.example/v1"
+    assert gateway.mcp_url == "https://gateway.example/mcp"
     assert gateway.files_provider == "lgos-files"

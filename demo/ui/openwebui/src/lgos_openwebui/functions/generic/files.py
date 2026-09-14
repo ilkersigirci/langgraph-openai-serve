@@ -5,6 +5,7 @@ from binascii import Error as Base64Error
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 from openai.types.responses import ResponseFunctionToolCall
@@ -22,6 +23,7 @@ async def _with_response_file_parts(
     messages: list[dict[str, Any]],
     files: list[dict[str, Any]] | None,
     metadata: dict[str, Any] | None,
+    request: Any = None,
     *,
     base_url: str,
     api_key: str,
@@ -45,12 +47,13 @@ async def _with_response_file_parts(
 
     current_file_ids = {cast(str, file["id"]) for file in current_files}
     path_attachments = {
-        file_id: _path_attachment(file)
+        file_id: attachment
         for file in files or []
         if isinstance(file, dict)
         and file.get("type") == "file"
         and isinstance(file_id := file.get("id"), str)
         and file_id in current_file_ids
+        and (attachment := _path_attachment(file)) is not None
     }
     images = iter(_image_attachments(messages[user_message_index]))
     attachments: list[tuple[Path | bytes, str, str]] = []
@@ -62,13 +65,19 @@ async def _with_response_file_parts(
         if _content_type(file).startswith("image/"):
             try:
                 content, content_type = next(images)
-            except StopIteration as exc:
-                msg = f"Open WebUI attachment is unavailable: {_filename(file)}"
-                raise ValueError(msg) from exc
-            attachments.append((content, _filename(file), content_type))
-            continue
-        msg = f"Open WebUI attachment is unavailable: {_filename(file)}"
-        raise ValueError(msg)
+            except StopIteration:
+                pass
+            else:
+                attachments.append((content, _filename(file), content_type))
+                continue
+        filename = _filename(file)
+        content, content_type = await _download_openwebui_file(
+            request,
+            file_id,
+            filename=filename,
+            timeout=timeout,
+        )
+        attachments.append((content, filename, content_type or _content_type(file)))
 
     parts: list[dict[str, str]] = []
     async with _client(base_url=base_url, api_key=api_key, timeout=timeout) as client:
@@ -124,16 +133,41 @@ def _current_files(metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
     ]
 
 
-def _path_attachment(file: dict[str, Any]) -> tuple[Path, str, str]:
+def _path_attachment(file: dict[str, Any]) -> tuple[Path, str, str] | None:
     stored = file.get("file")
     if not isinstance(stored, dict):
-        raise ValueError("Open WebUI returned an invalid file attachment.")
+        return None
     path_value = stored.get("path")
     if not isinstance(path_value, str) or not path_value:
-        raise ValueError("Open WebUI returned an invalid file attachment.")
+        return None
 
     path = Path(path_value)
+    if not path.is_file():
+        return None
     return path, _filename(file, fallback=path.name), _content_type(file)
+
+
+async def _download_openwebui_file(
+    request: Any,
+    file_id: str,
+    *,
+    filename: str,
+    timeout: float,
+) -> tuple[bytes, str | None]:
+    """Download an attachment through the authenticated Open WebUI API."""
+    client, headers = _openwebui_client(request, timeout)
+    try:
+        async with client as openwebui:
+            response = await openwebui.get(
+                f"/api/v1/files/{quote(file_id, safe='')}/content",
+                headers=headers,
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        msg = f"Open WebUI attachment is unavailable: {filename}"
+        raise ValueError(msg) from exc
+    content_type = response.headers.get("content-type")
+    return response.content, content_type if content_type else None
 
 
 def _image_attachments(
@@ -282,18 +316,12 @@ async def _store_openwebui_file(
     timeout: float,
 ) -> str:
     """Upload bytes through the authenticated Open WebUI Files endpoint."""
-    headers = getattr(request, "headers", None)
-    authorization = headers.get("authorization") if headers is not None else None
-    base_url = getattr(request, "base_url", None)
-    if not isinstance(authorization, str) or not authorization or base_url is None:
-        msg = "Open WebUI request credentials are unavailable for file storage."
-        raise ValueError(msg)
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            f"{str(base_url).rstrip('/')}/api/v1/files/",
+    client, headers = _openwebui_client(request, timeout)
+    async with client as openwebui:
+        response = await openwebui.post(
+            "/api/v1/files/",
             params={"process": "false"},
-            headers={"Authorization": authorization},
+            headers=headers,
             files={"file": (filename, content, media_type)},
         )
         response.raise_for_status()
@@ -303,3 +331,30 @@ async def _store_openwebui_file(
         msg = "Open WebUI returned an invalid stored file."
         raise ValueError(msg)
     return file_id
+
+
+def _openwebui_client(
+    request: Any,
+    timeout: float,
+) -> tuple[httpx.AsyncClient, dict[str, str]]:
+    """Build an authenticated client for the current Open WebUI application."""
+    headers = getattr(request, "headers", None)
+    authorization = headers.get("authorization") if headers is not None else None
+    if not isinstance(authorization, str) or not authorization:
+        msg = "Open WebUI request credentials are unavailable for file transfer."
+        raise ValueError(msg)
+
+    app = getattr(request, "app", None)
+    if app is not None:
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://openwebui.internal",
+            timeout=timeout,
+        )
+    else:
+        base_url = getattr(request, "base_url", None)
+        if base_url is None:
+            msg = "Open WebUI request URL is unavailable for file transfer."
+            raise ValueError(msg)
+        client = httpx.AsyncClient(base_url=str(base_url), timeout=timeout)
+    return client, {"Authorization": authorization}

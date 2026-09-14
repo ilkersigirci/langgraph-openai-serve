@@ -9,12 +9,19 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from openai import AsyncOpenAI
 
 from lgos_demo_api.checkpointer import postgres_runtime
-from lgos_demo_api.graphs.advanced_mcp import advanced_mcp_graph_config
+from lgos_demo_api.graphs.advanced_graph import (
+    OpenAICompatibleKnowledgeBase,
+    create_advanced_graph,
+    create_advanced_graph_config,
+    create_model,
+)
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
@@ -25,6 +32,8 @@ from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph_config,
 )
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
+from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph_config
+from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph_config
 from lgos_demo_api.graphs.multi_node_streaming import (
     multi_node_streaming_graph_config,
 )
@@ -32,6 +41,7 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     create_persistent_plot_agent,
     create_persistent_plot_agent_config,
 )
+from lgos_demo_api.graphs.response_outcomes import response_outcome_graph_config
 from lgos_demo_api.graphs.server_tool import server_tool_graph_config
 from lgos_demo_api.graphs.simple import simple_graph_config
 from lgos_demo_api.graphs.simple_external_tools import (
@@ -43,6 +53,19 @@ from lgos_demo_api.otel import instrument_fastapi_app
 from lgos_demo_api.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _vector_store_connection() -> tuple[str, str]:
+    """Resolve storage credentials without leaking the model provider's key."""
+    if settings.VECTOR_STORE_BASE_URL:
+        return (
+            settings.VECTOR_STORE_BASE_URL,
+            settings.VECTOR_STORE_API_KEY or "DUMMY",
+        )
+    return (
+        settings.OPENAI_BASE_URL,
+        settings.VECTOR_STORE_API_KEY or settings.OPENAI_API_KEY,
+    )
 
 
 @asynccontextmanager
@@ -57,11 +80,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     """
     logger.info("demo.server.starting")
+    vector_store_base_url, vector_store_api_key = _vector_store_connection()
 
-    async with postgres_runtime(settings.POSTGRES_URI) as runtime:
+    async with (
+        postgres_runtime(settings.POSTGRES_URI) as runtime,
+        httpx.AsyncClient(timeout=60) as upstream_http,
+        AsyncOpenAI(
+            base_url=vector_store_base_url,
+            api_key=vector_store_api_key,
+            default_headers=(
+                {"x-bf-api-key": settings.VECTOR_STORE_BIFROST_KEY_NAME}
+                if settings.VECTOR_STORE_BIFROST_KEY_NAME
+                else None
+            ),
+            http_client=upstream_http,
+            max_retries=0,
+        ) as vector_store_client,
+        AsyncOpenAI(
+            base_url=settings.FILES_BASE_URL,
+            api_key="DUMMY",
+            max_retries=0,
+        ) as files_client,
+    ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
+        knowledge = (
+            OpenAICompatibleKnowledgeBase(
+                vector_store_client,
+                settings.VECTOR_STORE_ID,
+            )
+            if settings.VECTOR_STORE_ID
+            else None
+        )
+        app.state.advanced_graph = create_advanced_graph(
+            model=create_model(upstream_http),
+            knowledge=knowledge,
+            files=files_client,
+            checkpointer=runtime.checkpointer,
+            store=runtime.store,
+        )
         yield
 
     logger.info("demo.server.stopped")
@@ -94,17 +152,23 @@ def create_custom_app() -> FastAPI:
     )
     graph_registry = GraphRegistry(
         registry={
+            "advanced-graph": create_advanced_graph_config(
+                lambda: app.state.advanced_graph,
+                lambda key: app.state.run_coordinator(key),
+            ),
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,
             "server-tool": server_tool_graph_config,
             "lgos-rag": lgos_rag_graph_config,
             "custom-input-output-context": custom_io_graph_config,
-            "advanced-mcp-tools": advanced_mcp_graph_config,
+            "mcp-mock": mcp_mock_graph_config,
+            "mcp-postgres": mcp_postgres_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "multi-node-streaming": multi_node_streaming_graph_config,
             "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
+            "response-outcomes": response_outcome_graph_config,
             "persistent-plot-agent": create_persistent_plot_agent_config(
                 lambda: app.state.persistent_plot_agent,
             ),

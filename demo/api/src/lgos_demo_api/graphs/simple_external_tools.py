@@ -43,29 +43,43 @@ def request_to_input(
 
 async def generate(state: ExternalToolsState) -> dict[str, list[AIMessage]]:
     """Return a model response without executing client-owned tools."""
+    model_response = await invoke_client_tool_model(
+        state,
+        system_prompt=DEFAULT_SYSTEM_PROMPT,
+        temperature=0.7,
+    )
+    return {"messages": [model_response]}
+
+
+async def invoke_client_tool_model(
+    state: ExternalToolsState,
+    *,
+    system_prompt: str,
+    temperature: float,
+    default_tool_choice: ClientToolChoice | None = None,
+) -> AIMessage:
+    """Invoke the shared chat model while leaving tool execution to the client."""
     model = ChatOpenAI(
         model=settings.OPENAI_MODEL,
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
-        temperature=0.7,
+        temperature=temperature,
         streaming=True,
     )
-    conversation = [SystemMessage(content=DEFAULT_SYSTEM_PROMPT), *state.messages]
+    conversation = [SystemMessage(content=system_prompt), *state.messages]
 
     if state.tools:
         binding_options: dict[str, Any] = {}
-        if state.tool_choice is not None:
-            binding_options["tool_choice"] = _chat_tool_choice(state.tool_choice)
+        tool_choice = state.tool_choice or default_tool_choice
+        if tool_choice is not None:
+            binding_options["tool_choice"] = _chat_tool_choice(tool_choice)
         if state.parallel_tool_calls is not None:
             binding_options["parallel_tool_calls"] = state.parallel_tool_calls
-        model_response = await model.bind_tools(
+        return await model.bind_tools(
             [_chat_tool(tool) for tool in state.tools],
             **binding_options,
         ).ainvoke(conversation)
-    else:
-        model_response = await model.ainvoke(conversation)
-
-    return {"messages": [model_response]}
+    return await model.ainvoke(conversation)
 
 
 def _chat_tool(tool: ClientFunctionTool) -> dict[str, object]:
@@ -109,6 +123,7 @@ simple_external_tools_graph_config = GraphConfig(
 
 __all__ = [
     "ExternalToolsState",
+    "invoke_client_tool_model",
     "request_to_input",
     "simple_external_tools_graph",
     "simple_external_tools_graph_config",

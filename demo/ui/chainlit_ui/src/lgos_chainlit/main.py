@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from chainlit.config import config
 from chainlit.data import get_data_layer
 from chainlit.data.chainlit_data_layer import ChainlitDataLayer
 from chainlit.data.storage_clients.s3 import S3StorageClient
@@ -12,7 +13,8 @@ from fastapi import FastAPI
 from lgos_chainlit.auth.chainlit import configure_auth
 from lgos_chainlit.auth.oauth_tokens import initialize_oauth_storage
 from lgos_chainlit.settings import get_chainlit_settings, settings
-from lgos_chainlit.utils.clients import gateway_http_client
+from lgos_chainlit.utils.clients import gateway, gateway_http_client
+from lgos_chainlit.utils.mcp import mcp_gateway_config
 
 os.environ.setdefault(
     "AWS_CONFIG_FILE",
@@ -20,13 +22,21 @@ os.environ.setdefault(
 )
 get_chainlit_settings()
 
+if settings.UI_FILE == "simple" and not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
+    assert settings.OPENAI_GATEWAY_API_KEY is not None
+    config.features.mcp.servers = [
+        mcp_gateway_config(gateway, settings.OPENAI_GATEWAY_API_KEY)
+    ]
+else:
+    config.features.mcp.enabled = False
+
 
 async def _close_chainlit_data_layer() -> None:
     data_layer = get_data_layer()
     if not isinstance(data_layer, ChainlitDataLayer):
         return
     if isinstance(data_layer.storage_client, S3StorageClient):
-        # Chainlit 2.11.1 incorrectly awaits boto3's synchronous close method.
+        # Chainlit 2.12.0 incorrectly awaits boto3's synchronous close method.
         data_layer.storage_client.client.close()
         data_layer.storage_client = None
     await data_layer.close()

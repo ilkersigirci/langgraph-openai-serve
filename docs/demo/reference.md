@@ -52,9 +52,9 @@ integration commands:
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
 Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
-`lgos-files-api`, `lgos-bifrost`, `lgos-litellm`, `lgos-chainlit`, and
-`lgos-openwebui`. Put arguments for the underlying command after `--` when a
-recipe has its own options, for example
+`lgos-files-api`, `lgos-postgres-mcp`, `lgos-bifrost`, `lgos-litellm`,
+`lgos-chainlit`, and `lgos-openwebui`. Put arguments for the underlying command
+after `--` when a recipe has its own options, for example
 `just demo/test --editable -- -q`.
 
 Use `just demo/` to list recipes in the `local`, `integration`, `checks`,
@@ -72,9 +72,10 @@ environment file, run:
 just --dotenv-path demo/.env.example demo/compose-config
 ```
 
-Host-side UI commands use the host-reachable `DEMO_GATEWAY_HOST_URL`; see
-the [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup)
-client guides for the host-side commands.
+The local Chainlit command uses the host-reachable `DEMO_GATEWAY_HOST_URL`.
+Compose runs Open WebUI synchronization inside its container so the UI and its
+sync process share the same gateway configuration. See the
+[Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup) guides.
 
 `just demo/test-litellm --editable` and
 `just demo/test-bifrost --editable` run the focused OpenAI SDK
@@ -92,12 +93,13 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
-| `DEMO_GATEWAY_HOST_URL` | Gateway root used by host-side synchronization and integration tests |
+| `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit process and integration tests |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Static gateway credential used by Open WebUI. The bundled LiteLLM configuration also uses it as its demo master key |
-| `DEMO_CHAINLIT_GATEWAY_API_KEY` | Static Chainlit gateway credential used with mock or OAuth login. Leave empty only when OAuth token forwarding is enabled |
+| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, and MCP; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `LGOS_MCP_DB_PASSWORD` | Password for the dedicated read-only `lgos_mcp` PostgreSQL login; DBHub receives it through an interpolated individual connection field, so URL encoding is not required |
+| `LGOS_MCP_AUTH_TOKEN` | Internal bearer token used by LiteLLM or Bifrost when it connects to DBHub |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |
 | `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container; may differ from the UI's SSO endpoint |
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
@@ -150,11 +152,15 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
 | `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | Upstream generation model |
+| `DEMO_API_VECTOR_STORE_BASE_URL` | OpenAI-compatible vector-service base URL for `advanced-graph`; falls back to the model base URL |
+| `DEMO_API_VECTOR_STORE_API_KEY` | Vector-service API key; uses the model key only when the vector base URL is omitted, otherwise defaults to `DUMMY` |
+| `DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` | Optional Bifrost managed-key pin for stateful vector-store passthrough requests |
+| `DEMO_API_VECTOR_STORE_ID` | Shared knowledge-base ID searched by `advanced-graph`; required for document search and saved notes |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
-| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` graph. |
+| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
@@ -177,8 +183,9 @@ These settings belong only to the independent `demo/files_api` project.
 
 ## Open WebUI Sync Settings
 
-These settings configure the host-side Open WebUI synchronization command,
-alongside the shared gateway values under [Stack Settings](#stack-settings).
+These settings configure Open WebUI synchronization alongside the shared
+gateway values under [Stack Settings](#stack-settings). Compose executes the
+command inside the Open WebUI container.
 
 | Setting | Purpose |
 | --- | --- |

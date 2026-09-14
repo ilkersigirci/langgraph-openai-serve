@@ -45,6 +45,7 @@ class GatewayConfig:
     """Resolved URLs and routing behavior for one supported gateway."""
 
     root_url: str
+    mcp_url: str
     responses_base_url: str
     provider_routing: bool
     files_base_url: str
@@ -61,6 +62,7 @@ def gateway_config(
         managed_base_url = f"{root}/v1"
         return GatewayConfig(
             root_url=root,
+            mcp_url=f"{root}/mcp/",
             responses_base_url=managed_base_url,
             provider_routing=False,
             files_base_url=managed_base_url,
@@ -69,6 +71,7 @@ def gateway_config(
 
     return GatewayConfig(
         root_url=root,
+        mcp_url=f"{root}/mcp",
         responses_base_url=f"{root}/openai/v1",
         provider_routing=True,
         files_base_url=f"{root}/v1",

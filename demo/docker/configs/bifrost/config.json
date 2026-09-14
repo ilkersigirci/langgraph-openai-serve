@@ -1,9 +1,90 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
   "client": {
+    "enforce_auth_on_inference": true,
     "header_filter_config": {
       "allowlist": ["traceparent", "tracestate", "user-agent"]
     }
+  },
+  "mcp": {
+    "client_configs": [
+      {
+        "name": "lgos_postgres",
+        "endpoint_slug": "lgos-postgres-source",
+        "connection_type": "http",
+        "connection_string": "http://lgos-postgres-mcp:8080/mcp",
+        "auth_type": "headers",
+        "headers": {
+          "Authorization": "env.LGOS_MCP_AUTH_HEADER"
+        },
+        "tools_to_execute": [
+          "count_chainlit_users",
+          "list_chainlit_conversation_counts",
+          "summarize_chainlit_activity",
+          "list_chainlit_activity_by_profile",
+          "summarize_lgos_interrupted_runs",
+          "list_lgos_interrupted_runs"
+        ]
+      }
+    ],
+    "virtual_mcps": [
+      {
+        "id": 1,
+        "name": "LGOS PostgreSQL Reports",
+        "endpoint_slug": "lgos-postgres",
+        "description": "Fixed read-only reports for live LGOS and Chainlit data",
+        "enabled": true,
+        "virtual_key_ids": ["lgos-demo"],
+        "tools": [
+          {
+            "mcp_client_name": "lgos_postgres",
+            "tool_names": [
+              "count_chainlit_users",
+              "list_chainlit_conversation_counts",
+              "summarize_chainlit_activity",
+              "list_chainlit_activity_by_profile",
+              "summarize_lgos_interrupted_runs",
+              "list_lgos_interrupted_runs"
+            ]
+          }
+        ]
+      }
+    ],
+    "tool_manager_config": {
+      "tool_execution_timeout": "15s",
+      "disable_auto_tool_inject": true
+    }
+  },
+  "governance": {
+    "virtual_keys": [
+      {
+        "id": "lgos-demo",
+        "name": "LGOS demo clients",
+        "description": "Demo UI access to LGOS providers and read-only PostgreSQL MCP tools",
+        "value": "env.BIFROST_DEMO_VIRTUAL_KEY",
+        "is_active": true,
+        "provider_configs": [
+          {
+            "provider": "lgos-a",
+            "allowed_models": ["*"],
+            "key_ids": ["*"],
+            "weight": 1.0
+          },
+          {
+            "provider": "lgos-b",
+            "allowed_models": ["*"],
+            "key_ids": ["*"],
+            "weight": 1.0
+          },
+          {
+            "provider": "lgos-files",
+            "allowed_models": ["*"],
+            "key_ids": ["*"],
+            "weight": 1.0
+          }
+        ]
+      }
+    ]
   },
   "providers": {
     "lgos-a": {
@@ -81,7 +162,11 @@
     }
   },
   "config_store": {
-    "enabled": false
+    "enabled": true,
+    "type": "sqlite",
+    "config": {
+      "path": "/tmp/config.db"
+    }
   },
   "plugins": [
     {

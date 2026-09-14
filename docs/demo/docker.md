@@ -34,10 +34,11 @@ In a standalone copy of `demo/`, use `just <recipe>` in place of
 
 !!! note "Docker Compose 5.3.0 or newer"
 
-    Chainlit uses `pre_start` for its private schema migrations. The two API
-    services instead share one dedicated `lgos-demo-api-setup` job and wait for
-    its successful completion. This avoids running the same LangGraph
-    checkpoint migration concurrently in both API workers.
+    The demo is validated with Compose 5.3.0. Chainlit and the two API services
+    use dedicated one-shot schema jobs and wait for successful completion. This
+    avoids running the same persistence migrations concurrently in application
+    workers and ensures the MCP views are created only after their source
+    tables exist.
 
 Prepare the demo environment:
 
@@ -115,6 +116,23 @@ settings](reference.md#opentelemetry-settings).
     gateway's profile, and stop the running gateway before switching. Changing
     `OPENAI_GATEWAY_TYPE` does not stop the previous gateway container.
 
+=== "PostgreSQL MCP"
+
+    ```bash
+    just demo/up lgos-postgres-mcp --wait
+    ```
+
+    The API and Chainlit migration jobs initialize their persistence schemas.
+    A following one-shot job creates or updates the dedicated `lgos_mcp` login
+    and four curated views over live Chainlit users/conversations and pending
+    LGOS interrupts. The role can read only those views. The pinned DBHub
+    service then exposes six fixed reports only inside the Compose network;
+    it publishes no host port. Starting either bundled gateway starts these
+    dependencies automatically. Replace `LGOS_MCP_DB_PASSWORD` and
+    `LGOS_MCP_AUTH_TOKEN` before startup. See
+    [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) for the complete
+    client and security flow.
+
 === "Graph APIs"
 
     ```bash
@@ -152,10 +170,11 @@ settings](reference.md#opentelemetry-settings).
     just demo/up lgos-bifrost
     ```
 
-    The UIs use native `/openai/v1/responses`, normal `/v1` Files routing, and
-    raw pass-through only for provider-specific catalog detail. See [Bifrost
-    Gateway](bifrost.md) for endpoints, routing, and the shared SDK verification
-    command.
+    The UIs use native `/openai/v1/responses`, normal `/v1` Files routing, the
+    aggregate `/mcp` endpoint, and raw pass-through only for provider-specific
+    catalog detail. The named PostgreSQL Virtual MCP remains available at
+    `http://localhost:3000/mcp/lgos-postgres`. See [Bifrost Gateway](bifrost.md)
+    for endpoints, routing, and the shared SDK verification command.
 
 === "External LiteLLM"
 
@@ -167,20 +186,26 @@ settings](reference.md#opentelemetry-settings).
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_GATEWAY_API_KEY=${OPENAI_GATEWAY_API_KEY}
     DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
     ```
 
-    Use the gateway root without `/v1`. Both UIs share the gateway type and
-    base URL. Open WebUI uses `OPENAI_GATEWAY_API_KEY`; Chainlit uses its key
-    above with either login type, or delegated OAuth when explicitly enabled.
-    An external LiteLLM uses the same
+    Use the gateway root without `/v1`. Both UIs share the gateway type, base
+    URL, and `OPENAI_GATEWAY_API_KEY`, or Chainlit uses delegated OAuth when
+    explicitly enabled. An external LiteLLM uses the same
     Responses, Files, and catalog routes as bundled LiteLLM.
 
+    Both UIs derive their MCP endpoint from the same gateway root and use the
+    same credential as Responses and Files. To use `mcp-postgres`, also adapt
+    the checked-in
+    `mcp_servers.lgos_postgres` entry and `LGOS_MCP_AUTH_TOKEN` for the external
+    gateway, just as the Files configuration is adapted below. The external
+    gateway URL must be reachable from both UI containers. On another host,
+    expose DBHub only on a private address reachable by that gateway.
+
     `just demo/compose` (or the same command with `--dev`) starts
-    the demo APIs, Files service, and PostgreSQL, syncs both catalogs to the
-    external LiteLLM, then starts and
-    syncs the UIs. An empty `COMPOSE_PROFILES` disables both bundled gateways;
+    the demo APIs, Files service, DBHub, and its PostgreSQL setup, syncs both
+    catalogs to the external LiteLLM, then starts and syncs the UIs. An empty
+    `COMPOSE_PROFILES` disables both bundled gateways;
     the template normally selects one through
     `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`. The external gateway and its
     administrator credentials must be reachable by the
@@ -211,16 +236,18 @@ settings](reference.md#opentelemetry-settings).
     Create the network by starting the demo backends first, for example with
     `just demo/up lgos-demo-api-a`,
     `just demo/up lgos-demo-api-b`, and
-    `just demo/up lgos-files-api` in separate
-    terminals. The existing gateway can then resolve `lgos-demo-api-a`,
-    `lgos-demo-api-b`, and `lgos-files-api` using the bundled sync examples
-    and Files configuration. For another host, replace those upstream URLs
-    with addresses reachable from that gateway.
+    `just demo/up lgos-files-api` in separate terminals, then
+    `just demo/up lgos-postgres-mcp --wait`.
+    The existing gateway can then resolve `lgos-demo-api-a`,
+    `lgos-demo-api-b`, `lgos-files-api`, and `lgos-postgres-mcp` using the
+    bundled sync, Files, and MCP configuration examples. For another host,
+    replace those upstream URLs with addresses reachable from that gateway.
 
     The external deployment continues to own its database, TLS, credentials,
     and Admin UI SSO. The selected credentials must allow the LGOS models, Files
-    operations, and native `/model/info`. Chainlit can enable
-    [delegated OAuth](chainlit.md#persistence-and-login) and clear its static key.
+    operations, the configured MCP tools, and native `/model/info`. Chainlit can
+    enable [delegated OAuth](chainlit.md#persistence-and-login); it then ignores
+    the shared static key and disables its native MCP connection.
     If the gateway already configures `litellm_proxy` Files,
     reconcile that provider with the demo's shared Files namespace. Then run
     `just demo/sync-openwebui` and the
@@ -238,6 +265,7 @@ settings](reference.md#opentelemetry-settings).
     - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
     - managed routing: `http://localhost:3000/v1`
+    - native MCP: `http://localhost:3000/mcp/`
     - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
     The bundled configuration uses API-key authentication. Chainlit can still
@@ -257,6 +285,12 @@ settings](reference.md#opentelemetry-settings).
     default in any shared deployment. For the local Admin UI, sign in as
     `admin`; unless `UI_PASSWORD` is set separately, the password is the value
     of `OPENAI_GATEWAY_API_KEY` from `demo/.env`.
+
+    The MCP configuration reaches DBHub with the separate internal
+    `LGOS_MCP_AUTH_TOKEN`, allowlists the six fixed PostgreSQL reports, and
+    permits authenticated gateway keys to use them. Native clients still opt
+    in by connecting to `/mcp/`; the graph API receives only ordinary OpenAI
+    function definitions and results.
 
     The managed-routing surface uses concrete database-backed models
     and LiteLLM's native
@@ -345,9 +379,9 @@ state, and Open WebUI state—including its native raw file copies—use host bi
 mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
-required ephemeral writes. The one-shot API setup service initializes the
-LangGraph persistence schemas before both API workers, while Chainlit's
-`pre_start` hook applies its independent UI migrations.
+required ephemeral writes. The one-shot API and Chainlit setup services
+initialize their respective persistence schemas. A following idempotent setup
+job owns the MCP reporting views, role, and grants before DBHub starts.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads generated file elements to the configured `BUCKET_NAME`.

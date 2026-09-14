@@ -48,18 +48,24 @@ def completed_response(content: str) -> Response:
     )
 
 
-def configured_model(settings: ModelClientSettings) -> Model:
+def configured_model(
+    settings: ModelClientSettings | None,
+    *,
+    features: list[str] | None = None,
+) -> Model:
+    extension: dict[str, object] = {
+        "schema_version": 1,
+        "description": "DUMMY",
+        "features": features or [],
+    }
+    if settings is not None:
+        extension["client_settings"] = settings.model_dump(mode="json")
     return Model(
         id="simple",
         object="model",
         created=1,
         owned_by="test",
-        lgos={
-            "schema_version": 1,
-            "description": "DUMMY",
-            "features": [],
-            "client_settings": settings.model_dump(mode="json"),
-        },
+        lgos=extension,
     )
 
 
@@ -155,7 +161,62 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
     session.values["chat_settings"][chat_settings.PACKAGE_VERSION_SETTING_ID] = False
     assert chat_settings.response_tools() == [{"type": "web_search"}]
     session.values["chat_profile"] = "simple"
+    assert chat_settings.response_tools() == []
+    session.values["chat_profile"] = "provider/persistent-plot-agent"
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
+
+
+def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session(
+        {
+            "chat_profile": "provider/database-assistant",
+            chat_settings.MODEL_FEATURES_SESSION_KEY: ["mcp_tools"],
+        }
+    )
+    gateway_tools = [{"type": "function", "name": "database_report"}]
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
+
+    assert chat_settings.response_tools() == gateway_tools
+
+    session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] = []
+    assert chat_settings.response_tools() == []
+
+
+async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session(
+        {
+            "chat_profile": "lgos-a/advanced-graph",
+            "chat_settings": {"web_search": True},
+        }
+    )
+    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(
+        chat_settings,
+        "retrieve_model",
+        AsyncMock(return_value=configured_model(None, features=["mcp_tools"])),
+    )
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    gateway_tools = [{"type": "function", "name": "database_report"}]
+    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
+
+    await chat_settings.configure_chat_settings()
+
+    assert [widget.id for widget in factory.call_args.args[0]] == [
+        chat_settings.STREAMING_SETTING_ID,
+        chat_settings.WEB_SEARCH_SETTING_ID,
+    ]
+    assert chat_settings.response_tools() == [
+        *gateway_tools,
+        {"type": "web_search"},
+    ]
+    assert chat_settings.chat_settings_metadata() == {}
 
 
 async def test_chat_profiles_use_list_capabilities_for_file_uploads(
@@ -364,7 +425,7 @@ async def test_selected_settings_reach_the_openai_request(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[DISPLAY_FILE_TOOL],
+        tools=[],
         user="demo-user",
         metadata={
             "lgos_settings": (
@@ -423,7 +484,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         extra_headers={"x-model-provider": "lgos-a"},
         input=messages,
         store=False,
-        tools=[DISPLAY_FILE_TOOL],
+        tools=[],
         user="demo-user",
         metadata={
             "lgos_settings": '{"mode":"detailed"}',

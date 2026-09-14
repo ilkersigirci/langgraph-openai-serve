@@ -94,6 +94,7 @@ async def test_retrieved_model_exposes_sorted_graph_features(
         GraphFeature.INTERRUPTS,
         GraphFeature.CLIENT_EVENTS,
         GraphFeature.FILE_INPUTS,
+        GraphFeature.MCP_TOOLS,
     }
 
     response = await openai_client.models.retrieve("test")
@@ -103,7 +104,7 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     expected_extension = {
         "schema_version": 1,
         "description": "DUMMY",
-        "features": ["client_events", "file_inputs", "interrupts"],
+        "features": ["client_events", "file_inputs", "interrupts", "mcp_tools"],
     }
     assert extension == expected_extension
     assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)

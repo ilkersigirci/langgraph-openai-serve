@@ -1,33 +1,47 @@
+x-lgos-chainlit: &lgos-chainlit
+  image: ghcr.io/ilkersigirci/lgos-chainlit:$DEMO_IMAGE_TAG
+  pull_policy: always
+  restart: "no"
+  user: "$PUID:$PGID"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+    - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
+    - /app/src/lgos_chainlit/.files:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=755
+    - /app/src/lgos_chainlit/.chainlit/translations:rw,noexec,nosuid,nodev,size=16m,uid=$PUID,gid=$PGID,mode=755
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add: []
+  pids_limit: 256
+  cpus: "1.0"
+  mem_limit: 1G
+  ulimits:
+    nofile:
+      soft: 4096
+      hard: 8192
+
 services:
-  lgos-chainlit:
-    container_name: lgos-chainlit
-    image: ghcr.io/ilkersigirci/lgos-chainlit:$DEMO_IMAGE_TAG
-    pull_policy: always
-    restart: "no"
-    user: "$PUID:$PGID"
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
-      - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
-      - /app/src/lgos_chainlit/.files:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=755
-      - /app/src/lgos_chainlit/.chainlit/translations:rw,noexec,nosuid,nodev,size=16m,uid=$PUID,gid=$PGID,mode=755
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add: []
-    pids_limit: 256
-    cpus: "1.0"
-    mem_limit: 1G
-    ulimits:
-      nofile:
-        soft: 4096
-        hard: 8192
+  lgos-chainlit-setup:
+    <<: *lgos-chainlit
+    container_name: lgos-chainlit-setup
+    command: ["lgos-chainlit-setup"]
     depends_on:
       lgos-db:
         condition: service_healthy
-    pre_start:
-      - command: ["lgos-chainlit-setup"]
+    environment:
+      DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos
+      CHAINLIT_UTILS_MIGRATIONS_TABLE: $CHAINLIT_UTILS_MIGRATIONS_TABLE
+    healthcheck:
+      disable: true
+
+  lgos-chainlit:
+    <<: *lgos-chainlit
+    container_name: lgos-chainlit
+    depends_on:
+      lgos-chainlit-setup:
+        condition: service_completed_successfully
     ports:
       - "$LGOS_CHAINLIT_PORT:5000"
     environment:
@@ -42,7 +56,7 @@ services:
       STORAGE_EXPIRY_TIME: $STORAGE_EXPIRY_TIME
       OPENAI_GATEWAY_TYPE: $OPENAI_GATEWAY_TYPE
       OPENAI_GATEWAY_BASE_URL: $OPENAI_GATEWAY_BASE_URL
-      DEMO_CHAINLIT_GATEWAY_API_KEY: $DEMO_CHAINLIT_GATEWAY_API_KEY
+      OPENAI_GATEWAY_API_KEY: $OPENAI_GATEWAY_API_KEY
       DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING: $DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING
       CHAINLIT_UTILS_MIGRATIONS_TABLE: $CHAINLIT_UTILS_MIGRATIONS_TABLE
       CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY: $CHAINLIT_UTILS_MODEL_CONTEXT_EXCLUDED_KEY

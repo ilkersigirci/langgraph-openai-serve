@@ -54,6 +54,7 @@ def _model_payload() -> dict[str, Any]:
                 GraphFeature.CLIENT_EVENTS,
                 GraphFeature.FILE_INPUTS,
                 GraphFeature.INTERRUPTS,
+                GraphFeature.MCP_TOOLS,
             ],
             client_settings=ModelClientSettings(
                 json_schema=client_settings_json_schema(ExampleSettings),

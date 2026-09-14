@@ -16,6 +16,7 @@ API_KEY = os.getenv("DEMO_TEST_OPENAI_API_KEY", "DUMMY")
 MODEL_PROVIDER = os.getenv("DEMO_TEST_OPENAI_MODEL_PROVIDER")
 FILES_PROVIDER = os.getenv("DEMO_TEST_FILES_PROVIDER")
 ENDPOINTS = DIRECT_BASE_URLS or (None,)
+GATEWAY_ERROR_XFAIL_REASON = os.getenv("DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON")
 
 
 def _graph_client(base_url: str) -> AsyncOpenAI:
@@ -231,6 +232,11 @@ async def test_direct_function_output_continuation(base_url: str | None) -> None
 
 
 @pytest.mark.parametrize("base_url", ENDPOINTS)
+@pytest.mark.xfail(
+    bool(GATEWAY_ERROR_XFAIL_REASON),
+    strict=True,
+    reason=GATEWAY_ERROR_XFAIL_REASON or "",
+)
 async def test_direct_responses_preserve_openai_errors(base_url: str | None) -> None:
     assert base_url is not None
 

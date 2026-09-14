@@ -78,8 +78,8 @@ class GatewayRequestContextMiddleware:
 
 async def gateway_credential() -> str:
     if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
-        assert settings.GATEWAY_API_KEY is not None
-        return settings.GATEWAY_API_KEY
+        assert settings.OPENAI_GATEWAY_API_KEY is not None
+        return settings.OPENAI_GATEWAY_API_KEY
     # HTTP discovery has no Chainlit context. Chat callbacks use the native
     # socket session, even when Socket.IO's transport task inherited an HTTP token.
     token = _request_token.get()
@@ -190,7 +190,7 @@ async def oauth_callback(provider_id: str, request: Request):
         status_code=302,
     )
     clear_auth_cookie(request, response)
-    # Chainlit 2.11.1's cookie helper sets Secure only with SameSite=None.
+    # Chainlit 2.12.0's cookie helper sets Secure only with SameSite=None.
     response.set_cookie(
         os.environ.get("CHAINLIT_AUTH_COOKIE_NAME", "access_token"),
         create_jwt(user),

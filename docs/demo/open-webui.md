@@ -24,10 +24,14 @@ LGOS model. Each Workspace Model wraps the corresponding manifold model and
 projects its LGOS settings schema into the pinned release's native Chat
 Variables form.
 The generated `server-tool` models add fixed **Package version** and **Web
-search** Chat Variable checkboxes. The Pipe maps enabled boxes to a name-only
-`{"type":"custom","name":"lgos_package_version"}` declaration and
-`{"type":"web_search"}`; the names are client constants, not discovered
-metadata. The server registry determines which names execute in LGOS.
+search** Chat Variable checkboxes. Generated `advanced-graph` models add only
+the **Web search** checkbox; their gateway MCP tools are attached separately
+from the discovered `mcp_tools` capability. The Pipe maps enabled tool boxes to
+a name-only `{"type":"custom","name":"lgos_package_version"}` declaration or
+`{"type":"web_search"}`; it keeps them out of `metadata.lgos_settings`. The
+names are client constants, not discovered metadata. The server registry
+determines which names execute in LGOS. Asking the advanced graph to remember or
+save something triggers its note-review flow without a graph-specific setting.
 The Pipe executes only native `function_call` items. Server custom calls and
 searches have distinct native types and are already complete.
 When `lgos-a/simple-graph` is available with valid metadata, sync also creates
@@ -39,6 +43,10 @@ Select **LGOS / ... / server-tool**, open the Chat Variables control beside the
 chat input, and enable **Package version**, **Web search**, or both. The
 checkboxes default to off and their values belong to the chat. LGOS executes
 the selected tools server-side without a client-tool continuation.
+
+For **LGOS / ... / advanced-graph**, the same control contains **Web search**.
+Search is sent as a standard Responses tool. Note saving is an intent expressed
+in the user's message.
 
 ## Simple Per-User Settings
 
@@ -65,6 +73,29 @@ It depends on the Generic Pipe for Responses transport. The generated
     `/model/info` or Bifrost's catalog-detail pass-through. Neither
     the Function nor the sync logic connects directly to LGOS.
 
+## Gateway MCP
+
+The sync command reconciles one managed Streamable HTTP connection. It attaches
+`lgos-gateway` to each generated Workspace Model whose gateway metadata
+advertises `mcp_tools`. The Generic Pipe forwards the gateway tools from
+Open WebUI's native `__tools__` map through Responses and returns matching calls
+to the native tool loop. `mcp-postgres` adds its fixed report allowlist at the
+API boundary, while general-purpose graphs can use the gateway-authorized tool
+catalog without knowing which MCP servers provide it.
+
+The connection derives `/mcp` from `OPENAI_GATEWAY_BASE_URL` and stores
+`OPENAI_GATEWAY_API_KEY` as native bearer authentication. The same values drive
+model discovery, Responses, and Files. The gateway credential determines which
+MCP tools can be discovered, while the downstream DBHub token remains private
+to the gateway.
+
+Keep streaming enabled because Open WebUI's native tool middleware consumes the
+streamed tool-call shape. The current database example is
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md); see it for the complete
+flow and security boundaries, and Open WebUI's official
+[MCP documentation](https://docs.openwebui.com/features/extensibility/mcp/)
+for its native server administration and access controls.
+
 ## Setup
 
 Start the official Open WebUI image:
@@ -75,17 +106,18 @@ just demo/up lgos-openwebui --wait
 ```
 
 For independently started components, first [sync LGOS model
-metadata](litellm-sync.md) when using LiteLLM. Then run the Open WebUI
-synchronization project locally:
+metadata](litellm-sync.md) when using LiteLLM. Then run synchronization inside
+the Open WebUI container:
 
 ```bash
 just demo/sync-openwebui
 ```
 
-Both bundled gateways use host port `3000`. The recipe reads the host-reachable
-`DEMO_GATEWAY_HOST_URL`, while Compose uses `OPENAI_GATEWAY_BASE_URL` for its
-container network. Set both to the external root when one URL serves both
-contexts.
+The command inherits the same gateway root and credential as the Open WebUI
+runtime. For a standalone Open WebUI deployment, run
+`uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
+environment where `DEMO_OPENWEBUI_URL` and the shared gateway URL are both
+reachable.
 
 The full-stack `just demo/compose [--dev] [--otel]` variants handle
 synchronization automatically after their dependencies are healthy.
@@ -157,7 +189,9 @@ graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
 demo to process an attachment. The Generic
 Function receives non-image attachments through Open WebUI's documented
 [`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
-argument and image bytes from their base64 `image_url` content. In the pinned
+argument and image bytes from their base64 `image_url` content. Raw uploads can
+omit the documented hydrated `file.path`; the Function then reads the original
+bytes through Open WebUI's authenticated file-content endpoint. In the pinned
 release, `__metadata__["user_message"]` identifies the message that started this
 turn. Because `__files__` also includes files from earlier turns, the Function
 intersects it with that current message, uploads each current attachment's
@@ -207,7 +241,7 @@ not only to generated LGOS models.
 Every generated model remains visible when its native detail response
 lacks the required `lgos` extension. Its name and description
 say **Limited functionality**. Standard assistant text may still work; runtime
-settings and file-upload controls are not assumed.
+settings, file-upload controls, and gateway tools are not assumed.
 
 ## Runtime Settings
 
@@ -333,6 +367,14 @@ The deliberately small UI profile is an object containing a non-empty
 **Other** input. This is a demo-client presentation convention, not an LGOS
 payload restriction. Responses carries each resume value as a string, and this
 adapter maps Open WebUI choices and free-form answers directly to those strings.
+
+The [advanced graph](graphs/advanced-graph.md) includes exact note bytes in its
+review payload after the user explicitly asks to save something. When details
+exceed the native question's 500-character limit, the Pipe renders the complete
+payload above the question card; nothing is truncated from the saved interrupt
+cursor. Knowledge citations remain ordinary answer text with filenames and
+provider file IDs. The Pipe does not add a knowledge-base selector or bridge the
+demo S3 Files namespace.
 
 After the user answers, the Pipe decodes the paused Response ID and original
 calls from the opaque cursor. It sends the Response ID as `previous_response_id`

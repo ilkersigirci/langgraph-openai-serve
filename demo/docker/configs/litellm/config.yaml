@@ -1,6 +1,21 @@
 # Register database-backed models with the demo's sync-litellm command.
 model_list: []
 
+mcp_servers:
+  lgos_postgres:
+    url: http://lgos-postgres-mcp:8080/mcp
+    transport: http
+    auth_type: bearer_token
+    auth_value: os.environ/LGOS_MCP_AUTH_TOKEN
+    allowed_tools:
+      - count_chainlit_users
+      - list_chainlit_conversation_counts
+      - summarize_chainlit_activity
+      - list_chainlit_activity_by_profile
+      - summarize_lgos_interrupted_runs
+      - list_lgos_interrupted_runs
+    allow_all_keys: true
+
 files_settings:
   - custom_llm_provider: litellm_proxy
     api_base: http://lgos-files-api:8000/v1

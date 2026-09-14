@@ -194,7 +194,9 @@ async def oauth_app(
     monkeypatch.setattr(settings, "OAUTH_RESOURCE", resource)
     monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", forward_oauth_token)
     monkeypatch.setattr(
-        settings, "GATEWAY_API_KEY", None if forward_oauth_token else "static-key"
+        settings,
+        "OPENAI_GATEWAY_API_KEY",
+        None if forward_oauth_token else "static-key",
     )
     get_chainlit_settings.cache_clear()
     oauth_client.oidc_client.cache_clear()

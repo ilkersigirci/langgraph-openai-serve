@@ -29,6 +29,8 @@ CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 SERVER_TOOL_MODEL_NAME = "server-tool"
+ADVANCED_GRAPH_MODEL_NAME = "advanced-graph"
+PERSISTENT_PLOT_MODEL_NAME = "persistent-plot-agent"
 PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
 WEB_SEARCH_TOOL_NAME = "web_search"
 PipeChunk = str | dict[str, Any]
@@ -38,6 +40,19 @@ PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 def is_server_tool_model(model_id: str) -> bool:
     """Return whether a model is the fixed server-tool showcase."""
     return model_id.rsplit("/", 1)[-1] == SERVER_TOOL_MODEL_NAME
+
+
+def supports_web_search(model_id: str) -> bool:
+    """Return whether the demo UI may request LGOS server-side web search."""
+    return model_id.rsplit("/", 1)[-1] in {
+        ADVANCED_GRAPH_MODEL_NAME,
+        SERVER_TOOL_MODEL_NAME,
+    }
+
+
+def supports_display_file(model_id: str) -> bool:
+    """Return whether the selected demo graph publishes displayable files."""
+    return model_id.rsplit("/", 1)[-1] == PERSISTENT_PLOT_MODEL_NAME
 
 
 class InterruptCancelled(Exception):

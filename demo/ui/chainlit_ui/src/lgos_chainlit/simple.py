@@ -30,7 +30,9 @@ from lgos_chainlit.utils.files import (
     file_upload_overrides,
     with_response_file_parts,
 )
+from lgos_chainlit.utils.mcp import execute_mcp_tool
 from lgos_chainlit.utils.responses import (
+    DISPLAY_FILE_TOOL_NAME,
     CommentaryTaskList,
     citation_elements,
     continuation_input,
@@ -154,7 +156,14 @@ async def _response_message(message: cl.Message, model: str) -> None:
                 )
                 raise RuntimeError(msg)
 
-            outputs = [await display_file(call) for call in calls]
+            outputs = [
+                (
+                    await display_file(call)
+                    if call.name == DISPLAY_FILE_TOOL_NAME
+                    else await execute_mcp_tool(call)
+                )
+                for call in calls
+            ]
             input_items.extend(continuation_input(response, outputs))
     except asyncio.CancelledError:
         await commentary_tasks.stop()

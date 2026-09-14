@@ -73,8 +73,9 @@ The standard OpenAI Model object has no description field. The required
 `lgos.description` on both list entries and detailed model
 responses. It is API-owned presentation text; clients decide how to render it.
 
-`GraphConfig.features` is the single source of truth: the runner uses it to
-enable behavior, while model listing and retrieval serialize it for discovery.
+`GraphConfig.features` is the single declaration for optional runtime behavior
+and client capabilities. Model listing and retrieval serialize it for
+discovery.
 `GraphConfig.client_settings` is an explicit, allowlisted public Pydantic model;
 LGOS never publishes a graph's internal LangGraph context schema automatically.
 Additive features do not require an outer schema-version change. The nested
@@ -93,6 +94,7 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 | `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
+| `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
@@ -130,8 +132,8 @@ Concrete gateway configurations and native Responses requirements are documented
     endpoint is not preserving the optional LGOS discovery contract. A UI may
     continue plain Responses text, but it must visibly label the model or chat
     as **Limited functionality** and must not assume runtime settings, file
-    inputs, status commentary, or interrupts are available. A normalized
-    routing catalog cannot remove this requirement.
+    inputs, client tools, status commentary, or interrupts are available. A
+    normalized routing catalog cannot remove this requirement.
 
 ## Runtime Settings
 
@@ -472,7 +474,10 @@ acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
 Tool definitions are accepted for OpenAI compatibility. Graphs can read their
 normalized function definitions and choices from `GraphRequest` in
-`request_to_input` or load tools independently, as the mock MCP demo does.
+`request_to_input`, or they can load and execute server-owned tools independently.
+MCP discovery is not part of LGOS: the PostgreSQL demo's native UI client
+discovers gateway tools, supplies their standard function definitions, and
+executes returned calls.
 
 Responses accepts flat function tool definitions, named or automatic tool
 choice, returned `function_call` items, and matching string-valued

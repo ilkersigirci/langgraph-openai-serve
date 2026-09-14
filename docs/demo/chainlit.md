@@ -9,11 +9,15 @@ needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
 The `server-tool` profile has fixed opt-in switches for `lgos_package_version`
-and `web_search`. Chainlit knows these public names and includes only selected
-tools in the native Responses `tools` array; it does not discover them from
-model metadata. Package lookup uses a name-only custom declaration, while
+and `web_search`; `advanced-graph` has only the **Web search** Chat Settings
+switch and receives gateway MCP tools separately through its advertised
+capability. Chainlit knows the server-tool names and includes only selected
+tools in the native Responses `tools` array; it does not discover those names
+from model metadata. Package lookup uses a name-only custom declaration, while
 search uses `{"type":"web_search"}`. LGOS completes selected server tools inside
-the same Response, so Chainlit executes only returned `function_call` items.
+the same Response, so Chainlit executes only returned `function_call` items. The
+advanced graph enters note review when the user asks to remember or save
+something, not through a UI setting.
 Native URL-citation annotations become
 clickable Chainlit source elements containing Markdown links, without changing
 the replayed answer text.
@@ -108,6 +112,23 @@ URL. Browser login and gateway authorization are separate settings: mock and
 OAuth login can use a static key, while OAuth can optionally delegate the
 signed-in user's access token.
 
+## Gateway MCP
+
+The backend derives one trusted `/mcp` connection from the selected gateway
+root and uses the same credential as Responses and Files. The browser receives
+no URL or bearer token, and user-provided servers remain disabled. After you
+click **Connect**, Chainlit owns the session and discovers the tools authorized
+by the gateway. It sends them only when the selected model advertises the
+`mcp_tools` capability. `mcp-postgres` applies a fixed report allowlist at the
+API boundary, while general-purpose graphs can use the gateway-authorized tool
+catalog without knowing which MCP servers provide it.
+
+The current database example is
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md); see it for the complete
+request flow, read-only controls, and connection steps. Chainlit's official
+[MCP guide](https://docs.chainlit.io/advanced-features/mcp) documents the
+underlying lifecycle.
+
 ## File Attachments
 
 The UI uploads every file attached to the current user message through
@@ -127,10 +148,10 @@ If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
 resolve its central ID.
 
-!!! note "Chainlit 2.11.1 upload validation"
+!!! note "Chainlit 2.12.0 upload validation"
 
     Chainlit applies profile overrides to the browser and WebSocket session,
-    but its pinned [`/project/file` validator](https://github.com/Chainlit/chainlit/blob/2.11.1/backend/chainlit/server.py#L1649-L1661)
+    but its pinned [`/project/file` validator](https://github.com/Chainlit/chainlit/blob/2.12.0/backend/chainlit/server.py#L1997-L2011)
     reads the global setting. The demo therefore leaves that route globally
     enabled, hides the attachment control through native
     [`ChatProfile.config_overrides`](https://docs.chainlit.io/api-reference/chat-profiles),
@@ -200,15 +221,15 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
 
 | Browser login | OAuth token forwarding | Gateway credential |
 | --- | --- | --- |
-| `mock` | `false` | `DEMO_CHAINLIT_GATEWAY_API_KEY` |
-| `oauth` | `false` | `DEMO_CHAINLIT_GATEWAY_API_KEY` |
+| `mock` | `false` | `OPENAI_GATEWAY_API_KEY` |
+| `oauth` | `false` | `OPENAI_GATEWAY_API_KEY` |
 | `oauth` | `true` | Signed-in user's OAuth access token |
 
 === "Mock login (default)"
 
     `DEMO_CHAINLIT_LOGIN_TYPE=mock` maps every login to the shared `demo-user`.
     Keep OAuth token forwarding disabled and configure
-    `DEMO_CHAINLIT_GATEWAY_API_KEY`. This is for local use only.
+    `OPENAI_GATEWAY_API_KEY`. This is for local use only.
 
 === "OIDC login"
 
@@ -235,7 +256,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     OPENAI_GATEWAY_TYPE=litellm
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
-    DEMO_CHAINLIT_GATEWAY_API_KEY=${OPENAI_GATEWAY_API_KEY}
+    OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
     DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
     ```
 
@@ -253,15 +274,15 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
 
     ```dotenv
     DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true
-    DEMO_CHAINLIT_GATEWAY_API_KEY=
     DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
     OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm-sso.example.com
     ```
 
-    The shared `OPENAI_GATEWAY_API_KEY` can remain set for Open WebUI; Compose
-    forwards only the separate Chainlit key, which is empty in delegated mode.
+    Chainlit ignores the shared static key in delegated mode and does not
+    register its static native MCP connection. Open WebUI and the gateway
+    services can continue using `OPENAI_GATEWAY_API_KEY`.
 
     Match `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` to the registered client:
     `client_secret_basic` (default) or `client_secret_post`. Authlib uses it for
@@ -376,6 +397,12 @@ one `{resume: ...}` value, so the client depends only on the standard tool-call
 batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md).
 
+The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
+note uploads after an explicit natural-language save request. The payload
+displays the exact note content and destination before approval. Knowledge
+citations stay in the answer as filenames and provider file IDs; the default S3
+Files connection is not a bridge to the graph's configured vector service.
+
 ![Chainlit human review form with approve, reject, and custom-response controls](../static/hitl_chainlit.png)
 
 *Chainlit renders the LangGraph interrupt as native choices with an optional
@@ -463,7 +490,6 @@ Chainlit-specific settings:
 | `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
 | `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
-| `DEMO_CHAINLIT_GATEWAY_API_KEY` | Required for mock login and static-key OAuth login. Leave empty when token forwarding is enabled. |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token. |
 | `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 resource identifier passed in OAuth authorization and token requests. |
 | `DEMO_CHAINLIT_OAUTH_ISSUER` | Required for `oauth`. Exact HTTPS issuer; endpoints and signing keys come from discovery. |
@@ -501,8 +527,9 @@ Chainlit origin. CORS only permits the cross-origin response; the object still
 requires Chainlit's time-limited presigned URL. See
 [Amazon S3's CORS guide](https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html).
 
-The demo requires Chainlit 2.11.1 or newer. Review Chainlit's migration guidance
-when updating it because the PostgreSQL schema is release-specific.
+The demo requires Chainlit 2.12.0 or newer. Review Chainlit's current MCP and
+PostgreSQL guidance when updating because those native contracts are
+release-specific.
 
 ## Production Notes
 
@@ -510,6 +537,9 @@ when updating it because the PostgreSQL schema is release-specific.
   access control or user isolation.
 - Choose static-key or delegated gateway authorization explicitly with
   `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING`.
+- The trusted MCP gateway connection uses the same
+  `OPENAI_GATEWAY_API_KEY` as Responses and Files. It is not registered when
+  delegated token forwarding is enabled.
 - Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for

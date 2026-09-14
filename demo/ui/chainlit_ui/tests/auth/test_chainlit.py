@@ -231,7 +231,7 @@ async def test_gateway_uses_its_static_key_without_a_user_session(
 ) -> None:
     monkeypatch.setattr(settings, "LOGIN_TYPE", login_type)
     monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", False)
-    monkeypatch.setattr(settings, "GATEWAY_API_KEY", "static-key")
+    monkeypatch.setattr(settings, "OPENAI_GATEWAY_API_KEY", "static-key")
 
     def gateway(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer static-key"

@@ -15,17 +15,17 @@ GraphRegistry(
             description="General-purpose chat graph.",
             streamable_node_names=["generate"],
         ),
-        "advanced-mcp-tools": GraphConfig(
-            graph=advanced_graph,
-            description="Chat graph with MCP tools.",
+        "mcp-mock": GraphConfig(
+            graph=mcp_mock_graph,
+            description="Chat graph with asynchronously loaded tools.",
         ),
     }
 )
 ```
 
 `GraphConfig.graph` can be a compiled graph, sync factory, or async factory.
-Async factories support setup such as MCP-style tool loading before creating a
-ReAct graph.
+Async factories support setup such as MCP-style tool discovery before creating
+a compiled graph.
 
 ## Adaptation
 

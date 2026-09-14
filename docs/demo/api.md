@@ -125,15 +125,29 @@ for event in stream:
 See [LGOS RAG](graphs/lgos-rag.md) for its retrieval flow, bounded rewrite, and
 process-local index lifetime.
 
-Try the async mock MCP graph:
+Start with the dependency-free MCP-shaped example:
 
 ```python
 response = client.responses.create(
-    model="advanced-mcp-tools",
+    model="mcp-mock",
     input="What is the weather in Istanbul?",
     store=False,
 )
+
+print(response.output_text)
 ```
+
+`mcp-mock` uses a stand-in client and deterministic fake model, so it teaches
+async tool discovery and the agent tool loop without requiring an MCP server,
+gateway, database, or provider credential. See
+[Core Graph Patterns](graphs/core-patterns.md#mcp-mock).
+
+The real `mcp-postgres` graph expects its OpenAI client to discover and execute
+tools through the selected gateway's MCP endpoint. Use the maintained Chainlit
+or Open WebUI client for the complete native tool loop; see
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md#try-it).
+`advanced-graph` uses the same client-owned loop for any tools authorized by the
+gateway; `mcp-postgres` remains the narrower database-focused example.
 
 Try the deterministic status-event showcase:
 
@@ -156,6 +170,31 @@ for event in stream:
 
 See [Events And Citations](graphs/events-and-citations.md) for the status and
 custom-event flows and their client behavior.
+
+Try the deterministic response-outcome showcase:
+
+```python
+refusal = client.responses.create(
+    model="response-outcomes",
+    input="refusal",
+    store=False,
+)
+print(refusal.status, refusal.output[0].content[0].refusal)
+
+stream = client.responses.create(
+    model="response-outcomes",
+    input="incomplete",
+    store=False,
+    stream=True,
+)
+for event in stream:
+    if event.type == "response.incomplete":
+        print(event.response.incomplete_details.reason)
+```
+
+See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
+refusal differs from an incomplete response and which terminal events clients
+must handle.
 
 ## Try A Demo Client
 

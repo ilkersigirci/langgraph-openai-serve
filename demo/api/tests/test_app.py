@@ -18,7 +18,8 @@ from lgos_demo_api.graphs.simple import SimpleContext
 from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
-    "advanced-mcp-tools",
+    "advanced-graph",
+    "mcp-postgres",
     "citation-events",
     "complex-subgraphs",
     "custom-event-showcase",
@@ -26,8 +27,10 @@ DOCUMENTED_MODEL_IDS = {
     "file-input",
     "interruptible-approval",
     "lgos-rag",
+    "mcp-mock",
     "persistent-plot-agent",
     "multi-node-streaming",
+    "response-outcomes",
     "simple-graph",
     "server-tool",
     "simple-graph-external-tools",
@@ -83,6 +86,16 @@ async def test_app_lists_exactly_the_documented_models(
         for model in response.data
     }
     assert features["file-input"] == ["file_inputs"]
+
+    advanced_model = await openai_client.models.retrieve("advanced-graph")
+    advanced_extension = (advanced_model.model_extra or {})["lgos"]
+    assert advanced_extension["features"] == [
+        "client_events",
+        "file_inputs",
+        "interrupts",
+        "mcp_tools",
+    ]
+    assert "client_settings" not in advanced_extension
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["lgos"]
@@ -204,6 +217,44 @@ async def test_file_input_demo_prompts_for_an_attachment(
     assert response.output_text == "Attach a file and try again."
 
 
+async def test_response_outcomes_exposes_native_refusal(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.responses.create(
+        store=False,
+        model="response-outcomes",
+        input="refusal",
+    )
+
+    assert response.status == "completed"
+    assert response.output_text == ""
+    assert response.output[0].content[0].model_dump() == {
+        "type": "refusal",
+        "refusal": "I cannot help with bypassing safety controls.",
+    }
+
+
+async def test_response_outcomes_finishes_incomplete_stream_natively(
+    openai_client: AsyncOpenAI,
+) -> None:
+    stream = await openai_client.responses.create(
+        store=False,
+        model="response-outcomes",
+        input="incomplete",
+        stream=True,
+    )
+    events = [event async for event in stream]
+
+    assert events[-1].type == "response.incomplete"
+    assert not any(event.type == "response.completed" for event in events)
+    response = events[-1].response
+    assert response.status == "incomplete"
+    assert response.completed_at is None
+    assert response.incomplete_details.reason == "max_output_tokens"
+    assert response.output_text == "This answer stopped before it could finish."
+    assert response.output[0].status == "incomplete"
+
+
 async def test_complex_subgraphs_preserve_streaming_parity(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -266,6 +317,42 @@ async def test_lifespan_installs_shared_postgres_runtime(
             pass
 
     runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
+
+
+@pytest.mark.parametrize(
+    ("vector_base_url", "vector_api_key", "expected"),
+    [
+        (
+            None,
+            None,
+            ("https://model.example/v1", "model-secret"),
+        ),
+        (
+            "https://vectors.example/v1",
+            None,
+            ("https://vectors.example/v1", "DUMMY"),
+        ),
+        (
+            "https://vectors.example/v1",
+            "vector-secret",
+            ("https://vectors.example/v1", "vector-secret"),
+        ),
+    ],
+)
+def test_vector_store_credentials_are_isolated_from_a_separate_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    vector_base_url: str | None,
+    vector_api_key: str | None,
+    expected: tuple[str, str],
+) -> None:
+    monkeypatch.setattr(
+        app_module.settings, "OPENAI_BASE_URL", "https://model.example/v1"
+    )
+    monkeypatch.setattr(app_module.settings, "OPENAI_API_KEY", "model-secret")
+    monkeypatch.setattr(app_module.settings, "VECTOR_STORE_BASE_URL", vector_base_url)
+    monkeypatch.setattr(app_module.settings, "VECTOR_STORE_API_KEY", vector_api_key)
+
+    assert app_module._vector_store_connection() == expected
 
 
 def test_main_leaves_access_logging_to_the_deployment(

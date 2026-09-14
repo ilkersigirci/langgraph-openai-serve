@@ -139,7 +139,7 @@ test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_
 [timestamp]
 test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
-    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
+    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_API_KEY="$OPENAI_GATEWAY_API_KEY" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON="Bifrost v2.1.1 governance rejects unknown models before passthrough" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
@@ -164,11 +164,10 @@ reset-litellm-db:
     @{{ compose_command }} exec -T lgos-db psql -U lgos -d lgos -v ON_ERROR_STOP=1 -c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
 
 # Sync Open WebUI Functions and LGOS Workspace Models.
-[env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('docker dev')]
 [group('docker prod')]
-sync-openwebui *args:
-    {{ openwebui_run }} lgos-openwebui-sync "$@"
+sync-openwebui:
+    {{ compose_command }} exec -T lgos-openwebui python -m lgos_openwebui.sync_functions
 
 # Register one LGOS catalog in LiteLLM; add --dev for the checkout image.
 [arg('dev', long, value='true')]
@@ -193,7 +192,7 @@ compose dev='false' otel='false' *up_args:
             "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service"
             ;;
         litellm:|bifrost:)
-            "${compose[@]}" up --wait "${up_args[@]}" lgos-demo-api-a lgos-demo-api-b lgos-files-api
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
@@ -207,7 +206,7 @@ compose dev='false' otel='false' *up_args:
     fi
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
-    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} lgos-openwebui-sync
+    "${compose[@]}" exec -T lgos-openwebui python -m lgos_openwebui.sync_functions
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

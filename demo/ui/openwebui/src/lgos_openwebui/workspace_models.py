@@ -22,40 +22,36 @@ from .functions.generic.contracts import (
     PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     is_server_tool_model,
+    supports_web_search,
 )
 from .functions.generic.gateway import GatewayConfig, litellm_models
+from .tool_servers import MCP_GATEWAY_TOOL_ID, PUBLIC_READ_GRANT
 
 FILE_INPUTS_FEATURE = "file_inputs"
+MCP_TOOLS_FEATURE = "mcp_tools"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERIC_FUNCTION_ID = "generic"
 WORKSPACE_MODEL_PREFIX = "lgos."
 USERVALVES_MODEL_ID = "lgos.uservalves_simple"
 OPENWEBUI_MODEL_ID_MAX_LENGTH = 256
-PUBLIC_READ_GRANT = {
-    "principal_type": "user",
-    "principal_id": "*",
-    "permission": "read",
-}
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "lgos model metadata. Runtime settings, file inputs, and "
+    "lgos model metadata. Runtime settings, file inputs, gateway tools, and "
     "interrupt profile checks may be unavailable."
 )
-SERVER_TOOL_FIELDS: tuple[dict[str, JsonValue], ...] = (
-    {
-        "key": PACKAGE_VERSION_TOOL_NAME,
-        "type": "checkbox",
-        "label": "Package version",
-        "default": False,
-    },
-    {
-        "key": WEB_SEARCH_TOOL_NAME,
-        "type": "checkbox",
-        "label": "Web search",
-        "default": False,
-    },
-)
+PACKAGE_VERSION_FIELD: dict[str, JsonValue] = {
+    "key": PACKAGE_VERSION_TOOL_NAME,
+    "type": "checkbox",
+    "label": "Package version",
+    "default": False,
+}
+WEB_SEARCH_FIELD: dict[str, JsonValue] = {
+    "key": WEB_SEARCH_TOOL_NAME,
+    "type": "checkbox",
+    "label": "Web search",
+    "default": False,
+}
 
 
 class _ModelExtension(BaseModel):
@@ -87,6 +83,7 @@ class WorkspaceModelSpec:
     fields: tuple[dict[str, JsonValue], ...]
     description: str | None = None
     supports_file_inputs: bool = False
+    supports_mcp_tools: bool = False
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
@@ -175,6 +172,9 @@ def discover_workspace_model_specs(
                 description=extension.description if extension is not None else None,
                 supports_file_inputs=(
                     extension is not None and FILE_INPUTS_FEATURE in extension.features
+                ),
+                supports_mcp_tools=(
+                    extension is not None and MCP_TOOLS_FEATURE in extension.features
                 ),
             )
         )
@@ -323,19 +323,24 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
     # an LGOS system prompt.
     fields = list(spec.fields)
     if is_server_tool_model(spec.id):
-        fields.extend(SERVER_TOOL_FIELDS)
+        fields.append(PACKAGE_VERSION_FIELD)
+    if supports_web_search(spec.id):
+        fields.append(WEB_SEARCH_FIELD)
+    metadata = {
+        "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
+        CHAT_VARIABLES_META_KEY: {"fields": fields},
+        "capabilities": {
+            "file_upload": spec.supports_file_inputs,
+            "file_context": False,
+        },
+        "builtinTools": {"files": False},
+    }
+    if spec.supports_mcp_tools:
+        metadata["toolIds"] = [MCP_GATEWAY_TOOL_ID]
     return {
         "id": spec.workspace_model_id,
         "base_model_id": spec.base_model_id,
         "name": spec.name,
-        "meta": {
-            "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
-            CHAT_VARIABLES_META_KEY: {"fields": fields},
-            "capabilities": {
-                "file_upload": spec.supports_file_inputs,
-                "file_context": False,
-            },
-            "builtinTools": {"files": False},
-        },
+        "meta": metadata,
         "params": {},
     }

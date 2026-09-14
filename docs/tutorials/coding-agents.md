@@ -21,9 +21,10 @@ Connect directly to LGOS and use the exact model ID from `GET /v1/models`:
 An optional gateway may use a provider-qualified routing ID, but it must pass
 the native contract tests in the [proxy guide](../how-to-guides/openai-proxies.md).
 The pinned Bifrost demo's native Responses route preserves the tested data-plane
-contract, including `phase`; its normalized model-detail and error metadata
-remain lossy. The raw OpenAI pass-through route passes the complete tested
-subset.
+contract, including `phase`; its normalized model-detail, error metadata, and
+returned `store` field remain lossy. The raw OpenAI pass-through route preserves
+successful-request contracts, while virtual-key governance rejects the
+unknown-model error case before pass-through.
 
 ## Client Compatibility
 

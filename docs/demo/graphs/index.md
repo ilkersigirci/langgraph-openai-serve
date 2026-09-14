@@ -7,13 +7,16 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
+| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note | `client_events`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
-| [`advanced-mcp-tools`](core-patterns.md#advanced-mcp-tools) | Async graph factories and a mock MCP-style tool | None | None |
+| [`mcp-mock`](core-patterns.md#mcp-mock) | Async MCP-style tool discovery and an agent tool loop | None | None |
+| [`mcp-postgres`](mcp-postgres.md) | Read-only database questions with MCP discovery and execution owned by the native UI client | `mcp_tools` | Upstream model, selected gateway, DBHub, and PostgreSQL |
 | [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
 | [`custom-event-showcase`](events-and-citations.md) | Filtering internal progress and artifact events at the API boundary | `client_events` | None |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
+| [`response-outcomes`](core-patterns.md#response-outcomes) | Native refusal content and incomplete terminal responses | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | None | Upstream model, Files API, and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
@@ -27,8 +30,9 @@ PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 
 `persistent-plot-agent` stores application data with a LangGraph Store.
-`interruptible-approval` checkpoints graph execution. Neither mechanism makes
-LGOS the owner of UI conversation history.
+`interruptible-approval` checkpoints graph execution. `advanced-graph` uses both:
+checkpoints for human review and Store receipts for vector-service uploads. None
+makes LGOS the owner of UI conversation history.
 
 ## Source Map
 

@@ -7,3 +7,4 @@ class GraphFeature(StrEnum):
     CLIENT_EVENTS = "client_events"
     FILE_INPUTS = "file_inputs"
     INTERRUPTS = "interrupts"
+    MCP_TOOLS = "mcp_tools"

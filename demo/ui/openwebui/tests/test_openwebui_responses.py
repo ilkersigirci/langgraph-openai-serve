@@ -32,6 +32,8 @@ from lgos_openwebui.functions.generic import pipe as generic_pipe
 from lgos_openwebui.functions.generic.interrupts import (
     _ask_user_to_resume,
     _interrupts_to_ask_user,
+    _openwebui_interrupt_chunk,
+    _openwebui_interrupt_completion,
 )
 from lgos_openwebui.functions.generic.responses import _responses_input
 from lgos_openwebui.functions.uservalves_simple import Filter
@@ -68,6 +70,57 @@ def final_response(text: str) -> Response:
             type="message",
             phase="final_answer",
         )
+    )
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_large_note_is_visible_before_the_native_approval_question(streaming) -> None:
+    note = "Exact note contents. " * 100
+    call = function_call(
+        "lgos_interrupt",
+        {
+            "question": "Save this exact note?",
+            "content": note,
+            "filename": "note.md",
+            "vector_store_id": "vs_docs",
+            "choices": ["approve", "reject"],
+            "allow_other": True,
+        },
+    )
+    result = (
+        _openwebui_interrupt_chunk if streaming else _openwebui_interrupt_completion
+    )("advanced-graph", RESPONSE_ID, [call])
+    message = result["choices"][0]["delta" if streaming else "message"]
+    assert note in message["content"]
+    ask_user = message["tool_calls"][0]
+    question = json.loads(ask_user["function"]["arguments"])["questions"][0]["question"]
+    assert len(question) <= 500
+    assert "above" in question
+    assert len(ask_user["id"]) < 1_000
+    resumed = _ask_user_to_resume(
+        [
+            {"role": "assistant", "tool_calls": [ask_user]},
+            {
+                "role": "tool",
+                "tool_call_id": ask_user["id"],
+                "content": json.dumps(
+                    {
+                        "status": "answered",
+                        "answers": {"resume_0": {"type": "option", "option_index": 0}},
+                    }
+                ),
+            },
+        ]
+    )
+    assert resumed == (
+        [
+            {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": "approve",
+            }
+        ],
+        RESPONSE_ID,
     )
 
 
@@ -315,6 +368,29 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
     ) == "openai==installed-version"
 
 
+async def test_bundle_maps_advanced_web_search_outside_graph_settings(
+    bundled_generic: ModuleType,
+) -> None:
+    create = AsyncMock(return_value=final_response("Research complete."))
+    bundled_generic._client = lambda **_: FakeClient(create=create)
+
+    result = await bundled_generic.Pipe().pipe(
+        {
+            **body(stream=False),
+            "model": "generic.lgos-a/advanced-graph",
+        },
+        __metadata__={
+            "chat_id": "thread-123",
+            "chat_variables": {"web_search": True},
+        },
+    )
+
+    assert result == "Research complete."
+    request = create.await_args.kwargs
+    assert request["tools"] == [{"type": "web_search"}]
+    assert request["metadata"] == {"conversation_id": "thread-123"}
+
+
 async def test_deployed_bundle_runs_non_streaming_interrupt(
     bundled_generic: ModuleType,
 ) -> None:
@@ -389,7 +465,7 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
         "conversation_id": "thread-123",
         "lgos_settings": '{"audience":"expert"}',
     }
-    assert request["tools"][0]["name"] == "display_file"
+    assert request["tools"] == []
 
 
 @pytest.mark.parametrize(
@@ -994,12 +1070,16 @@ def test_plotly_labels_cannot_inject_html_into_the_embed() -> None:
 
 async def test_current_openwebui_attachment_becomes_responses_input_file(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    path = tmp_path / "report.pdf"
-    path.write_bytes(b"pdf-bytes")
     create = AsyncMock(return_value=SimpleNamespace(id="file-report"))
     files_client = SimpleNamespace(files=SimpleNamespace(create=create))
+    get = AsyncMock(
+        return_value=SimpleNamespace(
+            content=b"pdf-bytes",
+            headers={"content-type": "application/pdf"},
+            raise_for_status=lambda: None,
+        )
+    )
 
     class FilesClientContext:
         async def __aenter__(self) -> object:
@@ -1008,7 +1088,19 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
         async def __aexit__(self, *_: object) -> None:
             pass
 
+    class OpenWebUIClientContext:
+        async def __aenter__(self) -> object:
+            return SimpleNamespace(get=get)
+
+        async def __aexit__(self, *_: object) -> None:
+            pass
+
     monkeypatch.setattr(generic_files, "_client", lambda **_: FilesClientContext())
+    monkeypatch.setattr(
+        generic_files.httpx,
+        "AsyncClient",
+        lambda **_: OpenWebUIClientContext(),
+    )
 
     messages = await generic_files._with_response_file_parts(
         [{"role": "user", "content": "Summarize it."}],
@@ -1016,7 +1108,8 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
             {
                 "id": "owui-file",
                 "type": "file",
-                "file": {"path": str(path), "filename": "report.pdf"},
+                "name": "report.pdf",
+                "content_type": "application/pdf",
             }
         ],
         {
@@ -1031,6 +1124,10 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
                 ]
             }
         },
+        SimpleNamespace(
+            base_url="https://openwebui.example/",
+            headers={"authorization": "Bearer browser-session"},
+        ),
         base_url="https://files.example/v1",
         api_key="test",
         timeout=10,
@@ -1048,6 +1145,10 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
     ]
     assert create.await_args.kwargs["purpose"] == "user_data"
     assert create.await_args.kwargs["extra_query"] == {"provider": "lgos-files"}
+    get.assert_awaited_once_with(
+        "/api/v1/files/owui-file/content",
+        headers={"Authorization": "Bearer browser-session"},
+    )
 
 
 async def test_openwebui_storage_upload_forwards_request_authorization(
@@ -1087,7 +1188,7 @@ async def test_openwebui_storage_upload_forwards_request_authorization(
 
     assert stored_id == "stored-file"
     post.assert_awaited_once_with(
-        "https://openwebui.example/api/v1/files/",
+        "/api/v1/files/",
         params={"process": "false"},
         headers={"Authorization": "Bearer browser-session"},
         files={"file": ("chart.png", b"png-bytes", "image/png")},
@@ -1252,3 +1353,164 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
+
+
+def test_native_mcp_transcript_becomes_responses_tool_items() -> None:
+    openwebui_tool_name = "lgos-gateway_database_report"
+    tool_call = {
+        "id": "call-db",
+        "type": "function",
+        "function": {
+            "name": openwebui_tool_name,
+            "arguments": "{}",
+        },
+    }
+
+    assert _responses_input(
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call,
+                    {
+                        "id": "call-display",
+                        "type": "function",
+                        "function": {"name": "display_file", "arguments": "{}"},
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-db",
+                "content": {"content": [{"type": "text", "text": "12"}]},
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-display",
+                "content": "displayed",
+            },
+        ],
+        mcp_tool_names={openwebui_tool_name: "database_report"},
+    ) == [
+        {
+            "type": "function_call",
+            "call_id": "call-db",
+            "name": "database_report",
+            "arguments": "{}",
+            "status": "completed",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "call-db",
+            "output": '{"content":[{"type":"text","text":"12"}]}',
+        },
+    ]
+
+
+async def test_gateway_tool_call_is_delegated_to_openwebui(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    openwebui_tool_name = "lgos-gateway_database_report"
+    gateway_tool_name = "database_report"
+    completed = response(function_call(gateway_tool_name, {}))
+    requests = []
+
+    @asynccontextmanager
+    async def stream(**request: object) -> AsyncIterator[FakeResponseStream]:
+        requests.append(request)
+        yield FakeResponseStream([], completed)
+
+    install_client(monkeypatch, stream=stream)
+    openwebui_tool = {
+        "type": "mcp",
+        "spec": {
+            "name": openwebui_tool_name,
+            "description": "Run a database report.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    }
+    unrelated_tool = {
+        "type": "mcp",
+        "spec": {
+            "name": "unrelated_tool",
+            "description": "A manually enabled unrelated tool.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    request_body = {
+        "model": "generic.lgos-a/database-assistant",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Run the database report.",
+            }
+        ],
+        "stream": True,
+    }
+
+    result = await collect(
+        generic_pipe.Pipe().pipe(
+            request_body,
+            __tools__={
+                openwebui_tool_name: openwebui_tool,
+                "unrelated_tool": unrelated_tool,
+            },
+        )
+    )
+
+    response_message = result[0]["choices"][0]
+    message = response_message["delta"]
+    assert response_message["finish_reason"] == "tool_calls"
+    assert message["tool_calls"][0]["function"] == {
+        "name": openwebui_tool_name,
+        "arguments": "{}",
+    }
+    assert [tool["name"] for tool in requests[0]["tools"]] == [
+        gateway_tool_name,
+    ]
+    assert requests[0]["tools"][0] == {
+        "type": "function",
+        "name": gateway_tool_name,
+        "description": "Run a database report.",
+        "parameters": openwebui_tool["spec"]["parameters"],
+        "strict": False,
+    }
+
+
+async def test_mcp_tool_execution_rejects_non_streaming_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock()
+    install_client(monkeypatch, create=create)
+
+    tool_name = "lgos-gateway_database_report"
+    result = await generic_pipe.Pipe().pipe(
+        {
+            "model": "generic.lgos-a/database-assistant",
+            "messages": [{"role": "user", "content": "List the demo graphs."}],
+            "stream": False,
+        },
+        __tools__={
+            tool_name: {
+                "type": "mcp",
+                "spec": {
+                    "name": tool_name,
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        },
+    )
+
+    assert result == {
+        "error": {
+            "detail": (
+                "Responses request failed: "
+                "Open WebUI MCP tool execution requires streaming."
+            )
+        }
+    }
+    create.assert_not_awaited()

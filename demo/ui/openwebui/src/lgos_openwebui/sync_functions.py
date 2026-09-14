@@ -9,6 +9,7 @@ from openai import OpenAI, OpenAIError
 from .bundle import bundle_function
 from .functions.generic.gateway import gateway_config
 from .settings import Settings
+from .tool_servers import MCP_GATEWAY_ID, sync_mcp_gateway
 from .workspace_models import (
     discover_workspace_model_specs,
     sync_workspace_models,
@@ -174,17 +175,23 @@ def main() -> None:
                 openai_client,
                 gateway=gateway,
             )
+            mcp_action = sync_mcp_gateway(
+                client,
+                gateway=gateway,
+                api_key=settings.OPENAI_GATEWAY_API_KEY,
+            )
             function_results = sync_functions(client)
             sync_workspace_models(client, model_specs)
     except httpx.HTTPStatusError as exc:
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
         raise SystemExit(msg) from exc
-    except (OSError, ValueError, httpx.HTTPError, OpenAIError) as exc:
+    except (OSError, TypeError, ValueError, httpx.HTTPError, OpenAIError) as exc:
         msg = f"Open WebUI sync failed: {exc}"
         raise SystemExit(msg) from exc
 
     for function_id, action in function_results.items():
         print(f"{action.capitalize()} Function: {function_id}")
+    print(f"{mcp_action.capitalize()} MCP server: {MCP_GATEWAY_ID}")
     print(f"Synchronized Workspace Models: {len(model_specs)}")
 
 

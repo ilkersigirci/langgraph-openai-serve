@@ -240,6 +240,7 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
+    sync_mcp_mock = Mock(return_value="created")
     if server_error is not None:
         response = httpx.Response(
             400,
@@ -272,6 +273,11 @@ def test_main_reads_demo_openwebui_environment(
         "sync_workspace_models",
         sync_workspace_models_mock,
     )
+    monkeypatch.setattr(
+        sync_functions_module,
+        "sync_mcp_gateway",
+        sync_mcp_mock,
+    )
 
     if server_error is not None:
         with pytest.raises(SystemExit, match=server_error):
@@ -286,6 +292,11 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
+    sync_mcp_mock.assert_called_once_with(
+        client,
+        gateway=gateway_config("bifrost", "https://bifrost.example"),
+        api_key="api-key",
+    )
     openai_factory.assert_called_once_with(
         base_url="https://bifrost.example/v1",
         api_key="api-key",

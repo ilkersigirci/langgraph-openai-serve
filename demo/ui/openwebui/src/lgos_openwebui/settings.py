@@ -32,10 +32,10 @@ class Settings(BaseSettings):
     )
     OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
         validation_alias="OPENAI_GATEWAY_BASE_URL",
-        description="Gateway root used by the host sync command.",
+        description="Gateway root used for model discovery and MCP synchronization.",
     )
     OPENAI_GATEWAY_API_KEY: str = Field(
         min_length=1,
         validation_alias="OPENAI_GATEWAY_API_KEY",
-        description="API key sent to the configured OpenAI-compatible endpoints.",
+        description="API key used for model discovery and MCP synchronization.",
     )

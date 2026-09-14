@@ -1,5 +1,7 @@
 """Responses API helpers for Open WebUI models."""
 
+import json as responses_json
+from collections.abc import Mapping
 from typing import Any
 
 from openai.types.chat.chat_completion_chunk import (
@@ -25,7 +27,10 @@ from .contracts import (
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     is_server_tool_model,
+    supports_display_file,
+    supports_web_search,
 )
+from .gateway import MCP_GATEWAY_ID
 
 RESPONSE_OUTPUT = TypeAdapter(list[ResponseOutputItem])
 
@@ -42,20 +47,67 @@ PACKAGE_VERSION_TOOL: CustomToolParam = {
 }
 
 
-def _responses_tools(model_id: str, metadata: dict[str, Any]) -> list[ToolParam]:
+def _responses_tools(
+    model_id: str,
+    metadata: dict[str, Any],
+) -> list[ToolParam]:
     """Build the tools owned by the selected demo client and graph."""
-    if not is_server_tool_model(model_id):
-        return [DISPLAY_FILE_TOOL]
-
+    tools: list[ToolParam] = (
+        [DISPLAY_FILE_TOOL] if supports_display_file(model_id) else []
+    )
     variables = metadata.get("chat_variables")
     if not isinstance(variables, dict):
-        return []
-    tools: list[ToolParam] = []
-    if variables.get(PACKAGE_VERSION_TOOL_NAME) is True:
+        return tools
+    if (
+        is_server_tool_model(model_id)
+        and variables.get(PACKAGE_VERSION_TOOL_NAME) is True
+    ):
         tools.append(PACKAGE_VERSION_TOOL)
-    if variables.get(WEB_SEARCH_TOOL_NAME) is True:
+    if supports_web_search(model_id) and variables.get(WEB_SEARCH_TOOL_NAME) is True:
         tools.append({"type": "web_search"})
     return tools
+
+
+def _openwebui_mcp_tools(
+    tools: object,
+) -> tuple[list[FunctionToolParam], dict[str, str]]:
+    """Translate managed Open WebUI tools to their gateway names."""
+    if not isinstance(tools, dict):
+        return [], {}
+
+    translated = []
+    openwebui_names = {}
+    name_prefix = f"{MCP_GATEWAY_ID}_"
+    for name, tool in tools.items():
+        if (
+            not isinstance(name, str)
+            or not name.startswith(name_prefix)
+            or not isinstance(tool, dict)
+            or tool.get("type") != "mcp"
+        ):
+            continue
+        spec = tool.get("spec")
+        if not isinstance(spec, dict):
+            continue
+        gateway_name = name.removeprefix(name_prefix)
+        if not gateway_name:
+            continue
+        parameters = spec.get("parameters")
+        translated_tool: FunctionToolParam = {
+            "type": "function",
+            "name": gateway_name,
+            "parameters": (
+                parameters
+                if isinstance(parameters, dict)
+                else {"type": "object", "properties": {}}
+            ),
+            "strict": spec.get("strict") is True,
+        }
+        if isinstance(spec.get("description"), str):
+            translated_tool["description"] = spec["description"]
+        translated.append(translated_tool)
+        openwebui_names[gateway_name] = name
+    return translated, openwebui_names
 
 
 def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
@@ -71,38 +123,133 @@ def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
     ).model_dump(exclude_none=True)
 
 
-def _responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _responses_input(
+    messages: list[dict[str, Any]],
+    *,
+    mcp_tool_names: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
     """Convert Open WebUI's text/file transcript into Responses items."""
     items = []
+    mcp_call_ids: set[str] = set()
     for message in messages:
         role = message.get("role")
         content = message.get("content")
+        if role == "tool":
+            call_id = message.get("tool_call_id")
+            if isinstance(call_id, str) and call_id in mcp_call_ids:
+                items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": _tool_output(content),
+                    }
+                )
+            continue
         if role not in {"user", "assistant", "system", "developer"}:
             continue
         message_fields = {"role": role}
         if role == "assistant":
             message_fields["phase"] = message.get("phase") or "final_answer"
-        if isinstance(content, str):
+        if isinstance(content, str) and content:
             items.append({**message_fields, "content": content})
-            continue
-        if not isinstance(content, list):
-            continue
+        elif isinstance(content, list):
+            parts = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") in {"text", "input_text"} and isinstance(
+                    part.get("text"), str
+                ):
+                    parts.append({"type": "input_text", "text": part["text"]})
+                elif part.get("type") == "input_file":
+                    file_id = part.get("file_id")
+                    if isinstance(file_id, str) and file_id:
+                        parts.append({"type": "input_file", "file_id": file_id})
+            if parts:
+                items.append({**message_fields, "content": parts})
 
-        parts = []
-        for part in content:
-            if not isinstance(part, dict):
+        if role != "assistant" or not mcp_tool_names:
+            continue
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            function = (
+                tool_call.get("function") if isinstance(tool_call, dict) else None
+            )
+            call_id = tool_call.get("id") if isinstance(tool_call, dict) else None
+            name = function.get("name") if isinstance(function, dict) else None
+            arguments = (
+                function.get("arguments") if isinstance(function, dict) else None
+            )
+            if not isinstance(call_id, str) or not call_id:
                 continue
-            if part.get("type") in {"text", "input_text"} and isinstance(
-                part.get("text"), str
-            ):
-                parts.append({"type": "input_text", "text": part["text"]})
-            elif part.get("type") == "input_file":
-                file_id = part.get("file_id")
-                if isinstance(file_id, str) and file_id:
-                    parts.append({"type": "input_file", "file_id": file_id})
-        if parts:
-            items.append({**message_fields, "content": parts})
+            gateway_name = mcp_tool_names.get(name) if isinstance(name, str) else None
+            if gateway_name is None:
+                continue
+            mcp_call_ids.add(call_id)
+            items.append(
+                {
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": gateway_name,
+                    "arguments": arguments if isinstance(arguments, str) else "{}",
+                    "status": "completed",
+                }
+            )
     return items
+
+
+def _tool_output(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    return responses_json.dumps(content, ensure_ascii=False, separators=(",", ":"))
+
+
+def _openwebui_tool_chunk(
+    model_id: str,
+    calls: list[ResponseFunctionToolCall],
+    openwebui_names: Mapping[str, str],
+) -> dict[str, Any]:
+    """Return graph calls for execution by Open WebUI's native tool loop."""
+    return {
+        "id": "chatcmpl-lgos-responses",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "tool_calls": [
+                        _openwebui_tool_call(
+                            call,
+                            name=openwebui_names[call.name],
+                            index=index,
+                        )
+                        for index, call in enumerate(calls)
+                    ]
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+    }
+
+
+def _openwebui_tool_call(
+    call: ResponseFunctionToolCall,
+    *,
+    name: str,
+    index: int | None = None,
+) -> dict[str, Any]:
+    result = {
+        "id": call.call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": call.arguments},
+    }
+    if index is not None:
+        result["index"] = index
+    return result
 
 
 def _responses_request(

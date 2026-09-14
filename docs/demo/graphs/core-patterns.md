@@ -1,14 +1,15 @@
 # Core Graph Patterns
 
-Five small graphs isolate the basic ways an OpenAI request can drive a
+Six small graphs isolate the basic ways an OpenAI request can drive a
 LangGraph. They keep persistence, client events, and interrupts out of the way
 so each adapter or streaming behavior is visible on its own.
 
 | Graph | Demonstrates |
 | --- | --- |
 | `custom-input-output-context` | Custom graph input, output, and typed runtime context |
-| `advanced-mcp-tools` | An async graph factory that loads MCP-style tools before building an agent |
+| `mcp-mock` | Async MCP-style tool discovery without external services |
 | `multi-node-streaming` | Ordered text streamed by more than one graph node |
+| `response-outcomes` | Native refusal content and incomplete terminal responses |
 | `simple-graph` | A real chat model controlled by discoverable runtime settings |
 | `simple-graph-external-tools` | A chat model that receives and returns client-owned function tools |
 
@@ -22,7 +23,7 @@ so each adapter or streaming behavior is visible on its own.
 		generate --> __end__;
     ```
 
-=== "advanced-mcp-tools"
+=== "mcp-mock"
 
     ```mermaid
     graph TD;
@@ -48,6 +49,14 @@ so each adapter or streaming behavior is visible on its own.
     graph TD;
 		__start__ --> generate;
 		generate --> __end__;
+    ```
+
+=== "response-outcomes"
+
+    ```mermaid
+    graph TD;
+		__start__ --> respond_with_outcome;
+		respond_with_outcome --> __end__;
     ```
 
 === "simple-graph-external-tools"
@@ -79,17 +88,18 @@ one typed graph:
 
 No chat model or external service is called.
 
-### advanced-mcp-tools
+### mcp-mock
 
 LGOS awaits the registered async graph factory for each request. The factory
-loads one mock weather tool, passes it to LangChain `create_agent`, and returns
-the compiled model-tools loop. The deterministic fake model calls the tool for
-Istanbul and then returns its result as assistant text.
+asks a tiny stand-in MCP client for one mock weather tool, passes it to
+LangChain `create_agent`, and returns the compiled model-tools loop. A
+deterministic fake model calls the tool for Istanbul and then returns the final
+assistant answer.
 
-This is an MCP-style lifecycle example, not a network MCP integration. A real
-application can replace the mock client with LangChain's
-[`MultiServerMCPClient`](https://docs.langchain.com/oss/python/langchain/mcp)
-while keeping the async factory boundary.
+This demonstrates the MCP-shaped lifecycle without a network server, gateway,
+database, credentials, or provider charges. Continue with
+[`mcp-postgres`](mcp-postgres.md) for the supported gateway-owned MCP
+deployment.
 
 ### multi-node-streaming
 
@@ -127,10 +137,41 @@ items. Direct Chat compatibility clients send the returned assistant
 `tool_calls` and matching `tool` messages. LGOS normalizes both protocols before
 the graph sees them; no Responses-to-Chat gateway is required.
 
+### response-outcomes
+
+This deterministic graph makes two Responses outcomes reproducible without an
+upstream model:
+
+- `refusal` returns the model's explanation as a `refusal` content part. The
+  message and Response are still `completed`; `output_text` is empty because a
+  refusal is not ordinary output text. A stream emits
+  `response.refusal.delta`, `response.refusal.done`, then
+  `response.completed`.
+- `incomplete` returns partial text plus `status="incomplete"` and
+  `incomplete_details.reason="max_output_tokens"`. A stream ends with
+  `response.incomplete`, not `response.completed`.
+
+Use refusal content when a model declines a request, especially for a safety
+reason. Use an incomplete result when generation started but stopped before a
+complete answer was available, such as at an output-token limit or content
+filter. Transport and application failures belong in the normal HTTP or
+`response.failed` paths instead.
+
+OpenAI defines refusal as a distinct assistant-message content type and defines
+incomplete details separately on the Response. Current upstream incomplete
+reasons include `max_output_tokens`, `max_messages`, `content_filter`, and
+`steered`; LGOS currently maps model output-token and content-filter outcomes.
+See the official OpenAI [Responses output message schema](https://developers.openai.com/api/reference/resources/responses#response-output-message)
+and [incomplete details schema](https://developers.openai.com/api/reference/resources/responses#response-incomplete-details).
+
+The demo synthesizes these outputs only to stay deterministic. A real
+model-backed graph should return the provider's final `AIMessage` unchanged so
+LGOS can retain its refusal content or incomplete metadata.
+
 ## State And Output
 
 None of these graphs uses a checkpointer or LangGraph Store, so graph state ends
-with the request. All five return standard OpenAI assistant messages and emit no
+with the request. All six return standard OpenAI assistant messages and emit no
 LGOS client events. `multi-node-streaming`, `simple-graph`, and the
 external-tools graph identify their answer-producing nodes for incremental text
 streaming and standard OpenAI function-call output.
@@ -140,7 +181,8 @@ streaming and standard OpenAI function-call output.
 | Model | Prompt | Optional request value |
 | --- | --- | --- |
 | `custom-input-output-context` | `Show me custom schemas.` | `user="demo-user"` |
-| `advanced-mcp-tools` | `What is the weather in Istanbul?` | None |
+| `mcp-mock` | `What is the weather in Istanbul?` | None |
 | `multi-node-streaming` | `Build one answer from two nodes.` | None |
+| `response-outcomes` | `refusal` or `incomplete` | None |
 | `simple-graph` | `Explain what this demo does.` | Select an audience in the UI |
 | `simple-graph-external-tools` | `Use the supplied function tool when needed.` | Client supplies `tools` |
