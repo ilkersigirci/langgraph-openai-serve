@@ -47,6 +47,7 @@ class GraphFeature(StrEnum):
 
     FILE_INPUTS = "file_inputs"
     INTERRUPTS = "interrupts"
+    MCP_TOOLS = "mcp_tools"
 
 
 class ModelClientSettings(BaseModel):

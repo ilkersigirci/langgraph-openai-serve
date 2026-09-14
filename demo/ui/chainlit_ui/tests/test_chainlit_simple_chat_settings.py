@@ -162,6 +162,26 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
     assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
 
 
+def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    session = Session(
+        {
+            "chat_profile": "provider/database-assistant",
+            chat_settings.MODEL_FEATURES_SESSION_KEY: ["mcp_tools"],
+        }
+    )
+    gateway_tools = [{"type": "function", "name": "database_report"}]
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
+
+    assert chat_settings.response_tools() == gateway_tools
+
+    session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] = []
+    assert chat_settings.response_tools() == []
+
+
 async def test_advanced_graph_uses_web_search_without_runtime_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

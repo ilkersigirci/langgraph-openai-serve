@@ -101,10 +101,11 @@ client integrations, gateway configuration, and a complete Compose stack.
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
-| Chainlit | Persistent Responses client, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Responses manifold plus dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
+| Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
+| Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
 | LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
+| DBHub | Six fixed read-only reports over curated live-data PostgreSQL views | Pinned official image and demo-owned TOML configuration |
 | PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
@@ -119,11 +120,12 @@ Bifrost uses catalog-detail pass-through.
 !!! warning "Pinned managed-routing limitations"
 
     The bundled Bifrost native Responses route preserves `phase`, commentary,
-    file-input, and continuation contracts; only normalized model-detail and
-    error metadata remain strict expected failures. Its raw pass-through route
-    passes the direct contract suite. The bundled `homeserver-litellm` image
-    preserves native streaming and commentary. Standard
-    error metadata remains rewritten.
+    file-input, and continuation contracts; normalized model-detail, error
+    metadata, and the returned `store` field remain strict expected failures.
+    Its raw pass-through route preserves successful-request contracts, while
+    virtual-key governance rejects the unknown-model error case before
+    pass-through. The bundled `homeserver-litellm` image preserves native
+    streaming and commentary. Standard error metadata remains rewritten.
     Direct LGOS and Bifrost's raw route remain protocol references. The UIs use
     the selected gateway's normal inference route and accept that route's
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
@@ -131,10 +133,13 @@ Bifrost uses catalog-detail pass-through.
 
 ## Client Capabilities
 
-| Demo client | File input | Missing LGOS metadata | Runtime settings | Interrupts | UI feedback | Citations |
+| Demo client | File input | MCP | Runtime settings | Interrupts | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- |
-| Chainlit | Uploads attachments to the central Files API | Limited-functionality profile and warning toast | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Native status and persisted image elements | Markdown content |
-| Open WebUI generated models | Uploads attachments to the central Files API | Limited-functionality model description and warning notification | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Native status and persisted file events | Native source events and Markdown |
+| Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Native status and persisted image elements | Markdown content |
+| Open WebUI generated models | Uploads attachments to the central Files API | One synchronized gateway connection attached from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Native status and persisted file events | Native source events and Markdown |
+
+Both clients still expose limited-functionality models when LGOS metadata is
+missing; see their client-specific guides for that behavior.
 
 Ordinary graph conversations work through an OpenAI SDK without a demo adapter.
 An interrupt uses standard Responses function calls, but a client application

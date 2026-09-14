@@ -1353,3 +1353,164 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             ],
         },
     ]
+
+
+def test_native_mcp_transcript_becomes_responses_tool_items() -> None:
+    openwebui_tool_name = "lgos-gateway_database_report"
+    tool_call = {
+        "id": "call-db",
+        "type": "function",
+        "function": {
+            "name": openwebui_tool_name,
+            "arguments": "{}",
+        },
+    }
+
+    assert _responses_input(
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    tool_call,
+                    {
+                        "id": "call-display",
+                        "type": "function",
+                        "function": {"name": "display_file", "arguments": "{}"},
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-db",
+                "content": {"content": [{"type": "text", "text": "12"}]},
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call-display",
+                "content": "displayed",
+            },
+        ],
+        mcp_tool_names={openwebui_tool_name: "database_report"},
+    ) == [
+        {
+            "type": "function_call",
+            "call_id": "call-db",
+            "name": "database_report",
+            "arguments": "{}",
+            "status": "completed",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "call-db",
+            "output": '{"content":[{"type":"text","text":"12"}]}',
+        },
+    ]
+
+
+async def test_gateway_tool_call_is_delegated_to_openwebui(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    openwebui_tool_name = "lgos-gateway_database_report"
+    gateway_tool_name = "database_report"
+    completed = response(function_call(gateway_tool_name, {}))
+    requests = []
+
+    @asynccontextmanager
+    async def stream(**request: object) -> AsyncIterator[FakeResponseStream]:
+        requests.append(request)
+        yield FakeResponseStream([], completed)
+
+    install_client(monkeypatch, stream=stream)
+    openwebui_tool = {
+        "type": "mcp",
+        "spec": {
+            "name": openwebui_tool_name,
+            "description": "Run a database report.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    }
+    unrelated_tool = {
+        "type": "mcp",
+        "spec": {
+            "name": "unrelated_tool",
+            "description": "A manually enabled unrelated tool.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    request_body = {
+        "model": "generic.lgos-a/database-assistant",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Run the database report.",
+            }
+        ],
+        "stream": True,
+    }
+
+    result = await collect(
+        generic_pipe.Pipe().pipe(
+            request_body,
+            __tools__={
+                openwebui_tool_name: openwebui_tool,
+                "unrelated_tool": unrelated_tool,
+            },
+        )
+    )
+
+    response_message = result[0]["choices"][0]
+    message = response_message["delta"]
+    assert response_message["finish_reason"] == "tool_calls"
+    assert message["tool_calls"][0]["function"] == {
+        "name": openwebui_tool_name,
+        "arguments": "{}",
+    }
+    assert [tool["name"] for tool in requests[0]["tools"]] == [
+        gateway_tool_name,
+    ]
+    assert requests[0]["tools"][0] == {
+        "type": "function",
+        "name": gateway_tool_name,
+        "description": "Run a database report.",
+        "parameters": openwebui_tool["spec"]["parameters"],
+        "strict": False,
+    }
+
+
+async def test_mcp_tool_execution_rejects_non_streaming_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock()
+    install_client(monkeypatch, create=create)
+
+    tool_name = "lgos-gateway_database_report"
+    result = await generic_pipe.Pipe().pipe(
+        {
+            "model": "generic.lgos-a/database-assistant",
+            "messages": [{"role": "user", "content": "List the demo graphs."}],
+            "stream": False,
+        },
+        __tools__={
+            tool_name: {
+                "type": "mcp",
+                "spec": {
+                    "name": tool_name,
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        },
+    )
+
+    assert result == {
+        "error": {
+            "detail": (
+                "Responses request failed: "
+                "Open WebUI MCP tool execution requires streaming."
+            )
+        }
+    }
+    create.assert_not_awaited()

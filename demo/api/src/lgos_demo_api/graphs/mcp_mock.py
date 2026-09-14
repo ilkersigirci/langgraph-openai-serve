@@ -1,4 +1,4 @@
-"""Demo graph for async MCP-style tool loading."""
+"""Small, dependency-free example of loading MCP-style tools."""
 
 from typing import Any
 
@@ -11,7 +11,7 @@ from langgraph_openai_serve import GraphConfig
 
 
 class MockToolCallingChatModel(FakeMessagesListChatModel):
-    """Fake chat model that supports LangGraph tool binding for the demo."""
+    """Fake chat model that supports tool binding for the deterministic demo."""
 
     def bind_tools(
         self, tools: list[BaseTool], **kwargs: Any
@@ -20,7 +20,7 @@ class MockToolCallingChatModel(FakeMessagesListChatModel):
 
 
 class MockMCPClient:
-    """Small stand-in for MultiServerMCPClient used by the demo."""
+    """Minimal stand-in for an MCP client that discovers tools asynchronously."""
 
     async def get_tools(self) -> list[BaseTool]:
         return [mock_weather_tool]
@@ -28,12 +28,12 @@ class MockMCPClient:
 
 @tool
 async def mock_weather_tool(city: str) -> str:
-    """Get mock weather data for a city."""
+    """Get deterministic mock weather for a city."""
     return f"The mock MCP weather service says it is sunny in {city}."
 
 
-async def advanced_mcp_graph() -> CompiledStateGraph:
-    """Build a ReAct graph after asynchronously loading MCP-style tools."""
+async def mcp_mock_graph() -> CompiledStateGraph:
+    """Build an agent after asynchronously loading one mock MCP tool."""
     tools = await MockMCPClient().get_tools()
     model = MockToolCallingChatModel(
         responses=[
@@ -58,9 +58,11 @@ async def advanced_mcp_graph() -> CompiledStateGraph:
     return create_agent(model=model, tools=tools)
 
 
-advanced_mcp_graph_config = GraphConfig(
-    graph=advanced_mcp_graph,
-    description="Demonstrates async graph factories with a mock MCP-style tool.",
+mcp_mock_graph_config = GraphConfig(
+    graph=mcp_mock_graph,
+    description=(
+        "Demonstrates async MCP-style tool discovery with no network or credentials."
+    ),
 )
 
-__all__ = ["advanced_mcp_graph", "advanced_mcp_graph_config"]
+__all__ = ["mcp_mock_graph", "mcp_mock_graph_config"]

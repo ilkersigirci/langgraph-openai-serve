@@ -14,10 +14,12 @@ each API process.
 !!! warning "Managed gateway normalization boundaries"
 
     The bundled Bifrost native Responses route preserves standard fields, file
-    input, commentary, and `phase`; normalized model detail and error metadata
-    remain lossy. Its raw pass-through route passes the complete direct
-    contract suite. The bundled `homeserver-litellm` image preserves native
-    streaming and commentary; error metadata remains rewritten.
+    input, commentary, and `phase`; normalized model detail, error metadata,
+    and the returned `store` field remain lossy. Its raw pass-through route
+    preserves successful-request contracts, while virtual-key governance
+    rejects an unknown model before its upstream error can pass through. The
+    bundled `homeserver-litellm` image preserves native streaming and
+    commentary; error metadata remains rewritten.
     The UIs exercise the selected gateway's managed/native inference path;
     only Bifrost model-detail lookup uses a lossless pass-through. See
     [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
@@ -46,13 +48,15 @@ flowchart LR
   end
 
   files["Files service<br/>OpenAI Files API + S3 repository"]
+  dbhub["DBHub<br/>read-only MCP server"]
+  database[("lgos-db PostgreSQL<br/>dedicated mcp_demo schema")]
 
   model["Upstream OpenAI-compatible model"]
 
   user <--> chainlit
   user <--> openwebui
-  chainlit <-->|"OpenAI API"| gateway
-  openwebui <-->|"OpenAI API"| gateway
+  chainlit <-->|"OpenAI API + native MCP"| gateway
+  openwebui <-->|"OpenAI API + native MCP"| gateway
   gateway <-.->|"bifrost"| bifrost
   gateway <-.->|"litellm"| litellm
   sdk <-->|"catalog + native/raw Responses"| bifrost
@@ -63,6 +67,9 @@ flowchart LR
   litellm <-->|"managed inference"| api_a
   litellm <-->|"managed inference"| api_b
   litellm <-->|"provider: litellm_proxy"| files
+  bifrost <-->|"allowlisted MCP tools"| dbhub
+  litellm <-->|"allowlisted MCP tools"| dbhub
+  dbhub -->|"lgos_mcp read-only role"| database
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
 ```
@@ -75,6 +82,9 @@ Responses through native routing with `x-model-provider`. Both choices upload
 attachments through normal gateway Files routing before sending the returned
 `file_id` to a graph. This preserves descriptions and runtime capabilities
 without allowing UI inference to bypass the gateway's normal data plane.
+For `mcp-postgres`, the clients also discover and execute the gateway's native
+MCP tools; DBHub and the database credential remain behind that gateway. See
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md).
 
 The [LGOS-owned sync command](litellm-sync.md) registers concrete models and full
 metadata in LiteLLM's database. Run it after graph changes; the gateway needs no
@@ -82,11 +92,13 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-At startup, Compose waits for PostgreSQL, runs the one-shot API schema setup,
-starts both healthy graph APIs and the Files service, and then starts the
-selected gateway and the UI clients. The diagram shows request traffic rather than those
-readiness dependencies. Compose runs one Files process for the demo; production
-deployments may run multiple stateless replicas over the same repository.
+At startup, Compose waits for PostgreSQL and runs the one-shot API and Chainlit
+schema migrations. The idempotent MCP setup then creates the reporting views,
+role, and grants before DBHub starts. Both healthy graph APIs and the Files
+service start before the selected gateway and UI clients. The diagram shows
+request traffic rather than those readiness dependencies. Compose runs one
+Files process for the demo; production deployments may run multiple stateless
+replicas over the same repository.
 
 ## State Ownership
 

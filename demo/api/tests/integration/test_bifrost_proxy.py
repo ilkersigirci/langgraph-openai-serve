@@ -5,9 +5,11 @@ import uuid
 import pytest
 from openai import AsyncOpenAI, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
+from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 
 BIFROST_BASE_URL = os.getenv("DEMO_TEST_BIFROST_BASE_URL")
 BIFROST_CATALOG_BASE_URL = os.getenv("DEMO_TEST_BIFROST_CATALOG_BASE_URL")
+BIFROST_API_KEY = os.getenv("OPENAI_GATEWAY_API_KEY", "sk-bf-lgos-demo-only-key")
 
 pytestmark = [
     pytest.mark.integration,
@@ -20,13 +22,28 @@ pytestmark = [
 BIFROST_MODEL_METADATA_XFAIL = pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="Bifrost v2.0.0 normalized model detail omits LGOS extensions",
+    reason="Bifrost v2.1.1 normalized model detail omits LGOS extensions",
 )
 BIFROST_ERROR_METADATA_XFAIL = pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="Bifrost v2.0.0 rewrites the upstream OpenAI error metadata",
+    reason="Bifrost v2.1.1 rewrites the upstream OpenAI error metadata",
 )
+BIFROST_STORE_FIELD_XFAIL = pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="Bifrost v2.1.1 reports store=true after forwarding store=false",
+)
+
+
+async def test_bifrost_native_mcp_is_authenticated_and_exposes_fixed_reports() -> None:
+    assert BIFROST_CATALOG_BASE_URL is not None
+
+    await assert_postgres_mcp_contract(
+        BIFROST_CATALOG_BASE_URL.removesuffix("/v1"),
+        BIFROST_API_KEY,
+        endpoint="/mcp",
+    )
 
 
 async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
@@ -35,7 +52,7 @@ async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
 
     async with AsyncOpenAI(
         base_url=BIFROST_CATALOG_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as catalog:
@@ -75,13 +92,13 @@ async def test_bifrost_native_responses_preserve_file_input(provider: str) -> No
     async with (
         AsyncOpenAI(
             base_url=BIFROST_CATALOG_BASE_URL,
-            api_key="DUMMY",
+            api_key=BIFROST_API_KEY,
             max_retries=0,
             timeout=10.0,
         ) as catalog,
         AsyncOpenAI(
             base_url=BIFROST_BASE_URL,
-            api_key="DUMMY",
+            api_key=BIFROST_API_KEY,
             max_retries=0,
             timeout=10.0,
         ) as api_client,
@@ -125,7 +142,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as client:
@@ -141,6 +158,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
+@BIFROST_STORE_FIELD_XFAIL
 async def test_bifrost_native_responses_preserve_standard_fields(
     provider: str,
 ) -> None:
@@ -148,7 +166,7 @@ async def test_bifrost_native_responses_preserve_standard_fields(
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as client:
@@ -173,7 +191,7 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as client:
@@ -205,7 +223,7 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as client:
@@ -251,7 +269,7 @@ async def test_bifrost_preserves_openai_errors(provider: str) -> None:
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
-        api_key="DUMMY",
+        api_key=BIFROST_API_KEY,
         max_retries=0,
         timeout=10.0,
     ) as client:

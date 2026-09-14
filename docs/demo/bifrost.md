@@ -11,12 +11,14 @@ package.
 
     With `responses` and `responses_stream` enabled for both graph providers,
     the bundled Bifrost gateway's normalized
-    `/openai/v1` route preserves the tested `user`, `store: false`,
-    `input_file`, function-continuation, final-answer `phase`, and multiple
-    commentary `phase` contracts. Two narrower gaps remain: normalized model
-    detail does not expose LGOS extensions, and normalized errors replace the
-    upstream OpenAI `type`, `param`, and `code`. The raw
-    `/openai_passthrough/v1` route preserves the complete tested contract.
+    `/openai/v1` route preserves the tested `user`, `input_file`,
+    function-continuation, final-answer `phase`, and multiple commentary
+    `phase` contracts. Three narrower gaps remain: normalized model detail does
+    not expose LGOS extensions, normalized errors replace the upstream OpenAI
+    `type`, `param`, and `code`, and a response reports `store: true` after the
+    request sent `store: false`. The raw `/openai_passthrough/v1` route
+    preserves the successful-request contracts, while governance rejects an
+    unknown model before its upstream OpenAI error can pass through.
 
 ## Run The Gateway
 
@@ -33,14 +35,28 @@ Bifrost exposes each service as a custom provider:
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
 
+It also exposes the `LGOS PostgreSQL Reports` Virtual MCP at
+`http://localhost:3000/mcp/lgos-postgres`. This named bundle selects six tools
+from the `lgos_postgres` source client; that client reaches the internal DBHub
+service with a separate bearer token. Both the source client and the Virtual
+MCP use explicit tool-name lists, so neither opts future tools in
+automatically. The UIs connect to the gateway's aggregate `/mcp` endpoint with
+the same virtual key used for OpenAI requests; its Virtual MCP grant determines
+the tools they discover. The named endpoint remains a gateway-owned interface
+for the same bundle. See Bifrost's
+[Virtual MCP documentation](https://docs.getbifrost.ai/mcp/virtual-mcps) and
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md).
+
 Use Bifrost's normalized OpenAI endpoint to inspect the shared model catalog:
 
 ```python title="Inspect the Bifrost catalog"
+import os
+
 from openai import OpenAI
 
 catalog = OpenAI(
     base_url="http://localhost:3000/v1",
-    api_key="DUMMY",
+    api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
 )
 model_ids = [
     model.id
@@ -65,6 +81,20 @@ for both demo UIs.
 The clients derive the Responses route, catalog-detail route, Files provider,
 and model-header routing from that explicit configuration. Host-side commands
 must instead receive a URL reachable from the host.
+
+The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
+catalog, and MCP requests. Bifrost loads it as one native virtual key whose
+provider policies allow only `lgos-a`, `lgos-b`, and `lgos-files`; the key is
+attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
+before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
+
+The local dashboard and management API omit administrator authentication so
+Compose can perform its startup reconciliation. Before exposing Bifrost beyond
+a trusted development host, follow Bifrost's
+[authentication guidance](https://docs.getbifrost.ai/deployment-guides/config-json/client#authentication),
+configure an encryption key, restrict browser origins, and authenticate that
+management request. A virtual key alone protects the data plane, not the
+management API.
 
 The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
 `file_list`, `file_retrieve`, `file_content`, and `file_delete` operations.
@@ -97,8 +127,21 @@ The client header allowlist forwards `traceparent`, `tracestate`, and
 trace context and the originating UI's identity at LGOS. See the
 [OpenTelemetry guide](opentelemetry.md#signal-ownership).
 
-The demo uses `DUMMY` upstream keys because LGOS authentication is not enabled.
-Replace each key when its target application enforces authentication.
+The gateway uses `DUMMY` only for its private upstream connections because LGOS
+authentication is not enabled. This is separate from the required client-facing
+virtual key. Replace each upstream key when its target application enforces
+authentication.
+
+Bifrost's MCP manager initializes only when its native config store is enabled.
+The bundled configuration therefore uses an ephemeral SQLite database at
+`/tmp/config.db`; the checked-in JSON remains the source of truth on every
+restart, matching the demo's otherwise stateless gateway configuration.
+The JSON declares the Virtual MCP's key assignment. On a fresh store, Bifrost
+2.1.1 reconciles that bundle before its file-defined key, so Compose repeats
+the idempotent attachment after startup and keeps the health check red until it
+is visible. The configuration also sets `disable_auto_tool_inject=true`, so MCP
+tools reach a model only when Chainlit or Open WebUI supplies their schemas;
+unrelated calls do not inherit database access.
 
 ## Usage Accounting
 
@@ -114,9 +157,9 @@ pass-through for inference.
 
 Run `just demo/test-bifrost --editable` after starting the gateway.
 The command requires the native Responses data-plane contracts to pass, records
-only the normalized model-detail and error-metadata gaps as strict expected
-failures, and then requires the complete raw pass-through OpenAI SDK suite to
-pass.
+the normalized model-detail, error-metadata, and `store` response-field gaps as
+strict expected failures, and then requires the raw pass-through OpenAI SDK
+suite to pass except for its strict unknown-model governance expectation.
 
 See Bifrost's
 [custom-provider documentation](https://docs.getbifrost.ai/providers/custom-providers)

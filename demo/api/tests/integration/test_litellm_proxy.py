@@ -6,6 +6,7 @@ import httpx
 import pytest
 from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
+from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
 DIRECT_BASE_URLS = os.getenv("DEMO_TEST_DIRECT_BASE_URLS", "").split(",")
@@ -21,6 +22,16 @@ pytestmark = [
         reason="set the native LiteLLM test URL",
     ),
 ]
+
+
+async def test_litellm_native_mcp_is_authenticated_and_exposes_fixed_reports() -> None:
+    assert LITELLM_BASE_URL is not None
+
+    await assert_postgres_mcp_contract(
+        LITELLM_BASE_URL.removesuffix("/v1"),
+        LITELLM_API_KEY,
+        endpoint="/mcp/",
+    )
 
 
 async def test_litellm_admin_ui_login() -> None:

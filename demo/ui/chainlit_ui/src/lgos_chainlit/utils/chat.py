@@ -6,8 +6,8 @@ from lgos_chainlit.lgos_protocol import CONVERSATION_METADATA_KEY, LGOS_EXTENSIO
 
 LIMITED_FUNCTIONALITY_MESSAGE = (
     "Limited functionality: The configured OpenAI endpoint did not return valid "
-    f"{LGOS_EXTENSION_KEY} model metadata. Runtime settings, file uploads, and "
-    "interrupt profile checks may be unavailable."
+    f"{LGOS_EXTENSION_KEY} model metadata. Runtime settings, file uploads, "
+    "gateway tools, and interrupt profile checks may be unavailable."
 )
 
 

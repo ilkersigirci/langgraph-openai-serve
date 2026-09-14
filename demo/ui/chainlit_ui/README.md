@@ -7,7 +7,8 @@ package, demonstrating that UI logic needs only the OpenAI wire protocol.
 The client uses Responses exclusively and never connects directly to an LGOS
 or Files container. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway.
 LiteLLM uses managed Responses routing; Bifrost uses its native Responses
-route. Both use their normal Files route. LiteLLM discovery and settings read
+route. Both use their normal Files and aggregate MCP routes with the same
+gateway credential. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
 extension. Bifrost uses its aggregate catalog and model-detail pass-through.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
@@ -29,16 +30,16 @@ uv run --locked --env-file .env lgos-chainlit
 ```
 
 Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
-gateway type and base URL. Reusable helper settings use `CHAINLIT_UTILS_`;
+gateway type, base URL, and API key. Reusable helper settings use `CHAINLIT_UTILS_`;
 Chainlit's native `DATABASE_URL` and `CHAINLIT_AUTH_SECRET` variables remain
 unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEV_AWS_ENDPOINT` S3 settings so generated files survive thread resume.
 
 `DEMO_CHAINLIT_LOGIN_TYPE=oauth` enables OIDC browser login independently of
 gateway authorization. By default, mock and OAuth login both use
-`DEMO_CHAINLIT_GATEWAY_API_KEY`. Set
-`DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true` and clear that key to send
-the signed-in user's access token instead. Delegated mode needs the gateway's
+`OPENAI_GATEWAY_API_KEY` for Responses, Files, and MCP. Set
+`DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true` to send the signed-in user's
+access token instead. Delegated mode disables the static MCP connection and needs the gateway's
 API permission and `offline_access`; point `OPENAI_GATEWAY_BASE_URL` at the
 LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses
 and Files for the user's credential. See the

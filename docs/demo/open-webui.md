@@ -72,6 +72,27 @@ It depends on the Generic Pipe for Responses transport. The generated
     `/model/info` or Bifrost's catalog-detail pass-through. Neither
     the Function nor the sync logic connects directly to LGOS.
 
+## Gateway MCP
+
+The sync command reconciles one managed Streamable HTTP connection. It attaches
+`lgos-gateway` to each generated Workspace Model whose gateway metadata
+advertises `mcp_tools`. The Generic Pipe forwards the gateway tools from
+Open WebUI's native `__tools__` map through Responses and returns matching calls
+to the native tool loop; each graph owns its tool allowlist at the API boundary.
+
+The connection derives `/mcp` from `OPENAI_GATEWAY_BASE_URL` and stores
+`OPENAI_GATEWAY_API_KEY` as native bearer authentication. The same values drive
+model discovery, Responses, and Files. The gateway credential determines which
+MCP tools can be discovered, while the downstream DBHub token remains private
+to the gateway.
+
+Keep streaming enabled because Open WebUI's native tool middleware consumes the
+streamed tool-call shape. The current database example is
+[PostgreSQL Through Native MCP](graphs/mcp-postgres.md); see it for the complete
+flow and security boundaries, and Open WebUI's official
+[MCP documentation](https://docs.openwebui.com/features/extensibility/mcp/)
+for its native server administration and access controls.
+
 ## Setup
 
 Start the official Open WebUI image:
@@ -82,17 +103,18 @@ just demo/up lgos-openwebui --wait
 ```
 
 For independently started components, first [sync LGOS model
-metadata](litellm-sync.md) when using LiteLLM. Then run the Open WebUI
-synchronization project locally:
+metadata](litellm-sync.md) when using LiteLLM. Then run synchronization inside
+the Open WebUI container:
 
 ```bash
 just demo/sync-openwebui
 ```
 
-Both bundled gateways use host port `3000`. The recipe reads the host-reachable
-`DEMO_GATEWAY_HOST_URL`, while Compose uses `OPENAI_GATEWAY_BASE_URL` for its
-container network. Set both to the external root when one URL serves both
-contexts.
+The command inherits the same gateway root and credential as the Open WebUI
+runtime. For a standalone Open WebUI deployment, run
+`uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
+environment where `DEMO_OPENWEBUI_URL` and the shared gateway URL are both
+reachable.
 
 The full-stack `just demo/compose [--dev] [--otel]` variants handle
 synchronization automatically after their dependencies are healthy.
@@ -216,7 +238,7 @@ not only to generated LGOS models.
 Every generated model remains visible when its native detail response
 lacks the required `lgos` extension. Its name and description
 say **Limited functionality**. Standard assistant text may still work; runtime
-settings and file-upload controls are not assumed.
+settings, file-upload controls, and gateway tools are not assumed.
 
 ## Runtime Settings
 

@@ -1,0 +1,135 @@
+[[sources]]
+id = "lgos"
+description = "Live LGOS and Chainlit reporting data"
+type = "postgres"
+host = "lgos-db"
+port = 5432
+database = "lgos"
+user = "lgos_mcp"
+password = "${LGOS_MCP_DB_PASSWORD}"
+sslmode = "disable"
+search_path = "mcp_demo"
+connection_timeout = 10
+query_timeout = 10
+
+[[tools]]
+name = "count_chainlit_users"
+description = "Count all Chainlit users."
+source = "lgos"
+statement = "SELECT count(*) AS user_count FROM mcp_demo.chainlit_user_conversation_counts"
+readonly = true
+max_rows = 1
+
+[[tools]]
+name = "list_chainlit_conversation_counts"
+description = "List up to 100 Chainlit users and their current, deleted, and total conversation counts."
+source = "lgos"
+statement = """
+SELECT
+  user_identifier,
+  user_created_at,
+  current_conversation_count,
+  deleted_conversation_count,
+  total_conversation_count,
+  last_current_conversation_at
+FROM mcp_demo.chainlit_user_conversation_counts
+ORDER BY current_conversation_count DESC, user_identifier
+"""
+readonly = true
+max_rows = 100
+
+[[tools]]
+name = "summarize_chainlit_activity"
+description = "Summarize current Chainlit conversations, messages, recorded errors, profiles, and latest activity."
+source = "lgos"
+statement = "SELECT * FROM mcp_demo.chainlit_activity_summary"
+readonly = true
+max_rows = 1
+
+[[tools]]
+name = "list_chainlit_activity_by_profile"
+description = "List Chainlit conversation and message activity for up to 100 chat profiles."
+source = "lgos"
+statement = """
+SELECT
+  chat_profile,
+  current_user_count,
+  current_conversation_count,
+  deleted_conversation_count,
+  active_conversation_count,
+  empty_conversation_count,
+  user_message_count,
+  assistant_message_count,
+  conversation_with_errors_count,
+  error_step_count,
+  last_activity_at
+FROM mcp_demo.chainlit_profile_activity
+ORDER BY current_conversation_count DESC, chat_profile
+"""
+readonly = true
+max_rows = 100
+
+[[tools]]
+name = "summarize_lgos_interrupted_runs"
+description = "Summarize currently interrupted LGOS runs by model, age, and time range."
+source = "lgos"
+statement = """
+WITH run_summary AS (
+  SELECT
+    count(*) AS total_interrupted_runs,
+    min(interrupted_at) AS oldest_interrupt_at,
+    max(interrupted_at) AS newest_interrupt_at,
+    count(*) FILTER (
+      WHERE interrupted_at < current_timestamp - interval '24 hours'
+    ) AS older_than_24_hours,
+    count(*) FILTER (
+      WHERE interrupted_at < current_timestamp - interval '7 days'
+    ) AS older_than_7_days
+  FROM mcp_demo.lgos_interrupted_runs
+),
+by_model AS (
+  SELECT
+    coalesce(model_name, 'unknown') AS model_name,
+    count(*) AS interrupted_run_count
+  FROM mcp_demo.lgos_interrupted_runs
+  GROUP BY coalesce(model_name, 'unknown')
+)
+SELECT
+  run_summary.*,
+  coalesce(
+    (
+      SELECT jsonb_object_agg(
+        model_name,
+        interrupted_run_count
+        ORDER BY model_name
+      )
+      FROM by_model
+    ),
+    '{}'::jsonb
+  ) AS interrupted_runs_by_model
+FROM run_summary
+"""
+readonly = true
+max_rows = 1
+
+[[tools]]
+name = "list_lgos_interrupted_runs"
+description = "List up to 100 oldest currently interrupted LGOS runs without checkpoint payloads."
+source = "lgos"
+statement = """
+SELECT
+  model_name,
+  run_id,
+  first_checkpoint_at,
+  interrupted_at,
+  round(
+    extract(epoch FROM (current_timestamp - interrupted_at)) / 3600,
+    1
+  ) AS interrupted_for_hours,
+  checkpoint_count,
+  pending_checkpoint_namespaces
+FROM mcp_demo.lgos_interrupted_runs
+ORDER BY interrupted_at, run_id
+"""
+readonly = true
+max_rows = 100

@@ -144,9 +144,9 @@ supports that API and the graph needs the simpler compatibility surface.
 | Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
 | Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
 
-The `lgos.features` model extension advertises
-`client_events`, `file_inputs`, and `interrupts` so a capability-aware UI can
-enable only supported controls. See the
+The `lgos.features` model extension advertises `client_events`, `file_inputs`,
+`interrupts`, and `mcp_tools` so a capability-aware UI can enable only
+supported controls. See the
 [complete compatibility contract](explanation/openai-compatibility.md) for the
 accepted fields, item shapes, streaming events, errors, and retention rules.
 

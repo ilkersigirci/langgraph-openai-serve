@@ -7,7 +7,7 @@ so each adapter or streaming behavior is visible on its own.
 | Graph | Demonstrates |
 | --- | --- |
 | `custom-input-output-context` | Custom graph input, output, and typed runtime context |
-| `advanced-mcp-tools` | An async graph factory that loads MCP-style tools before building an agent |
+| `mcp-mock` | Async MCP-style tool discovery without external services |
 | `multi-node-streaming` | Ordered text streamed by more than one graph node |
 | `response-outcomes` | Native refusal content and incomplete terminal responses |
 | `simple-graph` | A real chat model controlled by discoverable runtime settings |
@@ -23,7 +23,7 @@ so each adapter or streaming behavior is visible on its own.
 		generate --> __end__;
     ```
 
-=== "advanced-mcp-tools"
+=== "mcp-mock"
 
     ```mermaid
     graph TD;
@@ -88,17 +88,18 @@ one typed graph:
 
 No chat model or external service is called.
 
-### advanced-mcp-tools
+### mcp-mock
 
 LGOS awaits the registered async graph factory for each request. The factory
-loads one mock weather tool, passes it to LangChain `create_agent`, and returns
-the compiled model-tools loop. The deterministic fake model calls the tool for
-Istanbul and then returns its result as assistant text.
+asks a tiny stand-in MCP client for one mock weather tool, passes it to
+LangChain `create_agent`, and returns the compiled model-tools loop. A
+deterministic fake model calls the tool for Istanbul and then returns the final
+assistant answer.
 
-This is an MCP-style lifecycle example, not a network MCP integration. A real
-application can replace the mock client with LangChain's
-[`MultiServerMCPClient`](https://docs.langchain.com/oss/python/langchain/mcp)
-while keeping the async factory boundary.
+This demonstrates the MCP-shaped lifecycle without a network server, gateway,
+database, credentials, or provider charges. Continue with
+[`mcp-postgres`](mcp-postgres.md) for the supported gateway-owned MCP
+deployment.
 
 ### multi-node-streaming
 
@@ -180,7 +181,7 @@ streaming and standard OpenAI function-call output.
 | Model | Prompt | Optional request value |
 | --- | --- | --- |
 | `custom-input-output-context` | `Show me custom schemas.` | `user="demo-user"` |
-| `advanced-mcp-tools` | `What is the weather in Istanbul?` | None |
+| `mcp-mock` | `What is the weather in Istanbul?` | None |
 | `multi-node-streaming` | `Build one answer from two nodes.` | None |
 | `response-outcomes` | `refusal` or `incomplete` | None |
 | `simple-graph` | `Explain what this demo does.` | Select an audience in the UI |

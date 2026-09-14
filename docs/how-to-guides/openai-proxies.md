@@ -53,8 +53,8 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | --- | --- | --- |
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
 | LiteLLM managed routing | Native streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
-| Bifrost raw pass-through | Full maintained contract | UI catalog detail and protocol reference |
-| Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions are unavailable and error metadata is rewritten | Bifrost-selected UI inference and Files |
+| Bifrost raw pass-through | Successful-request contracts pass; virtual-key governance rejects the unknown-model error case before pass-through | UI catalog detail and protocol reference |
+| Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, and continuation pass; model-detail extensions and error metadata are unavailable, and the returned `store` field is `true` after a `store: false` request | Bifrost-selected UI inference and Files |
 
 These results describe the bundled configuration. Exact image tags and digests
 are provided by `DEMO_LITELLM_IMAGE` in `demo/.env.example` for LiteLLM and

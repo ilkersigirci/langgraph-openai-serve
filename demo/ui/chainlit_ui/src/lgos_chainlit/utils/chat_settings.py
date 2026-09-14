@@ -21,6 +21,7 @@ from lgos_chainlit.lgos_protocol import (
 )
 from lgos_chainlit.utils.chat import send_limited_functionality_warning
 from lgos_chainlit.utils.clients import retrieve_model
+from lgos_chainlit.utils.mcp import mcp_response_tools
 from lgos_chainlit.utils.responses import DISPLAY_FILE_TOOL
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,8 @@ def response_tools() -> list[ToolParam]:
     tools: list[ToolParam] = (
         [DISPLAY_FILE_TOOL] if _supports_display_file(model_id) else []
     )
+    if model_feature_enabled(GraphFeature.MCP_TOOLS):
+        tools.extend(mcp_response_tools())
     selected = cl.user_session.get("chat_settings")
     if not isinstance(selected, dict):
         return tools

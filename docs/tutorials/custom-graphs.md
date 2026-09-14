@@ -179,18 +179,21 @@ version is in `demo/api/src/lgos_demo_api/graphs/simple.py`.
 `GraphConfig.graph` may be a compiled graph, sync factory, or async factory:
 
 ```python title="Async graph factory"
-async def advanced_graph():
+async def mcp_mock_graph():
     tools = await mcp_client.get_tools()
     return create_agent(model=model, tools=tools)
 
 GraphConfig(
-    graph=advanced_graph,
+    graph=mcp_mock_graph,
     description="Answer questions with asynchronously loaded tools.",
 )
 ```
 
-See `demo/api/src/lgos_demo_api/graphs/advanced_mcp.py` for a mock MCP-style
-example.
+See `demo/api/src/lgos_demo_api/graphs/mcp_mock.py` for a dependency-free
+MCP-style example. The real
+[`mcp-postgres`](../demo/graphs/mcp-postgres.md) demo needs no async factory:
+Chainlit or Open WebUI owns the native MCP session and passes its tools through
+the standard OpenAI request contract.
 
 ## Register And Bind
 
@@ -204,9 +207,9 @@ graphs = GraphRegistry(
             description="Answer questions with my graph.",
             streamable_node_names=["generate"],
         ),
-        "advanced-mcp-tools": GraphConfig(
-            graph=advanced_graph,
-            description="Answer questions with MCP tools.",
+        "mcp-mock": GraphConfig(
+            graph=mcp_mock_graph,
+            description="Answer questions with asynchronously loaded tools.",
         ),
     }
 )

@@ -26,6 +26,8 @@ services:
     depends_on:
       lgos-db:
         condition: service_healthy
+      lgos-postgres-mcp:
+        condition: service_healthy
       lgos-demo-api-a:
         condition: service_healthy
       lgos-demo-api-b:
@@ -40,6 +42,7 @@ services:
       STORE_PROMPTS_IN_SPEND_LOGS: "true"
       OPENAI_BASE_URL: http://lgos-files-api:8000/v1
       OPENAI_API_KEY: DUMMY
+      LGOS_MCP_AUTH_TOKEN: $LGOS_MCP_AUTH_TOKEN
       ##### CUSTOM IMAGE #####
       # Honor each deployment's native Responses streaming capability.
       LITELLM_ENABLE_RESPONSES_STREAMING_FIX: "true"

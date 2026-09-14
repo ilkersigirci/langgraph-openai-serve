@@ -13,8 +13,10 @@ The demo API registers these graph names as OpenAI models:
   with Markdown links and structured URL citations.
 - `custom-input-output-context` demonstrates graph input, output, and context
   adapters.
-- `advanced-mcp-tools` demonstrates an asynchronous graph factory and mock
-  MCP-style tools.
+- `mcp-mock` demonstrates asynchronous MCP-style tool discovery without a
+  network service or credentials.
+- `mcp-postgres` advertises MCP-tool support and requests only the read-only
+  PostgreSQL reports that a native MCP client discovers from the gateway.
 - `complex-subgraphs` demonstrates routing across nested specialist graphs.
 - `multi-node-streaming` combines streamed contributions from two sequential
   nodes into one final assistant message.

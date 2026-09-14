@@ -103,7 +103,7 @@ belong to an external OpenAI Files API, not the LGOS package. See
   forwarded as assistant text. If several nodes contribute, the graph's output
   adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior or
-  advertise a graph input capability.
+  advertise graph input and client-tool capabilities.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
 - `server_tools`: internal allowlist of server-executed tool names. A
@@ -198,11 +198,14 @@ during execution, so callbacks on interrupt runs receive the derived checkpoint
 custom Langfuse trace ID. See [Production Logging and Request
 Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
-The same `features` set drives runtime behavior and the versioned
-`lgos.features` extension returned by model listing and
-retrieval. `GraphFeature.CLIENT_EVENTS` enables and advertises public
+The `features` set is returned in the versioned `lgos.features` extension and
+enables server behavior where applicable. `GraphFeature.CLIENT_EVENTS` enables
+and advertises public
 status commentary in streaming Responses. Chat Completions ignores custom
 stream events and does not emit commentary.
+`GraphFeature.MCP_TOOLS` advertises that a client may attach and execute tools
+from its configured MCP gateway; it does not publish tool definitions or grant
+access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow.

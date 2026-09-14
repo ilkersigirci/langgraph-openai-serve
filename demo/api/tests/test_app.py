@@ -19,7 +19,7 @@ from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
     "advanced-graph",
-    "advanced-mcp-tools",
+    "mcp-postgres",
     "citation-events",
     "complex-subgraphs",
     "custom-event-showcase",
@@ -27,6 +27,7 @@ DOCUMENTED_MODEL_IDS = {
     "file-input",
     "interruptible-approval",
     "lgos-rag",
+    "mcp-mock",
     "persistent-plot-agent",
     "multi-node-streaming",
     "response-outcomes",

@@ -42,7 +42,9 @@ from .interrupts import (
 from .metadata import _request_metadata
 from .responses import (
     _emit_response_sources,
+    _openwebui_mcp_tools,
     _openwebui_text_chunk,
+    _openwebui_tool_chunk,
     _responses_continuation,
     _responses_final_text,
     _responses_function_calls,
@@ -77,7 +79,7 @@ class Pipe:
         OPENAI_GATEWAY_API_KEY: str = Field(
             default_factory=lambda: _required_environment("OPENAI_GATEWAY_API_KEY"),
             min_length=1,
-            description="API key sent to the configured OpenAI-compatible endpoints.",
+            description="API key used for Responses, Files, and MCP.",
             json_schema_extra={"input": {"type": "password"}},
         )
         OPENAI_API_TIMEOUT: float = Field(
@@ -116,6 +118,7 @@ class Pipe:
         __user__: dict[str, Any] | None = None,
         __files__: list[dict[str, Any]] | None = None,
         __request__: Any = None,
+        __tools__: dict[str, Any] | None = None,
     ) -> PipeResponse:
         """Run the selected graph through OpenAI Responses."""
         results = self._run(
@@ -125,6 +128,7 @@ class Pipe:
             __user__=__user__,
             __files__=__files__,
             __request__=__request__,
+            __tools__=__tools__,
         )
         if body.get("stream") is True:
             return results
@@ -139,6 +143,7 @@ class Pipe:
         __user__: dict[str, Any] | None = None,
         __files__: list[dict[str, Any]] | None = None,
         __request__: Any = None,
+        __tools__: dict[str, Any] | None = None,
     ) -> AsyncGenerator[PipeChunk, None]:
         """Own one Responses/tool loop for both Pipe response modes."""
         streaming = body.get("stream") is True
@@ -147,10 +152,26 @@ class Pipe:
         finished = False
         try:
             metadata = __metadata__ or {}
-            model_id, input_items, previous_response_id = await self._request_input(
-                body, __metadata__, __files__, __request__
+            model_id = _model_id(body)
+            mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(__tools__)
+            transcript_mcp_names = {
+                openwebui_name: gateway_name
+                for gateway_name, openwebui_name in openwebui_mcp_names.items()
+            }
+            input_items, previous_response_id = await self._request_input(
+                model_id,
+                body,
+                __metadata__,
+                __files__,
+                __request__,
+                mcp_tool_names=transcript_mcp_names,
             )
+            # Open WebUI v0.11 only enters its native tool loop for streams.
+            if mcp_tools and not streaming:
+                raise ValueError("Open WebUI MCP tool execution requires streaming.")
             gateway = self._gateway()
+            tools = _responses_tools(model_id, metadata)
+            tools.extend(mcp_tools)
             request = _responses_request(
                 model_id,
                 input_items,
@@ -163,7 +184,7 @@ class Pipe:
                 ),
                 _user_id(__user__),
                 provider_routing=gateway.provider_routing,
-                tools=_responses_tools(model_id, metadata),
+                tools=tools,
                 previous_response_id=previous_response_id,
             )
             async with _client(
@@ -231,6 +252,16 @@ class Pipe:
                             )
                         )
                         return
+                    if openwebui_mcp_names and all(
+                        call.name in openwebui_mcp_names for call in calls
+                    ):
+                        finished = True
+                        yield _openwebui_tool_chunk(
+                            model_id,
+                            calls,
+                            openwebui_mcp_names,
+                        )
+                        return
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
                         raise ValueError(
                             "LangGraph API returned an unsupported or mixed function-call batch."
@@ -250,7 +281,10 @@ class Pipe:
                     if request.pop("previous_response_id", None) is not None:
                         # Interrupt answers belong only to the paused checkpoint.
                         # Client tools continue from the UI's transcript instead.
-                        request["input"] = _responses_input(body["messages"])
+                        request["input"] = _responses_input(
+                            body["messages"],
+                            mcp_tool_names=transcript_mcp_names,
+                        )
                     request["input"].extend(_responses_continuation(response, outputs))
         except InterruptCancelled:
             yield INTERRUPT_CANCELLED_MESSAGE
@@ -266,12 +300,14 @@ class Pipe:
 
     async def _request_input(
         self,
+        model_id: str,
         body: dict[str, Any],
         metadata: dict[str, Any] | None,
         files: list[dict[str, Any]] | None,
         request: Any,
-    ) -> tuple[str, list[dict[str, Any]], str | None]:
-        model_id = _model_id(body)
+        *,
+        mcp_tool_names: dict[str, str],
+    ) -> tuple[list[dict[str, Any]], str | None]:
         gateway = self._gateway()
         _model_request(
             model_id,
@@ -281,7 +317,7 @@ class Pipe:
         messages = raw_messages if isinstance(raw_messages, list) else []
         if resume := _ask_user_to_resume(messages):
             input_items, previous_response_id = resume
-            return model_id, input_items, previous_response_id
+            return input_items, previous_response_id
         messages = await _with_response_file_parts(
             messages,
             files,
@@ -292,7 +328,13 @@ class Pipe:
             timeout=self.valves.OPENAI_API_TIMEOUT,
             provider=gateway.files_provider,
         )
-        return model_id, _responses_input(messages), None
+        return (
+            _responses_input(
+                messages,
+                mcp_tool_names=mcp_tool_names,
+            ),
+            None,
+        )
 
     def _gateway(self) -> GatewayConfig:
         return gateway_config(

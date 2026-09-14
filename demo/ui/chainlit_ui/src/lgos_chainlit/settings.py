@@ -58,11 +58,15 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_GATEWAY_BASE_URL",
         description="Gateway root without the OpenAI API path.",
     )
-    GATEWAY_API_KEY: str | None = Field(
+    OPENAI_GATEWAY_API_KEY: str | None = Field(
         default=None,
         min_length=1,
+        validation_alias="OPENAI_GATEWAY_API_KEY",
         repr=False,
-        description="Static gateway API key used when OAuth token forwarding is disabled.",
+        description=(
+            "Shared gateway credential used for Responses, Files, and MCP when "
+            "OAuth token forwarding is disabled."
+        ),
     )
     ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
     HITL_MODEL: str = "lgos-a/interruptible-approval"
@@ -123,17 +127,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING requires OAuth login."
                 )
-            if self.GATEWAY_API_KEY is not None:
-                raise ValueError(
-                    "DEMO_CHAINLIT_GATEWAY_API_KEY must be empty when OAuth token forwarding is enabled."
-                )
             if not self.OAUTH_ENCRYPTION_KEYS:
                 raise ValueError(
                     "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS must be configured."
                 )
-        elif _is_unconfigured(self.GATEWAY_API_KEY):
+        elif _is_unconfigured(self.OPENAI_GATEWAY_API_KEY):
             raise ValueError(
-                "DEMO_CHAINLIT_GATEWAY_API_KEY must be configured when OAuth token forwarding is disabled."
+                "OPENAI_GATEWAY_API_KEY must be configured when OAuth token forwarding is disabled."
             )
         return self
 

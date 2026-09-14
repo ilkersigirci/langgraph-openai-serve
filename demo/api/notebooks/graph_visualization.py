@@ -32,12 +32,13 @@ def _():
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.store.memory import InMemoryStore
 
-    from lgos_demo_api.graphs.advanced_mcp import advanced_mcp_graph
     from lgos_demo_api.graphs.citations import citation_graph
     from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph
     from lgos_demo_api.graphs.custom_io import custom_io_graph
     from lgos_demo_api.graphs.interruptible import create_interruptible_graph
     from lgos_demo_api.graphs.lgos_rag import lgos_rag
+    from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph
+    from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph
     from lgos_demo_api.graphs.multi_node_streaming import multi_node_streaming_graph
     from lgos_demo_api.graphs.persistent_plot_agent import (
         create_persistent_plot_agent,
@@ -54,7 +55,6 @@ def _():
     return (
         InMemorySaver,
         InMemoryStore,
-        advanced_mcp_graph,
         citation_graph,
         create_interruptible_graph,
         create_persistent_plot_agent,
@@ -63,6 +63,8 @@ def _():
         custom_io_graph,
         lgos_rag,
         multi_node_streaming_graph,
+        mcp_mock_graph,
+        mcp_postgres_graph,
         response_outcome_graph,
         server_tool_graph,
         simple_graph,
@@ -75,7 +77,6 @@ def _():
 async def _(
     InMemorySaver,
     InMemoryStore,
-    advanced_mcp_graph,
     citation_graph,
     create_interruptible_graph,
     create_persistent_plot_agent,
@@ -84,6 +85,8 @@ async def _(
     custom_io_graph,
     lgos_rag,
     multi_node_streaming_graph,
+    mcp_mock_graph,
+    mcp_postgres_graph,
     response_outcome_graph,
     server_tool_graph,
     simple_graph,
@@ -93,7 +96,8 @@ async def _(
     graphs = {
         "custom-input-output-context": custom_io_graph,
         "citation-events": citation_graph,
-        "advanced-mcp-tools": await advanced_mcp_graph(),
+        "mcp-mock": await mcp_mock_graph(),
+        "mcp-postgres": mcp_postgres_graph,
         "complex-subgraphs": create_specialist_team_graph(),
         "status-events": status_event_graph,
         "custom-event-showcase": custom_event_showcase_graph,

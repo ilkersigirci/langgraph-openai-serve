@@ -37,7 +37,6 @@ async def test_compose_deploys_and_syncs_the_stack_in_order(
     otel: bool,
 ) -> None:
     docker = tmp_path / "docker"
-    uv = tmp_path / "uv"
     log = tmp_path / "operations"
     docker.write_text(
         """#!/bin/sh
@@ -48,18 +47,12 @@ while [ "$1" = "-f" ]; do shift 2; done
 case "$1:$2" in
   config:--services)
     test -z "$DEPLOY_TEST_GATEWAY_SERVICE" || printf "%s\\n" "$DEPLOY_TEST_GATEWAY_SERVICE" ;;
-  up:*|run:*) exit 0 ;;
+  up:*|run:*|exec:*) exit 0 ;;
   *) exit 99 ;;
 esac
 """
     )
     docker.chmod(0o755)
-    uv.write_text(
-        """#!/bin/sh
-printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST_LOG"
-"""
-    )
-    uv.chmod(0o755)
 
     result = await anyio.run_process(
         [
@@ -93,7 +86,9 @@ printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST
     if otel:
         compose += " -f docker/compose/otel.yml"
     up_args = "--build --quiet-pull" if dev else "--quiet-pull"
-    first_services = gateway_service or "lgos-demo-api-a lgos-demo-api-b lgos-files-api"
+    first_services = gateway_service or (
+        "lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api"
+    )
     expected = [
         f"{compose} config --services",
         f"{compose} up --wait {up_args} {first_services}",
@@ -114,13 +109,7 @@ printf "uv %s gateway=%s\\n" "$*" "${OPENAI_GATEWAY_BASE_URL-}" >> "$DEPLOY_TEST
     expected.extend(
         [
             f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
-            "uv run --directory ui/openwebui --locked "
-            "lgos-openwebui-sync gateway="
-            + (
-                "http://localhost:3000"
-                if gateway_service
-                else "https://gateway.example"
-            ),
+            f"{compose} exec -T lgos-openwebui python -m lgos_openwebui.sync_functions",
         ]
     )
     assert log.read_text().splitlines() == expected
@@ -329,7 +318,7 @@ def test_chainlit_receives_only_its_configuration() -> None:
     assert "env_file:" not in compose
     for setting in (
         "CHAINLIT_AUTH_SECRET",
-        "DEMO_CHAINLIT_GATEWAY_API_KEY",
+        "OPENAI_GATEWAY_API_KEY",
         "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
         "DEMO_CHAINLIT_LOGIN_TYPE",
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
@@ -341,7 +330,6 @@ def test_chainlit_receives_only_its_configuration() -> None:
         "DEMO_OPENWEBUI_ADMIN_PASSWORD",
         "LANGFUSE_SECRET_KEY",
         "LITELLM_MASTER_KEY",
-        "OPENAI_GATEWAY_API_KEY",
     ):
         assert unrelated_secret not in compose
 

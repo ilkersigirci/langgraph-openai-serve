@@ -7,8 +7,8 @@ from openai import OpenAI
 from openai.types import Model
 
 from lgos_openwebui.functions.generic.gateway import gateway_config
+from lgos_openwebui.tool_servers import PUBLIC_READ_GRANT
 from lgos_openwebui.workspace_models import (
-    PUBLIC_READ_GRANT,
     WorkspaceModelSpec,
     chat_variable_fields,
     discover_workspace_model_specs,
@@ -172,7 +172,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
         lgos={
             "schema_version": 1,
             "description": "  Simple graph  ",
-            "features": ["file_inputs"],
+            "features": ["file_inputs", "mcp_tools"],
             "client_settings": {
                 "schema_version": 1,
                 "json_schema": {"properties": {"enabled": {"type": "boolean"}}},
@@ -248,6 +248,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
     ]
     for spec in specs:
         assert spec.description == "Simple graph"
+        assert spec.supports_mcp_tools is True
         assert spec.supports_file_inputs is True
     assert specs[0].fields == (
         {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": False},
@@ -423,6 +424,25 @@ def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
             "default": False,
         },
     ]
+
+
+def test_client_tool_model_selects_the_gateway_connection() -> None:
+    client = _client([])
+
+    sync_workspace_models(
+        client,
+        (
+            WorkspaceModelSpec(
+                id="lgos-a/database-assistant",
+                description="Database assistant",
+                fields=(),
+                supports_mcp_tools=True,
+            ),
+        ),
+    )
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
 
 
 def test_advanced_graph_workspace_model_has_only_web_search() -> None:

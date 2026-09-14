@@ -22,7 +22,6 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     create_model,
 )
-from lgos_demo_api.graphs.advanced_mcp import advanced_mcp_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
@@ -33,6 +32,8 @@ from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph_config,
 )
 from lgos_demo_api.graphs.lgos_rag import lgos_rag_graph_config
+from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph_config
+from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph_config
 from lgos_demo_api.graphs.multi_node_streaming import (
     multi_node_streaming_graph_config,
 )
@@ -161,7 +162,8 @@ def create_custom_app() -> FastAPI:
             "server-tool": server_tool_graph_config,
             "lgos-rag": lgos_rag_graph_config,
             "custom-input-output-context": custom_io_graph_config,
-            "advanced-mcp-tools": advanced_mcp_graph_config,
+            "mcp-mock": mcp_mock_graph_config,
+            "mcp-postgres": mcp_postgres_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "multi-node-streaming": multi_node_streaming_graph_config,
             "custom-event-showcase": custom_event_showcase_graph_config,

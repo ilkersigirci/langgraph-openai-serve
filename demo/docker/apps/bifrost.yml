@@ -2,7 +2,7 @@ services:
   lgos-bifrost:
     container_name: lgos-bifrost
     profiles: [bifrost]
-    image: maximhq/bifrost:v2.0.0@sha256:cf71be9fad4e0749b6e26cbb774c687413dad9a0970b83f4e1dadb6f503ea208
+    image: maximhq/bifrost:v2.1.1@sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
@@ -22,6 +22,8 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
+      lgos-postgres-mcp:
+        condition: service_healthy
       lgos-demo-api-a:
         condition: service_healthy
       lgos-demo-api-b:
@@ -47,8 +49,32 @@ services:
       APP_PORT: 4000
       LOG_LEVEL: info
       LOG_STYLE: json
+      BIFROST_DEMO_VIRTUAL_KEY: $OPENAI_GATEWAY_API_KEY
+      LGOS_MCP_AUTH_HEADER: Bearer $LGOS_MCP_AUTH_TOKEN
+    # Bifrost 2.1.1 reconciles file-defined Virtual MCPs before file-defined
+    # virtual keys on first boot. Repeat the idempotent assignment once its API
+    # is ready, then keep the service unhealthy until the assignment is visible.
+    post_start:
+      - command:
+          - sh
+          - -ec
+          - |
+            attempt=0
+            until wget --quiet --tries=1 --timeout=2 \
+              --output-document=/dev/null --post-data='' \
+              http://localhost:4000/api/mcp/virtual-mcps/1/virtual-keys/lgos-demo
+            do
+              attempt=$$((attempt + 1))
+              [ "$$attempt" -lt 30 ] || exit 1
+              sleep 1
+            done
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:4000/health"]
+      test:
+        - CMD-SHELL
+        - >-
+          wget --quiet --tries=1 --output-document=/dev/null http://localhost:4000/health &&
+          wget --quiet --tries=1 --output-document=- http://localhost:4000/api/mcp/virtual-mcps/1 |
+          grep -q '"lgos-demo"'
       interval: 5s
       timeout: 5s
       retries: 10
