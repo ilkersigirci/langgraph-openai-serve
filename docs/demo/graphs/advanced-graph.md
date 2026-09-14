@@ -1,156 +1,54 @@
 # Advanced Graph
 
-`advanced-graph` is the demo's production-style, all-in-one, model-backed
-chatbot. Use it like a normal assistant: chat, ask it to reason or write, attach
-a file, query live data through gateway-provided MCP tools, request source-backed
-research, or explicitly ask it to remember something. The graph routes only the
-turns that need research or durable storage into small LangGraph subgraphs. Its
-implementation is an explicit `StateGraph` with ordinary nodes, not a prebuilt
-`create_agent` loop.
+`advanced-graph` is the demo's production showcase: one real model-backed
+assistant that combines normal chat, file understanding, gateway MCP tools,
+source-backed research, streaming progress, and reviewed durable knowledge.
+It uses an explicit LangGraph `StateGraph` so routing, side effects, and
+persistence boundaries remain visible.
+Other demo graphs isolate individual mechanisms; this graph shows how those
+mechanisms compose without changing the OpenAI-facing contract.
 
-Clients call it as the model `advanced-graph` through `POST /v1/responses`.
-This model does not support Chat Completions or a graph-specific request
-envelope. Its upstream model calls also use the Responses API, and all searches
-and writes use real configured services rather than fixtures or mock results.
+Clients use it as the model `advanced-graph` through `POST /v1/responses`.
+There is no graph-specific request envelope, and the graph is not available
+through Chat Completions because its interrupt workflow requires Responses.
+Its upstream model calls also use the Responses API with `store=false`.
 
-## At A Glance
+The model advertises four LGOS capabilities:
 
-The intent router chooses one of four paths from the user's latest request:
+- `client_events` for streaming status commentary;
+- `file_inputs` for Files API attachments;
+- `interrupts` for review and resume;
+- `mcp_tools` so maintained UIs attach tools authorized by their selected
+  gateway.
 
-| What the user asks for | Intent | Graph path |
+These capabilities describe the client contract. They do not add a graph-side
+connection to a UI, gateway, or MCP server.
+
+## Workflows
+
+The router classifies the latest user request into one of four explicit paths:
+
+| User intent | Path | Result |
 | --- | --- | --- |
-| Conversation, reasoning, writing, coding, attached-file Q&A, or client tools | `chat` | Answer directly or return a tool call |
-| Current, externally verified, cited, or shared-knowledge information | `research` | Select and search sources, then answer |
-| “Remember,” “save,” or “add this to shared knowledge” | `save` | Draft a note, pause for review, then save or discard it |
-| Research followed by durable storage | `research_and_save` | Run research, then the same reviewed save flow |
+| Conversation, reasoning, writing, coding, file Q&A, or client tools | `chat` | Answer directly or return a client-owned function call |
+| Current public facts or shared knowledge | `research` | Select available sources, search, then answer from evidence |
+| Explicitly remember or save information | `save` | Draft a Markdown note and pause before writing it |
+| Research and then remember the result | `research_and_save` | Research first, then run the same reviewed save workflow |
 
-The intent is internal graph state, not a request field that clients set.
-Normal chat is the default. Enabling Web search only makes it available; it
-does not turn every message into a research request. Likewise, the graph never
-saves information merely because it may be useful later—the user must ask.
+Chat is the default. Making Web search available does not force research, and
+the graph never infers a save merely because information could be useful later.
+The user must ask for persistence explicitly.
 
-## Quick Tour
+OpenAI `tool_choice` remains authoritative:
 
-After configuring `demo/.env`, start the [complete demo stack](../docker.md#compose-modes)
-with `just demo/compose --dev`. Select `lgos-a/advanced-graph` in Chainlit or
-**LGOS / lgos-a/advanced-graph** in Open WebUI, then try these in order:
-
-| Feature | What to do | What to expect |
-| --- | --- | --- |
-| Generic chat | Ask `Explain why idempotency matters in two short paragraphs.` | A normal streamed answer; no research, write, or synthetic status |
-| Gateway MCP | In Chainlit, connect `lgos-gateway`; then ask `How many Chainlit users do I have? How many conversations does each of them have?` | The UI executes read-only reports through the selected gateway, then returns their evidence to the graph |
-| File understanding | Attach a text or Markdown file, then ask `Summarize the attached file and repeat every identifier marked IMPORTANT exactly.` | The UI uploads the file to the central Files API; the graph reads it by `file_id` |
-| Web search, status, and citations | Enable **Web search**, then ask `Search the current official LangGraph documentation for interrupt durability. Summarize it and cite the exact source URL.` | Live search status, a server-side search, and clickable citations |
-| Subgraphs and human review | Keep Web search enabled and ask `Research the official LangGraph interrupt guidance, then save a concise cited note to shared knowledge. Ask me before writing.` | Research runs first, then an approval card shows the exact proposed note |
-| Revision and persistence | Enter feedback such as `Keep only the durability rule and its source URL.`, then approve the revised note | Another review appears before the approved bytes are indexed |
-| Knowledge retrieval | Ask `What does shared knowledge say about LangGraph interrupt durability?` | The research subgraph searches the saved note and cites its `[K#]`, filename, and file ID |
-
-Choose **Reject** on any review to prove that the graph writes nothing before
-approval. The [Python examples](#try-it) cover client-owned function calls and
-native refusal or incomplete outcomes, which are less convenient to exercise
-from a chat UI. UI-specific upload and review behavior remains documented in
-[Chainlit](../chainlit.md) and [Open WebUI](../open-webui.md).
-
-## Configuration
-
-The capabilities use independent services. Configure the rows you plan to
-exercise:
-
-| Capability | Required service |
-| --- | --- |
-| All requests | Responses-capable model and the demo PostgreSQL runtime |
-| Gateway MCP tools | Selected gateway with its configured MCP servers |
-| Attached-file Q&A | Central OpenAI-compatible Files API |
-| Public research | Configured HTTP search endpoint or upstream Responses web search |
-| Shared-knowledge search and saving | OpenAI-compatible Files and vector-store service plus a vector-store ID |
-
-??? info "Complete advanced-graph settings"
-
-    Configure these values in `demo/.env`:
-
-    ```dotenv
-    DEMO_API_OPENAI_BASE_URL=https://api.openai.com/v1
-    DEMO_API_OPENAI_API_KEY=...
-    DEMO_API_OPENAI_MODEL=gpt-5.4-mini
-
-    DEMO_API_FILES_BASE_URL=http://localhost:3006/v1
-
-    DEMO_API_WEB_SEARCH_BACKEND=http
-    DEMO_API_WEB_SEARCH_URL=https://searxng.example.com/search
-
-    DEMO_API_VECTOR_STORE_BASE_URL=https://api.openai.com/v1
-    DEMO_API_VECTOR_STORE_API_KEY=...
-    DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME=
-    DEMO_API_VECTOR_STORE_ID=vs_...
-    ```
-
-    Set `DEMO_API_WEB_SEARCH_BACKEND=openai` to use the upstream model's native
-    Responses web-search tool; `DEMO_API_WEB_SEARCH_URL` is then unused. The
-    `http` backend accepts the configured SearXNG- or Degoog-compatible JSON
-    endpoint.
-
-    If `DEMO_API_VECTOR_STORE_BASE_URL` is blank, the adapter reuses the model
-    endpoint and key. If it is set, the adapter uses its own key or `DUMMY` when
-    that key is blank. `DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` is needed only
-    when a Bifrost passthrough must pin stateful requests to one managed key.
-
-Without `DEMO_API_VECTOR_STORE_ID`, chat, file input, and web search continue to
-work. Knowledge search is unavailable, and a save request clearly reports that
-nothing was stored. See [Run The Demo API](../api.md#start-postgresql-and-the-api)
-for setup, or start the complete stack with `just demo/compose --dev`.
-
-## Request Flow
-
-One request moves through the graph as follows:
-
-1. LGOS validates `POST /v1/responses`, converts the standard input items to
-   LangChain messages, and places request tools and tool choice in runtime
-   context.
-2. `route_intent` uses a private structured model call to classify the latest
-   turn. It sees recent conversation text and an attachment marker, not the
-   downloaded file bytes.
-3. `chat` goes to `answer`. `research` enters the research subgraph, where the
-   model selects from the sources actually available for this request.
-   `save` enters the notebook subgraph, and `research_and_save` runs both.
-4. File content is resolved from the central Files API only inside a model node
-   that needs it. Research uses LangGraph's `ToolNode`; saving uses
-   `interrupt()` before any upload.
-5. The `answer` node produces the only streamed answer tokens. LGOS maps the
-   graph result, tool activity, status, citations, and terminal outcome back to
-   standard Responses items and events.
-
-`tool_choice` remains authoritative. `none` disables searches and client
-functions; `required` with the public Web-search tool forces the research path;
-a named client function forces the answer path. Client functions are returned
-to the caller to execute—they never run inside this graph.
-
-The `mcp_tools` capability tells maintained UIs to attach tools discovered from
-their selected gateway. The graph treats those schemas like any other
-client-owned function: it can request a call and consume the returned evidence,
-but it never opens an MCP connection or handles gateway credentials.
-
-### What The Client Sees
-
-| Graph behavior | Responses representation |
-| --- | --- |
-| Progress such as source selection or indexing | Streaming message with `phase="commentary"` |
-| Chatbot answer | Message with `phase="final_answer"`; token deltas come only from `answer` |
-| Public search | `web_search_call` plus `url_citation` annotations on supported answer text |
-| Client function, MCP tool, or human review | `function_call`; the next request sends matching `function_call_output` items |
-| Model refusal | Native `refusal` message content |
-| Output limit reached | `status="incomplete"` with `incomplete_details` |
-
-The OpenAI SDK's `response.output_text` convenience property can concatenate
-commentary and final text. Streaming clients should use each message's `phase`,
-as the helper in [Try It](#try-it) does. Plain chat emits no commentary;
-statuses are reserved for work with a meaningful intermediate state, such as
-searching, preparing a review, saving, or indexing.
+- a named client function selects the chat path;
+- `required` with Web search available selects the research path;
+- `none` disables client functions and both public and private search.
 
 ## LangGraph Topology
 
-Generated from the compiled graph with
-`get_graph(xray=True).draw_mermaid(with_styles=False)`. Mermaid-unsafe qualified
-node IDs are aliased below; labels preserve LangGraph's names.
+This is the compiled graph's native `xray=True` topology. Qualified node IDs
+are aliased only where Mermaid cannot render them safely.
 
 ```mermaid
 graph TD
@@ -196,259 +94,375 @@ graph TD
     end
 ```
 
-## Storage Boundaries
+The research subgraph makes one source-selection pass, executes the returned
+calls, and exits without a tool loop. The notebook subgraph keeps every
+mutation after review: feedback returns to `draft`, reject ends without a
+write, and approval alone reaches `save`.
 
-The graph deliberately separates conversation state, file transport, paused
-execution, and durable knowledge:
+## Request Flow
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant UI as Chainlit / Open WebUI
+  participant Gateway as Selected gateway
+  participant LGOS as LGOS / advanced-graph
+  participant Model as Responses model
+  participant Services as State and data services
+
+  User->>UI: Prompt + optional attachment
+  UI->>Gateway: Responses input + enabled tools
+  Gateway->>LGOS: OpenAI-compatible request
+  LGOS->>Model: Classify unless tool_choice fixes the path
+
+  alt chat
+    LGOS->>Services: Resolve an attachment when present
+    LGOS->>Model: Answer or request a client tool
+  else research
+    LGOS->>Model: Select from available sources
+    LGOS->>Services: Run Web and/or knowledge search
+    LGOS->>Model: Answer from returned evidence
+  else save or research_and_save
+    opt research first
+      LGOS->>Services: Run selected searches
+    end
+    LGOS->>Model: Draft exact Markdown
+    LGOS->>Services: Checkpoint before review
+    LGOS-->>Gateway: Paused Response with lgos_interrupt
+    Gateway-->>UI: Review request
+    User->>UI: Approve, reject, or request a revision
+    UI->>Gateway: previous_response_id + function_call_output
+    Gateway->>LGOS: Resume checkpointed workflow
+    alt approve
+      LGOS->>Services: Record receipt, upload, and index
+    else request a revision
+      LGOS->>Model: Redraft
+      LGOS->>Services: Checkpoint the next review
+    else reject
+      LGOS->>LGOS: Finish without writing
+    end
+  end
+
+  LGOS-->>Gateway: Standard Response
+  Gateway-->>UI: Answer or requested action
+```
+
+For each initial request:
+
+1. LGOS validates the standard Responses request, converts input items to
+   LangChain messages, and supplies normalized tools and `tool_choice` as
+   request-scoped context.
+2. `route_intent` first honors a forced `tool_choice`; otherwise it classifies
+   recent conversation text plus an attachment marker. It does not download
+   attachment bytes.
+3. The selected path runs. Files are resolved only inside a model node that
+   needs them; research and note drafting remain private, non-streaming model
+   steps.
+4. `answer` is the only token-streaming node. Research and notebook work can
+   emit validated status events, which LGOS exposes as commentary.
+5. LGOS maps the result to standard Responses messages, tool calls, citations,
+   terminal status, or an interrupt continuation.
+
+### Tool Ownership
+
+The showcase deliberately exercises different tool lifecycles without hiding
+them behind one agent loop:
+
+| Tool or action | Execution owner | Continuation |
+| --- | --- | --- |
+| Gateway MCP or another client function | Calling UI or client | LGOS returns `function_call`; the client executes it and sends `function_call_output` in a new request |
+| Public `web_search` | Graph API | The research subgraph executes it and returns `web_search_call` in the same Response |
+| Private `knowledge_search` | Research subgraph | It is selected and executed internally; clients never send or receive its tool definition |
+| `lgos_interrupt` review | Graph and client | The graph checkpoints the pause; the client resumes it with `previous_response_id` and `function_call_output` |
+
+MCP discovery, credentials, and execution stay in the UI and gateway. The
+graph receives ordinary client function schemas and treats returned values as
+untrusted evidence. It does not know which MCP server supplied a tool. See
+[PostgreSQL Through Native MCP](mcp-postgres.md) for the specialized,
+allowlisted database example.
+
+Public and private searches are chosen in one selection step before either
+result returns, so private knowledge results cannot shape that run's public
+query. The selector is also instructed not to put private document text,
+credentials, or personal data into a Web search query. This is model guidance,
+not an authorization boundary.
+
+## Persistence And Ownership
 
 | Data | Source of truth | Lifetime |
 | --- | --- | --- |
-| Completed conversation ledger | Calling client or UI | Defined by the client |
-| User attachments | Configured central Files API | Defined by that service |
-| MCP discovery and execution | Client UI and selected gateway | UI session and gateway configuration |
-| Pending review and resume position | PostgreSQL LangGraph checkpointer | Across API restarts |
-| Approved note contents and vector index | Configured OpenAI-compatible vector service | Until deleted there |
-| Upload ID, digest, and indexing status | PostgreSQL LangGraph Store | Durable save receipt |
-| Upstream model Response | Not retained (`store=false`) | One upstream call |
+| Conversation and rendered UI elements | Chainlit or Open WebUI | Defined by the client |
+| MCP server catalog and authorization | Selected gateway | Gateway configuration and credential grant |
+| MCP client session and execution | Chainlit or Open WebUI | UI session |
+| User attachment | Central Files API | Defined by the Files service |
+| Pending note review and resume position | LangGraph PostgreSQL checkpointer | Across API restarts until terminal cleanup |
+| Approved note and searchable content | Configured Files and vector-store service | Until removed from that service |
+| Save receipt: digest, file ID, and index status | LangGraph PostgreSQL Store | Durable application record |
+| Same-run coordination lease | PostgreSQL run coordinator | One initial or resume request |
+| Each upstream model Response | Not retained (`store=false`) | One model call |
 
-For ordinary chat, the client replays its conversation ledger. Only a paused
-human-review turn uses `previous_response_id` to find its checkpoint. A file
-attachment stays in the Files API: the graph checkpoints its opaque `file_id`
-and resolves bytes only when a model node needs them. Attaching a file never
-adds it to shared knowledge; that requires a separate, explicit, reviewed save.
+Completed conversations remain stateless at LGOS: the client replays the input
+ledger needed for another turn. `previous_response_id` is reserved for resuming
+a paused review; it is not conversation storage. See
+[Stateless item continuation](../../explanation/openai-compatibility.md#stateless-item-continuation)
+for the shared wire contract.
 
-The checkpointer stores graph execution snapshots; the LangGraph Store holds
-small application records outside that state. The graph talks to durable
-knowledge through a small `KnowledgeBase` interface (`vector_store_id`,
-`search`, `upload`, and `index`). Its included adapter uses OpenAI-compatible
-Files and vector-store endpoints, with credentials independent from the model
-provider. Another compatible service can replace it without changing the graph
-or the public Responses contract.
+The run coordinator holds a lease only while an initial or resume request is
+executing, not while a person reviews the note. Competing work for the same
+paused run is rejected; unrelated runs remain independent. Terminal execution
+cleans up its checkpoint.
 
-??? warning "Production storage and failure details"
+Attachments remain opaque Files API IDs in checkpoint state and are resolved
+only when needed. Attaching a file does not add it to shared knowledge. A save
+request drafts the exact Markdown first, then:
 
-    The LangGraph Store holds only a receipt, not a second copy of the note. The
-    receipt prevents an automatic duplicate upload after an uncertain failure.
-    A note is reported as searchable only after indexing completes; a bounded
-    wait otherwise reports it as uploaded but not yet searchable.
+1. review pauses before any upload;
+2. feedback redrafts under the same note identity and pauses again;
+3. reject completes without uploading;
+4. approve records a content digest, uploads the approved bytes, and indexes
+   the resulting file;
+5. an uncertain upload is not repeated blindly on retry.
 
-    The configured vector store is a shared workspace, not an authorization
-    boundary. Production deployments must add authentication, tenant isolation,
-    retention, and deletion appropriate to their data. Retrieved snippets and
-    attached-file contents are sent to the configured model provider as context.
-    Source selection happens before search results return, so private results
-    cannot influence that run's public query.
+The Store keeps only the receipt, not another copy of the note. Indexing is
+bounded; if it does not complete, the final answer reports the non-indexed
+status instead of claiming that the note is searchable.
 
-See the official OpenAI-compatible endpoint shapes for
-[file search](https://developers.openai.com/api/docs/guides/tools-file-search)
-and [vector-store search](https://developers.openai.com/api/reference/resources/vector_stores/methods/search),
-and LangGraph's guidance for
-[graphs](https://docs.langchain.com/oss/python/langgraph/graph-api),
-[subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs),
+!!! warning "Shared knowledge is not an authorization boundary"
+
+    The configured vector store is shared. A production deployment must add
+    authenticated tenant isolation, authorization, retention, and deletion at
+    the application and storage boundaries. Caller-provided IDs are
+    correlation values, not proof of identity. Attachment and retrieved
+    contents are sent to the configured model as context.
+
+## Output And Failure Behavior
+
+| Graph behavior | Responses representation |
+| --- | --- |
+| Streamed progress | Completed message with `phase="commentary"` |
+| Assistant answer | Message with `phase="final_answer"`; token deltas come only from `answer` |
+| Supported public citation | `url_citation` annotation whose URL came from Web search output |
+| Client tool or review request | `function_call` |
+| Provider refusal | Native `refusal` content |
+| Provider output limit or filtering | `status="incomplete"` with `incomplete_details` |
+
+Plain chat emits no synthetic commentary. If no research tool runs, the answer
+states that no external source returned evidence. If shared knowledge is not
+configured, chat, attachments, Web search, and client tools continue to work,
+while knowledge search is omitted and save requests report that nothing was
+stored. Provider and transport failures remain errors rather than being
+rewritten as refusals or incomplete responses.
+
+Web citations are added only when an answer uses an exact URL returned by the
+configured search tool. Private results use their `[K#]` label, filename, and
+file ID in text instead of pretending to be public URL citations. See
+[Citation ownership](../../explanation/openai-compatibility.md#citation-ownership)
+and [Responses output](../../explanation/openai-compatibility.md#responses-output)
+for the shared API rules.
+
+## Dependencies
+
+| Path | Required service |
+| --- | --- |
+| Every request | Responses-capable upstream model and demo PostgreSQL runtime |
+| File understanding | Central OpenAI-compatible Files API |
+| MCP tools | Selected gateway with an MCP server authorized for the UI credential |
+| Public research | Configured HTTP search endpoint or upstream Responses Web search |
+| Shared-knowledge read and write | OpenAI-compatible Files and vector-store service plus a vector-store ID |
+
+??? example "Relevant `demo/.env` values"
+
+    Start from the checked-in `demo/.env.example`. These are the values users
+    typically choose for the complete `advanced-graph` showcase:
+
+    ```dotenv
+    LGOS_GATEWAY_PORT=3000
+    OPENAI_GATEWAY_TYPE=bifrost
+    OPENAI_GATEWAY_API_KEY=sk-bf-replace-me
+
+    DEMO_API_OPENAI_BASE_URL=https://api.openai.com/v1
+    DEMO_API_OPENAI_API_KEY=replace-me
+    DEMO_API_OPENAI_MODEL=gpt-5.4-mini
+    DEMO_API_WEB_SEARCH_BACKEND=openai
+
+    DEMO_API_VECTOR_STORE_BASE_URL=
+    DEMO_API_VECTOR_STORE_API_KEY=
+    DEMO_API_VECTOR_STORE_ID=vs_replace_me
+    ```
+
+    Set `OPENAI_GATEWAY_TYPE=litellm` to use LiteLLM with the same gateway
+    credential. A blank vector-store ID disables only shared-knowledge search
+    and saving. The full [settings reference](../reference.md#demo-api-settings)
+    covers a separate vector provider and the HTTP search backend.
+
+The graph depends on a small knowledge interface for search, upload, and
+indexing. The included adapter uses OpenAI-compatible Files and vector-store
+endpoints; another compatible implementation can replace it without changing
+the graph or public Responses contract.
+
+Complete defaults and startup instructions remain in their canonical owners:
+[Docker Compose](../docker.md#compose-modes), the
+[Demo API settings](../reference.md#demo-api-settings), and the [graph
+dependency matrix](index.md). The graph follows LangGraph's documented
+[StateGraph](https://docs.langchain.com/oss/python/langgraph/graph-api),
+[subgraph](https://docs.langchain.com/oss/python/langgraph/use-subgraphs),
 [persistence](https://docs.langchain.com/oss/python/langgraph/persistence), and
-[interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts).
+[interrupt](https://docs.langchain.com/oss/python/langgraph/interrupts)
+semantics.
 
 ## Try It
 
-These Python examples expose the same `POST /v1/responses` behavior as the UI
-tour. Copy the shared setup once, then expand only the feature you want to test.
-The direct demo keeps the graph API and Files API independently addressable;
-the maintained UIs route both through the configured gateway automatically.
+With the [complete demo stack](../docker.md#demo-services) running, use either
+maintained UI:
 
-??? example "Shared Python setup"
+=== "Chainlit"
 
-    The helper prints commentary as status and streams only the final answer.
-    It also keeps prior output items in the wire form accepted on a later turn.
+    Open `http://localhost:3002` and select `lgos-a/advanced-graph` or
+    `lgos-b/advanced-graph`. Enable **Web search** for public research. Before
+    the MCP prompt, open the MCP menu and click **Connect** beside
+    `lgos-gateway`.
+
+=== "Open WebUI"
+
+    Open `http://localhost:3003` and select
+    **LGOS / lgos-a/advanced-graph** or **LGOS / lgos-b/advanced-graph**.
+    Enable the **Web search** Chat Variable for public research. The gateway MCP
+    connection is already attached to the generated Workspace Model.
+
+Try these paths:
+
+| Path | Prompt or action | Expected behavior |
+| --- | --- | --- |
+| Chat | `Explain why idempotency matters in two short paragraphs.` | A normal streamed answer without research status |
+| Gateway MCP | `How many Chainlit users do I have? How many conversations does each of them have?` | The UI executes read-only reports through the selected gateway and returns the evidence to the graph |
+| File understanding | Attach a text or Markdown file, then ask `Summarize this file and repeat every identifier marked IMPORTANT exactly.` | The graph reads the attachment through its Files API ID |
+| Public research | `Search the current official LangGraph documentation for interrupt durability. Summarize it and cite the exact source URL.` | Source-selection and search status followed by a cited answer |
+| Research and review | `Research the official LangGraph interrupt guidance, then save a concise cited note to shared knowledge. Ask me before writing.` | Research runs, then an approval card shows the exact proposed note |
+| Revision | Enter `Keep only the durability rule and its source URL.` | The graph redrafts and asks for approval again without writing |
+| Persistence | Approve the revision, then ask `What does shared knowledge say about LangGraph interrupt durability?` | The approved bytes are indexed and a later turn can retrieve them |
+
+Choose **Reject** at review to verify that no note is uploaded. UI-specific
+upload, MCP, and interrupt rendering details belong to the
+[Chainlit](../chainlit.md) and [Open WebUI](../open-webui.md) guides.
+
+### Python SDK
+
+These examples use the bundled LiteLLM gateway to keep the demo focused on one
+runnable path. Start the stack with `OPENAI_GATEWAY_TYPE=litellm`. Bifrost can
+serve the same graph, but its native routing details are kept in the
+[Bifrost gateway guide](../bifrost.md).
+
+Every tab reuses one OpenAI client and the same gateway credential as the UIs.
+
+```python title="LiteLLM gateway setup"
+import json
+import os
+
+from openai import OpenAI
+
+gateway_url = f"http://localhost:{os.getenv('LGOS_GATEWAY_PORT', '3000')}/v1"
+client = OpenAI(
+    base_url=gateway_url,
+    api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
+)
+model = "lgos-a/advanced-graph"
+files_query = {"provider": "litellm_proxy"}
+
+
+def respond(input_items, **options):
+    return client.responses.create(
+        model=model,
+        input=input_items,
+        store=False,
+        **options,
+    )
+```
+
+These calls use standard Responses and Files fields. They do not create an MCP
+session; use Chainlit or Open WebUI for native gateway MCP. The client-function
+tab shows the same function-call continuation those UIs use after executing an
+MCP tool.
+
+=== "Chat"
 
     ```python
-    import json
-
-    from openai import OpenAI
-
-    MODEL = "advanced-graph"
-    WEB_SEARCH = [{"type": "web_search"}]
-
-    client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
-    files = OpenAI(base_url="http://localhost:3006/v1", api_key="DUMMY")
-
-
-    def run(input_items, **options):
-        """Stream final text, show commentary statuses, and return the Response."""
-        phases = {}
-        with client.responses.stream(
-            model=MODEL,
-            input=input_items,
-            store=False,
-            **options,
-        ) as stream:
-            for event in stream:
-                if (
-                    event.type == "response.output_item.added"
-                    and event.item.type == "message"
-                ):
-                    phases[event.output_index] = event.item.phase
-                elif (
-                    event.type == "response.output_text.delta"
-                    and phases.get(event.output_index) == "final_answer"
-                ):
-                    print(event.delta, end="", flush=True)
-                elif (
-                    event.type == "response.output_text.done"
-                    and phases.get(event.output_index) == "commentary"
-                ):
-                    print(f"\n[status] {event.text}")
-            response = stream.get_final_response()
-        print(f"\n[{response.status}]")
-        return response
-
-
-    def replay(response):
-        """Keep the stateless input ledger required for a later chat turn."""
-        items = []
-        for item in response.output:
-            value = item.model_dump(mode="json", exclude_none=True)
-            value.pop("parsed_arguments", None)  # SDK-only streaming convenience field
-            items.append(value)
-        return items
-
-
-    def url_citations(response):
-        return [
-            annotation.url
-            for item in response.output
-            if item.type == "message"
-            for part in item.content
-            if part.type == "output_text"
-            for annotation in part.annotations
-            if annotation.type == "url_citation"
-        ]
+    response = respond("Explain why idempotency matters in two short paragraphs.")
+    print(response.output_text)
     ```
 
-### Generic Chat And Intent Routing
-
-Supplying Web search makes it available but does not force an ordinary request
-through research. LGOS is stateless after a completed response, so the client
-owns the conversation ledger and replays prior output on the next turn.
-
-??? example "Run a two-turn chat"
+=== "File input"
 
     ```python
-    history = [
-        {
-            "role": "user",
-            "content": "Compare Python lists and tuples in three concise bullets.",
-        }
-    ]
-    first = run(history, tools=WEB_SEARCH)
-
-    history.extend(replay(first))
-    history.append({"role": "user", "content": "Now show one short example of each."})
-    second = run(history, tools=WEB_SEARCH)
-    ```
-
-Use `tool_choice="none"` with the same request to disable both public and
-private search. Use `previous_response_id` only for the paused HITL continuation
-shown below, not for ordinary chat history.
-
-### File Input
-
-Upload once to the configured Files API and send only its opaque ID to the
-Responses endpoint. The graph downloads the file only in a node that needs its
-contents and does not copy its Base64 bytes into checkpoint state.
-
-??? example "Upload, ask, and delete"
-
-    ```python
-    uploaded = files.files.create(
+    uploaded = client.files.create(
         file=("brief.txt", b"The project marker is FILE_INPUT_OK."),
         purpose="user_data",
+        extra_query=files_query,
     )
     try:
-        result = run(
+        response = respond(
             [
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Summarize this file and repeat its marker exactly.",
-                        },
+                        {"type": "input_text", "text": "Summarize this file."},
                         {"type": "input_file", "file_id": uploaded.id},
                     ],
                 }
             ]
         )
+        print(response.output_text)
     finally:
-        files.files.delete(uploaded.id)
+        client.files.delete(uploaded.id, extra_query=files_query)
     ```
 
-Uploading a file does not add it to shared knowledge. Persistence always uses
-the separate reviewed flow.
-
-### Server-Side Web Search, Status, And Citations
-
-This request forces the registered server tool. The stream prints research
-statuses before answer tokens, and the final Response contains a
-`web_search_call` plus standard `url_citation` annotations when the backend
-returns a usable source.
-
-??? example "Force public Web search"
+=== "Web research"
 
     ```python
-    result = run(
-        "Search the current official LangGraph documentation for interrupts. "
-        "Explain interrupt() in one sentence and cite the exact source URL.",
-        tools=WEB_SEARCH,
+    response = respond(
+        "Find the current LangGraph interrupt guidance and cite it.",
+        tools=[{"type": "web_search"}],
         tool_choice="required",
     )
-    print("citations:", url_citations(result))
-    print("items:", [item.type for item in result.output])
+    citations = [
+        annotation.url
+        for item in response.output
+        if item.type == "message"
+        for part in item.content
+        if part.type == "output_text"
+        for annotation in part.annotations
+        if annotation.type == "url_citation"
+    ]
+    print(response.output_text)
+    print(citations)
     ```
 
-With the default `tool_choice="auto"`, the research subgraph can select public
-web search, private `knowledge_search`, or both. Private search remains an
-implementation detail; clients never send a non-standard file-search tool.
-
-### Client-Owned Function Tools
-
-The graph binds client function definitions to the answer model but never
-executes them. Execute the returned call locally, append its output to the same
-ledger, and resend the prior Response items in their accepted wire form.
-Maintained UIs use this same loop for gateway MCP tools; discovery, credentials,
-and execution remain outside LGOS. See the
-[`mcp-postgres` walkthrough](mcp-postgres.md#try-it) for UI prompts.
-
-??? example "Execute a client function and continue"
+=== "Client function"
 
     ```python
-    SUM_TOOL = [
-        {
-            "type": "function",
-            "name": "calculate_sum",
-            "description": "Add a list of integers.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "numbers": {"type": "array", "items": {"type": "integer"}}
-                },
-                "required": ["numbers"],
-                "additionalProperties": False,
+    tool = {
+        "type": "function",
+        "name": "calculate_sum",
+        "description": "Add a list of integers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "numbers": {"type": "array", "items": {"type": "integer"}}
             },
-            "strict": True,
-        }
-    ]
+            "required": ["numbers"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    }
     ledger = [{"role": "user", "content": "Add 12, 30, and 5."}]
-    called = run(
+    called = respond(
         ledger,
-        tools=SUM_TOOL,
+        tools=[tool],
         tool_choice={"type": "function", "name": "calculate_sum"},
     )
     call = next(item for item in called.output if item.type == "function_call")
     arguments = json.loads(call.arguments)
-    print("arguments:", arguments)
 
-    # The client owns and executes the function.
-    ledger.extend(replay(called))
+    ledger.extend(called.output)
     ledger.append(
         {
             "type": "function_call_output",
@@ -456,106 +470,33 @@ and execution remain outside LGOS. See the
             "output": json.dumps({"total": sum(arguments["numbers"])}),
         }
     )
-    completed = run(ledger, tools=SUM_TOOL)
+    completed = respond(ledger, tools=[tool])
+    print(completed.output_text)
     ```
 
-### HITL, Subgraphs, And Persistent Knowledge
-
-Human-in-the-loop (HITL) review is the point where the graph pauses for a user
-decision. This combined request traverses both subgraphs: research runs first,
-then the notebook drafts exact Markdown and returns `lgos_interrupt`. The pause
-is checkpointed, so the response can be resumed after an API restart. No note
-is uploaded before approval. Leave `tool_choice` at its default here so intent
-routing can select the combined path; `tool_choice="required"` deliberately
-forces the public Web-search path for that request.
-
-??? example "Research, revise, approve, and retrieve"
+=== "Reviewed save"
 
     ```python
-    def interrupt_calls(response):
-        return [
-            item
-            for item in response.output
-            if item.type == "function_call" and item.name == "lgos_interrupt"
-        ]
-
-
-    def resume_review(response, decision, **options):
-        calls = interrupt_calls(response)
-        return run(
-            [
-                {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": decision,
-                }
-                for call in calls
-            ],
-            previous_response_id=response.id,
-            **options,
-        )
-
-
-    pending = run(
-        "Research the official LangGraph interrupts page. Then save a concise "
-        "cited note to shared knowledge and ask me to approve it before writing.",
-        tools=WEB_SEARCH,
+    pending = respond("Remember this exact note: retries need idempotency keys.")
+    review = next(
+        item
+        for item in pending.output
+        if item.type == "function_call" and item.name == "lgos_interrupt"
     )
-    for call in interrupt_calls(pending):
-        print(json.dumps(json.loads(call.arguments), indent=2))
+    print(json.loads(review.arguments))
 
-    # Free text requests a revision and produces another interrupt.
-    pending = resume_review(
-        pending,
-        "Keep only the durability rule and its exact source URL.",
-        tools=WEB_SEARCH,
+    completed = respond(
+        [
+            {
+                "type": "function_call_output",
+                "call_id": review.call_id,
+                "output": "approve",  # Or "reject" or revision feedback.
+            }
+        ],
+        previous_response_id=pending.id,
     )
-
-    # Use "reject" here instead to finish without writing anything.
-    completed = resume_review(
-        pending,
-        "approve",
-        tools=WEB_SEARCH,
-    )
-
-    # A later request searches the indexed note through the private subgraph tool.
-    readback = run(
-        "What does shared knowledge say about LangGraph interrupt durability?"
-    )
+    print(completed.output_text)
     ```
 
-!!! warning "Approval writes durable shared data"
-
-    Run the approval example against a disposable vector store unless you want
-    to retain the note. The configured store is shared and is not a tenant or
-    authorization boundary.
-
-### Refusal And Incomplete Outcomes
-
-The graph does not use magic prompts or mock results to manufacture these
-outcomes. If any upstream model step returns refusal content or an incomplete
-status, LGOS preserves it in the final Response. Inspect every result rather
-than assuming `output_text` is present:
-
-??? example "Inspect terminal outcomes"
-
-    ```python
-    def inspect_outcome(response):
-        print("status:", response.status)
-        if response.incomplete_details is not None:
-            print("incomplete reason:", response.incomplete_details.reason)
-        for item in response.output:
-            if item.type != "message":
-                continue
-            for part in item.content:
-                if part.type == "refusal":
-                    print("refusal:", part.refusal)
-
-
-    inspect_outcome(result)
-    ```
-
-A refusal is message content and can accompany a completed Response; an
-incomplete run instead ends with `status="incomplete"` and
-`incomplete_details`. HTTP and provider failures remain errors rather than being
-rewritten as either outcome.
+For the complete client contract, including streaming commentary and terminal
+events, see [OpenAI Clients](../../tutorials/openai-clients.md).
