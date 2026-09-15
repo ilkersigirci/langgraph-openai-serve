@@ -392,6 +392,11 @@ compatibility for assistant text and client tool calling. It streams plain text
 `delta.content` chunks, ignores custom streaming events, and never selects
 server tools. Only interrupt-enabled models fail fast with HTTP 400.
 
+Chat message content is limited to strings, explicit `text` parts, and native
+`file` parts containing only `file.file_id`. Image and audio parts, inline file
+data or filenames, and prompt-cache fields are outside the supported subset and
+fail request validation.
+
 | Graph result | Responses | Chat Completions |
 | --- | --- | --- |
 | Assistant text | `final_answer` message | `delta.content` |

@@ -1,9 +1,8 @@
 """Request models for the supported Chat Completions subset."""
 
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal, TypeAlias
 
-from openai.types.chat import ChatCompletionContentPartParam
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,6 +18,12 @@ from langgraph_openai_serve.api.metadata import (
 )
 
 
+class _ChatRequestModel(BaseModel):
+    """Reject fields outside the supported Chat Completions subset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class Role(StrEnum):
     """Role options for chat messages."""
 
@@ -28,14 +33,14 @@ class Role(StrEnum):
     TOOL = "tool"
 
 
-class ToolCallFunction(BaseModel):
+class ToolCallFunction(_ChatRequestModel):
     """Model for a tool call function."""
 
     name: str
     arguments: str
 
 
-class ToolCall(BaseModel):
+class ToolCall(_ChatRequestModel):
     """Model for a tool call."""
 
     id: str
@@ -43,10 +48,34 @@ class ToolCall(BaseModel):
     function: ToolCallFunction
 
 
-ChatCompletionMessageContent = str | list[ChatCompletionContentPartParam]
+class ChatCompletionTextContentPart(_ChatRequestModel):
+    """One text part in a Chat Completions message."""
+
+    type: Literal["text"]
+    text: str
 
 
-class ChatCompletionRequestMessage(BaseModel):
+class ChatCompletionFileReference(_ChatRequestModel):
+    """One uploaded file selected by its opaque Files API ID."""
+
+    file_id: str
+
+
+class ChatCompletionFileContentPart(_ChatRequestModel):
+    """One native Chat Completions file-ID content part."""
+
+    type: Literal["file"]
+    file: ChatCompletionFileReference
+
+
+ChatCompletionContentPart: TypeAlias = Annotated[
+    ChatCompletionTextContentPart | ChatCompletionFileContentPart,
+    Field(discriminator="type"),
+]
+ChatCompletionMessageContent: TypeAlias = list[ChatCompletionContentPart] | str
+
+
+class ChatCompletionRequestMessage(_ChatRequestModel):
     """Model for a chat completion request message."""
 
     role: Role
@@ -54,11 +83,15 @@ class ChatCompletionRequestMessage(BaseModel):
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
-    # SDK assistant messages include this as null even for modern tool calls.
+    # SDK assistant messages serialize these nulls even when LGOS does not
+    # implement the corresponding output modality or deprecated function call.
+    refusal: None = None
+    annotations: None = None
+    audio: None = None
     function_call: None = None
 
 
-class FunctionDefinition(BaseModel):
+class FunctionDefinition(_ChatRequestModel):
     """Model for a function definition."""
 
     name: str
@@ -67,33 +100,31 @@ class FunctionDefinition(BaseModel):
     strict: bool | None = None
 
 
-class Tool(BaseModel):
+class Tool(_ChatRequestModel):
     """Model for a tool."""
 
     type: Literal["function"] = "function"
     function: FunctionDefinition
 
 
-class NamedToolChoiceFunction(BaseModel):
+class NamedToolChoiceFunction(_ChatRequestModel):
     """Function selected by a named Chat Completions tool choice."""
 
     name: str
 
 
-class NamedToolChoice(BaseModel):
+class NamedToolChoice(_ChatRequestModel):
     """Named function tool choice accepted by Chat Completions."""
 
     type: Literal["function"] = "function"
     function: NamedToolChoiceFunction
 
 
-ChatToolChoice = Literal["none", "auto", "required"] | NamedToolChoice
+ChatToolChoice = NamedToolChoice | Literal["none", "auto", "required"]
 
 
-class ChatCompletionRequest(BaseModel):
+class ChatCompletionRequest(_ChatRequestModel):
     """Model for a chat completion request."""
-
-    model_config = ConfigDict(extra="forbid")
 
     model: str
     messages: list[ChatCompletionRequestMessage] = Field(min_length=1)
@@ -117,7 +148,7 @@ class ChatCompletionRequest(BaseModel):
         return self
 
 
-class ChatCompletionStreamOptions(BaseModel):
+class ChatCompletionStreamOptions(_ChatRequestModel):
     """Options that affect Chat Completions streaming."""
 
     include_usage: bool | None = False

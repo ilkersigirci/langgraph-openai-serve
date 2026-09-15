@@ -47,6 +47,47 @@ async def test_message_content_parts_are_accepted(
     assert response.choices[0].message.content == "hello"
 
 
+@pytest.mark.parametrize(
+    "content_part",
+    [
+        pytest.param(
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://example.com/image.png"},
+            },
+            id="image",
+        ),
+        pytest.param(
+            {
+                "type": "input_audio",
+                "input_audio": {"data": "AA==", "format": "wav"},
+            },
+            id="audio",
+        ),
+    ],
+)
+async def test_undocumented_chat_content_parts_are_rejected(
+    openai_client: AsyncOpenAI,
+    content_part: dict[str, object],
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/chat/completions",
+            cast_to=object,
+            body={
+                "model": "test",
+                "messages": [{"role": "user", "content": [content_part]}],
+            },
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"].startswith("messages.0.content")
+    assert error["code"] is None
+
+
 async def test_sdk_assistant_message_can_be_replayed_unchanged(
     openai_client: AsyncOpenAI,
 ) -> None:

@@ -142,6 +142,41 @@ async def test_openai_api_schema_describes_mounted_api(
     assert schema["servers"] == [{"url": "/v1"}]
     stream_options = schema["components"]["schemas"]["ChatCompletionStreamOptions"]
     assert set(stream_options["properties"]) == {"include_usage"}
+    strict_nested_request_schemas = {
+        "ChatCompletionFileContentPart",
+        "ChatCompletionFileReference",
+        "ChatCompletionRequestMessage",
+        "ChatCompletionStreamOptions",
+        "ChatCompletionTextContentPart",
+        "FunctionDefinition",
+        "NamedToolChoice",
+        "NamedToolChoiceFunction",
+        "ResponseCustomToolCallInput",
+        "ResponseCustomToolCallOutputInput",
+        "ResponseURLCitationInput",
+        "ResponseWebSearchActionInput",
+        "ResponseWebSearchCallInput",
+        "Tool",
+        "ToolCall",
+        "ToolCallFunction",
+    }
+    components = schema["components"]["schemas"]
+    assert all(
+        components[name]["additionalProperties"] is False
+        for name in strict_nested_request_schemas
+    )
+
+    message_content = components["ChatCompletionRequestMessage"]["properties"][
+        "content"
+    ]
+    content_parts = next(
+        option for option in message_content["anyOf"] if option.get("type") == "array"
+    )
+    assert set(content_parts["items"]["discriminator"]["mapping"]) == {
+        "file",
+        "text",
+    }
+    assert set(components["ChatCompletionFileReference"]["properties"]) == {"file_id"}
 
 
 def test_openai_api_prefix_settings_normalizes_trailing_slash() -> None:

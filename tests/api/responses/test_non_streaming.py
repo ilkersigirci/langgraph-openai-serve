@@ -5,9 +5,21 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     SystemMessage,
+    ToolMessage,
 )
 from langgraph.graph import StateGraph
 from openai import AsyncOpenAI, BadRequestError, InternalServerError
+from openai.types.responses import (
+    ResponseCustomToolCall,
+    ResponseCustomToolCallOutputItem,
+    ResponseFunctionToolCall,
+    ResponseFunctionToolCallOutputItem,
+    ResponseFunctionWebSearch,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
+from openai.types.responses.response_function_web_search import ActionSearch
+from openai.types.responses.response_output_text import AnnotationURLCitation
 from starlette import status
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry, GraphRequest
@@ -383,6 +395,134 @@ async def test_replayed_citations_and_phase_reach_langchain_content(
     )
 
 
+async def test_locked_sdk_output_objects_can_be_replayed_unchanged(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    received: list[BaseMessage] = []
+
+    def capture(
+        _request: GraphRequest, messages: list[BaseMessage]
+    ) -> dict[str, list[BaseMessage]]:
+        received.extend(messages)
+        return {"messages": messages}
+
+    graph_registry.get_graph("test").request_to_input = capture
+    output_text = ResponseOutputText.model_validate(
+        {
+            "type": "output_text",
+            "text": "OpenAI docs",
+            "annotations": [
+                AnnotationURLCitation(
+                    type="url_citation",
+                    start_index=0,
+                    end_index=10,
+                    title="OpenAI docs",
+                    url="https://example.com/docs",
+                )
+            ],
+            "parsed": None,
+        }
+    )
+    custom_call = ResponseCustomToolCall.model_validate(
+        {
+            "id": "ctc-package",
+            "type": "custom_tool_call",
+            "call_id": "call-package",
+            "name": "package_version",
+            "input": "langgraph",
+            "status": "completed",
+        }
+    )
+
+    await openai_client.responses.create(
+        model="test",
+        input=[
+            ResponseOutputMessage(
+                id="msg-docs",
+                type="message",
+                role="assistant",
+                status="completed",
+                phase="final_answer",
+                content=[output_text],
+            ),
+            ResponseFunctionToolCall(
+                id="fc-weather",
+                type="function_call",
+                call_id="call-weather",
+                name="weather",
+                arguments='{"city":"Istanbul"}',
+                status="completed",
+            ),
+            custom_call,
+            ResponseFunctionToolCallOutputItem(
+                id="fco-weather",
+                type="function_call_output",
+                call_id="call-weather",
+                output="sunny",
+                status="completed",
+            ),
+            ResponseCustomToolCallOutputItem(
+                id="ctco-package",
+                type="custom_tool_call_output",
+                call_id="call-package",
+                output="langgraph==installed-version",
+                status="completed",
+            ),
+            ResponseFunctionWebSearch(
+                id="ws-docs",
+                type="web_search_call",
+                action=ActionSearch(type="search", query="OpenAI docs"),
+                status="completed",
+            ),
+        ],
+    )
+
+    assert [type(message) for message in received] == [
+        AIMessage,
+        AIMessage,
+        ToolMessage,
+        ToolMessage,
+        AIMessage,
+    ]
+    assert received[0].content[0]["annotations"] == [
+        {
+            "end_index": 10,
+            "start_index": 0,
+            "title": "OpenAI docs",
+            "type": "url_citation",
+            "url": "https://example.com/docs",
+        }
+    ]
+    calls = received[1]
+    assert isinstance(calls, AIMessage)
+    assert [part["id"] for part in calls.content] == ["fc-weather", "ctc-package"]
+    assert [call["id"] for call in calls.tool_calls] == [
+        "call-weather",
+        "call-package",
+    ]
+    function_output, custom_output = received[2:4]
+    assert isinstance(function_output, ToolMessage)
+    assert function_output.content == "sunny"
+    assert isinstance(custom_output, ToolMessage)
+    assert custom_output.content == [
+        {
+            "type": "custom_tool_call_output",
+            "output": "langgraph==installed-version",
+        }
+    ]
+    search = received[4]
+    assert isinstance(search, AIMessage)
+    assert search.content == [
+        {
+            "id": "ws-docs",
+            "action": {"type": "search", "query": "OpenAI docs"},
+            "status": "completed",
+            "type": "web_search_call",
+        }
+    ]
+
+
 @pytest.mark.parametrize("stream", [False, True])
 async def test_provider_usage_maps_to_responses_details(
     openai_client: AsyncOpenAI,
@@ -519,6 +659,119 @@ async def test_unimplemented_response_options_are_explicit_errors(
     error = exc_info.value.response.json()["error"]
     assert error["type"] == "invalid_request_error"
     assert error["param"] == expected_param
+    assert error["code"] is None
+
+
+@pytest.mark.parametrize(
+    ("input_item", "expected_param"),
+    [
+        pytest.param(
+            {
+                "id": "msg-test",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Answer",
+                        "annotations": [],
+                        "parsed": {"answer": True},
+                    }
+                ],
+            },
+            "parsed",
+            id="parsed-output",
+        ),
+        pytest.param(
+            {
+                "id": "msg-test",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Answer",
+                        "annotations": [],
+                        "logprobs": [{"token": "Answer"}],
+                    }
+                ],
+            },
+            "logprobs",
+            id="nonempty-logprobs",
+        ),
+        pytest.param(
+            {
+                "id": "ctc-test",
+                "type": "custom_tool_call",
+                "call_id": "call-test",
+                "name": "lookup",
+                "input": "query",
+                "caller": {"type": "direct"},
+            },
+            "caller",
+            id="custom-tool-caller",
+        ),
+        pytest.param(
+            {
+                "id": "ctc-test",
+                "type": "custom_tool_call",
+                "call_id": "call-test",
+                "name": "lookup",
+                "input": "query",
+                "namespace": "tools",
+            },
+            "namespace",
+            id="custom-tool-namespace",
+        ),
+        pytest.param(
+            {
+                "id": "ws-test",
+                "type": "web_search_call",
+                "status": "completed",
+                "action": {
+                    "type": "search",
+                    "query": "OpenAI",
+                    "queries": ["OpenAI", "Responses API"],
+                },
+            },
+            "queries",
+            id="multiple-search-queries",
+        ),
+        pytest.param(
+            {
+                "id": "ws-test",
+                "type": "web_search_call",
+                "status": "completed",
+                "action": {
+                    "type": "search",
+                    "query": "OpenAI",
+                    "sources": [{"type": "url", "url": "https://example.com/docs"}],
+                },
+            },
+            "sources",
+            id="search-sources",
+        ),
+    ],
+)
+async def test_non_null_sdk_fields_outside_the_replay_subset_are_rejected(
+    openai_client: AsyncOpenAI,
+    input_item: dict[str, object],
+    expected_param: str,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/responses",
+            cast_to=object,
+            body={"model": "test", "input": [input_item]},
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"].endswith(expected_param)
     assert error["code"] is None
 
 

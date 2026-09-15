@@ -53,6 +53,15 @@ prompt-cache controls, and truncation. Unknown fields are not silently ignored.
 See the [supported Responses subset](explanation/openai-compatibility.md#supported-responses-subset)
 for the complete behavior and continuation rules.
 
+### Chat Completions Request
+
+Chat messages accept string content, explicit `text` content parts, and native
+`file` parts containing only `file.file_id`. The route supports modern function
+`tools`, `tool_choice`, assistant `tool_calls`, matching `tool` messages,
+streaming, and `stream_options.include_usage`. Image and audio parts, inline
+file data or filenames, prompt-cache fields, deprecated function fields,
+generation controls, and other unknown fields are rejected.
+
 ## Settings
 
 Package settings:
