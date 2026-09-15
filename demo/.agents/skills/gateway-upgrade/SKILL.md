@@ -86,9 +86,10 @@ errors. Extend the closest behavior test for relevant gaps. Keep remaining
 expected failures strict; remove an `xfail` only after verifying the restored
 behavior, and investigate an unexpected pass. Inspect gateway logs too:
 successful client responses do not prove background usage logging works.
-If UI behavior changes, run its focused checks and follow
-`demo/.agents/ui_checks.md` for browser verification. Report unavailable live
-checks explicitly instead of presenting source inspection as a passing test.
+If UI behavior changes, run its focused checks and use
+[Demo browser checks](../browser-checks/SKILL.md) for browser verification.
+Report unavailable live checks explicitly instead of presenting source
+inspection as a passing test.
 
 ## Keep Documentation Stable
 

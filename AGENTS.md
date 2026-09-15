@@ -11,16 +11,11 @@ entry point.
   guidance applies to `tests/`, `demo/api/tests/`,
   `demo/ui/chainlit_ui/tests/`, and `demo/ui/openwebui/tests/`, including the
   async-test guidance for restricted coding-agent sandboxes.
-- Read `demo/AGENTS.md` before changing files under `demo/`; it documents the
-  self-contained demo projects and the modular OpenWebUI bundling contract.
+- Read `demo/AGENTS.md` before changing files under `demo/` or changing public
+  graph APIs; it owns all demo-specific guidance.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
-- Use `docs/demo/api.md` and `docs/demo/graphs/index.md` for demo runs and graph
-  files.
-- Read `demo/.agents/skills/demo_graph_doc.md` before creating or substantially
-  revising a page under `docs/demo/graphs/`.
-- Use `docs/reference.md` for the package API and settings; use
-  `docs/demo/reference.md` for demo settings and commands.
+- Use `docs/reference.md` for the package API and settings.
 - Use `docs/explanation/openai-compatibility.md` before changing API behavior;
   its citation ownership section defines the LGOS, Chainlit, and Open WebUI
   boundaries.
@@ -34,7 +29,6 @@ entry point.
   `.agents/CODE_STYLE.md` for test-design guidance.
 - For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
   `openai.types.shared.ErrorObject`.
-- Check demo graph adapters before changing public graph APIs.
 
 
 ## Documentation Style
