@@ -5,9 +5,16 @@ that project. From the repository root, run
 `just demo/check`; add `--editable` when validating the parent LGOS
 checkout.
 
-For live Chainlit or Open WebUI verification, read
-[Browser UI checks](.agents/ui_checks.md). It covers browser setup, login,
-model selection, rendering checks, and common deployment failures.
+Use `../docs/demo/api.md` and `../docs/demo/graphs/index.md` for demo runs and
+graph files, and `../docs/demo/reference.md` for demo settings and commands.
+Read [Demo graph documentation](.agents/skills/demo_graph_doc.md) before
+creating or substantially revising a page under `../docs/demo/graphs/`.
+Check demo graph adapters before changing public graph APIs.
+
+For live Chainlit or Open WebUI verification, use
+[Demo browser checks](.agents/skills/browser-checks/SKILL.md). It owns the
+Playwright setup, login flows, rendering checks, and common deployment
+failures for both demo UIs.
 
 For LiteLLM or Bifrost upgrades and workaround reviews, use
 [Gateway upgrade](.agents/skills/gateway-upgrade/SKILL.md). Keep the upgrade
