@@ -1,6 +1,6 @@
 # 05 — Responses Event Assembly
 
-- Status: **Waiting for 02 and 03**
+- Status: **Complete**
 - Priority: **P1**
 - Dependencies: **02, 03**
 
@@ -122,4 +122,51 @@ document the source and update the compatibility document in the same unit.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-15.
+
+- Graph execution and I/O now live in `api/responses/orchestration.py`.
+  That module owns prepared-run execution, native runner-event adaptation,
+  non-streaming collection, streaming failure translation, and the handoff to
+  standard SSE framing. `api/responses/streaming.py` now owns only the
+  SDK-typed event accumulator and encoder, producing one clean boundary without
+  an import cycle.
+- `ResponsesStreamBuilder` became `ResponsesEventBuilder` because the same
+  accumulator remains the source of both streaming terminal events and
+  non-streaming `Response` objects. Its mutable sequence, output, final-text,
+  and server-tool correlation state remains local. A terminal guard now makes
+  the one-completed, one-incomplete, or one-failed-event invariant explicit.
+- The adapter consumes unit 02's exact `str`, `CustomStreamPart`,
+  `UpdatesStreamPart`, `AIMessage`, and `LangGraphInterruptBatch` cases. The
+  server-tool tracker still receives native root updates, validates only a
+  message-bearing mapping or sequence, and keeps its pending-call completeness
+  check. No exhaustive type was invented for arbitrary user-authored graph
+  state.
+- Tool lifecycle branching remains explicit over official SDK output families.
+  Function argument, custom-tool input, and web-search completion events now
+  have small named helpers; no reflection, dynamic model lookup, private SDK
+  streaming code, or parallel event implementation was introduced.
+- `ResponseContext` remains a frozen data object in `service.py`. Moving its
+  already-small request identity and response-default construction would only
+  move constructor dependencies across the new boundary.
+- Existing normalized text, function-call, and failure fixtures passed without
+  changes. Streaming and non-streaming output behavior, commentary exclusion,
+  final-text reconciliation, citations, refusals, usage, server tools,
+  interrupts, failures, and cancellation therefore retain their documented
+  wire contract; no product-documentation change was required.
+
+Locked-version verification used `uv.lock`, `uv run --locked`, and the installed
+OpenAI Python 2.45.0 and LangGraph 1.2.9 sources. The locked SDK exports the
+typed Responses output and stream-event union plus a client-side stream decoder,
+but no public server-side lifecycle builder. The current official
+[Responses streaming event reference](https://developers.openai.com/api/reference/resources/responses/streaming-events)
+confirms the created, in-progress, output-item, content-part, delta/done, and
+single terminal event families retained by the accumulator.
+
+| Validation | Result |
+| --- | --- |
+| `just check` | Pass |
+| `just test tests/api/responses tests/api/interrupt tests/api/test_chat_cancellation.py` | 144 passed |
+| `just test` | 394 passed |
+| `cd demo && just test --editable` | API 111 passed, Files 12 passed, Chainlit 116 passed, Open WebUI 120 passed |
+| `just demo/check --editable` | All demo tests, lint, formatting, type checks, and Compose config checks passed |
+| `just docs` | Strict build passed |
