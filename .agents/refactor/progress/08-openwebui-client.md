@@ -1,14 +1,16 @@
-# 08 — Open WebUI Client
+# 08 — Open WebUI Function Runtime
 
 - Status: **Waiting for core work**
 - Priority: **P2**
-- Dependencies: **01, 05, 06**
+- Dependencies: **05, 06**
 
 ## Objective
 
-Give the Open WebUI Function one typed path from its untrusted host arguments to
-an OpenAI Responses request, while making the request, continuation, and
-rendering stages of `Pipe._run()` visible without adding a framework.
+Give the Open WebUI Function one validated path from its untrusted host
+arguments to an OpenAI Responses request, while making the request,
+continuation, and rendering stages of `Pipe._run()` visible without adding a
+framework. Administrator synchronization is a separate control plane and is
+not part of this runtime unit.
 
 ## Assessment
 
@@ -39,24 +41,25 @@ not only current docs, before changing injected arguments or event payloads.
 - `demo/ui/openwebui/src/lgos_openwebui/functions/generic/interrupts.py`
 - nearby gateway, file, metadata, and API helpers only when responsibility
   clearly belongs there
-- `demo/ui/openwebui/src/lgos_openwebui/workspace_models.py`
-- `demo/ui/openwebui/src/lgos_openwebui/sync_functions.py`
-- `demo/ui/openwebui/src/lgos_openwebui/tool_servers.py`
 - `bundle.py`, bundle tests, UI tests, and README text affected by the change
 
 The bundle constraints in `demo/AGENTS.md` are part of the deployed runtime:
 imports must remain acyclic in `GENERIC_BUNDLE` order and top-level names must
 remain unique across the flattened modules.
 
-## 08A — Function Runtime
+## Implementation Steps
 
-1. Complete units 01 and 05 first and migrate directly to their final request
-   and output boundaries.
-2. Define the smallest strict models or typed values for the external host
-   shapes actually consumed by `Pipe.pipe()`: body fields, user identity,
-   request metadata, attached files, tool servers, and the persisted interrupt
-   cursor. Validate once near entry, then pass precise values through `_run()`.
-   Do not model unused Open WebUI fields.
+1. Complete units 05 and 06 first and verify generated requests against their
+   final documented wire behavior. Continue using official OpenAI SDK types;
+   the independently deployed Function must not import LGOS server internals.
+2. Define the smallest models or typed values for the external host shapes
+   actually consumed by `Pipe.pipe()`: body fields, user identity, request
+   metadata, attached files, tool servers, and the persisted interrupt cursor.
+   Validate once near entry, then pass precise values through `_run()`. Open
+   WebUI owns the host dictionaries and may add unrelated fields, so either
+   project the consumed keys before strict validation or allow unknown host
+   fields. Use `extra="forbid"` for LGOS-owned persisted cursor data. Do not
+   model unused Open WebUI fields.
 3. Preserve the public `Pipe` methods and arguments expected by Open WebUI.
    Move pure normalization behind that boundary instead of spreading `Any`
    checks across the orchestration path.
@@ -84,38 +87,25 @@ remain unique across the flattened modules.
     needed. Run the bundle compilation and duplicate-name tests after every
     source move.
 
-The attachment path in `files.py` is a boundary worth cleaning with the Pipe.
-Preserve its three native host sources in order: an available server path,
-image bytes already embedded in message content, and an authenticated Open
-WebUI Files download. Upload only the current turn's files to the OpenAI Files
-provider, and retain the authenticated in-process ASGI path when a host request
-exposes its app. Strict small models for consumed file metadata may replace
-repeated dictionary checks; do not model the complete Open WebUI file object.
+The attachment path in `files.py` may be cleaned only where Pipe entry
+validation removes repeated checks. Preserve its three native host sources in
+order: an available server path, image bytes already embedded in message
+content, and an authenticated Open WebUI Files download. Upload only the current
+turn's files to the OpenAI Files provider, and retain the authenticated
+in-process ASGI path when a host request exposes its app. Small models for
+consumed file metadata must tolerate additive host fields; do not model the
+complete Open WebUI file object.
 
-## 08B — Synchronization Control Plane
+## Deferred Control Plane
 
-Treat Function, MCP server, and Workspace Model synchronization as a second
-reviewable change. These modules call Open WebUI administrator endpoints and do
-not run in the chat request path.
-
-1. Validate the few fields read from Function exports, model exports, base
-   models, and sign-in responses through small strict boundary models or one
-   plainly named parser per payload. Do not pass raw `Any` beyond the response
-   boundary.
-2. Separate pure desired/existing reconciliation from HTTP writes where this
-   makes create, update, unchanged, and stale-delete decisions directly
-   testable. Preserve the current order: validate and import desired objects
-   before deleting stale generated objects.
-3. Preserve unrelated Functions and Models, existing access grants, hidden
-   manifold bases, deterministic generated IDs, and the special demo
-   UserValves model. These are ownership rules, not incidental dictionary
-   transformations.
-4. Keep Function bundling as an AST-based build step. Open WebUI stores one
-   source string, so flattening the modular source and compiling it before
-   upload is required. Do not check in a second generated `generic.py`.
-5. Compare every administrator endpoint and payload with the pinned 0.11.3
-   source before changing it; these endpoints do not have an official Python
-   SDK.
+`sync_functions.py`, `workspace_models.py`, and `tool_servers.py` call Open
+WebUI administrator endpoints and do not participate in a chat request. They
+already have focused reconciliation tests and several typed boundaries. Do not
+change them in this unit. Open a separate work unit only for a concrete defect
+or measured maintenance problem, preserving validation-before-deletion,
+unrelated objects and access grants, deterministic IDs, hidden manifold bases,
+and the special demo UserValves model. Host API response models must tolerate
+additive fields even when LGOS-owned desired-state models are strict.
 
 ## Required Behavior
 
@@ -136,8 +126,7 @@ not run in the chat request path.
 
 ```bash
 cd demo/ui/openwebui
-uv run --locked pytest tests/test_openwebui_responses.py tests/test_openwebui_tool_servers.py tests/test_openwebui_upload_policy.py
-uv run --locked pytest tests/test_openwebui_sync_functions.py tests/test_openwebui_workspace_models.py
+uv run --locked pytest tests/test_openwebui_responses.py tests/test_openwebui_settings.py tests/test_openwebui_upload_policy.py
 uv run --locked ruff check src tests
 uv run --locked ruff format --check src tests
 uv run --locked ty check src

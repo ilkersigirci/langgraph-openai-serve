@@ -5,10 +5,15 @@ product documentation were changed during this review. This directory is the
 handoff for later implementation work.
 
 The repository is healthy, but complexity is concentrated in a few boundaries.
-The first changes should fix nested OpenAI request validation and consume
-LangGraph's native typed results. Interrupt durability and Responses event
-assembly contain substantial necessary complexity; their work units narrow and
-contain that complexity instead of deleting safeguards.
+The first changes fix nested OpenAI request validation and consume LangGraph's
+native typed results. Interrupt durability and Responses event assembly contain
+substantial necessary complexity; their work units narrow and contain that
+complexity instead of deleting safeguards.
+
+Units 01–06 are the core refactor. After unit 06, re-baseline before touching
+the demo clients. Units 07–09 are evidence-gated follow-through: they may record
+that the final core API requires no further change, and they must not become a
+general rewrite of otherwise healthy demo code.
 
 ## Rules For Every Work Unit
 
@@ -25,10 +30,17 @@ contain that complexity instead of deleting safeguards.
   contract, such as cancellation and PostgreSQL session-lock ownership.
 - Do not use line count as a success metric. Remove code, casts, state, or I/O
   only when the resulting responsibility is clearer.
-- Before starting a unit, change its status here to **In progress**. On
-  completion, record the result and validation in that unit's Outcome section.
+- Before starting a unit, change its status both here and in the unit file to
+  **In progress**. On completion, keep the two statuses synchronized and record
+  the result and validation in that unit's Outcome section.
+- Keep dependency experiments disposable. Do not ship an experimental API,
+  feature flag, or dual implementation unless the unit's acceptance criteria
+  explicitly require it.
 
 ## Ordered Work Units
+
+Priority labels describe refactor sequencing, not incident severity; the
+repository is passing its baseline.
 
 | ID | Work unit | Priority | Depends on | Status |
 | --- | --- | --- | --- | --- |
@@ -36,20 +48,25 @@ contain that complexity instead of deleting safeguards.
 | 01 | [Strict OpenAI request boundaries](01-strict-openai-request-boundaries.md) | P0 | — | Complete |
 | 02 | [Native LangGraph execution results](02-native-langgraph-execution.md) | P0 | — | Ready |
 | 03 | [Run ownership and cancellation](03-run-ownership-and-cancellation.md) | P0 | 02 | Waiting for 02 |
-| 04 | [Interrupt continuation identity](04-interrupt-continuation-identity.md) | P1 | 02, 03 | Waiting for 02 and 03 |
+| 04 | [Interrupt continuation identity](04-interrupt-continuation-identity.md) | P1 | 02 | Waiting for 02 |
 | 05 | [Responses event assembly](05-responses-event-assembly.md) | P1 | 02, 03 | Waiting for 02 and 03 |
-| 06 | [Graph registration](06-graph-registration.md) | P1 | 03, 04 | Waiting for 03 and 04 |
-| 07 | [Chainlit client](07-chainlit-client.md) | P2 | 01, 05, 06 | Waiting for core work |
-| 08 | [Open WebUI client](08-openwebui-client.md) | P2 | 01, 05, 06 | Waiting for core work |
-| 09 | [Demo graphs and services](09-demo-graphs-and-services.md) | P2 | 06 | Waiting for 06 |
+| 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Waiting for core execution work |
+| 07 | [Chainlit interrupt ledger](07-chainlit-client.md) | P2 | 05, 06 | Waiting for core work |
+| 08 | [Open WebUI Function runtime](08-openwebui-client.md) | P2 | 05, 06 | Waiting for core work |
+| 09 | [Demo registration migration and audit](09-demo-graphs-and-services.md) | P2 | 06 | Waiting for 06 |
 | 10 | [Closeout audit](10-closeout-audit.md) | P2 | 01–09 | Waiting for implementation |
 
-Units 01 and 02 are independent and may be implemented in either order. Unit 03
-follows 02. Units 04 and 05 can proceed after 03; keep them as separate changes
-because interrupt identity and Responses assembly have different invariants.
-Unit 06 follows 04 so its checkpointer capability checks reflect the final
-interrupt path. Units 07–09 should start only after the public package shape has
-settled.
+Units 01 and 02 are independent and may be implemented in either order. After
+02, units 03 and 04 are independent: one owns execution lifetime and the other
+owns continuation identity. Unit 05 follows 03. Unit 06 follows both 03 and 04
+so its checkpointer capability checks reflect the final execution and interrupt
+paths. Keep 04 and 05 as separate changes because interrupt identity and
+Responses assembly have different invariants.
+
+After 06, run the package suite and the editable demo suite, then reread the
+recorded outcomes before starting 07–09. A client or demo unit is complete when
+its named boundary is clean and validated; a reviewed **no change required**
+outcome is preferable to speculative cleanup.
 
 ## Main Findings
 
@@ -99,7 +116,8 @@ settled.
 
 ## Completion Definition
 
-The refactor is complete when units 01–09 have recorded outcomes, unit 10 passes,
-the OpenAI contract documentation matches observed behavior, no temporary
-compatibility layer remains, and every retained exception to the simple design
-has a nearby explanation of the invariant it protects.
+The refactor is complete when units 01–09 have recorded outcomes (including any
+evidence-backed no-change outcomes), unit 10 passes, the OpenAI contract
+documentation matches observed behavior, no temporary compatibility layer
+remains, and every retained exception to the simple design has a nearby
+explanation of the invariant it protects.

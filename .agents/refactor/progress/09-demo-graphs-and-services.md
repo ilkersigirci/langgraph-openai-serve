@@ -1,4 +1,4 @@
-# 09 — Demo Graphs And Services
+# 09 — Demo Registration Migration And Audit
 
 - Status: **Waiting for graph registration**
 - Priority: **P2**
@@ -6,10 +6,10 @@
 
 ## Objective
 
-Migrate every demo to the final package API, then simplify only the demo modules
-where a mixed responsibility remains after that migration. Preserve each
-example's purpose and use the native LangChain, LangGraph, OpenAI, Plotly,
-FastAPI, boto3, and psycopg capabilities it demonstrates.
+Migrate demo registrations only if unit 06 changes the public construction
+shape, then validate the demos as consumers of the final package. Do not turn a
+registration migration into an open-ended rewrite of graphs or standalone
+services.
 
 ## Assessment
 
@@ -28,87 +28,66 @@ that breadth is intentional:
   lock lifecycles with the package-native APIs.
 
 Long files here do not justify merging examples or inventing shared base
-classes. The migration caused by unit 06 is the first useful test: code that
-remains hard to explain afterward is a candidate for a separate cleanup.
+classes. Unit 06 should preserve `GraphConfig` and `GraphRegistry` construction
+when possible; if it does, this unit is an integration audit with a legitimate
+no-change outcome.
 
-## 09A — Registration Migration
+## Registration Follow-Through
 
-Migrate all `GraphConfig` and `GraphRegistry` construction in the demo API and
-notebooks in one mechanical change after unit 06. Keep graph IDs, descriptions,
-feature declarations, adapters, client settings, and runtime factory lifetimes
-unchanged. Update the matching graph docs and examples to the final API; do not
-add aliases for the old registration form.
+Inventory all `GraphConfig` and `GraphRegistry` construction in the demo API and
+notebooks after unit 06. If the public form is unchanged, make no mechanical
+edits and record that the demos already use the final API. If a justified public
+change remains, migrate all callers in one mechanical change. Keep graph IDs,
+descriptions, feature declarations, adapters, client settings, and runtime
+factory lifetimes unchanged. Update matching docs and examples without adding
+aliases for the old form.
 
-Validate this substep before any graph-internal cleanup so registry regressions
-are distinguishable from demo behavior changes.
+Validate the migration or no-change decision before considering any separate
+demo cleanup so registry regressions remain attributable.
 
-## 09B — Advanced And Persistent Graphs
+## Reviewed And Not Scheduled
 
-Review `advanced_graph/graph.py` after the migration. Its small top-level
-routing helpers are cohesive. The nested nodes and edge selectors close over
-the model, knowledge service, Files client, checkpointer, and Store used to
-compile one graph. Keep those closures when moving them would require a large
-dependency object or strategy hierarchy.
+The review found no concrete graph or service defect that belongs in this
+refactor. Retain the following designs unless the registration migration reveals
+a specific problem; open a new bounded work unit rather than appending the work
+here:
 
-Extract only a pure policy that is independently understandable and reused by
-multiple nodes, or a node group that has one clear dependency boundary. Retain
-the native `StateGraph` declaration together so readers can see the workflow.
-Do not hide edges behind a graph-builder framework.
+- `advanced_graph/graph.py` keeps its native `StateGraph` topology and node
+  closures over the model, knowledge service, Files client, checkpointer, and
+  Store. Moving them would require a larger dependency object and hide the
+  workflow.
+- The durable notebook receipt keeps upload/index stages idempotent across
+  retries. Preserve its failure and restart behavior.
+- `persistent_plot_agent.py` keeps native `create_agent`, typed tools, Store,
+  OpenAI Files, settings, and output adaptation together. Do not wrap it in a
+  local agent framework.
+- Smaller graph modules remain separate because they demonstrate different
+  public features. Similar syntax alone is not a shared contract.
+- MCP filtering and the external-tool loop remain explicit because their trust
+  and tool-choice rules differ from ordinary model calls.
+- `sync_litellm.py` already validates the relevant catalog and management
+  payloads. Preserve conflict-before-write, ownership, deterministic IDs, and
+  credential-safe errors.
+- The Files service keeps its repository protocol, S3 paginator and streaming
+  body, cursor behavior, metadata encoding, and guaranteed body close.
+- `postgres_runtime()` and `PostgresRunCoordinator` keep saver, Store, pool, and
+  session-lock ownership. Session advisory locks must remain on one checked-out
+  connection, and an indeterminate session must not return to the pool.
 
-The durable notebook receipt in the advanced graph records upload/index stages
-so retries do not duplicate side effects. Keep it unless a locked LangGraph or
-OpenAI SDK primitive provides the same durable, idempotent workflow. Preserve
-the failure and restart tests before changing its order.
-
-`persistent_plot_agent.py` uses LangChain's native `create_agent`, typed tools,
-Store, and OpenAI Files. Its graph setup, persistence scope, Plotly rendering,
-and output adapter are distinct but closely related to one example. A split is
-optional; prefer removing coarse `Any` at the compiled-graph and output boundary
-if the locked generic types permit it. Do not wrap `create_agent` in a local
-agent abstraction.
-
-## 09C — Smaller Graphs And Standalone Services
-
-Review smaller graph modules independently. Consolidate a helper only when two
-graphs have the same contract, not merely similar syntax. In particular:
-
-- keep MCP filtering and the external-tool loop explicit because their trust
-  and tool-choice rules differ from ordinary model calls;
-- keep citation and client-event helpers at the existing common boundary;
-- keep graph fixtures separate when each demonstrates a different public
-  feature;
-- validate untyped provider or gateway JSON once at the edge, then use precise
-  types internally.
-
-`sync_litellm.py` already validates both the LGOS catalog and the relevant
-LiteLLM management response before reconciliation. If cleanup is still useful,
-separate pure desired/current reconciliation from HTTP writes so dry-run and
-mutation share one decision path. Preserve ownership checks, deterministic IDs,
-credential-safe errors, and the rule that all conflicts are detected before the
-first write. Do not widen this into a general gateway synchronizer.
-
-Retain the Files service repository protocol and S3 native paginator/streaming
-body. Its cursor behavior, metadata encoding, and guaranteed body close have
-focused contracts. Change it only for a concrete finding, and use botocore or
-boto3 primitives instead of a second storage layer.
-
-Retain `postgres_runtime()` and `PostgresRunCoordinator` ownership. PostgreSQL
-session advisory locks must stay on one checked-out connection and survive
-transaction rollback; a connection with indeterminate cancellation state must
-not return to the pool. Unit 03 may simplify how the server owns the runtime,
-but this demo should not reproduce that lifecycle.
+When parsing provider, gateway, or host-owned JSON in a future unit, validate
+the fields LGOS consumes but tolerate additive external fields unless that API
+declares a closed schema. Strict unknown-field rejection is reserved for values
+LGOS owns.
 
 ## Files In Scope
 
-- `demo/api/src/lgos_demo_api/graphs/`
-- `demo/api/src/lgos_demo_api/app.py`
-- `demo/api/src/lgos_demo_api/sync_litellm.py`
-- `demo/api/notebooks/`
-- `demo/files_api/` only for a concrete issue found during final migration
+- `demo/api/src/lgos_demo_api/graphs/` and `app.py` only where registration is
+  constructed
+- `demo/api/notebooks/` only where registration is constructed
 - matching demo tests and pages under `docs/demo/`
 
-Keep 09A, 09B, and 09C as separate reviewable implementation changes. A later
-agent may mark one substep complete without claiming the whole unit is done.
+Any graph-internal, synchronization, Files, or PostgreSQL change requires a new
+work unit with its own finding and acceptance criteria.
 
 ## Required Behavior
 
@@ -116,14 +95,9 @@ agent may mark one substep complete without claiming the whole unit is done.
   settings schema, and `/v1` behavior unless a separately documented contract
   fix requires a change.
 - Lifespan-managed graphs still resolve only after their dependencies exist.
-- Advanced graph routing, research, note approval/revision, durable side
-  effects, client tools, refusals, and incomplete outcomes remain covered.
-- Persistent chart state remains scoped by user and conversation and survives
-  runtime restart through LangGraph Store.
-- LiteLLM sync remains deterministic, detects conflicts before mutation, and
-  leaves unowned deployments untouched.
-- Files list, upload, retrieval, deletion, byte streaming, and cursor behavior
-  remain OpenAI-compatible.
+- Demo tests confirm that advanced graph behavior, persistent chart state,
+  LiteLLM synchronization, Files behavior, and PostgreSQL wiring were not
+  accidentally affected by the package migration.
 
 ## Validation
 
@@ -137,7 +111,8 @@ cd ..
 just docs
 ```
 
-For changes to durable graph behavior, additionally run the PostgreSQL suite:
+Registration migration should not change durable graph behavior. If it does,
+stop and create a bounded unit before additionally running the PostgreSQL suite:
 
 ```bash
 cd demo
@@ -155,6 +130,8 @@ a graph page.
   between graphs, keep the graphs separate.
 - If a split makes the `StateGraph` topology harder to see, keep the nodes and
   edges together.
+- If unit 06 preserved the public constructor, record a no-change outcome rather
+  than rewriting equivalent registrations.
 - Do not update a dependency or lockfile to obtain a stylistic simplification.
 
 ## Outcome

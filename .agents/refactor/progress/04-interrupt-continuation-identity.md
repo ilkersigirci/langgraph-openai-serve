@@ -1,14 +1,15 @@
 # 04 — Interrupt Continuation Identity
 
-- Status: **Waiting for 02 and 03**
+- Status: **Waiting for 02**
 - Priority: **P1**
-- Dependencies: **02, 03**
+- Dependencies: **02**
 
 ## Objective
 
-Make interrupt resume validation understandable from one module, isolate the
-one dependency on LangGraph checkpoint internals, and preserve exact stale,
-parallel, nested, restart, and tenant-scope behavior.
+Contain interrupt resume validation in one module, isolate the one dependency
+on LangGraph checkpoint internals, and preserve exact stale, parallel, nested,
+restart, and tenant-scope behavior. This is a containment audit, not a mandate
+to rewrite an algorithm that is already isolated and covered.
 
 ## Why This Cannot Be A Deletion Refactor
 
@@ -57,8 +58,8 @@ user-configurable continuation provider in this unit.
    separate named stages. A reader should be able to follow new request, retry,
    resume, and terminal paths without stepping through unrelated UUID helpers.
 2. After unit 02, build durable batches from native interrupts and the existing
-   runnable configuration. Remove the old post-execution snapshot helper if it
-   has no remaining caller.
+   runnable configuration. Remove the old post-execution snapshot helper when
+   it has no remaining caller.
 3. Give the fingerprint a name that describes its role as continuation
    generation, not merely “latest checkpoint.” Keep its algorithm and format in
    one location with a nearby comment explaining the sequential-ID evidence.
@@ -68,14 +69,16 @@ user-configurable continuation provider in this unit.
    LangGraph actually require. Do not loosen registration by deleting a method
    check until a real interrupt graph works with a saver lacking that method.
 6. Keep the fingerprint deterministic across process restart and saver
-   implementations. Preserve the token format version prefix so a later
-   algorithm can be distinguished cleanly.
+   implementations. Preserve the existing lowercase 64-hex wire value and the
+   versioned domain separator used to compute it. A future wire-format change
+   needs an explicit codec migration; this unit does not add a visible prefix.
 7. Preserve complete-batch resume through `Command(resume={id: value, ...})`.
    Do not convert parallel answers to positional lists.
-8. Measure checkpoint scans with a representative persistent saver after the
-   code is clearer. Optimize only if the measured history sizes justify it and
-   the public saver API can return every namespace head correctly. Do not add a
-   cache that becomes another source of truth.
+8. Keep the recorded scan measurements as the baseline. Re-measure with a
+   representative persistent saver only if this unit changes query behavior or
+   new evidence suggests a regression. Optimize only if measured history sizes
+   justify it and the public saver API can return every namespace head
+   correctly. Do not add a cache that becomes another source of truth.
 
 ## Required Behavior
 
@@ -87,7 +90,8 @@ user-configurable continuation provider in this unit.
 - Direct, nested, indirectly nested, and parallel batches resume after a process
   and graph restart.
 - Checkpoint scope, model, and run ID remain part of the private storage key.
-- Terminal, failed, and abandoned runs follow unit 03's cleanup rules.
+- This unit does not change checkpoint retention or lease ownership; unit 03
+  owns those rules.
 
 ## Tests To Retain
 
@@ -100,6 +104,10 @@ user-configurable continuation provider in this unit.
 Prefer these end-to-end signals over tests that reproduce the hash line by line.
 If a small pure token encoder remains, one fixed-vector test is enough to protect
 cross-restart stability.
+
+If unit 02 leaves the checkpoint-internal knowledge already contained in one
+well-named function and no simpler public saver API exists, record a no-change
+outcome rather than renaming stable helpers for cosmetic reasons.
 
 ## Validation
 

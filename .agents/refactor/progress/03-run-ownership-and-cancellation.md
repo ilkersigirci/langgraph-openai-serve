@@ -50,46 +50,52 @@ event state machine in this unit.
    the interrupt-only state read and checkpoint identifiers in a small branch.
 3. Make close idempotent and make ownership transfer explicit at the route,
    service, runner, and stream boundary. Exactly one layer should own cleanup at
-   a time.
+   a time. Do not require every caller to invoke both a runner finalizer and a
+   separate resource close in a particular order.
 4. Represent checkpoint retention with the smallest state that expresses the
-   rule: preserve only a batch exposed for resume; delete every terminal or
-   unclassified interrupt thread. Cleanup failure may replace a successful
-   response, but it must not mask the original graph or cancellation failure.
+   lifecycle table below. A batch is *committed* when the runner has validated
+   and returned or yielded it; this does not claim that the network peer
+   received the bytes, which the server cannot know. Cleanup failure may replace
+   a successful result, but it must not mask the original graph or cancellation
+   failure.
 5. Keep shielding limited to cleanup sections that must finish after request
    cancellation. Do not shield graph execution.
 
-### 2. Evaluate the HTTP stream owner
+### Checkpoint and lease lifecycle
 
-First make a local branch that streams the protocol generator directly through
-the locked Starlette response and relies on the prepared-run context for
-cleanup. Run the real TCP cancellation tests, including immediate close. Keep
-the simpler path only if all graph, provider, nested generator, and lease
-finalizers complete deterministically.
+| Situation | Checkpoint disposition | Lease |
+| --- | --- | --- |
+| Preparation or resume validation fails before execution | Leave any pre-existing thread untouched | Release |
+| A retry re-emits an already pending batch | Preserve | Release after the batch is committed |
+| Execution returns or yields a validated interrupt batch | Preserve | Release after the batch is committed |
+| Execution completes normally without an interrupt | Delete the temporary thread | Release after deletion |
+| Execution, output rendering, or streaming fails or is cancelled after execution starts and before a batch is committed | Delete incomplete state best-effort | Release |
+| Cleanup itself fails while another failure is active | Keep the original failure primary and log cleanup failure | Attempt release exactly once |
 
-If native Starlette consumption still fails, retain a dedicated producer owner.
-Reduce it to the task and resources it must actually own after unit 02, and make
-its lifecycle an async context rather than a collection of externally ordered
-`start()`/`aclose()` mutations where practical. The zero-buffer AnyIO channel is
-valid if it remains necessary for backpressure.
+For non-interrupt graphs, checkpoint disposition is not applicable but the same
+single-owner and primary-error rules still apply.
 
-### 3. Evaluate LangGraph v3 separately
+### 2. Simplify the HTTP stream owner conservatively
 
-Locked LangGraph's `AsyncGraphRunStream` owns a caller-driven pump, backpressure,
-and an `abort()` path that cancels an in-flight `__anext__`. Build a disposable
-spike using `astream_events(version="v3")` and compare it with the stable v2
-runner for:
+Retain a dedicated producer owner by default: repository history and the real
+TCP regression tests show that it protects cancellation of nested graph and
+provider generators. After unit 02, reduce it to the task and resources it must
+actually own, and make its lifecycle an async context rather than a collection
+of externally ordered `start()`/`aclose()` mutations where that is genuinely
+simpler. The zero-buffer AnyIO channel remains valid backpressure.
 
-- root and nested message filtering by node and `nostream` tag;
-- custom status events and root server-tool updates in arrival order;
-- final output and complete direct/parallel/nested interrupts;
-- usage aggregation;
-- `durability="exit"` and checkpoint cleanup;
-- real TCP disconnect and immediate close.
+Deleting the owner is optional, not a required experiment. Do so only if a
+disposable direct-StreamingResponse probe passes the real TCP disconnect,
+immediate-close, provider-finalizer, graph-finalizer, and lease-release cases.
+An in-process ASGI test is insufficient. Do not retain the probe or a second
+streaming path when it fails.
 
-Adopt v3 only if the locked experimental API passes all cases and removes the
-custom owner or a material amount of runner code. Do not ship both paths, add a
-feature flag, or update LangGraph merely to make the spike pass. Otherwise
-delete the spike and retain stable v2.
+### Deferred API migration
+
+Do not evaluate or adopt LangGraph v3 in this unit. The locked implementation is
+experimental, and combining an execution-API migration with lifecycle cleanup
+would make failures and cancellation regressions harder to attribute. Unit 00
+records the future replacement gate.
 
 ## Required Behavior
 
@@ -97,6 +103,8 @@ delete the spike and retain stable v2.
 - A client disconnect promptly cancels graph and provider work and completes
   their async finalizers.
 - Closing before the source starts releases the prepared run.
+- Invalid or stale resume preparation releases the lease without deleting the
+  valid pending checkpoint that the caller may still resume correctly.
 - A completed interrupt releases its coordinator lease but preserves its
   checkpoint thread.
 - Success without an interrupt deletes the temporary checkpoint thread.

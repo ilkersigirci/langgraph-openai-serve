@@ -7,8 +7,8 @@
 ## Objective
 
 Consume LangGraph 1.2.9's stable v2 result and stream types directly, remove the
-post-execution `aget_state()` read, and pass precise event types to the protocol
-adapters.
+post-execution `aget_state()` read, and pass the narrowest honest event types to
+the protocol adapters.
 
 ## Problem
 
@@ -40,25 +40,31 @@ event ordering, or graph registration in this unit.
 
 ## Implementation Steps
 
-1. Let `ainvoke(..., version="v2")` return its inferred native `GraphOutput`.
-   Render `result.value`, and build an interrupt batch from
+1. Pass `version="v2"` as a literal visible at the `ainvoke()` call site so the
+   locked overload resolves to native `GraphOutput`. Do not hide the literal in
+   a `dict[str, Any]` expanded through `**kwargs`, which erases the useful return
+   type. Render `result.value`, and build an interrupt batch from
    `result.interrupts` when present.
-2. Type the stream as LangGraph's `StreamPart` union. Narrow on
-   `part["type"]`, and give message extraction a `MessagesStreamPart` rather
-   than a bare dictionary.
+2. Apply the same rule at `astream()`: keep `version="v2"` visible to the type
+   checker, consume LangGraph's `StreamPart` union, narrow on `part["type"]`,
+   and give message extraction a `MessagesStreamPart` rather than a bare
+   dictionary. Invocation option helpers may remain only for values that do not
+   erase overload selection.
 3. Treat root `ValuesStreamPart` values (`ns == ()`) as the durable final output.
-   Capture `part["data"]` and accumulate its interrupts in insertion order,
-   de-duplicated by validated interrupt ID.
+   Capture `part["data"]` and accumulate its interrupts in first-seen order.
+   Repeated IDs with the same native interrupt may be de-duplicated; the same ID
+   paired with conflicting data is invalid durable state and must fail loudly.
 4. Do not assume the final root values part contains the complete parallel
    interrupt set. A local locked-version probe emitted parallel nested
    interrupts across multiple root values parts.
 5. Change interrupt-batch construction to accept native interrupts plus the
-   prepared runnable configuration. The state token may still scan checkpoint
-   tuples, but batch construction must no longer fetch a new `StateSnapshot`
-   after execution.
+   prepared runnable configuration and run ID. The state token may still scan
+   checkpoint tuples, but batch construction must no longer fetch a new
+   `StateSnapshot` after execution.
 6. For a retry that re-emits an already pending batch without execution, reuse
-   the snapshot obtained during preparation. Carry only the minimal prepared
-   interrupt data needed by the runner; do not make a second state read.
+   the validated interrupts from the snapshot obtained during preparation.
+   Carry only that minimal prepared data to the runner; do not retain the whole
+   snapshot or make a second state read.
 7. Delete casts and `Any` made obsolete by native discriminated types. Keep
    `Any` at graph input/output adapter boundaries where graph schemas are truly
    user-defined.
@@ -82,7 +88,8 @@ Retain the existing public behavior tests. Add or adjust focused runner cases
 for native v2 inputs only where they distinguish an incomplete implementation:
 
 - `GraphOutput.interrupts` on invoke;
-- multiple root values parts forming one parallel batch;
+- multiple root values parts forming one parallel batch, including rejection of
+  a conflicting duplicate ID;
 - nested and indirectly nested interrupt streaming;
 - final root value selection with subgraph values present;
 - custom, updates, and message-part narrowing;
@@ -103,9 +110,9 @@ just test
 ## Deferred Native Option
 
 LangGraph's v3 `astream_events()` has useful typed projections, native abort,
-and aggregated interrupts, but locked 1.2.9 labels it experimental. Do not mix a
-v3 migration into this stable v2 refactor. Unit 03 contains a bounded evaluation
-because v3 also affects cancellation ownership.
+and aggregated interrupts, but locked 1.2.9 labels it experimental. It is not
+part of this refactor. Reconsider it only as a separate migration against a
+locked stable release and the full behavior matrix recorded in unit 00.
 
 ## Outcome
 

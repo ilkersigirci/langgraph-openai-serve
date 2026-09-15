@@ -1,15 +1,15 @@
-# 07 — Chainlit Client
+# 07 — Chainlit Interrupt Ledger
 
 - Status: **Waiting for core work**
 - Priority: **P2**
-- Dependencies: **01, 05, 06**
+- Dependencies: **05, 06**
 
 ## Objective
 
-Make the Chainlit adapters easier to reason about by separating durable
-interrupt data from Chainlit lifecycle and rendering calls. Keep the client on
-the standard Responses API and preserve recovery after process or browser
-restarts.
+Separate durable interrupt-ledger data from Chainlit lifecycle and rendering
+calls. Keep the client on the standard Responses API and preserve recovery after
+process or browser restarts. Ordinary chat cleanup is not part of this unit
+unless the final core contract forces a caller change.
 
 ## Assessment
 
@@ -29,10 +29,11 @@ completed marker also prevents a finished batch from being reopened. The
 problem is that pure ledger validation and host actions are interleaved, making
 both harder to test.
 
-The ordinary `simple.py` adapter has a smaller version of the same orchestration
-problem: one response turn, streamed presentation, client-owned function tools,
-and file handling meet in `_response_message()`. Its existing Responses helpers
-already provide the right shared protocol boundary.
+The ordinary `simple.py` adapter combines one response turn, streamed
+presentation, client-owned function tools, and file handling in
+`_response_message()`, but its existing Responses helpers already provide the
+right shared protocol boundary. Review it for required caller changes only; its
+size alone is not evidence for another extraction.
 
 This design is grounded in Chainlit's public host contract: `on_chat_resume`
 receives a `ThreadDict`, and `Message.metadata` is explicitly persisted by the
@@ -42,8 +43,8 @@ before moving any host operation.
 ## Files In Scope
 
 - `demo/ui/chainlit_ui/src/lgos_chainlit/hitl.py`
-- `demo/ui/chainlit_ui/src/lgos_chainlit/simple.py`
-- `demo/ui/chainlit_ui/src/lgos_chainlit/utils/responses.py`
+- `demo/ui/chainlit_ui/src/lgos_chainlit/simple.py` and
+  `utils/responses.py` only for changes required by the final core wire contract
 - a single new ledger module if extraction makes `hitl.py` materially smaller
 - focused Chainlit tests and README text affected by the final structure
 
@@ -54,8 +55,10 @@ application-specific.
 
 ## Implementation Steps
 
-1. Complete units 01 and 05 first, then use their final strict input models and
-   Responses helpers. Do not preserve an interim client shape with an adapter.
+1. Complete units 05 and 06 first, then verify the client-generated requests
+   against the final documented Responses subset. The independently deployed UI
+   must continue using official OpenAI SDK request/output types; do not import
+   LGOS's server-internal Pydantic request models.
 2. Extract a small pure ledger codec from `hitl.py`. It should own the schema
    version, pending/completed values, strict metadata validation, selection of
    the newest valid pending entry, and conversion to immutable continuation
@@ -75,13 +78,16 @@ application-specific.
 7. Keep the rule that all calls in a parallel interrupt batch are answered
    together. Cancellation while a prompt is open must leave the persisted
    pending ledger intact for the next resume.
-8. In `simple.py`, separate result classification from host rendering only if a
-   pure helper is shared by the streamed and non-streamed paths. Continue using
-   the official SDK stream iterator and the existing file, MCP, and response
-   helpers; do not create another response accumulator.
+8. Leave `simple.py` structurally unchanged unless a required wire migration
+   reveals a pure result-classification helper shared by streamed and
+   non-streamed paths. Continue using the official SDK stream iterator and the
+   existing file, MCP, and response helpers; do not create another response
+   accumulator.
 9. Apply strict validation to client-owned persisted values at decode time.
    Invalid or future ledger versions should fail closed and produce the current
-   visible recovery error without sending a guessed resume.
+   visible recovery error without sending a guessed resume. Treat Chainlit's
+   surrounding `ThreadDict` as an extensible host object: read and validate only
+   consumed fields rather than rejecting unrelated host-added fields.
 10. Replace tests that mock a chain of internal helpers with direct pure-codec
     cases plus the smallest hook-level tests needed to prove persistence order,
     reconnect behavior, rendering, and cancellation.

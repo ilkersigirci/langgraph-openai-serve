@@ -15,11 +15,14 @@ rewrites.
 
 ## Audit Steps
 
-1. Read the Outcome section of units 01–09. Resolve any unfinished item or
-   explicitly move it to a new, bounded work unit with evidence; do not silently
-   declare it complete.
+1. Read the Outcome section of units 01–09, including evidence-backed no-change
+   outcomes. Resolve any unfinished item or explicitly move it to a new, bounded
+   work unit with evidence; do not silently declare it complete.
 2. Compare public OpenAPI schemas and representative official-SDK requests with
-   the pre-refactor contract. Confirm that supported `/v1/models`,
+   the post-unit-01 contract plus every intentional delta recorded in later
+   outcomes. Unit 01 deliberately made nested request schemas stricter, so the
+   original baseline is not expected to be byte-identical. Confirm that
+   supported `/v1/models`,
    `/v1/chat/completions`, `/v1/responses`, Files demo, streaming SSE, error
    envelopes, metadata, and interrupt continuation behavior remain documented.
 3. Search the changed core paths for remaining `Any`, casts, bare dictionaries,
@@ -78,9 +81,11 @@ direct, LiteLLM, or Bifrost tests only when their services and credentials are
 available. Record each skipped external check in the Outcome instead of
 claiming it passed.
 
-For the two browser clients, follow `demo/.agents/skills/browser-checks/SKILL.md`
-and verify at least ordinary streaming, one client tool, file handling, and an
-interrupt reconnect for the paths changed in units 07 and 08.
+For either browser client changed in units 07 or 08, follow
+`demo/.agents/skills/browser-checks/SKILL.md` and verify the affected paths. For
+the full pair of client refactors, cover at least ordinary streaming, one client
+tool, file handling, and interrupt reconnect. Do not claim a live browser check
+for a client with a no-change outcome.
 
 ## Final Review Questions
 

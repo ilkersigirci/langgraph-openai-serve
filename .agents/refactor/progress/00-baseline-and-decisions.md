@@ -128,10 +128,11 @@ required proof.
 
 LangGraph now recommends its v3 event-streaming API for application code, and
 that API exposes message, output, and interrupt projections. In locked 1.2.9 it
-is explicitly decorated and documented as experimental. The core refactor will
-use stable v2 types first. A v3 migration is allowed only as the bounded spike in
-unit 03, after it passes the project's custom-event, nested update, usage,
-durability, and cancellation behavior matrix with less local code.
+is explicitly decorated and documented as experimental. The core refactor uses
+stable v2 types. A v3 migration is outside this plan; reconsider it in a future
+bounded spike only after a locked stable release passes the project's
+custom-event, nested-update, usage, durability, and cancellation behavior
+matrix with less local code.
 
 ### Exact interrupt generation cannot use IDs alone
 
@@ -228,6 +229,8 @@ typed invalid calls or controlled OpenAI request errors.
 5. Keep client-specific Chainlit and Open WebUI persistence and rendering.
 6. Do not introduce a general internal framework for two protocol adapters or
    one lifecycle use case.
+7. Keep the core runner on LangGraph's stable v2 execution API for this
+   refactor; do not combine ownership cleanup with an experimental v3 migration.
 
 Reopen one of these decisions only with a smaller working implementation and a
 behavior test that explains what changed.

@@ -7,7 +7,7 @@
 ## Objective
 
 Keep one explicit OpenAI Responses state machine, give graph orchestration and
-wire assembly clear boundaries, and remove complexity that only compensates for
+wire assembly clear boundaries, and remove only complexity that compensates for
 coarse runner events.
 
 ## Current Assessment
@@ -47,9 +47,10 @@ tool, custom tool, or web-search ownership in this unit.
 
 ## Implementation Steps
 
-1. Update the graph-to-Responses adapter to consume unit 02's precise runner
+1. Update the graph-to-Responses adapter to consume unit 02's native runner
    events. Remove casts and broad unions that no longer describe possible
-   values.
+   values, while keeping `Any` or mapping validation where LangGraph graph data
+   is genuinely user-defined.
 2. Keep one stateful accumulator for streaming and non-streaming output. Its
    public methods should accept protocol facts: final-text delta, status
    commentary, server-tool item/update, final assistant message, interrupt
@@ -57,16 +58,19 @@ tool, custom tool, or web-search ownership in this unit.
 3. Keep mutable state local to that accumulator. Sequence number, output list,
    active final text item, and server-tool call/result correlation are clear
    local mutation and do not need immutable copies after every event.
-4. Separate graph/I/O orchestration from event lifecycle construction if doing
-   so produces one clean module boundary without import cycles. One split such
-   as builder versus stream orchestration is reasonable; splitting every event
-   family into a file is not.
+4. Separate graph/I/O orchestration from event lifecycle construction only if
+   doing so produces one clean module boundary without import cycles. A split
+   such as builder/events versus stream orchestration is reasonable; splitting
+   every event family into a file is not. If the existing single module remains
+   clearer after the type changes, keep it and record that decision.
 5. Make terminal ownership explicit. Exactly one completed, incomplete, or
    failed terminal event must be produced, and the non-streaming collector must
    obtain the same final `Response` from that path.
-6. Keep server-tool correlation separate from generic text-item state. Give
-   `ServerToolTracker` the narrow typed update/item input available after unit
-   02, while retaining its pending-call completeness check.
+6. Keep server-tool correlation separate from generic text-item state. Continue
+   accepting LangGraph's native `UpdatesStreamPart`; validate only the
+   graph-authored message shape the tracker consumes and retain its pending-call
+   completeness check. Do not invent an exhaustive type for arbitrary graph
+   state updates.
 7. Simplify large branch methods such as `_tool_item()` only when named helpers
    correspond to real SDK output families. Do not replace an exhaustive type
    branch with reflection or dynamic model lookup.
@@ -97,7 +101,12 @@ focused tests for text before interrupt, refusals, malformed tool calls, server
 tools, citation indexes, terminal outcomes, cancellation, and usage.
 
 Do not rewrite fixtures from the refactored implementation. Expected event
-payloads must remain independently reviewed wire examples.
+payloads must remain independently reviewed wire examples. Existing normalized
+fixtures, rather than raw UUIDs or timestamps, define event parity.
+
+This unit must end with either one demonstrably cleaner orchestration/builder
+boundary or a recorded no-split decision. Do not churn event-family methods
+merely to make the largest file shorter.
 
 ## Validation
 
