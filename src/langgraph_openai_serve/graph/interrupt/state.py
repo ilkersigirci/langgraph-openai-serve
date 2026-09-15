@@ -52,28 +52,23 @@ async def prepare_interrupt_input(  # ruff: ignore[too-many-arguments]
     checkpoint_id = get_checkpoint_id(snapshot.config)
 
     if resume is None:
-        if checkpoint_id is None:
-            return await graph_config.build_input(request, messages), True, ()
-        if pending_interrupts:
-            # Re-emit persisted tool calls without rerunning graph nodes.
-            return None, False, tuple(pending_interrupts.values())
-        msg = "This run_id has already been used."
-        raise InterruptStateConflictError(msg)
+        return await _prepare_new_or_retry_input(
+            graph_config,
+            request,
+            messages,
+            checkpoint_id=checkpoint_id,
+            pending_interrupts=pending_interrupts,
+        )
 
-    if checkpoint_id is None:
-        msg = "No durable interrupt state exists for this run."
-        raise InterruptStateConflictError(msg)
-    if not pending_interrupts:
-        msg = "This run no longer has pending interrupts."
-        raise InterruptStateConflictError(msg)
+    _require_pending_resume_state(checkpoint_id, pending_interrupts)
 
-    state_token = await checkpoint_state_token(graph, snapshot.config)
-    if state_token is None:
+    generation_token = await continuation_generation_token(graph, snapshot.config)
+    if generation_token is None:
         msg = "No durable interrupt state exists for this run."
         raise InterruptStateConflictError(msg)
     return (
         _resume_interrupt_inputs(
-            state_token,
+            generation_token,
             set(pending_interrupts),
             resume,
         ),
@@ -82,20 +77,60 @@ async def prepare_interrupt_input(  # ruff: ignore[too-many-arguments]
     )
 
 
+async def _prepare_new_or_retry_input(
+    graph_config: GraphConfig,
+    request: GraphRequest,
+    messages: list[BaseMessage],
+    *,
+    checkpoint_id: str | None,
+    pending_interrupts: dict[str, Interrupt],
+) -> tuple[Any, bool, tuple[Interrupt, ...]]:
+    if checkpoint_id is None:
+        return await graph_config.build_input(request, messages), True, ()
+    if pending_interrupts:
+        # Re-emit persisted tool calls without rerunning graph nodes.
+        return None, False, tuple(pending_interrupts.values())
+    msg = "This run_id has already been used."
+    raise InterruptStateConflictError(msg)
+
+
+def _require_pending_resume_state(
+    checkpoint_id: str | None,
+    pending_interrupts: dict[str, Interrupt],
+) -> None:
+    if checkpoint_id is None:
+        msg = "No durable interrupt state exists for this run."
+        raise InterruptStateConflictError(msg)
+    if not pending_interrupts:
+        msg = "This run no longer has pending interrupts."
+        raise InterruptStateConflictError(msg)
+
+
 def _resume_interrupt_inputs(
-    state_token: str,
+    generation_token: str,
     pending_ids: set[str],
     resume: InterruptResume,
 ) -> Command:
-    if resume.state_token != state_token:
-        msg = "The interrupt result is stale for the current interrupt generation."
-        raise InterruptStateConflictError(msg)
-    if set(resume.values) != pending_ids:
-        msg = "Interrupt results do not match the complete pending interrupt set."
-        raise InterruptStateConflictError(msg)
+    _validate_resume_generation(generation_token, resume.generation_token)
+    _validate_complete_pending_set(pending_ids, set(resume.values))
 
     # The ID/value form preserves call causality and handles parallel batches.
     return Command(resume=resume.values)
+
+
+def _validate_resume_generation(current: str, submitted: str) -> None:
+    if submitted != current:
+        msg = "The interrupt result is stale for the current interrupt generation."
+        raise InterruptStateConflictError(msg)
+
+
+def _validate_complete_pending_set(
+    pending_ids: set[str],
+    submitted_ids: set[str],
+) -> None:
+    if submitted_ids != pending_ids:
+        msg = "Interrupt results do not match the complete pending interrupt set."
+        raise InterruptStateConflictError(msg)
 
 
 def interrupts_by_id(snapshot: StateSnapshot) -> dict[str, Interrupt]:
@@ -174,12 +209,12 @@ def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
-async def checkpoint_state_token(
+async def continuation_generation_token(
     graph: CompiledStateGraph,
     runnable_config: RunnableConfig,
 ) -> str | None:
     """
-    Fingerprint the latest checkpoint in every namespace.
+    Fingerprint the durable continuation generation across all namespaces.
 
     Nested resumes may not advance the root checkpoint, and indirectly invoked
     subgraphs are not exposed through state snapshots. Scanning the checkpointer
@@ -202,6 +237,9 @@ async def checkpoint_state_token(
         if head is not None and checkpoint_id <= head[0]:
             continue
 
+        # Locked LangGraph 1.2.9 can reuse both its interrupt ID and checkpoint
+        # ID for a later pause in one task. Only the durable RESUME-write count
+        # distinguishes that continuation generation without storing answers.
         heads[namespace] = (
             checkpoint_id,
             sorted(
@@ -257,13 +295,13 @@ async def durable_interrupt_batch(
     if run_id is None:
         msg = "run_id cannot be None"
         raise RuntimeError(msg)
-    state_token = await checkpoint_state_token(graph, runnable_config)
-    if state_token is None:
+    generation_token = await continuation_generation_token(graph, runnable_config)
+    if generation_token is None:
         msg = "Interrupted LangGraph state has no checkpoint tuple."
         raise RuntimeError(msg)
     return LangGraphInterruptBatch(
         run_id=run_id,
-        state_token=state_token,
+        generation_token=generation_token,
         interrupts=tuple(pending_interrupts.values()),
     )
 

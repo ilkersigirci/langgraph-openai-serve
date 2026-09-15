@@ -490,7 +490,7 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
     assert isinstance(paused, LangGraphInterruptBatch)
     resume = InterruptResume(
         run_id=paused.run_id,
-        state_token=paused.state_token,
+        generation_token=paused.generation_token,
         values={paused.interrupts[0].id: "approve"},
     )
 

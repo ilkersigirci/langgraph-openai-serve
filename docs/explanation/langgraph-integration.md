@@ -161,8 +161,8 @@ production adapter.
 !!! warning "Test the interrupt contract before every LangGraph upgrade"
 
     Sequential interrupts can reuse their interrupt and checkpoint IDs, so the
-    opaque `state_token` fingerprints every checkpoint namespace and its
-    durable resume-channel generations.
+    opaque continuation-generation token fingerprints every checkpoint namespace
+    and its durable resume-channel generations.
     Keep the sequential, parallel, nested, stale-resume, and restart tests as
     an upgrade gate before widening the supported LangGraph range. See the
     official

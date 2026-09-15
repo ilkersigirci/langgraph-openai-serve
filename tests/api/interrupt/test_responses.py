@@ -9,13 +9,13 @@ from langgraph_openai_serve.api.responses.service import interrupt_output_items
 from langgraph_openai_serve.api.responses.streaming import ResponsesStreamBuilder
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
-STATE_TOKEN = "a" * 64
+GENERATION_TOKEN = "a" * 64
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 RESPONSE_NONCE = "b" * 32
 RESPONSE_ID = f"resp_lg_{RUN_ID.replace('-', '')}_{RESPONSE_NONCE}"
 EXPECTED_CALL_IDS = [
-    f"call_lg_{STATE_TOKEN}_{RESPONSE_NONCE}_interrupt-b",
-    f"call_lg_{STATE_TOKEN}_{RESPONSE_NONCE}_interrupt-a",
+    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-b",
+    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-a",
 ]
 EXPECTED_ARGUMENTS = [
     {"question": "B?"},
@@ -26,7 +26,7 @@ EXPECTED_ARGUMENTS = [
 def _interrupt_batch() -> LangGraphInterruptBatch:
     return LangGraphInterruptBatch(
         run_id=RUN_ID,
-        state_token=STATE_TOKEN,
+        generation_token=GENERATION_TOKEN,
         interrupts=(
             Interrupt(id="interrupt-b", value={"question": "B?"}),
             Interrupt(id="interrupt-a", value={"question": "A?"}),

@@ -1,6 +1,6 @@
 # 04 — Interrupt Continuation Identity
 
-- Status: **Waiting for 02**
+- Status: **Complete**
 - Priority: **P1**
 - Dependencies: **02**
 
@@ -13,9 +13,9 @@ to rewrite an algorithm that is already isolated and covered.
 
 ## Why This Cannot Be A Deletion Refactor
 
-`graph/interrupt/state.py::checkpoint_state_token()` scans checkpoint history,
-selects the latest checkpoint in each namespace, includes counts from the
-`__resume__` pending-write channel, and hashes the result. This is the least
+`graph/interrupt/state.py::continuation_generation_token()` scans checkpoint
+history, selects the latest checkpoint in each namespace, includes counts from
+the `__resume__` pending-write channel, and hashes the result. This is the least
 comfortable part of the interrupt design because it couples LGOS to checkpoint
 tuple details and scales with thread history.
 
@@ -129,4 +129,48 @@ restart. Verify that claim with the same direct and nested probe before coding.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-15.
+
+- Unit 02 had already removed the post-execution snapshot read and supplied
+  native interrupt tuples plus the prepared runnable configuration. No obsolete
+  snapshot helper remained to remove.
+- The checkpoint-history fingerprint is now named for its actual role as the
+  continuation-generation token. The protocol-neutral resume and batch models,
+  Responses codec, and internal serializer use the same terminology while the
+  opaque wire format remains unchanged.
+- New/retry handling, resumable-state checks, generation validation, and
+  complete pending-set validation are separate named stages. Parallel answers
+  still reach LangGraph as `Command(resume={interrupt_id: value, ...})`.
+- `CheckpointTuple.pending_writes` and the `RESUME` channel remain confined to
+  `continuation_generation_token()`. A nearby comment records why locked
+  LangGraph 1.2.9's reused sequential interrupt and checkpoint IDs require the
+  durable resume-write count.
+- The generation hash still uses the
+  `langgraph-openai-serve.interrupt-state.v2` domain separator and emits a
+  deterministic lowercase 64-hex digest. Query behavior did not change, so the
+  recorded scan measurements remain the applicable baseline.
+- The asynchronous saver capability surface remains `aget_tuple()`, `alist()`,
+  `aput()`, `aput_writes()`, and `adelete_thread()`. Locked LangGraph uses the
+  read/write methods during async state access and execution; LGOS additionally
+  needs `alist()` for cross-namespace generation identity and
+  `adelete_thread()` for terminal cleanup. No registration check was loosened.
+
+Locked-version verification used `uv.lock`, `uv tree --locked`, installed
+package introspection, and byte-for-byte SHA-256 comparisons with the official
+tagged sources. The installed LangGraph checkpoint base and execution-loop files
+matched the official 1.2.9 tag; the installed OpenAI Responses parameter files
+matched the official Python SDK 2.45.0 tag:
+
+- [LangGraph 1.2.9 checkpoint interface](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/checkpoint/langgraph/checkpoint/base/__init__.py)
+- [LangGraph 1.2.9 execution loop](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/langgraph/langgraph/pregel/_loop.py)
+- [LangGraph interrupt guidance](https://docs.langchain.com/oss/python/langgraph/interrupts)
+- [OpenAI Python 2.45.0 Responses request parameters](https://github.com/openai/openai-python/blob/v2.45.0/src/openai/types/responses/response_create_params.py)
+- [OpenAI Responses creation reference](https://developers.openai.com/api/reference/resources/responses/methods/create)
+
+| Validation | Result |
+| --- | --- |
+| `just check` | Pass |
+| `just test tests/api/interrupt tests/graph/runner tests/integrations/test_postgres.py` | 108 passed |
+| `just test` | 393 passed |
+| `just docs` | Strict build passed |
+| `cd demo && just test-postgres --editable --uri "$DEMO_API_TEST_POSTGRES_URI"` | Not run; `DEMO_API_TEST_POSTGRES_URI` was unavailable |
