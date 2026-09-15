@@ -1,11 +1,10 @@
 from collections.abc import AsyncIterator, Callable
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from anyio import Event, fail_after, sleep_forever
 from langchain_core.messages import AIMessage, AIMessageChunk
-from langgraph.types import GraphOutput
+from langgraph.types import GraphOutput, StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
@@ -30,15 +29,14 @@ class CleanupGraph:
 
     def __init__(
         self,
-        events: Callable[[], AsyncIterator[dict[str, Any]]],
+        events: Callable[[], AsyncIterator[StreamPart[Any, Any]]],
         *,
         delete_error: Exception | None = None,
     ) -> None:
         self._events = events
         self.checkpointer = RecordingCheckpointer(delete_error)
-        self.state_reads = 0
 
-    def astream(self, *_args, **_kwargs) -> AsyncIterator[dict[str, Any]]:
+    def astream(self, *_args, **_kwargs) -> AsyncIterator[StreamPart[Any, Any]]:
         return self._events()
 
     async def ainvoke(self, *_args, **_kwargs) -> GraphOutput[Any]:
@@ -47,10 +45,6 @@ class CleanupGraph:
             if event.get("type") == "values" and not event.get("ns"):
                 output = event["data"]
         return GraphOutput(value=output)
-
-    async def aget_state(self, *_args, **_kwargs):
-        self.state_reads += 1
-        return SimpleNamespace(interrupts=())
 
 
 def cleanup_run(
@@ -85,7 +79,12 @@ async def test_rendering_failure_deletes_without_replacing_error(
     delete_error: Exception | None,
 ) -> None:
     async def events():
-        yield {"type": "values", "ns": (), "data": {"answer": "done"}}
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"answer": "done"},
+            interrupts=(),
+        )
 
     async def fail_rendering(_output: Any) -> AIMessage:
         msg = "rendering failed"
@@ -97,7 +96,6 @@ async def test_rendering_failure_deletes_without_replacing_error(
         await invoke_run(cleanup_run(graph, output_to_message=fail_rendering))
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
-    assert graph.state_reads == 1
 
 
 @pytest.mark.parametrize(
@@ -109,7 +107,12 @@ async def test_execution_failure_deletes_without_replacing_error(
     delete_error: Exception | None,
 ) -> None:
     async def events():
-        yield {"type": "values", "ns": (), "data": {"answer": "partial"}}
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"answer": "partial"},
+            interrupts=(),
+        )
         msg = "graph failed"
         raise ValueError(msg)
 
@@ -119,7 +122,6 @@ async def test_execution_failure_deletes_without_replacing_error(
         await invoke_run(cleanup_run(graph))
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
-    assert graph.state_reads == 0
 
 
 async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> None:

@@ -1,6 +1,6 @@
 # 02 — Native LangGraph Execution Results
 
-- Status: **Ready**
+- Status: **Complete**
 - Priority: **P0**
 - Dependencies: **None**
 
@@ -116,4 +116,39 @@ locked stable release and the full behavior matrix recorded in unit 00.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-15.
+
+- `ainvoke()` and `astream()` now receive a visible literal `version="v2"`.
+  Invoke consumes `GraphOutput.value` and `GraphOutput.interrupts`; streaming
+  discriminates the native `StreamPart` union and passes `MessagesStreamPart`,
+  `CustomStreamPart`, and `UpdatesStreamPart` through narrow boundaries.
+- Streaming retains only root `ValuesStreamPart.data` as durable output and
+  accumulates interrupts from every root values part in first-seen order.
+  Identical repeated IDs are de-duplicated, while conflicting repeated IDs fail
+  as invalid native state. Focused coverage includes parallel, nested,
+  indirectly nested, conflicting, and successful resume streams.
+- Durable batch construction receives native interrupts and the prepared
+  runnable configuration. It still scans checkpoint tuples for the continuation
+  token, but it no longer calls `aget_state()` after invoke or stream execution.
+- Pending retries retain only the validated interrupt tuple from the initial
+  preparation snapshot, and re-emit it without graph execution or another state
+  read. Initial conflict checking, exit durability, checkpoint cleanup, lease
+  release, and protocol event assembly are unchanged.
+- Runner documentation now describes native v2 result consumption and
+  multi-part interrupt accumulation.
+
+Locked-version verification used `uv.lock`, `uv tree --locked`, and the
+installed LangGraph 1.2.9 sources. The installed `types.py` and
+`pregel/main.py` hashes matched the official 1.2.9 tag, whose public definitions
+expose `GraphOutput`, the discriminated `StreamPart` union, and the literal-v2
+`ainvoke()`/`astream()` overloads:
+
+- [LangGraph 1.2.9 result and stream types](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/langgraph/langgraph/types.py)
+- [LangGraph 1.2.9 execution overloads](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/langgraph/langgraph/pregel/main.py)
+
+| Validation | Result |
+| --- | --- |
+| `just check` | Pass |
+| `just test tests/graph/runner tests/api/interrupt tests/api/responses tests/api/test_chat_cancellation.py` | 184 passed |
+| `just test` | 389 passed |
+| `just docs` | Strict build passed |

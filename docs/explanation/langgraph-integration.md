@@ -107,8 +107,8 @@ OpenAI response mode; server tools additionally need intermediate updates.
     `graph.ainvoke(version="v2")`. Requests selecting server tools use
     `stream_run()` so LGOS can collect native call/result updates. That path
     does not subscribe to message deltas, encode SSE, or include transient
-    commentary. Both paths use the same Responses item builder and read durable
-    pending state for interrupts.
+    commentary. Both paths use the same Responses item builder and consume
+    interrupts from LangGraph's native v2 execution results.
 
 === "SSE response"
 
@@ -125,10 +125,11 @@ OpenAI response mode; server tools additionally need intermediate updates.
     selection or the `nostream` tag; tool selection does not disable streaming.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
-    events. The final root value supplies durable citations, tool calls, and
-    provider-reported usage. After execution quiesces, it reads durable pending
-    state and renders a complete interrupt batch when present. Unknown custom
-    events stay private.
+    events. Root value parts supply the durable final output and complete
+    interrupt set; LGOS accumulates parallel interrupts when LangGraph emits
+    them across multiple parts. After execution quiesces, LGOS binds that
+    native set to the durable continuation generation and renders one complete
+    interrupt batch. Unknown custom events stay private.
 
 Internal model calls that must not reach the assistant text stream use LangGraph's native
 `nostream` tag. `streamable_node_names` selects calls whose text is intended for

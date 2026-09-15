@@ -9,8 +9,11 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import (
     CustomStreamPart,
-    GraphOutput,
+    Durability,
+    Interrupt,
+    MessagesStreamPart,
     StreamMode,
+    StreamPart,
     UpdatesStreamPart,
 )
 
@@ -93,26 +96,27 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
-            interrupt_batch = await _durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(
+                run,
+                run.pending_interrupts,
+            )
             if interrupt_batch is None:
                 msg = "Pending interrupt state disappeared before use."
                 raise RuntimeError(msg)
             checkpoint_disposition = "preserve"
             return interrupt_batch
 
-        result = cast(
-            "GraphOutput[Any]",
-            await run.graph.ainvoke(
-                run.inputs,
-                config=run.runnable_config,
-                context=run.context,
-                output_keys=run.graph.output_channels,
-                **_invoke_options(run),
-            ),
+        result = await run.graph.ainvoke(
+            run.inputs,
+            config=run.runnable_config,
+            context=run.context,
+            output_keys=run.graph.output_channels,
+            durability=_durability(run),
+            version="v2",
         )
 
         if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await _durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run, result.interrupts)
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
                 return interrupt_batch
@@ -185,7 +189,10 @@ async def stream_run(
     checkpoint_disposition: _CheckpointDisposition = "unknown"
     try:
         if not run.should_execute:
-            interrupt_batch = await _durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(
+                run,
+                run.pending_interrupts,
+            )
             if interrupt_batch is None:
                 msg = "Pending interrupt state disappeared before use."
                 raise RuntimeError(msg)
@@ -194,36 +201,43 @@ async def stream_run(
             return
 
         final_output: Any = _MISSING
+        interrupts: list[Interrupt] = []
 
+        # LangGraph implements this as an async generator, while its overload
+        # returns AsyncIterator. Keep the concrete type so cancellation closes it.
         graph_stream = cast(
-            "AsyncGenerator[dict[str, Any], None]",
+            "AsyncGenerator[StreamPart[Any, Any], None]",
             run.graph.astream(
                 run.inputs,
                 config=run.runnable_config,
                 context=run.context,
-                **_astream_options(
-                    run,
+                stream_mode=_stream_modes(
                     stream_messages=stream_messages,
                     stream_updates=stream_updates,
                 ),
+                subgraphs=True,
+                output_keys=run.graph.output_channels,
+                durability=_durability(run),
+                version="v2",
             ),
         )
         async with aclosing(graph_stream):
-            async for event in graph_stream:
-                event_type = event.get("type")
-                if event_type == "values" and not event.get("ns"):
-                    final_output = event.get("data")
+            async for part in graph_stream:
+                if part["type"] == "values":
+                    if not part["ns"]:
+                        final_output = part["data"]
+                        interrupts.extend(part["interrupts"])
                     continue
-                part = _visible_stream_part(
-                    event,
+                visible_part = _visible_stream_part(
+                    part,
                     run,
                     stream_updates=stream_updates,
                 )
-                if part is not None:
-                    yield part
+                if visible_part is not None:
+                    yield visible_part
 
         if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await _durable_interrupt_batch(run)
+            interrupt_batch = await _durable_interrupt_batch(run, tuple(interrupts))
             if interrupt_batch is not None:
                 checkpoint_disposition = "preserve"
                 yield interrupt_batch
@@ -237,22 +251,21 @@ async def stream_run(
 
 
 def _visible_stream_part(
-    event: dict[str, Any],
+    part: StreamPart[Any, Any],
     run: GraphRun,
     *,
     stream_updates: bool,
 ) -> LangGraphStreamEvent | None:
-    event_type = event.get("type")
-    if event_type == "custom":
-        return cast("CustomStreamPart", event)
-    if event_type == "updates" and stream_updates:
-        return cast("UpdatesStreamPart", event)
-    if event_type == "messages":
-        return text_from_message_event(event, run)
+    if part["type"] == "custom":
+        return part
+    if part["type"] == "updates" and stream_updates:
+        return part
+    if part["type"] == "messages":
+        return text_from_message_event(part, run)
     return None
 
 
-def text_from_message_event(event: dict, run: GraphRun) -> str | None:
+def text_from_message_event(event: MessagesStreamPart, run: GraphRun) -> str | None:
     """Extract visible text from a streamable LangGraph message event."""
     message, metadata = event["data"]
     if not isinstance(message, AIMessageChunk):
@@ -266,32 +279,23 @@ def text_from_message_event(event: dict, run: GraphRun) -> str | None:
     return content or None
 
 
-def _invoke_options(run: GraphRun) -> dict[str, Any]:
-    """Build shared LangGraph invocation options."""
-    options: dict[str, Any] = {"version": "v2"}
-    if run.config.supports(GraphFeature.INTERRUPTS):
-        options["durability"] = "exit"
-    return options
-
-
-def _astream_options(
-    run: GraphRun,
+def _stream_modes(
     *,
     stream_messages: bool,
     stream_updates: bool,
-) -> dict[str, Any]:
-    """Build LangGraph streaming options."""
+) -> list[StreamMode]:
+    """Build the requested LangGraph stream modes."""
     stream_mode: list[StreamMode] = ["custom", "values"]
     if stream_messages:
         stream_mode.insert(0, "messages")
     if stream_updates:
         stream_mode.append("updates")
-    return {
-        "stream_mode": stream_mode,
-        "subgraphs": True,
-        "output_keys": run.graph.output_channels,
-        **_invoke_options(run),
-    }
+    return stream_mode
+
+
+def _durability(run: GraphRun) -> Durability | None:
+    """Persist interrupt runs when they pause or exit."""
+    return "exit" if run.config.supports(GraphFeature.INTERRUPTS) else None
 
 
 def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:
@@ -308,9 +312,11 @@ async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
 
 async def _durable_interrupt_batch(
     run: GraphRun,
+    interrupts: tuple[Interrupt, ...],
 ) -> interrupt_models.LangGraphInterruptBatch | None:
     return await interrupt_state.durable_interrupt_batch(
         run.graph,
+        interrupts,
         run.runnable_config,
         run.run_id,
     )

@@ -23,7 +23,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
-from langgraph.types import GraphOutput
+from langgraph.types import GraphOutput, Interrupt, ValuesStreamPart
 
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -41,6 +41,7 @@ from langgraph_openai_serve.graph.runner import (
     invoke_run,
     run_langgraph,
     run_langgraph_stream,
+    stream_run,
 )
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
@@ -51,6 +52,8 @@ from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
     make_interrupt_graph,
     make_parallel_interrupt_graph,
+    make_parallel_nested_interrupt_graph,
+    make_sequential_nested_interrupt_graph,
 )
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.schemas import MessageState
@@ -354,6 +357,105 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
     }
     options = astream_options[0] if stream else ainvoke_options[0]
     assert options["durability"] == "exit"
+
+
+@pytest.mark.parametrize(
+    ("graph_factory", "expected_questions"),
+    [
+        pytest.param(
+            make_parallel_nested_interrupt_graph,
+            {"nested-a", "nested-b"},
+            id="nested-parallel",
+        ),
+        pytest.param(
+            make_sequential_nested_interrupt_graph,
+            {"first"},
+            id="indirectly-nested",
+        ),
+    ],
+)
+async def test_stream_returns_nested_interrupts_from_root_values(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+    graph_factory,
+    expected_questions: set[str],
+) -> None:
+    graph = graph_factory(sqlite_checkpointer)
+    registry = GraphRegistry(
+        registry={
+            "nested": GraphConfig(
+                graph=graph,
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                request_to_input=lambda _request, _messages: {"answers": []},
+                output_to_message=lambda output: AIMessage(
+                    content=str(output["answers"])
+                ),
+                run_coordinator=InMemoryRunCoordinator(),
+            )
+        }
+    )
+    request = make_request(
+        "nested",
+        metadata={RUN_METADATA_KEY: RUN_ID},
+    )
+
+    outputs = [
+        event
+        async for event in run_langgraph_stream(
+            request,
+            [HumanMessage(content="question")],
+            registry,
+        )
+    ]
+
+    assert len(outputs) == 1
+    batch = outputs[0]
+    assert isinstance(batch, LangGraphInterruptBatch)
+    assert {interrupt.value["question"] for interrupt in batch.interrupts} == (
+        expected_questions
+    )
+
+
+async def test_stream_rejects_conflicting_duplicate_interrupt_id(
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    graph = make_interrupt_graph(checkpointer=sqlite_checkpointer)
+    first = Interrupt(value={"question": "first"}, id="duplicate")
+    conflicting = Interrupt(value={"question": "second"}, id="duplicate")
+
+    async def graph_events(*_args, **_kwargs):
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"messages": []},
+            interrupts=(first,),
+        )
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"messages": []},
+            interrupts=(conflicting,),
+        )
+
+    monkeypatch.setattr(graph, "astream", graph_events)
+    run = GraphRun(
+        config=GraphConfig(
+            graph=graph,
+            description="DUMMY",
+            features={GraphFeature.INTERRUPTS},
+        ),
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config={"configurable": {"thread_id": "conflicting-interrupts"}},
+        run_id=RUN_ID,
+        checkpoint_thread_id="conflicting-interrupts",
+    )
+
+    with pytest.raises(RuntimeError, match="conflicting data"):
+        _ = [event async for event in stream_run(run)]
 
 
 async def test_interrupt_resumes_after_checkpointer_and_graph_restart(

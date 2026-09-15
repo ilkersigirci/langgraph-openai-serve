@@ -13,6 +13,7 @@ from langchain_core.messages import BaseMessage, UsageMetadata
 from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Interrupt
 
 from langgraph_openai_serve.core.logging import (
     bind_log_context,
@@ -48,6 +49,7 @@ class GraphRun:
     run_id: str | None
     checkpoint_thread_id: str | None = None
     should_execute: bool = True
+    pending_interrupts: tuple[Interrupt, ...] = ()
     usage_callback: UsageMetadataCallbackHandler = field(
         default_factory=UsageMetadataCallbackHandler,
         repr=False,
@@ -125,7 +127,11 @@ async def prepare_run(
 
     try:
         snapshot = await graph.aget_state(runnable_config, subgraphs=True)
-        inputs, should_execute = await interrupt_state.prepare_interrupt_input(
+        (
+            inputs,
+            should_execute,
+            pending_interrupts,
+        ) = await interrupt_state.prepare_interrupt_input(
             graph_config,
             graph,
             request,
@@ -154,6 +160,7 @@ async def prepare_run(
         run_id=run_id,
         checkpoint_thread_id=checkpoint_thread_id,
         should_execute=should_execute,
+        pending_interrupts=pending_interrupts,
         usage_callback=usage_callback,
         _lease=lease,
     )
