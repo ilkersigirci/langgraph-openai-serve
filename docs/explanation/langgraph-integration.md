@@ -107,8 +107,8 @@ OpenAI response mode; server tools additionally need intermediate updates.
     `graph.ainvoke(version="v2")`. Requests selecting server tools use
     `stream_run()` so LGOS can collect native call/result updates. That path
     does not subscribe to message deltas, encode SSE, or include transient
-    commentary. Both paths use the same Responses item builder and read durable
-    pending state for interrupts.
+    commentary. Both paths use the same Responses item builder and consume
+    interrupts from LangGraph's native v2 execution results.
 
 === "SSE response"
 
@@ -125,10 +125,11 @@ OpenAI response mode; server tools additionally need intermediate updates.
     selection or the `nostream` tag; tool selection does not disable streaming.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
-    events. The final root value supplies durable citations, tool calls, and
-    provider-reported usage. After execution quiesces, it reads durable pending
-    state and renders a complete interrupt batch when present. Unknown custom
-    events stay private.
+    events. Root value parts supply the durable final output and complete
+    interrupt set; LGOS accumulates parallel interrupts when LangGraph emits
+    them across multiple parts. After execution quiesces, LGOS binds that
+    native set to the durable continuation generation and renders one complete
+    interrupt batch. Unknown custom events stay private.
 
 Internal model calls that must not reach the assistant text stream use LangGraph's native
 `nostream` tag. `streamable_node_names` selects calls whose text is intended for
@@ -144,6 +145,13 @@ retains only checkpoints it has exposed as an interrupt and otherwise performs
 best-effort terminal cleanup. The complete lifecycle is specified in
 [OpenAI compatibility](openai-compatibility.md#durable-validation-and-recovery).
 
+One prepared-run async context owns that lease and its checkpoint disposition.
+State is left untouched until execution starts, becomes cleanup-eligible while
+execution is incomplete, and becomes retained only when the runner commits a
+validated interrupt batch. The context deletes terminal or incomplete temporary
+state before releasing the lease. Cleanup is idempotent, shielded from outer
+request cancellation, and never replaces an execution or cancellation failure.
+
 The graph therefore needs an async checkpointer implementing `aget_tuple()`,
 `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator
 shared by all workers. See
@@ -153,8 +161,8 @@ production adapter.
 !!! warning "Test the interrupt contract before every LangGraph upgrade"
 
     Sequential interrupts can reuse their interrupt and checkpoint IDs, so the
-    opaque `state_token` fingerprints every checkpoint namespace and its
-    durable resume-channel generations.
+    opaque continuation-generation token fingerprints every checkpoint namespace
+    and its durable resume-channel generations.
     Keep the sequential, parallel, nested, stale-resume, and restart tests as
     an upgrade gate before widening the supported LangGraph range. See the
     official
@@ -187,7 +195,9 @@ request types.
 
 `run_langgraph()` returns the final `AIMessage` or `LangGraphInterruptBatch`
 directly. The streaming helper yields text and custom events followed by that
-same output type.
+same output type. These public helpers own the prepared-run context for their
+complete lifetime. Lower-level `invoke_run()` and `stream_run()` calls operate
+only inside the active context supplied by an HTTP service or direct wrapper.
 
 When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
 Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation
@@ -204,8 +214,10 @@ For streaming Responses and Chat Completions (`stream=true`), LGOS ties graph
 iteration to the HTTP response lifetime. A request-scoped FastAPI dependency
 owns the producer task and memory channel behind `StreamingResponse`. When the
 client disconnects, dependency cleanup cancels and awaits that producer, then
-closes the graph iterator. This uses the normal OpenAI streaming connection;
-LGOS adds no custom cancellation route, header, or SSE event.
+closes the graph iterator. The service's prepared-run context owns graph cleanup
+after streaming starts; the request owner releases the run itself when a stream
+is closed before its source starts. This uses the normal OpenAI streaming
+connection; LGOS adds no custom cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"
 

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
@@ -23,8 +24,16 @@ from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseInputParam,
 )
-from pydantic import BaseModel, Field
 
+from lgos_chainlit.interrupt_ledger import (
+    INTERRUPT_LEDGER_METADATA_KEY,
+    InterruptContinuation,
+    InvalidInterruptLedgerError,
+    completed_ledger_metadata,
+    interrupt_continuation,
+    newest_pending_ledger,
+    pending_ledger_metadata,
+)
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
     GraphFeature,
@@ -58,33 +67,15 @@ from lgos_chainlit.utils.thread_resume import (
 
 logger = logging.getLogger(__name__)
 
-INTERRUPT_LEDGER_METADATA_KEY = "lgos_chainlit.hitl_interrupt_ledger"
-INTERRUPT_LEDGER_SCHEMA_VERSION = 2
 PENDING_LEDGER_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
-PENDING_LEDGER_STATUS = "pending"
-COMPLETED_LEDGER_STATUS = "completed"
 
 
-class InvalidInterruptLedgerError(ValueError):
-    """A persisted Chainlit interrupt ledger is unsafe to resume."""
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PendingInterruptLedger:
-    """Validated pending state restored from one Chainlit message."""
+    """A durable continuation paired with its persisted Chainlit message."""
 
     message: cl.Message
-    model_id: str
-    response_id: str
-    calls: tuple[ResponseFunctionToolCall, ...]
-
-
-class InterruptContinuation(BaseModel):
-    """The Responses fields needed to resume a persisted interrupt batch."""
-
-    model_id: str = Field(min_length=1)
-    response_id: str = Field(min_length=1)
-    function_calls: list[ResponseFunctionToolCall] = Field(min_length=1)
+    continuation: InterruptContinuation
 
 
 @cl.set_chat_profiles
@@ -152,8 +143,11 @@ async def on_chat_resume(thread: ThreadDict) -> None:
             await remove_persisted_interrupt_elements(thread, ledger.message.id)
             cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
             schedule_after_thread_hydration(partial(reopen_pending_interrupt, ledger))
-    except InvalidInterruptLedgerError:
+    except InvalidInterruptLedgerError as exc:
         logger.exception("Persisted Chainlit HITL ledger is invalid")
+        schedule_after_thread_hydration(
+            partial(send_ui_message, f"Response failed: {exc}")
+        )
     except Exception as exc:
         logger.exception("Chainlit HITL resume failed: %s", exc)
 
@@ -220,8 +214,9 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
 async def resolve_interrupts(pending: PendingInterruptLedger) -> None:
     """Resolve complete interrupt batches until the graph returns terminal text."""
     while True:
+        continuation = pending.continuation
         outputs = []
-        for call in pending.calls:
+        for call in continuation.function_calls:
             decision = await ask_for_resume(call, pending.message)
             if decision is None:
                 return
@@ -234,11 +229,13 @@ async def resolve_interrupts(pending: PendingInterruptLedger) -> None:
             )
         response = await create_response(
             outputs,
-            model_id=pending.model_id,
-            previous_response_id=pending.response_id,
+            model_id=continuation.model_id,
+            previous_response_id=continuation.response_id,
         )
         next_pending = await publish_response(
-            response, model_id=pending.model_id, ledger_message=pending.message
+            response,
+            model_id=continuation.model_id,
+            ledger_message=pending.message,
         )
         if next_pending is None:
             return
@@ -300,15 +297,13 @@ async def persist_pending_ledger(
     calls: list[ResponseFunctionToolCall],
 ) -> PendingInterruptLedger:
     """Create or update the one public Chainlit message that owns the ledger."""
-    continuation = InterruptContinuation(
-        model_id=model_id, response_id=response_id, function_calls=calls
+    continuation = interrupt_continuation(
+        model_id=model_id,
+        response_id=response_id,
+        function_calls=calls,
     )
-    ledger = {
-        "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
-        "status": PENDING_LEDGER_STATUS,
-        **continuation.model_dump(mode="json", exclude_none=True),
-    }
-    prompt = pending_interrupt_prompt(calls)
+    ledger = pending_ledger_metadata(continuation)
+    prompt = pending_interrupt_prompt(continuation.function_calls)
     if ledger_message is None:
         ledger_message = cl.Message(content=prompt)
         set_ledger_message_metadata(ledger_message, ledger)
@@ -319,9 +314,7 @@ async def persist_pending_ledger(
         await ledger_message.update()
     pending = PendingInterruptLedger(
         message=ledger_message,
-        model_id=model_id,
-        response_id=response_id,
-        calls=tuple(calls),
+        continuation=continuation,
     )
     cl.user_session.set(PENDING_LEDGER_SESSION_KEY, pending)
     return pending
@@ -331,10 +324,7 @@ async def mark_ledger_completed(ledger_message: cl.Message) -> None:
     """Persist a terminal marker before rendering output so resume cannot replay."""
     set_ledger_message_metadata(
         ledger_message,
-        {
-            "schema_version": INTERRUPT_LEDGER_SCHEMA_VERSION,
-            "status": COMPLETED_LEDGER_STATUS,
-        },
+        completed_ledger_metadata(),
     )
     await ledger_message.update()
     cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
@@ -342,7 +332,7 @@ async def mark_ledger_completed(ledger_message: cl.Message) -> None:
 
 def set_ledger_message_metadata(
     message: cl.Message,
-    ledger: dict[str, object],
+    ledger: Mapping[str, object],
 ) -> None:
     # During on_chat_resume(), Message.from_dict() shares this mapping with the
     # original thread step. Chainlit rebuilds chat context from that step after
@@ -350,72 +340,31 @@ def set_ledger_message_metadata(
     metadata = message.metadata if isinstance(message.metadata, dict) else {}
     mark_model_context_excluded(message)
     metadata.update(message.metadata or {})
-    metadata[INTERRUPT_LEDGER_METADATA_KEY] = ledger
+    metadata[INTERRUPT_LEDGER_METADATA_KEY] = dict(ledger)
     message.metadata = metadata
 
 
 def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | None:
     """Decode the newest ledger step; a completed ledger blocks older replay."""
-    for step in reversed(thread.get("steps", [])):
-        metadata = step.get("metadata")
-        if (
-            not isinstance(metadata, dict)
-            or INTERRUPT_LEDGER_METADATA_KEY not in metadata
-        ):
-            continue
-
-        parsed = parse_interrupt_ledger_metadata(
-            metadata[INTERRUPT_LEDGER_METADATA_KEY]
-        )
-        if parsed is None:
-            return None
-        model_id, response_id, calls = parsed
-        restored_step = dict(step)
-        created_at = restored_step.get("createdAt")
-        if isinstance(created_at, str) and not created_at.endswith("Z"):
-            # The pinned SQL layer returns naive ISO text, but its write path
-            # accepts only the same timestamp with an explicit UTC suffix.
-            restored_step["createdAt"] = f"{created_at}Z"
-        try:
-            message = cl.Message.from_dict(restored_step)  # ty: ignore[invalid-argument-type]
-        except (KeyError, TypeError, ValueError) as exc:
-            msg = "The pending interrupt message cannot be restored."
-            raise InvalidInterruptLedgerError(msg) from exc
-        return PendingInterruptLedger(
-            message=message,
-            model_id=model_id,
-            response_id=response_id,
-            calls=tuple(calls),
-        )
-    return None
-
-
-def parse_interrupt_ledger_metadata(
-    raw_ledger: object,
-) -> tuple[str, str, list[ResponseFunctionToolCall]] | None:
-    if not isinstance(raw_ledger, dict):
-        msg = "Interrupt ledger metadata is not an object."
-        raise InvalidInterruptLedgerError(msg)
-    if raw_ledger.get("schema_version") != INTERRUPT_LEDGER_SCHEMA_VERSION:
-        msg = "Interrupt ledger schema is unsupported."
-        raise InvalidInterruptLedgerError(msg)
-
-    status = raw_ledger.get("status")
-    if status == COMPLETED_LEDGER_STATUS:
+    entry = newest_pending_ledger(thread.get("steps", []))
+    if entry is None:
         return None
-    if status != PENDING_LEDGER_STATUS:
-        msg = "Interrupt ledger status is invalid."
-        raise InvalidInterruptLedgerError(msg)
+
+    restored_step = dict(entry.step)
+    created_at = restored_step.get("createdAt")
+    if isinstance(created_at, str) and not created_at.endswith("Z"):
+        # The pinned SQL layer returns naive ISO text, but its write path accepts
+        # only the same timestamp with an explicit UTC suffix.
+        restored_step["createdAt"] = f"{created_at}Z"
     try:
-        continuation = InterruptContinuation.model_validate(raw_ledger)
-    except ValueError as exc:
-        msg = "Interrupt ledger continuation is invalid."
+        message = cl.Message.from_dict(restored_step)  # ty: ignore[invalid-argument-type]
+    except (KeyError, TypeError, ValueError) as exc:
+        msg = "The pending interrupt message cannot be restored."
         raise InvalidInterruptLedgerError(msg) from exc
-    calls = continuation.function_calls
-    if any(call.name != INTERRUPT_TOOL_NAME for call in calls):
-        msg = "Interrupt ledger has no valid interrupt calls."
-        raise InvalidInterruptLedgerError(msg)
-    return continuation.model_id, continuation.response_id, calls
+    return PendingInterruptLedger(
+        message=message,
+        continuation=entry.continuation,
+    )
 
 
 async def _warn_if_model_metadata_is_missing() -> None:
@@ -556,7 +505,7 @@ def interrupt_payload(
     return arguments
 
 
-def pending_interrupt_prompt(calls: list[ResponseFunctionToolCall]) -> str:
+def pending_interrupt_prompt(calls: Sequence[ResponseFunctionToolCall]) -> str:
     """Render the ledger step without letting malformed payloads skip persistence."""
     if not calls:
         return ""

@@ -3,7 +3,12 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
-from langgraph.types import CustomStreamPart, UpdatesStreamPart
+from langgraph.types import (
+    CustomStreamPart,
+    MessagesStreamPart,
+    UpdatesStreamPart,
+    ValuesStreamPart,
+)
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import (
@@ -120,13 +125,14 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
 
     async def graph_events():
         try:
-            yield {
-                "type": "messages",
-                "data": (
+            yield MessagesStreamPart(
+                type="messages",
+                ns=(),
+                data=(
                     AIMessageChunk(content="token"),
                     {"langgraph_node": "generate"},
                 ),
-            }
+            )
             await sleep_forever()
         finally:
             closed.set()
@@ -152,12 +158,13 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
         run_id=None,
     )
 
-    chunks = stream_run(run)
-    assert await anext(chunks) == "token"
-    assert stream_options["output_keys"] == ("answer",)
+    async with run:
+        chunks = stream_run(run)
+        assert await anext(chunks) == "token"
+        assert stream_options["output_keys"] == ("answer",)
 
-    with fail_after(1):
-        await chunks.aclose()
+        with fail_after(1):
+            await chunks.aclose()
 
     assert closed.is_set()
 
@@ -166,20 +173,30 @@ async def test_stream_run_preserves_generic_event_order() -> None:
     payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
 
     async def graph_events():
-        yield {
-            "type": "messages",
-            "data": (
+        yield MessagesStreamPart(
+            type="messages",
+            ns=(),
+            data=(
                 AIMessageChunk(content="token"),
                 {"langgraph_node": "generate"},
             ),
-        }
-        yield {
-            "type": "custom",
-            "ns": ("research:task-id",),
-            "data": payload,
-        }
-        yield {"type": "updates", "ns": (), "data": {"answer": "done"}}
-        yield {"type": "values", "ns": (), "data": {"messages": []}}
+        )
+        yield CustomStreamPart(
+            type="custom",
+            ns=("research:task-id",),
+            data=payload,
+        )
+        yield UpdatesStreamPart(
+            type="updates",
+            ns=(),
+            data={"answer": "done"},
+        )
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"messages": []},
+            interrupts=(),
+        )
 
     class Graph:
         output_channels = ()
@@ -202,17 +219,59 @@ async def test_stream_run_preserves_generic_event_order() -> None:
         run_id=None,
     )
 
-    assert [event async for event in stream_run(run, stream_updates=True)] == [
-        "token",
-        CustomStreamPart(
-            type="custom",
-            ns=("research:task-id",),
-            data=payload,
-        ),
-        UpdatesStreamPart(
-            type="updates",
+    async with run:
+        assert [event async for event in stream_run(run, stream_updates=True)] == [
+            "token",
+            CustomStreamPart(
+                type="custom",
+                ns=("research:task-id",),
+                data=payload,
+            ),
+            UpdatesStreamPart(
+                type="updates",
+                ns=(),
+                data={"answer": "done"},
+            ),
+            AIMessage(content=""),
+        ]
+
+
+async def test_stream_uses_final_root_value_with_subgraph_values_present() -> None:
+    async def graph_events():
+        yield ValuesStreamPart(
+            type="values",
             ns=(),
-            data={"answer": "done"},
+            data={"answer": "root"},
+            interrupts=(),
+        )
+        yield ValuesStreamPart(
+            type="values",
+            ns=("nested:task-id",),
+            data={"answer": "nested"},
+            interrupts=(),
+        )
+
+    class Graph:
+        output_channels = ("answer",)
+
+        def astream(self, *args, **kwargs):
+            return graph_events()
+
+    graph = Graph()
+    run = GraphRun(
+        config=GraphConfig(
+            graph=lambda: graph,
+            description="DUMMY",
+            output_to_message=lambda output: AIMessage(content=output["answer"]),
         ),
-        AIMessage(content=""),
-    ]
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config=None,
+        run_id=None,
+    )
+
+    async with run:
+        events = [event async for event in stream_run(run)]
+
+    assert events == [AIMessage(content="root")]

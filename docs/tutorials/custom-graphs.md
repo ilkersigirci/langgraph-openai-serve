@@ -195,6 +195,11 @@ MCP-style example. The real
 Chainlit or Open WebUI owns the native MCP session and passes its tools through
 the standard OpenAI request contract.
 
+LGOS reuses a directly registered compiled graph. It invokes a sync or async
+factory for every request, without caching, then validates that request's result
+before execution. Factories can therefore create request-scoped graphs or bind
+current resources.
+
 ## Register And Bind
 
 ```python title="Application registration"
@@ -216,6 +221,11 @@ graphs = GraphRegistry(
 
 LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 ```
+
+`GraphConfig` declarations are immutable. Their node-name tuple and feature and
+server-tool frozen sets cannot be changed after registration. Construct a new
+config and call `graphs.register(model_id, config)` when a model declaration
+must be added or replaced; `graphs.registry` is a read-only mapping view.
 
 ## Streaming
 

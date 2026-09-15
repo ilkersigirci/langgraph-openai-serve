@@ -137,11 +137,11 @@ async def test_fabricated_interrupt_id_cannot_resume_pending_state(
 ) -> None:
     first_response = await create_response(openai_client)
     call_id = interrupt_calls(first_response)[0].call_id
-    state_token = call_id.removeprefix("call_lg_").partition("_")[0]
+    generation_token = call_id.removeprefix("call_lg_").partition("_")[0]
     input_items = resume_outputs(first_response, ["approve"])
     input_items[0]["call_id"] = interrupt_tool_call_id(
         "fabricated",
-        state_token,
+        generation_token,
         response_id=first_response.id,
     )
 
@@ -156,7 +156,7 @@ async def test_fabricated_interrupt_id_cannot_resume_pending_state(
 
 
 @pytest.mark.parametrize("model", [SEQUENTIAL_MODEL, NESTED_SEQUENTIAL_MODEL])
-async def test_checkpoint_token_disambiguates_sequential_reused_interrupt_id(
+async def test_continuation_generation_disambiguates_sequential_reused_interrupt_id(
     openai_client: AsyncOpenAI,
     model: str,
 ) -> None:

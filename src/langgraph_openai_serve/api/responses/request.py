@@ -1,5 +1,7 @@
 """Decode Responses requests for protocol-neutral graph execution."""
 
+from collections.abc import Set as AbstractSet
+
 from langchain_core.messages import BaseMessage
 
 from langgraph_openai_serve.api.responses.interrupts import parse_responses_resume
@@ -32,7 +34,7 @@ class UnsupportedResponsesRequestError(ValueError):
 
 def decode_responses_request(
     request: ResponseCreateRequest,
-    server_tools: set[str],
+    server_tools: AbstractSet[str],
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     """Normalize one supported, stateless Responses request."""
     _validate_supported_semantics(request)
@@ -84,7 +86,7 @@ def _decode_tool_choice(
 
 
 def selected_server_tools(
-    request: ResponseCreateRequest, server_tools: set[str]
+    request: ResponseCreateRequest, server_tools: AbstractSet[str]
 ) -> tuple[str, ...]:
     """Return the registered server tools selected for this response."""
     if request.tool_choice == "none":
@@ -97,7 +99,10 @@ def selected_server_tools(
     )
 
 
-def validate_tools(request: ResponseCreateRequest, server_tools: set[str]) -> None:
+def validate_tools(
+    request: ResponseCreateRequest,
+    server_tools: AbstractSet[str],
+) -> None:
     """Reject unknown server-tool selectors before execution or SSE starts."""
     declarations: dict[str, str] = {}
     for index, tool in enumerate(request.tools or ()):

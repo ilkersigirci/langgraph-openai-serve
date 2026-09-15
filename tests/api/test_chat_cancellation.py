@@ -1,7 +1,7 @@
 import asyncio
 import socket
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -250,8 +250,8 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
         yield "unreachable"
 
     coordinator = InMemoryRunCoordinator()
-    lease = coordinator("prepared-run")
-    await lease.__aenter__()  # ruff: ignore[unnecessary-dunder-call]
+    resources = AsyncExitStack()
+    await resources.enter_async_context(coordinator("prepared-run"))
     run = GraphRun(
         config=cast("Any", None),
         graph=cast("Any", None),
@@ -259,13 +259,46 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
         context=None,
         runnable_config=None,
         run_id=None,
-        _lease=lease,
+        _resources=resources,
     )
-    owner = _StreamOwner()
 
-    owner.start(source(), run)
-    await owner.aclose()
+    async with _StreamOwner() as owner:
+        owner.start(source(), run)
 
     assert not source_started
     async with coordinator("prepared-run"):
         pass
+
+
+async def test_stream_owner_preserves_active_failure_during_cleanup() -> None:
+    @asynccontextmanager
+    async def failing_resource() -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            msg = "cleanup failed"
+            raise RuntimeError(msg)
+
+    async def source() -> AsyncGenerator[str, None]:
+        yield "unreachable"
+
+    resources = AsyncExitStack()
+    await resources.enter_async_context(failing_resource())
+    run = GraphRun(
+        config=cast("Any", None),
+        graph=cast("Any", None),
+        inputs=None,
+        context=None,
+        runnable_config=None,
+        run_id=None,
+        _resources=resources,
+    )
+
+    async def fail_request() -> None:
+        async with _StreamOwner() as owner:
+            owner.start(source(), run)
+            msg = "request failed"
+            raise ValueError(msg)
+
+    with pytest.raises(ValueError, match="request failed"):
+        await fail_request()

@@ -28,7 +28,14 @@ def _langchain_content(
     content: ChatCompletionMessageContent | None,
 ) -> str | list[str | dict[Any, Any]]:
     """Pass OpenAI content parts through LangChain's compatible message type."""
-    return cast("str | list[str | dict[Any, Any]]", content or "")
+    if not content:
+        return ""
+    if isinstance(content, str):
+        return content
+    return cast(
+        "list[str | dict[Any, Any]]",
+        [part.model_dump(mode="json") for part in content],
+    )
 
 
 def convert_to_lc_messages(

@@ -32,6 +32,7 @@ from tests.api.responses.support import (
 )
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
+from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState
 
 FINAL_TEXT = "Fixture answer."
@@ -337,7 +338,11 @@ async def test_status_commentary_requires_feature_and_streaming(
     )
     assert [item.phase for item in response.output] == ["final_answer"]
 
-    fastapi_app.state.graph_registry.get_graph("text").features.clear()
+    replace_graph_config(
+        fastapi_app.state.graph_registry,
+        "text",
+        features=frozenset(),
+    )
     events = await _events(openai_client, "text")
     completed = events[-1].response
     assert [item.phase for item in completed.output] == ["final_answer"]

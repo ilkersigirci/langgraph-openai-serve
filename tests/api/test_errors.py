@@ -156,6 +156,335 @@ async def test_unsupported_chat_fields_are_rejected(
     assert expected_message in error["message"]
 
 
+@pytest.mark.parametrize(
+    ("body", "unknown_field"),
+    [
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {"role": "user", "content": "Hello", "message_extra": True}
+                ],
+            },
+            "message_extra",
+            id="message",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Hello",
+                                "prompt_cache_breakpoint": {"mode": "explicit"},
+                            }
+                        ],
+                    }
+                ],
+            },
+            "prompt_cache_breakpoint",
+            id="text-content-part",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "file",
+                                "file": {"file_id": "file-test"},
+                                "file_part_extra": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "file_part_extra",
+            id="file-content-part",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "file",
+                                "file": {
+                                    "file_id": "file-test",
+                                    "file_data": "data:application/pdf;base64,AA==",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+            "file_data",
+            id="file-reference",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call-test",
+                                "type": "function",
+                                "function": {"name": "lookup", "arguments": "{}"},
+                                "tool_call_extra": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "tool_call_extra",
+            id="tool-call",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call-test",
+                                "type": "function",
+                                "function": {
+                                    "name": "lookup",
+                                    "arguments": "{}",
+                                    "call_function_extra": True,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+            "call_function_extra",
+            id="tool-call-function",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {"name": "lookup"},
+                        "tool_extra": True,
+                    }
+                ],
+            },
+            "tool_extra",
+            id="tool",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "definition_extra": True,
+                        },
+                    }
+                ],
+            },
+            "definition_extra",
+            id="function-definition",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "tool_choice": {
+                    "type": "function",
+                    "function": {"name": "lookup"},
+                    "choice_extra": True,
+                },
+            },
+            "choice_extra",
+            id="named-tool-choice",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "tool_choice": {
+                    "type": "function",
+                    "function": {"name": "lookup", "choice_function_extra": True},
+                },
+            },
+            "choice_function_extra",
+            id="named-tool-choice-function",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": True,
+                "stream_options": {
+                    "include_usage": True,
+                    "stream_options_extra": True,
+                },
+            },
+            "stream_options_extra",
+            id="stream-options",
+        ),
+    ],
+)
+async def test_chat_nested_unknown_fields_return_openai_errors(
+    openai_client: AsyncOpenAI,
+    body: dict[str, object],
+    unknown_field: str,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/chat/completions",
+            cast_to=object,
+            body=body,
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"].endswith(unknown_field)
+    assert error["code"] is None
+
+
+@pytest.mark.parametrize(
+    ("body", "unknown_field"),
+    [
+        pytest.param(
+            {
+                "model": "test",
+                "input": [
+                    {
+                        "id": "msg-test",
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Docs",
+                                "annotations": [
+                                    {
+                                        "type": "url_citation",
+                                        "start_index": 0,
+                                        "end_index": 3,
+                                        "title": "Docs",
+                                        "url": "https://example.com/docs",
+                                        "annotation_extra": True,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            "annotation_extra",
+            id="url-citation",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "input": [
+                    {
+                        "type": "custom_tool_call",
+                        "call_id": "call-test",
+                        "name": "lookup",
+                        "input": "query",
+                        "custom_call_extra": True,
+                    }
+                ],
+            },
+            "custom_call_extra",
+            id="custom-tool-call",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "input": [
+                    {
+                        "type": "custom_tool_call_output",
+                        "call_id": "call-test",
+                        "output": "result",
+                        "custom_output_extra": True,
+                    }
+                ],
+            },
+            "custom_output_extra",
+            id="custom-tool-call-output",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "input": [
+                    {
+                        "id": "ws-test",
+                        "type": "web_search_call",
+                        "status": "completed",
+                        "action": {"type": "search", "query": "OpenAI"},
+                        "web_search_extra": True,
+                    }
+                ],
+            },
+            "web_search_extra",
+            id="web-search-call",
+        ),
+        pytest.param(
+            {
+                "model": "test",
+                "input": [
+                    {
+                        "id": "ws-test",
+                        "type": "web_search_call",
+                        "status": "completed",
+                        "action": {
+                            "type": "search",
+                            "query": "OpenAI",
+                            "action_extra": True,
+                        },
+                    }
+                ],
+            },
+            "action_extra",
+            id="web-search-action",
+        ),
+    ],
+)
+async def test_responses_nested_unknown_fields_return_openai_errors(
+    openai_client: AsyncOpenAI,
+    body: dict[str, object],
+    unknown_field: str,
+) -> None:
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/responses",
+            cast_to=object,
+            body=body,
+        )
+
+    response = exc_info.value.response
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"].endswith(unknown_field)
+    assert error["code"] is None
+
+
 async def test_metadata_pair_limit_returns_openai_error(
     openai_client: AsyncOpenAI,
 ) -> None:

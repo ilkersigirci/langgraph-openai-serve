@@ -3,6 +3,7 @@ from langchain_core.callbacks import BaseCallbackHandler, UsageMetadataCallbackH
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
+from pydantic import ValidationError
 
 from langgraph_openai_serve.core.logging import (
     begin_log_context,
@@ -14,7 +15,6 @@ from langgraph_openai_serve.graph import utils as graph_utils
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
-    GraphConfigurationError,
     GraphNotFoundError,
     GraphRegistry,
 )
@@ -256,15 +256,13 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
         reset_log_context(token)
 
 
-async def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
-    graph_config = GraphConfig(
-        graph=make_message_graph("hello"),
-        description="DUMMY",
-        run_coordinator=InMemoryRunCoordinator(),
-    )
-
-    with pytest.raises(GraphConfigurationError, match="interrupt-enabled"):
-        await graph_config.resolve_graph()
+def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
+    with pytest.raises(ValidationError, match="interrupt-enabled"):
+        GraphConfig(
+            graph=make_message_graph("hello"),
+            description="DUMMY",
+            run_coordinator=InMemoryRunCoordinator(),
+        )
 
 
 async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
@@ -308,6 +306,7 @@ async def test_invoke_run_ignores_generic_custom_events() -> None:
         run_id=None,
     )
 
-    message = await invoke_run(run)
+    async with run:
+        message = await invoke_run(run)
 
     assert message.text == "done"
