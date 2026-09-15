@@ -1,6 +1,6 @@
 # 07 — Chainlit Interrupt Ledger
 
-- Status: **Waiting for core work**
+- Status: **Complete**
 - Priority: **P2**
 - Dependencies: **05, 06**
 
@@ -152,4 +152,58 @@ tests. Do not fold them into the chat or interrupt cleanup.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-16.
+
+- The versioned JSON-safe ledger codec now lives in
+  `lgos_chainlit/interrupt_ledger.py`. It owns pending and completed values,
+  strict decode-time validation, newest-ledger selection, and frozen, tuple-
+  backed continuation values built from the official OpenAI SDK output type.
+  It has no Chainlit UI or session dependency.
+- `hitl.py` retains the host boundary: public message-metadata persistence,
+  `Message.from_dict()` restoration, reused step identity, timestamp repair,
+  stale-element removal, hydration scheduling, and user-session state. A small
+  host value pairs the restored Chainlit message with its decoded continuation.
+- The interrupt flow writes the complete function-call batch before the first
+  prompt, collects every decision in a parallel batch, sends one standard
+  `function_call_output` request with `previous_response_id`, and writes the
+  completed marker before terminal output. Prompt cancellation or failure
+  leaves the pending marker recoverable, and a pending batch blocks a second
+  request.
+- Invalid, unknown, or future LGOS-owned ledger fields and duplicate call IDs
+  fail closed. A resumed thread schedules the existing visible recovery error
+  after Chainlit hydration and never guesses a continuation. Unrelated fields
+  in Chainlit's surrounding host step and metadata remain accepted.
+- `simple.py` and the shared Responses helpers required no caller or wire
+  change after units 05 and 06. Their streaming, files, MCP, citations,
+  incomplete, and refusal behavior remained covered by the ordinary-client
+  regression suite. Existing product documentation already describes the
+  retained public behavior, so no product-documentation change was required.
+
+Locked-version verification used the Chainlit UI's `uv.lock`,
+`uv tree --locked`, and installed source. The resolved relevant versions were
+Chainlit 2.12.0, chainlit-utils 0.1.0, OpenAI Python 2.46.0, Pydantic 2.13.4,
+and AnyIO 4.14.2. The implementation was checked against these primary
+references:
+
+- [Chainlit `on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
+- [Chainlit persisted message metadata](https://docs.chainlit.io/api-reference/message)
+- [Chainlit 2.12.0 message implementation](https://github.com/Chainlit/chainlit/blob/2.12.0/backend/chainlit/message.py)
+- [Chainlit 2.12.0 resume ordering](https://github.com/Chainlit/chainlit/blob/2.12.0/backend/chainlit/socket.py)
+- [OpenAI Python 2.46.0 function-call output type](https://github.com/openai/openai-python/blob/v2.46.0/src/openai/types/responses/response_function_tool_call.py)
+- [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
+
+| Validation | Result |
+| --- | --- |
+| `uv run --locked pytest tests/test_chainlit_hitl.py tests/test_thread_resume.py` | 24 passed |
+| `uv run --locked pytest tests/test_chainlit_responses.py tests/test_chainlit_files.py tests/test_chainlit_mcp.py` | 26 passed |
+| Chainlit Ruff check and format check | Pass |
+| `uv run --locked ty check src` | Pass |
+| `cd demo && just test --editable` | API 111 passed, Files 12 passed, Chainlit 126 passed, Open WebUI 120 passed |
+| `just demo/check --editable` | All demo tests, lint, formatting, type checks, and Compose config checks passed |
+| Live Chainlit browser check | Reconnect reopened one pending flow; two parallel decisions were submitted together in one resume request; terminal output completed the ledger |
+
+The live check used an isolated browser session and a disposable standard
+Responses mock because the checked-in demo graph emits only one interrupt at a
+time. The mock rejected partial parallel resumes and recorded both outputs in
+the accepted request. The running demo was restored to its original `simple`
+configuration afterward.
