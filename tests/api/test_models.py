@@ -11,7 +11,9 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
+from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
 
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
@@ -89,13 +91,22 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
 async def test_retrieved_model_exposes_sorted_graph_features(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
+    sqlite_checkpointer,
 ) -> None:
-    graph_registry.get_graph("test").features = {
-        GraphFeature.INTERRUPTS,
-        GraphFeature.CLIENT_EVENTS,
-        GraphFeature.FILE_INPUTS,
-        GraphFeature.MCP_TOOLS,
-    }
+    graph_registry.register(
+        "test",
+        GraphConfig(
+            graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+            description="DUMMY",
+            features={
+                GraphFeature.INTERRUPTS,
+                GraphFeature.CLIENT_EVENTS,
+                GraphFeature.FILE_INPUTS,
+                GraphFeature.MCP_TOOLS,
+            },
+            run_coordinator=InMemoryRunCoordinator(),
+        ),
+    )
 
     response = await openai_client.models.retrieve("test")
     listed = await openai_client.models.list()

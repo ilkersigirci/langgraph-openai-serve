@@ -25,6 +25,7 @@ from starlette import status
 from langgraph_openai_serve import GraphConfig, GraphRegistry, GraphRequest
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from tests.graph.support.message import make_message_graph
+from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState
 
 
@@ -81,7 +82,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
         received_messages.append(messages)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture_input
+    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
 
     response = await openai_client.responses.create(
         model="test",
@@ -172,7 +173,7 @@ async def test_file_id_input_uses_the_protocol_neutral_graph_shape(
         received_messages.append(messages)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture_input
+    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
 
     await openai_client.responses.create(
         model="test",
@@ -261,9 +262,12 @@ async def test_refusal_survives_response_stream_and_sdk_item_replay(
     message: AIMessage,
     stream: bool,
 ) -> None:
-    config = graph_registry.get_graph("test")
-    config.streamable_node_names = []
-    config.output_to_message = lambda _output: message
+    replace_graph_config(
+        graph_registry,
+        "test",
+        streamable_node_names=(),
+        output_to_message=lambda _output: message,
+    )
     if stream:
         async with openai_client.responses.stream(
             model="test", input="Hi"
@@ -292,7 +296,7 @@ async def test_refusal_survives_response_stream_and_sdk_item_replay(
         received.extend(messages)
         return {"messages": messages}
 
-    config.request_to_input = capture
+    replace_graph_config(graph_registry, "test", request_to_input=capture)
     await openai_client.responses.create(model="test", input=response.output)
     assert received[0].content[0]["refusal"] == "I cannot help with that."
     assert received[0].content[0]["phase"] == "final_answer"
@@ -320,10 +324,14 @@ async def test_truncated_output_finishes_as_incomplete(
     reason: str,
     stream: bool,
 ) -> None:
-    config = graph_registry.get_graph("test")
-    config.streamable_node_names = []
-    config.output_to_message = lambda _output: AIMessage(
-        content="Partial answer", response_metadata=metadata
+    replace_graph_config(
+        graph_registry,
+        "test",
+        streamable_node_names=(),
+        output_to_message=lambda _output: AIMessage(
+            content="Partial answer",
+            response_metadata=metadata,
+        ),
     )
     if stream:
         async with openai_client.responses.stream(
@@ -356,7 +364,6 @@ async def test_replayed_citations_and_phase_reach_langchain_content(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    config = graph_registry.get_graph("test")
     message = AIMessage(
         content=[
             {
@@ -374,7 +381,11 @@ async def test_replayed_citations_and_phase_reach_langchain_content(
             }
         ]
     )
-    config.output_to_message = lambda _output: message
+    replace_graph_config(
+        graph_registry,
+        "test",
+        output_to_message=lambda _output: message,
+    )
     first = await openai_client.responses.create(model="test", input="Hi")
     received: list[BaseMessage] = []
 
@@ -384,8 +395,12 @@ async def test_replayed_citations_and_phase_reach_langchain_content(
         received.extend(messages)
         return {"messages": messages}
 
-    config.request_to_input = capture
-    config.output_to_message = lambda _output: received[0]
+    replace_graph_config(
+        graph_registry,
+        "test",
+        request_to_input=capture,
+        output_to_message=lambda _output: received[0],
+    )
     replay = await openai_client.responses.create(model="test", input=first.output)
     assert received[0].content[0]["id"] == first.output[0].id
     assert received[0].content[0]["phase"] == "final_answer"
@@ -407,7 +422,7 @@ async def test_locked_sdk_output_objects_can_be_replayed_unchanged(
         received.extend(messages)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture
+    replace_graph_config(graph_registry, "test", request_to_input=capture)
     output_text = ResponseOutputText.model_validate(
         {
             "type": "output_text",

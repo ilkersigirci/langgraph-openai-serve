@@ -11,6 +11,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
+from tests.graph.support.registration import replace_graph_config
 
 
 async def test_non_streaming_completion_matches_openai_contract(
@@ -120,7 +121,11 @@ async def test_modern_function_tools_remain_supported(
         received.append(request)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture_request
+    replace_graph_config(
+        graph_registry,
+        "test",
+        request_to_input=capture_request,
+    )
 
     response = await openai_client.chat.completions.create(
         model="test",

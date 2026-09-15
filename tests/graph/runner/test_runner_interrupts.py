@@ -24,6 +24,7 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.types import GraphOutput, Interrupt, ValuesStreamPart
+from pydantic import ValidationError
 
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
@@ -446,6 +447,7 @@ async def test_stream_rejects_conflicting_duplicate_interrupt_id(
             graph=graph,
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
+            run_coordinator=InMemoryRunCoordinator(),
         ),
         graph=graph,
         inputs={},
@@ -518,17 +520,13 @@ async def test_interrupt_enabled_graph_requires_checkpointer() -> None:
         await config.resolve_graph()
 
 
-async def test_interrupt_enabled_graph_requires_run_coordinator(
-    sqlite_checkpointer: AsyncSqliteSaver,
-) -> None:
-    config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-    )
-
-    with pytest.raises(GraphConfigurationError, match="run_coordinator"):
-        await config.resolve_graph()
+def test_interrupt_enabled_graph_requires_run_coordinator() -> None:
+    with pytest.raises(ValidationError, match="run_coordinator"):
+        GraphConfig(
+            graph=make_message_graph("ok"),
+            description="DUMMY",
+            features={GraphFeature.INTERRUPTS},
+        )
 
 
 @pytest.mark.parametrize(

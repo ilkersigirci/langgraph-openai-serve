@@ -50,7 +50,7 @@ repository is passing its baseline.
 | 03 | [Run ownership and cancellation](03-run-ownership-and-cancellation.md) | P0 | 02 | Complete |
 | 04 | [Interrupt continuation identity](04-interrupt-continuation-identity.md) | P1 | 02 | Complete |
 | 05 | [Responses event assembly](05-responses-event-assembly.md) | P1 | 02, 03 | Complete |
-| 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Waiting for core execution work |
+| 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Complete |
 | 07 | [Chainlit interrupt ledger](07-chainlit-client.md) | P2 | 05, 06 | Waiting for core work |
 | 08 | [Open WebUI Function runtime](08-openwebui-client.md) | P2 | 05, 06 | Waiting for core work |
 | 09 | [Demo registration migration and audit](09-demo-graphs-and-services.md) | P2 | 06 | Waiting for 06 |

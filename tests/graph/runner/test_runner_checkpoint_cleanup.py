@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import GraphOutput, StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun
 
@@ -62,6 +63,7 @@ def cleanup_run(
             features={GraphFeature.INTERRUPTS},
             output_to_message=output_to_message,
             streamable_node_names=streamable_node_names or [],
+            run_coordinator=InMemoryRunCoordinator(),
         ),
         graph=cast("Any", graph),
         inputs={},

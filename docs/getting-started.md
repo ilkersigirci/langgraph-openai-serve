@@ -75,6 +75,11 @@ advertised by the LGOS model extension for clients that render model catalogs.
 This deterministic graph is deliberately provider-free, so the first request
 needs no upstream API key.
 
+The registry copies the supplied mapping, and each `GraphConfig` is immutable
+after construction. Add or replace a model explicitly with
+`registry.register(model_id, config)`; callers cannot mutate entries through the
+public `registry.registry` view.
+
 ## Run The Server
 
 ```bash

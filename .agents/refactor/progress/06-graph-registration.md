@@ -1,6 +1,6 @@
 # 06 — Graph Registration
 
-- Status: **Waiting for core execution work**
+- Status: **Complete**
 - Priority: **P1**
 - Dependencies: **02, 03, 04**
 
@@ -124,4 +124,53 @@ just docs
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-15.
+
+- `GraphConfig` remains the single declarative Pydantic representation and is
+  now frozen. LGOS-owned node names, features, and server-tool names are stored
+  as tuples or frozen sets, while caller-owned callback objects retain their
+  documented shallow mutability boundary.
+- Non-empty descriptions, client settings, tool names, and the exact
+  interrupts/run-coordinator relationship validate when a config is built.
+  Resolved compiled-graph type, direct client-settings context schema, and
+  interrupt checkpointer capabilities now live in one plainly named validation
+  function that runs before each resolved graph executes.
+- Direct compiled graphs remain reusable, while sync and async zero-argument
+  factories are invoked and validated on every resolution. No factory result
+  cache or alternate resolved-graph wrapper was introduced.
+- `GraphRegistry` is now a small slotted mapping owner rather than a Pydantic
+  serialization model. It copies the initial mapping, validates model IDs with
+  one reusable `TypeAdapter`, exposes one insertion-ordered read-only live view,
+  and validates `register()` inputs before changing its private dictionary.
+  Replacements preserve their existing order without rebuilding the mapping.
+- Package and demo tests that formerly mutated `GraphConfig` now construct a
+  complete validated replacement and install it through `register()`. Responses
+  request helpers accept the resulting abstract read-only server-tool set.
+- `ClientSettings` and the five-method asynchronous saver capability check were
+  retained. The latter still requires `aget_tuple()`, `alist()`, `aput()`,
+  `aput_writes()`, and `adelete_thread()`; units 02–04 and the locked interface
+  confirm that execution, continuation identity, and terminal cleanup need the
+  full surface.
+- Model IDs, model metadata, graph adapters, OpenAI wire behavior, and public
+  `GraphRegistry(registry=...)` construction remain unchanged. Reference,
+  getting-started, and custom-graph documentation now describe immutability,
+  registration replacement, and graph-factory lifetime explicitly.
+
+Locked-version verification used `uv.lock`, `uv tree --locked`, installed
+package introspection, and official tagged primary sources. The resolved
+versions were LangGraph 1.2.9, langgraph-checkpoint 4.1.1, and Pydantic 2.13.4:
+
+- [Pydantic 2.13.4 faux immutability](https://github.com/pydantic/pydantic/blob/v2.13.4/docs/concepts/models.md#faux-immutability)
+- [Pydantic 2.13.4 TypeAdapter](https://github.com/pydantic/pydantic/blob/v2.13.4/docs/concepts/type_adapter.md)
+- [LangGraph 1.2.9 checkpoint interface](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/checkpoint/README.md#interface)
+- [LangGraph 1.2.9 checkpoint base](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/checkpoint/langgraph/checkpoint/base/__init__.py)
+
+| Validation | Result |
+| --- | --- |
+| `just check` | Pass |
+| `just test tests/graph tests/api/test_models.py tests/api/test_chat_completions.py tests/api/test_chat_messages.py tests/api/responses` | 231 passed |
+| `just test` | 405 passed |
+| `cd demo && just test --editable` | API 111 passed, Files 12 passed, Chainlit 116 passed, Open WebUI 120 passed |
+| `cd demo && just lint` | Pass |
+| `cd demo && just type-check --editable` | Pass |
+| `just docs` | Strict build passed |

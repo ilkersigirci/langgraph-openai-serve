@@ -24,6 +24,7 @@ from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.server_tools import ServerToolTracker
 from langgraph_openai_serve.graph.events import status_event
 from langgraph_openai_serve.graph.utils import prepare_run
+from tests.graph.support.registration import replace_graph_config
 
 CALL = {
     "id": "call_package",
@@ -114,7 +115,11 @@ async def test_chat_completions_can_use_a_server_tool_graph_without_tools(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.get_graph("test").server_tools = {"package_version"}
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version"},
+    )
 
     response = await openai_client.chat.completions.create(
         model="test",
@@ -184,9 +189,12 @@ async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
         received.append(request)
         return {"messages": messages}
 
-    config = graph_registry.get_graph("test")
-    config.server_tools = {"package_version"}
-    config.request_to_input = capture
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version"},
+        request_to_input=capture,
+    )
 
     await openai_client.responses.create(
         model="test",
@@ -303,7 +311,11 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
         answer,
         server_tools={"package_version"},
     )
-    graph_registry.get_graph("package").features = {GraphFeature.CLIENT_EVENTS}
+    replace_graph_config(
+        graph_registry,
+        "package",
+        features={GraphFeature.CLIENT_EVENTS},
+    )
 
     response, _ = await _create(
         openai_client,
