@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any, cast
 
 import pytest
@@ -52,6 +53,7 @@ def cleanup_run(
     *,
     output_to_message: Callable[[Any], Any] | None = None,
     streamable_node_names: list[str] | None = None,
+    resources: AsyncExitStack | None = None,
 ) -> GraphRun:
     return GraphRun(
         config=GraphConfig(
@@ -67,6 +69,7 @@ def cleanup_run(
         runnable_config={"configurable": {"thread_id": THREAD_ID}},
         run_id="11111111-1111-4111-8111-111111111111",
         checkpoint_thread_id=THREAD_ID,
+        _resources=resources or AsyncExitStack(),
     )
 
 
@@ -92,8 +95,10 @@ async def test_rendering_failure_deletes_without_replacing_error(
 
     graph = CleanupGraph(events, delete_error=delete_error)
 
+    run = cleanup_run(graph, output_to_message=fail_rendering)
     with pytest.raises(ValueError, match="rendering failed"):
-        await invoke_run(cleanup_run(graph, output_to_message=fail_rendering))
+        async with run:
+            await invoke_run(run)
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
 
@@ -118,8 +123,10 @@ async def test_execution_failure_deletes_without_replacing_error(
 
     graph = CleanupGraph(events, delete_error=delete_error)
 
+    run = cleanup_run(graph)
     with pytest.raises(ValueError, match="graph failed"):
-        await invoke_run(cleanup_run(graph))
+        async with run:
+            await invoke_run(run)
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
 
@@ -142,11 +149,74 @@ async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> N
             closed.set()
 
     graph = CleanupGraph(events)
-    stream = stream_run(cleanup_run(graph, streamable_node_names=["generate"]))
+    run = cleanup_run(graph, streamable_node_names=["generate"])
 
-    assert await anext(stream) == "token"
-    with fail_after(1):
-        await stream.aclose()
+    async with run:
+        stream = stream_run(run)
+        assert await anext(stream) == "token"
+        with fail_after(1):
+            await stream.aclose()
 
     assert closed.is_set()
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["invoke", "stream"])
+async def test_successful_cleanup_failure_replaces_result(stream: bool) -> None:
+    async def events():
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"answer": "done"},
+            interrupts=(),
+        )
+
+    graph = CleanupGraph(events, delete_error=RuntimeError("database unavailable"))
+    run = cleanup_run(
+        graph,
+        output_to_message=lambda output: AIMessage(content=output["answer"]),
+    )
+
+    async def execute() -> None:
+        async with run:
+            if stream:
+                _ = [event async for event in stream_run(run)]
+            else:
+                await invoke_run(run)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await execute()
+
+    assert graph.checkpointer.deleted_threads == [THREAD_ID]
+
+
+async def test_active_failure_wins_and_releases_resources_once() -> None:
+    releases = 0
+
+    async def events():
+        msg = "graph failed"
+        raise ValueError(msg)
+        yield  # pragma: no cover
+
+    @asynccontextmanager
+    async def failing_lease():
+        nonlocal releases
+        try:
+            yield
+        finally:
+            releases += 1
+            msg = "lease release failed"
+            raise RuntimeError(msg)
+
+    resources = AsyncExitStack()
+    await resources.enter_async_context(failing_lease())
+    graph = CleanupGraph(events, delete_error=RuntimeError("database unavailable"))
+    run = cleanup_run(graph, resources=resources)
+
+    with pytest.raises(ValueError, match="graph failed"):
+        async with run:
+            await invoke_run(run)
+    await run.aclose()
+
+    assert graph.checkpointer.deleted_threads == [THREAD_ID]
+    assert releases == 1

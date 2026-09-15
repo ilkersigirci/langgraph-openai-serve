@@ -158,12 +158,13 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
         run_id=None,
     )
 
-    chunks = stream_run(run)
-    assert await anext(chunks) == "token"
-    assert stream_options["output_keys"] == ("answer",)
+    async with run:
+        chunks = stream_run(run)
+        assert await anext(chunks) == "token"
+        assert stream_options["output_keys"] == ("answer",)
 
-    with fail_after(1):
-        await chunks.aclose()
+        with fail_after(1):
+            await chunks.aclose()
 
     assert closed.is_set()
 
@@ -218,20 +219,21 @@ async def test_stream_run_preserves_generic_event_order() -> None:
         run_id=None,
     )
 
-    assert [event async for event in stream_run(run, stream_updates=True)] == [
-        "token",
-        CustomStreamPart(
-            type="custom",
-            ns=("research:task-id",),
-            data=payload,
-        ),
-        UpdatesStreamPart(
-            type="updates",
-            ns=(),
-            data={"answer": "done"},
-        ),
-        AIMessage(content=""),
-    ]
+    async with run:
+        assert [event async for event in stream_run(run, stream_updates=True)] == [
+            "token",
+            CustomStreamPart(
+                type="custom",
+                ns=("research:task-id",),
+                data=payload,
+            ),
+            UpdatesStreamPart(
+                type="updates",
+                ns=(),
+                data={"answer": "done"},
+            ),
+            AIMessage(content=""),
+        ]
 
 
 async def test_stream_uses_final_root_value_with_subgraph_values_present() -> None:
@@ -269,6 +271,7 @@ async def test_stream_uses_final_root_value_with_subgraph_values_present() -> No
         run_id=None,
     )
 
-    events = [event async for event in stream_run(run)]
+    async with run:
+        events = [event async for event in stream_run(run)]
 
     assert events == [AIMessage(content="root")]

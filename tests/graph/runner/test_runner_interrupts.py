@@ -280,7 +280,8 @@ async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
         run_id=None,
     )
 
-    message = await invoke_run(run)
+    async with run:
+        message = await invoke_run(run)
 
     assert isinstance(message, AIMessage)
     assert message.text == "not-enabled"
@@ -455,7 +456,8 @@ async def test_stream_rejects_conflicting_duplicate_interrupt_id(
     )
 
     with pytest.raises(RuntimeError, match="conflicting data"):
-        _ = [event async for event in stream_run(run)]
+        async with run:
+            _ = [event async for event in stream_run(run)]
 
 
 async def test_interrupt_resumes_after_checkpointer_and_graph_restart(

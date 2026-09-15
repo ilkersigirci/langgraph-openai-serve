@@ -47,7 +47,7 @@ repository is passing its baseline.
 | 00 | [Baseline and decisions](00-baseline-and-decisions.md) | Reference | — | Analysis complete |
 | 01 | [Strict OpenAI request boundaries](01-strict-openai-request-boundaries.md) | P0 | — | Complete |
 | 02 | [Native LangGraph execution results](02-native-langgraph-execution.md) | P0 | — | Complete |
-| 03 | [Run ownership and cancellation](03-run-ownership-and-cancellation.md) | P0 | 02 | Waiting for 02 |
+| 03 | [Run ownership and cancellation](03-run-ownership-and-cancellation.md) | P0 | 02 | Complete |
 | 04 | [Interrupt continuation identity](04-interrupt-continuation-identity.md) | P1 | 02 | Waiting for 02 |
 | 05 | [Responses event assembly](05-responses-event-assembly.md) | P1 | 02, 03 | Waiting for 02 and 03 |
 | 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Waiting for core execution work |

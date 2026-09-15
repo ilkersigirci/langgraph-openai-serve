@@ -563,17 +563,24 @@ def encode_event(event: ResponseStreamEvent) -> str:
 
 async def collect_response(request: ResponseCreateRequest, run: GraphRun) -> Response:
     """Build one non-streaming Response from the graph's durable output."""
-    server_tools = selected_server_tools(request, run.config.server_tools)
-    builder = ResponsesStreamBuilder(
-        request,
-        run_id=run.run_id,
-        server_tools=server_tools,
-    )
+    try:
+        server_tools = selected_server_tools(request, run.config.server_tools)
+        builder = ResponsesStreamBuilder(
+            request,
+            run_id=run.run_id,
+            server_tools=server_tools,
+        )
+    except BaseException as exc:
+        run.record_failure(exc)
+        await run.aclose()
+        raise
+
     if not server_tools:
-        output = await invoke_run(run)
-        for event in _finish_events(builder, output, run):
-            if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
-                return event.response
+        async with run:
+            output = await invoke_run(run)
+            for event in _finish_events(builder, output, run):
+                if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
+                    return event.response
     else:
         events = _successful_events(
             builder,
@@ -631,27 +638,28 @@ async def _successful_events(
         The successful Response lifecycle.
 
     """
-    yield builder.created()
-    yield builder.in_progress()
-
     final_output: AIMessage | LangGraphInterruptBatch | None = None
-    expose_status = streaming and run.config.supports(GraphFeature.CLIENT_EVENTS)
-    run_events = stream_run(
-        run,
-        stream_messages=streaming,
-        stream_updates=stream_updates,
-    )
-    async with aclosing(run_events):
-        async for graph_event in run_events:
-            if isinstance(graph_event, (AIMessage, LangGraphInterruptBatch)):
-                final_output = graph_event
-                continue
-            for event in _graph_response_events(
-                builder,
-                graph_event,
-                expose_status=expose_status,
-            ):
-                yield event
+    async with run:
+        yield builder.created()
+        yield builder.in_progress()
+
+        expose_status = streaming and run.config.supports(GraphFeature.CLIENT_EVENTS)
+        run_events = stream_run(
+            run,
+            stream_messages=streaming,
+            stream_updates=stream_updates,
+        )
+        async with aclosing(run_events):
+            async for graph_event in run_events:
+                if isinstance(graph_event, (AIMessage, LangGraphInterruptBatch)):
+                    final_output = graph_event
+                    continue
+                for event in _graph_response_events(
+                    builder,
+                    graph_event,
+                    expose_status=expose_status,
+                ):
+                    yield event
 
     for event in _finish_events(builder, final_output, run):
         yield event

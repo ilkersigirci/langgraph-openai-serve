@@ -145,6 +145,13 @@ retains only checkpoints it has exposed as an interrupt and otherwise performs
 best-effort terminal cleanup. The complete lifecycle is specified in
 [OpenAI compatibility](openai-compatibility.md#durable-validation-and-recovery).
 
+One prepared-run async context owns that lease and its checkpoint disposition.
+State is left untouched until execution starts, becomes cleanup-eligible while
+execution is incomplete, and becomes retained only when the runner commits a
+validated interrupt batch. The context deletes terminal or incomplete temporary
+state before releasing the lease. Cleanup is idempotent, shielded from outer
+request cancellation, and never replaces an execution or cancellation failure.
+
 The graph therefore needs an async checkpointer implementing `aget_tuple()`,
 `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator
 shared by all workers. See
@@ -188,7 +195,9 @@ request types.
 
 `run_langgraph()` returns the final `AIMessage` or `LangGraphInterruptBatch`
 directly. The streaming helper yields text and custom events followed by that
-same output type.
+same output type. These public helpers own the prepared-run context for their
+complete lifetime. Lower-level `invoke_run()` and `stream_run()` calls operate
+only inside the active context supplied by an HTTP service or direct wrapper.
 
 When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
 Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation
@@ -205,8 +214,10 @@ For streaming Responses and Chat Completions (`stream=true`), LGOS ties graph
 iteration to the HTTP response lifetime. A request-scoped FastAPI dependency
 owns the producer task and memory channel behind `StreamingResponse`. When the
 client disconnects, dependency cleanup cancels and awaits that producer, then
-closes the graph iterator. This uses the normal OpenAI streaming connection;
-LGOS adds no custom cancellation route, header, or SSE event.
+closes the graph iterator. The service's prepared-run context owns graph cleanup
+after streaming starts; the request owner releases the run itself when a stream
+is closed before its source starts. This uses the normal OpenAI streaming
+connection; LGOS adds no custom cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"
 

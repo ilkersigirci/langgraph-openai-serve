@@ -24,11 +24,8 @@ async def stream_owner_dependency() -> AsyncIterator[_StreamOwner]:
         The request-scoped stream owner.
 
     """
-    owner = _StreamOwner()
-    try:
+    async with _StreamOwner() as owner:
         yield owner
-    finally:
-        await owner.aclose()
 
 
 __all__ = ["checkpoint_scope_dependency", "stream_owner_dependency"]

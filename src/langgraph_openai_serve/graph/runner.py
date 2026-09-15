@@ -2,9 +2,8 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, cast
 
-from anyio import CancelScope
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import (
@@ -17,7 +16,6 @@ from langgraph.types import (
     UpdatesStreamPart,
 )
 
-from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt import (
@@ -30,12 +28,6 @@ from langgraph_openai_serve.graph.utils import (
     prepare_run,
 )
 
-if TYPE_CHECKING:
-    from langgraph.checkpoint.base import BaseCheckpointSaver
-
-logger = get_logger(__name__)
-
-
 LangGraphOutput = AIMessage | interrupt_models.LangGraphInterruptBatch
 LangGraphStreamEvent = (
     str
@@ -46,7 +38,6 @@ LangGraphStreamEvent = (
 )
 
 _MISSING = object()
-_CheckpointDisposition = Literal["unknown", "preserve", "delete"]
 
 
 async def run_langgraph(
@@ -88,49 +79,44 @@ async def run_langgraph(
         checkpoint_scope=checkpoint_scope,
     )
 
-    return await invoke_run(run)
+    async with run:
+        return await invoke_run(run)
 
 
 async def invoke_run(run: GraphRun) -> LangGraphOutput:
-    """Invoke a graph and return only its durable result."""
-    checkpoint_disposition: _CheckpointDisposition = "unknown"
-    try:
-        if not run.should_execute:
-            interrupt_batch = await _durable_interrupt_batch(
-                run,
-                run.pending_interrupts,
-            )
-            if interrupt_batch is None:
-                msg = "Pending interrupt state disappeared before use."
-                raise RuntimeError(msg)
-            checkpoint_disposition = "preserve"
+    """Invoke a graph already owned by an active ``GraphRun`` context."""
+    run.require_owner()
+    if not run.should_execute:
+        interrupt_batch = await _durable_interrupt_batch(
+            run,
+            run.pending_interrupts,
+        )
+        if interrupt_batch is None:
+            msg = "Pending interrupt state disappeared before use."
+            raise RuntimeError(msg)
+        run.commit_interrupts()
+        return interrupt_batch
+
+    run.begin_execution()
+    result = await run.graph.ainvoke(
+        run.inputs,
+        config=run.runnable_config,
+        context=run.context,
+        output_keys=run.graph.output_channels,
+        durability=_durability(run),
+        version="v2",
+    )
+
+    if run.config.supports(GraphFeature.INTERRUPTS):
+        interrupt_batch = await _durable_interrupt_batch(run, result.interrupts)
+        if interrupt_batch is not None:
+            run.commit_interrupts()
             return interrupt_batch
 
-        result = await run.graph.ainvoke(
-            run.inputs,
-            config=run.runnable_config,
-            context=run.context,
-            output_keys=run.graph.output_channels,
-            durability=_durability(run),
-            version="v2",
-        )
-
-        if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await _durable_interrupt_batch(run, result.interrupts)
-            if interrupt_batch is not None:
-                checkpoint_disposition = "preserve"
-                return interrupt_batch
-
-        rendered_output = _with_usage(
-            await run.config.render_output(result.value),
-            run,
-        )
-        if run.config.supports(GraphFeature.INTERRUPTS):
-            checkpoint_disposition = "delete"
-
-        return rendered_output
-    finally:
-        await finalize_run(run, checkpoint_disposition)
+    return _with_usage(
+        await run.config.render_output(result.value),
+        run,
+    )
 
 
 async def run_langgraph_stream(
@@ -167,10 +153,11 @@ async def run_langgraph_stream(
         resume=resume,
         checkpoint_scope=checkpoint_scope,
     )
-    run_stream = stream_run(run)
-    async with aclosing(run_stream):
-        async for event in run_stream:
-            yield event
+    async with run:
+        run_stream = stream_run(run)
+        async with aclosing(run_stream):
+            async for event in run_stream:
+                yield event
 
 
 async def stream_run(
@@ -180,74 +167,70 @@ async def stream_run(
     stream_updates: bool = False,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
-    Stream an already prepared LangGraph invocation.
+    Stream a graph already owned by an active ``GraphRun`` context.
 
     Yields:
         LangGraph stream events.
 
     """
-    checkpoint_disposition: _CheckpointDisposition = "unknown"
-    try:
-        if not run.should_execute:
-            interrupt_batch = await _durable_interrupt_batch(
+    run.require_owner()
+    if not run.should_execute:
+        interrupt_batch = await _durable_interrupt_batch(
+            run,
+            run.pending_interrupts,
+        )
+        if interrupt_batch is None:
+            msg = "Pending interrupt state disappeared before use."
+            raise RuntimeError(msg)
+        run.commit_interrupts()
+        yield interrupt_batch
+        return
+
+    run.begin_execution()
+    final_output: Any = _MISSING
+    interrupts: list[Interrupt] = []
+
+    # LangGraph implements this as an async generator, while its overload
+    # returns AsyncIterator. Keep the concrete type so cancellation closes it.
+    graph_stream = cast(
+        "AsyncGenerator[StreamPart[Any, Any], None]",
+        run.graph.astream(
+            run.inputs,
+            config=run.runnable_config,
+            context=run.context,
+            stream_mode=_stream_modes(
+                stream_messages=stream_messages,
+                stream_updates=stream_updates,
+            ),
+            subgraphs=True,
+            output_keys=run.graph.output_channels,
+            durability=_durability(run),
+            version="v2",
+        ),
+    )
+    async with aclosing(graph_stream):
+        async for part in graph_stream:
+            if part["type"] == "values":
+                if not part["ns"]:
+                    final_output = part["data"]
+                    interrupts.extend(part["interrupts"])
+                continue
+            visible_part = _visible_stream_part(
+                part,
                 run,
-                run.pending_interrupts,
+                stream_updates=stream_updates,
             )
-            if interrupt_batch is None:
-                msg = "Pending interrupt state disappeared before use."
-                raise RuntimeError(msg)
-            checkpoint_disposition = "preserve"
+            if visible_part is not None:
+                yield visible_part
+
+    if run.config.supports(GraphFeature.INTERRUPTS):
+        interrupt_batch = await _durable_interrupt_batch(run, tuple(interrupts))
+        if interrupt_batch is not None:
+            run.commit_interrupts()
             yield interrupt_batch
             return
 
-        final_output: Any = _MISSING
-        interrupts: list[Interrupt] = []
-
-        # LangGraph implements this as an async generator, while its overload
-        # returns AsyncIterator. Keep the concrete type so cancellation closes it.
-        graph_stream = cast(
-            "AsyncGenerator[StreamPart[Any, Any], None]",
-            run.graph.astream(
-                run.inputs,
-                config=run.runnable_config,
-                context=run.context,
-                stream_mode=_stream_modes(
-                    stream_messages=stream_messages,
-                    stream_updates=stream_updates,
-                ),
-                subgraphs=True,
-                output_keys=run.graph.output_channels,
-                durability=_durability(run),
-                version="v2",
-            ),
-        )
-        async with aclosing(graph_stream):
-            async for part in graph_stream:
-                if part["type"] == "values":
-                    if not part["ns"]:
-                        final_output = part["data"]
-                        interrupts.extend(part["interrupts"])
-                    continue
-                visible_part = _visible_stream_part(
-                    part,
-                    run,
-                    stream_updates=stream_updates,
-                )
-                if visible_part is not None:
-                    yield visible_part
-
-        if run.config.supports(GraphFeature.INTERRUPTS):
-            interrupt_batch = await _durable_interrupt_batch(run, tuple(interrupts))
-            if interrupt_batch is not None:
-                checkpoint_disposition = "preserve"
-                yield interrupt_batch
-                return
-            else:
-                checkpoint_disposition = "delete"
-
-        yield await _render_stream_output(final_output, run)
-    finally:
-        await finalize_run(run, checkpoint_disposition)
+    yield await _render_stream_output(final_output, run)
 
 
 def _visible_stream_part(
@@ -320,44 +303,3 @@ async def _durable_interrupt_batch(
         run.runnable_config,
         run.run_id,
     )
-
-
-async def finalize_run(
-    run: GraphRun,
-    checkpoint_disposition: _CheckpointDisposition,
-) -> None:
-    """
-    Finalize checkpoint retention, then release any interrupt-run lease.
-
-    Only state exposed as a resumable interrupt is preserved. Cleanup for an
-    unclassified run is best-effort so it cannot mask the failure that prevented
-    classification.
-    """
-    with CancelScope(shield=True):
-        try:
-            if checkpoint_disposition == "delete" or (
-                checkpoint_disposition == "unknown"
-                and run.config.supports(GraphFeature.INTERRUPTS)
-            ):
-                await delete_checkpoint_thread(run)
-        except Exception:
-            if checkpoint_disposition != "unknown":
-                raise
-            logger.exception("graph_run.checkpoint_cleanup_failed")
-        finally:
-            try:
-                await run.aclose()
-            except Exception:
-                if checkpoint_disposition != "unknown":
-                    raise
-                logger.exception("graph_run.lease_release_failed")
-
-
-async def delete_checkpoint_thread(run: GraphRun) -> None:
-    """Delete terminal state retained only to support an active interrupt."""
-    if run.checkpoint_thread_id is None:
-        msg = "Interrupt-enabled run has no checkpoint thread id."
-        raise RuntimeError(msg)
-
-    checkpointer = cast("BaseCheckpointSaver", run.graph.checkpointer)
-    await checkpointer.adelete_thread(run.checkpoint_thread_id)

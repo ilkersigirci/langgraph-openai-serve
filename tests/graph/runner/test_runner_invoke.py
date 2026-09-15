@@ -308,6 +308,7 @@ async def test_invoke_run_ignores_generic_custom_events() -> None:
         run_id=None,
     )
 
-    message = await invoke_run(run)
+    async with run:
+        message = await invoke_run(run)
 
     assert message.text == "done"

@@ -26,14 +26,15 @@ async def generate_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> ChatCompletion:
     """Generate a chat completion."""
-    output = await invoke_run(run)
-    if not isinstance(output, AIMessage):
-        msg = "The graph returned an unsupported Chat Completions output."
-        raise TypeError(msg)
-    return chat_completion_response(
-        model=chat_request.model,
-        message=output,
-    )
+    async with run:
+        output = await invoke_run(run)
+        if not isinstance(output, AIMessage):
+            msg = "The graph returned an unsupported Chat Completions output."
+            raise TypeError(msg)
+        return chat_completion_response(
+            model=chat_request.model,
+            message=output,
+        )
 
 
 async def stream_completion(
@@ -71,24 +72,26 @@ async def _generate_stream_chunks(
     *,
     include_usage: bool,
 ) -> AsyncGenerator[str, None]:
-    yield response_builder.role()
+    async with run:
+        yield response_builder.role()
 
-    final_message: AIMessage | None = None
-    text_parts: list[str] = []
-    run_stream = stream_run(run)
-    async with aclosing(run_stream):
-        async for event in run_stream:
-            if isinstance(event, AIMessage):
-                final_message = event
-                continue
+        final_message: AIMessage | None = None
+        text_parts: list[str] = []
+        run_stream = stream_run(run)
+        async with aclosing(run_stream):
+            async for event in run_stream:
+                if isinstance(event, AIMessage):
+                    final_message = event
+                    continue
 
-            if not isinstance(event, str):
-                continue
+                if not isinstance(event, str):
+                    continue
 
-            text_parts.append(event)
-            yield response_builder.text(event)
+                text_parts.append(event)
+                yield response_builder.text(event)
 
-    final_message = _require_final_message(final_message)
+        final_message = _require_final_message(final_message)
+
     for chunk in _final_chunks(
         response_builder,
         final_message,

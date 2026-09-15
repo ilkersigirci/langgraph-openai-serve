@@ -13,6 +13,8 @@ once at the stream boundary.
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
+from types import TracebackType
+from typing import Self
 
 from anyio import CancelScope, create_memory_object_stream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -33,11 +35,30 @@ class _StreamOwner:
         self._send_stream: MemoryObjectSendStream[str] | None = None
         self._receive_stream: MemoryObjectReceiveStream[str] | None = None
 
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        if exc is not None and self._run is not None:
+            self._run.record_failure(exc)
+        try:
+            await self.aclose()
+        except BaseException:
+            if exc is None:
+                raise
+            logger.exception("openai.stream_cleanup_failed")
+
     def start(
         self,
         source: AsyncGenerator[str, None],
         run: GraphRun,
     ) -> MemoryObjectReceiveStream[str]:
+        """Start the producer and take fallback ownership of its prepared run."""
         if self._started:
             msg = "A stream owner can only start one producer."
             raise RuntimeError(msg)
@@ -103,6 +124,8 @@ class _StreamOwner:
         run: GraphRun,
         primary_error: BaseException | None,
     ) -> None:
+        if primary_error is not None:
+            run.record_failure(primary_error)
         try:
             await run.aclose()
         except Exception:

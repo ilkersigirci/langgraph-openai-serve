@@ -1,6 +1,6 @@
 # 03 — Run Ownership And Cancellation
 
-- Status: **Waiting for 02**
+- Status: **Complete**
 - Priority: **P0**
 - Dependencies: **02**
 
@@ -128,4 +128,56 @@ case.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-15.
+
+- `GraphRun` is now the idempotent async owner for one prepared execution. Its
+  `AsyncExitStack` acquires and releases the coordinator lease, and one private
+  `"untouched" | "delete" | "preserve"` state implements the checkpoint
+  lifecycle: preparation leaves state untouched, execution makes incomplete
+  state cleanup-eligible, and committing a validated interrupt batch preserves
+  it.
+- Preparation builds the graph, usage callback, run identity, runnable config,
+  input, and context through one common path. The interrupt branch alone
+  acquires the lease, reads state, and resolves retry or resume input. Failed or
+  cancelled preparation unwinds the resource stack under a cleanup shield
+  without deleting pre-existing checkpoint state.
+- Direct runner wrappers and the Chat and Responses services now express
+  ownership with `async with run`. Lower-level `invoke_run()` and `stream_run()`
+  only advance execution and interrupt-commit state; the separate
+  `finalize_run()` function and manually entered lease were removed.
+- The dedicated HTTP producer owner and zero-buffer AnyIO channel were retained.
+  The owner is itself an async context, cancels and awaits the asyncio producer,
+  and provides idempotent fallback cleanup when a response closes before its
+  service source starts. Once a service starts, its prepared-run context closes
+  graph/provider generators and releases the run before terminal protocol
+  rendering.
+- Cleanup remains shielded and ordered: checkpoint deletion precedes lease
+  release, a cleanup error may replace a successful result, and cleanup errors
+  are logged instead of replacing an active graph, rendering, or cancellation
+  failure. Focused tests cover successful invoke/stream cleanup failure,
+  combined checkpoint-and-lease cleanup failure, exact-once release, immediate
+  close, active request-error precedence at the stream owner, and real TCP
+  graph/provider cancellation.
+- Product documentation now describes prepared-run ownership and the HTTP
+  streaming handoff. No OpenAI payload, interrupt identity, Responses event
+  state machine, dependency, or lockfile changed.
+
+Locked-version verification used `uv.lock`, `uv run --locked`, and the installed
+sources for AnyIO 4.14.2, FastAPI 0.139.2, Starlette 1.3.1, and Psycopg Pool
+3.3.1. The implementation was checked against these primary sources:
+
+- [Python 3.11 `AsyncExitStack`](https://docs.python.org/3.11/library/contextlib.html#contextlib.AsyncExitStack)
+- [AnyIO 4.14.2 cancellation and shielding](https://github.com/agronholm/anyio/blob/4.14.2/docs/cancellation.rst)
+- [FastAPI 0.139.2 request dependency lifetime](https://github.com/fastapi/fastapi/blob/0.139.2/fastapi/routing.py)
+- [Starlette 1.3.1 `StreamingResponse`](https://github.com/Kludex/starlette/blob/1.3.1/starlette/responses.py)
+- [Psycopg Pool 3.3.1 async connection lifecycle](https://github.com/psycopg/psycopg/blob/3.3.1/psycopg_pool/psycopg_pool/pool_async.py)
+- [PostgreSQL session advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
+
+| Validation | Result |
+| --- | --- |
+| `just check` | Pass |
+| `just test tests/api/test_chat_cancellation.py tests/api/interrupt tests/api/responses tests/integrations/test_postgres.py` | 161 passed |
+| `just test` | 393 passed |
+| `cd demo && just test --editable` | API 111 passed, Files 12 passed, Chainlit 116 passed, Open WebUI 120 passed |
+| `cd demo && just test-postgres --editable` | API PostgreSQL 2 passed, Chainlit PostgreSQL 10 passed |
+| `just docs` | Strict build passed |
