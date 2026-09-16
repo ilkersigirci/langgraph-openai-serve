@@ -44,6 +44,19 @@ Write the minimum code that fully solves the stated problem.
 - Prefer standard protocols, official SDKs, and established libraries over
   hand-rolled equivalents.
 
+## API Package Layout
+
+- Organize API resources as feature packages.
+- Keep FastAPI transport behavior in `views.py`, application operations in
+  `service.py`, and Pydantic boundary models in `schemas.py`.
+- Put route-local FastAPI dependencies in `deps.py`. Dependencies shared by
+  multiple resource packages belong in `api/deps.py`.
+- Add responsibility-specific modules such as `events.py` or `interrupts.py`
+  when a feature needs them. Prefer these domain names over generic `utils.py`
+  modules or `utils/` packages.
+- Do not create empty conventional modules. Add `permissions.py`, `models.py`,
+  or `repository.py` only when the resource actually owns that responsibility.
+
 ## Comments
 
 Write comments for the reader, not as a transcript of the code.

@@ -13,7 +13,7 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_function_web_search import ActionSearch
 
-from langgraph_openai_serve.api.responses.service import (
+from langgraph_openai_serve.api.responses.output import (
     UnsupportedResponsesOutputError,
     response_function_calls,
 )

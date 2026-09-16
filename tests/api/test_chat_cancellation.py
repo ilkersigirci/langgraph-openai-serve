@@ -20,9 +20,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.api.streaming import (
-    _StreamOwner,  # ruff: ignore[import-private-name]
-)
+from langgraph_openai_serve.api.streaming import StreamOwner
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
 
@@ -262,7 +260,7 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
         _resources=resources,
     )
 
-    async with _StreamOwner() as owner:
+    async with StreamOwner() as owner:
         owner.start(source(), run)
 
     assert not source_started
@@ -295,7 +293,7 @@ async def test_stream_owner_preserves_active_failure_during_cleanup() -> None:
     )
 
     async def fail_request() -> None:
-        async with _StreamOwner() as owner:
+        async with StreamOwner() as owner:
             owner.start(source(), run)
             msg = "request failed"
             raise ValueError(msg)

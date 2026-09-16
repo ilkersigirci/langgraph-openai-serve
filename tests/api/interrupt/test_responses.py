@@ -6,9 +6,9 @@ import pytest
 from langgraph.types import Interrupt
 from openai.types.responses import ResponseCompletedEvent
 
+from langgraph_openai_serve.api.responses.events import ResponsesEventBuilder
+from langgraph_openai_serve.api.responses.output import interrupt_output_items
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.api.responses.service import interrupt_output_items
-from langgraph_openai_serve.api.responses.streaming import ResponsesEventBuilder
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
 GENERATION_TOKEN = "a" * 64
