@@ -25,7 +25,7 @@ from langgraph_openai_serve.graph.utils import GraphRun
 logger = get_logger(__name__)
 
 
-class _StreamOwner:
+class StreamOwner:
     """Own the producer and resources for one streaming graph run."""
 
     def __init__(self) -> None:
@@ -36,6 +36,7 @@ class _StreamOwner:
         self._receive_stream: MemoryObjectReceiveStream[str] | None = None
 
     async def __aenter__(self) -> Self:
+        """Enter this stream owner's request-scoped lifetime."""
         return self
 
     async def __aexit__(
@@ -44,6 +45,7 @@ class _StreamOwner:
         exc: BaseException | None,
         _traceback: TracebackType | None,
     ) -> None:
+        """Close the producer and prepared run when the request scope exits."""
         if exc is not None and self._run is not None:
             self._run.record_failure(exc)
         try:
@@ -82,6 +84,7 @@ class _StreamOwner:
         return receive_stream
 
     async def aclose(self) -> None:
+        """Stop production and close the prepared run exactly once."""
         producer = self._producer
         run = self._run
         if run is None:
@@ -144,4 +147,4 @@ class _StreamOwner:
         self._receive_stream = None
 
 
-__all__ = ["_StreamOwner"]
+__all__ = ["StreamOwner"]

@@ -1,4 +1,4 @@
-"""Functions for generating chat completions."""
+"""Prepare and execute graph runs for OpenAI Chat Completions."""
 
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
@@ -6,6 +6,10 @@ from contextlib import aclosing
 from langchain_core.messages import AIMessage
 from openai.types.chat import ChatCompletion
 
+from langgraph_openai_serve.api.chat.request import (
+    UnsupportedChatRequestError,
+    decode_chat_request,
+)
 from langgraph_openai_serve.api.chat.responses import (
     ChatCompletionStreamResponseBuilder,
     annotations_from_message,
@@ -13,13 +17,31 @@ from langgraph_openai_serve.api.chat.responses import (
 )
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
 from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
     stream_run,
 )
-from langgraph_openai_serve.graph.utils import GraphRun
+from langgraph_openai_serve.graph.utils import GraphRun, prepare_run
 
 logger = get_logger(__name__)
+
+
+async def prepare_completion_run(
+    request: ChatCompletionRequest,
+    graph_registry: GraphRegistry,
+) -> GraphRun:
+    """Validate a Chat request and prepare its graph run."""
+    graph_request, messages = decode_chat_request(request)
+    graph_config = graph_registry.get_graph(request.model)
+    if graph_config.supports(GraphFeature.INTERRUPTS):
+        message = (
+            f"Model '{request.model}' requires interrupts, which is only "
+            "supported via the Responses API (/v1/responses)."
+        )
+        raise UnsupportedChatRequestError(message, param="model")
+    return await prepare_run(graph_request, messages, graph_registry)
 
 
 async def generate_completion(

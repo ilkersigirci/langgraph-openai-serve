@@ -1,4 +1,4 @@
-"""Assemble SDK-typed OpenAI Responses events."""
+"""Build SDK-typed OpenAI Responses events and named SSE frames."""
 
 import uuid
 from collections.abc import Collection, Iterator, Sequence
@@ -42,18 +42,18 @@ from openai.types.responses import (
 )
 from openai.types.responses.response import IncompleteDetails
 
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.api.responses.server_tools import (
-    ServerToolItem,
-    ServerToolTracker,
-)
-from langgraph_openai_serve.api.responses.service import (
+from langgraph_openai_serve.api.responses.output import (
     ResponseContext,
     interrupt_output_items,
     response_incomplete_details,
     response_output_text,
     response_refusals,
     response_usage,
+)
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.api.responses.server_tools import (
+    ServerToolItem,
+    ServerToolTracker,
 )
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 

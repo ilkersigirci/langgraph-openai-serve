@@ -10,8 +10,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from openai.types.shared import ErrorObject
 
+from langgraph_openai_serve.api.deps import get_graph_registry
 from langgraph_openai_serve.api.models import service as models_service
-from langgraph_openai_serve.api.models.deps import get_graph_registry_dependency
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.graph_registry import (
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/models", tags=["openai"])
 
 @router.get("")
 def list_models(
-    graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
+    graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry)],
 ) -> ModelList:
     """Get a list of available models."""
     return models_service.get_models(graph_registry)
@@ -36,7 +36,7 @@ def list_models(
 )
 def retrieve_model(
     model: str,
-    graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry_dependency)],
+    graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry)],
 ) -> ModelDetails:
     """Retrieve one registered graph as an OpenAI model."""
     try:
