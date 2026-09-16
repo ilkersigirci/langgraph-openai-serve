@@ -98,13 +98,16 @@ class ServerToolTracker:
                 if not isinstance(tool_input, str):
                     msg = "Server custom tool calls must include string input."
                     raise UnsupportedResponsesOutputError(msg)
-                call = ResponseCustomToolCall(
-                    id=f"ctc_{call_id}",
-                    type="custom_tool_call",
-                    status="completed",
-                    call_id=call_id,
-                    name=name,
-                    input=tool_input,
+                call = ResponseCustomToolCall.model_validate(
+                    {
+                        "id": f"ctc_{call_id}",
+                        "type": "custom_tool_call",
+                        "status": "completed",
+                        "call_id": call_id,
+                        "name": name,
+                        "input": tool_input,
+                        "async": None,
+                    }
                 )
             if call_id in self._pending or call_id in self._completed:
                 msg = "Server tool call IDs must be unique within a graph run."

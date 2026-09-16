@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
-import httpx
+import httpx2
 import pytest
 from openai import OpenAI
 from openai.types import Model
@@ -16,18 +16,18 @@ from lgos_openwebui.workspace_models import (
 )
 
 
-def _response(data: object) -> httpx.Response:
-    return httpx.Response(
+def _response(data: object) -> httpx2.Response:
+    return httpx2.Response(
         200,
         json=data,
-        request=httpx.Request("GET", "http://open-webui.test/api"),
+        request=httpx2.Request("GET", "http://open-webui.test/api"),
     )
 
 
 def _client(exported: object, base_models: object = ()) -> Mock:
     client = Mock()
 
-    def get(path: str) -> httpx.Response:
+    def get(path: str) -> httpx2.Response:
         responses = {
             "/api/v1/models/export": exported,
             "/api/v1/models/base": base_models,
@@ -224,16 +224,16 @@ def test_discovery_projects_settings_from_gateway_model_details(
             ],
         }
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         assert request.method == "GET"
         key = (request.url.path, request.headers.get("x-model-provider"))
-        return httpx.Response(200, json=responses[key])
+        return httpx2.Response(200, json=responses[key])
 
     with OpenAI(
         base_url="https://gateway.example/v1",
         api_key="test",
         max_retries=0,
-        http_client=httpx.Client(transport=httpx.MockTransport(handle)),
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handle)),
     ) as client:
         specs = discover_workspace_model_specs(
             client,
@@ -268,9 +268,9 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
     with OpenAI(
         base_url="https://gateway.example/v1",
         api_key="test",
-        http_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(
+        http_client=httpx2.Client(
+            transport=httpx2.MockTransport(
+                lambda _: httpx2.Response(
                     200,
                     json={
                         "data": [

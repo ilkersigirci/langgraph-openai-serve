@@ -5,9 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient, MockTransport, Request, Response
+from openai import AsyncOpenAI
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 
 from lgos_demo_api import app as app_module
@@ -71,6 +73,38 @@ def test_fastapi_instrumentation_is_optional(
     instrument_fastapi_app(app)
 
     assert not getattr(app, "_is_instrumented_by_opentelemetry", False)
+
+
+async def test_httpx2_instrumentation_supports_openai_v3() -> None:
+    async def respond(_request: Request) -> Response:
+        return Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "instrumented-model",
+                        "object": "model",
+                        "created": 0,
+                        "owned_by": "test",
+                    }
+                ],
+            },
+        )
+
+    http_client = AsyncClient(transport=MockTransport(respond))
+    HTTPX2ClientInstrumentor.instrument_client(http_client)
+    try:
+        async with AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=http_client,
+        ) as client:
+            models = await client.models.list()
+    finally:
+        HTTPX2ClientInstrumentor.uninstrument_client(http_client)
+
+    assert models.data[0].id == "instrumented-model"
 
 
 async def test_unhandled_failure_log_keeps_server_span_context() -> None:

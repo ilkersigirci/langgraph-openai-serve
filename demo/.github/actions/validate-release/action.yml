@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: Validate release
+description: Validate the release tag and its GitHub prerelease classification.
+
+inputs:
+  tag:
+    description: GitHub release tag.
+    required: true
+  prerelease:
+    description: Whether GitHub classifies the release as a prerelease.
+    required: true
+
+outputs:
+  version:
+    description: Validated version without the leading v.
+    value: ${{ steps.release.outputs.version }}
+  prerelease:
+    description: Whether the validated version is a prerelease.
+    value: ${{ steps.release.outputs.prerelease }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate release
+      id: release
+      shell: bash
+      env:
+        IS_PRERELEASE: ${{ inputs.prerelease }}
+        TAG_NAME: ${{ inputs.tag }}
+      run: |
+        stable_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        prerelease_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(rc|beta)([1-9][0-9]*)$'
+
+        if [[ "$TAG_NAME" =~ $stable_pattern ]]; then
+          if [[ "$IS_PRERELEASE" != "false" ]]; then
+            echo "Stable releases must not be marked as prereleases" >&2
+            exit 1
+          fi
+        elif [[ "$TAG_NAME" =~ $prerelease_pattern ]]; then
+          if [[ "$IS_PRERELEASE" != "true" ]]; then
+            echo "Prerelease versions must be marked as GitHub prereleases" >&2
+            exit 1
+          fi
+        else
+          echo "Expected v<MAJOR>.<MINOR>.<PATCH> or a -rc<N>/-beta<N> prerelease, got: $TAG_NAME" >&2
+          exit 1
+        fi
+
+        version=${TAG_NAME#v}
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+        echo "Validated version: $version"

@@ -44,6 +44,12 @@ chat input, and enable **Package version**, **Web search**, or both. The
 checkboxes default to off and their values belong to the chat. LGOS executes
 the selected tools server-side without a client-tool continuation.
 
+The pinned Open WebUI runtime's OpenAI 2.29 SDK omits
+`custom_tool_call_output` from one generated response union. The Function adds
+that existing SDK model to the affected response annotations at load time. The
+shim is feature-detected, changes no installed package files, and becomes a
+no-op when Open WebUI updates to an SDK containing the corrected union.
+
 For **LGOS / ... / advanced-graph**, the same control contains **Web search**.
 Search is sent as a standard Responses tool. Note saving is an intent expressed
 in the user's message.
@@ -98,7 +104,7 @@ for its native server administration and access controls.
 
 ## Setup
 
-Start the official Open WebUI image:
+Start the pinned official Open WebUI image unchanged:
 
 ```bash
 cp demo/.env.example demo/.env
@@ -106,14 +112,15 @@ just demo/up lgos-openwebui --wait
 ```
 
 For independently started components, first [sync LGOS model
-metadata](litellm-sync.md) when using LiteLLM. Then run synchronization inside
-the Open WebUI container:
+metadata](litellm-sync.md) when using LiteLLM. Then run the locked
+synchronization project on the host:
 
 ```bash
 just demo/sync-openwebui
 ```
 
-The command inherits the same gateway root and credential as the Open WebUI
+The command replaces the container-only gateway root with
+`DEMO_GATEWAY_HOST_URL` and reuses the same credential as the Open WebUI
 runtime. For a standalone Open WebUI deployment, run
 `uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
 environment where `DEMO_OPENWEBUI_URL` and the shared gateway URL are both
@@ -199,6 +206,9 @@ original bytes with `purpose="user_data"`, and appends the returned OpenAI
 `file_id` to the message. It never reuploads historical chat attachments or
 moves them to the latest message. Images use `input_file.file_id` too; the
 current LGOS Responses subset does not accept `input_image` items.
+
+This local file bridge uses the HTTPX shipped by the pinned Open WebUI runtime;
+it will move to HTTPX2 when Open WebUI adopts OpenAI v3.
 
 The generated Workspace Model is the upload-capability boundary. The raw
 manifold entry is intended for diagnostics and does not add a second remote

@@ -145,7 +145,7 @@ services:
       # outbound request instead of grouping the whole chat session into one.
       OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$,/ws/socket[.]io
       # Chainlit transitively installs GenAI instrumentors that record prompt
-      # content. HTTPX is sufficient for propagation and transport tracing.
+      # content. HTTPX2 remains enabled for propagation and transport tracing.
       OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: openai,openai_agents
     command: ["opentelemetry-instrument", "lgos-chainlit"]
     depends_on:

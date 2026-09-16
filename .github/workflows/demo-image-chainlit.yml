@@ -10,6 +10,7 @@ on:
     paths:
       - demo/ui/chainlit_ui/**
       - demo/.github/actions/build-image/**
+      - demo/.github/actions/validate-release/**
       - demo/.github/workflows/image-chainlit.yml
       - .github/workflows/demo-image-chainlit.yml
 
@@ -47,10 +48,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Validate release
+        uses: $/demo/.github/actions/validate-release
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Publish image
         uses: ./demo/.github/actions/build-image

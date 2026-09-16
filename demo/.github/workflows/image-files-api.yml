@@ -9,6 +9,7 @@ on:
     paths:
       - files_api/**
       - .github/actions/build-image/**
+      - .github/actions/validate-release/**
       - .github/workflows/image-files-api.yml
 
 concurrency:
@@ -45,10 +46,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Validate release
+        uses: $/.github/actions/validate-release
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          prerelease: ${{ github.event.release.prerelease }}
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Publish image
         uses: ./.github/actions/build-image

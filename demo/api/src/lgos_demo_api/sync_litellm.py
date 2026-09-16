@@ -5,7 +5,7 @@ import os
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
-import httpx
+import httpx2
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 from pydantic import BaseModel, JsonValue, ValidationError
 
@@ -37,8 +37,8 @@ def _is_owned(deployment: Deployment, *, prefix: str) -> bool:
 
 
 def sync_models(
-    source: httpx.Client,
-    gateway: httpx.Client,
+    source: httpx2.Client,
+    gateway: httpx2.Client,
     *,
     prefix: str,
     api_key: str,
@@ -158,12 +158,12 @@ def main() -> None:
     try:
         api_key = os.environ[args.api_key_env] if args.api_key_env else "DUMMY"
         with (
-            httpx.Client(
+            httpx2.Client(
                 base_url=args.source_url.rstrip("/") + "/",
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=30,
             ) as source,
-            httpx.Client(
+            httpx2.Client(
                 base_url=args.gateway_url.rstrip("/") + "/",
                 headers={"Authorization": f"Bearer {os.environ['LITELLM_MASTER_KEY']}"},
                 timeout=30,
@@ -183,7 +183,7 @@ def main() -> None:
         raise SystemExit(
             "LiteLLM model sync failed: invalid catalog response"
         ) from None
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
+    except (httpx2.HTTPError, ValueError, KeyError) as exc:
         # Do not print response bodies: management errors can echo credentials.
         raise SystemExit(f"LiteLLM model sync failed: {exc}") from None
 

@@ -54,6 +54,13 @@ class OpenAIHTTPException(HTTPException):
         self.error = error
 
 
+def _error_payload(error: ErrorObject) -> dict[str, object]:
+    """Keep the OpenAI error envelope stable across SDK v2 and v3."""
+    payload = error.model_dump(mode="json")
+    payload.setdefault("misalignment", None)
+    return payload
+
+
 def configure_openai_error_handlers(app: FastAPI) -> None:
     """Install OpenAI-compatible error handlers."""
     # Starlette dispatches each handler only for its registered exception class.
@@ -214,7 +221,7 @@ async def openai_http_exception_handler(
         )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": error.model_dump(mode="json")},
+        content={"error": _error_payload(error)},
     )
 
 
@@ -239,7 +246,7 @@ async def openai_request_validation_exception_handler(
     )
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": error.model_dump(mode="json")},
+        content={"error": _error_payload(error)},
     )
 
 
@@ -257,5 +264,5 @@ async def openai_unhandled_exception_handler(
     error = ErrorObject(message="Internal server error", type="server_error")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": error.model_dump(mode="json")},
+        content={"error": _error_payload(error)},
     )

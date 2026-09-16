@@ -57,7 +57,11 @@ def configure_openai_error_handlers(app: FastAPI) -> None:
 
 def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
     """Create OpenAI error payload."""
-    return {"error": error.model_dump(mode="json")}
+    payload = error.model_dump(mode="json")
+    # OpenAI v3 added this nullable field. Include it under v2 as well so the
+    # public error envelope does not depend on the installed SDK generation.
+    payload.setdefault("misalignment", None)
+    return {"error": payload}
 
 
 async def openai_http_exception_handler(  # ruff: ignore[unused-async]

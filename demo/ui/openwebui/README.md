@@ -1,8 +1,17 @@
 # LGOS Open WebUI integration
 
 Standalone Open WebUI Function sources and a local synchronization command.
-Open WebUI itself runs from its official image; this project is not built or
-published as a container.
+Compose runs the pinned official Open WebUI image unchanged. The synchronization
+command runs outside that container with this project's locked OpenAI v3 and
+HTTPX2 clients, then stores the bundled Function through Open WebUI's API.
+
+The stored Function executes inside Open WebUI and therefore uses the upstream
+image's dependency surface. Its local file bridge remains on upstream-provided
+HTTPX and will move to HTTPX2 when Open WebUI adopts OpenAI v3. The pinned host
+SDK omits custom-tool output from one generated response union; the Function
+applies a narrow compatibility shim for that type until Open WebUI updates its
+SDK. Both `web_search` and the demo's `lgos_package_version` custom tool remain
+available without replacing packages in the official image.
 
 Start with **UserValves Simple / simple-graph** after synchronization. The small
 [`uservalves_simple.py`](src/lgos_openwebui/functions/uservalves_simple.py)

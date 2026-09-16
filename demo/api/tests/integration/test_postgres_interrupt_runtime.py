@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from openai import AsyncOpenAI, ConflictError

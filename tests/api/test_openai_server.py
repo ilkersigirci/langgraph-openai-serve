@@ -1,6 +1,6 @@
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient, Response
+from httpx2 import ASGITransport, AsyncClient, Response
 from pydantic import ValidationError
 from starlette import status
 

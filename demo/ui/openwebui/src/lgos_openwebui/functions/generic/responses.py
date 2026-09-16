@@ -2,8 +2,9 @@
 
 import json as responses_json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Union
 
+import openai.types.responses as response_types
 from openai.types.chat.chat_completion_chunk import (
     ChatCompletionChunk,
     Choice,
@@ -36,7 +37,35 @@ from .contracts import (
 )
 from .gateway import MCP_GATEWAY_ID
 
-RESPONSE_OUTPUT = TypeAdapter(list[ResponseOutputItem])
+
+def _patch_legacy_custom_tool_output() -> None:
+    """Fill the response-output omission in OpenAI 2.29 used by Open WebUI."""
+    if hasattr(response_types, "ResponseCustomToolCallOutputItem"):
+        return
+
+    from openai.types.responses.response_custom_tool_call_output import (
+        ResponseCustomToolCallOutput,
+    )
+    from openai.types.responses.response_output_item_added_event import (
+        ResponseOutputItemAddedEvent,
+    )
+    from openai.types.responses.response_output_item_done_event import (
+        ResponseOutputItemDoneEvent,
+    )
+
+    compatible_item = Union[ResponseOutputItem, ResponseCustomToolCallOutput]
+    fields = (
+        (Response, "output", list[compatible_item]),
+        (ResponseOutputItemAddedEvent, "item", compatible_item),
+        (ResponseOutputItemDoneEvent, "item", compatible_item),
+    )
+    for model, field_name, annotation in fields:
+        model.model_fields[field_name].annotation = annotation
+        model.model_rebuild(force=True)
+
+
+_patch_legacy_custom_tool_output()
+RESPONSE_OUTPUT_ITEM = TypeAdapter(ResponseOutputItem)
 
 DISPLAY_FILE_TOOL: FunctionToolParam = {
     "type": "function",
@@ -304,8 +333,16 @@ def _responses_continuation(
     outputs: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
     return [
-        # Serialize wire types, excluding SDK-only parsed fields on subclasses.
-        *RESPONSE_OUTPUT.dump_python(response.output, mode="json", exclude_none=True),
+        *(
+            item.model_dump(mode="json", exclude_none=True)
+            if item.type == "custom_tool_call_output"
+            else RESPONSE_OUTPUT_ITEM.dump_python(
+                item,
+                mode="json",
+                exclude_none=True,
+            )
+            for item in response.output
+        ),
         *outputs,
     ]
 

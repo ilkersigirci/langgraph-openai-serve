@@ -2,9 +2,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import Mock
 
+import httpx2
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import GraphConfig, GraphRequest
@@ -56,8 +57,8 @@ def demo_app() -> FastAPI:
 @pytest.fixture
 async def openai_client(demo_app: FastAPI) -> AsyncIterator[AsyncOpenAI]:
     async with (
-        AsyncClient(
-            transport=ASGITransport(app=demo_app),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=demo_app),
             base_url="http://test",
         ) as http_client,
         AsyncOpenAI(
@@ -306,8 +307,17 @@ async def test_lifespan_installs_shared_postgres_runtime(
 
     runtime_factory = Mock(wraps=postgres_runtime)
     monkeypatch.setattr(app_module, "postgres_runtime", runtime_factory)
+    upstream_clients: list[httpx2.AsyncClient] = []
+    create_model = app_module.create_model
+
+    def capture_upstream_client(client: httpx2.AsyncClient):
+        upstream_clients.append(client)
+        return create_model(client)
+
+    monkeypatch.setattr(app_module, "create_model", capture_upstream_client)
 
     async with app_module.lifespan(demo_app):
+        assert not upstream_clients[0].is_closed
         assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
         assert demo_app.state.run_coordinator is coordinator
         assert demo_app.state.persistent_plot_agent.store is runtime.store
@@ -317,6 +327,7 @@ async def test_lifespan_installs_shared_postgres_runtime(
         async with config.run_coordinator("thread-1"):
             pass
 
+    assert upstream_clients[0].is_closed
     runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
 
 
@@ -436,7 +447,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
 ) -> None:
     import json
 
-    from httpx import MockTransport, Request, Response
+    from httpx2 import MockTransport, Request, Response
     from langchain_openai import ChatOpenAI
 
     requests = []

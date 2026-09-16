@@ -1,9 +1,10 @@
 import ast
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
 
-import httpx
+import httpx2
 import pytest
 from openai import OpenAI
 
@@ -20,11 +21,11 @@ from lgos_openwebui.sync_functions import (
 from lgos_openwebui.workspace_models import WorkspaceModelSpec
 
 
-def _response(data: object) -> httpx.Response:
-    return httpx.Response(
+def _response(data: object) -> httpx2.Response:
+    return httpx2.Response(
         200,
         json=data,
-        request=httpx.Request("GET", "http://open-webui.test/api"),
+        request=httpx2.Request("GET", "http://open-webui.test/api"),
     )
 
 
@@ -218,29 +219,43 @@ def test_catalog_failure_does_not_modify_openwebui(
 ) -> None:
     requests: list[str] = []
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond_openwebui(request: httpx2.Request) -> httpx2.Response:
         requests.append(request.url.path)
-        if request.url.path == "/api/v1/auths/signin":
-            return httpx.Response(200, json={"token": "admin-token"})
-        if request.url.path == "/model/info":
-            # Both unavailable and malformed catalogs must abort before writes.
-            return httpx.Response(catalog_status, json={})
-        pytest.fail(f"Catalog failure must not modify Open WebUI: {request.url}")
+        assert request.url.path == "/api/v1/auths/signin"
+        return httpx2.Response(200, json={"token": "admin-token"})
 
-    transport = httpx.MockTransport(respond)
+    def respond_gateway(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request.url.path)
+        assert request.url.path == "/model/info"
+        # Both unavailable and malformed catalogs must abort before writes.
+        return httpx2.Response(catalog_status, json={})
+
     with (
         closing(
-            httpx.Client(base_url="http://openwebui.test", transport=transport)
+            httpx2.Client(
+                base_url="http://openwebui.test",
+                transport=httpx2.MockTransport(respond_openwebui),
+            )
         ) as client,
         closing(
             OpenAI(
                 api_key="test-api-key",
-                http_client=httpx.Client(transport=transport),
+                http_client=httpx2.Client(
+                    transport=httpx2.MockTransport(respond_gateway)
+                ),
                 max_retries=0,
             )
         ) as gateway,
     ):
-        monkeypatch.setattr(sync_functions_module.httpx, "Client", lambda **_: client)
+        monkeypatch.setattr(
+            sync_functions_module,
+            "httpx2",
+            SimpleNamespace(
+                Client=lambda **_: client,
+                HTTPError=httpx2.HTTPError,
+                HTTPStatusError=httpx2.HTTPStatusError,
+            ),
+        )
         monkeypatch.setattr(sync_functions_module, "OpenAI", lambda **_: gateway)
 
         with pytest.raises(SystemExit, match="Open WebUI sync failed"):
@@ -277,20 +292,20 @@ def test_main_reads_demo_openwebui_environment(
     sync_functions_mock = Mock(return_value={})
     sync_mcp_mock = Mock(return_value="created")
     if server_error is not None:
-        response = httpx.Response(
+        response = httpx2.Response(
             400,
             json={"detail": server_error},
-            request=httpx.Request(
+            request=httpx2.Request(
                 "POST", "https://openwebui.example/api/v1/functions/id/generic/update"
             ),
         )
-        sync_functions_mock.side_effect = httpx.HTTPStatusError(
+        sync_functions_mock.side_effect = httpx2.HTTPStatusError(
             "400 Bad Request", request=response.request, response=response
         )
     model_specs = (WorkspaceModelSpec(id="plain", fields=()),)
     discover_workspace_models_mock = Mock(return_value=model_specs)
     sync_workspace_models_mock = Mock()
-    monkeypatch.setattr(sync_functions_module.httpx, "Client", client_factory)
+    monkeypatch.setattr(sync_functions_module.httpx2, "Client", client_factory)
     monkeypatch.setattr(sync_functions_module, "OpenAI", openai_factory)
     monkeypatch.setattr(sync_functions_module, "sign_in", sign_in_mock)
     monkeypatch.setattr(

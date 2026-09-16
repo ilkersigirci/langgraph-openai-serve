@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, call
 
-import httpx
+import httpx2
 import pytest
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -61,10 +61,10 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
     requests = []
     status = "incomplete" if outcome == "incomplete" else "completed"
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.url.path == "/v1/responses"
         requests.append(json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "resp_file",
@@ -100,7 +100,7 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             },
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         model = ChatOpenAI(
             model="file-model",
             base_url="https://model.test/v1",

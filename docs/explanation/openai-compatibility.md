@@ -234,6 +234,7 @@ not claim every field in the upstream OpenAI API.
 | `input_file.file_id` | Supported and normalized to the existing graph file block. |
 | function `tools`, named function `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. A function whose name is registered as a server tool is rejected so ownership stays unambiguous. |
 | name-only custom `tools` and named custom `tool_choice` | Select a custom tool registered in `GraphConfig.server_tools`. The graph owns its description, string input contract, and implementation; arbitrary client-defined custom tools and formats are outside this subset. |
+| `async` on function/custom tool declarations and replayed calls | Omitted, null, and false values are accepted for SDK round trips. `async: true` is rejected because LGOS does not implement the pending-call lifecycle for async tool calling; registered server tools execute and return their call and output within one Response. |
 | `tools=[{"type":"web_search"}]` | Selects a registered graph-owned web search. Use `tool_choice="required"` with only this tool to force search. Named built-in choices, optional filters, and location fields are outside the current subset. |
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |

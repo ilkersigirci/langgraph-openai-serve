@@ -1,6 +1,6 @@
 """Typed access to a self-hosted web-search JSON endpoint."""
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl, BaseModel, Field, OnErrorOmit
 
 _RESULT_LIMIT = 5
@@ -19,7 +19,7 @@ class _SearchResponse(BaseModel):
 
 
 async def search_web(
-    client: httpx.AsyncClient,
+    client: httpx2.AsyncClient,
     url: str,
     query: str,
 ) -> list[WebSearchResult]:

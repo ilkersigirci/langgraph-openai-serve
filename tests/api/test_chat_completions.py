@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from langchain_core.messages import BaseMessage
 from openai import AsyncOpenAI, BadRequestError
 from starlette import status
@@ -283,6 +283,7 @@ async def test_unknown_model_raises_openai_bad_request(
             "type": "invalid_request_error",
             "param": "model",
             "code": None,
+            "misalignment": None,
         }
     }
 

@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 
-import httpx
+import httpx2
 import pytest
 from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
@@ -37,7 +37,7 @@ async def test_litellm_native_mcp_is_authenticated_and_exposes_fixed_reports() -
 async def test_litellm_admin_ui_login() -> None:
     assert LITELLM_BASE_URL is not None
 
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         base_url=LITELLM_BASE_URL.removesuffix("/v1"),
         timeout=10.0,
     ) as client:
@@ -55,7 +55,7 @@ async def test_litellm_admin_ui_login() -> None:
 async def test_litellm_chat_catalog_discovers_lgos_models() -> None:
     assert LITELLM_BASE_URL is not None
 
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         base_url=LITELLM_BASE_URL.removesuffix("/v1"),
         headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
         timeout=10.0,
@@ -69,7 +69,7 @@ async def test_litellm_chat_catalog_discovers_lgos_models() -> None:
 
 async def test_litellm_model_info_requires_gateway_authentication() -> None:
     assert LITELLM_BASE_URL is not None
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         base_url=LITELLM_BASE_URL.removesuffix("/v1"),
         timeout=10.0,
     ) as client:

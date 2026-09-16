@@ -6,7 +6,7 @@ import uuid
 import pytest
 from anyio import Event, create_task_group
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from langgraph.graph import StateGraph
 from starlette import status
 

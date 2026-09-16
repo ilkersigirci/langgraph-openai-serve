@@ -19,6 +19,14 @@ REPOSITORY_BLOB_LINK = re.compile(
 )
 
 
+def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> None:
+    service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+
+    assert "image: ghcr.io/open-webui/open-webui:v0.11.3@sha256:" in service
+    assert "build:" not in service
+    assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
+
+
 @pytest.mark.parametrize(
     ("gateway_type", "gateway_service"),
     [
@@ -53,6 +61,13 @@ esac
 """
     )
     docker.chmod(0o755)
+    uv = tmp_path / "uv"
+    uv.write_text(
+        """#!/bin/sh
+printf "uv OPENAI_GATEWAY_BASE_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$*" >> "$DEPLOY_TEST_LOG"
+"""
+    )
+    uv.chmod(0o755)
 
     result = await anyio.run_process(
         [
@@ -109,7 +124,12 @@ esac
     expected.extend(
         [
             f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
-            f"{compose} exec -T lgos-openwebui python -m lgos_openwebui.sync_functions",
+            (
+                "uv OPENAI_GATEWAY_BASE_URL="
+                f"{'http://localhost:3000' if gateway_service else 'https://gateway.example'} "
+                "run --directory ui/openwebui --locked python -m "
+                "lgos_openwebui.sync_functions"
+            ),
         ]
     )
     assert log.read_text().splitlines() == expected

@@ -77,6 +77,165 @@ async def test_function_tools_and_choices_reach_graph_adapter(
     assert response.tools[0].name == "get_weather"
 
 
+async def test_sdk_response_tools_can_be_replayed_unchanged(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture(
+        request: GraphRequest,
+        messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version"},
+        request_to_input=capture,
+    )
+    response = await openai_client.responses.create(
+        model="test",
+        input="Use a tool.",
+        tools=[
+            {
+                "type": "function",
+                "name": "get_weather",
+                "description": "Get the weather.",
+                "parameters": {"type": "object", "properties": {}},
+                "strict": True,
+            },
+            {"type": "custom", "name": "package_version"},
+        ],
+        tool_choice="none",
+    )
+
+    await openai_client.responses.create(
+        model="test",
+        input="Use them again.",
+        tools=response.tools,
+        tool_choice="none",
+    )
+
+    original_request, replayed_request = received
+    assert replayed_request.tools == original_request.tools
+    assert replayed_request.server_tools == original_request.server_tools
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_param"),
+    [
+        pytest.param(
+            {
+                "input": "Run it.",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "get_weather",
+                        "parameters": {},
+                        "strict": True,
+                        "async": True,
+                    }
+                ],
+            },
+            "tools.0.async",
+            id="function-declaration",
+        ),
+        pytest.param(
+            {
+                "input": "Run it.",
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "package_version",
+                        "async": True,
+                    }
+                ],
+            },
+            "tools.0.async",
+            id="custom-declaration",
+        ),
+        pytest.param(
+            {
+                "input": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call_weather",
+                        "name": "get_weather",
+                        "arguments": "{}",
+                        "async": True,
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "call_weather",
+                        "output": "sunny",
+                    },
+                ]
+            },
+            "input.0.async",
+            id="function-call-replay",
+        ),
+        pytest.param(
+            {
+                "input": [
+                    {
+                        "type": "custom_tool_call",
+                        "call_id": "call_package",
+                        "name": "package_version",
+                        "input": "openai",
+                        "async": True,
+                    },
+                    {
+                        "type": "custom_tool_call_output",
+                        "call_id": "call_package",
+                        "output": "openai==3",
+                    },
+                ]
+            },
+            "input.0.async",
+            id="custom-call-replay",
+        ),
+    ],
+)
+async def test_async_tool_semantics_are_rejected_before_execution(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    body: dict[str, object],
+    expected_param: str,
+) -> None:
+    def unexpected_run(
+        _request: GraphRequest,
+        _messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        pytest.fail("An asynchronous tool request must not reach the graph.")
+
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version"},
+        request_to_input=unexpected_run,
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await openai_client.post(
+            "/responses",
+            cast_to=object,
+            body={"model": "test", **body},
+        )
+
+    error = exc_info.value.response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"] == expected_param
+    assert error["message"] == (
+        "Async tool calling ('async': true) is not supported for function or "
+        "custom tools."
+        if expected_param.startswith("tools.")
+        else "Asynchronous tool-call replay is not supported."
+    )
+
+
 @pytest.mark.parametrize("tool_type", ["web_search_preview", "unsupported_tool"])
 async def test_unsupported_tool_type_is_rejected_explicitly(
     openai_client: AsyncOpenAI,

@@ -23,6 +23,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,
@@ -64,6 +65,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,
@@ -92,7 +94,11 @@
     "response": {
       "id": "<response_0>",
       "created_at": "<created_at_0>",
-      "error": { "code": "server_error", "message": "Internal server error" },
+      "error": {
+        "code": "server_error",
+        "message": "Internal server error",
+        "misalignment": null
+      },
       "incomplete_details": null,
       "instructions": null,
       "metadata": {},
@@ -112,6 +118,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,

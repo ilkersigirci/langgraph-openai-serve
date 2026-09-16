@@ -5,7 +5,7 @@ from base64 import b64encode
 from collections import deque
 from contextlib import aclosing, asynccontextmanager
 
-import httpx
+import httpx2
 import pytest
 from anyio import Event, fail_after
 from langchain.tools import tool
@@ -152,8 +152,8 @@ class ModelProvider:
         assert payload["temperature"] == 0.7
         response = self.responses.popleft()
         if not payload.get("stream", False):
-            return httpx.Response(200, json=response)
-        return httpx.Response(
+            return httpx2.Response(200, json=response)
+        return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=response_events(response),
@@ -177,7 +177,7 @@ class FixtureKnowledgeBase:
     async def upload(self, filename, content):
         self.uploads.append((filename, content))
         if self.upload_error:
-            raise httpx.ReadError("connection lost")
+            raise httpx2.ReadError("connection lost")
         return "file_saved"
 
     async def index(self, file_id):
@@ -206,11 +206,11 @@ async def graph_client(
         raise AssertionError(f"Unexpected Files API request: {request.url}")
 
     async with (
-        httpx.AsyncClient(
-            transport=httpx.MockTransport(provider.handle)
+        httpx2.AsyncClient(
+            transport=httpx2.MockTransport(provider.handle)
         ) as upstream_http,
-        httpx.AsyncClient(
-            transport=httpx.MockTransport(files_handler or unexpected_file_request)
+        httpx2.AsyncClient(
+            transport=httpx2.MockTransport(files_handler or unexpected_file_request)
         ) as files_http,
         AsyncOpenAI(
             api_key="test",
@@ -239,8 +239,8 @@ async def graph_client(
             .app
         )
         async with (
-            httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+            httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app, raise_app_exceptions=False),
                 base_url="http://test",
             ) as transport,
             AsyncOpenAI(
@@ -374,12 +374,12 @@ async def test_file_ids_are_resolved_through_the_compatible_files_api(
     async def handle_files(request):
         file_requests.append(request)
         if request.url.path.endswith("/content"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 content=content,
                 headers={"content-type": "text/plain"},
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": file_id,
@@ -674,7 +674,7 @@ async def test_compatible_storage_adapter_uses_configured_endpoint():
     async def handle(request):
         requests.append(request)
         if request.url.path.endswith("/search"):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "object": "vector_store.search_results.page",
@@ -693,7 +693,7 @@ async def test_compatible_storage_adapter_uses_configured_endpoint():
                 },
             )
         if request.url.path == "/v1/files":
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     "id": "file_saved",
@@ -706,11 +706,11 @@ async def test_compatible_storage_adapter_uses_configured_endpoint():
                 },
             )
         if request.method == "GET" and len(requests) == 3:
-            return httpx.Response(
+            return httpx2.Response(
                 404,
                 json={"error": {"message": "missing", "type": "invalid_request_error"}},
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "file_saved",
@@ -724,7 +724,7 @@ async def test_compatible_storage_adapter_uses_configured_endpoint():
         )
 
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http,
         AsyncOpenAI(
             api_key="compatible",
             base_url="https://storage.test/v1",
@@ -754,7 +754,7 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
     completed = Event()
     request_count = 0
 
-    class GatedStream(httpx.AsyncByteStream):
+    class GatedStream(httpx2.AsyncByteStream):
         async def __aiter__(self):
             frames = response_events(model_response("Hello world")).split(b"\n\n")
             for frame in frames:
@@ -773,24 +773,25 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
         nonlocal request_count
         request_count += 1
         if request_count == 1:
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 headers={"content-type": "text/event-stream"},
                 content=response_events(intent_response("chat")),
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
             stream=GatedStream(),
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
-        files = AsyncOpenAI(
+    async with (
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http,
+        AsyncOpenAI(
             api_key="test",
             base_url="http://files.test/v1",
-            http_client=http,
             max_retries=0,
-        )
+        ) as files,
+    ):
         graph = create_advanced_graph(
             model=create_model(http),
             knowledge=None,

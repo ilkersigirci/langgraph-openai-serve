@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-import httpx
+import httpx2
 from openai import OpenAI, OpenAIError
 from openai.types import Model
 from pydantic import (
@@ -182,7 +182,7 @@ def discover_workspace_model_specs(
 
 
 def sync_workspace_models(
-    client: httpx.Client,
+    client: httpx2.Client,
     specs: tuple[WorkspaceModelSpec, ...],
 ) -> None:
     """Replace generated Workspace Models and their hidden manifold bases."""
