@@ -22,20 +22,6 @@ def _client(
     )
 
 
-def _model_id(body: dict[str, Any]) -> str:
-    qualified_model_id = body.get("model")
-    if not isinstance(qualified_model_id, str):
-        msg = "Open WebUI did not provide a valid model ID."
-        raise ValueError(msg)
-
-    _, separator, model_id = qualified_model_id.partition(".")
-    if not separator or not model_id:
-        msg = "Open WebUI did not provide a valid model ID."
-        raise ValueError(msg)
-
-    return model_id
-
-
 async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
     models = await client.models.list()
     return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]

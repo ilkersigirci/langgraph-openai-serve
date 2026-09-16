@@ -52,7 +52,7 @@ repository is passing its baseline.
 | 05 | [Responses event assembly](05-responses-event-assembly.md) | P1 | 02, 03 | Complete |
 | 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Complete |
 | 07 | [Chainlit interrupt ledger](07-chainlit-client.md) | P2 | 05, 06 | Complete |
-| 08 | [Open WebUI Function runtime](08-openwebui-client.md) | P2 | 05, 06 | Waiting for core work |
+| 08 | [Open WebUI Function runtime](08-openwebui-client.md) | P2 | 05, 06 | Complete |
 | 09 | [Demo registration migration and audit](09-demo-graphs-and-services.md) | P2 | 06 | Waiting for 06 |
 | 10 | [Closeout audit](10-closeout-audit.md) | P2 | 01–09 | Waiting for implementation |
 

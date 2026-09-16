@@ -1,6 +1,6 @@
 # 08 — Open WebUI Function Runtime
 
-- Status: **Waiting for core work**
+- Status: **Complete**
 - Priority: **P2**
 - Dependencies: **05, 06**
 
@@ -155,4 +155,68 @@ sources.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-16.
+
+- `Pipe.pipe()` now validates one deliberately small projection of the Open
+  WebUI body, user, metadata, files, and MCP tools that tolerates additive host
+  fields. The runtime passes those typed values through request preparation
+  instead of repeating loose dictionary checks. Invalid consumed host data
+  returns the existing safe Function error shape in both response modes before
+  an OpenAI client is called.
+- `_run()` now exposes request preparation, one Responses turn owned by the SDK,
+  typed terminal classification, and Open WebUI rendering as distinct stages.
+  The request state retained across client-tool turns is explicit, while text,
+  refusal, citation, completion status, and SDK output transformations remain
+  in `responses.py`.
+- The interrupt cursor is a strict LGOS-owned value containing the previous
+  response ID and the complete standard `ResponseFunctionToolCall` batch. Its
+  pure codec compresses that JSON before URL-safe encoding, rejects unknown
+  cursor or call fields, duplicate call IDs, and compressed payload
+  amplification. It restores exactly one output for every call in a parallel
+  answer batch. Mixed interrupt and ordinary client-tool batches still fail
+  closed.
+- Open WebUI 0.11.3's stream-only native MCP loop remains enforced. Interrupt
+  continuation sends only answer outputs with `previous_response_id`, while
+  ordinary turns and any following display-file continuation use the UI
+  transcript without replaying the paused transcript twice.
+- Attachment handling retains the three host sources in order: an available
+  server path, current-message image bytes, and an authenticated Open WebUI
+  file download. Embedded image positions stay aligned when an earlier image
+  uses its server path. Only the current turn's files are uploaded. The live
+  native upload returned unique file content; focused behavior tests cover the
+  authenticated download fallback.
+- The Generic bundle order and module set did not change. A focused bundle test
+  now rejects duplicate top-level definitions across flattened modules in
+  addition to compiling and executing the deployed source. Administrator sync,
+  Workspace Model, and tool-server control-plane code remained unchanged.
+  Existing product documentation already describes the retained public
+  behavior, so no product-documentation change was required.
+
+Locked-version verification used the Open WebUI project's `uv.lock`,
+`uv tree --locked`, the digest-pinned Open WebUI image declaration, and pinned
+upstream source. The relevant resolved versions were Open WebUI 0.11.3, OpenAI
+Python 2.46.0, Pydantic 2.13.4, HTTPX 0.28.1, and AnyIO 4.14.2. The
+implementation was checked against these primary references:
+
+- [Open WebUI Pipe Functions](https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/)
+- [Open WebUI Function events](https://docs.openwebui.com/features/extensibility/plugin/development/events/)
+- [Open WebUI 0.11.3 Function host source](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/functions.py)
+- [Open WebUI 0.11.3 chat integration source](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/utils/chat.py)
+- [Open WebUI 0.11.3 chat middleware source](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/utils/middleware.py)
+- [Open WebUI 0.11.3 socket-event source](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/socket/main.py)
+- [OpenAI Python 2.46.0 Responses resource](https://github.com/openai/openai-python/blob/v2.46.0/src/openai/resources/responses/responses.py)
+- [OpenAI Python 2.46.0 function-call type](https://github.com/openai/openai-python/blob/v2.46.0/src/openai/types/responses/response_function_tool_call.py)
+
+| Validation | Result |
+| --- | --- |
+| Required focused Open WebUI pytest command | 97 passed |
+| Bundle compilation and duplicate-definition tests | 13 passed |
+| Open WebUI Ruff check and format check | Pass |
+| `uv run --locked ty check src` | Pass |
+| `cd demo && just test --editable` | API 111 passed, Files 12 passed, Chainlit 126 passed, Open WebUI 139 passed |
+| Live Open WebUI browser check | Streaming Plotly output rendered in a 450 px interactive frame; a native file upload returned its unique content; `lgos-gateway` executed the read-only MCP report; and an approval interrupt resumed to terminal refund and notification output |
+
+The live check used an isolated browser session against the digest-pinned demo
+stack. Temporary authentication state and the uploaded text fixture were
+removed after the session; the chart assertion screenshot is
+`/tmp/lgos-openwebui-unit08-plot.png`.

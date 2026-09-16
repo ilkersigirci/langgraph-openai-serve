@@ -1,7 +1,7 @@
 """Responses API helpers for Open WebUI models."""
 
 import json as responses_json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from openai.types.chat.chat_completion_chunk import (
@@ -26,6 +26,10 @@ from .contracts import (
     PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
+    OpenWebUIEventEmitter,
+    OpenWebUIMCPTool,
+    OpenWebUIMessage,
+    OpenWebUIMetadata,
     is_server_tool_model,
     supports_display_file,
     supports_web_search,
@@ -49,62 +53,51 @@ PACKAGE_VERSION_TOOL: CustomToolParam = {
 
 def _responses_tools(
     model_id: str,
-    metadata: dict[str, Any],
+    metadata: OpenWebUIMetadata,
 ) -> list[ToolParam]:
     """Build the tools owned by the selected demo client and graph."""
     tools: list[ToolParam] = (
         [DISPLAY_FILE_TOOL] if supports_display_file(model_id) else []
     )
-    variables = metadata.get("chat_variables")
-    if not isinstance(variables, dict):
-        return tools
     if (
         is_server_tool_model(model_id)
-        and variables.get(PACKAGE_VERSION_TOOL_NAME) is True
+        and metadata.chat_variables.get(PACKAGE_VERSION_TOOL_NAME) is True
     ):
         tools.append(PACKAGE_VERSION_TOOL)
-    if supports_web_search(model_id) and variables.get(WEB_SEARCH_TOOL_NAME) is True:
+    if (
+        supports_web_search(model_id)
+        and metadata.chat_variables.get(WEB_SEARCH_TOOL_NAME) is True
+    ):
         tools.append({"type": "web_search"})
     return tools
 
 
 def _openwebui_mcp_tools(
-    tools: object,
+    tools: Mapping[str, OpenWebUIMCPTool],
 ) -> tuple[list[FunctionToolParam], dict[str, str]]:
     """Translate managed Open WebUI tools to their gateway names."""
-    if not isinstance(tools, dict):
-        return [], {}
-
     translated = []
     openwebui_names = {}
     name_prefix = f"{MCP_GATEWAY_ID}_"
     for name, tool in tools.items():
-        if (
-            not isinstance(name, str)
-            or not name.startswith(name_prefix)
-            or not isinstance(tool, dict)
-            or tool.get("type") != "mcp"
-        ):
-            continue
-        spec = tool.get("spec")
-        if not isinstance(spec, dict):
+        if not name.startswith(name_prefix):
             continue
         gateway_name = name.removeprefix(name_prefix)
         if not gateway_name:
             continue
-        parameters = spec.get("parameters")
+        parameters: dict[str, object] = (
+            dict(tool.spec.parameters)
+            if tool.spec.parameters is not None
+            else {"type": "object", "properties": {}}
+        )
         translated_tool: FunctionToolParam = {
             "type": "function",
             "name": gateway_name,
-            "parameters": (
-                parameters
-                if isinstance(parameters, dict)
-                else {"type": "object", "properties": {}}
-            ),
-            "strict": spec.get("strict") is True,
+            "parameters": parameters,
+            "strict": tool.spec.strict,
         }
-        if isinstance(spec.get("description"), str):
-            translated_tool["description"] = spec["description"]
+        if tool.spec.description is not None:
+            translated_tool["description"] = tool.spec.description
         translated.append(translated_tool)
         openwebui_names[gateway_name] = name
     return translated, openwebui_names
@@ -124,7 +117,7 @@ def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
 
 
 def _responses_input(
-    messages: list[dict[str, Any]],
+    messages: Sequence[OpenWebUIMessage],
     *,
     mcp_tool_names: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -132,15 +125,14 @@ def _responses_input(
     items = []
     mcp_call_ids: set[str] = set()
     for message in messages:
-        role = message.get("role")
-        content = message.get("content")
+        role = message.role
+        content = message.content
         if role == "tool":
-            call_id = message.get("tool_call_id")
-            if isinstance(call_id, str) and call_id in mcp_call_ids:
+            if message.tool_call_id in mcp_call_ids:
                 items.append(
                     {
                         "type": "function_call_output",
-                        "call_id": call_id,
+                        "call_id": message.tool_call_id,
                         "output": _tool_output(content),
                     }
                 )
@@ -149,7 +141,7 @@ def _responses_input(
             continue
         message_fields = {"role": role}
         if role == "assistant":
-            message_fields["phase"] = message.get("phase") or "final_answer"
+            message_fields["phase"] = message.phase or "final_answer"
         if isinstance(content, str) and content:
             items.append({**message_fields, "content": content})
         elif isinstance(content, list):
@@ -170,30 +162,23 @@ def _responses_input(
 
         if role != "assistant" or not mcp_tool_names:
             continue
-        tool_calls = message.get("tool_calls")
-        if not isinstance(tool_calls, list):
-            continue
-        for tool_call in tool_calls:
-            function = (
-                tool_call.get("function") if isinstance(tool_call, dict) else None
-            )
-            call_id = tool_call.get("id") if isinstance(tool_call, dict) else None
-            name = function.get("name") if isinstance(function, dict) else None
-            arguments = (
-                function.get("arguments") if isinstance(function, dict) else None
-            )
-            if not isinstance(call_id, str) or not call_id:
+        for tool_call in message.tool_calls:
+            if not tool_call.id or tool_call.function is None:
                 continue
-            gateway_name = mcp_tool_names.get(name) if isinstance(name, str) else None
+            gateway_name = (
+                mcp_tool_names.get(tool_call.function.name)
+                if tool_call.function.name is not None
+                else None
+            )
             if gateway_name is None:
                 continue
-            mcp_call_ids.add(call_id)
+            mcp_call_ids.add(tool_call.id)
             items.append(
                 {
                     "type": "function_call",
-                    "call_id": call_id,
+                    "call_id": tool_call.id,
                     "name": gateway_name,
-                    "arguments": arguments if isinstance(arguments, str) else "{}",
+                    "arguments": tool_call.function.arguments or "{}",
                     "status": "completed",
                 }
             )
@@ -293,6 +278,18 @@ def _responses_final_text(response: Response) -> str:
     return "".join(parts)
 
 
+def _raise_for_response(response: Response) -> None:
+    if response.status == "completed":
+        return
+    if response.status == "incomplete":
+        reason = response.incomplete_details
+        raise RuntimeError(
+            f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
+        )
+    detail = response.error
+    raise RuntimeError(detail.message if detail is not None else "Response failed.")
+
+
 def _responses_function_calls(
     response: Response,
 ) -> list[ResponseFunctionToolCall]:
@@ -313,7 +310,9 @@ def _responses_continuation(
     ]
 
 
-async def _emit_response_sources(response: Response, event_emitter: Any) -> None:
+async def _emit_response_sources(
+    response: Response, event_emitter: OpenWebUIEventEmitter | None
+) -> None:
     """Use complete, typed annotations instead of accumulating citation deltas."""
     if event_emitter is None:
         return

@@ -2,9 +2,10 @@
 
 from base64 import b64decode
 from binascii import Error as Base64Error
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -15,61 +16,64 @@ from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     PLOTLY_MEDIA_TYPE,
     DisplayFileArguments,
+    OpenWebUIEventEmitter,
+    OpenWebUIFile,
+    OpenWebUIMessage,
+    OpenWebUIMetadata,
     PlotlyFigure,
 )
 
 
 async def _with_response_file_parts(
-    messages: list[dict[str, Any]],
-    files: list[dict[str, Any]] | None,
-    metadata: dict[str, Any] | None,
-    request: Any = None,
+    messages: Sequence[OpenWebUIMessage],
+    files: Sequence[OpenWebUIFile],
+    metadata: OpenWebUIMetadata,
+    request: object | None = None,
     *,
     base_url: str,
     api_key: str,
     timeout: float,
     provider: str,
-) -> list[dict[str, Any]]:
+) -> list[OpenWebUIMessage]:
     """Upload this turn's files and attach native Responses input parts."""
     current_files = _current_files(metadata)
     if not current_files:
-        return messages
+        return list(messages)
     user_message_index = next(
         (
             index
             for index in range(len(messages) - 1, -1, -1)
-            if messages[index].get("role") == "user"
+            if messages[index].role == "user"
         ),
         None,
     )
     if user_message_index is None:
-        return messages
+        return list(messages)
 
-    current_file_ids = {cast(str, file["id"]) for file in current_files}
+    current_file_ids = {file.id for file in current_files if file.id is not None}
     path_attachments = {
-        file_id: attachment
-        for file in files or []
-        if isinstance(file, dict)
-        and file.get("type") == "file"
-        and isinstance(file_id := file.get("id"), str)
-        and file_id in current_file_ids
+        file.id: attachment
+        for file in files
+        if file.type == "file"
+        and file.id in current_file_ids
         and (attachment := _path_attachment(file)) is not None
     }
     images = iter(_image_attachments(messages[user_message_index]))
     attachments: list[tuple[Path | bytes, str, str]] = []
     for file in current_files:
-        file_id = cast(str, file["id"])
+        file_id = file.id
+        if file_id is None:
+            continue
+        image_attachment = None
+        if _content_type(file).startswith("image/"):
+            image_attachment = next(images, None)
         if attachment := path_attachments.get(file_id):
             attachments.append(attachment)
             continue
-        if _content_type(file).startswith("image/"):
-            try:
-                content, content_type = next(images)
-            except StopIteration:
-                pass
-            else:
-                attachments.append((content, _filename(file), content_type))
-                continue
+        if image_attachment is not None:
+            content, content_type = image_attachment
+            attachments.append((content, _filename(file), content_type))
+            continue
         filename = _filename(file)
         content, content_type = await _download_openwebui_file(
             request,
@@ -98,7 +102,7 @@ async def _with_response_file_parts(
             parts.append({"type": "input_file", "file_id": uploaded.id})
 
     message = messages[user_message_index]
-    content = message.get("content")
+    content = message.content
     if isinstance(content, str):
         content_parts: list[Any] = (
             [{"type": "input_text", "text": content}] if content else []
@@ -107,7 +111,7 @@ async def _with_response_file_parts(
         content_parts = list(content)
     else:
         content_parts = []
-    updated = {**message, "content": [*content_parts, *parts]}
+    updated = message.model_copy(update={"content": [*content_parts, *parts]})
     return [
         *messages[:user_message_index],
         updated,
@@ -115,30 +119,20 @@ async def _with_response_file_parts(
     ]
 
 
-def _current_files(metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _current_files(metadata: OpenWebUIMetadata) -> list[OpenWebUIFile]:
     """Return files attached to this turn, excluding Open WebUI's active history."""
-    user_message = (metadata or {}).get("user_message")
-    if not isinstance(user_message, dict):
-        return []
-    files = user_message.get("files")
-    if not isinstance(files, list):
+    if metadata.user_message is None:
         return []
     return [
-        file
-        for file in files
-        if isinstance(file, dict)
-        and file.get("type") == "file"
-        and isinstance(file.get("id"), str)
-        and file["id"]
+        file for file in metadata.user_message.files if file.type == "file" and file.id
     ]
 
 
-def _path_attachment(file: dict[str, Any]) -> tuple[Path, str, str] | None:
-    stored = file.get("file")
-    if not isinstance(stored, dict):
+def _path_attachment(file: OpenWebUIFile) -> tuple[Path, str, str] | None:
+    if file.file is None:
         return None
-    path_value = stored.get("path")
-    if not isinstance(path_value, str) or not path_value:
+    path_value = file.file.path
+    if not path_value:
         return None
 
     path = Path(path_value)
@@ -148,7 +142,7 @@ def _path_attachment(file: dict[str, Any]) -> tuple[Path, str, str] | None:
 
 
 async def _download_openwebui_file(
-    request: Any,
+    request: object | None,
     file_id: str,
     *,
     filename: str,
@@ -171,9 +165,9 @@ async def _download_openwebui_file(
 
 
 def _image_attachments(
-    message: dict[str, Any],
+    message: OpenWebUIMessage,
 ) -> list[tuple[bytes, str]]:
-    content = message.get("content")
+    content = message.content
     if not isinstance(content, list):
         return []
 
@@ -202,25 +196,20 @@ def _image_attachments(
     return images
 
 
-def _filename(file: dict[str, Any], *, fallback: str | None = None) -> str:
-    stored = file.get("file")
-    stored_filename = stored.get("filename") if isinstance(stored, dict) else None
-    filename = stored_filename or file.get("name") or fallback
-    if not isinstance(filename, str) or not filename:
+def _filename(file: OpenWebUIFile, *, fallback: str | None = None) -> str:
+    stored_filename = file.file.filename if file.file is not None else None
+    filename = stored_filename or file.name or fallback
+    if not filename:
         raise ValueError("Open WebUI returned an invalid file attachment.")
     return filename
 
 
-def _content_type(file: dict[str, Any]) -> str:
-    stored = file.get("file")
-    metadata = stored.get("meta") if isinstance(stored, dict) else None
-    content_type = file.get("content_type") or (
-        metadata.get("content_type") if isinstance(metadata, dict) else None
-    )
+def _content_type(file: OpenWebUIFile) -> str:
+    metadata = file.file.meta if file.file is not None else None
     return (
-        content_type
-        if isinstance(content_type, str) and content_type
-        else "application/octet-stream"
+        file.content_type
+        or (metadata.content_type if metadata is not None else None)
+        or "application/octet-stream"
     )
 
 
@@ -245,8 +234,8 @@ Plotly.newPlot("plot", {{...figure, config: {{responsive: true}}}}).then(plot =>
 
 async def _handle_display_file(
     call: ResponseFunctionToolCall,
-    event_emitter: Any,
-    request: Any,
+    event_emitter: OpenWebUIEventEmitter | None,
+    request: object | None,
     *,
     files_base_url: str,
     api_key: str,
@@ -308,7 +297,7 @@ async def _handle_display_file(
 
 
 async def _store_openwebui_file(
-    request: Any,
+    request: object | None,
     *,
     filename: str,
     media_type: str,
@@ -334,7 +323,7 @@ async def _store_openwebui_file(
 
 
 def _openwebui_client(
-    request: Any,
+    request: object | None,
     timeout: float,
 ) -> tuple[httpx.AsyncClient, dict[str, str]]:
     """Build an authenticated client for the current Open WebUI application."""

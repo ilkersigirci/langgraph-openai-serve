@@ -1,8 +1,9 @@
 """Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
+from dataclasses import dataclass
 from typing import Any, cast
 
 from openai import OpenAIError
@@ -12,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from .api import (
     _client,
     _list_model_ids,
-    _model_id,
     _model_request,
 )
 from .contracts import (
@@ -21,6 +21,8 @@ from .contracts import (
     INTERRUPT_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     InterruptCancelled,
+    OpenWebUIEventEmitter,
+    OpenWebUIInvocation,
     PipeChunk,
     PipeResponse,
     is_server_tool_model,
@@ -45,6 +47,7 @@ from .responses import (
     _openwebui_mcp_tools,
     _openwebui_text_chunk,
     _openwebui_tool_chunk,
+    _raise_for_response,
     _responses_continuation,
     _responses_final_text,
     _responses_function_calls,
@@ -60,6 +63,18 @@ def _required_environment(name: str) -> str:
         msg = f"{name} must be configured."
         raise RuntimeError(msg)
     return value
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedResponsesRequest:
+    """Validated upstream request state retained across client-tool turns."""
+
+    model_id: str
+    streaming: bool
+    gateway: GatewayConfig
+    openwebui_mcp_names: dict[str, str]
+    replay_input: list[dict[str, Any]]
+    request: dict[str, Any]
 
 
 class Pipe:
@@ -121,82 +136,61 @@ class Pipe:
         __tools__: dict[str, Any] | None = None,
     ) -> PipeResponse:
         """Run the selected graph through OpenAI Responses."""
+        streaming = isinstance(body, Mapping) and body.get("stream") is True
+        try:
+            invocation = OpenWebUIInvocation.from_host(
+                body=body,
+                metadata=__metadata__,
+                user=__user__,
+                files=__files__,
+                tools=__tools__,
+            )
+            if __event_emitter__ is not None and not callable(__event_emitter__):
+                raise ValueError("Open WebUI provided an invalid event emitter.")
+        except ValueError as exc:
+            failure = _error(f"Responses request failed: {exc}")
+            return _single_chunk(failure) if streaming else failure
+
         results = self._run(
-            body,
-            __event_emitter__=__event_emitter__,
-            __metadata__=__metadata__,
-            __user__=__user__,
-            __files__=__files__,
-            __request__=__request__,
-            __tools__=__tools__,
+            invocation,
+            event_emitter=cast("OpenWebUIEventEmitter | None", __event_emitter__),
+            host_request=__request__,
         )
-        if body.get("stream") is True:
+        if invocation.body.stream:
             return results
         async with aclosing(results):
             return await anext(results)
 
     async def _run(
         self,
-        body: dict[str, Any],
-        __event_emitter__: Any = None,
-        __metadata__: dict[str, Any] | None = None,
-        __user__: dict[str, Any] | None = None,
-        __files__: list[dict[str, Any]] | None = None,
-        __request__: Any = None,
-        __tools__: dict[str, Any] | None = None,
+        invocation: OpenWebUIInvocation,
+        *,
+        event_emitter: OpenWebUIEventEmitter | None,
+        host_request: object | None,
     ) -> AsyncGenerator[PipeChunk, None]:
         """Own one Responses/tool loop for both Pipe response modes."""
-        streaming = body.get("stream") is True
         answer_parts: list[str] = []
         latest_status = ""
         finished = False
         try:
-            metadata = __metadata__ or {}
-            model_id = _model_id(body)
-            mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(__tools__)
-            transcript_mcp_names = {
-                openwebui_name: gateway_name
-                for gateway_name, openwebui_name in openwebui_mcp_names.items()
-            }
-            input_items, previous_response_id = await self._request_input(
-                model_id,
-                body,
-                __metadata__,
-                __files__,
-                __request__,
-                mcp_tool_names=transcript_mcp_names,
-            )
-            # Open WebUI v0.11 only enters its native tool loop for streams.
-            if mcp_tools and not streaming:
-                raise ValueError("Open WebUI MCP tool execution requires streaming.")
-            gateway = self._gateway()
-            tools = _responses_tools(model_id, metadata)
-            tools.extend(mcp_tools)
-            request = _responses_request(
-                model_id,
-                input_items,
-                _request_metadata(
-                    metadata,
-                    include_runtime_settings=not is_server_tool_model(model_id),
-                    excluded_runtime_settings=(
-                        {WEB_SEARCH_TOOL_NAME} if supports_web_search(model_id) else ()
-                    ),
-                ),
-                _user_id(__user__),
-                provider_routing=gateway.provider_routing,
-                tools=tools,
-                previous_response_id=previous_response_id,
+            prepared = await self._prepare_request(
+                invocation,
+                host_request=host_request,
             )
             async with _client(
-                base_url=gateway.responses_base_url,
+                base_url=prepared.gateway.responses_base_url,
                 api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
+                    # Execute one SDK-owned Responses turn. Text deltas remain
+                    # live while the SDK assembles the typed final Response.
                     final_text_streamed = False
                     phases: dict[int, str | None] = {}
-                    if streaming:
-                        async with client.responses.stream(**request) as stream:
+                    if prepared.streaming:
+                        async with client.responses.stream(
+                            **prepared.request
+                        ) as stream:
                             async for event in stream:
                                 if event.type == "response.output_item.added":
                                     if event.item.type == "message":
@@ -206,7 +200,9 @@ class Pipe:
                                     or event.type == "response.refusal.delta"
                                 ) and phases.get(event.output_index) != "commentary":
                                     final_text_streamed = True
-                                    yield _openwebui_text_chunk(model_id, event.delta)
+                                    yield _openwebui_text_chunk(
+                                        prepared.model_id, event.delta
+                                    )
                                 elif (
                                     event.type == "response.incomplete"
                                     or event.type == "response.failed"
@@ -219,47 +215,51 @@ class Pipe:
                                 ):
                                     latest_status = event.text
                                     await _emit_status(
-                                        __event_emitter__, latest_status, done=False
+                                        event_emitter, latest_status, done=False
                                     )
                             response = cast(
                                 "Response", await stream.get_final_response()
                             )
                     else:
-                        response = await client.responses.create(**request)
+                        response = await client.responses.create(**prepared.request)
 
+                    # Classify the typed terminal result before selecting one
+                    # Open WebUI rendering path.
                     _raise_for_response(response)
-                    await _emit_response_sources(response, __event_emitter__)
+                    await _emit_response_sources(response, event_emitter)
                     final_text = _responses_final_text(response)
-                    if streaming and not final_text_streamed and final_text:
-                        yield _openwebui_text_chunk(model_id, final_text)
+                    if prepared.streaming and not final_text_streamed and final_text:
+                        yield _openwebui_text_chunk(prepared.model_id, final_text)
                     answer_parts.append(final_text)
                     calls = _responses_function_calls(response)
                     if not calls:
                         finished = True
-                        if not streaming:
+                        if not prepared.streaming:
                             yield "".join(answer_parts)
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
                         finished = True
                         yield (
-                            _openwebui_interrupt_chunk(model_id, response.id, calls)
-                            if streaming
+                            _openwebui_interrupt_chunk(
+                                prepared.model_id, response.id, calls
+                            )
+                            if prepared.streaming
                             else _openwebui_interrupt_completion(
-                                model_id,
+                                prepared.model_id,
                                 response.id,
                                 calls,
                                 content="".join(answer_parts),
                             )
                         )
                         return
-                    if openwebui_mcp_names and all(
-                        call.name in openwebui_mcp_names for call in calls
+                    if prepared.openwebui_mcp_names and all(
+                        call.name in prepared.openwebui_mcp_names for call in calls
                     ):
                         finished = True
                         yield _openwebui_tool_chunk(
-                            model_id,
+                            prepared.model_id,
                             calls,
-                            openwebui_mcp_names,
+                            prepared.openwebui_mcp_names,
                         )
                         return
                     if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
@@ -269,23 +269,22 @@ class Pipe:
                     outputs = [
                         await _handle_display_file(
                             call,
-                            __event_emitter__,
-                            __request__,
-                            files_base_url=gateway.files_base_url,
+                            event_emitter,
+                            host_request,
+                            files_base_url=prepared.gateway.files_base_url,
                             api_key=self.valves.OPENAI_GATEWAY_API_KEY,
                             timeout=self.valves.OPENAI_API_TIMEOUT,
-                            provider=gateway.files_provider,
+                            provider=prepared.gateway.files_provider,
                         )
                         for call in calls
                     ]
-                    if request.pop("previous_response_id", None) is not None:
+                    if prepared.request.pop("previous_response_id", None) is not None:
                         # Interrupt answers belong only to the paused checkpoint.
                         # Client tools continue from the UI's transcript instead.
-                        request["input"] = _responses_input(
-                            body["messages"],
-                            mcp_tool_names=transcript_mcp_names,
-                        )
-                    request["input"].extend(_responses_continuation(response, outputs))
+                        prepared.request["input"] = list(prepared.replay_input)
+                    prepared.request["input"].extend(
+                        _responses_continuation(response, outputs)
+                    )
         except InterruptCancelled:
             yield INTERRUPT_CANCELLED_MESSAGE
         except (ValueError, RuntimeError, OpenAIError) as exc:
@@ -293,47 +292,77 @@ class Pipe:
         finally:
             if latest_status:
                 await _emit_status(
-                    __event_emitter__,
+                    event_emitter,
                     latest_status if finished else f"Stopped: {latest_status}",
                     done=True,
                 )
 
-    async def _request_input(
+    async def _prepare_request(
         self,
-        model_id: str,
-        body: dict[str, Any],
-        metadata: dict[str, Any] | None,
-        files: list[dict[str, Any]] | None,
-        request: Any,
+        invocation: OpenWebUIInvocation,
         *,
-        mcp_tool_names: dict[str, str],
-    ) -> tuple[list[dict[str, Any]], str | None]:
+        host_request: object | None,
+    ) -> PreparedResponsesRequest:
         gateway = self._gateway()
+        model_id = invocation.body.model_id
         _model_request(
             model_id,
             provider_routing=gateway.provider_routing,
         )
-        raw_messages = body.get("messages")
-        messages = raw_messages if isinstance(raw_messages, list) else []
-        if resume := _ask_user_to_resume(messages):
-            input_items, previous_response_id = resume
-            return input_items, previous_response_id
-        messages = await _with_response_file_parts(
-            messages,
-            files,
-            metadata,
-            request,
-            base_url=gateway.files_base_url,
-            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
-            timeout=self.valves.OPENAI_API_TIMEOUT,
-            provider=gateway.files_provider,
+        mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(invocation.mcp_tools)
+        # Open WebUI v0.11.3 enters its native tool loop only for streams.
+        if mcp_tools and not invocation.body.stream:
+            raise ValueError("Open WebUI MCP tool execution requires streaming.")
+        transcript_mcp_names = {
+            openwebui_name: gateway_name
+            for gateway_name, openwebui_name in openwebui_mcp_names.items()
+        }
+        replay_input = _responses_input(
+            invocation.body.messages,
+            mcp_tool_names=transcript_mcp_names,
         )
-        return (
-            _responses_input(
+        if resume := _ask_user_to_resume(invocation.body.messages):
+            input_items, previous_response_id = resume
+        else:
+            messages = await _with_response_file_parts(
+                invocation.body.messages,
+                invocation.files,
+                invocation.metadata,
+                host_request,
+                base_url=gateway.files_base_url,
+                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                timeout=self.valves.OPENAI_API_TIMEOUT,
+                provider=gateway.files_provider,
+            )
+            input_items = _responses_input(
                 messages,
-                mcp_tool_names=mcp_tool_names,
+                mcp_tool_names=transcript_mcp_names,
+            )
+            previous_response_id = None
+
+        tools = _responses_tools(model_id, invocation.metadata)
+        tools.extend(mcp_tools)
+        return PreparedResponsesRequest(
+            model_id=model_id,
+            streaming=invocation.body.stream,
+            gateway=gateway,
+            openwebui_mcp_names=openwebui_mcp_names,
+            replay_input=replay_input,
+            request=_responses_request(
+                model_id,
+                input_items,
+                _request_metadata(
+                    invocation.metadata,
+                    include_runtime_settings=not is_server_tool_model(model_id),
+                    excluded_runtime_settings=(
+                        {WEB_SEARCH_TOOL_NAME} if supports_web_search(model_id) else ()
+                    ),
+                ),
+                invocation.user.id or None,
+                provider_routing=gateway.provider_routing,
+                tools=tools,
+                previous_response_id=previous_response_id,
             ),
-            None,
         )
 
     def _gateway(self) -> GatewayConfig:
@@ -347,29 +376,21 @@ def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:
     return bool(calls) and all(call.name == name for call in calls)
 
 
-def _raise_for_response(response: Response) -> None:
-    if response.status == "completed":
-        return
-    if response.status == "incomplete":
-        reason = response.incomplete_details
-        raise RuntimeError(
-            f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
-        )
-    detail = response.error
-    raise RuntimeError(detail.message if detail is not None else "Response failed.")
-
-
-async def _emit_status(event_emitter: Any, description: str, *, done: bool) -> None:
+async def _emit_status(
+    event_emitter: OpenWebUIEventEmitter | None,
+    description: str,
+    *,
+    done: bool,
+) -> None:
     if event_emitter is not None:
         await event_emitter(
             {"type": "status", "data": {"description": description, "done": done}}
         )
 
 
-def _user_id(user: dict[str, Any] | None) -> str | None:
-    user_id = (user or {}).get("id")
-    return user_id if isinstance(user_id, str) and user_id else None
-
-
 def _error(detail: str) -> dict[str, Any]:
     return {"error": {"detail": detail}}
+
+
+async def _single_chunk(chunk: PipeChunk) -> AsyncGenerator[PipeChunk, None]:
+    yield chunk
