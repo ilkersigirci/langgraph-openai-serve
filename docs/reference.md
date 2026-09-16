@@ -40,9 +40,10 @@ standard Responses types.
 The public `web_search` shape does not prescribe the graph's search backend;
 the bundled demo chooses an HTTP or upstream provider backend.
 
-LGOS does not persist completed Responses for retrieve or deletion. Omitted `store` and
-`store=false` are accepted; `store=true`, `conversation`, and background mode are
-rejected. `previous_response_id` is supported for interruptible graphs to resume execution
+LGOS does not persist completed Responses for retrieve or deletion. Omitted,
+null, and false `store` values are accepted, and the returned Response reports
+`store=false`; `store=true`, `conversation`, and background mode are rejected.
+`previous_response_id` is supported for interruptible graphs to resume execution
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
 those resumes. The route also rejects unregistered custom tools, client-supplied
 custom descriptions or formats, other built-in tools,

@@ -206,7 +206,7 @@ typed invalid calls or controlled OpenAI request errors.
 - [Pydantic extra-data behavior](https://docs.pydantic.dev/latest/concepts/models/#extra-data)
 - [Pydantic discriminated unions](https://docs.pydantic.dev/latest/concepts/unions/#discriminated-unions)
 - [Pydantic `TypeAdapter`](https://docs.pydantic.dev/latest/concepts/type_adapter/)
-- [Starlette response streaming](https://www.starlette.io/responses/)
+- [Starlette 1.3.1 response streaming](https://github.com/Kludex/starlette/blob/1.3.1/docs/responses.md)
 - [Starlette 1.3.1 `StreamingResponse` source](https://github.com/Kludex/starlette/blob/1.3.1/starlette/responses.py)
 - [Psycopg pool lifecycle](https://www.psycopg.org/psycopg3/docs/advanced/pool.html)
 - [PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
@@ -234,3 +234,41 @@ typed invalid calls or controlled OpenAI request errors.
 
 Reopen one of these decisions only with a smaller working implementation and a
 behavior test that explains what changed.
+
+## Final Refactor Summary
+
+The closeout audit completed on 2026-09-16. The final design has one strict
+OpenAI request-validation boundary, one prepared-run owner, and one Responses
+event/output accumulator shared by streaming and non-streaming requests.
+LangGraph v2 results now provide output and interrupts directly, so execution
+no longer performs a post-run state read. Interrupt preparation retains the one
+pre-run snapshot and checkpoint-history scan needed for exact, restart-safe
+continuation identity.
+
+`GraphRegistry` is a small mapping owner around frozen `GraphConfig` values.
+Chainlit persists a versioned interrupt ledger in its public message metadata,
+while Open WebUI carries a bounded compressed interrupt cursor because its host
+persistence model differs. Those adapters share the OpenAI `/v1` protocol, not
+a new UI framework. The demo graph registrations and lazy lifespan-backed
+factories already used the final API, so unit 09 required no production-code
+migration.
+
+Raw Python line counts remain inventory rather than a success metric:
+
+| Area | Baseline production | Final production | Baseline tests | Final tests |
+| --- | ---: | ---: | ---: | ---: |
+| Package | 5,786 | 6,224 | 8,922 | 10,105 |
+| Demo API source | 4,262 | 4,262 | 5,495 | 5,539 |
+| Demo API notebooks | 612 | 612 | — | — |
+| Demo Files service | 776 | 776 | 386 | 386 |
+| Chainlit UI | 2,622 | 2,758 | 3,458 | 3,689 |
+| Open WebUI UI | 2,630 | 2,811 | 2,594 | 2,953 |
+
+Across package and demo production Python, explicit `cast()` calls fell from 33
+to 28. Package `aget_state()` calls fell from two to one, with no post-run read;
+the remaining call is the documented pre-execution interrupt snapshot.
+`finalize_run()` and its manual ownership path were removed. The former
+`ResponsesStreamBuilder` name and orchestration coupling were replaced by one
+`ResponsesEventBuilder` plus a separate execution/I/O module, without creating
+a second protocol state machine. No compatibility alias, deprecated parallel
+constructor, dependency update, or lockfile change remains.

@@ -91,6 +91,7 @@ class ResponseContext:
                 ),
                 "previous_response_id": request.previous_response_id,
                 "service_tier": "default",
+                "store": False,
                 "text": {"format": {"type": "text"}},
                 "tool_choice": (
                     request.tool_choice.model_dump(mode="json")

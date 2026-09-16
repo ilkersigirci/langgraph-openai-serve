@@ -216,6 +216,10 @@ async def test_text_stream_has_complete_lifecycle_and_stable_identity(
         in {"response.created", "response.in_progress", "response.completed"}
     ]
     assert len({event.response.id for event in response_events}) == 1
+    assert all(
+        (event.response.model_extra or {})["store"] is False
+        for event in response_events
+    )
     completed = response_events[-1].response
     assert completed.created_at == response_events[0].response.created_at
     assert completed.completed_at > completed.created_at

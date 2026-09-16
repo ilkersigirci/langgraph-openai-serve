@@ -34,11 +34,12 @@ from tests.graph.support.schemas import MessageState
     [
         pytest.param({}, id="omitted"),
         pytest.param({"store": False}, id="false"),
+        pytest.param({"store": None}, id="null"),
     ],
 )
 async def test_async_openai_creates_stateless_text_response(
     openai_client: AsyncOpenAI,
-    store_options: dict[str, bool],
+    store_options: dict[str, bool | None],
 ) -> None:
     response = await openai_client.responses.create(
         model="test",
@@ -57,7 +58,7 @@ async def test_async_openai_creates_stateless_text_response(
     assert response.text is not None
     assert response.text.format is not None
     assert response.text.format.type == "text"
-    assert "store" not in (response.model_extra or {})
+    assert (response.model_extra or {})["store"] is False
 
     message = response.output[0]
     assert message.type == "message"

@@ -1,19 +1,17 @@
 # Refactor Progress
 
-Analysis completed on 2026-09-15. No production code, tests, dependencies, or
-product documentation were changed during this review. This directory is the
-handoff for later implementation work.
+Initial analysis completed on 2026-09-15, and implementation units 01–10
+completed on 2026-09-16. This directory records the decisions, sequencing,
+validation, and retained invariants for the finished refactor.
 
-The repository is healthy, but complexity is concentrated in a few boundaries.
-The first changes fix nested OpenAI request validation and consume LangGraph's
-native typed results. Interrupt durability and Responses event assembly contain
-substantial necessary complexity; their work units narrow and contain that
-complexity instead of deleting safeguards.
+The refactor fixed nested OpenAI request validation, consumes LangGraph's native
+typed results, and gives prepared runs one explicit owner. Interrupt durability
+and Responses event assembly retain substantial necessary complexity; their
+work units narrow and contain it instead of deleting safeguards.
 
-Units 01–06 are the core refactor. After unit 06, re-baseline before touching
-the demo clients. Units 07–09 are evidence-gated follow-through: they may record
-that the final core API requires no further change, and they must not become a
-general rewrite of otherwise healthy demo code.
+Units 01–06 were the core refactor. Units 07–09 were evidence-gated
+follow-through: they could record that the final core API required no further
+change and did not become a general rewrite of otherwise healthy demo code.
 
 ## Rules For Every Work Unit
 
@@ -53,8 +51,8 @@ repository is passing its baseline.
 | 06 | [Graph registration](06-graph-registration.md) | P1 | 02, 03, 04 | Complete |
 | 07 | [Chainlit interrupt ledger](07-chainlit-client.md) | P2 | 05, 06 | Complete |
 | 08 | [Open WebUI Function runtime](08-openwebui-client.md) | P2 | 05, 06 | Complete |
-| 09 | [Demo registration migration and audit](09-demo-graphs-and-services.md) | P2 | 06 | Waiting for 06 |
-| 10 | [Closeout audit](10-closeout-audit.md) | P2 | 01–09 | Waiting for implementation |
+| 09 | [Demo registration migration and audit](09-demo-graphs-and-services.md) | P2 | 06 | Complete |
+| 10 | [Closeout audit](10-closeout-audit.md) | P2 | 01–09 | Complete |
 
 Units 01 and 02 are independent and may be implemented in either order. After
 02, units 03 and 04 are independent: one owns execution lifetime and the other
@@ -68,33 +66,32 @@ recorded outcomes before starting 07–09. A client or demo unit is complete whe
 its named boundary is clean and validated; a reviewed **no change required**
 outcome is preferable to speculative cleanup.
 
-## Main Findings
+## Initial Findings And Disposition
 
-1. Nested unknown fields currently pass validation even though the documented
-   Responses and Chat subsets reject unknown request fields. This is a contract
-   bug, not an aesthetic cleanup.
-2. The runner requests LangGraph v2 results but casts them back to coarse
-   dictionaries and performs another state read after execution. Native
-   `GraphOutput` and `StreamPart` types expose the output and interrupts already.
-3. `GraphRun`, `prepare_run`, `finalize_run`, and `_StreamOwner` divide ownership
-   of one run across several mutable states. Cleanup guarantees are required,
-   but their ownership can be made easier to follow.
+1. Nested unknown fields passed validation even though the documented Responses
+   and Chat subsets reject them. Unit 01 replaced SDK output validators with
+   strict local request models.
+2. The runner cast LangGraph v2 results back to coarse dictionaries and read
+   state after execution. Unit 02 consumes native `GraphOutput` and `StreamPart`
+   values directly and removed the post-run read.
+3. `GraphRun`, `prepare_run`, `finalize_run`, and `_StreamOwner` divided one run's
+   ownership across several mutable states. Unit 03 made `GraphRun` the resource
+   owner, removed `finalize_run()`, and retained the HTTP producer owner only for
+   ASGI cancellation.
 4. The interrupt state token reads checkpoint history and the `__resume__`
    pending-write channel. A local probe confirmed that sequential interrupts can
    reuse both the raw interrupt ID and checkpoint ID, including inside a nested
    invocation. Exact stale-resume rejection therefore needs this generation
    signal until LangGraph publishes a durable alternative.
-5. `ResponsesStreamBuilder` is large because the standard event grammar is
-   large. It already uses official OpenAI SDK output and event models. Refactor
-   its orchestration boundary and types; do not replace it with hand-built
-   dictionaries or separate streaming and non-streaming implementations.
-6. `GraphConfig` performs static registration checks during every resolution,
-   while `GraphRegistry` uses Pydantic validation and serialization machinery
-   for a small mapping. This can be simplified after runner ownership settles.
-7. The Chainlit interrupt ledger and Open WebUI pipe each mix host callbacks,
-   durable continuation data, and rendering. They need client-specific cleanup;
-   their platform contracts are different and should not be forced behind one
-   shared UI abstraction.
+5. `ResponsesStreamBuilder` was large because it mixed the standard event
+   grammar with execution and I/O. Unit 05 separated orchestration and renamed
+   the one shared streaming/non-streaming accumulator `ResponsesEventBuilder`.
+6. `GraphConfig` repeated static checks during resolution, while
+   `GraphRegistry` used Pydantic serialization machinery for a small mapping.
+   Unit 06 made config values frozen and the registry a focused mapping owner.
+7. The Chainlit interrupt ledger and Open WebUI pipe mixed host callbacks,
+   durable continuation data, and rendering. Units 07 and 08 isolated strict
+   continuation codecs while keeping their different host contracts separate.
 
 ## Intentionally Retained Designs
 

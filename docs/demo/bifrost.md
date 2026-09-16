@@ -13,10 +13,10 @@ package.
     the bundled Bifrost gateway's normalized
     `/openai/v1` route preserves the tested `user`, `input_file`,
     function-continuation, final-answer `phase`, and multiple commentary
-    `phase` contracts. Three narrower gaps remain: normalized model detail does
-    not expose LGOS extensions, normalized errors replace the upstream OpenAI
-    `type`, `param`, and `code`, and a response reports `store: true` after the
-    request sent `store: false`. The raw `/openai_passthrough/v1` route
+    `phase` and `store: false` contracts. Two narrower gaps remain: normalized
+    model detail does not expose LGOS extensions, and normalized errors replace
+    the upstream OpenAI `type`, `param`, and `code`. The raw
+    `/openai_passthrough/v1` route
     preserves the successful-request contracts, while governance rejects an
     unknown model before its upstream OpenAI error can pass through.
 
@@ -157,9 +157,9 @@ pass-through for inference.
 
 Run `just demo/test-bifrost --editable` after starting the gateway.
 The command requires the native Responses data-plane contracts to pass, records
-the normalized model-detail, error-metadata, and `store` response-field gaps as
-strict expected failures, and then requires the raw pass-through OpenAI SDK
-suite to pass except for its strict unknown-model governance expectation.
+the normalized model-detail and error-metadata gaps as strict expected failures,
+and then requires the raw pass-through OpenAI SDK suite to pass except for its
+strict unknown-model governance expectation.
 
 See Bifrost's
 [custom-provider documentation](https://docs.getbifrost.ai/providers/custom-providers)

@@ -1,6 +1,6 @@
 # 09 — Demo Registration Migration And Audit
 
-- Status: **Waiting for graph registration**
+- Status: **Complete**
 - Priority: **P2**
 - Dependencies: **06**
 
@@ -136,4 +136,41 @@ a graph page.
 
 ## Outcome
 
-Not started.
+Completed on 2026-09-16 with no demo production-code migration.
+
+- Unit 06 preserved both public construction forms: `GraphConfig(...)` and the
+  keyword-only `GraphRegistry(registry=...)`. Its implementation commit changed
+  no demo production registration or notebook.
+- The audit found all 17 `GraphConfig` constructions under the demo API graph
+  package and both `GraphRegistry` constructions in `app.py` and the graph-runner
+  notebook already use the final API. Their model IDs, descriptions, features,
+  server tools, client settings, adapters, and streamable-node declarations
+  therefore remain unchanged.
+- The advanced, persistent-plot, and interruptible registrations still pass
+  zero-argument graph factories that read lifespan-populated `app.state` only
+  when LGOS resolves a request. No resource was made eager or cached.
+- No graph internals, standalone service, demo test, product page, dependency,
+  or lockfile was changed. Existing behavior coverage is the correct regression
+  signal for this evidence-gated no-change unit.
+
+Locked-version verification used `demo/api/uv.lock`, `uv tree --locked`, and
+installed signature introspection. The relevant demo environment resolves
+LangGraph 1.2.9, langgraph-checkpoint 4.1.1, Pydantic 2.13.4, FastAPI 0.139.2,
+OpenAI 2.46.0, psycopg 3.3.4, and psycopg-pool 3.3.1. The final registration
+shape and lifespan decision were checked against these tagged primary sources:
+
+- [Pydantic 2.13.4 frozen models](https://github.com/pydantic/pydantic/blob/v2.13.4/docs/concepts/models.md#faux-immutability)
+- [Pydantic 2.13.4 `TypeAdapter`](https://github.com/pydantic/pydantic/blob/v2.13.4/docs/concepts/type_adapter.md)
+- [LangGraph 1.2.9 `StateGraph.compile()` and `CompiledStateGraph`](https://github.com/langchain-ai/langgraph/blob/1.2.9/libs/langgraph/langgraph/graph/state.py)
+- [FastAPI 0.139.2 lifespan events](https://github.com/fastapi/fastapi/blob/0.139.2/docs/en/docs/advanced/events.md)
+
+| Validation | Result |
+| --- | --- |
+| `cd demo && just test --editable` | API 111 passed; Files 12 passed; Chainlit 126 passed; Open WebUI 139 passed |
+| `cd demo && just lint` | Pass |
+| `cd demo && just type-check --editable` | Pass |
+| `cd demo && just compose-config` | All four Compose combinations passed |
+| `just docs` | Strict build passed |
+
+The PostgreSQL and live direct/gateway suites were not run because registration
+did not change durable graph behavior or any live integration.
