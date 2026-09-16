@@ -1,9 +1,16 @@
 """Wire-contract values and small models used by the Generic Function."""
 
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    field_validator,
+)
 
 # These values mirror the public LGOS wire contract. This standalone Open WebUI
 # Function must not import the server package:
@@ -35,6 +42,144 @@ PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
 WEB_SEARCH_TOOL_NAME = "web_search"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
+OpenWebUIEventEmitter = Callable[[dict[str, Any]], Awaitable[object]]
+
+
+class OpenWebUIHostModel(BaseModel):
+    """Validated projection of an additive Open WebUI-owned object."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+
+
+class OpenWebUIStoredFileMetadata(OpenWebUIHostModel):
+    content_type: str | None = None
+
+
+class OpenWebUIStoredFile(OpenWebUIHostModel):
+    path: str | None = None
+    filename: str | None = None
+    meta: OpenWebUIStoredFileMetadata | None = None
+
+
+class OpenWebUIFile(OpenWebUIHostModel):
+    id: str | None = None
+    type: str | None = None
+    name: str | None = None
+    content_type: str | None = None
+    file: OpenWebUIStoredFile | None = None
+
+
+class OpenWebUIMessageFunction(OpenWebUIHostModel):
+    name: str | None = None
+    arguments: str | None = None
+
+
+class OpenWebUIMessageToolCall(OpenWebUIHostModel):
+    id: str | None = None
+    function: OpenWebUIMessageFunction | None = None
+
+
+class OpenWebUIMessage(OpenWebUIHostModel):
+    role: str | None = None
+    content: JsonValue = None
+    phase: str | None = None
+    tool_calls: list[OpenWebUIMessageToolCall] = Field(default_factory=list)
+    tool_call_id: str | None = None
+
+
+class OpenWebUIBody(OpenWebUIHostModel):
+    model: str = Field(min_length=1)
+    messages: list[OpenWebUIMessage]
+    stream: bool = False
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value: str) -> str:
+        _, separator, model_id = value.partition(".")
+        if not separator or not model_id:
+            msg = "Open WebUI did not provide a valid model ID."
+            raise ValueError(msg)
+        return value
+
+    @property
+    def model_id(self) -> str:
+        return self.model.partition(".")[2]
+
+
+class OpenWebUIUserMessage(OpenWebUIHostModel):
+    files: list[OpenWebUIFile] = Field(default_factory=list)
+
+
+class OpenWebUIMetadata(OpenWebUIHostModel):
+    chat_id: str | None = None
+    chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
+    user_message: OpenWebUIUserMessage | None = None
+
+
+class OpenWebUIUser(OpenWebUIHostModel):
+    id: str | None = None
+
+
+class OpenWebUIToolSpec(OpenWebUIHostModel):
+    description: str | None = None
+    parameters: dict[str, JsonValue] | None = None
+    strict: bool = False
+
+
+class OpenWebUIMCPTool(OpenWebUIHostModel):
+    type: Literal["mcp"]
+    spec: OpenWebUIToolSpec
+
+
+class OpenWebUIInvocation(OpenWebUIHostModel):
+    """The complete validated subset of one Open WebUI Pipe invocation."""
+
+    body: OpenWebUIBody
+    metadata: OpenWebUIMetadata
+    user: OpenWebUIUser
+    files: list[OpenWebUIFile]
+    mcp_tools: dict[str, OpenWebUIMCPTool]
+
+    @classmethod
+    def from_host(
+        cls,
+        *,
+        body: object,
+        metadata: object,
+        user: object,
+        files: object,
+        tools: object,
+    ) -> Self:
+        if tools is None:
+            raw_tools: Mapping[object, object] = {}
+        elif isinstance(tools, Mapping):
+            raw_tools = tools
+        else:
+            msg = "Open WebUI provided invalid Function arguments."
+            raise ValueError(msg)
+
+        # Open WebUI may inject unrelated built-in and client tools. Only MCP
+        # declarations participate in this Function's Responses request.
+        mcp_tools = {
+            name: value
+            for name, value in raw_tools.items()
+            if isinstance(name, str)
+            and isinstance(value, Mapping)
+            and value.get("type") == "mcp"
+        }
+        try:
+            return cls.model_validate(
+                {
+                    "body": body,
+                    "metadata": metadata if metadata is not None else {},
+                    "user": user if user is not None else {},
+                    "files": files if files is not None else [],
+                    "mcp_tools": mcp_tools,
+                }
+            )
+        except ValidationError as exc:
+            msg = "Open WebUI provided invalid Function arguments."
+            raise ValueError(msg) from exc
 
 
 def is_server_tool_model(model_id: str) -> bool:

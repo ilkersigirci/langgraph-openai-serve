@@ -1,7 +1,9 @@
 """Responses-only Open WebUI Function behavior."""
 
+import base64
 import json
 import sys
+import zlib
 from collections.abc import AsyncIterator, Awaitable, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -29,8 +31,15 @@ from openai.types.responses.response_output_text import AnnotationURLCitation
 from lgos_openwebui.bundle import bundle_function
 from lgos_openwebui.functions.generic import files as generic_files
 from lgos_openwebui.functions.generic import pipe as generic_pipe
+from lgos_openwebui.functions.generic.contracts import (
+    OpenWebUIInvocation,
+    OpenWebUIMessage,
+)
 from lgos_openwebui.functions.generic.interrupts import (
+    INTERRUPT_CURSOR_MAX_BYTES,
+    InterruptCursor,
     _ask_user_to_resume,
+    _decode_interrupt_cursor,
     _interrupts_to_ask_user,
     _openwebui_interrupt_chunk,
     _openwebui_interrupt_completion,
@@ -96,21 +105,30 @@ def test_large_note_is_visible_before_the_native_approval_question(streaming) ->
     question = json.loads(ask_user["function"]["arguments"])["questions"][0]["question"]
     assert len(question) <= 500
     assert "above" in question
+    cursor = _decode_interrupt_cursor(ask_user["id"])
+    assert cursor.previous_response_id == RESPONSE_ID
+    assert cursor.calls[0].model_dump(exclude_none=True) == call.model_dump(
+        mode="json", exclude_none=True
+    )
     assert len(ask_user["id"]) < 1_000
     resumed = _ask_user_to_resume(
-        [
-            {"role": "assistant", "tool_calls": [ask_user]},
-            {
-                "role": "tool",
-                "tool_call_id": ask_user["id"],
-                "content": json.dumps(
-                    {
-                        "status": "answered",
-                        "answers": {"resume_0": {"type": "option", "option_index": 0}},
-                    }
-                ),
-            },
-        ]
+        host_messages(
+            [
+                {"role": "assistant", "tool_calls": [ask_user]},
+                {
+                    "role": "tool",
+                    "tool_call_id": ask_user["id"],
+                    "content": json.dumps(
+                        {
+                            "status": "answered",
+                            "answers": {
+                                "resume_0": {"type": "option", "option_index": 0}
+                            },
+                        }
+                    ),
+                },
+            ]
+        )
     )
     assert resumed == (
         [
@@ -152,6 +170,82 @@ def body(*, stream: bool) -> dict[str, object]:
         "messages": [{"role": "user", "content": "Refund ORDER-123"}],
         "stream": stream,
     }
+
+
+def host_messages(messages: list[dict[str, Any]]) -> list[OpenWebUIMessage]:
+    return OpenWebUIInvocation.from_host(
+        body={"model": QUALIFIED_MODEL_ID, "messages": messages},
+        metadata=None,
+        user=None,
+        files=None,
+        tools=None,
+    ).body.messages
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize(
+    ("body_update", "host_arguments"),
+    [
+        ({"messages": "invalid"}, {}),
+        ({"stream": "true"}, {}),
+        ({}, {"__metadata__": {"chat_id": 123}}),
+        ({}, {"__user__": {"id": 123}}),
+        ({}, {"__files__": {"id": "not-a-list"}}),
+        ({}, {"__tools__": ["not-a-mapping"]}),
+    ],
+)
+async def test_invalid_host_arguments_fail_before_an_upstream_request(
+    monkeypatch: pytest.MonkeyPatch,
+    streaming: bool,
+    body_update: dict[str, object],
+    host_arguments: dict[str, object],
+) -> None:
+    create = AsyncMock()
+    stream = Mock()
+    install_client(monkeypatch, create=create, stream=stream)
+    request_body = {**body(stream=streaming), **body_update}
+
+    result = await collect(generic_pipe.Pipe().pipe(request_body, **host_arguments))
+
+    assert result == [
+        {
+            "error": {
+                "detail": (
+                    "Responses request failed: "
+                    "Open WebUI provided invalid Function arguments."
+                )
+            }
+        }
+    ]
+    create.assert_not_awaited()
+    stream.assert_not_called()
+
+
+async def test_additive_host_fields_are_ignored_at_the_validated_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock(return_value=final_response("Accepted."))
+    install_client(monkeypatch, create=create)
+    request_body = {
+        **body(stream=False),
+        "future_body_field": {"enabled": True},
+    }
+    request_body["messages"][0]["future_message_field"] = "preserved by host"
+
+    result = await generic_pipe.Pipe().pipe(
+        request_body,
+        __metadata__={"chat_id": "thread-123", "future_metadata_field": True},
+        __user__={"id": "user-123", "future_user_field": "value"},
+        __files__=[],
+        __tools__={"unrelated": {"type": "function", "future": True}},
+    )
+
+    assert result == "Accepted."
+    assert create.await_args.kwargs["input"] == [
+        {"role": "user", "content": "Refund ORDER-123"}
+    ]
+    assert create.await_args.kwargs["metadata"] == {"conversation_id": "thread-123"}
+    assert create.await_args.kwargs["user"] == "user-123"
 
 
 async def collect(
@@ -1102,9 +1196,12 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
         lambda **_: OpenWebUIClientContext(),
     )
 
-    messages = await generic_files._with_response_file_parts(
-        [{"role": "user", "content": "Summarize it."}],
-        [
+    invocation = OpenWebUIInvocation.from_host(
+        body={
+            "model": QUALIFIED_MODEL_ID,
+            "messages": [{"role": "user", "content": "Summarize it."}],
+        },
+        files=[
             {
                 "id": "owui-file",
                 "type": "file",
@@ -1112,7 +1209,7 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
                 "content_type": "application/pdf",
             }
         ],
-        {
+        metadata={
             "user_message": {
                 "files": [
                     {
@@ -1124,6 +1221,13 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
                 ]
             }
         },
+        user=None,
+        tools=None,
+    )
+    messages = await generic_files._with_response_file_parts(
+        invocation.body.messages,
+        invocation.files,
+        invocation.metadata,
         SimpleNamespace(
             base_url="https://openwebui.example/",
             headers={"authorization": "Bearer browser-session"},
@@ -1134,7 +1238,7 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
         provider="lgos-files",
     )
 
-    assert messages == [
+    assert _responses_input(messages) == [
         {
             "role": "user",
             "content": [
@@ -1149,6 +1253,91 @@ async def test_current_openwebui_attachment_becomes_responses_input_file(
         "/api/v1/files/owui-file/content",
         headers={"Authorization": "Bearer browser-session"},
     )
+
+
+async def test_image_source_priority_keeps_embedded_images_aligned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "first.png"
+    path.write_bytes(b"server-path-image")
+    uploaded: list[bytes] = []
+
+    async def create(*, file, **_: object) -> object:
+        _, content, _ = file
+        uploaded.append(content.read())
+        return SimpleNamespace(id=f"file-{len(uploaded)}")
+
+    @asynccontextmanager
+    async def client(**_: object) -> AsyncIterator[object]:
+        yield SimpleNamespace(files=SimpleNamespace(create=create))
+
+    download = AsyncMock()
+    monkeypatch.setattr(generic_files, "_client", client)
+    monkeypatch.setattr(generic_files, "_download_openwebui_file", download)
+    first_embedded = base64.b64encode(b"first-embedded-image").decode()
+    second_embedded = base64.b64encode(b"second-embedded-image").decode()
+    current_files = [
+        {
+            "id": "first",
+            "type": "file",
+            "name": "first.png",
+            "content_type": "image/png",
+        },
+        {
+            "id": "second",
+            "type": "file",
+            "name": "second.png",
+            "content_type": "image/png",
+        },
+    ]
+    invocation = OpenWebUIInvocation.from_host(
+        body={
+            "model": QUALIFIED_MODEL_ID,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{first_embedded}"
+                            },
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{second_embedded}"
+                            },
+                        },
+                    ],
+                }
+            ],
+        },
+        files=[
+            {
+                **current_files[0],
+                "file": {"path": str(path), "filename": path.name},
+            },
+            current_files[1],
+        ],
+        metadata={"user_message": {"files": current_files}},
+        user=None,
+        tools=None,
+    )
+
+    await generic_files._with_response_file_parts(
+        invocation.body.messages,
+        invocation.files,
+        invocation.metadata,
+        base_url="https://files.example/v1",
+        api_key="test",
+        timeout=10,
+        provider="lgos-files",
+    )
+
+    assert uploaded == [b"server-path-image", b"second-embedded-image"]
+    download.assert_not_awaited()
 
 
 async def test_openwebui_storage_upload_forwards_request_authorization(
@@ -1210,14 +1399,16 @@ def test_interrupt_round_trip_uses_previous_response_id() -> None:
     }
 
     continuation = _ask_user_to_resume(
-        [
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [ask_user],
-            },
-            answer,
-        ]
+        host_messages(
+            [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [ask_user],
+                },
+                answer,
+            ]
+        )
     )
 
     assert continuation is not None
@@ -1230,6 +1421,137 @@ def test_interrupt_round_trip_uses_previous_response_id() -> None:
             "output": "approve",
         }
     ]
+
+
+def test_interrupt_cursor_rejects_unknown_owned_fields() -> None:
+    call = interrupt_call().model_dump(mode="json", exclude_none=True)
+
+    with pytest.raises(ValueError):
+        InterruptCursor.model_validate(
+            {
+                "previous_response_id": RESPONSE_ID,
+                "calls": [call],
+                "unknown_cursor_field": True,
+            }
+        )
+    with pytest.raises(ValueError):
+        InterruptCursor.model_validate(
+            {
+                "previous_response_id": RESPONSE_ID,
+                "calls": [{**call, "unknown_call_field": True}],
+            }
+        )
+
+
+def test_interrupt_cursor_rejects_compressed_payload_amplification() -> None:
+    compressed = zlib.compress(b"x" * (INTERRUPT_CURSOR_MAX_BYTES + 1))
+    encoded = base64.urlsafe_b64encode(compressed).decode().rstrip("=")
+
+    with pytest.raises(ValueError, match="invalid interrupt cursor"):
+        _decode_interrupt_cursor(f"lgos_ask_{encoded}")
+
+
+async def test_parallel_interrupt_batch_uses_one_prompt_and_resumes_every_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_call = interrupt_call()
+    second_call = first_call.model_copy(
+        update={
+            "id": "fc_second",
+            "call_id": "call_second",
+            "arguments": json.dumps(
+                {
+                    "question": "Choose a delivery method?",
+                    "choices": ["standard", "express"],
+                    "allow_other": True,
+                },
+                separators=(",", ":"),
+            ),
+        }
+    )
+    create = AsyncMock(
+        side_effect=[
+            response(first_call, second_call),
+            final_response("Both answers received."),
+        ]
+    )
+    install_client(monkeypatch, create=create)
+    pipe = generic_pipe.Pipe()
+
+    interrupted = await pipe.pipe(body(stream=False))
+    (ask_user,) = interrupted["choices"][0]["message"]["tool_calls"]
+    questions = json.loads(ask_user["function"]["arguments"])["questions"]
+    assert [question["id"] for question in questions] == ["resume_0", "resume_1"]
+
+    resume_body = body(stream=False)
+    resume_body["messages"].extend(
+        [
+            {"role": "assistant", "content": None, "tool_calls": [ask_user]},
+            {
+                "role": "tool",
+                "tool_call_id": ask_user["id"],
+                "content": json.dumps(
+                    {
+                        "status": "answered",
+                        "answers": {
+                            "resume_0": {"type": "option", "option_index": 0},
+                            "resume_1": {"type": "other", "text": "courier"},
+                        },
+                    }
+                ),
+            },
+        ]
+    )
+
+    completed = await pipe.pipe(resume_body)
+
+    assert completed == "Both answers received."
+    resumed_request = create.await_args_list[1].kwargs
+    assert resumed_request["previous_response_id"] == RESPONSE_ID
+    assert resumed_request["input"] == [
+        {
+            "type": "function_call_output",
+            "call_id": first_call.call_id,
+            "output": "approve",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": second_call.call_id,
+            "output": "courier",
+        },
+    ]
+
+
+async def test_mixed_interrupt_and_client_tool_batch_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock(
+        return_value=response(
+            interrupt_call(),
+            function_call(
+                "display_file",
+                {
+                    "file_id": "file-chart",
+                    "filename": "chart.png",
+                    "media_type": "image/png",
+                    "title": "Chart",
+                    "alt": "A chart.",
+                },
+            ),
+        )
+    )
+    install_client(monkeypatch, create=create)
+
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
+
+    assert result == {
+        "error": {
+            "detail": (
+                "Responses request failed: LangGraph API returned an unsupported "
+                "or mixed function-call batch."
+            )
+        }
+    }
 
 
 async def test_interrupt_response_becomes_native_ask_user_call(
@@ -1341,7 +1663,7 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
         },
     ]
 
-    assert _responses_input(messages) == [
+    assert _responses_input(host_messages(messages)) == [
         messages[0],
         messages[1],
         {"role": "assistant", "content": "Answer", "phase": "final_answer"},
@@ -1367,30 +1689,32 @@ def test_native_mcp_transcript_becomes_responses_tool_items() -> None:
     }
 
     assert _responses_input(
-        [
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    tool_call,
-                    {
-                        "id": "call-display",
-                        "type": "function",
-                        "function": {"name": "display_file", "arguments": "{}"},
-                    },
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": "call-db",
-                "content": {"content": [{"type": "text", "text": "12"}]},
-            },
-            {
-                "role": "tool",
-                "tool_call_id": "call-display",
-                "content": "displayed",
-            },
-        ],
+        host_messages(
+            [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        tool_call,
+                        {
+                            "id": "call-display",
+                            "type": "function",
+                            "function": {"name": "display_file", "arguments": "{}"},
+                        },
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-db",
+                    "content": {"content": [{"type": "text", "text": "12"}]},
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call-display",
+                    "content": "displayed",
+                },
+            ]
+        ),
         mcp_tool_names={openwebui_tool_name: "database_report"},
     ) == [
         {

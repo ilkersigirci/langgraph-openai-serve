@@ -10,7 +10,7 @@ class InterruptResume:
     """A complete, causally bound set of interrupt answers."""
 
     run_id: str
-    state_token: str
+    generation_token: str
     values: dict[str, str]
 
 
@@ -19,7 +19,7 @@ class LangGraphInterruptBatch:
     """The durable interrupts awaiting answers for one graph run."""
 
     run_id: str
-    state_token: str
+    generation_token: str
     interrupts: tuple[Interrupt, ...]
 
 

@@ -120,8 +120,8 @@ Bifrost uses catalog-detail pass-through.
 !!! warning "Pinned managed-routing limitations"
 
     The bundled Bifrost native Responses route preserves `phase`, commentary,
-    file-input, and continuation contracts; normalized model-detail, error
-    metadata, and the returned `store` field remain strict expected failures.
+    file-input, continuation, and `store: false` contracts; normalized
+    model-detail and error metadata remain strict expected failures.
     Its raw pass-through route preserves successful-request contracts, while
     virtual-key governance rejects the unknown-model error case before
     pass-through. The bundled `homeserver-litellm` image preserves native

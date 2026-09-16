@@ -91,6 +91,7 @@ class ResponseContext:
                 ),
                 "previous_response_id": request.previous_response_id,
                 "service_tier": "default",
+                "store": False,
                 "text": {"format": {"type": "text"}},
                 "tool_choice": (
                     request.tool_choice.model_dump(mode="json")
@@ -163,7 +164,7 @@ def interrupt_output_items(
         _function_call_item(
             call_id=interrupt_tool_call_id(
                 interrupt.id,
-                state_token=batch.state_token,
+                generation_token=batch.generation_token,
                 response_id=response_id,
             ),
             name=INTERRUPT_TOOL_NAME,

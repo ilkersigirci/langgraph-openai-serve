@@ -14,8 +14,8 @@ each API process.
 !!! warning "Managed gateway normalization boundaries"
 
     The bundled Bifrost native Responses route preserves standard fields, file
-    input, commentary, and `phase`; normalized model detail, error metadata,
-    and the returned `store` field remain lossy. Its raw pass-through route
+    input, commentary, `phase`, and `store: false`; normalized model detail and
+    error metadata remain lossy. Its raw pass-through route
     preserves successful-request contracts, while virtual-key governance
     rejects an unknown model before its upstream error can pass through. The
     bundled `homeserver-litellm` image preserves native streaming and

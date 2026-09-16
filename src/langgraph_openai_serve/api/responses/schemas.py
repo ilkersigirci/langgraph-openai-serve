@@ -1,14 +1,9 @@
 """Validated request models for the supported Responses API subset."""
 
+from collections.abc import Mapping
 from typing import Annotated, Literal, TypeAlias
 
-from openai.types.responses import (
-    ResponseCustomToolCall as ResponseCustomToolCallInput,
-    ResponseCustomToolCallOutput as ResponseCustomToolCallOutputInput,
-    ResponseFunctionWebSearch as ResponseWebSearchCallInput,
-)
-from openai.types.responses.response_output_text import Annotation
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, JsonValue, Tag
 
 from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
@@ -42,11 +37,11 @@ ResponseInputContentPart: TypeAlias = Annotated[
     Field(discriminator="type"),
 ]
 ResponseInputContent: TypeAlias = (
-    str
-    | Annotated[
+    Annotated[
         list[ResponseInputContentPart],
         Field(min_length=1),
     ]
+    | str
 )
 
 
@@ -64,13 +59,23 @@ class ResponseInputMessage(_ResponsesRequestModel):
     phase: Literal["commentary", "final_answer"] | None = None
 
 
+class ResponseURLCitationInput(_ResponsesRequestModel):
+    """A URL citation replayed with assistant output text."""
+
+    end_index: int
+    start_index: int
+    title: str
+    type: Literal["url_citation"]
+    url: str
+
+
 class ResponseOutputTextInput(_ResponsesRequestModel):
     """Plain output text replayed from a previous assistant message."""
 
-    annotations: list[Annotation]
+    annotations: list[ResponseURLCitationInput]
     text: str
     type: Literal["output_text"]
-    logprobs: list[JsonValue] | None = None
+    logprobs: Annotated[list[JsonValue], Field(max_length=0)] | None = None
     # responses.stream().get_final_response() adds this even without a text format.
     parsed: None = None
 
@@ -87,7 +92,13 @@ class ResponseOutputMessageInput(_ResponsesRequestModel):
 
     id: str
     content: Annotated[
-        list[ResponseOutputTextInput | ResponseRefusalInput], Field(min_length=1)
+        list[
+            Annotated[
+                ResponseOutputTextInput | ResponseRefusalInput,
+                Field(discriminator="type"),
+            ]
+        ],
+        Field(min_length=1),
     ]
     role: Literal["assistant"]
     status: Literal["completed", "incomplete"]
@@ -122,21 +133,103 @@ class ResponseFunctionCallOutputInput(_ResponsesRequestModel):
     created_by: str | None = None
 
 
-ResponseInputItem: TypeAlias = (
-    ResponseOutputMessageInput
-    | ResponseInputMessage
-    | ResponseFunctionCallInput
-    | ResponseFunctionCallOutputInput
-    | ResponseCustomToolCallInput
-    | ResponseCustomToolCallOutputInput
-    | ResponseWebSearchCallInput
-)
-ResponseInput: TypeAlias = (
-    str
+class ResponseCustomToolCallInput(_ResponsesRequestModel):
+    """A custom-tool call replayed from a previous Response."""
+
+    call_id: str
+    input: str
+    name: str
+    type: Literal["custom_tool_call"] = "custom_tool_call"
+    id: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+    caller: None = None
+    namespace: None = None
+
+
+class ResponseCustomToolCallOutputInput(_ResponsesRequestModel):
+    """A string result replayed for a preceding custom-tool call."""
+
+    call_id: str
+    output: str
+    type: Literal["custom_tool_call_output"] = "custom_tool_call_output"
+    id: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+    caller: None = None
+    created_by: str | None = None
+
+
+class ResponseWebSearchActionInput(_ResponsesRequestModel):
+    """The query action produced by LGOS's supported web-search tool."""
+
+    type: Literal["search"]
+    query: str
+    # The locked SDK includes these nullable fields on serialized output items.
+    queries: None = None
+    sources: None = None
+
+
+class ResponseWebSearchCallInput(_ResponsesRequestModel):
+    """A web-search call replayed from a previous Response."""
+
+    id: str
+    action: ResponseWebSearchActionInput
+    status: Literal["in_progress", "searching", "completed", "failed"]
+    type: Literal["web_search_call"]
+
+
+def _response_input_item_type(value: object) -> str | None:
+    """Discriminate input and output messages that share ``type='message'``."""
+    if isinstance(value, ResponseOutputMessageInput):
+        item_type = "output_message"
+    elif isinstance(value, ResponseInputMessage):
+        item_type = "input_message"
+    elif isinstance(
+        value,
+        (
+            ResponseFunctionCallInput,
+            ResponseFunctionCallOutputInput,
+            ResponseCustomToolCallInput,
+            ResponseCustomToolCallOutputInput,
+            ResponseWebSearchCallInput,
+        ),
+    ):
+        item_type = value.type
+    elif isinstance(value, Mapping):
+        discriminator = value.get("type")
+        if discriminator == "message":
+            item_type = (
+                "output_message"
+                if "id" in value or "status" in value
+                else "input_message"
+            )
+        elif discriminator is None and "role" in value:
+            item_type = "input_message"
+        else:
+            item_type = discriminator if isinstance(discriminator, str) else None
+    else:
+        item_type = None
+    return item_type
+
+
+ResponseInputItem: TypeAlias = Annotated[
+    Annotated[ResponseOutputMessageInput, Tag("output_message")]
+    | Annotated[ResponseInputMessage, Tag("input_message")]
+    | Annotated[ResponseFunctionCallInput, Tag("function_call")]
+    | Annotated[ResponseFunctionCallOutputInput, Tag("function_call_output")]
+    | Annotated[ResponseCustomToolCallInput, Tag("custom_tool_call")]
     | Annotated[
+        ResponseCustomToolCallOutputInput,
+        Tag("custom_tool_call_output"),
+    ]
+    | Annotated[ResponseWebSearchCallInput, Tag("web_search_call")],
+    Discriminator(_response_input_item_type),
+]
+ResponseInput: TypeAlias = (
+    Annotated[
         list[ResponseInputItem],
         Field(min_length=1),
     ]
+    | str
 )
 
 
@@ -171,7 +264,7 @@ class ResponseNamedToolChoice(_ResponsesRequestModel):
 
 
 ResponseToolChoice: TypeAlias = (
-    Literal["none", "auto", "required"] | ResponseNamedToolChoice
+    ResponseNamedToolChoice | Literal["none", "auto", "required"]
 )
 ResponseTool: TypeAlias = Annotated[
     ResponseFunctionTool | ResponseCustomTool | ResponseWebSearchTool,
@@ -236,6 +329,8 @@ __all__ = [
     "ResponseTextFormat",
     "ResponseTool",
     "ResponseToolChoice",
+    "ResponseURLCitationInput",
+    "ResponseWebSearchActionInput",
     "ResponseWebSearchCallInput",
     "ResponseWebSearchTool",
 ]

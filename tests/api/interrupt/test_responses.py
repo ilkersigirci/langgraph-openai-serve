@@ -2,20 +2,22 @@
 
 import json
 
+import pytest
 from langgraph.types import Interrupt
+from openai.types.responses import ResponseCompletedEvent
 
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import interrupt_output_items
-from langgraph_openai_serve.api.responses.streaming import ResponsesStreamBuilder
+from langgraph_openai_serve.api.responses.streaming import ResponsesEventBuilder
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
-STATE_TOKEN = "a" * 64
+GENERATION_TOKEN = "a" * 64
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 RESPONSE_NONCE = "b" * 32
 RESPONSE_ID = f"resp_lg_{RUN_ID.replace('-', '')}_{RESPONSE_NONCE}"
 EXPECTED_CALL_IDS = [
-    f"call_lg_{STATE_TOKEN}_{RESPONSE_NONCE}_interrupt-b",
-    f"call_lg_{STATE_TOKEN}_{RESPONSE_NONCE}_interrupt-a",
+    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-b",
+    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-a",
 ]
 EXPECTED_ARGUMENTS = [
     {"question": "B?"},
@@ -26,7 +28,7 @@ EXPECTED_ARGUMENTS = [
 def _interrupt_batch() -> LangGraphInterruptBatch:
     return LangGraphInterruptBatch(
         run_id=RUN_ID,
-        state_token=STATE_TOKEN,
+        generation_token=GENERATION_TOKEN,
         interrupts=(
             Interrupt(id="interrupt-b", value={"question": "B?"}),
             Interrupt(id="interrupt-a", value={"question": "A?"}),
@@ -46,9 +48,9 @@ def test_interrupt_output_items_preserves_order() -> None:
     assert [json.loads(call.arguments) for call in calls] == EXPECTED_ARGUMENTS
 
 
-def test_streaming_finish_interrupt_uses_stable_indices() -> None:
+def test_event_builder_finish_interrupt_uses_stable_indices() -> None:
     request = ResponseCreateRequest(model="interruptible", input="Hi")
-    builder = ResponsesStreamBuilder(request, run_id=RUN_ID)
+    builder = ResponsesEventBuilder(request, run_id=RUN_ID)
     response_id = builder.created().response.id
     expected_calls = interrupt_output_items(_interrupt_batch(), response_id=response_id)
     events = list(builder.finish_interrupt(_interrupt_batch(), usage=None))
@@ -68,3 +70,14 @@ def test_streaming_finish_interrupt_uses_stable_indices() -> None:
     completed_events = [e for e in events if e.type == "response.completed"]
     assert len(completed_events) == 1
     assert completed_events[0].response.status == "completed"
+
+
+def test_event_builder_emits_only_one_terminal_event() -> None:
+    request = ResponseCreateRequest(model="interruptible", input="Hi")
+    builder = ResponsesEventBuilder(request, run_id=RUN_ID)
+
+    terminal = list(builder.finish_interrupt(_interrupt_batch(), usage=None))[-1]
+
+    assert isinstance(terminal, ResponseCompletedEvent)
+    with pytest.raises(RuntimeError, match="already emitted a terminal event"):
+        list(builder.failure("late failure"))

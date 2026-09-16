@@ -13,6 +13,7 @@ from langgraph_openai_serve import (
     NamedFunctionToolChoice,
 )
 from tests.graph.support.message import make_message_graph
+from tests.graph.support.registration import replace_graph_config
 
 
 async def test_function_tools_and_choices_reach_graph_adapter(
@@ -28,7 +29,7 @@ async def test_function_tools_and_choices_reach_graph_adapter(
         received.append(request)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture
+    replace_graph_config(graph_registry, "test", request_to_input=capture)
 
     response = await openai_client.responses.create(
         model="test",
@@ -103,9 +104,12 @@ async def test_server_and_client_tools_are_separated_by_registration(
         received.append(request)
         return {"messages": messages}
 
-    config = graph_registry.get_graph("test")
-    config.server_tools = {"package_version", "web_search"}
-    config.request_to_input = capture
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version", "web_search"},
+        request_to_input=capture,
+    )
 
     response = await openai_client.responses.create(
         model="test",
@@ -153,9 +157,12 @@ async def test_required_web_search_choice_reaches_graph_adapter(
         received.append(request)
         return {"messages": messages}
 
-    config = graph_registry.get_graph("test")
-    config.server_tools = {"web_search"}
-    config.request_to_input = capture
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"web_search"},
+        request_to_input=capture,
+    )
 
     result = await openai_client.responses.create(
         model="test",
@@ -233,13 +240,15 @@ async def test_invalid_server_tool_selection_fails_before_execution(
     fields,
     param,
 ) -> None:
-    config = graph_registry.get_graph("test")
-    config.server_tools = {"package_version"}
-
     def unexpected_run(request: GraphRequest, messages: list[BaseMessage]):
         pytest.fail("Invalid tool selection must fail before graph preparation.")
 
-    config.request_to_input = unexpected_run
+    replace_graph_config(
+        graph_registry,
+        "test",
+        server_tools={"package_version"},
+        request_to_input=unexpected_run,
+    )
     with pytest.raises(BadRequestError) as error:
         await openai_client.responses.create(model="test", input="Run tools.", **fields)
 
@@ -261,7 +270,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
         received.append(messages)
         return {"messages": messages}
 
-    graph_registry.get_graph("test").request_to_input = capture
+    replace_graph_config(graph_registry, "test", request_to_input=capture)
 
     await openai_client.responses.create(
         model="test",
@@ -332,14 +341,21 @@ async def test_truncated_function_arguments_are_incomplete_not_server_errors(
     graph_registry: GraphRegistry,
     stream: bool,
 ) -> None:
-    config = graph_registry.get_graph("test")
-    config.streamable_node_names = []
-    config.output_to_message = lambda _: AIMessage(
-        content="",
-        invalid_tool_calls=[
-            {"id": "call_weather", "name": "weather", "args": '{"city":"Ista'}
-        ],
-        response_metadata={"finish_reason": "length"},
+    replace_graph_config(
+        graph_registry,
+        "test",
+        streamable_node_names=(),
+        output_to_message=lambda _: AIMessage(
+            content="",
+            invalid_tool_calls=[
+                {
+                    "id": "call_weather",
+                    "name": "weather",
+                    "args": '{"city":"Ista',
+                }
+            ],
+            response_metadata={"finish_reason": "length"},
+        ),
     )
 
     if stream:

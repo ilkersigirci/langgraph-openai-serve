@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import GraphRequest
+from langgraph_openai_serve import GraphConfig, GraphRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
@@ -39,12 +39,13 @@ DOCUMENTED_MODEL_IDS = {
 CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
-def _rebuild_server_tool_graph(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        server_tool.server_tool_graph_config,
-        "graph",
-        server_tool.create_server_tool_graph(),
+def _rebuild_server_tool_graph(demo_app: FastAPI) -> None:
+    current = demo_app.state.graph_registry.get_graph("server-tool")
+    config = GraphConfig.model_validate(
+        {name: getattr(current, name) for name in GraphConfig.model_fields}
+        | {"graph": server_tool.create_server_tool_graph()}
     )
+    demo_app.state.graph_registry.register("server-tool", config)
 
 
 @pytest.fixture
@@ -373,7 +374,10 @@ def test_main_leaves_access_logging_to_the_deployment(
     "tools", [[], [{"type": "custom", "name": "lgos_package_version"}]]
 )
 async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
-    openai_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch, tools
+    demo_app: FastAPI,
+    openai_client: AsyncOpenAI,
+    monkeypatch: pytest.MonkeyPatch,
+    tools,
 ) -> None:
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel,
@@ -386,7 +390,7 @@ async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
 
     model = NoToolsModel(responses=[AIMessage(content="Package lookup is disabled.")])
     monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
-    _rebuild_server_tool_graph(monkeypatch)
+    _rebuild_server_tool_graph(demo_app)
     details = await openai_client.models.retrieve("server-tool")
     assert "client_settings" not in details.lgos
     assert "server_tools" not in details.lgos
@@ -424,6 +428,7 @@ async def test_server_tool_graph_rejects_client_functions(
     ],
 )
 async def test_server_custom_tool_executes_a_fresh_native_exchange(
+    demo_app: FastAPI,
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
@@ -544,7 +549,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
             "ChatOpenAI",
             lambda **kwargs: ChatOpenAI(http_async_client=provider, **kwargs),
         )
-        _rebuild_server_tool_graph(monkeypatch)
+        _rebuild_server_tool_graph(demo_app)
         response = await openai_client.responses.create(
             model="server-tool",
             input=[
@@ -602,6 +607,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
 
 @pytest.mark.parametrize("stream", [False, True])
 async def test_server_web_search_runs_through_http_backend(
+    demo_app: FastAPI,
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
@@ -655,7 +661,7 @@ async def test_server_web_search_runs_through_http_backend(
         server_tool.settings, "WEB_SEARCH_URL", "https://searxng.example.com/search"
     )
     monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
-    _rebuild_server_tool_graph(monkeypatch)
+    _rebuild_server_tool_graph(demo_app)
     monkeypatch.setattr(server_tool, "search_web", search)
 
     response = await openai_client.responses.create(
@@ -691,6 +697,7 @@ async def test_server_web_search_runs_through_http_backend(
 
 @pytest.mark.parametrize("stream", [False, True])
 async def test_server_web_search_can_use_the_upstream_openai_tool(
+    demo_app: FastAPI,
     openai_client: AsyncOpenAI,
     monkeypatch: pytest.MonkeyPatch,
     make_tool_calling_model,
@@ -759,7 +766,7 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
     models = iter([model, provider])
     monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
     monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: next(models))
-    _rebuild_server_tool_graph(monkeypatch)
+    _rebuild_server_tool_graph(demo_app)
 
     response = await openai_client.responses.create(
         model="server-tool",

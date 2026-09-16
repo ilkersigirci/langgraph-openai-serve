@@ -240,7 +240,7 @@ not claim every field in the upstream OpenAI API.
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events. |
-| `store` | Omitted and false mean false; true is rejected. |
+| `store` | Omitted, null, and false mean false, and Responses return `store: false`; true is rejected. |
 | `text.format.type="text"` | Supported. |
 | `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible graphs. |
 | `conversation`, `background: true` | Rejected because LGOS has no Responses conversation store or background lifecycle. |
@@ -391,6 +391,11 @@ The Chat Completions API (`/v1/chat/completions`) provides strict, standard Open
 compatibility for assistant text and client tool calling. It streams plain text
 `delta.content` chunks, ignores custom streaming events, and never selects
 server tools. Only interrupt-enabled models fail fast with HTTP 400.
+
+Chat message content is limited to strings, explicit `text` parts, and native
+`file` parts containing only `file.file_id`. Image and audio parts, inline file
+data or filenames, and prompt-cache fields are outside the supported subset and
+fail request validation.
 
 | Graph result | Responses | Chat Completions |
 | --- | --- | --- |

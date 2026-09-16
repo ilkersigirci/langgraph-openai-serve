@@ -2,17 +2,17 @@
 
 import json
 from collections.abc import Collection
-from typing import Any
 
 from .contracts import (
     CONVERSATION_METADATA_KEY,
     OPENAI_METADATA_VALUE_MAX_LENGTH,
     SETTINGS_METADATA_KEY,
+    OpenWebUIMetadata,
 )
 
 
 def _request_metadata(
-    metadata: dict[str, Any],
+    metadata: OpenWebUIMetadata,
     *,
     include_runtime_settings: bool = True,
     excluded_runtime_settings: Collection[str] = (),
@@ -22,19 +22,21 @@ def _request_metadata(
         if include_runtime_settings
         else {}
     )
-    chat_id = metadata.get("chat_id")
-    if isinstance(chat_id, str) and chat_id:
-        request_metadata[CONVERSATION_METADATA_KEY] = chat_id
+    if metadata.chat_id:
+        request_metadata[CONVERSATION_METADATA_KEY] = metadata.chat_id
     return request_metadata
 
 
 def _runtime_settings_metadata(
-    metadata: dict[str, Any], *, excluded: Collection[str] = ()
+    metadata: OpenWebUIMetadata, *, excluded: Collection[str] = ()
 ) -> dict[str, str]:
-    values = metadata.get("chat_variables")
-    if not isinstance(values, dict) or not values:
+    if not metadata.chat_variables:
         return {}
-    settings = {name: value for name, value in values.items() if name not in excluded}
+    settings = {
+        name: value
+        for name, value in metadata.chat_variables.items()
+        if name not in excluded
+    }
     if not settings:
         return {}
     try:

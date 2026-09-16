@@ -138,7 +138,7 @@ async def test_direct_responses_preserve_text_and_stream(
         assert response.output_text == (
             "direct-user asked: Where is the routing boundary?"
         )
-        assert "store" not in (response.model_extra or {})
+        assert (response.model_extra or {})["store"] is False
         assert response.output[0].phase == "final_answer"
 
         stream = await client.responses.create(
@@ -156,9 +156,24 @@ async def test_direct_responses_preserve_text_and_stream(
     assert [(item.type, item.phase) for item in added_items] == [
         ("message", "final_answer")
     ]
-    completed = [event for event in events if event.type == "response.completed"]
-    assert len(completed) == 1
-    assert completed[0].response.output_text == "direct-user asked: Stream directly."
+    response_events = [
+        event
+        for event in events
+        if event.type
+        in {"response.created", "response.in_progress", "response.completed"}
+    ]
+    assert [event.type for event in response_events] == [
+        "response.created",
+        "response.in_progress",
+        "response.completed",
+    ]
+    assert all(
+        (event.response.model_extra or {})["store"] is False
+        for event in response_events
+    )
+    assert response_events[-1].response.output_text == (
+        "direct-user asked: Stream directly."
+    )
 
 
 @pytest.mark.parametrize("base_url", ENDPOINTS)

@@ -1,6 +1,6 @@
 """Translate LGOS-executed tools into native Responses output items."""
 
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import TypeAlias
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -45,14 +45,7 @@ class ServerToolTracker:
         if event["ns"]:
             return
         for update in event["data"].values():
-            if not isinstance(update, dict):
-                continue
-            messages = update.get("messages", ())
-            if isinstance(messages, BaseMessage):
-                messages = (messages,)
-            if not isinstance(messages, Sequence):
-                continue
-            for message in messages:
+            for message in _update_messages(update):
                 if isinstance(message, AIMessage):
                     yield from self._tool_calls(message)
                 elif isinstance(message, ToolMessage):
@@ -140,6 +133,19 @@ class ServerToolTracker:
         return call.model_copy(
             update={"status": "failed" if message.status == "error" else "completed"}
         )
+
+
+def _update_messages(update: object) -> Iterator[BaseMessage]:
+    if not isinstance(update, Mapping):
+        return
+    messages = update.get("messages")
+    if isinstance(messages, BaseMessage):
+        yield messages
+        return
+    if isinstance(messages, Sequence) and not isinstance(messages, (str, bytes)):
+        for message in messages:
+            if isinstance(message, BaseMessage):
+                yield message
 
 
 def _custom_output(message: ToolMessage) -> str:

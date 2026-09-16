@@ -40,9 +40,10 @@ standard Responses types.
 The public `web_search` shape does not prescribe the graph's search backend;
 the bundled demo chooses an HTTP or upstream provider backend.
 
-LGOS does not persist completed Responses for retrieve or deletion. Omitted `store` and
-`store=false` are accepted; `store=true`, `conversation`, and background mode are
-rejected. `previous_response_id` is supported for interruptible graphs to resume execution
+LGOS does not persist completed Responses for retrieve or deletion. Omitted,
+null, and false `store` values are accepted, and the returned Response reports
+`store=false`; `store=true`, `conversation`, and background mode are rejected.
+`previous_response_id` is supported for interruptible graphs to resume execution
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
 those resumes. The route also rejects unregistered custom tools, client-supplied
 custom descriptions or formats, other built-in tools,
@@ -52,6 +53,15 @@ service tiers, reusable prompts,
 prompt-cache controls, and truncation. Unknown fields are not silently ignored.
 See the [supported Responses subset](explanation/openai-compatibility.md#supported-responses-subset)
 for the complete behavior and continuation rules.
+
+### Chat Completions Request
+
+Chat messages accept string content, explicit `text` content parts, and native
+`file` parts containing only `file.file_id`. The route supports modern function
+`tools`, `tool_choice`, assistant `tool_calls`, matching `tool` messages,
+streaming, and `stream_options.include_usage`. Image and audio parts, inline
+file data or filenames, prompt-cache fields, deprecated function fields,
+generation controls, and other unknown fields are rejected.
 
 ## Settings
 
@@ -72,10 +82,11 @@ Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 After binding, `server.openai_app` exposes the mounted FastAPI application for
 host integrations such as manual middleware or telemetry instrumentation.
 Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
-The registry must contain at least one graph. Pydantic rejects empty registries
-and model IDs that cannot be addressed as one URL path segment. Registry keys
-are read-only after validation; use `registry.register(model_id, config)` to add
-or replace a graph.
+The registry copies its initial mapping and must contain at least one graph. It
+rejects empty model IDs, `.`, `..`, and IDs containing `/`. The public
+`registry.registry` mapping is an insertion-ordered, read-only view; use
+`registry.register(model_id, config)` to add or replace a graph. Replacing an
+existing ID preserves its position.
 
 `LanggraphOpenaiServe(..., checkpoint_scope=resolver)` accepts an optional sync
 or async callable from FastAPI `Request` to a non-empty, server-trusted string.
@@ -123,6 +134,20 @@ belong to an external OpenAI Files API, not the LGOS package. See
   runtime context from normalized request values, server-owned values, and optional
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
+
+`GraphConfig` is immutable after construction. Pydantic snapshots
+`streamable_node_names` as a tuple and `features` and `server_tools` as frozen
+sets, so later mutations of the input collections cannot change a registered
+model. To change a declaration, construct a replacement and pass it to
+`registry.register()`. Freezing the declaration does not make a caller-owned
+callback handler or callback manager internally immutable.
+
+A directly supplied compiled graph is reused. A sync or async graph factory is
+called for every request and is never cached; LGOS validates each resolved value
+as a compiled state graph and rechecks its context schema and interrupt
+checkpointer capabilities before execution. Static configuration relationships,
+including the requirement that `run_coordinator` appear exactly when
+`GraphFeature.INTERRUPTS` is enabled, fail during `GraphConfig` construction.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is

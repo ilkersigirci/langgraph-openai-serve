@@ -1,7 +1,7 @@
 import inspect
 from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage
@@ -11,10 +11,10 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
-    Field,
-    PlainSerializer,
     StringConstraints,
+    TypeAdapter,
     field_validator,
+    model_validator,
 )
 
 from langgraph_openai_serve.graph.client_settings import (
@@ -74,11 +74,11 @@ class GraphConfig(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
-    streamable_node_names: list[str] = Field(default_factory=list)
-    features: set[GraphFeature] = Field(default_factory=set)
+    streamable_node_names: tuple[str, ...] = ()
+    features: frozenset[GraphFeature] = frozenset()
     client_settings: type[ClientSettings] | None = None
-    server_tools: set[Annotated[str, StringConstraints(min_length=1)]] = Field(
-        default_factory=set
+    server_tools: frozenset[Annotated[str, StringConstraints(min_length=1)]] = (
+        frozenset()
     )
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
@@ -95,50 +95,29 @@ class GraphConfig(BaseModel):
         """Validate a public settings model when its graph is registered."""
         return validate_client_settings_model(value) if value is not None else None
 
+    @model_validator(mode="after")
+    def validate_interrupt_configuration(self) -> Self:
+        """Validate feature relationships that do not depend on a resolved graph."""
+        interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
+        if self.run_coordinator is not None and not interrupt_enabled:
+            msg = "run_coordinator is only supported by interrupt-enabled graphs."
+            raise ValueError(msg)
+        if interrupt_enabled and self.run_coordinator is None:
+            msg = "Interrupt-enabled graphs must configure a run_coordinator."
+            raise ValueError(msg)
+        return self
+
     def supports(self, feature: GraphFeature) -> bool:
         """Return whether this graph supports a feature."""
         return feature in self.features
 
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""
-        if self.run_coordinator is not None and not self.supports(
-            GraphFeature.INTERRUPTS
-        ):
-            msg = "run_coordinator is only supported by interrupt-enabled graphs."
-            raise GraphConfigurationError(msg)
-
         if isinstance(self.graph, CompiledStateGraph):
             graph = self.graph
         else:
             graph = await _maybe_await(self.graph())
-
-        if (
-            self.client_settings is not None
-            and self.context_factory is None
-            and graph.context_schema is not self.client_settings
-        ):
-            msg = (
-                "Graphs using client_settings directly must use that settings model "
-                "as context_schema."
-            )
-            raise GraphConfigurationError(msg)
-
-        if self.supports(GraphFeature.INTERRUPTS):
-            checkpointer = graph.checkpointer
-            if checkpointer is None or any(
-                not _overrides_checkpointer_method(checkpointer, method_name)
-                for method_name in _INTERRUPT_CHECKPOINTER_METHODS
-            ):
-                msg = (
-                    "Interrupt-enabled graphs must use a fully asynchronous "
-                    "checkpointer with thread deletion."
-                )
-                raise GraphConfigurationError(msg)
-            if self.run_coordinator is None:
-                msg = "Interrupt-enabled graphs must configure a run_coordinator."
-                raise GraphConfigurationError(msg)
-
-        return graph
+        return _validate_resolved_graph(graph, self)
 
     async def build_input(
         self,
@@ -199,7 +178,7 @@ class GraphConfig(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        validate_assignment=True,
+        frozen=True,
     )
 
 
@@ -207,6 +186,38 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStateGraph:
+    """Validate requirements that can change with each factory result."""
+    if not isinstance(graph, CompiledStateGraph):
+        msg = "Graph factories must return a compiled LangGraph StateGraph."
+        raise GraphConfigurationError(msg)
+
+    if (
+        config.client_settings is not None
+        and config.context_factory is None
+        and graph.context_schema is not config.client_settings
+    ):
+        msg = (
+            "Graphs using client_settings directly must use that settings model "
+            "as context_schema."
+        )
+        raise GraphConfigurationError(msg)
+
+    if config.supports(GraphFeature.INTERRUPTS):
+        checkpointer = graph.checkpointer
+        if checkpointer is None or any(
+            not _overrides_checkpointer_method(checkpointer, method_name)
+            for method_name in _INTERRUPT_CHECKPOINTER_METHODS
+        ):
+            msg = (
+                "Interrupt-enabled graphs must use a fully asynchronous "
+                "checkpointer with thread deletion."
+            )
+            raise GraphConfigurationError(msg)
+
+    return graph
 
 
 def _overrides_checkpointer_method(
@@ -219,30 +230,47 @@ def _overrides_checkpointer_method(
     return callable(implementation) and implementation is not base_implementation
 
 
-def _freeze_registry(
-    value: Mapping[ModelId, GraphConfig],
-) -> Mapping[ModelId, GraphConfig]:
-    return MappingProxyType(dict(value))
+_MODEL_ID_ADAPTER = TypeAdapter(ModelId)
 
 
-_RegistryEntries = Annotated[
-    Mapping[ModelId, GraphConfig],
-    Field(min_length=1),
-    AfterValidator(_freeze_registry),
-    PlainSerializer(dict, return_type=dict),
-]
+def _validate_model_id(value: object) -> str:
+    return _MODEL_ID_ADAPTER.validate_python(value, strict=True)
 
 
-class GraphRegistry(BaseModel):
+def _validate_graph_config(value: object) -> GraphConfig:
+    if not isinstance(value, GraphConfig):
+        msg = "Registry values must be GraphConfig instances."
+        raise TypeError(msg)
+    return value
+
+
+class GraphRegistry:
     """Registry of graphs."""
 
-    registry: _RegistryEntries
+    __slots__ = ("_entries", "_registry")
 
-    model_config = ConfigDict(validate_assignment=True)
+    def __init__(self, *, registry: Mapping[str, GraphConfig]) -> None:
+        if not registry:
+            msg = "GraphRegistry must contain at least one graph."
+            raise ValueError(msg)
+
+        entries = {
+            _validate_model_id(model_id): _validate_graph_config(config)
+            for model_id, config in registry.items()
+        }
+        self._entries = entries
+        self._registry = MappingProxyType(entries)
+
+    @property
+    def registry(self) -> Mapping[str, GraphConfig]:
+        """The read-only, insertion-ordered registry view."""
+        return self._registry
 
     def register(self, model_id: str, config: GraphConfig) -> None:
         """Add or replace one graph through the validated registry boundary."""
-        self.registry = {**self.registry, model_id: config}
+        validated_model_id = _validate_model_id(model_id)
+        validated_config = _validate_graph_config(config)
+        self._entries[validated_model_id] = validated_config
 
     def get_graph_names(self) -> list[str]:
         """Get the names of all registered graphs."""

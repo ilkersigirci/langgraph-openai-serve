@@ -29,11 +29,6 @@ BIFROST_ERROR_METADATA_XFAIL = pytest.mark.xfail(
     raises=AssertionError,
     reason="Bifrost v2.1.1 rewrites the upstream OpenAI error metadata",
 )
-BIFROST_STORE_FIELD_XFAIL = pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Bifrost v2.1.1 reports store=true after forwarding store=false",
-)
 
 
 async def test_bifrost_native_mcp_is_authenticated_and_exposes_fixed_reports() -> None:
@@ -158,7 +153,6 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-@BIFROST_STORE_FIELD_XFAIL
 async def test_bifrost_native_responses_preserve_standard_fields(
     provider: str,
 ) -> None:
@@ -182,7 +176,7 @@ async def test_bifrost_native_responses_preserve_standard_fields(
         "gateway-user asked: Where is the routing boundary?"
     )
     assert response.output[0].phase == "final_answer"
-    assert "store" not in (response.model_extra or {})
+    assert (response.model_extra or {})["store"] is False
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
@@ -213,6 +207,21 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
         ("commentary", "message"),
         ("final_answer", "message"),
     ]
+    response_events = [
+        event
+        for event in events
+        if event.type
+        in {"response.created", "response.in_progress", "response.completed"}
+    ]
+    assert [event.type for event in response_events] == [
+        "response.created",
+        "response.in_progress",
+        "response.completed",
+    ]
+    assert all(
+        (event.response.model_extra or {})["store"] is False
+        for event in response_events
+    )
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])

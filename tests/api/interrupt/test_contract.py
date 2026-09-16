@@ -153,6 +153,24 @@ async def test_streaming_interrupt_matches_responses_tool_call_contract(
     assert len({response.id for response in response_events}) == 1
 
 
+async def test_streaming_interrupt_resume_completes_with_final_answer(
+    openai_client: AsyncOpenAI,
+) -> None:
+    paused = await create_response(openai_client)
+
+    stream = await openai_client.responses.create(
+        model=MODEL,
+        previous_response_id=paused.id,
+        input=resume_outputs(paused, ["approve"]),
+        stream=True,
+    )
+    events = [event async for event in stream]
+
+    assert events[-1].type == "response.completed"
+    assert events[-1].response.output_text == "resumed:approve"
+    assert events[-1].response.previous_response_id == paused.id
+
+
 async def test_invalid_interrupt_payload_returns_openai_server_error(
     openai_client: AsyncOpenAI,
     sqlite_checkpointer: AsyncSqliteSaver,

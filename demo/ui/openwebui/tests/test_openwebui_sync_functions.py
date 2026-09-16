@@ -1,3 +1,4 @@
+import ast
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, call
@@ -7,7 +8,7 @@ import pytest
 from openai import OpenAI
 
 import lgos_openwebui.sync_functions as sync_functions_module
-from lgos_openwebui.bundle import bundle_function
+from lgos_openwebui.bundle import GENERIC_BUNDLE, bundle_function
 from lgos_openwebui.functions.generic.gateway import gateway_config
 from lgos_openwebui.sync_functions import (
     FUNCTIONS_DIR,
@@ -72,6 +73,40 @@ def test_bundle_function_is_frontmatter_first_and_executable() -> None:
     assert "# ===== BEGIN files.py =====" in content
     assert "# ===== BEGIN pipe.py =====" in content
     assert "Pipe" in namespace
+
+
+def test_generic_bundle_modules_have_unique_top_level_definitions() -> None:
+    definitions: dict[str, str] = {}
+
+    for module_name in GENERIC_BUNDLE:
+        source = FUNCTIONS_DIR / "generic" / module_name
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        for node in tree.body:
+            if not isinstance(
+                node,
+                (
+                    ast.Assign,
+                    ast.AnnAssign,
+                    ast.AsyncFunctionDef,
+                    ast.ClassDef,
+                    ast.FunctionDef,
+                ),
+            ):
+                continue
+            if isinstance(node, ast.Assign):
+                names = [
+                    target.id for target in node.targets if isinstance(target, ast.Name)
+                ]
+            elif isinstance(node, ast.AnnAssign):
+                names = [node.target.id] if isinstance(node.target, ast.Name) else []
+            else:
+                names = [node.name]
+
+            for name in names:
+                assert name not in definitions, (
+                    f"{name!r} is defined by both {definitions[name]} and {module_name}"
+                )
+                definitions[name] = module_name
 
 
 def test_discover_function_specs_includes_directory_backed_functions() -> None:
