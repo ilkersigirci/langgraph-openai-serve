@@ -232,9 +232,9 @@ every `AIMessageChunk` in the graph's `messages` stream. A graph with no
 streamed text still receives its final rendered `AIMessage` after execution, so
 a caller does not need a separate non-streaming code path.
 
-When several public nodes contribute text, return their completed messages through
-the graph's `messages` channel and make `output_to_message` render the same
-ordered content for a complete response.
+When several public model calls contribute text, return their completed messages
+through the graph's `messages` channel and make `output_to_message` render the
+same ordered content for a complete response.
 
 !!! tip "Disable private model streams"
 

@@ -126,10 +126,7 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
             yield MessagesStreamPart(
                 type="messages",
                 ns=(),
-                data=(
-                    AIMessageChunk(content="token"),
-                    {"langgraph_node": "generate"},
-                ),
+                data=(AIMessageChunk(content="token"), {}),
             )
             await sleep_forever()
         finally:
@@ -173,10 +170,7 @@ async def test_stream_run_preserves_generic_event_order() -> None:
         yield MessagesStreamPart(
             type="messages",
             ns=(),
-            data=(
-                AIMessageChunk(content="token"),
-                {"langgraph_node": "generate"},
-            ),
+            data=(AIMessageChunk(content="token"), {}),
         )
         yield CustomStreamPart(
             type="custom",

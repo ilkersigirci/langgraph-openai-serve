@@ -9,7 +9,6 @@ from tests.graph.support.schemas import MessageState
 def make_message_graph(
     response: str = "hello",
     *,
-    node_name: str = "generate",
     context_schema: type[Any] | None = None,
     disable_streaming: bool = False,
 ) -> Any:
@@ -23,8 +22,8 @@ def make_message_graph(
 
     return (
         StateGraph(MessageState, context_schema=context_schema)
-        .add_node(node_name, generate)
-        .set_entry_point(node_name)
-        .set_finish_point(node_name)
+        .add_node("generate", generate)
+        .set_entry_point("generate")
+        .set_finish_point("generate")
         .compile()
     )

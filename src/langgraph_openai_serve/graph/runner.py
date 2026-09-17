@@ -9,7 +9,6 @@ from langgraph.types import (
     CustomStreamPart,
     Durability,
     Interrupt,
-    MessagesStreamPart,
     StreamMode,
     StreamPart,
     UpdatesStreamPart,
@@ -238,18 +237,10 @@ def _visible_stream_part(
     if part["type"] == "updates" and stream_updates:
         return part
     if part["type"] == "messages":
-        return text_from_message_event(part)
+        message = part["data"][0]
+        if isinstance(message, AIMessageChunk):
+            return str(message.text) or None
     return None
-
-
-def text_from_message_event(event: MessagesStreamPart) -> str | None:
-    """Extract visible text from a LangGraph message event."""
-    message = event["data"][0]
-    if not isinstance(message, AIMessageChunk):
-        return None
-
-    content = str(message.text)
-    return content or None
 
 
 def _stream_modes(

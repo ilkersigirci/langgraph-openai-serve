@@ -141,8 +141,9 @@ immutable.
 
 Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
 graph's `messages` stream. Configure private `ChatOpenAI` calls with
-`disable_streaming=True`; LangChain then uses the complete invocation path and
-does not emit model stream chunks for that call.
+[`disable_streaming=True`](https://reference.langchain.com/python/langchain-core/language_models/chat_models/BaseChatModel/disable_streaming);
+LangChain then uses the complete invocation path and does not emit model stream
+chunks for that call.
 
 A directly supplied compiled graph is reused. A sync or async graph factory is
 called for every request and is never cached; LGOS validates each resolved value
