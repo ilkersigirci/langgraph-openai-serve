@@ -21,8 +21,8 @@ just demo/sync-litellm -- \
 The shared `lgos-model-sync` job starts no dependencies. The deployment system
 owns rollout and health checks; this command only copies the catalog. Use a
 unique prefix for each API. After a manual sync, reconnect Chainlit and run
-`just demo/sync-openwebui`; the running Open WebUI container reuses its
-[gateway configuration](open-webui.md#setup).
+`just demo/sync-openwebui`; the host-side locked sync project uses the
+[host-reachable gateway configuration](open-webui.md#setup).
 
 ## Gateway Credentials
 

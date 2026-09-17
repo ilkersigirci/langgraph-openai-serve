@@ -1,6 +1,6 @@
 """Environment settings coverage for the standalone Chainlit application."""
 
-import httpx
+import httpx2
 import pytest
 from cryptography.fernet import Fernet
 from openai import OpenAIError
@@ -232,7 +232,7 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         "lgos": {"schema_version": 1, "description": "Graph", "features": []},
     }
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/v1/models":
             data = [
                 {**graph, "id": "team/graph"},
@@ -243,9 +243,9 @@ async def test_bifrost_catalog_preserves_provider_metadata(
             assert request.url.path == "/openai_passthrough/v1/models"
             assert request.headers["x-model-provider"] in {"team", "other"}
             data = [graph]
-        return httpx.Response(200, json={"object": "list", "data": data})
+        return httpx2.Response(200, json={"object": "list", "data": data})
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
         monkeypatch.setattr(
             clients,
             "openai_client",
@@ -284,9 +284,9 @@ async def test_model_retrieval_rejects_a_non_model_response(
     monkeypatch.setattr(
         clients, "gateway", gateway_config("bifrost", "https://gateway.example")
     )
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json="unsupported model detail")
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda _: httpx2.Response(200, json="unsupported model detail")
         )
     ) as http:
         monkeypatch.setattr(
@@ -310,12 +310,12 @@ async def test_litellm_model_info_owns_catalog_and_preserves_public_names(
         {"model_name": name, "model_info": {"lgos": metadata}} for name in names
     ]
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         assert request.method == "GET"
         assert request.url.path == "/model/info"
         assert request.headers["Authorization"] == "Bearer test-key"
         assert "x-model-provider" not in request.headers
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "data": [
@@ -326,7 +326,7 @@ async def test_litellm_model_info_owns_catalog_and_preserves_public_names(
             },
         )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
         monkeypatch.setattr(
             clients,
             "openai_client",
@@ -353,11 +353,11 @@ async def test_litellm_catalog_errors_do_not_fall_back_to_other_routes(
         clients, "gateway", gateway_config("litellm", "https://gateway.example")
     )
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         assert request.url.path == "/model/info"
-        return httpx.Response(status, json={"error": "unavailable"})
+        return httpx2.Response(status, json={"error": "unavailable"})
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
         monkeypatch.setattr(
             clients,
             "openai_client",

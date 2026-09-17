@@ -12,7 +12,7 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
@@ -299,12 +299,12 @@ async def test_pipe_lists_native_litellm_model_info(
 ) -> None:
     deployment = {"model_name": "research/graph", "model_info": {"lgos": {}}}
 
-    def handle(request: httpx.Request) -> httpx.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         assert request.method == "GET"
         assert request.url.path == "/model/info"
         assert request.headers["Authorization"] == "Bearer test-key"
         assert "x-model-provider" not in request.headers
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "data": [
@@ -320,7 +320,7 @@ async def test_pipe_lists_native_litellm_model_info(
     async def catalog_client(**kwargs: Any) -> AsyncIterator[AsyncOpenAI]:
         async with AsyncOpenAI(
             **kwargs,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
         ) as client:
             yield client
 

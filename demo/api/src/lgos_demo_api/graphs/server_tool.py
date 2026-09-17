@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 from typing import Annotated, Literal
 
-import httpx
+import httpx2
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -103,7 +103,7 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
         }
         links = "\n".join(f"{title}: {url}" for url, title in sources.items())
         return f"{result.text}\n{links}", sources
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         follow_redirects=True,
         timeout=10,
     ) as client:

@@ -1,13 +1,13 @@
-import httpx
+import httpx2
 
 from lgos_demo_api.utils.web_search import search_web
 
 
 async def test_search_uses_json_and_filters_bad_results() -> None:
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.url.path == "/api/search"
         assert dict(request.url.params) == {"q": "LangGraph", "format": "json"}
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "results": [
@@ -27,8 +27,8 @@ async def test_search_uses_json_and_filters_bad_results() -> None:
             },
         )
 
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(respond),
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(respond),
     ) as client:
         results = await search_web(
             client,

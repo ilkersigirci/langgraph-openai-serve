@@ -23,15 +23,17 @@ before starting services or running live integration tests.
 The API resolves `langgraph-openai-serve` from PyPI and packages the default
 `lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
 override builds a local API image and installs both the API and parent LGOS
-checkout as editable packages without changing the locked production
-dependency source.
+checkout as editable packages without changing the locked production dependency
+source. Every demo-owned Python environment targets OpenAI v3; the upstream
+Open WebUI runtime owns its dependencies. The reusable LGOS package retains its
+OpenAI v2 compatibility range.
 
 | Project | Purpose | Deployment |
 | --- | --- | --- |
 | `api` | Example LangGraph API | `ghcr.io/ilkersigirci/lgos-demo-api` |
 | `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `ui/openwebui` | Open WebUI Function sync and raw-upload policy | Local uv command and official-image bind mount |
+| `ui/openwebui` | Open WebUI Function sync and raw-upload policy | Host-run locked sync tool plus the unchanged pinned official image |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. Bifrost and LiteLLM gateway configurations
@@ -140,8 +142,9 @@ Models:
 just demo/sync-openwebui
 ```
 
-The recipe executes inside the Open WebUI container and reuses its
-`OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY` values.
+The recipe runs the locked `ui/openwebui` project on the host. It uses
+`DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`, so the
+official Open WebUI image remains unchanged.
 
 Compose starts each selected service's dependencies. One API setup job
 initializes the LangGraph checkpointer and Store schemas, and a separate

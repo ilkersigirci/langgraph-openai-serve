@@ -201,5 +201,6 @@ async def test_bound_client_settings_does_not_coerce_json_values(
             "type": "invalid_request_error",
             "param": f"metadata.{SETTINGS_METADATA_KEY}",
             "code": None,
+            "misalignment": None,
         }
     }

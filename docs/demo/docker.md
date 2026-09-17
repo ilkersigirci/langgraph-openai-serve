@@ -9,7 +9,7 @@ The demo uses four independent uv projects rather than a uv workspace:
 | `demo/api` | `demo/api/uv.lock` | `ghcr.io/ilkersigirci/lgos-demo-api` |
 | `demo/files_api` | `demo/files_api/uv.lock` | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Local Function sync command and upload-policy mount |
+| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Host-run sync tool; unchanged pinned official Open WebUI image |
 
 Published project-owned images use only their project directories as build
 contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
@@ -17,13 +17,12 @@ definitions live in `docker/apps/`, while `docker/compose/development.yml` and
 `docker/compose/otel.yml` provide development and OpenTelemetry overlays.
 Shared runtime assets remain under `demo/docker/`. The development overlay
 additionally supplies the parent LGOS checkout as a named context for the API's
-editable install. The Open WebUI
-integration uses the official Open WebUI image and keeps its Function sync
-command local. Compose also mounts its small raw-upload policy into that image;
-it does not build a project-owned Open WebUI image. The two gateway fragments
-use pinned public images: upstream Bifrost and `homeserver-litellm`. There is
-no demo-wide `pyproject.toml`, uv workspace, shared Python environment, or
-shared lockfile.
+editable install. Open WebUI runs its pinned official image unchanged. Its
+locked OpenAI v3 and HTTPX2 synchronization project runs on the host, while
+Compose mounts only the Function sources and small raw-upload policy into the
+upstream image. The two gateway fragments use pinned public images: upstream
+Bifrost and `homeserver-litellm`. There is no demo-wide `pyproject.toml`, uv
+workspace, shared Python environment, or shared lockfile.
 The API package includes the compact Markdown corpus used by `lgos-rag`.
 
 ## Compose Modes
@@ -80,7 +79,8 @@ settings](reference.md#opentelemetry-settings).
 
     Apply the explicit development model from the LGOS repository checkout.
     The API, Files API, and Chainlit services build locally from their
-    Dockerfiles and lockfiles. Only the API image installs the parent LGOS
+    Dockerfiles and lockfiles; Open WebUI remains the pinned upstream image.
+    Only the API image installs the parent LGOS
     checkout as an editable package:
 
     ```bash
@@ -368,7 +368,7 @@ settings](reference.md#opentelemetry-settings).
 
     Open WebUI: `http://localhost:3003`
 
-    Compose runs the official Open WebUI image. Follow the
+    Compose runs the pinned official Open WebUI image unchanged. Follow the
     [Open WebUI setup](open-webui.md#setup) to synchronize the bundled
     Functions and generate Workspace Models from LGOS metadata.
     The Compose service also mounts the temporary raw-upload policy described

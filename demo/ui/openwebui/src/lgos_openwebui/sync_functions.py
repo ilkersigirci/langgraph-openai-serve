@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
+import httpx2
 from openai import OpenAI, OpenAIError
 
 from .bundle import bundle_function
@@ -88,7 +88,7 @@ def discover_function_specs(
     return tuple(specs)
 
 
-def sign_in(client: httpx.Client, email: str, password: str) -> None:
+def sign_in(client: httpx2.Client, email: str, password: str) -> None:
     """Sign in and configure the client with the returned bearer token."""
     response = client.post(
         "/api/v1/auths/signin",
@@ -103,7 +103,7 @@ def sign_in(client: httpx.Client, email: str, password: str) -> None:
 
 
 def sync_functions(
-    client: httpx.Client,
+    client: httpx2.Client,
     specs: tuple[FunctionSpec, ...] | None = None,
 ) -> dict[str, str]:
     """Create/update maintained Functions while preserving unrelated Functions."""
@@ -163,7 +163,7 @@ def main() -> None:
             settings.OPENAI_GATEWAY_BASE_URL,
         )
         with (
-            httpx.Client(base_url=settings.URL, timeout=10) as client,
+            httpx2.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
                 base_url=f"{gateway.root_url}/v1",
                 api_key=settings.OPENAI_GATEWAY_API_KEY,
@@ -182,10 +182,10 @@ def main() -> None:
             )
             function_results = sync_functions(client)
             sync_workspace_models(client, model_specs)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
         raise SystemExit(msg) from exc
-    except (OSError, TypeError, ValueError, httpx.HTTPError, OpenAIError) as exc:
+    except (OSError, TypeError, ValueError, httpx2.HTTPError, OpenAIError) as exc:
         msg = f"Open WebUI sync failed: {exc}"
         raise SystemExit(msg) from exc
 

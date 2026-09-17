@@ -4,7 +4,7 @@ import json
 from http import HTTPStatus
 
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from openai import AsyncOpenAI

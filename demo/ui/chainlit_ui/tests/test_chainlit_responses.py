@@ -6,7 +6,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, call
 
-import httpx
+import httpx2
 import pytest
 from chainlit.context import init_http_context
 from openai import AsyncOpenAI
@@ -233,9 +233,9 @@ async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completio
         f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in payloads
     )
     async with (
-        httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(
+        httpx2.AsyncClient(
+            transport=httpx2.MockTransport(
+                lambda _: httpx2.Response(
                     200,
                     headers={"content-type": "text/event-stream"},
                     text=wire,

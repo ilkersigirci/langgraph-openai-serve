@@ -848,6 +848,7 @@ async def test_unknown_model_uses_openai_error_envelope(
             "type": "invalid_request_error",
             "param": "model",
             "code": None,
+            "misalignment": None,
         }
     }
 
@@ -878,5 +879,6 @@ async def test_graph_configuration_error_uses_server_error_envelope(
             "type": "server_error",
             "param": None,
             "code": None,
+            "misalignment": None,
         }
     }

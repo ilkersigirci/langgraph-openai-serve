@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
 import chainlit as cl
-import httpx
 import httpx2
 import jwt
 import pytest
@@ -131,13 +130,14 @@ class OAuthApp:
     persisted: dict[str, cl.User]
     gateway_authorizations: list[str]
 
-    def browser(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=self.app), base_url="https://chat.example"
+    def browser(self) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=self.app),
+            base_url="https://chat.example",
         )
 
     async def start(
-        self, browser: httpx.AsyncClient, code: str
+        self, browser: httpx2.AsyncClient, code: str
     ) -> dict[str, list[str]]:
         response = await browser.get("/auth/oauth/generic")
         assert response.status_code == 302
@@ -151,7 +151,7 @@ class OAuthApp:
         self.provider.codes[code] = params
         return params
 
-    async def login(self, browser: httpx.AsyncClient, code: str) -> httpx.Response:
+    async def login(self, browser: httpx2.AsyncClient, code: str) -> httpx2.Response:
         params = await self.start(browser, code)
         return await browser.get(
             "/auth/oauth/generic/callback",
@@ -249,12 +249,12 @@ async def oauth_app(
     )
     gateway_authorizations: list[str] = []
 
-    def catalog(request: httpx.Request) -> httpx.Response:
+    def catalog(request: httpx2.Request) -> httpx2.Response:
         assert request.url.path == "/model/info"
         gateway_authorizations.append(request.headers["Authorization"])
-        return httpx.Response(200, json={"object": "list", "data": []})
+        return httpx2.Response(200, json={"object": "list", "data": []})
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(catalog)) as gateway:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(catalog)) as gateway:
         monkeypatch.setattr(
             clients,
             "openai_client",

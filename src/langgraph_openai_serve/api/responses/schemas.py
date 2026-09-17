@@ -15,7 +15,7 @@ from langgraph_openai_serve.api.metadata import (
 class _ResponsesRequestModel(BaseModel):
     """Reject fields outside the supported Responses subset."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class ResponseInputText(_ResponsesRequestModel):
@@ -115,6 +115,8 @@ class ResponseFunctionCallInput(_ResponsesRequestModel):
     type: Literal["function_call"] = "function_call"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
+    # OpenAI v3 adds this field when SDK response objects are replayed as input.
+    async_: bool | None = Field(default=None, alias="async")
     # Current SDK output models serialize these optional fields as null during
     # full-item replay. Non-null program/namespaced calls are outside this subset.
     caller: None = None
@@ -142,6 +144,7 @@ class ResponseCustomToolCallInput(_ResponsesRequestModel):
     type: Literal["custom_tool_call"] = "custom_tool_call"
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
+    async_: bool | None = Field(default=None, alias="async")
     caller: None = None
     namespace: None = None
 
@@ -241,6 +244,12 @@ class ResponseFunctionTool(_ResponsesRequestModel):
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
     strict: bool | None = None
+    # OpenAI v3 response objects include these fields during full tool replay.
+    # Only the default synchronous shape fits LGOS's supported subset.
+    allowed_callers: None = None
+    async_: bool | None = Field(default=None, alias="async")
+    defer_loading: None = None
+    output_schema: None = None
 
 
 class ResponseCustomTool(_ResponsesRequestModel):
@@ -248,6 +257,13 @@ class ResponseCustomTool(_ResponsesRequestModel):
 
     type: Literal["custom"]
     name: Annotated[str, Field(min_length=1)]
+    # Accept the default shape emitted by OpenAI v3 response objects while
+    # continuing to reject unsupported custom-tool configuration.
+    allowed_callers: None = None
+    async_: bool | None = Field(default=None, alias="async")
+    defer_loading: None = None
+    description: None = None
+    format: None = None
 
 
 class ResponseWebSearchTool(_ResponsesRequestModel):

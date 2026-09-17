@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI
 
@@ -70,13 +70,26 @@ async def client(fastapi_app: FastAPI) -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture
+async def openai_http_client(
+    fastapi_app: FastAPI,
+) -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=fastapi_app)
+    async with AsyncClient(
+        transport=transport,
+        base_url=_BASE_URL,
+        timeout=_TIMEOUT,
+    ) as async_client:
+        yield async_client
+
+
+@pytest.fixture
 async def openai_client(
-    client: AsyncClient,
+    openai_http_client: AsyncClient,
 ) -> AsyncIterator[AsyncOpenAI]:
     async with AsyncOpenAI(
         api_key="test",
         base_url=f"{_BASE_URL}/v1",
-        http_client=client,
+        http_client=openai_http_client,
         max_retries=0,
     ) as openai_client:
         yield openai_client

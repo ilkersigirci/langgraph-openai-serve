@@ -6,13 +6,13 @@ from uuid import uuid4
 
 import anyio
 import chainlit as cl
-import httpx
+import httpx2
 import pytest
 from chainlit.auth import create_jwt
 from chainlit.context import ChainlitContext, context_var
 from chainlit.session import WebsocketSession
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from starlette.status import HTTP_200_OK
 
 from lgos_chainlit.auth import chainlit as auth
@@ -107,14 +107,14 @@ async def test_concurrent_requests_keep_each_users_gateway_credentials_isolated(
         await both_requested.wait()
         return f"access-{identifier}"
 
-    def gateway(request: httpx.Request) -> httpx.Response:
+    def gateway(request: httpx2.Request) -> httpx2.Response:
         authorization = request.headers["Authorization"]
         subject = request.headers["X-Test-Subject"]
         observed[subject] = authorization
-        return httpx.Response(200, json={"object": "list", "data": []})
+        return httpx2.Response(200, json={"object": "list", "data": []})
 
     monkeypatch.setattr(auth, "access_token", token)
-    async with AsyncClient(transport=httpx.MockTransport(gateway)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
         client = clients.openai_client.with_options(http_client=http)
         app = FastAPI()
         app.add_middleware(auth.GatewayRequestContextMiddleware)
@@ -159,10 +159,10 @@ async def test_missing_delegated_user_preserves_login_error_through_sdk(
     monkeypatch.setattr(settings, "LOGIN_TYPE", "oauth")
     monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", True)
 
-    def gateway(_request: httpx.Request) -> httpx.Response:
+    def gateway(_request: httpx2.Request) -> httpx2.Response:
         pytest.fail("Unauthenticated request reached the gateway")
 
-    async with AsyncClient(transport=httpx.MockTransport(gateway)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
         monkeypatch.setattr(
             clients,
             "openai_client",
@@ -190,13 +190,13 @@ async def test_delegated_chat_uses_new_credentials_and_stops_after_logout(
             raise OAuthLoginRequired()
         return current_token
 
-    def gateway(request: httpx.Request) -> httpx.Response:
+    def gateway(request: httpx2.Request) -> httpx2.Response:
         observed.append(request.headers["Authorization"])
-        return httpx.Response(200, json={"id": "resp_test", "output": []})
+        return httpx2.Response(200, json={"id": "resp_test", "output": []})
 
     monkeypatch.setattr(auth, "access_token", token)
     async with (
-        AsyncClient(transport=httpx.MockTransport(gateway)) as http,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http,
         chat_session(user, create_jwt(user)),
     ):
         client = clients.openai_client.with_options(http_client=http)
@@ -233,12 +233,12 @@ async def test_gateway_uses_its_static_key_without_a_user_session(
     monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", False)
     monkeypatch.setattr(settings, "OPENAI_GATEWAY_API_KEY", "static-key")
 
-    def gateway(request: httpx.Request) -> httpx.Response:
+    def gateway(request: httpx2.Request) -> httpx2.Response:
         assert request.headers["Authorization"] == "Bearer static-key"
         assert request.url.path == "/model/info"
-        return httpx.Response(200, json={"object": "list", "data": []})
+        return httpx2.Response(200, json={"object": "list", "data": []})
 
-    async with AsyncClient(transport=httpx.MockTransport(gateway)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
         monkeypatch.setattr(
             clients,
             "openai_client",

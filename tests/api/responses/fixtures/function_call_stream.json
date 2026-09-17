@@ -25,6 +25,7 @@
           "strict": true,
           "type": "function",
           "allowed_callers": null,
+          "async": null,
           "defer_loading": null,
           "description": "Get the weather for a city.",
           "output_schema": null
@@ -39,6 +40,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,
@@ -82,6 +84,7 @@
           "strict": true,
           "type": "function",
           "allowed_callers": null,
+          "async": null,
           "defer_loading": null,
           "description": "Get the weather for a city.",
           "output_schema": null
@@ -96,6 +99,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,
@@ -120,6 +124,7 @@
       "name": "weather",
       "type": "function_call",
       "id": "<function_call_0>",
+      "async": null,
       "caller": null,
       "namespace": null,
       "status": "in_progress"
@@ -150,6 +155,7 @@
       "name": "weather",
       "type": "function_call",
       "id": "<function_call_0>",
+      "async": null,
       "caller": null,
       "namespace": null,
       "status": "completed"
@@ -175,6 +181,7 @@
           "name": "weather",
           "type": "function_call",
           "id": "<function_call_0>",
+          "async": null,
           "caller": null,
           "namespace": null,
           "status": "completed"
@@ -195,6 +202,7 @@
           "strict": true,
           "type": "function",
           "allowed_callers": null,
+          "async": null,
           "defer_loading": null,
           "description": "Get the weather for a city.",
           "output_schema": null
@@ -209,6 +217,7 @@
       "moderation": null,
       "previous_response_id": null,
       "prompt": null,
+      "prompt_cache_diagnostics": null,
       "prompt_cache_key": null,
       "prompt_cache_options": null,
       "prompt_cache_retention": null,

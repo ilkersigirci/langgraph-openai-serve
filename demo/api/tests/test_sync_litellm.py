@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from copy import deepcopy
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 
@@ -32,36 +32,36 @@ def model() -> ModelDetails:
 
 
 @pytest.fixture
-def source(model: ModelDetails) -> Iterator[httpx.Client]:
-    def respond(request: httpx.Request) -> httpx.Response:
+def source(model: ModelDetails) -> Iterator[httpx2.Client]:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.headers["Authorization"] == "Bearer source-key"
         if request.url.path == "/v1/models":
-            return httpx.Response(
+            return httpx2.Response(
                 200, json=ModelList(data=[model]).model_dump(mode="json")
             )
         assert request.url.path == "/v1/models/graph"
-        return httpx.Response(200, json=model.model_dump(mode="json"))
+        return httpx2.Response(200, json=model.model_dump(mode="json"))
 
-    with httpx.Client(
+    with httpx2.Client(
         base_url="https://source.invalid/v1/",
         headers={"Authorization": "Bearer source-key"},
-        transport=httpx.MockTransport(respond),
+        transport=httpx2.MockTransport(respond),
     ) as client:
         yield client
 
 
 @pytest.mark.parametrize("api_base", [None, "https://graphs.internal/v1"])
 def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
-    source: httpx.Client, model: ModelDetails, api_base: str | None
+    source: httpx2.Client, model: ModelDetails, api_base: str | None
 ) -> None:
     deployments: list[dict[str, Any]] = []
     writes: list[dict[str, Any]] = []
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.headers["Authorization"] == "Bearer admin-key"
         if request.method == "GET":
             assert request.url.path == "/model/info"
-            return httpx.Response(200, json={"data": deployments})
+            return httpx2.Response(200, json={"data": deployments})
         payload = json.loads(request.content)
         writes.append(payload)
         if request.method == "POST":
@@ -83,12 +83,12 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
             assert payload["model_info"]["id"] == deployment["model_info"]["id"]
             assert payload["model_info"]["db_model"] is True
             deployment["model_info"].update(payload["model_info"])
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
-    with httpx.Client(
+    with httpx2.Client(
         base_url="https://gateway.invalid/",
         headers={"Authorization": "Bearer admin-key"},
-        transport=httpx.MockTransport(respond),
+        transport=httpx2.MockTransport(respond),
     ) as gateway:
         args = {
             "prefix": "research",
@@ -121,7 +121,7 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
 
 
 def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
-    source: httpx.Client, model: ModelDetails
+    source: httpx2.Client, model: ModelDetails
 ) -> None:
     extension = model.lgos.model_dump(mode="json")
     deployments: list[dict[str, Any]] = [
@@ -159,9 +159,9 @@ def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
     ]
     deleted_ids: list[str] = []
 
-    def gateway_response(request: httpx.Request) -> httpx.Response:
+    def gateway_response(request: httpx2.Request) -> httpx2.Response:
         if request.method == "GET":
-            return httpx.Response(200, json={"data": deployments})
+            return httpx2.Response(200, json={"data": deployments})
         payload = json.loads(request.content)
         if request.url.path == "/model/new":
             deployments.append(deepcopy(payload))
@@ -173,12 +173,12 @@ def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
                 for item in deployments
                 if item["model_info"]["id"] != payload["id"]
             ]
-        return httpx.Response(200, json={})
+        return httpx2.Response(200, json={})
 
     with (
-        httpx.Client(
+        httpx2.Client(
             base_url="https://gateway.invalid/",
-            transport=httpx.MockTransport(gateway_response),
+            transport=httpx2.MockTransport(gateway_response),
         ) as gateway,
     ):
         args = {"api_base": "https://graphs.internal/v1", "api_key": "source-key"}
@@ -203,27 +203,27 @@ def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
 
 
 def test_dry_run_and_failed_discovery_never_write(
-    source: httpx.Client, model: ModelDetails
+    source: httpx2.Client, model: ModelDetails
 ) -> None:
-    def read_only_gateway(request: httpx.Request) -> httpx.Response:
+    def read_only_gateway(request: httpx2.Request) -> httpx2.Response:
         assert (request.method, request.url.path) == ("GET", "/model/info")
-        return httpx.Response(200, json={"data": []})
+        return httpx2.Response(200, json={"data": []})
 
-    def unavailable_detail(request: httpx.Request) -> httpx.Response:
+    def unavailable_detail(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/v1/models":
-            return httpx.Response(
+            return httpx2.Response(
                 200, json=ModelList(data=[model]).model_dump(mode="json")
             )
-        return httpx.Response(503)
+        return httpx2.Response(503)
 
     with (
-        httpx.Client(
+        httpx2.Client(
             base_url="https://gateway.invalid/",
-            transport=httpx.MockTransport(read_only_gateway),
+            transport=httpx2.MockTransport(read_only_gateway),
         ) as gateway,
-        httpx.Client(
+        httpx2.Client(
             base_url="https://source.invalid/v1/",
-            transport=httpx.MockTransport(unavailable_detail),
+            transport=httpx2.MockTransport(unavailable_detail),
         ) as unavailable,
     ):
         args = {
@@ -234,7 +234,7 @@ def test_dry_run_and_failed_discovery_never_write(
         assert sync_models(source, gateway, dry_run=True, **args) == {
             "research/graph": "created"
         }
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(httpx2.HTTPStatusError):
             sync_models(unavailable, gateway, **args)
 
 
@@ -247,14 +247,14 @@ def test_dry_run_and_failed_discovery_never_write(
     ],
 )
 def test_ambiguous_or_non_sync_owned_deployments_are_not_modified(
-    source: httpx.Client,
+    source: httpx2.Client,
     db_model: bool,
     lgos_sync: bool,
     count: int,
 ) -> None:
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.method == "GET"
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "data": [
@@ -273,8 +273,9 @@ def test_ambiguous_or_non_sync_owned_deployments_are_not_modified(
         )
 
     with (
-        httpx.Client(
-            base_url="https://gateway.invalid/", transport=httpx.MockTransport(respond)
+        httpx2.Client(
+            base_url="https://gateway.invalid/",
+            transport=httpx2.MockTransport(respond),
         ) as gateway,
         pytest.raises(ValueError, match="ambiguous or non-sync-owned deployment"),
     ):
@@ -289,11 +290,11 @@ def test_ambiguous_or_non_sync_owned_deployments_are_not_modified(
 
 @pytest.mark.parametrize("prefix", ["", " ", "research team", "a/b", "a*"])
 def test_invalid_namespace_is_rejected_before_discovery(prefix: str) -> None:
-    def unexpected_request(request: httpx.Request) -> httpx.Response:
+    def unexpected_request(request: httpx2.Request) -> httpx2.Response:
         pytest.fail(f"Invalid namespace must not make requests: {request.url}")
 
     with (
-        httpx.Client(transport=httpx.MockTransport(unexpected_request)) as client,
+        httpx2.Client(transport=httpx2.MockTransport(unexpected_request)) as client,
         pytest.raises(ValueError, match="Model namespace"),
     ):
         sync_models(client, client, prefix=prefix, api_base="unused", api_key="unused")

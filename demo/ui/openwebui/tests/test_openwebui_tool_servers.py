@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-import httpx
+import httpx2
 import pytest
 
 from lgos_openwebui.functions.generic.gateway import gateway_config
@@ -12,11 +12,11 @@ from lgos_openwebui.tool_servers import (
 )
 
 
-def _response(data: object) -> httpx.Response:
-    return httpx.Response(
+def _response(data: object) -> httpx2.Response:
+    return httpx2.Response(
         200,
         json=data,
-        request=httpx.Request("GET", "http://openwebui.test/api"),
+        request=httpx2.Request("GET", "http://openwebui.test/api"),
     )
 
 

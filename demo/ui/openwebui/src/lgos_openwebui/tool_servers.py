@@ -2,7 +2,7 @@
 
 from typing import Any
 
-import httpx
+import httpx2
 
 from .functions.generic.gateway import MCP_GATEWAY_ID, GatewayConfig
 
@@ -41,7 +41,7 @@ def mcp_gateway_connection(
 
 
 def sync_mcp_gateway(
-    client: httpx.Client,
+    client: httpx2.Client,
     *,
     gateway: GatewayConfig,
     api_key: str,

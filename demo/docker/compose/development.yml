@@ -92,3 +92,9 @@ services:
           path: ../../ui/chainlit_ui/pyproject.toml
         - action: rebuild
           path: ../../ui/chainlit_ui/uv.lock
+
+  lgos-openwebui:
+    develop:
+      watch:
+        - action: restart
+          path: ../../ui/openwebui/src

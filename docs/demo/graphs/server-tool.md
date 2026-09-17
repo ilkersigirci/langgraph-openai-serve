@@ -13,6 +13,11 @@ one standard Responses request:
 The graph is a model-backed workflow with no persistence. Clients own
 conversation history and opt in to either tool on each request.
 
+The Chainlit and Open WebUI demos expose both switches. Open WebUI's bundled
+Function carries a narrow compatibility shim for the custom-tool output union
+omitted by the pinned host SDK; it does not replace packages in the official
+image.
+
 ## LangGraph Topology
 
 ```mermaid
@@ -102,8 +107,8 @@ tools. Citations are attached after generation without changing or buffering
 the streamed text. Clients rendering the transcript select
 `phase="final_answer"` messages and present commentary separately.
 
-The `http` backend is one JSON `GET` implemented with the demo's existing
-`httpx` dependency. Both SearXNG and Degoog return the small `results` shape the
+The `http` backend is one JSON `GET` implemented with the demo's HTTPX2 client.
+Both SearXNG and Degoog return the small `results` shape the
 adapter consumes, so there are no provider classes. The adapter validates
 HTTP(S) result URLs, removes duplicates, limits the result set, and gives the
 model compact title, URL, and snippet text. Search content is treated as

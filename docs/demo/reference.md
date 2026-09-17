@@ -72,9 +72,9 @@ environment file, run:
 just --dotenv-path demo/.env.example demo/compose-config
 ```
 
-The local Chainlit command uses the host-reachable `DEMO_GATEWAY_HOST_URL`.
-Compose runs Open WebUI synchronization inside its container so the UI and its
-sync process share the same gateway configuration. See the
+The local Chainlit and Open WebUI sync commands use the host-reachable
+`DEMO_GATEWAY_HOST_URL`. Open WebUI itself remains the unchanged pinned
+upstream image. See the
 [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup) guides.
 
 `just demo/test-litellm --editable` and
@@ -183,9 +183,8 @@ These settings belong only to the independent `demo/files_api` project.
 
 ## Open WebUI Sync Settings
 
-These settings configure Open WebUI synchronization alongside the shared
-gateway values under [Stack Settings](#stack-settings). Compose executes the
-command inside the Open WebUI container.
+These settings configure the host-side Open WebUI synchronization command
+alongside the shared gateway values under [Stack Settings](#stack-settings).
 
 | Setting | Purpose |
 | --- | --- |

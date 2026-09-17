@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Release tag to publish, for example v0.8.1
+        description: Release tag to publish, for example v0.8.1 or v0.9.0-rc1
         required: true
         type: string
+      prerelease:
+        description: Whether the release tag is a prerelease
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: pages
@@ -17,11 +22,17 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
+      - name: Validate release
+        id: release
+        uses: $/demo/.github/actions/validate-release
+        with:
+          tag: ${{ github.event.release.tag_name || inputs.release_tag }}
+          prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease == true || github.event_name == 'workflow_dispatch' && inputs.prerelease == true }}
+
       - name: Checkout release
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -43,21 +54,24 @@ jobs:
 
       - name: Publish version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          IS_PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected a release tag such as v0.8.1, got: $RELEASE_TAG" >&2
-            exit 1
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            uv run mike deploy \
+              --push \
+              --title "$VERSION" \
+              "$VERSION"
+          else
+            uv run mike deploy \
+              --push \
+              --update-aliases \
+              --alias-type redirect \
+              --title "$VERSION" \
+              "$VERSION" \
+              latest
+            uv run mike set-default --push latest
           fi
-          VERSION="${RELEASE_TAG#v}"
-          uv run mike deploy \
-            --push \
-            --update-aliases \
-            --alias-type redirect \
-            --title "$VERSION" \
-            "$VERSION" \
-            latest
-          uv run mike set-default --push latest
 
   deploy:
     needs: publish

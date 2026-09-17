@@ -43,7 +43,7 @@ async def main() -> None:
     # Import only after proving no optional integration was installed, and from
     # a directory whose dotenv values must not configure the library.
     with hostile_working_directory():
-        from httpx import (
+        from httpx2 import (
             ASGITransport,
             AsyncClient,
         )

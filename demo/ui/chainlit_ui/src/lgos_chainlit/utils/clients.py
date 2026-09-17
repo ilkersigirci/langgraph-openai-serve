@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
+from openai import AsyncOpenAI, DefaultAsyncHttpx2Client, OpenAIError
 from openai.types import Model
 
 from lgos_chainlit.auth.chainlit import gateway_credential
@@ -14,7 +14,7 @@ gateway = gateway_config(
     settings.OPENAI_GATEWAY_TYPE,
     settings.OPENAI_GATEWAY_BASE_URL,
 )
-gateway_http_client = DefaultAsyncHttpxClient()
+gateway_http_client = DefaultAsyncHttpx2Client()
 
 openai_client = AsyncOpenAI(
     base_url=gateway.responses_base_url,

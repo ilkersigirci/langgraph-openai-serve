@@ -2,7 +2,7 @@ import json
 
 import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
@@ -75,11 +75,11 @@ def _assert_usage(usage: CompletionUsage | None) -> None:
     assert usage.total_tokens == USAGE["total_tokens"]
 
 
-async def test_non_streaming_uses_provider_reported_usage(client) -> None:
+async def test_non_streaming_uses_provider_reported_usage(openai_http_client) -> None:
     async with AsyncOpenAI(
         api_key="test",
         base_url="http://test/v1",
-        http_client=client,
+        http_client=openai_http_client,
         max_retries=0,
     ) as openai_client:
         response = await openai_client.chat.completions.create(
@@ -90,11 +90,13 @@ async def test_non_streaming_uses_provider_reported_usage(client) -> None:
     _assert_usage(response.usage)
 
 
-async def test_streaming_usage_uses_the_standard_final_chunk(client) -> None:
+async def test_streaming_usage_uses_the_standard_final_chunk(
+    openai_http_client,
+) -> None:
     async with AsyncOpenAI(
         api_key="test",
         base_url="http://test/v1",
-        http_client=client,
+        http_client=openai_http_client,
         max_retries=0,
     ) as openai_client:
         stream = await openai_client.chat.completions.create(
@@ -136,11 +138,11 @@ async def test_streaming_usage_is_null_on_ordinary_wire_chunks(
     assert all("usage" in payload for payload in ordinary_chunks)
 
 
-async def test_streaming_omits_usage_unless_requested(client) -> None:
+async def test_streaming_omits_usage_unless_requested(openai_http_client) -> None:
     async with AsyncOpenAI(
         api_key="test",
         base_url="http://test/v1",
-        http_client=client,
+        http_client=openai_http_client,
         max_retries=0,
     ) as openai_client:
         stream = await openai_client.chat.completions.create(

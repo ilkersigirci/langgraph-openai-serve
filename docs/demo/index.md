@@ -102,7 +102,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Independent uv project; Open WebUI uses its official image |
+| Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Host-run locked sync project plus the unchanged pinned official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
 | LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
 | DBHub | Six fixed read-only reports over curated live-data PostgreSQL views | Pinned official image and demo-owned TOML configuration |

@@ -9,7 +9,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import httpx
+import httpx2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
-        httpx.AsyncClient(timeout=60) as upstream_http,
+        httpx2.AsyncClient(timeout=60) as upstream_http,
         AsyncOpenAI(
             base_url=vector_store_base_url,
             api_key=vector_store_api_key,

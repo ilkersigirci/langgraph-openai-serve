@@ -292,7 +292,13 @@ class ResponsesEventBuilder:
                 sequence_number=self._sequence(),
                 response=self._response(
                     status="failed",
-                    error=ResponseError(code="server_error", message=message),
+                    error=ResponseError.model_validate(
+                        {
+                            "code": "server_error",
+                            "message": message,
+                            "misalignment": None,
+                        }
+                    ),
                 ),
             )
         )
@@ -391,7 +397,10 @@ class ResponsesEventBuilder:
                 item_id=item.id,
                 content_index=0,
                 annotation_index=annotation_index,
-                annotation=annotation,
+                # v3 generates a distinct annotation class for this event,
+                # while v2 accepts an untyped object. A wire mapping validates
+                # correctly under both SDK generations.
+                annotation=annotation.model_dump(mode="json"),
             )
         yield ResponseTextDoneEvent(
             type="response.output_text.done",
@@ -595,7 +604,7 @@ class ResponsesEventBuilder:
 
 def encode_event(event: ResponseStreamEvent) -> str:
     """Encode one Responses event using the official named SSE framing."""
-    return f"event: {event.type}\ndata: {event.model_dump_json()}\n\n"
+    return f"event: {event.type}\ndata: {event.model_dump_json(by_alias=True)}\n\n"
 
 
 __all__ = [

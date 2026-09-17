@@ -9,6 +9,8 @@ from langgraph_openai_serve.api.responses.messages import convert_responses_inpu
 from langgraph_openai_serve.api.responses.schemas import (
     ResponseCreateRequest,
     ResponseCustomTool,
+    ResponseCustomToolCallInput,
+    ResponseFunctionCallInput,
     ResponseFunctionTool,
     ResponseTool,
     ResponseToolChoice,
@@ -157,6 +159,32 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
             "items."
         )
         raise UnsupportedResponsesRequestError(message, param="conversation")
+    for index, tool in enumerate(request.tools or ()):
+        if isinstance(tool, (ResponseFunctionTool, ResponseCustomTool)) and (
+            tool.async_ is True
+        ):
+            message = (
+                "Async tool calling ('async': true) is not supported for function "
+                "or custom tools."
+            )
+            raise UnsupportedResponsesRequestError(
+                message,
+                param=f"tools.{index}.async",
+            )
+    if isinstance(request.input, list):
+        for index, item in enumerate(request.input):
+            if (
+                isinstance(
+                    item,
+                    (ResponseFunctionCallInput, ResponseCustomToolCallInput),
+                )
+                and item.async_ is True
+            ):
+                message = "Asynchronous tool-call replay is not supported."
+                raise UnsupportedResponsesRequestError(
+                    message,
+                    param=f"input.{index}.async",
+                )
     if request.previous_response_id is not None and request.instructions is not None:
         message = "'instructions' cannot be changed while resuming an interrupt."
         raise UnsupportedResponsesRequestError(message, param="instructions")

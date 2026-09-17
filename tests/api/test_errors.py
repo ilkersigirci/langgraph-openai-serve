@@ -1,7 +1,7 @@
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from openai import AsyncOpenAI, BadRequestError, NotFoundError
 from starlette import status
 
@@ -26,6 +26,7 @@ async def test_validation_error_returns_openai_error(
             "type": "invalid_request_error",
             "param": "messages",
             "code": None,
+            "misalignment": None,
         }
     }
 
@@ -70,6 +71,7 @@ async def test_missing_tool_call_id_returns_openai_error(
             "type": "invalid_request_error",
             "param": "messages",
             "code": None,
+            "misalignment": None,
         }
     }
 
@@ -517,6 +519,7 @@ async def test_http_error_returns_openai_error(
             "type": "invalid_request_error",
             "param": "model",
             "code": "model_not_found",
+            "misalignment": None,
         }
     }
 
@@ -559,5 +562,6 @@ async def test_openai_error_handlers_do_not_replace_host_app_handlers(
             "type": "invalid_request_error",
             "param": "model",
             "code": "model_not_found",
+            "misalignment": None,
         }
     }

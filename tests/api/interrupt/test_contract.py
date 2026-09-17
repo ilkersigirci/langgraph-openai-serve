@@ -189,6 +189,7 @@ async def test_invalid_interrupt_payload_returns_openai_server_error(
         "type": "server_error",
         "param": None,
         "code": None,
+        "misalignment": None,
     }
     await assert_checkpoint_deleted(
         sqlite_checkpointer,

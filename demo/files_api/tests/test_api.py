@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from unittest.mock import Mock, call
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from openai import AsyncOpenAI, BadRequestError, NotFoundError
 from openai.types import FileDeleted, FileObject
 
@@ -126,5 +126,6 @@ async def test_file_expiration_is_rejected_instead_of_ignored(
         "type": "invalid_request_error",
         "param": "expires_after",
         "code": None,
+        "misalignment": None,
     }
     file_repository.create.assert_not_called()

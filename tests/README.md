@@ -102,7 +102,7 @@ timer only masks the environment failure.
 - Responses normalized golden fixtures assert the complete text, function-call,
   and failure stream payloads from the real endpoint. Run gateway checks through
   the live demo integration suites.
-- Use `AsyncOpenAI` over HTTPX's ASGI transport for OpenAI contract tests. Use
+- Use `AsyncOpenAI` over HTTPX2's ASGI transport for OpenAI contract tests. Use
   the raw HTTP client only for wire-format and host-application assertions.
 - If the same graph shape is needed in both layers, define it once in
   `tests/graph/support/` and call the factory from each test.
