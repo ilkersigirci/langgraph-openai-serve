@@ -8,7 +8,6 @@ Each `GraphRegistry` key becomes an OpenAI `model` name.
 GraphConfig(
     graph=my_graph,
     description="Answer questions with the default message graph.",
-    streamable_node_names=["generate"],
 )
 ```
 
@@ -210,7 +209,6 @@ graphs = GraphRegistry(
         "my-graph": GraphConfig(
             graph=my_graph,
             description="Answer questions with my graph.",
-            streamable_node_names=["generate"],
         ),
         "mcp-mock": GraphConfig(
             graph=mcp_mock_graph,
@@ -222,26 +220,27 @@ graphs = GraphRegistry(
 LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
 ```
 
-`GraphConfig` declarations are immutable. Their node-name tuple and feature and
-server-tool frozen sets cannot be changed after registration. Construct a new
-config and call `graphs.register(model_id, config)` when a model declaration
-must be added or replaced; `graphs.registry` is a read-only mapping view.
+`GraphConfig` declarations are immutable. Their feature and server-tool frozen
+sets cannot be changed after registration. Construct a new config and call
+`graphs.register(model_id, config)` when a model declaration must be added or
+replaced; `graphs.registry` is a read-only mapping view.
 
 ## Streaming
 
-When an OpenAI request sets `stream=True`, LGOS forwards only streamed
-`AIMessageChunk` values from `streamable_node_names`. A graph with no eligible
-chunks still receives its final rendered `AIMessage` after execution, so a
-caller does not need a separate non-streaming code path.
+When an OpenAI request sets `stream=True`, LGOS forwards non-empty text from
+every `AIMessageChunk` in the graph's `messages` stream. A graph with no
+streamed text still receives its final rendered `AIMessage` after execution, so
+a caller does not need a separate non-streaming code path.
 
-When several public nodes contribute text, return their completed messages through
-the graph's `messages` channel and make `output_to_message` render the same
-ordered content for a complete response.
+When several public model calls contribute text, return their completed messages
+through the graph's `messages` channel and make `output_to_message` render the
+same ordered content for a complete response.
 
-!!! tip "Choose streamable nodes deliberately"
+!!! tip "Disable private model streams"
 
-    List only nodes whose model chunks should reach the client. This prevents
-    internal graph work from appearing as assistant output.
+    Configure private `ChatOpenAI` calls with `disable_streaming=True`. This
+    prevents internal graph work from appearing as assistant output while public
+    model calls continue to stream normally.
 
 ## Status Updates
 

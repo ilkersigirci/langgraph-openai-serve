@@ -503,7 +503,7 @@ async def test_truncated_function_arguments_are_incomplete_not_server_errors(
     replace_graph_config(
         graph_registry,
         "test",
-        streamable_node_names=(),
+        graph=make_message_graph(disable_streaming=True),
         output_to_message=lambda _: AIMessage(
             content="",
             invalid_tool_calls=[
@@ -629,7 +629,7 @@ def tool_openai_client(
     graph_registry.register(
         "tools",
         GraphConfig(
-            graph=make_message_graph(),
+            graph=make_message_graph(disable_streaming=True),
             description="DUMMY",
             output_to_message=lambda _output: tool_message,
         ),

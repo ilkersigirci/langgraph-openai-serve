@@ -56,7 +56,6 @@ def usage_app() -> FastAPI:
             "usage": GraphConfig(
                 graph=usage_graph,
                 description="DUMMY",
-                streamable_node_names=["generate"],
             )
         }
     )

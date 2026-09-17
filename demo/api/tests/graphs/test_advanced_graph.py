@@ -769,15 +769,12 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
         async def aclose(self):
             closed.set()
 
-    async def handle(_request):
+    async def handle(request):
         nonlocal request_count
         request_count += 1
         if request_count == 1:
-            return httpx2.Response(
-                200,
-                headers={"content-type": "text/event-stream"},
-                content=response_events(intent_response("chat")),
-            )
+            assert not json.loads(request.content)["stream"]
+            return httpx2.Response(200, json=intent_response("chat"))
         return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},

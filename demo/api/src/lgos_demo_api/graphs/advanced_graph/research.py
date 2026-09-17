@@ -7,7 +7,6 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolM
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
@@ -94,27 +93,23 @@ def create_research_graph(
     ) -> AdvancedState:
         get_stream_writer()(status_event("Selecting sources"))
         tools = available_tools(runtime.context)
-        response = await (
-            model.bind_tools(
-                tools,
-                tool_choice=(
-                    "required"
-                    if runtime.context.request.tool_choice == "required"
-                    else "auto"
-                ),
-                **(
-                    {"parallel_tool_calls": runtime.context.request.parallel_tool_calls}
-                    if runtime.context.request.parallel_tool_calls is not None
-                    else {}
-                ),
-            )
-            .with_config(tags=[TAG_NOSTREAM])
-            .ainvoke(
-                [
-                    SystemMessage(content=_RESEARCH_PROMPT),
-                    *await resolve_file_inputs(state["messages"], files),
-                ]
-            )
+        response = await model.bind_tools(
+            tools,
+            tool_choice=(
+                "required"
+                if runtime.context.request.tool_choice == "required"
+                else "auto"
+            ),
+            **(
+                {"parallel_tool_calls": runtime.context.request.parallel_tool_calls}
+                if runtime.context.request.parallel_tool_calls is not None
+                else {}
+            ),
+        ).ainvoke(
+            [
+                SystemMessage(content=_RESEARCH_PROMPT),
+                *await resolve_file_inputs(state["messages"], files),
+            ]
         )
         if terminal := terminal_message(response):
             return {"messages": [terminal], "terminal": True}

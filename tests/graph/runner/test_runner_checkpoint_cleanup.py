@@ -53,7 +53,6 @@ def cleanup_run(
     graph: CleanupGraph,
     *,
     output_to_message: Callable[[Any], Any] | None = None,
-    streamable_node_names: list[str] | None = None,
     resources: AsyncExitStack | None = None,
 ) -> GraphRun:
     return GraphRun(
@@ -62,7 +61,6 @@ def cleanup_run(
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
             output_to_message=output_to_message,
-            streamable_node_names=streamable_node_names or [],
             run_coordinator=InMemoryRunCoordinator(),
         ),
         graph=cast("Any", graph),
@@ -151,7 +149,7 @@ async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> N
             closed.set()
 
     graph = CleanupGraph(events)
-    run = cleanup_run(graph, streamable_node_names=["generate"])
+    run = cleanup_run(graph)
 
     async with run:
         stream = stream_run(run)

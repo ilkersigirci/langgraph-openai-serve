@@ -158,6 +158,6 @@ accepted fields, item shapes, streaming events, errors, and retention rules.
 ## Next Steps
 
 - [Understand the request path and state ownership](explanation/architecture.md)
-- [Register adapters, streaming nodes, settings, and interrupts](tutorials/custom-graphs.md)
+- [Register adapters, streaming behavior, settings, and interrupts](tutorials/custom-graphs.md)
 - [Connect Python and JavaScript OpenAI clients](tutorials/openai-clients.md)
 - [Add bearer-token authentication](how-to-guides/authentication.md)

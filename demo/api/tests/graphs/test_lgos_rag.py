@@ -79,11 +79,6 @@ def _registry() -> GraphRegistry:
             "lgos-rag": GraphConfig(
                 graph=lgos_rag_module.lgos_rag,
                 description="DUMMY",
-                streamable_node_names=[
-                    "generate_query_or_respond",
-                    "generate_answer",
-                    "answer_no_results",
-                ],
                 features={GraphFeature.CLIENT_EVENTS},
             )
         }

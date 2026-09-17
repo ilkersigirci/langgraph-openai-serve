@@ -29,8 +29,4 @@ def create_complex_subgraphs_graph_config() -> GraphConfig:
         ),
         request_to_input=request_to_input,
         features={GraphFeature.CLIENT_EVENTS},
-        streamable_node_names=[
-            "summarize_contract",
-            "summarize_docs",
-        ],
     )

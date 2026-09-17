@@ -71,10 +71,6 @@ multi_node_streaming_graph_config = GraphConfig(
     description=(
         "Combines streamed output from multiple nodes into one assistant message."
     ),
-    streamable_node_names=[
-        "write_first_contribution",
-        "write_second_contribution",
-    ],
 )
 
 __all__ = ["multi_node_streaming_graph_config"]

@@ -119,7 +119,6 @@ graphs = GraphRegistry(
         "my-graph": GraphConfig(
             graph=my_graph,
             description="Answer questions with my LangGraph workflow.",
-            streamable_node_names=["generate"],
         )
     }
 )

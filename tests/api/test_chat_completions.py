@@ -317,7 +317,6 @@ async def test_streaming_completion_ignores_custom_stream_events(
         GraphConfig(
             graph=graph,
             description="Test custom stream",
-            streamable_node_names=["generate"],
         ),
     )
 

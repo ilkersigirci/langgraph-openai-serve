@@ -1,17 +1,15 @@
 import json
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Any, Self
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
-from langchain_core.messages.tool import tool_call_chunk
-from langchain_core.outputs import ChatGenerationChunk
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import (
@@ -48,30 +46,13 @@ def _state(prompt: str) -> dict[str, list[HumanMessage]]:
     return {"messages": [HumanMessage(content=prompt)]}
 
 
-class StreamingToolCallingChatModel(FakeMessagesListChatModel):
-    """Emit modern tool calls and text through the model streaming path."""
+class ToolCallingChatModel(FakeMessagesListChatModel):
+    """Deterministic model with the tool-binding surface used by the agent."""
 
-    def bind_tools(self, tools: list[BaseTool], **_kwargs: Any) -> Self:  # ty: ignore[invalid-method-override]
+    def bind_tools(
+        self, tools: list[BaseTool], **_kwargs: Any
+    ) -> "ToolCallingChatModel":  # ty: ignore[invalid-method-override]
         return self
-
-    def _stream(self, *args: Any, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
-        message = self._generate(*args, **kwargs).generations[0].message
-        chunks = [
-            tool_call_chunk(
-                name=call["name"],
-                args=json.dumps(call["args"]),
-                id=call["id"],
-                index=index,
-            )
-            for index, call in enumerate(message.tool_calls)
-        ]
-        yield ChatGenerationChunk(
-            message=AIMessageChunk(
-                content=message.content,
-                tool_call_chunks=chunks,
-                chunk_position="last",
-            )
-        )
 
 
 def _registry(model: BaseChatModel) -> GraphRegistry:
@@ -249,7 +230,7 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
     assert create_file.await_args.kwargs["purpose"] == "user_data"
 
 
-async def test_streaming_agent_completes_with_display_file_call(
+async def test_streaming_response_completes_with_display_file_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     create_file = AsyncMock(return_value=SimpleNamespace(id="file-chart"))
@@ -266,11 +247,12 @@ async def test_streaming_agent_completes_with_display_file_call(
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
     registry = _registry(
-        StreamingToolCallingChatModel(
+        ToolCallingChatModel(
             responses=[
                 _tool_call("show_quarterly_revenue", {}, "show-1"),
                 AIMessage(content="Q4 is highest at $230k."),
-            ]
+            ],
+            disable_streaming=True,
         )
     )
     app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app

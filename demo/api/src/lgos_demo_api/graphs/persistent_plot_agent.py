@@ -258,7 +258,7 @@ def _chat_model() -> ChatOpenAI:
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         temperature=0,
-        streaming=True,
+        disable_streaming=True,
         model_kwargs={"parallel_tool_calls": False},
     )
 

@@ -108,7 +108,6 @@ mcp_postgres_graph_config = GraphConfig(
         "Answers questions about live LGOS checkpoints and Chainlit usage with "
         "fixed read-only PostgreSQL reports reached through the client gateway."
     ),
-    streamable_node_names=["query_database"],
     features={GraphFeature.MCP_TOOLS},
     request_to_input=request_to_input,
 )

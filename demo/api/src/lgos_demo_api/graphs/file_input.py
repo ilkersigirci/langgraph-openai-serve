@@ -102,7 +102,6 @@ file_input_graph = workflow.compile()
 file_input_graph_config = GraphConfig(
     graph=file_input_graph,
     description="Analyzes attached files with the OpenAI Responses API.",
-    streamable_node_names=["process_files"],
     features={GraphFeature.FILE_INPUTS},
 )
 

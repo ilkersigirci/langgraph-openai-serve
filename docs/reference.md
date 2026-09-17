@@ -110,9 +110,6 @@ belong to an external OpenAI Files API, not the LGOS package. See
 - `graph`: compiled graph, sync factory, or async factory.
 - `description`: required human-readable model description advertised by model
   listing and retrieval.
-- `streamable_node_names`: node names whose streamed `AIMessageChunk` values are
-  forwarded as assistant text. If several nodes contribute, the graph's output
-  adapter must render the same ordered content for complete responses.
 - `features`: `GraphFeature` values that enable optional server behavior or
   advertise graph input and client-tool capabilities.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
@@ -135,12 +132,18 @@ belong to an external OpenAI Files API, not the LGOS package. See
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
 
-`GraphConfig` is immutable after construction. Pydantic snapshots
-`streamable_node_names` as a tuple and `features` and `server_tools` as frozen
-sets, so later mutations of the input collections cannot change a registered
-model. To change a declaration, construct a replacement and pass it to
-`registry.register()`. Freezing the declaration does not make a caller-owned
-callback handler or callback manager internally immutable.
+`GraphConfig` is immutable after construction. Pydantic snapshots `features`
+and `server_tools` as frozen sets, so later mutations of the input collections
+cannot change a registered model. To change a declaration, construct a
+replacement and pass it to `registry.register()`. Freezing the declaration does
+not make a caller-owned callback handler or callback manager internally
+immutable.
+
+Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
+graph's `messages` stream. Configure private `ChatOpenAI` calls with
+[`disable_streaming=True`](https://reference.langchain.com/python/langchain-core/language_models/chat_models/BaseChatModel/disable_streaming);
+LangChain then uses the complete invocation path and does not emit model stream
+chunks for that call.
 
 A directly supplied compiled graph is reused. A sync or async graph factory is
 called for every request and is never cached; LGOS validates each resolved value

@@ -266,7 +266,7 @@ async def test_refusal_survives_response_stream_and_sdk_item_replay(
     replace_graph_config(
         graph_registry,
         "test",
-        streamable_node_names=(),
+        graph=make_message_graph(disable_streaming=True),
         output_to_message=lambda _output: message,
     )
     if stream:
@@ -328,7 +328,7 @@ async def test_truncated_output_finishes_as_incomplete(
     replace_graph_config(
         graph_registry,
         "test",
-        streamable_node_names=(),
+        graph=make_message_graph(disable_streaming=True),
         output_to_message=lambda _output: AIMessage(
             content="Partial answer",
             response_metadata=metadata,

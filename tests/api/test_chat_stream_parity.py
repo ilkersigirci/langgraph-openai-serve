@@ -43,7 +43,6 @@ def deterministic_app() -> FastAPI:
             "mismatch": GraphConfig(
                 graph=mismatch_graph,
                 description="DUMMY",
-                streamable_node_names=["generate"],
             ),
         }
     )
