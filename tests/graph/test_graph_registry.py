@@ -10,22 +10,18 @@ EXPECTED_FACTORY_RESOLUTIONS = 2
 
 
 def test_graph_config_is_immutable_and_copies_owned_collections(message_graph) -> None:
-    node_names = ["generate"]
     features = {GraphFeature.CLIENT_EVENTS}
     server_tools = {"package_version"}
     config = GraphConfig(
         graph=message_graph,
         description="DUMMY",
-        streamable_node_names=node_names,
         features=features,
         server_tools=server_tools,
     )
 
-    node_names.clear()
     features.clear()
     server_tools.clear()
 
-    assert config.streamable_node_names == ("generate",)
     assert config.features == frozenset({GraphFeature.CLIENT_EVENTS})
     assert config.server_tools == frozenset({"package_version"})
     with pytest.raises(ValidationError, match="frozen"):
@@ -38,6 +34,17 @@ def test_graph_config_rejects_empty_server_tool_names(message_graph) -> None:
             graph=message_graph,
             description="DUMMY",
             server_tools={""},
+        )
+
+
+def test_graph_config_rejects_unknown_fields(message_graph) -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        GraphConfig.model_validate(
+            {
+                "graph": message_graph,
+                "description": "DUMMY",
+                "unknown": True,
+            }
         )
 
 

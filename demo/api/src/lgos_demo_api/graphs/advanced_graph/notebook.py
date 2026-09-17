@@ -7,7 +7,6 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
@@ -58,7 +57,7 @@ def create_notebook_graph(
                     )
                 )
             )
-        response = await model.with_config(tags=[TAG_NOSTREAM]).ainvoke(messages)
+        response = await model.ainvoke(messages)
         if terminal := terminal_message(response):
             return {"messages": [terminal], "terminal": True}
         content = str(response.text).strip()

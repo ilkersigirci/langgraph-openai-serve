@@ -49,7 +49,6 @@ async def generate(
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         temperature=0.7,
-        streaming=True,
     )
     context = runtime.context or SimpleContext()
     messages = state.messages if context.use_history else state.messages[-1:]
@@ -79,7 +78,6 @@ simple_graph_config = GraphConfig(
     description=(
         "Streams model output with configurable history and audience settings."
     ),
-    streamable_node_names=["generate"],
     client_settings=SimpleContext,
 )
 

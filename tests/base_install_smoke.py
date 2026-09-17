@@ -79,7 +79,6 @@ async def main() -> None:
                     "minimal": GraphConfig(
                         graph=graph,
                         description="Minimal graph",
-                        streamable_node_names=["respond"],
                     )
                 }
             )

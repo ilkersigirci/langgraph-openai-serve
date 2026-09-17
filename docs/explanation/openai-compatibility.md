@@ -346,15 +346,15 @@ usage, LGOS omits it rather than estimating tokens.
 ### Assistant Text Parity
 
 The final rendered `AIMessage.text` is the canonical assistant text.
-Non-streaming returns it directly. Ordinary streaming emits eligible message
-chunks immediately, then compares their concatenation with the final text.
+Non-streaming returns it directly. Ordinary streaming emits each non-empty
+`AIMessageChunk.text`, then compares their concatenation with the final text.
 If no text streamed, LGOS emits the final text as a fallback; a mismatch instead
 produces the protocol's failure sequence. Requests selecting server tools also
 consume completed LangGraph updates for tool activity, without disabling message
 chunks. This check covers one graph run, not two
 independent LLM executions. Transient status events are excluded.
 
-When multiple streamable nodes contribute text, the graph's
+When multiple streamed model calls contribute text, the graph's
 `output_to_message` adapter must render their messages in the same order.
 
 ## Streaming Status
@@ -574,10 +574,11 @@ Responses items. Nested updates are private. Custom inputs produce native
 completed searches emit
 `response.web_search_call.completed`. Backend result payloads stay private.
 
-Streaming requests also subscribe to LangGraph `messages`. Eligible answer
-tokens are emitted immediately, and citations are attached before the message
-completes. Graphs choose streamable nodes and keep intermediate tool-selection
-text private. User-facing progress uses the existing `status_event()` contract.
+Streaming requests also subscribe to LangGraph `messages`. Answer tokens are
+emitted immediately, and citations are attached before the message completes.
+Graphs configure private tool-selection `ChatOpenAI` calls with
+`disable_streaming=True` so their text never enters the public answer. User-facing
+progress uses the existing `status_event()` contract.
 Status events remain progress-only; they do not carry tool call IDs or results.
 Completed tool inputs still use one input delta; LGOS does not parse partial
 tool-call arguments.

@@ -10,7 +10,7 @@ from lgos_demo_api.graphs.subgraphs.schemas import KeywordState
 API_ANSWER = (
     "API contract: OpenAI request messages were adapted into native graph input; "
     "native graph output is rendered back as assistant text; "
-    "streamable nested node names can be exposed safely"
+    "nested model output can be exposed safely"
 )
 DOCS_ANSWER = (
     "Docs specialist: covered subgraph, routing; nested keyword subgraph selected "

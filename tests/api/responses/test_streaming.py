@@ -9,7 +9,6 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.messages.content import create_citation, create_text_block
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
 from langgraph.types import interrupt
 from openai import AsyncOpenAI
@@ -51,9 +50,10 @@ WEATHER_TOOL = {
 
 
 def _status_graph(*, multiple: bool = False, stream_final: bool = True) -> Any:
-    model = FakeListChatModel(responses=[FINAL_TEXT])
-    if not stream_final:
-        model = model.with_config(tags=[TAG_NOSTREAM])
+    model = FakeListChatModel(
+        responses=[FINAL_TEXT],
+        disable_streaming=not stream_final,
+    )
 
     async def generate(state: MessageState) -> dict[str, list[AIMessage]]:
         writer = get_stream_writer()
@@ -134,27 +134,27 @@ def fastapi_app() -> FastAPI:
             "text": GraphConfig(
                 graph=lambda: _status_graph(stream_final=False),
                 description="DUMMY",
-                streamable_node_names=["generate"],
                 features={GraphFeature.CLIENT_EVENTS},
             ),
             "commentary": GraphConfig(
                 graph=lambda: _status_graph(multiple=True),
                 description="DUMMY",
-                streamable_node_names=["generate"],
                 features={GraphFeature.CLIENT_EVENTS},
             ),
             "fallback": GraphConfig(
-                graph=lambda: make_message_graph("fallback"),
+                graph=lambda: make_message_graph("fallback", disable_streaming=True),
                 description="DUMMY",
             ),
             "mismatch": GraphConfig(
                 graph=lambda: make_message_graph("streamed"),
                 description="DUMMY",
-                streamable_node_names=["generate"],
                 output_to_message=lambda _output: AIMessage("durable"),
             ),
             "citations": GraphConfig(
-                graph=lambda: make_message_graph(citation_text),
+                graph=lambda: make_message_graph(
+                    citation_text,
+                    disable_streaming=True,
+                ),
                 description="DUMMY",
                 output_to_message=lambda _output: citation_message,
             ),
@@ -163,7 +163,7 @@ def fastapi_app() -> FastAPI:
                 description="DUMMY",
             ),
             "wire-tool": GraphConfig(
-                graph=make_message_graph,
+                graph=lambda: make_message_graph(disable_streaming=True),
                 description="DUMMY",
                 output_to_message=lambda _output: tool_message,
             ),
@@ -352,7 +352,7 @@ async def test_status_commentary_requires_feature_and_streaming(
     assert [item.phase for item in completed.output] == ["final_answer"]
 
 
-async def test_non_streamable_graph_emits_final_text_fallback(
+async def test_graph_without_model_stream_emits_final_text_fallback(
     openai_client: AsyncOpenAI,
 ) -> None:
     events = await _events(openai_client, "fallback")
@@ -520,7 +520,6 @@ async def test_text_before_interrupt_is_completed_and_retained(
         GraphConfig(
             graph=graph,
             description="DUMMY",
-            streamable_node_names=["generate"],
             features={GraphFeature.INTERRUPTS},
             run_coordinator=InMemoryRunCoordinator(),
         ),

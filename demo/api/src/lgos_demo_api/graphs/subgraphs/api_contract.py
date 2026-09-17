@@ -18,7 +18,7 @@ async def collect_contract_checks(state: ApiContractState) -> dict[str, Any]:
         "native graph output is rendered back as assistant text",
     ]
     if "stream" in normalized:
-        checks.append("streamable nested node names can be exposed safely")
+        checks.append("nested model output can be exposed safely")
     return {"checks": checks}
 
 

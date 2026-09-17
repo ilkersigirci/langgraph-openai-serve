@@ -22,7 +22,6 @@ from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -166,24 +165,19 @@ def _embedding_model() -> OpenAIEmbeddings:
     )
 
 
-def _make_chat_model(*, streaming: bool) -> ChatOpenAI:
+@cache
+def _chat_model() -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.OPENAI_MODEL,
         base_url=settings.OPENAI_BASE_URL,
         api_key=SecretStr(settings.OPENAI_API_KEY),
         temperature=0,
-        streaming=streaming,
     )
 
 
 @cache
-def _chat_model() -> ChatOpenAI:
-    return _make_chat_model(streaming=True)
-
-
-@cache
 def _internal_chat_model() -> ChatOpenAI:
-    return _make_chat_model(streaming=False)
+    return _chat_model().model_copy(update={"disable_streaming": True})
 
 
 class _DocsIndex:
@@ -325,10 +319,8 @@ async def generate_query_or_respond(
     if state.rewrite_count == 0:
         _emit_status("Understanding your question")
     question = state.question or _latest_human_text(state)
-    decision = (
-        await _retrieval_decider()
-        .with_config(tags=[TAG_NOSTREAM])
-        .ainvoke([SystemMessage(content=DECISION_PROMPT), *state.messages])
+    decision = await _retrieval_decider().ainvoke(
+        [SystemMessage(content=DECISION_PROMPT), *state.messages]
     )
     if decision.tool_calls:
         _emit_status("Searching the LGOS documentation")
@@ -456,11 +448,6 @@ lgos_rag_graph_config = GraphConfig(
     description=(
         "Answers questions with cited agentic retrieval over the packaged demo corpus."
     ),
-    streamable_node_names=[
-        "generate_query_or_respond",
-        "generate_answer",
-        "answer_no_results",
-    ],
     features={GraphFeature.CLIENT_EVENTS},
 )
 

@@ -87,7 +87,6 @@ citation_graph_config = GraphConfig(
     description=(
         "Demonstrates structured OpenAI URL citations with portable Markdown content."
     ),
-    streamable_node_names=["answer_with_citation"],
 )
 
 __all__ = ["citation_graph", "citation_graph_config"]

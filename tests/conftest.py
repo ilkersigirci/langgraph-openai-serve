@@ -41,7 +41,6 @@ def graph_registry(message_graph) -> GraphRegistry:
             "test": GraphConfig(
                 graph=message_graph,
                 description="DUMMY",
-                streamable_node_names=["generate"],
             )
         }
     )

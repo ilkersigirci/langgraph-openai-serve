@@ -1,7 +1,6 @@
 from anyio import Event, fail_after, sleep_forever
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import StateGraph
 from langgraph.types import (
     CustomStreamPart,
@@ -70,7 +69,6 @@ async def test_nested_subgraph_streaming(
                     "question": messages[-1].content
                 },
                 output_to_message=lambda output: AIMessage(content=output["answer"]),
-                streamable_node_names=["generate"],
             )
         },
     )
@@ -78,12 +76,13 @@ async def test_nested_subgraph_streaming(
     assert await stream_text("nested", graph_registry, make_request) == "nested"
 
 
-async def test_stream_filters_nodes_nostream_tags_and_non_ai_messages(
+async def test_stream_excludes_disabled_model_streams_and_non_ai_messages(
     make_request,
 ) -> None:
     draft_model = FakeListChatModel(responses=["draft"])
-    hidden_model = FakeListChatModel(responses=["hidden"]).with_config(
-        tags=[TAG_NOSTREAM]
+    hidden_model = FakeListChatModel(
+        responses=["hidden"],
+        disable_streaming=True,
     )
     visible_model = FakeListChatModel(responses=["visible"])
 
@@ -111,12 +110,11 @@ async def test_stream_filters_nodes_nostream_tags_and_non_ai_messages(
             "filtered": GraphConfig(
                 graph=builder.compile(),
                 description="DUMMY",
-                streamable_node_names=["non_ai", "generate"],
             )
         },
     )
 
-    assert await stream_text("filtered", graph_registry, make_request) == "visible"
+    assert await stream_text("filtered", graph_registry, make_request) == "draftvisible"
 
 
 async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
@@ -149,7 +147,6 @@ async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",
-            streamable_node_names=["generate"],
         ),
         graph=graph,
         inputs={},
@@ -210,7 +207,6 @@ async def test_stream_run_preserves_generic_event_order() -> None:
             graph=lambda: graph,
             description="DUMMY",
             output_to_message=lambda _output: AIMessage(content=""),
-            streamable_node_names=["generate"],
         ),
         graph=graph,
         inputs={},

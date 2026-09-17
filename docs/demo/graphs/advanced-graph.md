@@ -156,9 +156,9 @@ For each initial request:
    recent conversation text plus an attachment marker. It does not download
    attachment bytes.
 3. The selected path runs. Files are resolved only inside a model node that
-   needs them; research and note drafting remain private, non-streaming model
-   steps.
-4. `answer` is the only token-streaming node. Research and notebook work can
+   needs them; research and note drafting use private
+   `ChatOpenAI(disable_streaming=True)` calls.
+4. `answer` is the only token-streaming model call. Research and notebook work can
    emit validated status events, which LGOS exposes as commentary.
 5. LGOS maps the result to standard Responses messages, tool calls, citations,
    terminal status, or an interrupt continuation.

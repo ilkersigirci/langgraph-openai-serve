@@ -70,7 +70,6 @@ def _register_single_node(
     node: Any,
     *,
     server_tools: set[str],
-    streamable: bool = False,
 ) -> None:
     graph = (
         StateGraph(MessagesState)
@@ -85,7 +84,6 @@ def _register_single_node(
             graph=graph,
             description=name,
             server_tools=server_tools,
-            streamable_node_names=["answer"] if streamable else [],
         ),
     )
 
@@ -591,7 +589,6 @@ async def test_server_search_reports_its_terminal_status(
         "search",
         answer,
         server_tools={"web_search"},
-        streamable=True,
     )
     response, events = await _create(
         openai_client,
@@ -656,7 +653,6 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
             description="Live search",
             server_tools={"web_search"},
             features={GraphFeature.CLIENT_EVENTS},
-            streamable_node_names=["answer"],
         ),
     )
     request = ResponseCreateRequest(

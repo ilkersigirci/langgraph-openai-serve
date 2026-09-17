@@ -30,7 +30,6 @@ async def test_streams_portable_markdown_with_anchored_citations(
             "citation-events": GraphConfig(
                 graph=citation_graph,
                 description="DUMMY",
-                streamable_node_names=["answer_with_citation"],
             )
         }
     )

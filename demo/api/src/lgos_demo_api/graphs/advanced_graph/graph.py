@@ -12,7 +12,6 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
@@ -83,7 +82,6 @@ def create_model(http_client: httpx2.AsyncClient) -> ChatOpenAI:
         temperature=0.7,
         # LangChain otherwise removes temperature for GPT-5 models.
         reasoning={"effort": "none"},
-        streaming=True,
         use_responses_api=True,
         store=False,
         output_version="responses/v1",
@@ -152,8 +150,9 @@ def create_advanced_graph(
     store: BaseStore,
     web_search_tool: BaseTool = web_search,
 ) -> AdvancedGraph:
+    internal_model = model.model_copy(update={"disable_streaming": True})
     research_graph = create_research_graph(
-        model,
+        internal_model,
         knowledge,
         files,
         web_search_tool,
@@ -177,20 +176,16 @@ def create_advanced_graph(
         if intent := forced_intent(runtime.context):
             return _new_turn(intent)
 
-        result = await (
-            model.with_structured_output(
-                IntentDecision,
-                method="function_calling",
-                include_raw=True,
-                strict=True,
-            )
-            .with_config(tags=[TAG_NOSTREAM])
-            .ainvoke(
-                [
-                    SystemMessage(content=_ROUTER_PROMPT),
-                    *_routing_messages(state["messages"]),
-                ]
-            )
+        result = await internal_model.with_structured_output(
+            IntentDecision,
+            method="function_calling",
+            include_raw=True,
+            strict=True,
+        ).ainvoke(
+            [
+                SystemMessage(content=_ROUTER_PROMPT),
+                *_routing_messages(state["messages"]),
+            ]
         )
         raw = result["raw"]
         if not isinstance(raw, AIMessage):
@@ -315,7 +310,10 @@ def create_advanced_graph(
     graph.add_node("route_intent", route_intent)
     graph.add_node("research", research_graph)
     if knowledge is not None:
-        graph.add_node("notebook", create_notebook_graph(model, knowledge, files))
+        graph.add_node(
+            "notebook",
+            create_notebook_graph(internal_model, knowledge, files),
+        )
     graph.add_node("answer", answer)
     graph.add_edge(START, "route_intent")
     destinations = ["research", "answer", END]
@@ -363,7 +361,6 @@ def create_advanced_graph_config(
             GraphFeature.MCP_TOOLS,
         },
         server_tools={"web_search"},
-        streamable_node_names=["answer"],
         context_factory=context,
         request_to_input=request_to_input,
         output_to_message=output_to_message,

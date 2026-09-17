@@ -64,7 +64,6 @@ async def invoke_client_tool_model(
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         temperature=temperature,
-        streaming=True,
     )
     conversation = [SystemMessage(content=system_prompt), *state.messages]
 
@@ -117,7 +116,6 @@ simple_external_tools_graph_config = GraphConfig(
     description=(
         "Streams a chat model response with tools supplied and executed by the client."
     ),
-    streamable_node_names=["generate"],
     request_to_input=request_to_input,
 )
 

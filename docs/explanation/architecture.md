@@ -104,8 +104,7 @@ Endpoint paths and settings live in [Reference](../reference.md).
    acquires its coordinator lease, and validates any resume against durable
    state.
 4. The runner calls `graph.ainvoke` for a complete response or consumes
-   `graph.astream` to forward eligible message and custom events to the SSE
-   service.
+   `graph.astream` to forward message and custom events to the SSE service.
 5. After execution quiesces, pending interrupts become one durable OpenAI
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
 6. LGOS releases any interrupt lease and renders a protocol-specific OpenAI

@@ -5,7 +5,6 @@ from contextlib import aclosing
 from typing import Any, cast
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import (
     CustomStreamPart,
     Durability,
@@ -215,11 +214,7 @@ async def stream_run(
                     final_output = part["data"]
                     interrupts.extend(part["interrupts"])
                 continue
-            visible_part = _visible_stream_part(
-                part,
-                run,
-                stream_updates=stream_updates,
-            )
+            visible_part = _visible_stream_part(part, stream_updates=stream_updates)
             if visible_part is not None:
                 yield visible_part
 
@@ -235,7 +230,6 @@ async def stream_run(
 
 def _visible_stream_part(
     part: StreamPart[Any, Any],
-    run: GraphRun,
     *,
     stream_updates: bool,
 ) -> LangGraphStreamEvent | None:
@@ -244,18 +238,14 @@ def _visible_stream_part(
     if part["type"] == "updates" and stream_updates:
         return part
     if part["type"] == "messages":
-        return text_from_message_event(part, run)
+        return text_from_message_event(part)
     return None
 
 
-def text_from_message_event(event: MessagesStreamPart, run: GraphRun) -> str | None:
-    """Extract visible text from a streamable LangGraph message event."""
-    message, metadata = event["data"]
+def text_from_message_event(event: MessagesStreamPart) -> str | None:
+    """Extract visible text from a LangGraph message event."""
+    message = event["data"][0]
     if not isinstance(message, AIMessageChunk):
-        return None
-    if TAG_NOSTREAM in (metadata.get("tags") or []):
-        return None
-    if metadata.get("langgraph_node") not in run.config.streamable_node_names:
         return None
 
     content = str(message.text)

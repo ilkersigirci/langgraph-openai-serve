@@ -11,8 +11,12 @@ def make_message_graph(
     *,
     node_name: str = "generate",
     context_schema: type[Any] | None = None,
+    disable_streaming: bool = False,
 ) -> Any:
-    model = FakeListChatModel(responses=[response])
+    model = FakeListChatModel(
+        responses=[response],
+        disable_streaming=disable_streaming,
+    )
 
     async def generate(state: MessageState):
         return {"messages": [await model.ainvoke(state["messages"])]}

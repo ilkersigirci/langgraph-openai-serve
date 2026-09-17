@@ -40,9 +40,9 @@ flowchart TD
 ```
 
 The retry is deliberately bounded to one rewrite. Routing, grading, and
-rewriting use non-streaming internal model calls; retrieval uses the in-memory
-vector index. Direct, grounded, and no-result answers are the user-visible
-streamed nodes.
+rewriting use internal `ChatOpenAI(disable_streaming=True)` calls; retrieval uses
+the in-memory vector index. Direct, grounded, and no-result answers are the
+user-visible streamed model calls.
 
 For a grounded answer, the graph adds annotations only for Markdown links whose
 URLs exactly match retrieved document metadata. Citation spans come from the

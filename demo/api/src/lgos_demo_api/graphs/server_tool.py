@@ -9,7 +9,6 @@ from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMe
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, custom_tool
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -51,13 +50,14 @@ class ServerToolState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def _chat_model() -> ChatOpenAI:
+def _chat_model(*, disable_streaming: bool = False) -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.OPENAI_MODEL,
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         use_responses_api=True,
         store=False,
+        disable_streaming=disable_streaming,
     )
 
 
@@ -89,10 +89,9 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
         raise ValueError("web_search requires a non-empty query")
     if settings.WEB_SEARCH_BACKEND == "openai":
         result = await (
-            _chat_model()
+            _chat_model(disable_streaming=True)
             .bind_tools([{"type": "web_search"}], tool_choice="required")
-            .with_config(tags=[TAG_NOSTREAM])
-            .ainvoke(query, stream=False)
+            .ainvoke(query)
         )
         sources = {
             annotation["url"]: annotation.get("title") or annotation["url"]
@@ -167,6 +166,7 @@ def create_server_tool_graph() -> CompiledStateGraph[
 ]:
     """Select tools once, execute them, then stream an answer with citations."""
     model = _chat_model()
+    internal_model = _chat_model(disable_streaming=True)
 
     def start(
         _state: ServerToolState, runtime: Runtime[GraphRequest]
@@ -186,28 +186,23 @@ def create_server_tool_graph() -> CompiledStateGraph[
                 "name": choice.name,
             }
         get_stream_writer()(status_event("Checking which tools are needed"))
-        response = await (
-            model.bind_tools(
-                _selected_tools(request),
-                tool_choice=choice,
-                **(
-                    {"parallel_tool_calls": request.parallel_tool_calls}
-                    if request.parallel_tool_calls is not None
-                    else {}
+        response = await internal_model.bind_tools(
+            _selected_tools(request),
+            tool_choice=choice,
+            **(
+                {"parallel_tool_calls": request.parallel_tool_calls}
+                if request.parallel_tool_calls is not None
+                else {}
+            ),
+        ).ainvoke(
+            [
+                SystemMessage(
+                    content=f"{_ANSWER_PROMPT} Call tools to collect the information "
+                    "needed for the latest request. Select every needed tool now. "
+                    "Do not write the answer; a separate step will do that."
                 ),
-            )
-            .with_config(tags=[TAG_NOSTREAM])
-            .ainvoke(
-                [
-                    SystemMessage(
-                        content=f"{_ANSWER_PROMPT} Call tools to collect the information "
-                        "needed for the latest request. Select every needed tool now. "
-                        "Do not write the answer; a separate step will do that."
-                    ),
-                    *state.messages,
-                ],
-                stream=False,
-            )
+                *state.messages,
+            ]
         )
         return {"messages": [response]}
 
@@ -249,7 +244,6 @@ server_tool_graph_config = GraphConfig(
         "Demonstrates LGOS-owned package version lookup and OpenAI-compatible "
         "web search."
     ),
-    streamable_node_names=["answer"],
     features={GraphFeature.CLIENT_EVENTS},
     server_tools={lgos_package_version.name, web_search.name},
     context_factory=context_factory,

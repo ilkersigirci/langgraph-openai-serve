@@ -13,7 +13,6 @@ GraphRegistry(
         "chat": GraphConfig(
             graph=chat_graph,
             description="General-purpose chat graph.",
-            streamable_node_names=["generate"],
         ),
         "mcp-mock": GraphConfig(
             graph=mcp_mock_graph,
@@ -115,14 +114,15 @@ OpenAI response mode; server tools additionally need intermediate updates.
     When `stream=true`, the route returns an SSE response backed by
     `stream_run()`. The runner consumes `custom` and `values`, plus `updates` for
     requests selecting server tools. It also consumes `messages` for live text
-    whether or not server tools are selected. Only
-    `AIMessageChunk` values from configured streamable nodes become text chunks;
-    the list may include nodes in nested subgraphs. Returning a message through
-    the graph's `messages` state is not a live-streaming signal.
-    Root-node updates expose selected tool activity while eligible answer tokens
-    stream immediately; nested updates remain private. Graphs keep intermediate
-    model text private through node
-    selection or the `nostream` tag; tool selection does not disable streaming.
+    whether or not server tools are selected. Non-empty text from every
+    `AIMessageChunk` in the graph's `messages` stream becomes a text chunk.
+    Returning a message through the graph's `messages` state is not a
+    live-streaming signal.
+    Root-node updates expose selected tool activity while model tokens stream
+    immediately; nested updates remain private. Graphs keep intermediate model
+    text private by configuring those `ChatOpenAI` calls with
+    `disable_streaming=True`; tool selection does not disable streaming for
+    other model calls.
     The protocol adapter maps explicitly public `status_event()` values to
     standard Responses commentary messages. Chat Completions ignores custom
     events. Root value parts supply the durable final output and complete
@@ -131,10 +131,8 @@ OpenAI response mode; server tools additionally need intermediate updates.
     native set to the durable continuation generation and renders one complete
     interrupt batch. Unknown custom events stay private.
 
-Internal model calls that must not reach the assistant text stream use LangGraph's native
-`nostream` tag. `streamable_node_names` selects calls whose text is intended for
-the OpenAI assistant stream; the tag selects calls within those nodes. Graph
-authors must follow the
+Internal `ChatOpenAI` calls that must not reach the assistant text stream set
+`disable_streaming=True`. Graph authors must follow the
 [assistant text parity contract](openai-compatibility.md#assistant-text-parity)
 because a graph cannot retract an intermediate draft after it has streamed it.
 

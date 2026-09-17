@@ -74,7 +74,6 @@ class GraphConfig(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
-    streamable_node_names: tuple[str, ...] = ()
     features: frozenset[GraphFeature] = frozenset()
     client_settings: type[ClientSettings] | None = None
     server_tools: frozenset[Annotated[str, StringConstraints(min_length=1)]] = (
@@ -178,6 +177,7 @@ class GraphConfig(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
+        extra="forbid",
         frozen=True,
     )
 

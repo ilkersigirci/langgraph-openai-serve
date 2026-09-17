@@ -774,7 +774,7 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
         ),
         AIMessage(content="See [OpenAI API](https://developers.openai.com/api/)."),
     )
-    models = iter([model, provider])
+    models = iter([model, model, provider])
     monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
     monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: next(models))
     _rebuild_server_tool_graph(demo_app)

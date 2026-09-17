@@ -104,7 +104,6 @@ custom_event_showcase_graph_config = GraphConfig(
     description=(
         "Demonstrates internal stream writer events handled safely alongside assistant text."
     ),
-    streamable_node_names=["build_compatibility_report"],
     features={GraphFeature.CLIENT_EVENTS},
 )
 

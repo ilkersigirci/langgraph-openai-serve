@@ -72,7 +72,6 @@ def citation_app() -> FastAPI:
             "citations": GraphConfig(
                 graph=graph,
                 description="DUMMY",
-                streamable_node_names=["generate"],
             )
         }
     )

@@ -28,7 +28,6 @@ def bind_public_settings(graph_registry: GraphRegistry) -> GraphConfig:
     graph_config = GraphConfig(
         graph=make_message_graph(context_schema=PublicSettings),
         description="DUMMY",
-        streamable_node_names=["generate"],
         client_settings=PublicSettings,
     )
     graph_registry.register("test", graph_config)
