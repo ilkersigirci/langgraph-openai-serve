@@ -3,10 +3,15 @@ from http import HTTPStatus
 
 import pytest
 from fastapi import FastAPI
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.graph import StateGraph
+from langgraph.types import interrupt
 from openai import AsyncOpenAI, BadRequestError, ConflictError
 
 from langgraph_openai_serve.api.responses.interrupts import interrupt_tool_call_id
+from tests.graph.support.registration import replace_graph_config
+from tests.graph.support.schemas import MessageState
 
 from .support import (
     MODEL,
@@ -21,24 +26,39 @@ from .support import (
 )
 
 
+@pytest.mark.parametrize("stream", [False, True])
 async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
     openai_client: AsyncOpenAI,
     fastapi_app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
+    sqlite_checkpointer: AsyncSqliteSaver,
+    stream: bool,
 ) -> None:
+    executions = []
+
+    def ask(_state: MessageState):
+        executions.append("ask")
+        answer = interrupt({"question": "Approve?"})
+        return {"messages": [AIMessage(content=f"resumed:{answer}")]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("ask", ask)
+        .set_entry_point("ask")
+        .set_finish_point("ask")
+        .compile(checkpointer=sqlite_checkpointer)
+    )
+    replace_graph_config(fastapi_app.state.graph_registry, MODEL, graph=graph)
     run_id = str(uuid.uuid4()).upper()
     first_response = await create_response(openai_client, run_id=run_id)
-    graph_config = fastapi_app.state.graph_registry.get_graph(MODEL)
-    graph = await graph_config.resolve_graph()
+    recovered_response = await create_response(
+        openai_client, run_id=run_id, stream=stream
+    )
+    if stream:
+        events = [event async for event in recovered_response]
+        assert events[-1].type == "response.completed"
+        recovered_response = events[-1].response
 
-    def fail_execution(*_args, **_kwargs):
-        msg = "a pending retry must not execute the graph"
-        raise AssertionError(msg)
-
-    with monkeypatch.context() as retry_patch:
-        retry_patch.setattr(graph, "astream", fail_execution)
-        recovered_response = await create_response(openai_client, run_id=run_id)
-
+    assert executions == ["ask"]
     first_calls = interrupt_calls(first_response)
     recovered_calls = interrupt_calls(recovered_response)
     clean_id = run_id.lower().replace("-", "")

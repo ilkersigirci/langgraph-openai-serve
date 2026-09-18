@@ -15,7 +15,10 @@ from langgraph.types import (
 )
 
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import (
+    GraphConfigurationError,
+    GraphRegistry,
+)
 from langgraph_openai_serve.graph.interrupt import (
     models as interrupt_models,
     state as interrupt_state,
@@ -84,16 +87,8 @@ async def run_langgraph(
 async def invoke_run(run: GraphRun) -> LangGraphOutput:
     """Invoke a graph already owned by an active ``GraphRun`` context."""
     run.require_owner()
-    if not run.should_execute:
-        interrupt_batch = await _durable_interrupt_batch(
-            run,
-            run.pending_interrupts,
-        )
-        if interrupt_batch is None:
-            msg = "Pending interrupt state disappeared before use."
-            raise RuntimeError(msg)
-        run.commit_interrupts()
-        return interrupt_batch
+    if run.pending_batch is not None:
+        return run.pending_batch
 
     run.begin_execution()
     result = await run.graph.ainvoke(
@@ -105,11 +100,9 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
         version="v2",
     )
 
-    if run.config.supports(GraphFeature.INTERRUPTS):
-        interrupt_batch = await _durable_interrupt_batch(run, result.interrupts)
-        if interrupt_batch is not None:
-            run.commit_interrupts()
-            return interrupt_batch
+    interrupt_batch = await _commit_interrupts(run, result.interrupts)
+    if interrupt_batch is not None:
+        return interrupt_batch
 
     return _with_usage(
         await run.config.render_output(result.value),
@@ -172,16 +165,8 @@ async def stream_run(
 
     """
     run.require_owner()
-    if not run.should_execute:
-        interrupt_batch = await _durable_interrupt_batch(
-            run,
-            run.pending_interrupts,
-        )
-        if interrupt_batch is None:
-            msg = "Pending interrupt state disappeared before use."
-            raise RuntimeError(msg)
-        run.commit_interrupts()
-        yield interrupt_batch
+    if run.pending_batch is not None:
+        yield run.pending_batch
         return
 
     run.begin_execution()
@@ -211,18 +196,18 @@ async def stream_run(
             if part["type"] == "values":
                 if not part["ns"]:
                     final_output = part["data"]
-                    interrupts.extend(part["interrupts"])
+                    interrupts.extend(
+                        item for item in part["interrupts"] if item not in interrupts
+                    )
                 continue
             visible_part = _visible_stream_part(part, stream_updates=stream_updates)
             if visible_part is not None:
                 yield visible_part
 
-    if run.config.supports(GraphFeature.INTERRUPTS):
-        interrupt_batch = await _durable_interrupt_batch(run, tuple(interrupts))
-        if interrupt_batch is not None:
-            run.commit_interrupts()
-            yield interrupt_batch
-            return
+    interrupt_batch = await _commit_interrupts(run, tuple(interrupts))
+    if interrupt_batch is not None:
+        yield interrupt_batch
+        return
 
     yield await _render_stream_output(final_output, run)
 
@@ -274,13 +259,21 @@ async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
     return _with_usage(await run.config.render_output(output), run)
 
 
-async def _durable_interrupt_batch(
+async def _commit_interrupts(
     run: GraphRun,
     interrupts: tuple[Interrupt, ...],
 ) -> interrupt_models.LangGraphInterruptBatch | None:
-    return await interrupt_state.durable_interrupt_batch(
+    if not interrupts:
+        return None
+    if not run.config.supports(GraphFeature.INTERRUPTS):
+        msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
+        raise GraphConfigurationError(msg)
+    batch = await interrupt_state.durable_interrupt_batch(
         run.graph,
         interrupts,
         run.runnable_config,
         run.run_id,
     )
+    if batch is not None:
+        run.commit_interrupts()
+    return batch

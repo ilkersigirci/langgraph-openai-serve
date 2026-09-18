@@ -14,7 +14,6 @@ from langchain_core.messages import BaseMessage, UsageMetadata
 from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Interrupt
 
 from langgraph_openai_serve.core.logging import (
     bind_log_context,
@@ -28,7 +27,10 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import state as interrupt_state
-from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+from langgraph_openai_serve.graph.interrupt.models import (
+    InterruptResume,
+    LangGraphInterruptBatch,
+)
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
@@ -57,8 +59,7 @@ class _RunIdentity:
 class _PreparedRunValues:
     inputs: Any
     context: Any
-    should_execute: bool = True
-    pending_interrupts: tuple[Interrupt, ...] = ()
+    pending_batch: LangGraphInterruptBatch | None = None
 
 
 @dataclass
@@ -72,8 +73,7 @@ class GraphRun:
     runnable_config: RunnableConfig | None
     run_id: str | None
     checkpoint_thread_id: str | None = None
-    should_execute: bool = True
-    pending_interrupts: tuple[Interrupt, ...] = ()
+    pending_batch: LangGraphInterruptBatch | None = None
     usage_callback: UsageMetadataCallbackHandler = field(
         default_factory=UsageMetadataCallbackHandler,
         repr=False,
@@ -246,8 +246,7 @@ async def prepare_run(
         runnable_config=runnable_config,
         run_id=identity.run_id,
         checkpoint_thread_id=identity.checkpoint_thread_id,
-        should_execute=values.should_execute,
-        pending_interrupts=values.pending_interrupts,
+        pending_batch=values.pending_batch,
         usage_callback=usage_callback,
         _resources=resources,
     )
@@ -297,32 +296,26 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
     if coordinator is None:  # resolve_graph() reports this first.
         msg = "Interrupt run has no coordinator."
         raise RuntimeError(msg)
-    if runnable_config is None:
+    if runnable_config is None or identity.run_id is None:
         msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
     await resources.enter_async_context(coordinator(identity.checkpoint_thread_id))
-    snapshot = await graph.aget_state(runnable_config, subgraphs=True)
-    (
-        inputs,
-        should_execute,
-        pending_interrupts,
-    ) = await interrupt_state.prepare_interrupt_input(
-        graph_config,
+    state = await interrupt_state.prepare_interrupt_state(
         graph,
-        request,
-        snapshot,
+        runnable_config,
+        identity.run_id,
         resume,
-        messages=messages,
     )
-    context = (
-        await graph_config.build_context(request, graph) if should_execute else None
-    )
+    if isinstance(state, LangGraphInterruptBatch):
+        return _PreparedRunValues(inputs=None, context=None, pending_batch=state)
     return _PreparedRunValues(
-        inputs=inputs,
-        context=context,
-        should_execute=should_execute,
-        pending_interrupts=pending_interrupts,
+        inputs=(
+            state
+            if state is not None
+            else await graph_config.build_input(request, messages)
+        ),
+        context=await graph_config.build_context(request, graph),
     )
 
 
