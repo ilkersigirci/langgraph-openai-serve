@@ -10,7 +10,6 @@ from lgos_chainlit.settings import ChainlitSettings, Settings
 @pytest.mark.parametrize(
     ("setting", "value", "field"),
     [
-        ("DEMO_CHAINLIT_UI_FILE", "../other", "UI_FILE"),
         ("OPENAI_GATEWAY_TYPE", "unsupported", "OPENAI_GATEWAY_TYPE"),
         ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example", "OPENAI_GATEWAY_BASE_URL"),
         ("DEMO_CHAINLIT_OAUTH_RESOURCE", "relative-resource", "OAUTH_RESOURCE"),

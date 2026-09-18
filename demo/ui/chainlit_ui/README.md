@@ -110,12 +110,12 @@ that supplies the imported API and refresh `uv.lock`.
 
 ## Module ownership
 
-`simple.py` and `hitl.py` register the two applications' Chainlit callbacks.
-`auth.py` configures login and gateway credentials; `clients.py` and
+`chat.py` registers the Chainlit callbacks. `auth.py` configures login and
+gateway credentials; `clients.py` and
 `gateway.py` own gateway access. `conversation.py`, `chat_settings.py`,
 `files.py`, `display_files.py`, and `mcp.py` contain their respective
 LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
-`hitl.py` owns the LGOS interrupt payload and `InterruptReview` UI.
+`interrupts.py` owns the LGOS interrupt payload and `InterruptReview` UI.
 
 Import reusable history, resume, settings, Responses, and durable HITL helpers
 from their concrete modules under `chainlit_utils.chat` and

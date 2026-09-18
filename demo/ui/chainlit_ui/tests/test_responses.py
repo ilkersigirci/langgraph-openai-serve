@@ -49,7 +49,7 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     phase: str | None,
     chainlit_context,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     completed = Response.model_construct(status="completed", output=[])
     events = [
         SimpleNamespace(
@@ -90,11 +90,11 @@ async def test_response_stream_routes_commentary_to_the_task_list(
     stream_manager.__aenter__ = AsyncMock(return_value=stream)
     stream_manager.__aexit__ = AsyncMock(return_value=None)
     create_stream = Mock(return_value=stream_manager)
-    monkeypatch.setattr(simple.openai_client.responses, "stream", create_stream)
+    monkeypatch.setattr(chat.openai_client.responses, "stream", create_stream)
     assistant_message = Mock(stream_token=AsyncMock())
     commentary_tasks = Mock(add=AsyncMock())
 
-    response = await simple._stream_response(
+    response = await chat._stream_response(
         [],
         assistant_message,
         model="status-events",
@@ -113,7 +113,7 @@ async def test_response_stream_routes_commentary_to_the_task_list(
 async def test_streamed_refusal_is_visible_even_without_deltas(
     monkeypatch, send_delta, chainlit_context
 ):
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     refusal = ResponseOutputRefusal(
         type="refusal", refusal="Cannot answer this request."
     )
@@ -141,11 +141,11 @@ async def test_streamed_refusal_is_visible_even_without_deltas(
     manager = MagicMock()
     manager.__aenter__ = AsyncMock(return_value=stream)
     monkeypatch.setattr(
-        simple.openai_client.responses, "stream", Mock(return_value=manager)
+        chat.openai_client.responses, "stream", Mock(return_value=manager)
     )
     assistant = Mock(stream_token=AsyncMock())
 
-    await simple._stream_response(
+    await chat._stream_response(
         [],
         assistant,
         model="test",
@@ -161,7 +161,7 @@ async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completio
     monkeypatch,
     chainlit_context,
 ):
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     incomplete = Response.model_construct(
         id="resp_partial",
         object="response",
@@ -199,11 +199,11 @@ async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completio
         ) as http_client,
         AsyncOpenAI(api_key="test", http_client=http_client) as client,
     ):
-        monkeypatch.setattr(simple, "openai_client", client)
+        monkeypatch.setattr(chat, "openai_client", client)
         with pytest.raises(
             RuntimeError, match="Response incomplete: max_output_tokens"
         ):
-            await simple._stream_response(
+            await chat._stream_response(
                 [],
                 Mock(),
                 model="test",
@@ -305,7 +305,7 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     streaming: bool,
     chainlit_context,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     call = _display_call()
     first_text = ResponseOutputMessage(
         id="msg_intro",
@@ -392,29 +392,29 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
 
     async def stream(input_items, assistant_message, **_):
         completed = await create(input=input_items)
-        assistant_message.content += simple.final_answer(completed)
+        assistant_message.content += chat.final_answer(completed)
         return completed
 
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(simple, "text_only_chat_messages", lambda: history)
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: history)
     monkeypatch.setattr(
-        simple,
+        chat,
         "with_response_file_parts",
         AsyncMock(return_value=[*history, file_input]),
     )
-    monkeypatch.setattr(simple, "streaming_enabled", lambda: streaming)
-    monkeypatch.setattr(simple, "chat_settings_metadata", dict)
+    monkeypatch.setattr(chat, "streaming_enabled", lambda: streaming)
+    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
     monkeypatch.setattr(
-        simple, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
+        chat, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
     )
-    monkeypatch.setattr(simple, "model_request", lambda _: {"model": "plot"})
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(simple.openai_client.responses, "create", create)
-    monkeypatch.setattr(simple, "_stream_response", stream)
+    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "plot"})
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat, "_stream_response", stream)
     display = AsyncMock(return_value=output)
-    monkeypatch.setattr(simple, "display_file", display)
+    monkeypatch.setattr(chat, "display_file", display)
 
-    await simple._response_message(Mock(), "plot")
+    await chat._response_message(Mock(), "plot")
 
     assert assistant.content == "Here is the chart. Chart ready [source]"
     assert [
@@ -435,41 +435,41 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     monkeypatch,
     chainlit_context,
 ):
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     failed = _response(_display_call())
     failed.status = "failed"
     failed.error = SimpleNamespace(message="Graph failed")
     assistant = Mock(content="", send=AsyncMock())
     error = AsyncMock()
     display = AsyncMock()
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(simple, "text_only_chat_messages", list)
-    monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
-    monkeypatch.setattr(simple, "chat_settings_metadata", dict)
-    monkeypatch.setattr(simple, "conversation_metadata", dict)
-    monkeypatch.setattr(simple, "model_request", lambda _: {"model": "plot"})
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(chat, "text_only_chat_messages", list)
+    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
+    monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
+    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
+    monkeypatch.setattr(chat, "conversation_metadata", dict)
+    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "plot"})
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
-        simple.openai_client.responses, "create", AsyncMock(return_value=failed)
+        chat.openai_client.responses, "create", AsyncMock(return_value=failed)
     )
-    monkeypatch.setattr(simple, "display_file", display)
-    monkeypatch.setattr(simple, "send_ui_message", error)
+    monkeypatch.setattr(chat, "display_file", display)
+    monkeypatch.setattr(chat, "send_ui_message", error)
 
-    await simple._response_message(Mock(), "plot")
+    await chat._response_message(Mock(), "plot")
 
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
 
 
-async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(
+async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
     monkeypatch,
     chainlit_context,
 ) -> None:
     from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME
 
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     interrupt_resp = _response(
         ResponseFunctionToolCall(
             id="fc_1",
@@ -480,26 +480,85 @@ async def test_simple_ui_rejects_interrupt_calls_with_hitl_guidance(
         )
     )
     assistant = Mock(content="", send=AsyncMock())
-    error = AsyncMock()
+    workflow = SimpleNamespace(run=AsyncMock())
     display = AsyncMock()
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(simple, "text_only_chat_messages", list)
-    monkeypatch.setattr(simple, "with_response_file_parts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(simple, "streaming_enabled", lambda: False)
-    monkeypatch.setattr(simple, "chat_settings_metadata", dict)
-    monkeypatch.setattr(simple, "conversation_metadata", dict)
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(chat, "text_only_chat_messages", list)
+    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
+    monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
+    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
+    monkeypatch.setattr(chat, "conversation_metadata", dict)
     monkeypatch.setattr(
-        simple, "model_request", lambda _: {"model": "interruptible-approval"}
+        chat, "model_request", lambda _: {"model": "interruptible-approval"}
     )
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
-        simple.openai_client.responses, "create", AsyncMock(return_value=interrupt_resp)
+        chat.openai_client.responses, "create", AsyncMock(return_value=interrupt_resp)
     )
-    monkeypatch.setattr(simple, "display_file", display)
-    monkeypatch.setattr(simple, "send_ui_message", error)
+    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
+    monkeypatch.setattr(chat, "display_file", display)
 
-    await simple._response_message(Mock(), "interruptible-approval")
+    await chat._response_message(Mock(), "interruptible-approval")
 
-    assert error.await_count == 1
-    assert "DEMO_CHAINLIT_UI_FILE=hitl" in error.await_args[0][0]
+    workflow.run.assert_awaited_once_with(
+        interrupt_resp,
+        model_id="interruptible-approval",
+    )
     display.assert_not_awaited()
+
+
+async def test_interrupt_continuation_keeps_response_cursor_and_request_context(
+    monkeypatch,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    completed = _response()
+    create = AsyncMock(return_value=completed)
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+    monkeypatch.setattr(
+        chat,
+        "model_request",
+        lambda _: {
+            "model": "interruptible-approval",
+            "extra_headers": {"x-model-provider": "lgos-a"},
+        },
+    )
+    monkeypatch.setattr(
+        chat,
+        "chat_settings_metadata",
+        lambda: {"lgos_settings": '{"audience":"expert"}'},
+    )
+    monkeypatch.setattr(
+        chat,
+        "conversation_metadata",
+        lambda: {"conversation_id": "thread-123"},
+    )
+    monkeypatch.setattr(chat, "response_tools", lambda: [{"type": "web_search"}])
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
+    input_items = [
+        {
+            "type": "function_call_output",
+            "call_id": "call-review",
+            "output": "approve",
+        }
+    ]
+
+    response = await chat._continue_interrupt_response(
+        input_items,
+        model_id="lgos-a/interruptible-approval",
+        previous_response_id="resp-review",
+    )
+
+    assert response is completed
+    assert create.await_args.kwargs == {
+        "model": "interruptible-approval",
+        "extra_headers": {"x-model-provider": "lgos-a"},
+        "input": input_items,
+        "previous_response_id": "resp-review",
+        "store": False,
+        "tools": [{"type": "web_search"}],
+        "user": "demo-user",
+        "metadata": {
+            "lgos_settings": '{"audience":"expert"}',
+            "conversation_id": "thread-123",
+        },
+    }

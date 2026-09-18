@@ -1,6 +1,4 @@
-import importlib
 from pathlib import Path
-from typing import Any
 
 import pytest
 from chainlit.context import init_http_context
@@ -31,11 +29,6 @@ async def chainlit_context():
         yield context
     finally:
         user_sessions.pop(context.session.id, None)
-
-
-@pytest.fixture
-def hitl() -> Any:
-    return importlib.import_module("lgos_chainlit.hitl")
 
 
 @pytest.fixture

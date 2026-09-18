@@ -22,7 +22,7 @@ from lgos_chainlit import auth, clients
 from lgos_chainlit.settings import settings
 
 CHAINLIT_TARGET = (
-    Path(__file__).parents[1] / "src" / "lgos_chainlit" / "simple.py"
+    Path(__file__).parents[1] / "src" / "lgos_chainlit" / "chat.py"
 ).as_posix()
 
 

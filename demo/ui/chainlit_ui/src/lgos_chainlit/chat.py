@@ -1,6 +1,7 @@
 """Responses API Chainlit UI for the demo LangGraph server."""
 
 import asyncio
+import logging
 from typing import Any, cast
 
 import chainlit as cl
@@ -8,10 +9,10 @@ from chainlit.types import ThreadDict
 from chainlit_utils.auth import authenticated_user_identifier
 from chainlit_utils.chat.history import (
     mark_model_context_excluded,
-    mark_persisted_errors_excluded,
     send_ui_message,
     text_only_chat_messages,
 )
+from chainlit_utils.chat.hitl import HitlWorkflow
 from chainlit_utils.openai.responses import (
     CommentaryTaskList,
     citation_elements,
@@ -34,12 +35,50 @@ from lgos_chainlit.conversation import (
     conversation_metadata,
 )
 from lgos_chainlit.display_files import DISPLAY_FILE_TOOL_NAME, display_file
-from lgos_chainlit.files import (
-    file_upload_overrides,
-    with_response_file_parts,
+from lgos_chainlit.files import file_upload_overrides, with_response_file_parts
+from lgos_chainlit.interrupts import (
+    INTERRUPT_ELEMENT_NAME,
+    ask_for_interrupt,
+    pending_interrupt_prompt,
 )
 from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
 from lgos_chainlit.mcp import mcp_tools
+
+logger = logging.getLogger(__name__)
+
+
+async def _continue_interrupt_response(
+    input_items: list[dict[str, Any]],
+    *,
+    model_id: str,
+    previous_response_id: str,
+) -> Response:
+    return await openai_client.responses.create(
+        **model_request(model_id),
+        input=cast("ResponseInputParam", input_items),
+        previous_response_id=previous_response_id,
+        store=False,
+        tools=response_tools(),
+        user=authenticated_user_identifier(),
+        metadata=_response_metadata(),
+    )
+
+
+async def _publish_interrupt_final(response: Response) -> None:
+    await cl.Message(
+        content=final_answer(response),
+        elements=cast("list[Any]", citation_elements(response)),
+    ).send()
+
+
+interrupt_workflow = HitlWorkflow(
+    INTERRUPT_TOOL_NAME,
+    ask=ask_for_interrupt,
+    continue_response=_continue_interrupt_response,
+    prompt=pending_interrupt_prompt,
+    publish_final=_publish_interrupt_final,
+    element_name=INTERRUPT_ELEMENT_NAME,
+)
 
 
 @cl.set_chat_profiles
@@ -79,15 +118,28 @@ async def on_chat_start() -> None:
     await configure_chat_settings()
 
 
+@cl.on_chat_end
+async def on_chat_end() -> None:
+    interrupt_workflow.cancel()
+
+
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
-    mark_persisted_errors_excluded(thread)
     await configure_chat_settings()
+    await interrupt_workflow.restore(thread)
 
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    """Reply through stateless Responses replay."""
+    """Reply through Responses, restoring an unfinished review when necessary."""
+    try:
+        if await interrupt_workflow.continue_pending(message):
+            return
+    except Exception as exc:
+        logger.exception("Chainlit HITL completion failed")
+        await send_ui_message(f"Response failed: {exc}")
+        return
+
     model = cl.user_session.get("chat_profile")
     if not isinstance(model, str) or not model:
         await send_ui_message("Response failed: no model profile is selected.")
@@ -102,8 +154,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
         input_items = response_input(text_only_chat_messages())
         input_items = await with_response_file_parts(input_items, message)
         streaming = streaming_enabled()
-        metadata = chat_settings_metadata()
-        metadata.update(conversation_metadata())
+        metadata = _response_metadata()
         model_options = model_request(model)
         upstream_model = cast(str, model_options["model"])
         extra_headers = cast(dict[str, str] | None, model_options.get("extra_headers"))
@@ -131,11 +182,16 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     metadata=metadata,
                 )
 
+            calls = function_calls(response)
+            if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
+                await interrupt_workflow.run(response, model_id=model)
+                await commentary_tasks.complete()
+                return
+
             raise_for_response(response)
             assistant_message.elements.extend(
                 cast("list[Any]", citation_elements(response))
             )
-            calls = function_calls(response)
             if not streaming:
                 assistant_message.content += final_answer(response)
             if not calls:
@@ -145,14 +201,6 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     await assistant_message.update()
                 await commentary_tasks.complete()
                 return
-
-            if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
-                msg = (
-                    f"Model '{upstream_model}' requested human review ('{INTERRUPT_TOOL_NAME}'). "
-                    "The standard Chainlit UI does not support interactive interrupts. "
-                    "Please run Chainlit with DEMO_CHAINLIT_UI_FILE=hitl to interact with interruptible graphs."
-                )
-                raise RuntimeError(msg)
 
             outputs = [
                 (
@@ -178,6 +226,12 @@ async def _response_message(message: cl.Message, model: str) -> None:
             await assistant_message.update()
         else:
             await send_ui_message(error)
+
+
+def _response_metadata() -> dict[str, str]:
+    metadata = chat_settings_metadata()
+    metadata.update(conversation_metadata())
+    return metadata
 
 
 async def _stream_response(

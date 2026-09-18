@@ -21,7 +21,7 @@ os.environ.setdefault(
 )
 get_chainlit_settings()
 
-if settings.UI_FILE == "simple" and not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
+if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
     assert settings.OPENAI_GATEWAY_API_KEY is not None
     config.features.mcp.servers = [
         mcp_gateway_config(gateway, settings.OPENAI_GATEWAY_API_KEY)
@@ -55,11 +55,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(lifespan=lifespan)
 configure_auth(app)
 
-CHAINLIT_UI_PATH = f"{settings.UI_FILE}.py"
-
 mount_chainlit(
     app=app,
-    target=Path(__file__).parent.joinpath(CHAINLIT_UI_PATH).absolute().as_posix(),
+    target=Path(__file__).with_name("chat.py").absolute().as_posix(),
     path="",
 )
 

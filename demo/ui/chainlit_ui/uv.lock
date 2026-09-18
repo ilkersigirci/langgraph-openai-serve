@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,9 +365,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/cf/570469a693bc019899099a14db0d56cb8950a6fbc9106272ed3b6686ecb0/chainlit_utils-0.2.0.tar.gz", hash = "sha256:5c227374a0957abf4f6b7967858e7aa54016a56333cc8cd1be5e1e7322312086", size = 24837, upload-time = "2026-09-18T08:07:46.081Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/d9/13ff0bed83bfa5e3f0dcdc699291d4fe53135b49ec3662c67fb46323fd1e/chainlit_utils-0.2.1.tar.gz", hash = "sha256:dfe85fa2ebe97d5cb506dc2f47782f391fd784ab2fd7e96f21cdd82305b7d6f6", size = 25886, upload-time = "2026-09-18T10:11:41.134Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/42/b009d2f3be321d36ac36537f31979051e455e9767a82780fd714fd2bd444/chainlit_utils-0.2.0-py3-none-any.whl", hash = "sha256:326dee4847d697b31cb341fa2fca8e7ed98c5e23d54cbc1c50dfe3c8df4f5b8f", size = 34641, upload-time = "2026-09-18T08:07:45.038Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/f3/a2985ea5f35881323be7e895b52045d7528e21b242a9150ba4498e6398eb/chainlit_utils-0.2.1-py3-none-any.whl", hash = "sha256:c8742c42961fe770ff81136a77d30cc54930a3873fb086001bd13cb65dc83a3f", size = 35773, upload-time = "2026-09-18T10:11:40.148Z" },
 ]
 
 [package.optional-dependencies]
@@ -1155,7 +1155,7 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["sso"], specifier = ">=0.2.0,<0.3" },
+    { name = "chainlit-utils", extras = ["sso"], specifier = ">=0.2.1,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
     { name = "openai", specifier = ">=3.14.1,<4" },
