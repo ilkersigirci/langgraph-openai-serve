@@ -23,7 +23,13 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
-from langgraph.types import GraphOutput, Interrupt, ValuesStreamPart
+from langgraph.types import (
+    GraphOutput,
+    Interrupt,
+    StateSnapshot,
+    ValuesStreamPart,
+    interrupt,
+)
 from pydantic import ValidationError
 
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -255,6 +261,46 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     assert batch.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
 
 
+@pytest.mark.parametrize("stream", [False, True], ids=["invoke", "stream"])
+async def test_undeclared_interrupt_cannot_be_rendered_as_success(
+    make_request,
+    stream: bool,
+) -> None:
+    def ask(_state: MessageState):
+        interrupt({"question": "Approve?"})
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("ask", ask)
+        .set_entry_point("ask")
+        .set_finish_point("ask")
+        .compile()
+    )
+    registry = GraphRegistry(
+        registry={
+            "undeclared-interrupt": GraphConfig(
+                graph=graph,
+                description="An interrupt without the required feature declaration.",
+                output_to_message=lambda _output: AIMessage(content="success"),
+            )
+        }
+    )
+    request = make_request("undeclared-interrupt")
+    messages = [HumanMessage(content="question")]
+
+    async def execute() -> None:
+        if stream:
+            _ = [
+                event
+                async for event in run_langgraph_stream(request, messages, registry)
+            ]
+        else:
+            await run_langgraph(request, messages, registry)
+
+    with pytest.raises(GraphConfigurationError, match=r"GraphFeature\.INTERRUPTS"):
+        await execute()
+
+
 async def test_interrupt_shape_is_ignored_when_interrupts_disabled(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
@@ -438,6 +484,12 @@ async def test_stream_rejects_conflicting_duplicate_interrupt_id(
             type="values",
             ns=(),
             data={"messages": []},
+            interrupts=(first,),
+        )
+        yield ValuesStreamPart(
+            type="values",
+            ns=(),
+            data={"messages": []},
             interrupts=(conflicting,),
         )
 
@@ -460,6 +512,54 @@ async def test_stream_rejects_conflicting_duplicate_interrupt_id(
     with pytest.raises(RuntimeError, match="conflicting data"):
         async with run:
             _ = [event async for event in stream_run(run)]
+
+
+async def test_durable_state_rejects_duplicate_interrupt_id(
+    make_request,
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    graph = make_interrupt_graph(checkpointer=sqlite_checkpointer)
+    duplicate = Interrupt(value={"question": "Approve?"}, id="duplicate")
+
+    async def duplicate_state(*_args, **_kwargs):
+        return StateSnapshot(
+            values={},
+            next=("ask",),
+            config={
+                "configurable": {
+                    "thread_id": "duplicate-interrupts",
+                    "checkpoint_id": "checkpoint",
+                }
+            },
+            metadata=None,
+            created_at=None,
+            parent_config=None,
+            tasks=(),
+            interrupts=(duplicate, duplicate),
+        )
+
+    monkeypatch.setattr(graph, "aget_state", duplicate_state)
+    registry = GraphRegistry(
+        registry={
+            "interruptible": GraphConfig(
+                graph=graph,
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                run_coordinator=InMemoryRunCoordinator(),
+            )
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate interrupt ids"):
+        await prepare_run(
+            make_request(
+                "interruptible",
+                metadata={RUN_METADATA_KEY: RUN_ID},
+            ),
+            [HumanMessage(content="question")],
+            registry,
+        )
 
 
 async def test_interrupt_resumes_after_checkpointer_and_graph_restart(

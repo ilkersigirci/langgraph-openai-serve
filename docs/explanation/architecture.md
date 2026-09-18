@@ -92,6 +92,18 @@ LangGraph Store for explicit data.
 PostgreSQL can provide all three roles; Redis is not required by this design.
 The demo shares one PostgreSQL pool per API process among them.
 
+The Responses adapter owns interrupt function-call encoding and decodes
+`previous_response_id` plus `function_call_output` items into a resume request.
+Under the coordinator lease, preparation either validates that request into a
+native LangGraph `Command(resume=...)`, reads the pending batch for an initial
+request retry, or builds fresh graph input. Streaming and non-streaming runners
+share this prepared state and the same interrupt validation. LangGraph
+checkpoints remain the source of truth for paused execution.
+
+Chat Completions rejects interrupt-enabled models before preparing a graph run.
+A graph that calls `interrupt()` without declaring `GraphFeature.INTERRUPTS`
+fails with a configuration error on either API.
+
 Endpoint paths and settings live in [Reference](../reference.md).
 
 ## Request Flow

@@ -83,13 +83,19 @@ async def test_interrupt_output_requires_previous_response_id(
     assert "require previous_response_id" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "previous_response_id",
+    ["resp_invalid", f"resp_lg_{'0' * 32}_{'a' * 32}"],
+    ids=["malformed", "nil-operation"],
+)
 async def test_invalid_interrupt_response_id_reports_its_parameter(
     openai_client: AsyncOpenAI,
+    previous_response_id: str,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.responses.create(
             model=MODEL,
-            previous_response_id="resp_invalid",
+            previous_response_id=previous_response_id,
             input=[
                 {
                     "type": "function_call_output",

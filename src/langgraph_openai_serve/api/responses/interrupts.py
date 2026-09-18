@@ -110,7 +110,7 @@ def _reject_interrupt_items_without_response_id(
 
 def _parse_interrupt_response_id(response_id: str) -> str:
     match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
-    if match is None:
+    if match is None or uuid.UUID(hex=match.group("run")).int == 0:
         msg = "previous_response_id is not an LGOS interrupt Response ID."
         raise InvalidResumeRequestError(msg, param="previous_response_id")
     return str(uuid.UUID(hex=match.group("run")))

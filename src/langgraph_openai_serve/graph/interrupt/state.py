@@ -4,9 +4,8 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import cast
 
-from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     RESUME,
@@ -14,12 +13,9 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
 )
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command, Interrupt, StateSnapshot
+from langgraph.types import Command, Interrupt
 
-from langgraph_openai_serve.graph.graph_registry import (
-    GraphConfig,
-    GraphConfigurationError,
-)
+from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
 from langgraph_openai_serve.graph.interrupt.models import (
     InterruptResume,
@@ -38,114 +34,37 @@ class InterruptStateConflictError(RuntimeError):
     """Raised when a resume does not match durable pending state."""
 
 
-async def prepare_interrupt_input(  # ruff: ignore[too-many-arguments]
-    graph_config: GraphConfig,
+async def prepare_interrupt_state(
     graph: CompiledStateGraph,
-    request: GraphRequest,
-    snapshot: StateSnapshot,
+    runnable_config: RunnableConfig,
+    run_id: str,
     resume: InterruptResume | None,
-    *,
-    messages: list[BaseMessage],
-) -> tuple[Any, bool, tuple[Interrupt, ...]]:
-    """Build a new input or causally validate an interrupt resume."""
-    pending_interrupts = interrupts_by_id(snapshot)
-    checkpoint_id = get_checkpoint_id(snapshot.config)
-
-    if resume is None:
-        return await _prepare_new_or_retry_input(
-            graph_config,
-            request,
-            messages,
-            checkpoint_id=checkpoint_id,
-            pending_interrupts=pending_interrupts,
-        )
-
-    _require_pending_resume_state(checkpoint_id, pending_interrupts)
-
-    generation_token = await continuation_generation_token(graph, snapshot.config)
-    if generation_token is None:
+) -> Command | LangGraphInterruptBatch | None:
+    """Return a validated resume, a pending retry batch, or a fresh-run marker."""
+    snapshot = await graph.aget_state(runnable_config, subgraphs=True)
+    if get_checkpoint_id(snapshot.config) is None:
+        if resume is None:
+            return None
         msg = "No durable interrupt state exists for this run."
         raise InterruptStateConflictError(msg)
-    return (
-        _resume_interrupt_inputs(
-            generation_token,
-            set(pending_interrupts),
-            resume,
-        ),
-        True,
-        (),
+
+    batch = await durable_interrupt_batch(
+        graph, snapshot.interrupts, runnable_config, run_id
     )
-
-
-async def _prepare_new_or_retry_input(
-    graph_config: GraphConfig,
-    request: GraphRequest,
-    messages: list[BaseMessage],
-    *,
-    checkpoint_id: str | None,
-    pending_interrupts: dict[str, Interrupt],
-) -> tuple[Any, bool, tuple[Interrupt, ...]]:
-    if checkpoint_id is None:
-        return await graph_config.build_input(request, messages), True, ()
-    if pending_interrupts:
-        # Re-emit persisted tool calls without rerunning graph nodes.
-        return None, False, tuple(pending_interrupts.values())
-    msg = "This run_id has already been used."
-    raise InterruptStateConflictError(msg)
-
-
-def _require_pending_resume_state(
-    checkpoint_id: str | None,
-    pending_interrupts: dict[str, Interrupt],
-) -> None:
-    if checkpoint_id is None:
-        msg = "No durable interrupt state exists for this run."
-        raise InterruptStateConflictError(msg)
-    if not pending_interrupts:
+    if batch is None:
         msg = "This run no longer has pending interrupts."
         raise InterruptStateConflictError(msg)
-
-
-def _resume_interrupt_inputs(
-    generation_token: str,
-    pending_ids: set[str],
-    resume: InterruptResume,
-) -> Command:
-    _validate_resume_generation(generation_token, resume.generation_token)
-    _validate_complete_pending_set(pending_ids, set(resume.values))
-
-    # The ID/value form preserves call causality and handles parallel batches.
-    return Command(resume=resume.values)
-
-
-def _validate_resume_generation(current: str, submitted: str) -> None:
-    if submitted != current:
+    if resume is None:
+        return batch
+    if resume.generation_token != batch.generation_token:
         msg = "The interrupt result is stale for the current interrupt generation."
         raise InterruptStateConflictError(msg)
-
-
-def _validate_complete_pending_set(
-    pending_ids: set[str],
-    submitted_ids: set[str],
-) -> None:
-    if submitted_ids != pending_ids:
+    if set(resume.values) != {item.id for item in batch.interrupts}:
         msg = "Interrupt results do not match the complete pending interrupt set."
         raise InterruptStateConflictError(msg)
 
-
-def interrupts_by_id(snapshot: StateSnapshot) -> dict[str, Interrupt]:
-    """Validate and index the interrupts exposed by a state snapshot."""
-    pending: dict[str, Interrupt] = {}
-    for interrupt in snapshot.interrupts:
-        interrupt_id = interrupt.id
-        if not isinstance(interrupt_id, str) or not interrupt_id:
-            msg = "Durable interrupt state has an invalid interrupt id."
-            raise RuntimeError(msg)
-        if interrupt_id in pending:
-            msg = "Durable interrupt state has duplicate interrupt ids."
-            raise RuntimeError(msg)
-        pending[interrupt_id] = interrupt
-    return pending
+    # Native ID/value resumes answer parallel interrupts without replaying input.
+    return Command(resume=resume.values)
 
 
 def resolve_run_id(
@@ -284,14 +203,13 @@ async def durable_interrupt_batch(
     run_id: str | None,
 ) -> LangGraphInterruptBatch | None:
     """Bind native execution interrupts to the durable checkpoint head."""
-    if runnable_config is None:
-        msg = "Interrupt-enabled runs require runnable configuration."
-        raise RuntimeError(msg)
-
     pending_interrupts = _native_interrupts_by_id(interrupts)
     if not pending_interrupts:
         return None
 
+    if runnable_config is None:
+        msg = "Interrupt-enabled runs require runnable configuration."
+        raise RuntimeError(msg)
     if run_id is None:
         msg = "run_id cannot be None"
         raise RuntimeError(msg)
@@ -309,7 +227,7 @@ async def durable_interrupt_batch(
 def _native_interrupts_by_id(
     interrupts: Iterable[Interrupt],
 ) -> dict[str, Interrupt]:
-    """Index native results while accepting identical repeated stream parts."""
+    """Validate and index native interrupt results."""
     pending: dict[str, Interrupt] = {}
     for interrupt in interrupts:
         interrupt_id = interrupt.id
@@ -321,5 +239,8 @@ def _native_interrupts_by_id(
             pending[interrupt_id] = interrupt
         elif pending[interrupt_id] != interrupt:
             msg = "Native interrupt result has conflicting data for one interrupt id."
+            raise RuntimeError(msg)
+        else:
+            msg = "Durable interrupt state has duplicate interrupt ids."
             raise RuntimeError(msg)
     return pending

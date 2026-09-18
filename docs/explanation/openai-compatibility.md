@@ -470,9 +470,9 @@ Invalid runtime settings return HTTP 400 with
 extension does not make plain text generation invalid, but clients surface it
 as limited functionality rather than silently presenting a fully capable
 model.
-Malformed interrupt inputs, a missing or duplicate tool result, and invalid
-caller-supplied run UUIDs return HTTP 400. A structurally complete exchange that
-does not match the durable pending set, or is stale or already completed,
+Malformed interrupt inputs, duplicate tool results, and invalid caller-supplied
+run UUIDs return HTTP 400. A validly shaped exchange that is missing results from
+the durable pending set, does not match it, or is stale or already completed,
 returns HTTP 409 with `code: "interrupt_state_conflict"`. A request that cannot
 acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
@@ -658,6 +658,13 @@ Retrying an initial request returns new Response and call IDs for the same pendi
 work; either complete exchange can resume it while that checkpoint remains current.
 
 ### Resuming an Interrupt
+
+Each pause finishes the current Response with `status: "completed"` and
+`function_call` output items, following the native
+[Responses function-calling flow](https://developers.openai.com/api/docs/guides/function-calling).
+The workflow waits in its LangGraph checkpoint. Submitting the function outputs
+creates a new Response with its own ID and a `previous_response_id` link to the
+paused Response. The client needs no checkpoint fields or payload envelope.
 
 Clients can resume using standard OpenAI `previous_response_id`:
 

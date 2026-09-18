@@ -33,7 +33,6 @@ async def prepare_completion_run(
     graph_registry: GraphRegistry,
 ) -> GraphRun:
     """Validate a Chat request and prepare its graph run."""
-    graph_request, messages = decode_chat_request(request)
     graph_config = graph_registry.get_graph(request.model)
     if graph_config.supports(GraphFeature.INTERRUPTS):
         message = (
@@ -41,6 +40,7 @@ async def prepare_completion_run(
             "supported via the Responses API (/v1/responses)."
         )
         raise UnsupportedChatRequestError(message, param="model")
+    graph_request, messages = decode_chat_request(request)
     return await prepare_run(graph_request, messages, graph_registry)
 
 
