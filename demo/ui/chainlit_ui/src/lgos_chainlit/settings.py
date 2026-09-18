@@ -69,8 +69,6 @@ class Settings(BaseSettings):
         ),
     )
     ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
-    HITL_MODEL: str = "lgos-a/interruptible-approval"
-    UI_FILE: Literal["simple", "hitl"] = "simple"
     LOGIN_TYPE: ChainlitLoginType = "mock"
     OAUTH_RESOURCE: str | None = Field(default=None, min_length=1)
     OAUTH_ISSUER: str | None = None

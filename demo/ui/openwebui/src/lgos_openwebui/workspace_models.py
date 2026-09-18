@@ -37,8 +37,8 @@ USERVALVES_MODEL_ID = "lgos.uservalves_simple"
 OPENWEBUI_MODEL_ID_MAX_LENGTH = 256
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured OpenAI endpoint did not return valid "
-    "lgos model metadata. Runtime settings, file inputs, gateway tools, and "
-    "interrupt profile checks may be unavailable."
+    "lgos model metadata. Runtime settings, file inputs, and gateway tools may "
+    "be unavailable."
 )
 PACKAGE_VERSION_FIELD: dict[str, JsonValue] = {
     "key": PACKAGE_VERSION_TOOL_NAME,

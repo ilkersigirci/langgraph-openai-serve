@@ -388,17 +388,18 @@ See [Authentication](../how-to-guides/authentication.md).
 
 ## Interrupt Demo
 
-Run the dedicated HITL UI by adding `DEMO_CHAINLIT_UI_FILE=hitl` to the
-local Chainlit command under [Run The UI](#run-the-ui).
+Select `lgos-a/interruptible-approval` in the normal Chainlit profile menu, then
+send `Refund order ORDER-123 for the customer.` The same UI also handles
+interrupts returned by other profiles, including `advanced-graph`.
 
-Initial requests need no interrupt metadata. The HITL client implements the
+Initial requests need no interrupt metadata. The client implements the
 [Responses interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
 it stores the paused Response ID, asks for every call in the batch, submits only
 matching `function_call_output` items, and repeats when the graph pauses again.
-Reusable ledger validation, Chainlit persistence, reconnect restoration, and
-batch continuation come from `chainlit-utils`. The demo keeps the LGOS
-`lgos_interrupt` payload, model-capability checks, Responses request, and
-`InterruptReview` element local.
+The `chainlit-utils` `HitlWorkflow` owns ledger validation, Chainlit persistence,
+reconnect restoration, pending-request protection, and batch continuation. The
+demo keeps only the LGOS `lgos_interrupt` name, the Responses request callback,
+the payload presentation, and the `InterruptReview` element.
 Each response is shown with Chainlit's native
 [`AskElementMessage`](https://docs.chainlit.io/api-reference/ask/ask-for-element)
 and a small custom element. Choice buttons and the allowed free-text field submit
@@ -443,8 +444,8 @@ custom response field.*
 
 ## Streaming, Events, And Citations
 
-Both bundled Chainlit clients use OpenAI Responses. In the general client's
-streaming mode, the SDK stream manager owns event accumulation and supplies
+The bundled Chainlit client uses OpenAI Responses. In streaming mode, the SDK
+stream manager owns event accumulation and supplies
 the terminal `Response`; the adapter streams
 answer text into the assistant message. Messages without the optional `phase`
 field are also treated as answers. It maps completed
@@ -496,8 +497,6 @@ Chainlit-specific settings:
 
 | Setting | Notes |
 | --- | --- |
-| `DEMO_CHAINLIT_HITL_MODEL` | Model selected by the HITL UI. |
-| `DEMO_CHAINLIT_UI_FILE` | Chainlit target: `simple` or `hitl`. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token. |
 | `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 resource identifier passed in OAuth authorization and token requests. |

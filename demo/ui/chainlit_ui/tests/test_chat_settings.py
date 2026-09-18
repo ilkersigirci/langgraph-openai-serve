@@ -1,4 +1,4 @@
-"""Chat-settings behavior of the simple Chainlit application."""
+"""Chat-settings behavior of the chat Chainlit application."""
 
 import importlib
 from types import SimpleNamespace
@@ -226,9 +226,9 @@ async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settin
 async def test_chat_profiles_use_list_capabilities_for_file_uploads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     monkeypatch.setattr(
-        simple,
+        chat,
         "list_models",
         AsyncMock(
             return_value=[
@@ -248,12 +248,12 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
         ),
     )
 
-    profiles = await simple.set_chat_profiles(None)
+    profiles = await chat.set_chat_profiles(None)
 
     assert [profile.name for profile in profiles] == ["configured", "proxy-model"]
     assert [profile.markdown_description for profile in profiles] == [
         "DUMMY",
-        simple.LIMITED_FUNCTIONALITY_MESSAGE,
+        chat.LIMITED_FUNCTIONALITY_MESSAGE,
     ]
     assert [
         profile.config_overrides.features.spontaneous_file_upload.enabled
@@ -334,7 +334,7 @@ async def test_model_without_extension_warns_and_clears_settings(
 async def test_missing_profile_disables_settings_and_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session({})
     retrieve = AsyncMock()
@@ -342,11 +342,11 @@ async def test_missing_profile_disables_settings_and_message(
     factory, form = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(chat_settings, "retrieve_model", retrieve)
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple, "send_ui_message", send_ui_message)
+    monkeypatch.setattr(chat.cl, "user_session", session)
+    monkeypatch.setattr(chat, "send_ui_message", send_ui_message)
 
     await chat_settings.configure_chat_settings()
-    await simple.on_message(Mock())
+    await chat.on_message(Mock())
 
     retrieve.assert_not_awaited()
     assert [widget.id for widget in factory.call_args.args[0]] == [
@@ -361,22 +361,22 @@ async def test_missing_profile_disables_settings_and_message(
 async def test_file_upload_failure_is_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     session = Session({"chat_profile": "lgos-a/file-input"})
     send_ui_message = AsyncMock()
     create = AsyncMock()
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=Mock(content="")))
-    monkeypatch.setattr(simple, "text_only_chat_messages", list)
+    monkeypatch.setattr(chat.cl, "user_session", session)
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=Mock(content="")))
+    monkeypatch.setattr(chat, "text_only_chat_messages", list)
     monkeypatch.setattr(
-        simple,
+        chat,
         "with_response_file_parts",
         AsyncMock(side_effect=RuntimeError("upload unavailable")),
     )
-    monkeypatch.setattr(simple, "send_ui_message", send_ui_message)
-    monkeypatch.setattr(simple.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat, "send_ui_message", send_ui_message)
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
 
-    await simple.on_message(Mock(content="Summarize it."))
+    await chat.on_message(Mock(content="Summarize it."))
 
     send_ui_message.assert_awaited_once_with("Response failed: upload unavailable")
     create.assert_not_awaited()
@@ -386,7 +386,7 @@ async def test_selected_settings_reach_the_openai_request(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     clients = importlib.import_module("lgos_chainlit.clients")
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
@@ -406,12 +406,12 @@ async def test_selected_settings_reach_the_openai_request(
     messages = [{"role": "user", "content": "Hello"}]
     create = AsyncMock(return_value=completed_response("Complete answer"))
     assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
-    monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat.cl, "user_session", session)
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant_message))
+    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: messages)
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
-        simple.cl,
+        chat.cl,
         "context",
         SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
     )
@@ -420,9 +420,9 @@ async def test_selected_settings_reach_the_openai_request(
         "gateway",
         gateway_config("bifrost", "https://gateway.example"),
     )
-    monkeypatch.setattr(simple.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
 
-    await simple.on_message(Mock(content="Hello"))
+    await chat.on_message(Mock(content="Hello"))
 
     create.assert_awaited_once_with(
         model="simple",
@@ -446,7 +446,7 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
-    simple = importlib.import_module("lgos_chainlit.simple")
+    chat = importlib.import_module("lgos_chainlit.chat")
     clients = importlib.import_module("lgos_chainlit.clients")
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
@@ -465,12 +465,12 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
     messages = [{"role": "user", "content": "Hello"}]
     create = AsyncMock(return_value=completed_response("Complete answer"))
     assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
-    monkeypatch.setattr(simple.cl, "user_session", session)
-    monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant_message))
-    monkeypatch.setattr(simple, "text_only_chat_messages", lambda: messages)
-    monkeypatch.setattr(simple, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat.cl, "user_session", session)
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant_message))
+    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: messages)
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
-        simple.cl,
+        chat.cl,
         "context",
         SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
     )
@@ -479,9 +479,9 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
         "gateway",
         gateway_config("bifrost", "https://gateway.example"),
     )
-    monkeypatch.setattr(simple.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
 
-    await simple.on_message(Mock(content="Hello"))
+    await chat.on_message(Mock(content="Hello"))
 
     create.assert_awaited_once_with(
         model="simple",

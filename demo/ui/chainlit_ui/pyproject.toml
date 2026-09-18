@@ -8,7 +8,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "boto3>=1.43.75,<2",
     "chainlit>=2.12.0,<3",
-    "chainlit-utils[sso]>=0.2.0,<0.3",
+    "chainlit-utils[sso]>=0.2.1,<0.3",
     "cryptography>=49,<50",
     "fastapi[standard]>=0.121.0",
     "openai>=3.14.1,<4",
