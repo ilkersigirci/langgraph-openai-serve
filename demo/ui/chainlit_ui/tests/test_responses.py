@@ -480,7 +480,7 @@ async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
         )
     )
     assistant = Mock(content="", send=AsyncMock())
-    workflow = SimpleNamespace(run=AsyncMock())
+    workflow = SimpleNamespace(publish=AsyncMock())
     display = AsyncMock()
     monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
     monkeypatch.setattr(chat, "text_only_chat_messages", list)
@@ -500,11 +500,104 @@ async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
 
     await chat._response_message(Mock(), "interruptible-approval")
 
-    workflow.run.assert_awaited_once_with(
+    workflow.publish.assert_awaited_once_with(
         interrupt_resp,
         model_id="interruptible-approval",
     )
     display.assert_not_awaited()
+
+
+async def test_pending_interrupt_blocks_a_new_model_turn(monkeypatch) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    workflow = SimpleNamespace(block_new_message=AsyncMock(return_value=True))
+    respond = AsyncMock()
+    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
+    monkeypatch.setattr(chat, "_response_message", respond)
+    message = Mock()
+
+    await chat.on_message(message)
+
+    workflow.block_new_message.assert_awaited_once_with(message)
+    respond.assert_not_awaited()
+
+
+async def test_interrupt_action_submits_only_the_ui_reference(
+    monkeypatch,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    workflow = SimpleNamespace(submit=AsyncMock(return_value=None))
+    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
+    action = chat.cl.Action(
+        name=chat.INTERRUPT_ACTION_NAME,
+        payload={
+            "step_id": "step-review",
+            "element_id": "element-review",
+            "revision": "resp-review",
+            "outputs": ["approve"],
+        },
+    )
+
+    result = await chat.on_interrupt_submit(action)
+
+    assert result == {"ok": True}
+    workflow.submit.assert_awaited_once_with(
+        step_id="step-review",
+        element_id="element-review",
+        revision="resp-review",
+        outputs=["approve"],
+    )
+
+
+async def test_interrupt_action_rejects_an_invalid_browser_payload(
+    monkeypatch,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    workflow = SimpleNamespace(submit=AsyncMock())
+    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
+    action = chat.cl.Action(
+        name=chat.INTERRUPT_ACTION_NAME,
+        payload={
+            "step_id": "step-review",
+            "element_id": "element-review",
+            "revision": "resp-review",
+            "outputs": "approve",
+        },
+    )
+
+    result = await chat.on_interrupt_submit(action)
+
+    assert result == {"ok": False, "error": "Invalid human-review submission."}
+    workflow.submit.assert_not_awaited()
+
+
+async def test_interrupt_action_returns_a_stale_submission_error(
+    monkeypatch,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    workflow = SimpleNamespace(
+        submit=AsyncMock(
+            side_effect=chat.InvalidHitlSubmissionError(
+                "This human-review revision is stale."
+            )
+        )
+    )
+    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
+    action = chat.cl.Action(
+        name=chat.INTERRUPT_ACTION_NAME,
+        payload={
+            "step_id": "step-review",
+            "element_id": "element-review",
+            "revision": "resp-review",
+            "outputs": ["approve"],
+        },
+    )
+
+    result = await chat.on_interrupt_submit(action)
+
+    assert result == {
+        "ok": False,
+        "error": "This human-review revision is stale.",
+    }
 
 
 async def test_interrupt_continuation_keeps_response_cursor_and_request_context(

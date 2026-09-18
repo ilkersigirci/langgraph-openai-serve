@@ -335,6 +335,11 @@ async def test_missing_profile_disables_settings_and_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
+    monkeypatch.setattr(
+        chat,
+        "interrupt_workflow",
+        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
+    )
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session({})
     retrieve = AsyncMock()
@@ -362,6 +367,11 @@ async def test_file_upload_failure_is_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
+    monkeypatch.setattr(
+        chat,
+        "interrupt_workflow",
+        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
+    )
     session = Session({"chat_profile": "lgos-a/file-input"})
     send_ui_message = AsyncMock()
     create = AsyncMock()
@@ -387,6 +397,11 @@ async def test_selected_settings_reach_the_openai_request(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
+    monkeypatch.setattr(
+        chat,
+        "interrupt_workflow",
+        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
+    )
     clients = importlib.import_module("lgos_chainlit.clients")
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
@@ -447,6 +462,11 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
+    monkeypatch.setattr(
+        chat,
+        "interrupt_workflow",
+        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
+    )
     clients = importlib.import_module("lgos_chainlit.clients")
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(

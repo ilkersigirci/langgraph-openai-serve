@@ -117,7 +117,7 @@ gateway credentials; `clients.py` and
 LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
 `interrupts.py` owns the LGOS interrupt payload and `InterruptReview` UI.
 
-Import reusable history, resume, settings, Responses, and durable HITL helpers
+Import reusable history, settings, Responses, and durable HITL helpers
 from their concrete modules under `chainlit_utils.chat` and
 `chainlit_utils.openai`.
 
