@@ -21,6 +21,7 @@ nav = [
   { "Demo Stack" = [
     "demo/index.md",
     { Architecture = "demo/architecture.md" },
+    { "Design Choices" = "demo/design-choices.md" },
     { "Run the Demo API" = "demo/api.md" },
     { "Run the Files API" = "demo/files-api.md" },
     { "Example Graphs" = [

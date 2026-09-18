@@ -47,6 +47,8 @@ Compose fallbacks. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
 
 ## Chainlit Utilities
 
+- Read [Demo design choices](../docs/demo/design-choices.md) before changing the
+  interrupt lifecycle, review element, or sibling HITL helper.
 - Keep the Chainlit demo constrained to the compatible released `chainlit-utils`
   series from PyPI, with the exact release recorded in `uv.lock`; do not commit a
   local path source.

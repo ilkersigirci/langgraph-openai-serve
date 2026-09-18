@@ -4,12 +4,22 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-import chainlit as cl
-from chainlit_utils.chat.history import send_ui_message
-from chainlit_utils.chat.resume import reuse_persisted_step
 from openai.types.responses import ResponseFunctionToolCall
+from pydantic import BaseModel, ConfigDict, Field
 
+INTERRUPT_ACTION_NAME = "lgos_interrupt_submit"
 INTERRUPT_ELEMENT_NAME = "InterruptReview"
+
+
+class InterruptSubmission(BaseModel):
+    """The untrusted reference and answers accepted from the browser."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    step_id: str = Field(min_length=1)
+    element_id: str = Field(min_length=1)
+    revision: str = Field(min_length=1)
+    outputs: list[str] = Field(min_length=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,10 +41,12 @@ class InterruptReview:
 
         raw_choices = payload.get("choices")
         choices = (
-            tuple(raw_choices)
+            tuple(choice.strip() for choice in raw_choices)
             if isinstance(raw_choices, list)
             and raw_choices
-            and all(isinstance(choice, str) and choice for choice in raw_choices)
+            and all(
+                isinstance(choice, str) and choice.strip() for choice in raw_choices
+            )
             else ()
         )
         return cls(
@@ -52,59 +64,43 @@ class InterruptReview:
         }
 
 
+def interrupt_review_props(
+    calls: Sequence[ResponseFunctionToolCall],
+) -> dict[str, object]:
+    """Build one custom-element form for the complete interrupt batch."""
+    return {"reviews": [InterruptReview.from_call(call).props for call in calls]}
+
+
 def pending_interrupt_prompt(calls: Sequence[ResponseFunctionToolCall]) -> str:
-    """Render a durable ledger message without skipping malformed calls."""
-    if not calls:
+    """Render the durable text accompanying an interrupt batch."""
+    reviews = [InterruptReview.from_call(call) for call in calls]
+    if not reviews:
         return ""
-    try:
-        return InterruptReview.from_call(calls[0]).prompt
-    except ValueError:
-        return ""
-
-
-async def ask_for_interrupt(
-    call: ResponseFunctionToolCall,
-    ledger_message: cl.Message,
-) -> str | None:
-    """Ask for one interrupt output using the demo's review element."""
-    try:
-        review = InterruptReview.from_call(call)
-    except ValueError:
-        await send_ui_message("Received an unsupported interrupt payload.")
-        return None
-
-    message = cl.AskElementMessage(
-        content=review.prompt,
-        element=cl.CustomElement(
-            name=INTERRUPT_ELEMENT_NAME,
-            display="inline",
-            props=review.props,
-        ),
-        timeout=300,
+    if len(reviews) == 1:
+        return reviews[0].prompt
+    prompts = "\n\n".join(
+        f"{index}. {review.prompt}" for index, review in enumerate(reviews, start=1)
     )
-    # Chainlit persists the ask message without its live controls. Updating the
-    # ledger step avoids adding another message whenever a thread reconnects.
-    reuse_persisted_step(message, ledger_message)
-    ledger_message.content = message.content
-    response = await message.send()
-    ledger_message.content = message.content
+    return f"Human review is required for {len(reviews)} requests.\n\n{prompts}"
 
-    if not response:
-        await send_ui_message("Interrupt input timed out.")
-        return None
-    if not isinstance(response, dict) or response.get("submitted") is not True:
-        await send_ui_message("Interrupt was cancelled.")
-        return None
 
-    raw_decision = response.get("resume")
-    if not isinstance(raw_decision, str) or not raw_decision.strip():
-        await send_ui_message("No interrupt response was received.")
-        return None
-    decision = raw_decision.strip()
-    if review.choices and decision not in review.choices and not review.allow_other:
-        await send_ui_message("No interrupt response was received.")
-        return None
-    return decision
+def validate_interrupt_outputs(
+    calls: Sequence[ResponseFunctionToolCall],
+    outputs: Sequence[str],
+) -> tuple[str, ...]:
+    """Validate all answers against the trusted persisted interrupt calls."""
+    if len(outputs) != len(calls):
+        raise ValueError("Every interrupt request requires one response.")
+
+    decisions: list[str] = []
+    for call, raw_output in zip(calls, outputs, strict=True):
+        if not isinstance(raw_output, str) or not (decision := raw_output.strip()):
+            raise ValueError("Interrupt responses must be non-empty strings.")
+        review = InterruptReview.from_call(call)
+        if review.choices and decision not in review.choices and not review.allow_other:
+            raise ValueError("An interrupt response is not an allowed choice.")
+        decisions.append(decision)
+    return tuple(decisions)
 
 
 def _prompt(payload: dict[str, object]) -> str:
@@ -123,8 +119,11 @@ def _prompt(payload: dict[str, object]) -> str:
 
 
 __all__ = [
+    "INTERRUPT_ACTION_NAME",
     "INTERRUPT_ELEMENT_NAME",
     "InterruptReview",
-    "ask_for_interrupt",
+    "InterruptSubmission",
+    "interrupt_review_props",
     "pending_interrupt_prompt",
+    "validate_interrupt_outputs",
 ]

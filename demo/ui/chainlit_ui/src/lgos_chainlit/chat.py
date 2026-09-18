@@ -9,10 +9,11 @@ from chainlit.types import ThreadDict
 from chainlit_utils.auth import authenticated_user_identifier
 from chainlit_utils.chat.history import (
     mark_model_context_excluded,
+    mark_persisted_errors_excluded,
     send_ui_message,
     text_only_chat_messages,
 )
-from chainlit_utils.chat.hitl import HitlWorkflow
+from chainlit_utils.chat.hitl import HitlWorkflow, InvalidHitlSubmissionError
 from chainlit_utils.openai.responses import (
     CommentaryTaskList,
     citation_elements,
@@ -22,6 +23,7 @@ from chainlit_utils.openai.responses import (
 )
 from chainlit_utils.openai.tools import continuation_input, function_calls
 from openai.types.responses import Response, ResponseInputParam
+from pydantic import ValidationError
 
 from lgos_chainlit.chat_settings import (
     chat_settings_metadata,
@@ -37,9 +39,12 @@ from lgos_chainlit.conversation import (
 from lgos_chainlit.display_files import DISPLAY_FILE_TOOL_NAME, display_file
 from lgos_chainlit.files import file_upload_overrides, with_response_file_parts
 from lgos_chainlit.interrupts import (
+    INTERRUPT_ACTION_NAME,
     INTERRUPT_ELEMENT_NAME,
-    ask_for_interrupt,
+    InterruptSubmission,
+    interrupt_review_props,
     pending_interrupt_prompt,
+    validate_interrupt_outputs,
 )
 from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
 from lgos_chainlit.mcp import mcp_tools
@@ -73,11 +78,13 @@ async def _publish_interrupt_final(response: Response) -> None:
 
 interrupt_workflow = HitlWorkflow(
     INTERRUPT_TOOL_NAME,
-    ask=ask_for_interrupt,
+    action_name=INTERRUPT_ACTION_NAME,
     continue_response=_continue_interrupt_response,
+    element_name=INTERRUPT_ELEMENT_NAME,
     prompt=pending_interrupt_prompt,
     publish_final=_publish_interrupt_final,
-    element_name=INTERRUPT_ELEMENT_NAME,
+    review=interrupt_review_props,
+    validate_outputs=validate_interrupt_outputs,
 )
 
 
@@ -118,25 +125,44 @@ async def on_chat_start() -> None:
     await configure_chat_settings()
 
 
-@cl.on_chat_end
-async def on_chat_end() -> None:
-    interrupt_workflow.cancel()
-
-
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict) -> None:
     await configure_chat_settings()
-    await interrupt_workflow.restore(thread)
+    mark_persisted_errors_excluded(thread)
+
+
+@cl.action_callback(INTERRUPT_ACTION_NAME)
+async def on_interrupt_submit(action: cl.Action) -> dict[str, object]:
+    """Advance one persisted interrupt revision from an untrusted UI action."""
+    try:
+        submission = InterruptSubmission.model_validate(action.payload)
+    except ValidationError:
+        return {"ok": False, "error": "Invalid human-review submission."}
+
+    try:
+        await interrupt_workflow.submit(
+            step_id=submission.step_id,
+            element_id=submission.element_id,
+            revision=submission.revision,
+            outputs=submission.outputs,
+        )
+    except InvalidHitlSubmissionError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("Chainlit HITL continuation failed")
+        await send_ui_message(f"Response failed: {exc}")
+        return {"ok": False, "error": "The human review could not be submitted."}
+    return {"ok": True}
 
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    """Reply through Responses, restoring an unfinished review when necessary."""
+    """Reply through Responses unless the thread awaits human review."""
     try:
-        if await interrupt_workflow.continue_pending(message):
+        if await interrupt_workflow.block_new_message(message):
             return
     except Exception as exc:
-        logger.exception("Chainlit HITL completion failed")
+        logger.exception("Chainlit HITL state check failed")
         await send_ui_message(f"Response failed: {exc}")
         return
 
@@ -184,7 +210,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
 
             calls = function_calls(response)
             if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
-                await interrupt_workflow.run(response, model_id=model)
+                await interrupt_workflow.publish(response, model_id=model)
                 await commentary_tasks.complete()
                 return
 

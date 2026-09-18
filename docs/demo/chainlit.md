@@ -397,15 +397,21 @@ Initial requests need no interrupt metadata. The client implements the
 it stores the paused Response ID, asks for every call in the batch, submits only
 matching `function_call_output` items, and repeats when the graph pauses again.
 The `chainlit-utils` `HitlWorkflow` owns ledger validation, Chainlit persistence,
-reconnect restoration, pending-request protection, and batch continuation. The
+pending-request protection, and batch continuation. The
 demo keeps only the LGOS `lgos_interrupt` name, the Responses request callback,
 the payload presentation, and the `InterruptReview` element.
-Each response is shown with Chainlit's native
-[`AskElementMessage`](https://docs.chainlit.io/api-reference/ask/ask-for-element)
-and a small custom element. Choice buttons and the allowed free-text field submit
-one `{resume: ...}` value, so the client depends only on the standard tool-call
-batch, not the graph topology. See the shared
-[interrupt walkthrough](graphs/interruptible-approval.md).
+The workflow publishes a normal Chainlit message with one persisted custom
+element and immediately returns. The element collects one answer for every
+interrupt call in the current batch, then invokes a native Chainlit action
+callback through `callAction`. The callback reads the trusted model ID,
+Response ID, exact function calls, and expected element ID from message
+metadata; the browser sends only opaque step, element, and revision references
+plus the answers. One accepted action advances one Responses transition. A later
+interrupt updates the same form, while a terminal response marks the ledger
+complete and removes it. The client therefore depends only on the standard
+tool-call batch, not the graph topology. See the shared
+[interrupt walkthrough](graphs/interruptible-approval.md) and the concise
+[design rationale](design-choices.md#chainlit-human-review-is-event-driven).
 
 The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
 note uploads after an explicit natural-language save request. The payload
@@ -418,16 +424,16 @@ Files connection is not a bridge to the graph's configured vector service.
 *Chainlit renders the LangGraph interrupt as native choices with an optional
 custom response field.*
 
-!!! note "Reconnect recovery and its boundary"
+!!! note "Navigation recovery and its boundary"
 
     The adapter stores the paused Response ID and exact function-call batch on the same
-    model-context-excluded Chainlit message that displays the current prompt.
-    Its
-    [`on_chat_resume`](https://docs.chainlit.io/api-reference/lifecycle-hooks/on-chat-resume)
-    hook restores the newest pending continuation and reattaches its custom review form,
-    including the free-text field when allowed, after the pinned Chainlit host
-    hydrates the displayed thread. Refreshing abandons only the old live prompt;
-    it neither duplicates the persisted message nor rejects or resumes the graph.
+    model-context-excluded Chainlit message that owns the custom review element.
+    Chainlit's native thread hydration restores both records when the user returns
+    to the thread; there is no live ask prompt to recreate and no socket-owned task
+    waiting for input. Switching threads, refreshing, or reconnecting therefore
+    neither duplicates the persisted message nor rejects or resumes the graph.
+    A per-step lock and the persisted revision reject stale or concurrent duplicate
+    submissions before another continuation request is sent.
     Chainlit queues data-layer writes asynchronously, with no public flush API,
     so a process crash can still occur before that message reaches PostgreSQL.
     Once stored, cancellation, reload, or worker loss before the resume request
