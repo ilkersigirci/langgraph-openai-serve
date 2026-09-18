@@ -9,9 +9,9 @@ from openai import OpenAIError
 from openai.types import Model
 from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 
+from lgos_chainlit.display_files import DISPLAY_FILE_TOOL
 from lgos_chainlit.gateway import gateway_config
 from lgos_chainlit.lgos_protocol import ModelClientSettings
-from lgos_chainlit.utils.responses import DISPLAY_FILE_TOOL
 
 
 class Session:
@@ -89,7 +89,7 @@ async def test_discovered_settings_are_published(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
@@ -129,7 +129,7 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "provider/server-tool",
@@ -169,7 +169,7 @@ async def test_server_tool_profile_uses_fixed_opt_in_tools(
 def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "provider/database-assistant",
@@ -178,7 +178,9 @@ def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
     )
     gateway_tools = [{"type": "function", "name": "database_report"}]
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
+    monkeypatch.setattr(
+        chat_settings.mcp_tools, "response_tools", lambda: gateway_tools
+    )
 
     assert chat_settings.response_tools() == gateway_tools
 
@@ -189,7 +191,7 @@ def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
 async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "lgos-a/advanced-graph",
@@ -204,7 +206,9 @@ async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settin
     )
     monkeypatch.setattr(chat_settings.cl, "user_session", session)
     gateway_tools = [{"type": "function", "name": "database_report"}]
-    monkeypatch.setattr(chat_settings, "mcp_response_tools", lambda: gateway_tools)
+    monkeypatch.setattr(
+        chat_settings.mcp_tools, "response_tools", lambda: gateway_tools
+    )
 
     await chat_settings.configure_chat_settings()
 
@@ -260,7 +264,7 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
 async def test_model_retrieval_failure_disables_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
@@ -295,7 +299,7 @@ async def test_model_retrieval_failure_disables_settings(
 async def test_model_without_extension_warns_and_clears_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "simple",
@@ -331,7 +335,7 @@ async def test_missing_profile_disables_settings_and_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session({})
     retrieve = AsyncMock()
     send_ui_message = AsyncMock()
@@ -383,8 +387,8 @@ async def test_selected_settings_reach_the_openai_request(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
-    clients = importlib.import_module("lgos_chainlit.utils.clients")
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    clients = importlib.import_module("lgos_chainlit.clients")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "lgos-a/simple",
@@ -443,8 +447,8 @@ async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
     runtime_client_settings: ModelClientSettings,
 ) -> None:
     simple = importlib.import_module("lgos_chainlit.simple")
-    clients = importlib.import_module("lgos_chainlit.utils.clients")
-    chat_settings = importlib.import_module("lgos_chainlit.utils.chat_settings")
+    clients = importlib.import_module("lgos_chainlit.clients")
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
     session = Session(
         {
             "chat_profile": "lgos-a/simple",

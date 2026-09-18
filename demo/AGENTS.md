@@ -52,8 +52,10 @@ Compose fallbacks. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
   local path source.
 - Agents may change the sibling `../chainlit-utils` repository when reusable
   Chainlit behavior needs development. Test those unpublished changes in the
-  demo with `uv run --with-editable ../../../../chainlit-utils <command>` from
+  demo with `uv run --with-editable "../../../../chainlit-utils[sso]" <command>` from
   `demo/ui/chainlit_ui/`.
 - Keep using the editable overlay during joint development, then publish
   `chainlit-utils` and refresh the demo's PyPI constraint and lockfile when the
   changes are released.
+- Keep generic helper and PostgreSQL token-storage tests in `chainlit-utils`;
+  the demo owns LGOS settings, gateway wiring, and application-flow tests.

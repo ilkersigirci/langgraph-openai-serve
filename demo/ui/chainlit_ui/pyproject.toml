@@ -4,18 +4,13 @@ version = "0.1.0"
 description = "Standalone Chainlit client for an OpenAI-compatible LGOS endpoint"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-    "asyncpg>=0.31,<1",
-    "authlib>=1.8,<2",
     "boto3>=1.43.75,<2",
     "chainlit>=2.12.0,<3",
-    "chainlit-utils>=0.1.0,<0.2",
+    "chainlit-utils[sso]>=0.2.0,<0.3",
     "cryptography>=49,<50",
     "fastapi[standard]>=0.121.0",
-    "httpx2>=2.13,<3",
-    "itsdangerous>=2.2,<3",
-    "joserfc>=1.7,<2",
     "openai>=3.14.1,<4",
     "opentelemetry-distro>=0.65b0,<0.66",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
@@ -24,12 +19,11 @@ dependencies = [
     "plotly>=6,<7",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
-    "pyjwt>=2.10,<3",
 ]
 
 [project.scripts]
 lgos-chainlit = "lgos_chainlit.main:run"
-lgos-chainlit-setup = "chainlit_utils.database:main"
+lgos-chainlit-setup = "chainlit_utils.db.schema:main"
 
 [dependency-groups]
 dev = [
@@ -38,6 +32,7 @@ dev = [
 ]
 test = [
     "anyio>=4.14,<5",
+    "httpx2>=2.13,<3",
     "pytest>=8.3.3",
     "pytest-env>=1.6.0",
     "pytest-xdist>=3.6.1",
@@ -54,9 +49,7 @@ addopts = [
     "--color=yes",
     "--strict-config",
     "--strict-markers",
-    "-m", "not integration",
 ]
-markers = ["integration: requires a PostgreSQL database via TEST_CHAINLIT_DATABASE_URL"]
 env = [
     "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
     "OPENAI_GATEWAY_TYPE=litellm",

@@ -19,10 +19,9 @@ from openai.types.responses import (
     ResponseOutputRefusal,
     ResponseOutputText,
 )
-from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
 from openai.types.responses.response_output_text import AnnotationURLCitation
 
-from lgos_chainlit.utils import responses
+from lgos_chainlit import display_files
 
 
 def _response(*output: object) -> Response:
@@ -42,36 +41,6 @@ def _display_call() -> ResponseFunctionToolCall:
         status="completed",
         type="function_call",
     )
-
-
-async def test_commentary_is_rendered_as_a_native_task_list(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_list = Mock(status="Ready", add_task=AsyncMock(), send=AsyncMock())
-    task_list_factory = Mock(return_value=task_list)
-    tasks = [Mock(), Mock(), Mock()]
-    task_factory = Mock(side_effect=tasks)
-    monkeypatch.setattr(responses.cl, "TaskList", task_list_factory)
-    monkeypatch.setattr(responses.cl, "Task", task_factory)
-    renderer = responses.CommentaryTaskList()
-
-    await renderer.add("Generating audio")
-    await renderer.add("Calculating embeddings")
-    await renderer.add("Media ready")
-    await renderer.complete()
-
-    task_list_factory.assert_called_once_with()
-    assert [item.kwargs["title"] for item in task_factory.call_args_list] == [
-        "Generating audio",
-        "Calculating embeddings",
-        "Media ready",
-    ]
-    assert [task.status for task in tasks] == [
-        responses.cl.TaskStatus.DONE,
-        responses.cl.TaskStatus.DONE,
-        responses.cl.TaskStatus.DONE,
-    ]
-    assert task_list.status == "Done"
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
@@ -186,20 +155,6 @@ async def test_streamed_refusal_is_visible_even_without_deltas(
         commentary_tasks=Mock(),
     )
     assistant.stream_token.assert_awaited_once_with(refusal.refusal)
-    assert responses.final_answer(completed) == refusal.refusal
-
-
-def test_incomplete_response_reports_its_native_reason():
-    from openai.types.responses.response import IncompleteDetails
-
-    incomplete = _response().model_copy(
-        update={
-            "status": "incomplete",
-            "incomplete_details": IncompleteDetails(reason="max_output_tokens"),
-        }
-    )
-    with pytest.raises(RuntimeError, match="Response incomplete: max_output_tokens"):
-        responses.raise_for_response(incomplete)
 
 
 async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completion(
@@ -271,11 +226,11 @@ async def test_display_file_uses_a_persisted_native_image_message(
     message = Mock(metadata=None, send=AsyncMock())
     message_factory = Mock(return_value=message)
     client = SimpleNamespace(files=SimpleNamespace(content=content))
-    monkeypatch.setattr(responses, "files_request", lambda: (client, provider))
-    monkeypatch.setattr(responses.cl, "Image", image_factory)
-    monkeypatch.setattr(responses.cl, "Message", message_factory)
+    monkeypatch.setattr(display_files, "files_request", lambda: (client, provider))
+    monkeypatch.setattr(display_files.cl, "Image", image_factory)
+    monkeypatch.setattr(display_files.cl, "Message", message_factory)
 
-    output = await responses.display_file(_display_call())
+    output = await display_files.display_file(_display_call())
 
     content.assert_awaited_once_with("file-chart", extra_query={"provider": provider})
     image_factory.assert_called_once_with(
@@ -315,24 +270,24 @@ async def test_display_plotly_persists_an_interactive_element(
     )
     content = AsyncMock(return_value=download)
     client = SimpleNamespace(files=SimpleNamespace(content=content))
-    monkeypatch.setattr(responses, "files_request", lambda: (client, "lgos-files"))
+    monkeypatch.setattr(display_files, "files_request", lambda: (client, "lgos-files"))
     message = Mock(metadata=None, send=AsyncMock())
     message_factory = Mock(return_value=message)
-    monkeypatch.setattr(responses.cl, "Message", message_factory)
+    monkeypatch.setattr(display_files.cl, "Message", message_factory)
 
     if not valid:
         with pytest.raises(ValueError):
-            await responses.display_file(call)
+            await display_files.display_file(call)
         message_factory.assert_not_called()
         return
 
-    output = await responses.display_file(call)
+    output = await display_files.display_file(call)
 
     content.assert_awaited_once_with(
         "file-chart", extra_query={"provider": "lgos-files"}
     )
     element = message_factory.call_args.kwargs["elements"][0]
-    assert isinstance(element, responses.cl.Plotly)
+    assert isinstance(element, display_files.cl.Plotly)
     assert element.display == "inline"
     assert json.loads(element.content)["data"] == json.loads(chart)["data"]
     assert message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
@@ -342,28 +297,6 @@ async def test_display_plotly_persists_an_interactive_element(
         "call_id": "call_chart",
         "output": '{"displayed":true}',
     }
-
-
-@pytest.mark.parametrize("parsed", [False, True])
-def test_continuation_replays_only_wire_fields_before_its_small_output(
-    parsed: bool,
-) -> None:
-    call = _display_call()
-    expected_call = call.model_dump(mode="json", exclude_none=True)
-    if parsed:
-        call = ParsedResponseFunctionToolCall(
-            **expected_call, parsed_arguments=json.loads(call.arguments)
-        )
-    response = _response(call)
-    output = {
-        "type": "function_call_output",
-        "call_id": call.call_id,
-        "output": '{"displayed":true}',
-    }
-
-    continuation = responses.continuation_input(response, [output])
-
-    assert continuation == [expected_call, output]
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -459,7 +392,7 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
 
     async def stream(input_items, assistant_message, **_):
         completed = await create(input=input_items)
-        assistant_message.content += responses.final_answer(completed)
+        assistant_message.content += simple.final_answer(completed)
         return completed
 
     monkeypatch.setattr(simple.cl, "Message", Mock(return_value=assistant))
@@ -496,21 +429,6 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
         output,
     ]
     display.assert_awaited_once_with(call)
-    assert responses.function_calls(_response(server_call, server_output)) == []
-
-
-def test_transcript_labels_answers_and_preserves_explicit_phase():
-    messages = [
-        {"role": "system", "content": "Be brief."},
-        {"role": "user", "content": "Hello"},
-        {"role": "assistant", "content": "Working", "phase": "commentary"},
-        {"role": "assistant", "content": "Answer"},
-    ]
-
-    assert responses.response_input(messages) == [
-        *messages[:3],
-        {"role": "assistant", "content": "Answer", "phase": "final_answer"},
-    ]
 
 
 async def test_non_streaming_failure_does_not_display_files_or_send_success(

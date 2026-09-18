@@ -3,8 +3,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from functools import partial
 from typing import Any, cast
 
@@ -12,12 +11,31 @@ import chainlit as cl
 from chainlit.context import context as chainlit_context
 from chainlit.types import ThreadDict
 from chainlit_utils.auth import authenticated_user_identifier
-from chainlit_utils.chat import (
+from chainlit_utils.chat.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
     send_ui_message,
     text_only_chat_messages,
 )
+from chainlit_utils.chat.hitl import (
+    PendingHitl,
+    complete_pending_hitl,
+    persist_pending_hitl,
+    remove_persisted_custom_elements,
+    resolve_hitl,
+    restore_pending_hitl,
+)
+from chainlit_utils.chat.resume import (
+    reuse_persisted_step,
+    schedule_after_thread_hydration,
+)
+from chainlit_utils.openai.hitl import HitlLedgerCodec, InvalidHitlLedgerError
+from chainlit_utils.openai.responses import (
+    final_answer,
+    raise_for_response,
+    response_input,
+)
+from chainlit_utils.openai.tools import function_calls
 from openai import OpenAIError
 from openai.types.responses import (
     Response,
@@ -25,14 +43,19 @@ from openai.types.responses import (
     ResponseInputParam,
 )
 
-from lgos_chainlit.interrupt_ledger import (
-    INTERRUPT_LEDGER_METADATA_KEY,
-    InterruptContinuation,
-    InvalidInterruptLedgerError,
-    completed_ledger_metadata,
-    interrupt_continuation,
-    newest_pending_ledger,
-    pending_ledger_metadata,
+from lgos_chainlit.clients import (
+    model_request,
+    openai_client,
+    retrieve_model,
+)
+from lgos_chainlit.conversation import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
+    conversation_metadata,
+    send_limited_functionality_warning,
+)
+from lgos_chainlit.files import (
+    file_upload_overrides,
+    with_response_file_parts,
 )
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
@@ -40,42 +63,13 @@ from lgos_chainlit.lgos_protocol import (
     model_extension,
 )
 from lgos_chainlit.settings import settings
-from lgos_chainlit.utils.chat import (
-    LIMITED_FUNCTIONALITY_MESSAGE,
-    conversation_metadata,
-    send_limited_functionality_warning,
-)
-from lgos_chainlit.utils.clients import (
-    model_request,
-    openai_client,
-    retrieve_model,
-)
-from lgos_chainlit.utils.files import (
-    file_upload_overrides,
-    with_response_file_parts,
-)
-from lgos_chainlit.utils.responses import (
-    final_answer,
-    function_calls,
-    raise_for_response,
-    response_input,
-)
-from lgos_chainlit.utils.thread_resume import (
-    reuse_persisted_step,
-    schedule_after_thread_hydration,
-)
 
 logger = logging.getLogger(__name__)
 
-PENDING_LEDGER_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
-
-
-@dataclass(frozen=True, slots=True)
-class PendingInterruptLedger:
-    """A durable continuation paired with its persisted Chainlit message."""
-
-    message: cl.Message
-    continuation: InterruptContinuation
+INTERRUPT_ELEMENT_NAME = "InterruptReview"
+HITL_LEDGER_METADATA_KEY = "lgos_chainlit.hitl_interrupt_ledger"
+PENDING_HITL_SESSION_KEY = "lgos_chainlit.pending_hitl_interrupt"
+hitl_ledger_codec = HitlLedgerCodec(INTERRUPT_TOOL_NAME)
 
 
 @cl.set_chat_profiles
@@ -136,14 +130,22 @@ async def on_chat_end() -> None:
 async def on_chat_resume(thread: ThreadDict) -> None:
     """Restore the latest durable ledger and reopen its interrupt prompt."""
     mark_persisted_errors_excluded(thread)
-    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
+    cl.user_session.set(PENDING_HITL_SESSION_KEY, None)
     try:
-        ledger = pending_interrupt_ledger(thread)
+        ledger = restore_pending_hitl(
+            thread,
+            codec=hitl_ledger_codec,
+            metadata_key=HITL_LEDGER_METADATA_KEY,
+        )
         if ledger is not None:
-            await remove_persisted_interrupt_elements(thread, ledger.message.id)
-            cl.user_session.set(PENDING_LEDGER_SESSION_KEY, ledger)
+            await remove_persisted_custom_elements(
+                thread,
+                step_id=ledger.message.id,
+                element_name=INTERRUPT_ELEMENT_NAME,
+            )
+            cl.user_session.set(PENDING_HITL_SESSION_KEY, ledger)
             schedule_after_thread_hydration(partial(reopen_pending_interrupt, ledger))
-    except InvalidInterruptLedgerError as exc:
+    except InvalidHitlLedgerError as exc:
         logger.exception("Persisted Chainlit HITL ledger is invalid")
         schedule_after_thread_hydration(
             partial(send_ui_message, f"Response failed: {exc}")
@@ -152,9 +154,9 @@ async def on_chat_resume(thread: ThreadDict) -> None:
         logger.exception("Chainlit HITL resume failed: %s", exc)
 
 
-async def reopen_pending_interrupt(ledger: PendingInterruptLedger) -> None:
+async def reopen_pending_interrupt(ledger: PendingHitl) -> None:
     """Recreate the live input controls from a durable interrupt ledger."""
-    if cl.user_session.get(PENDING_LEDGER_SESSION_KEY) is not ledger:
+    if cl.user_session.get(PENDING_HITL_SESSION_KEY) is not ledger:
         return
     task_started = False
     try:
@@ -189,8 +191,8 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
     values. A model-context-excluded message therefore owns the exact Responses
     function-call ledger without private data-layer access.
     """
-    pending = cl.user_session.get(PENDING_LEDGER_SESSION_KEY)
-    if isinstance(pending, PendingInterruptLedger):
+    pending = cl.user_session.get(PENDING_HITL_SESSION_KEY)
+    if isinstance(pending, PendingHitl):
         if trigger_message is not None:
             mark_model_context_excluded(trigger_message)
             await trigger_message.update()
@@ -211,35 +213,14 @@ async def handle_message(trigger_message: cl.Message | None = None) -> None:
         await resolve_interrupts(pending)
 
 
-async def resolve_interrupts(pending: PendingInterruptLedger) -> None:
+async def resolve_interrupts(pending: PendingHitl) -> None:
     """Resolve complete interrupt batches until the graph returns terminal text."""
-    while True:
-        continuation = pending.continuation
-        outputs = []
-        for call in continuation.function_calls:
-            decision = await ask_for_resume(call, pending.message)
-            if decision is None:
-                return
-            outputs.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": decision,
-                }
-            )
-        response = await create_response(
-            outputs,
-            model_id=continuation.model_id,
-            previous_response_id=continuation.response_id,
-        )
-        next_pending = await publish_response(
-            response,
-            model_id=continuation.model_id,
-            ledger_message=pending.message,
-        )
-        if next_pending is None:
-            return
-        pending = next_pending
+    await resolve_hitl(
+        pending,
+        ask=ask_for_resume,
+        continue_response=create_response,
+        publish_response=publish_response,
+    )
 
 
 async def publish_response(
@@ -247,22 +228,28 @@ async def publish_response(
     *,
     model_id: str,
     ledger_message: cl.Message | None = None,
-) -> PendingInterruptLedger | None:
+) -> PendingHitl | None:
     """Persist a paused Response before prompting, or publish its final answer."""
     raise_for_response(response)
     calls = function_calls(response)
-    if any(call.name != INTERRUPT_TOOL_NAME for call in calls):
-        msg = "Received an unsupported tool-call batch."
-        raise ValueError(msg)
     if calls:
-        return await persist_pending_ledger(
+        return await persist_pending_hitl(
+            codec=hitl_ledger_codec,
             ledger_message=ledger_message,
             model_id=model_id,
             response_id=response.id,
-            calls=calls,
+            function_calls=calls,
+            prompt=pending_interrupt_prompt(calls),
+            metadata_key=HITL_LEDGER_METADATA_KEY,
+            session_key=PENDING_HITL_SESSION_KEY,
         )
     if ledger_message is not None:
-        await mark_ledger_completed(ledger_message)
+        await complete_pending_hitl(
+            ledger_message,
+            codec=hitl_ledger_codec,
+            metadata_key=HITL_LEDGER_METADATA_KEY,
+            session_key=PENDING_HITL_SESSION_KEY,
+        )
     await cl.Message(content=final_answer(response)).send()
     return None
 
@@ -273,7 +260,7 @@ async def create_response(
     model_id: str | None = None,
     previous_response_id: str | None = None,
 ) -> Response:
-    response = await openai_client.responses.create(
+    return await openai_client.responses.create(
         **model_request(model_id or selected_model_id()),
         input=cast("ResponseInputParam", input_items),
         previous_response_id=previous_response_id,
@@ -281,90 +268,10 @@ async def create_response(
         user=authenticated_user_identifier(),
         metadata=conversation_metadata(),
     )
-    raise_for_response(response)
-    return response
 
 
 def selected_model_id() -> str:
     return cl.user_session.get("chat_profile") or settings.HITL_MODEL
-
-
-async def persist_pending_ledger(
-    *,
-    ledger_message: cl.Message | None,
-    model_id: str,
-    response_id: str,
-    calls: list[ResponseFunctionToolCall],
-) -> PendingInterruptLedger:
-    """Create or update the one public Chainlit message that owns the ledger."""
-    continuation = interrupt_continuation(
-        model_id=model_id,
-        response_id=response_id,
-        function_calls=calls,
-    )
-    ledger = pending_ledger_metadata(continuation)
-    prompt = pending_interrupt_prompt(continuation.function_calls)
-    if ledger_message is None:
-        ledger_message = cl.Message(content=prompt)
-        set_ledger_message_metadata(ledger_message, ledger)
-        await ledger_message.send()
-    else:
-        ledger_message.content = prompt
-        set_ledger_message_metadata(ledger_message, ledger)
-        await ledger_message.update()
-    pending = PendingInterruptLedger(
-        message=ledger_message,
-        continuation=continuation,
-    )
-    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, pending)
-    return pending
-
-
-async def mark_ledger_completed(ledger_message: cl.Message) -> None:
-    """Persist a terminal marker before rendering output so resume cannot replay."""
-    set_ledger_message_metadata(
-        ledger_message,
-        completed_ledger_metadata(),
-    )
-    await ledger_message.update()
-    cl.user_session.set(PENDING_LEDGER_SESSION_KEY, None)
-
-
-def set_ledger_message_metadata(
-    message: cl.Message,
-    ledger: Mapping[str, object],
-) -> None:
-    # During on_chat_resume(), Message.from_dict() shares this mapping with the
-    # original thread step. Chainlit rebuilds chat context from that step after
-    # the hook returns, so preserve its identity while updating the message.
-    metadata = message.metadata if isinstance(message.metadata, dict) else {}
-    mark_model_context_excluded(message)
-    metadata.update(message.metadata or {})
-    metadata[INTERRUPT_LEDGER_METADATA_KEY] = dict(ledger)
-    message.metadata = metadata
-
-
-def pending_interrupt_ledger(thread: ThreadDict) -> PendingInterruptLedger | None:
-    """Decode the newest ledger step; a completed ledger blocks older replay."""
-    entry = newest_pending_ledger(thread.get("steps", []))
-    if entry is None:
-        return None
-
-    restored_step = dict(entry.step)
-    created_at = restored_step.get("createdAt")
-    if isinstance(created_at, str) and not created_at.endswith("Z"):
-        # The pinned SQL layer returns naive ISO text, but its write path accepts
-        # only the same timestamp with an explicit UTC suffix.
-        restored_step["createdAt"] = f"{created_at}Z"
-    try:
-        message = cl.Message.from_dict(restored_step)  # ty: ignore[invalid-argument-type]
-    except (KeyError, TypeError, ValueError) as exc:
-        msg = "The pending interrupt message cannot be restored."
-        raise InvalidInterruptLedgerError(msg) from exc
-    return PendingInterruptLedger(
-        message=message,
-        continuation=entry.continuation,
-    )
 
 
 async def _warn_if_model_metadata_is_missing() -> None:
@@ -391,7 +298,7 @@ async def ask_for_resume(
     choices = interrupt_choices(payload)
     prompt = interrupt_prompt(payload)
     element = cl.CustomElement(
-        name="InterruptReview",
+        name=INTERRUPT_ELEMENT_NAME,
         display="inline",
         props=interrupt_element_props(payload, choices),
     )
@@ -447,34 +354,6 @@ def interrupt_element_props(
         "choices": values,
         "allow_other": allow_other,
     }
-
-
-async def remove_persisted_interrupt_elements(
-    thread: ThreadDict,
-    step_id: str,
-) -> None:
-    """Remove stale live controls before Chainlit rehydrates a resumed thread."""
-    elements = thread.get("elements") or []
-    stale_elements = [
-        element
-        for element in elements
-        if (
-            element.get("id")
-            and element.get("type") == "custom"
-            and element.get("name") == "InterruptReview"
-            and element.get("forId") == step_id
-        )
-    ]
-    if not stale_elements:
-        return
-
-    stale_ids = {element["id"] for element in stale_elements}
-    thread["elements"] = [
-        element for element in elements if element.get("id") not in stale_ids
-    ]
-    for element_dict in stale_elements:
-        element = cl.CustomElement.from_dict(element_dict)
-        await element.remove()
 
 
 def interrupt_choices(payload: object) -> tuple[list[str], bool] | None:

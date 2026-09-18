@@ -203,10 +203,15 @@ request that needs them. The underlying contract is documented in
 
 ## Persistence And Login
 
-Authentication code is grouped under `demo/ui/chainlit_ui/src/lgos_chainlit/auth/`,
-with its tests in `demo/ui/chainlit_ui/tests/auth/`. See the
+Reusable OIDC routes, request credential isolation, and encrypted token storage
+come from `chainlit-utils`. Demo-specific settings and login policy are grouped
+in `demo/ui/chainlit_ui/src/lgos_chainlit/auth.py`, with wiring tests in
+`demo/ui/chainlit_ui/tests/test_auth.py`. Reusable browser-flow and token-storage
+tests live in `chainlit-utils`. See the
 [Chainlit project README](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/chainlit_ui/README.md)
-for the module layout and targeted test commands.
+for the module layout, editable utility development, and targeted test commands,
+and the [`chainlit-utils` repository](https://github.com/ilkersigirci/chainlit-utils)
+for its reusable integration suite.
 
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
 Opening a stored thread restores its role/content transcript and continues with
@@ -390,6 +395,10 @@ Initial requests need no interrupt metadata. The HITL client implements the
 [Responses interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
 it stores the paused Response ID, asks for every call in the batch, submits only
 matching `function_call_output` items, and repeats when the graph pauses again.
+Reusable ledger validation, Chainlit persistence, reconnect restoration, and
+batch continuation come from `chainlit-utils`. The demo keeps the LGOS
+`lgos_interrupt` payload, model-capability checks, Responses request, and
+`InterruptReview` element local.
 Each response is shown with Chainlit's native
 [`AskElementMessage`](https://docs.chainlit.io/api-reference/ask/ask-for-element)
 and a small custom element. Choice buttons and the allowed free-text field submit

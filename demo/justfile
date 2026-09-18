@@ -48,7 +48,6 @@ marimo editable='false' host='0.0.0.0' port='2718' *args:
 [group('integration')]
 test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
-    TEST_CHAINLIT_DATABASE_URL="$DEMO_API_TEST_POSTGRES_URI" {{ chainlit_run }} pytest -m integration tests/auth/test_oauth_tokens.py "${@:3}"
 
 # Check lint and formatting for all four projects.
 [group('local')]

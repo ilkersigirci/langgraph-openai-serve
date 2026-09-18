@@ -5,13 +5,16 @@ from collections.abc import Mapping
 
 import chainlit as cl
 from chainlit.input_widget import Switch
-from chainlit_utils.chat_settings import (
+from chainlit_utils.chat.settings import (
     serialize_settings,
     settings_widgets,
 )
 from openai import OpenAIError
 from openai.types.responses import CustomToolParam, ToolParam
 
+from lgos_chainlit.clients import retrieve_model
+from lgos_chainlit.conversation import send_limited_functionality_warning
+from lgos_chainlit.display_files import DISPLAY_FILE_TOOL
 from lgos_chainlit.lgos_protocol import (
     OPENAI_METADATA_VALUE_MAX_LENGTH,
     SETTINGS_METADATA_KEY,
@@ -19,10 +22,7 @@ from lgos_chainlit.lgos_protocol import (
     model_client_settings,
     model_extension,
 )
-from lgos_chainlit.utils.chat import send_limited_functionality_warning
-from lgos_chainlit.utils.clients import retrieve_model
-from lgos_chainlit.utils.mcp import mcp_response_tools
-from lgos_chainlit.utils.responses import DISPLAY_FILE_TOOL
+from lgos_chainlit.mcp import mcp_tools
 
 logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
@@ -118,7 +118,7 @@ def response_tools() -> list[ToolParam]:
         [DISPLAY_FILE_TOOL] if _supports_display_file(model_id) else []
     )
     if model_feature_enabled(GraphFeature.MCP_TOOLS):
-        tools.extend(mcp_response_tools())
+        tools.extend(mcp_tools.response_tools())
     selected = cl.user_session.get("chat_settings")
     if not isinstance(selected, dict):
         return tools

@@ -1,28 +1,36 @@
+"""Demo authentication policy and gateway credential tests."""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
-import anyio
 import chainlit as cl
 import httpx2
 import pytest
 from chainlit.auth import create_jwt
 from chainlit.context import ChainlitContext, context_var
 from chainlit.session import WebsocketSession
+from chainlit_utils.sso.tokens import OAuthLoginRequired, OAuthTokenStore
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from starlette.status import HTTP_200_OK
 
-from lgos_chainlit.auth import chainlit as auth
-from lgos_chainlit.auth.oauth_tokens import OAuthLoginRequired
+from lgos_chainlit import auth, clients
 from lgos_chainlit.settings import settings
-from lgos_chainlit.utils import clients
 
 CHAINLIT_TARGET = (
-    Path(__file__).parents[2] / "src" / "lgos_chainlit" / "simple.py"
+    Path(__file__).parents[1] / "src" / "lgos_chainlit" / "simple.py"
 ).as_posix()
+
+
+@pytest.fixture
+def delegated_store(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    store = Mock(spec=OAuthTokenStore)
+    monkeypatch.setattr(auth, "token_store", lambda: store)
+    return store
 
 
 @asynccontextmanager
@@ -85,76 +93,56 @@ async def test_mock_chainlit_login_returns_the_demo_user(
     }
 
 
-@pytest.mark.parametrize("surface", ["http", "chat"])
-async def test_concurrent_requests_keep_each_users_gateway_credentials_isolated(
-    monkeypatch: pytest.MonkeyPatch, surface: str
+@pytest.mark.parametrize("forward_tokens", [False, True])
+def test_oauth_configuration_maps_the_demo_login_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    forward_tokens: bool,
 ) -> None:
-    monkeypatch.setenv(
-        "CHAINLIT_AUTH_SECRET", "test-signing-secret-with-at-least-32-bytes"
+    native = SimpleNamespace(
+        OAUTH_GENERIC_NAME="generic",
+        CHAINLIT_URL="https://chat.example",
+        CHAINLIT_AUTH_SECRET="test-signing-secret-with-at-least-32-bytes",
     )
     monkeypatch.setattr(settings, "LOGIN_TYPE", "oauth")
-    monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", True)
-    observed: dict[str, str] = {}
-    both_requested = anyio.Event()
-    pending = 0
+    monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", forward_tokens)
+    monkeypatch.setattr(auth, "get_chainlit_settings", lambda: native)
+    oidc = Mock()
+    store = Mock()
+    oidc_factory = Mock(return_value=oidc)
+    store_factory = Mock(return_value=store)
+    integration = Mock()
+    integration_factory = Mock(return_value=integration)
+    monkeypatch.setattr(auth, "oidc_client", oidc_factory)
+    monkeypatch.setattr(auth, "token_store", store_factory)
+    monkeypatch.setattr(auth, "ChainlitOAuth", integration_factory)
+    app = FastAPI()
 
-    async def token(session_id: str, identifier: str) -> str:
-        assert session_id == f"session-{identifier}"
-        nonlocal pending
-        pending += 1
-        if pending == 2:
-            both_requested.set()
-        await both_requested.wait()
-        return f"access-{identifier}"
+    auth.configure_auth(app)
 
-    def gateway(request: httpx2.Request) -> httpx2.Response:
-        authorization = request.headers["Authorization"]
-        subject = request.headers["X-Test-Subject"]
-        observed[subject] = authorization
-        return httpx2.Response(200, json={"object": "list", "data": []})
-
-    monkeypatch.setattr(auth, "access_token", token)
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
-        client = clients.openai_client.with_options(http_client=http)
-        app = FastAPI()
-        app.add_middleware(auth.GatewayRequestContextMiddleware)
-
-        @app.get("/credential/{subject}")
-        async def credential(subject: str) -> str:
-            await client.models.list(extra_headers={"X-Test-Subject": subject})
-            return "ok"
-
-        async def request_credential(subject: str) -> None:
-            user = cl.User(
-                identifier=subject,
-                metadata={auth.SESSION_CLAIM: f"session-{subject}"},
-            )
-            jwt = create_jwt(user)
-            if surface == "http":
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="https://chat.example"
-                ) as browser:
-                    response = await browser.get(
-                        f"/credential/{subject}",
-                        headers={"Authorization": f"Bearer {jwt}"},
-                    )
-                    assert response.status_code == 200
-            else:
-                async with chat_session(user, jwt):
-                    await client.models.list(extra_headers={"X-Test-Subject": subject})
-
-        with anyio.fail_after(5):
-            async with anyio.create_task_group() as group:
-                group.start_soon(request_credential, "alice")
-                group.start_soon(request_credential, "bob")
-    assert observed == {
-        "alice": "Bearer access-alice",
-        "bob": "Bearer access-bob",
-    }
+    integration_factory.assert_called_once_with(
+        provider_id="generic",
+        chainlit_url="https://chat.example",
+        auth_secret="test-signing-secret-with-at-least-32-bytes",
+        oidc=oidc,
+        provider_env=(
+            "OAUTH_GENERIC_CLIENT_ID",
+            "OAUTH_GENERIC_CLIENT_SECRET",
+            "DEMO_CHAINLIT_OAUTH_ISSUER",
+        ),
+        token_store=store if forward_tokens else None,
+        session_claim=auth.SESSION_CLAIM,
+        state_cookie="lgos_oauth_state",
+    )
+    integration.configure.assert_called_once_with(app)
+    if forward_tokens:
+        store_factory.assert_called_once_with()
+    else:
+        store_factory.assert_not_called()
 
 
 async def test_missing_delegated_user_preserves_login_error_through_sdk(
     monkeypatch: pytest.MonkeyPatch,
+    delegated_store: Mock,
 ) -> None:
     monkeypatch.setattr(settings, "LOGIN_TYPE", "oauth")
     monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", True)
@@ -174,6 +162,7 @@ async def test_missing_delegated_user_preserves_login_error_through_sdk(
 
 async def test_delegated_chat_uses_new_credentials_and_stops_after_logout(
     monkeypatch: pytest.MonkeyPatch,
+    delegated_store: Mock,
 ) -> None:
     monkeypatch.setenv(
         "CHAINLIT_AUTH_SECRET", "test-signing-secret-with-at-least-32-bytes"
@@ -194,7 +183,7 @@ async def test_delegated_chat_uses_new_credentials_and_stops_after_logout(
         observed.append(request.headers["Authorization"])
         return httpx2.Response(200, json={"id": "resp_test", "output": []})
 
-    monkeypatch.setattr(auth, "access_token", token)
+    delegated_store.access_token = token
     async with (
         httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http,
         chat_session(user, create_jwt(user)),
@@ -207,22 +196,6 @@ async def test_delegated_chat_uses_new_credentials_and_stops_after_logout(
         with pytest.raises(OAuthLoginRequired):
             await client.responses.create(model="graph", input="after logout")
     assert observed == ["Bearer access-before-refresh", "Bearer access-after-refresh"]
-
-
-async def test_delegated_chat_rejects_a_credential_bound_to_another_user(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "CHAINLIT_AUTH_SECRET", "test-signing-secret-with-at-least-32-bytes"
-    )
-    monkeypatch.setattr(settings, "LOGIN_TYPE", "oauth")
-    monkeypatch.setattr(settings, "ENABLE_OAUTH_TOKEN_FORWARDING", True)
-    alice_token = create_jwt(
-        cl.User(identifier="alice", metadata={auth.SESSION_CLAIM: "alice-session"})
-    )
-    async with chat_session(cl.User(identifier="bob"), alice_token):
-        with pytest.raises(OAuthLoginRequired):
-            await auth.gateway_credential()
 
 
 @pytest.mark.parametrize("login_type", ["mock", "oauth"])

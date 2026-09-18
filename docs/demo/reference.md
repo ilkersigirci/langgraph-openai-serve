@@ -45,7 +45,7 @@ integration commands:
 | `just demo/down` | Stop and remove every stack variant |
 | `just demo/sync` | Synchronize all four projects from their lockfiles |
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
-| `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence and Chainlit delegated-token tests against PostgreSQL on port 3001 |
+| `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
 | `just demo/lint` | Check all four projects with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check all four projects |

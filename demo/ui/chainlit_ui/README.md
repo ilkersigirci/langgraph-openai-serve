@@ -23,6 +23,9 @@ this client is declared locally in
 [`lgos_protocol.py`](src/lgos_chainlit/lgos_protocol.py). That file links every
 declaration to its authoritative source in the main LGOS repository.
 
+Use the [editable commands below](#local-utility-development) when testing
+changes from a sibling `chainlit-utils` checkout.
+
 ```bash
 cp .env.example .env
 uv run --locked --env-file .env lgos-chainlit-setup
@@ -46,10 +49,10 @@ and Files for the user's credential. See the
 [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
 for both modes, key rotation, and logout behavior.
 
-Authentication code lives in [`src/lgos_chainlit/auth/`](src/lgos_chainlit/auth/):
-`chainlit.py` integrates login and request credentials with Chainlit,
-`oauth_client.py` configures Authlib, and `oauth_tokens.py` stores and refreshes
-encrypted grants. The corresponding tests are grouped in [`tests/auth/`](tests/auth/).
+Reusable OIDC routes, request credential isolation, and encrypted token storage
+come from `chainlit-utils`. [`auth.py`](src/lgos_chainlit/auth.py)
+maps this demo's settings and login policy onto those services. The wiring
+coverage is in [`test_auth.py`](tests/test_auth.py).
 
 Authlib handles OIDC discovery, S256 PKCE, state, nonce, and ID-token validation.
 Set `DEMO_CHAINLIT_OAUTH_ISSUER` to the exact HTTPS issuer and `CHAINLIT_URL` to
@@ -80,17 +83,45 @@ copied native UI JWTs. The guide above documents the lifecycle and security
 boundaries.
 
 Run the regular checks with `uv run --locked pytest`, or only the authentication
-checks with `uv run --locked pytest tests/auth`. Delegated-token persistence and
-refresh tests use a temporary schema in the configured PostgreSQL database:
+checks with `uv run --locked pytest tests/test_auth.py`. Use the editable
+equivalents below when testing unpublished utility changes. The demo covers login
+policy and gateway credential wiring. Reusable browser login, token encryption,
+refresh concurrency, key rotation, and logout persistence are tested in the
+[`chainlit-utils` repository](https://github.com/ilkersigirci/chainlit-utils).
+
+## Local utility development
+
+When compatible utility changes have not been published yet, use the sibling
+`chainlit-utils` checkout as a temporary editable overlay:
 
 ```bash
-TEST_CHAINLIT_DATABASE_URL=postgresql://lgos:lgos@localhost:3001/lgos \
-  uv run --locked pytest -m integration tests/auth
+uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+  --env-file .env lgos-chainlit-setup
+uv run --locked --with-editable "../../../../chainlit-utils[sso]" pytest
+uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+  ty check src --extra-search-path ../../../../chainlit-utils/src
+uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+  --env-file .env lgos-chainlit
 ```
 
-`just demo/test-postgres --editable` runs these checks together with
-the demo API's PostgreSQL tests. Login and request-isolation tests run in the
-regular suite; neither suite needs a live identity provider.
+The overlay keeps local paths out of the project manifest and lockfile. After
+publishing, raise the demo's `chainlit-utils[sso]` minimum version to the release
+that supplies the imported API and refresh `uv.lock`.
+
+## Module ownership
+
+`simple.py` and `hitl.py` register the two applications' Chainlit callbacks.
+`auth.py` configures login and gateway credentials; `clients.py` and
+`gateway.py` own gateway access. `conversation.py`, `chat_settings.py`,
+`files.py`, `display_files.py`, and `mcp.py` contain their respective
+LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
+`hitl.py` owns the LGOS interrupt payload and `InterruptReview` UI.
+
+Import reusable history, resume, settings, Responses, and durable HITL helpers
+from their concrete modules under `chainlit_utils.chat` and
+`chainlit_utils.openai`.
+
+## Attachments
 
 User attachments are uploaded separately through the selected gateway's normal
 OpenAI Files API. LiteLLM assigns those requests to `litellm_proxy`; Bifrost

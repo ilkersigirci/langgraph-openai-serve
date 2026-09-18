@@ -5,7 +5,7 @@ from typing import Any
 from openai import AsyncOpenAI, DefaultAsyncHttpx2Client, OpenAIError
 from openai.types import Model
 
-from lgos_chainlit.auth.chainlit import gateway_credential
+from lgos_chainlit.auth import gateway_credential
 from lgos_chainlit.gateway import gateway_config, litellm_models
 from lgos_chainlit.lgos_protocol import LGOS_MODEL_OWNER
 from lgos_chainlit.settings import settings

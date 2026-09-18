@@ -1,4 +1,4 @@
-"""LGOS-specific Chainlit messages and compatibility warning."""
+"""LGOS conversation metadata and model-capability warnings."""
 
 import chainlit as cl
 

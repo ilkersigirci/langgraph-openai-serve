@@ -10,11 +10,10 @@ from chainlit.data.storage_clients.s3 import S3StorageClient
 from chainlit.utils import mount_chainlit
 from fastapi import FastAPI
 
-from lgos_chainlit.auth.chainlit import configure_auth
-from lgos_chainlit.auth.oauth_tokens import initialize_oauth_storage
+from lgos_chainlit.auth import configure_auth, token_store
+from lgos_chainlit.clients import gateway, gateway_http_client
+from lgos_chainlit.mcp import mcp_gateway_config
 from lgos_chainlit.settings import get_chainlit_settings, settings
-from lgos_chainlit.utils.clients import gateway, gateway_http_client
-from lgos_chainlit.utils.mcp import mcp_gateway_config
 
 os.environ.setdefault(
     "AWS_CONFIG_FILE",
@@ -46,7 +45,7 @@ async def _close_chainlit_data_layer() -> None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
-            await initialize_oauth_storage()
+            await token_store().initialize()
         yield
     finally:
         await gateway_http_client.aclose()

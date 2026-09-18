@@ -145,8 +145,7 @@ def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "import json, os, sys\n"
         "with open(os.environ['TASK_TEST_LOG'], 'a') as log:\n"
         "    log.write(json.dumps({'args': sys.argv[1:], "
-        "'cwd': os.getcwd(), "
-        "'postgres': os.environ.get('TEST_CHAINLIT_DATABASE_URL')}) + '\\n')\n"
+        "'cwd': os.getcwd()}) + '\\n')\n"
     )
     uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
@@ -197,7 +196,7 @@ async def test_postgres_task_accepts_ci_environment_without_a_dotenv_file(
 
     assert result.returncode == 0, result.stderr.decode()
     content = await anyio.Path(task_log).read_text(encoding="utf-8")
-    api, chainlit = [json.loads(line) for line in content.splitlines()]
+    [api] = [json.loads(line) for line in content.splitlines()]
     assert api["args"][:7] == [
         "run",
         "--directory",
@@ -207,8 +206,7 @@ async def test_postgres_task_accepts_ci_environment_without_a_dotenv_file(
         "../..",
         "pytest",
     ]
-    assert api["args"][-1] == chainlit["args"][-1] == "-x"
-    assert chainlit["postgres"] == uri
+    assert api["args"][-1] == "-x"
 
 
 async def test_notebook_task_passes_host_literally(task_log: Path) -> None:

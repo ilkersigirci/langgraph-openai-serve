@@ -6,42 +6,40 @@ from typing import Any, cast
 import chainlit as cl
 from chainlit.types import ThreadDict
 from chainlit_utils.auth import authenticated_user_identifier
-from chainlit_utils.chat import (
+from chainlit_utils.chat.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
     send_ui_message,
     text_only_chat_messages,
 )
+from chainlit_utils.openai.responses import (
+    CommentaryTaskList,
+    citation_elements,
+    final_answer,
+    raise_for_response,
+    response_input,
+)
+from chainlit_utils.openai.tools import continuation_input, function_calls
 from openai.types.responses import Response, ResponseInputParam
 
-from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
-from lgos_chainlit.utils.chat import (
-    LIMITED_FUNCTIONALITY_MESSAGE,
-    conversation_metadata,
-)
-from lgos_chainlit.utils.chat_settings import (
+from lgos_chainlit.chat_settings import (
     chat_settings_metadata,
     configure_chat_settings,
     response_tools,
     streaming_enabled,
 )
-from lgos_chainlit.utils.clients import list_models, model_request, openai_client
-from lgos_chainlit.utils.files import (
+from lgos_chainlit.clients import list_models, model_request, openai_client
+from lgos_chainlit.conversation import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
+    conversation_metadata,
+)
+from lgos_chainlit.display_files import DISPLAY_FILE_TOOL_NAME, display_file
+from lgos_chainlit.files import (
     file_upload_overrides,
     with_response_file_parts,
 )
-from lgos_chainlit.utils.mcp import execute_mcp_tool
-from lgos_chainlit.utils.responses import (
-    DISPLAY_FILE_TOOL_NAME,
-    CommentaryTaskList,
-    citation_elements,
-    continuation_input,
-    display_file,
-    final_answer,
-    function_calls,
-    raise_for_response,
-    response_input,
-)
+from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
+from lgos_chainlit.mcp import mcp_tools
 
 
 @cl.set_chat_profiles
@@ -160,7 +158,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
                 (
                     await display_file(call)
                     if call.name == DISPLAY_FILE_TOOL_NAME
-                    else await execute_mcp_tool(call)
+                    else await mcp_tools.execute(call)
                 )
                 for call in calls
             ]
