@@ -32,6 +32,9 @@ Install it with the supplied PostgreSQL Response store:
 uv add "langgraph-openai-serve[postgres,hatchet]"
 ```
 
+For local single-process trials, `InMemoryBackgroundBackend` needs no optional
+dependency. It is not durable and is not intended for deployment.
+
 The core package does not import Hatchet. Applications that deliberately own
 their complete background lifecycle can implement the high-level
 `BackgroundBackend` protocol. See

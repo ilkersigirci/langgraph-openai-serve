@@ -16,7 +16,6 @@ from hatchet_sdk.runnables.workflow import Standalone, Workflow
 from hatchet_sdk.types.idempotency import TTLBasedIdempotencyConfig
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background.contracts import (
     BackgroundSettings,
     RunJob,
@@ -172,17 +171,14 @@ class HatchetBackgroundBackend:
         response: dict[str, JsonValue],
     ) -> StoredRun | None:
         """Choose the public cancellation first, then cancel its Hatchet run."""
-        current = await self.store.get(response_id, owner_scope)
-        if current is None:
-            return None
-        request = ResponseCreateRequest.model_validate(current.envelope)
-        retention = self.settings.result_retention_for(stored=bool(request.store))
         cancelled = await self.store.request_cancellation(
             response_id,
             owner_scope,
             response,
             now=datetime.now(UTC),
-            result_retention=retention,
+            result_retention=self.settings.result_retention_for(
+                stored=response.get("store") is True
+            ),
             idempotency_retention=self.settings.idempotency_retention,
         )
         if (

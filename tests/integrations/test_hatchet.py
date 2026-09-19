@@ -9,9 +9,8 @@ from hatchet_sdk import Hatchet
 from hatchet_sdk.config import ClientConfig
 from hatchet_sdk.exceptions import IdempotencyCollisionError
 from hatchet_sdk.runnables.types import EmptyModel
-from tests.background.fakes import MemoryResponseStore
 
-from langgraph_openai_serve import BackgroundSettings, RunJob
+from langgraph_openai_serve import BackgroundSettings, InMemoryResponseStore, RunJob
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus
 from langgraph_openai_serve.integrations.hatchet import (
     HatchetAdapterSettings,
@@ -85,7 +84,7 @@ async def test_backend_submits_without_waiting_and_persists_hatchet_id() -> None
     workflow = Mock(
         aio_run=AsyncMock(return_value=SimpleNamespace(workflow_run_id="native-run"))
     )
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     backend = HatchetBackgroundBackend(
         workflow=workflow,
         runs=Mock(),
@@ -108,7 +107,7 @@ async def test_backend_uses_hatchet_idempotency_collision_receipt() -> None:
     backend = HatchetBackgroundBackend(
         workflow=workflow,
         runs=Mock(),
-        store=MemoryResponseStore(),
+        store=InMemoryResponseStore(),
     )
 
     created = await backend.create(_new_run())
@@ -117,7 +116,7 @@ async def test_backend_uses_hatchet_idempotency_collision_receipt() -> None:
 
 
 async def test_failed_non_idempotent_submission_discards_unacknowledged_row() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     workflow = Mock(aio_run=AsyncMock(side_effect=OSError("unavailable")))
     backend = HatchetBackgroundBackend(
         workflow=workflow,
@@ -132,7 +131,7 @@ async def test_failed_non_idempotent_submission_discards_unacknowledged_row() ->
 
 
 async def test_failed_idempotent_submission_keeps_stable_run_for_retry() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     workflow = Mock(
         aio_run=AsyncMock(
             side_effect=[
@@ -169,7 +168,7 @@ async def test_backend_cancellation_uses_native_hatchet_run() -> None:
             )
         ),
         runs=runs,
-        store=MemoryResponseStore(),
+        store=InMemoryResponseStore(),
         settings=BackgroundSettings(),
     )
     await backend.create(_new_run())
@@ -200,7 +199,7 @@ async def test_repeated_cancellation_retries_a_transient_hatchet_failure() -> No
             )
         ),
         runs=runs,
-        store=MemoryResponseStore(),
+        store=InMemoryResponseStore(),
     )
     await backend.create(_new_run())
     response = {"id": "resp_one", "status": "cancelled"}
@@ -247,7 +246,7 @@ async def test_registration_delegates_retries_failure_and_cron_to_hatchet() -> N
     workflow_options: dict[str, object] = {}
     maintenance_options: dict[str, object] = {}
     maintenance_function = None
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     runs = Mock(aio_cancel=AsyncMock())
     hatchet = Mock(runs=runs)
 
@@ -306,7 +305,7 @@ async def test_registration_delegates_retries_failure_and_cron_to_hatchet() -> N
 
 async def test_maintenance_delivers_cancellation_after_transient_api_failure() -> None:
     expected_attempts = 2
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     runs = Mock(aio_cancel=AsyncMock(side_effect=[OSError("transient"), None]))
     workflow = Mock(
         aio_run=AsyncMock(return_value=SimpleNamespace(workflow_run_id="native-run"))

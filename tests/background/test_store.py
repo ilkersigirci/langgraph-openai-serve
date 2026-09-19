@@ -3,8 +3,8 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from tests.background.fakes import MemoryResponseStore
 
+from langgraph_openai_serve import InMemoryResponseStore
 from langgraph_openai_serve.background.store import (
     BackgroundCapacityError,
     BackgroundIdempotencyConflictError,
@@ -37,7 +37,7 @@ def _new_run(
 
 
 async def test_accept_enforces_capacity_and_idempotency() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     original = _new_run("one", now=now, idempotency_key="key")
 
@@ -67,7 +67,7 @@ async def test_accept_enforces_capacity_and_idempotency() -> None:
 async def test_workflow_receipt_is_idempotent_and_unsubmitted_rows_can_be_removed() -> (
     None
 ):
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=2)
     await store.accept(_new_run("two", now=now), capacity=2)
@@ -87,7 +87,7 @@ async def test_workflow_receipt_is_idempotent_and_unsubmitted_rows_can_be_remove
 
 
 async def test_cancellation_and_completion_have_one_terminal_winner() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=1)
     await store.record_workflow_run("run-one", "native-run", now=now)
@@ -119,7 +119,7 @@ async def test_cancellation_and_completion_have_one_terminal_winner() -> None:
 
 
 async def test_expiry_retains_then_removes_an_idempotency_tombstone() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(
         _new_run("one", now=now, idempotency_key="key"),
@@ -154,7 +154,7 @@ async def test_expiry_retains_then_removes_an_idempotency_tombstone() -> None:
 
 
 async def test_expiry_skips_retained_tombstones_without_starving_later_work() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     for name, key in (("one", "key"), ("two", None)):
         await store.accept(
@@ -177,7 +177,7 @@ async def test_expiry_skips_retained_tombstones_without_starving_later_work() ->
 
 
 async def test_cleanup_claim_rotates_past_an_unfinished_row() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     for name in ("one", "two"):
         await store.accept(_new_run(name, now=now), capacity=2)
@@ -203,7 +203,7 @@ async def test_cleanup_claim_rotates_past_an_unfinished_row() -> None:
 
 
 async def test_expiry_retains_a_pending_native_cancellation() -> None:
-    store = MemoryResponseStore()
+    store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=1)
     await store.record_workflow_run("run-one", "native-run", now=now)

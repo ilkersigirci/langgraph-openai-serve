@@ -1,9 +1,9 @@
 # Run Responses In The Background
 
 LGOS can accept an OpenAI Responses request, run its graph in a separate
-Hatchet worker, and let the caller poll the standard Response resource. Hatchet
-is the only built-in background backend. It owns queueing, retries, backoff,
-timeouts, cancellation, final-failure handling, and recurring maintenance.
+worker, and let the caller poll the standard Response resource. Hatchet is the
+built-in durable backend. It owns queueing, retries, backoff, timeouts,
+cancellation, final-failure handling, and recurring maintenance.
 
 Install the supplied persistence and backend adapters:
 
@@ -99,8 +99,9 @@ graph policy.
 
 A background graph must:
 
-- use a persistent asynchronous LangGraph checkpointer with thread deletion;
-- configure a cross-process run coordinator;
+- use an asynchronous LangGraph checkpointer with thread deletion, persistent
+  for durable deployments;
+- configure a run coordinator, cross-process for multi-worker deployments;
 - reconstruct its output from checkpointed state;
 - support `durability="sync"`; and
 - avoid LangGraph interrupts, which are mutually exclusive with background
@@ -110,6 +111,26 @@ Hatchet retries a failed task. On each attempt, LGOS inspects the checkpoint,
 applies initial input only when no checkpoint exists, and resumes unfinished
 work otherwise. A completed node normally is not rerun, but unfinished node
 side effects still need application-level idempotency.
+
+## Try It In One Process
+
+For local trials, pair LangGraph's `InMemorySaver` with
+`InMemoryRunCoordinator`, then run the backend in the application lifespan:
+
+```python
+from fastapi import FastAPI
+from langgraph_openai_serve import InMemoryBackgroundBackend, LanggraphOpenaiServe
+
+background = InMemoryBackgroundBackend(graphs=graphs)
+app = FastAPI(lifespan=background.lifespan)
+server = LanggraphOpenaiServe(app=app, graphs=graphs, background=background)
+server.bind_openai_api()
+```
+
+!!! warning
+    This backend keeps all state and tasks in one process. It has no durable
+    queue, retries, or timeouts, and restarts lose every Response. Do not deploy
+    it.
 
 ## Configure PostgreSQL And Hatchet
 
@@ -248,7 +269,8 @@ transition and is reserved for operator intervention followed by recovery.
 ## Bring Another Engine
 
 `BackgroundBackend` is the escape hatch for applications that own another
-engine. Hatchet remains the only built-in adapter. Implement three methods:
+engine. Hatchet remains the only durable built-in adapter. Implement three
+methods:
 
 ```python
 class BackgroundBackend:
@@ -262,8 +284,9 @@ class BackgroundBackend:
     ) -> StoredRun | None: ...
 ```
 
-Pass it to `LanggraphOpenaiServe(background=...)`. To reuse LGOS persistence and
-execution, compose `PostgresResponseStore` with `BackgroundWorker`:
+Pass it to `LanggraphOpenaiServe(background=...)`. To reuse LGOS execution,
+compose `BackgroundWorker` with `PostgresResponseStore`, or
+`InMemoryResponseStore` locally:
 
 | Engine event | LGOS operation |
 | --- | --- |

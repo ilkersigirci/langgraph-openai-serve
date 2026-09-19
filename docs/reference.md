@@ -357,9 +357,9 @@ and `code: "run_busy"`.
 
 The package exports the lifecycle-level `BackgroundBackend`, `NewRun`,
 `StoredRun`, `ResponseStore`, `BackgroundPolicy`, `BackgroundSettings`,
-`RunJob`, and `BackgroundWorker` public interfaces. Hatchet is the only
-built-in backend. Test doubles are kept in the test suite rather than shipped
-as production adapters.
+`RunJob`, and `BackgroundWorker` public interfaces. It also exports
+`InMemoryBackgroundBackend` and `InMemoryResponseStore` for single-process
+development. Hatchet is the only durable built-in backend.
 
 `BackgroundSettings` defaults are:
 

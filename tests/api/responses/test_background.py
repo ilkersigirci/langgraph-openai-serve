@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
-from anyio import Event, create_task_group
-from fastapi import status
+from anyio import Event, create_task_group, fail_after
+from anyio.lowlevel import checkpoint
+from fastapi import FastAPI, status
 from httpx2 import ASGITransport, AsyncClient
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -20,18 +21,21 @@ from langgraph_openai_serve import (
     BackgroundWorker,
     GraphConfig,
     GraphRegistry,
+    InMemoryBackgroundBackend,
+    InMemoryResponseStore,
     LanggraphOpenaiServe,
     RetryableJobError,
     RunJob,
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from tests.background.fakes import MemoryBackgroundBackend, MemoryResponseStore
+from tests.background.fakes import MemoryBackgroundBackend
 from tests.graph.support.schemas import MessageState
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from fastapi import Request
+    from openai.types.responses import Response
 
 
 @dataclass
@@ -40,7 +44,7 @@ class _Environment:
     http: AsyncClient
     backend: MemoryBackgroundBackend
     worker: BackgroundWorker
-    store: MemoryResponseStore
+    store: InMemoryResponseStore
     invocations: list[str]
 
 
@@ -99,7 +103,7 @@ async def _environment(  # ruff: ignore[too-many-arguments] - Test fixture optio
                 )
             }
         )
-        store = MemoryResponseStore()
+        store = InMemoryResponseStore()
         backend = MemoryBackgroundBackend(store=store, settings=settings)
         worker = BackgroundWorker(graphs=registry, store=store, settings=settings)
 
@@ -135,6 +139,40 @@ async def _execute_next(environment: _Environment):
     return job
 
 
+@asynccontextmanager
+async def _in_memory_client(
+    environment: _Environment,
+) -> AsyncIterator[tuple[AsyncOpenAI, InMemoryBackgroundBackend]]:
+    backend = InMemoryBackgroundBackend(graphs=environment.worker.graphs)
+    app = FastAPI(lifespan=backend.lifespan)
+    LanggraphOpenaiServe(
+        app=app,
+        graphs=environment.worker.graphs,
+        background=backend,
+    ).bind_openai_api()
+    transport = ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=transport, base_url="http://test") as http,
+        AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=http,
+            max_retries=0,
+        ) as client,
+    ):
+        yield client, backend
+
+
+async def _terminal_response(client: AsyncOpenAI, response_id: str) -> Response:
+    with fail_after(2):
+        while True:
+            response = await client.responses.retrieve(response_id)
+            if response.status not in {"queued", "in_progress"}:
+                return response
+            await checkpoint()
+
+
 async def test_background_response_is_polled_and_executed_outside_post() -> None:
     async with _environment() as environment:
         created = await environment.client.responses.create(
@@ -158,6 +196,34 @@ async def test_background_response_is_polled_and_executed_outside_post() -> None
 
         await environment.worker.execute(job)
         assert environment.invocations == ["Hello"]
+
+
+async def test_in_memory_backend_executes_without_an_external_engine() -> None:
+    async with _environment() as environment:
+        async with _in_memory_client(environment) as (client, _backend):
+            created = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+            )
+            completed = await _terminal_response(client, created.id)
+
+        assert completed.status == "completed"
+        assert completed.output_text == "background hello"
+
+
+async def test_in_memory_backend_finalizes_execution_failure() -> None:
+    async with _environment(fail_after_checkpoint=1) as environment:
+        async with _in_memory_client(environment) as (client, _backend):
+            created = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+            )
+            failed = await _terminal_response(client, created.id)
+
+        assert failed.status == "failed"
+        assert failed.error is not None
 
 
 async def test_background_capable_model_preserves_foreground_execution() -> None:
@@ -254,6 +320,25 @@ async def test_cancellation_wins_a_race_with_graph_publication() -> None:
         current = await environment.client.responses.retrieve(created.id)
         assert cancelled.status == "cancelled"
         assert current.status == "cancelled"
+
+
+async def test_in_memory_backend_cancels_active_execution() -> None:
+    started = Event()
+    allow_execution = Event()
+    async with _environment(execution_gate=(started, allow_execution)) as environment:
+        async with _in_memory_client(environment) as (client, backend):
+            created = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+            )
+            await started.wait()
+            cancelled = await client.responses.cancel(created.id)
+            stored = await backend.store.get_internal(created.id)
+
+        assert cancelled.status == "cancelled"
+        assert stored is not None
+        assert not stored.cancellation_pending
 
 
 async def test_idempotent_create_reuses_response_and_rejects_conflicts() -> None:
