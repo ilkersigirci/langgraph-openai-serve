@@ -178,6 +178,7 @@ async def cancel_background_response(
         response_id,
         owner_scope,
         cast("dict[str, JsonValue]", cancellation_json),
+        stored=bool(request.store),
     )
     if cancelled is None or cancelled.response is None:
         raise BackgroundResponseNotFoundError(response_id)

@@ -281,8 +281,12 @@ class BackgroundBackend:
         response_id: str,
         owner_scope: str,
         response: dict[str, JsonValue],
+        *,
+        stored: bool,
     ) -> StoredRun | None: ...
 ```
+
+`stored` is the normalized `store` value from the persisted request.
 
 Pass it to `LanggraphOpenaiServe(background=...)`. To reuse LGOS execution,
 compose `BackgroundWorker` with `PostgresResponseStore`, or

@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -177,6 +177,7 @@ async def test_backend_cancellation_uses_native_hatchet_run() -> None:
         "resp_one",
         "owner",
         {"id": "resp_one", "status": "cancelled"},
+        stored=False,
     )
 
     assert cancelled is not None
@@ -204,13 +205,43 @@ async def test_repeated_cancellation_retries_a_transient_hatchet_failure() -> No
     await backend.create(_new_run())
     response = {"id": "resp_one", "status": "cancelled"}
 
-    first = await backend.cancel("resp_one", "owner", response)
-    second = await backend.cancel("resp_one", "owner", response)
+    first = await backend.cancel("resp_one", "owner", response, stored=False)
+    second = await backend.cancel("resp_one", "owner", response, stored=False)
 
     assert first is not None
     assert second is not None
     assert first.status is second.status is ResponseStatus.CANCELLED
     assert runs.aio_cancel.await_count == expected_attempts
+
+
+async def test_backend_cancellation_uses_stored_result_retention() -> None:
+    settings = BackgroundSettings(
+        result_retention=timedelta(seconds=1),
+        stored_result_retention=timedelta(days=30),
+    )
+    backend = HatchetBackgroundBackend(
+        workflow=Mock(
+            aio_run=AsyncMock(
+                return_value=SimpleNamespace(workflow_run_id="native-run")
+            )
+        ),
+        runs=Mock(aio_cancel=AsyncMock()),
+        store=InMemoryResponseStore(),
+        settings=settings,
+    )
+    await backend.create(_new_run())
+
+    cancelled = await backend.cancel(
+        "resp_one",
+        "owner",
+        {"id": "resp_one", "status": "cancelled"},
+        stored=True,
+    )
+
+    assert cancelled is not None
+    assert cancelled.result_expires_at is not None
+    assert cancelled.terminal_at is not None
+    assert cancelled.result_expires_at - cancelled.terminal_at == timedelta(days=30)
 
 
 class _FakeWorkflow:
@@ -320,6 +351,7 @@ async def test_maintenance_delivers_cancellation_after_transient_api_failure() -
         "resp_one",
         "owner",
         {"id": "resp_one", "status": "cancelled"},
+        stored=False,
     )
     assert cancelled is not None
 

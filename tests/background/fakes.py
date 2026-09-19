@@ -62,15 +62,15 @@ class MemoryBackgroundBackend:
         response_id: str,
         owner_scope: str,
         response: dict[str, JsonValue],
+        *,
+        stored: bool,
     ) -> StoredRun | None:
         result = await self.store.request_cancellation(
             response_id,
             owner_scope,
             response,
             now=datetime.now(UTC),
-            result_retention=self.settings.result_retention_for(
-                stored=response.get("store") is True
-            ),
+            result_retention=self.settings.result_retention_for(stored=stored),
             idempotency_retention=self.settings.idempotency_retention,
         )
         if result is not None and result.status is ResponseStatus.CANCELLED:

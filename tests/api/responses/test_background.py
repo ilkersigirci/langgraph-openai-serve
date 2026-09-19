@@ -3,10 +3,11 @@ from __future__ import annotations
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from anyio import Event, create_task_group, fail_after
+from anyio import CancelScope, Event, create_task_group, fail_after
 from anyio.lowlevel import checkpoint
 from fastapi import FastAPI, status
 from httpx2 import ASGITransport, AsyncClient
@@ -26,6 +27,7 @@ from langgraph_openai_serve import (
     LanggraphOpenaiServe,
     RetryableJobError,
     RunJob,
+    StoredRun,
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.background.fakes import MemoryBackgroundBackend
@@ -142,8 +144,13 @@ async def _execute_next(environment: _Environment):
 @asynccontextmanager
 async def _in_memory_client(
     environment: _Environment,
+    *,
+    settings: BackgroundSettings | None = None,
 ) -> AsyncIterator[tuple[AsyncOpenAI, InMemoryBackgroundBackend]]:
-    backend = InMemoryBackgroundBackend(graphs=environment.worker.graphs)
+    backend = InMemoryBackgroundBackend(
+        graphs=environment.worker.graphs,
+        settings=settings,
+    )
     app = FastAPI(lifespan=backend.lifespan)
     LanggraphOpenaiServe(
         app=app,
@@ -224,6 +231,63 @@ async def test_in_memory_backend_finalizes_execution_failure() -> None:
 
         assert failed.status == "failed"
         assert failed.error is not None
+
+
+async def test_in_memory_backend_finishes_a_cancelled_submission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with _environment() as environment:
+        async with _in_memory_client(environment) as (client, backend):
+            receipt_started = Event()
+            release_receipt = Event()
+            run_ids: list[str] = []
+            record_workflow_run = backend.store.record_workflow_run
+
+            async def delayed_receipt(
+                run_id: str,
+                workflow_run_id: str,
+                *,
+                now: datetime,
+            ) -> StoredRun | None:
+                run_ids.append(run_id)
+                receipt_started.set()
+                await release_receipt.wait()
+                return await record_workflow_run(
+                    run_id,
+                    workflow_run_id,
+                    now=now,
+                )
+
+            monkeypatch.setattr(
+                backend.store,
+                "record_workflow_run",
+                delayed_receipt,
+            )
+            request_scope = CancelScope()
+
+            async def create() -> None:
+                with request_scope:
+                    await client.responses.create(
+                        model="background",
+                        input="Hello",
+                        background=True,
+                    )
+
+            with fail_after(2):
+                async with create_task_group() as tasks:
+                    tasks.start_soon(create)
+                    await receipt_started.wait()
+                    request_scope.cancel()
+                    await checkpoint()
+                    release_receipt.set()
+
+            assert len(run_ids) == 1
+            stored = await backend.store.get_internal(run_ids[0])
+            assert stored is not None
+            assert stored.workflow_run_id == stored.run_id
+            completed = await _terminal_response(client, stored.response_id)
+
+        assert completed.status == "completed"
 
 
 async def test_background_capable_model_preserves_foreground_execution() -> None:
@@ -334,11 +398,48 @@ async def test_in_memory_backend_cancels_active_execution() -> None:
             )
             await started.wait()
             cancelled = await client.responses.cancel(created.id)
-            stored = await backend.store.get_internal(created.id)
+            with fail_after(2):
+                while True:
+                    stored = await backend.store.get_internal(created.id)
+                    if stored is not None and stored.recovery_cleaned:
+                        break
+                    await checkpoint()
 
         assert cancelled.status == "cancelled"
         assert stored is not None
         assert not stored.cancellation_pending
+        assert not stored.cleanup_pending
+
+
+async def test_in_memory_backend_preserves_stored_cancellation_retention() -> None:
+    started = Event()
+    allow_execution = Event()
+    settings = BackgroundSettings(
+        result_retention=timedelta(seconds=1),
+        stored_result_retention=timedelta(days=30),
+    )
+    async with _environment(execution_gate=(started, allow_execution)) as environment:
+        async with _in_memory_client(
+            environment,
+            settings=settings,
+        ) as (client, backend):
+            created = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+                store=True,
+            )
+            await started.wait()
+            await client.responses.cancel(created.id)
+            stored = await backend.store.get_internal(created.id)
+
+        assert stored is not None
+        assert stored.result_expires_at is not None
+        assert stored.terminal_at is not None
+        assert (
+            stored.result_expires_at - stored.terminal_at
+            == settings.stored_result_retention
+        )
 
 
 async def test_idempotent_create_reuses_response_and_rejects_conflicts() -> None:

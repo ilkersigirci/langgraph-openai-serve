@@ -169,6 +169,8 @@ class HatchetBackgroundBackend:
         response_id: str,
         owner_scope: str,
         response: dict[str, JsonValue],
+        *,
+        stored: bool,
     ) -> StoredRun | None:
         """Choose the public cancellation first, then cancel its Hatchet run."""
         cancelled = await self.store.request_cancellation(
@@ -176,9 +178,7 @@ class HatchetBackgroundBackend:
             owner_scope,
             response,
             now=datetime.now(UTC),
-            result_retention=self.settings.result_retention_for(
-                stored=response.get("store") is True
-            ),
+            result_retention=self.settings.result_retention_for(stored=stored),
             idempotency_retention=self.settings.idempotency_retention,
         )
         if (

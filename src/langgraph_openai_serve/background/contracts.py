@@ -76,8 +76,10 @@ class BackgroundBackend(Protocol):
         response_id: str,
         owner_scope: str,
         response: dict[str, JsonValue],
+        *,
+        stored: bool,
     ) -> StoredRun | None:
-        """Atomically choose cancellation and stop native work when possible."""
+        """Cancel using the original request's normalized storage decision."""
         ...
 
 

@@ -410,15 +410,16 @@ class InMemoryBackgroundBackend:
             )
             if accepted.run.workflow_run_id is not None:
                 return accepted.run
-            recorded = await self.store.record_workflow_run(
-                accepted.run.run_id,
-                accepted.run.run_id,
-                now=datetime.now(UTC),
-            )
-            if recorded is None:
-                msg = "The process-local task receipt could not be persisted."
-                raise RuntimeError(msg)
-            tasks.start_soon(self._execute, RunJob(run_id=recorded.run_id))
+            with CancelScope(shield=True):
+                recorded = await self.store.record_workflow_run(
+                    accepted.run.run_id,
+                    accepted.run.run_id,
+                    now=datetime.now(UTC),
+                )
+                if recorded is None:
+                    msg = "The process-local task receipt could not be persisted."
+                    raise RuntimeError(msg)
+                tasks.start_soon(self._execute, RunJob(run_id=recorded.run_id))
             return recorded
 
     async def retrieve(self, response_id: str, owner_scope: str) -> StoredRun | None:
@@ -430,6 +431,8 @@ class InMemoryBackgroundBackend:
         response_id: str,
         owner_scope: str,
         response: dict[str, JsonValue],
+        *,
+        stored: bool,
     ) -> StoredRun | None:
         """Choose cancellation, then stop its process-local task."""
         cancelled = await self.store.request_cancellation(
@@ -437,9 +440,7 @@ class InMemoryBackgroundBackend:
             owner_scope,
             response,
             now=datetime.now(UTC),
-            result_retention=self.settings.result_retention_for(
-                stored=response.get("store") is True
-            ),
+            result_retention=self.settings.result_retention_for(stored=stored),
             idempotency_retention=self.settings.idempotency_retention,
         )
         if (
@@ -464,11 +465,7 @@ class InMemoryBackgroundBackend:
         async with self._scope_lock:
             self._scopes[job.run_id] = scope
         try:
-            with scope:
-                try:
-                    await self.worker.execute(job)
-                except RetryableJobError:
-                    await self.worker.finalize(job)
+            await self._run_job(job, scope)
         except get_cancelled_exc_class():
             raise
         except Exception:
@@ -481,6 +478,16 @@ class InMemoryBackgroundBackend:
                 async with self._scope_lock:
                     if self._scopes.get(job.run_id) is scope:
                         self._scopes.pop(job.run_id)
+
+    async def _run_job(self, job: RunJob, scope: CancelScope) -> None:
+        with scope:
+            try:
+                await self.worker.execute(job)
+            except RetryableJobError:
+                await self.worker.finalize(job)
+        if scope.cancel_called:
+            with CancelScope(shield=True):
+                await self.worker.execute(job)
 
 
 __all__ = ["InMemoryBackgroundBackend", "InMemoryResponseStore"]
