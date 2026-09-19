@@ -14,6 +14,7 @@ def assert_optional_integrations_are_not_installed() -> None:
         "langchain",
         "langfuse",
         "langgraph.checkpoint.postgres",
+        "hatchet_sdk",
         "psycopg",
         "psycopg_pool",
     ):

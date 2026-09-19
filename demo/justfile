@@ -47,7 +47,7 @@ marimo editable='false' host='0.0.0.0' port='2718' *args:
 [arg('DEMO_API_TEST_POSTGRES_URI', long='uri')]
 [group('integration')]
 test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false' *args:
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_response_store.py tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
 
 # Check lint and formatting for all four projects.
 [group('local')]
@@ -107,6 +107,12 @@ api $DEMO_API_PORT=env("LGOS_A_PORT") editable='false':
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api-setup
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api
 
+# Run the independent Hatchet agent worker for background Responses.
+[arg('editable', long, value='true')]
+[group('local')]
+background-worker editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-background-worker
+
 # Run the OpenAI Files service locally.
 [arg('DEMO_API_FILES_PORT', long='port')]
 [group('local')]
@@ -139,6 +145,14 @@ test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_
 test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
     DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_API_KEY="$OPENAI_GATEWAY_API_KEY" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON="Bifrost v2.1.1 governance rejects unknown models before passthrough" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
+
+# Exercise the dedicated polling-only background lifecycle gateway route.
+[arg('DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL', long='base-url')]
+[arg('editable', long, value='true')]
+[group('integration')]
+[timestamp]
+test-background-gateway $DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL=env("DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:3}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]

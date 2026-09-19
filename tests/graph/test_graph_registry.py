@@ -3,8 +3,14 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
+from langgraph_openai_serve import (
+    BackgroundPolicy,
+    GraphConfig,
+    GraphFeature,
+    GraphRegistry,
+)
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
 
@@ -46,6 +52,49 @@ def test_graph_config_rejects_unknown_fields(message_graph) -> None:
                 "unknown": True,
             }
         )
+
+
+def test_background_feature_must_be_derived_from_policy(message_graph) -> None:
+    with pytest.raises(ValidationError, match=r"GraphConfig\.background"):
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            features={GraphFeature.BACKGROUND},
+        )
+
+
+def test_background_policy_requires_coordinator_and_excludes_interrupts(
+    message_graph,
+) -> None:
+    with pytest.raises(ValidationError, match="run_coordinator"):
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            background=BackgroundPolicy(version="v1"),
+        )
+
+    with pytest.raises(ValidationError, match="does not support interrupt"):
+        GraphConfig(
+            graph=message_graph,
+            description="DUMMY",
+            features={GraphFeature.INTERRUPTS},
+            background=BackgroundPolicy(version="v1"),
+            run_coordinator=InMemoryRunCoordinator(),
+        )
+
+
+async def test_background_graph_requires_persistent_async_checkpointer(
+    message_graph,
+) -> None:
+    config = GraphConfig(
+        graph=message_graph,
+        description="DUMMY",
+        background=BackgroundPolicy(version="v1"),
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+
+    with pytest.raises(GraphConfigurationError, match="checkpointer"):
+        await config.resolve_graph()
 
 
 def test_graph_registry_requires_at_least_one_graph() -> None:

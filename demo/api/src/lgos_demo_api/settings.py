@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, AnyHttpUrl, PlainValidator, TypeAdapter
+from pydantic import AfterValidator, AnyHttpUrl, Field, PlainValidator, TypeAdapter
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
@@ -9,6 +9,11 @@ HttpUrlStr = Annotated[
     PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda value: str(value).rstrip("/")),
 ]
+AdmissionCapacity = Annotated[int, Field(ge=1, le=10_000)]
+BackgroundSeconds = Annotated[int, Field(ge=1, le=31_536_000)]
+FinalizeDelaySeconds = Annotated[int, Field(ge=0, le=300)]
+WorkerSlots = Annotated[int, Field(ge=1, le=128)]
+TaskRetries = Annotated[int, Field(ge=0, le=20)]
 
 
 class Settings(BaseSettings):
@@ -47,6 +52,20 @@ class Settings(BaseSettings):
     WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
+    BACKGROUND_ENABLED: bool = False
+    BACKGROUND_ADMISSION_CAPACITY: AdmissionCapacity = 100
+    BACKGROUND_RESULT_RETENTION_SECONDS: BackgroundSeconds = 3600
+    BACKGROUND_STORED_RESULT_RETENTION_SECONDS: BackgroundSeconds = 2_592_000
+    BACKGROUND_IDEMPOTENCY_RETENTION_SECONDS: BackgroundSeconds = 86_400
+    BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS: FinalizeDelaySeconds = 5
+    HATCHET_NAMESPACE: str = "lgos-demo"
+    HATCHET_TASK_NAME: str = "background-response"
+    HATCHET_WORKER_NAME: str = "background-agent-worker"
+    HATCHET_WORKER_SLOTS: WorkerSlots = 4
+    HATCHET_TASK_RETRIES: TaskRetries = 2
+    HATCHET_IDEMPOTENCY_TTL_SECONDS: BackgroundSeconds = 3600
+    HATCHET_SCHEDULE_TIMEOUT_SECONDS: BackgroundSeconds = 1200
+    HATCHET_EXECUTION_TIMEOUT_SECONDS: BackgroundSeconds = 720
 
 
 settings = Settings()

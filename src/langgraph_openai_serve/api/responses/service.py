@@ -1,9 +1,14 @@
 """Prepare and execute graph runs for OpenAI Responses."""
 
+import hashlib
+import json
+import uuid
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.types import CustomStreamPart, UpdatesStreamPart
 from openai.types.responses import (
     Response,
@@ -24,18 +29,200 @@ from langgraph_openai_serve.api.responses.request import (
     UnsupportedResponsesRequestError,
     decode_responses_request,
     selected_server_tools,
+    validate_background_request,
     validate_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.background.contracts import BackgroundBackend
+from langgraph_openai_serve.background.responses import (
+    active_response,
+    cancelled_response,
+    response_json,
+)
+from langgraph_openai_serve.background.store import NewRun, ResponseStatus
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.events import parse_status_event
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.interrupt.state import (
+    checkpoint_key,
+    normalize_checkpoint_scope,
+    normalize_run_id,
+)
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun, prepare_run
 
 logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
+
+
+class BackgroundResponseNotFoundError(LookupError):
+    """Raised for unknown, expired, or unauthorized background Response IDs."""
+
+
+async def accept_background_response(
+    request: ResponseCreateRequest,
+    graph_registry: GraphRegistry,
+    background: BackgroundBackend | None,
+    *,
+    checkpoint_scope: str,
+) -> Response:
+    """Validate and durably accept one polling-only background Response."""
+    validate_background_request(request)
+    if background is None:
+        message = "Background Responses are not configured for this server."
+        raise UnsupportedResponsesRequestError(message, param="background")
+
+    graph_config = graph_registry.get_graph(request.model)
+    policy = graph_config.background
+    if policy is None:
+        message = f"Model '{request.model}' does not support background execution."
+        raise UnsupportedResponsesRequestError(message, param="background")
+    validate_tools(request, graph_config.server_tools)
+    graph_request, messages, _ = decode_responses_request(
+        request,
+        graph_config.server_tools,
+    )
+
+    owner_scope = normalize_checkpoint_scope(checkpoint_scope)
+    idempotency_key = graph_request.metadata.get("lgos_run_id")
+    if idempotency_key is not None:
+        idempotency_key = normalize_run_id(idempotency_key)
+    operation_id = str(uuid.uuid4())
+    response_id = f"resp_{uuid.uuid4().hex}"
+    now = datetime.now(UTC)
+    queued = active_response(
+        request,
+        response_id=response_id,
+        created_at=now.timestamp(),
+    )
+    initial_call_ids = _input_call_ids(messages)
+    accepted = await background.create(
+        NewRun(
+            run_id=response_id,
+            response_id=response_id,
+            owner_scope=owner_scope,
+            model=request.model,
+            checkpoint_thread_id=checkpoint_key(
+                request.model,
+                operation_id,
+                scope=f"background:{owner_scope}",
+            ),
+            graph_version=policy.version,
+            envelope=cast(
+                "dict[str, JsonValue]",
+                request.model_dump(mode="json", by_alias=True),
+            ),
+            request_fingerprint=_background_fingerprint(request),
+            idempotency_key=idempotency_key,
+            response=cast("dict[str, JsonValue]", response_json(queued)),
+            created_at=now,
+            initial_call_ids=initial_call_ids,
+            initial_message_count=len(messages),
+        )
+    )
+    if accepted.response is None:
+        msg = "Accepted background run has no public Response snapshot."
+        raise RuntimeError(msg)
+    return Response.model_validate(accepted.response)
+
+
+async def retrieve_background_response(
+    response_id: str,
+    background: BackgroundBackend | None,
+    *,
+    checkpoint_scope: str,
+) -> Response:
+    """Read one authorized snapshot without scheduling side effects."""
+    if background is None:
+        raise BackgroundResponseNotFoundError(response_id)
+    owner_scope = normalize_checkpoint_scope(checkpoint_scope)
+    run = await background.retrieve(response_id, owner_scope)
+    if run is None or run.response is None:
+        raise BackgroundResponseNotFoundError(response_id)
+    return Response.model_validate(run.response)
+
+
+async def cancel_background_response(
+    response_id: str,
+    background: BackgroundBackend | None,
+    *,
+    checkpoint_scope: str,
+) -> Response:
+    """Atomically choose logical cancellation or return the terminal winner."""
+    if background is None:
+        raise BackgroundResponseNotFoundError(response_id)
+    owner_scope = normalize_checkpoint_scope(checkpoint_scope)
+    current = await background.retrieve(response_id, owner_scope)
+    if current is None or current.response is None:
+        raise BackgroundResponseNotFoundError(response_id)
+    if current.terminal and current.status is not ResponseStatus.CANCELLED:
+        return Response.model_validate(current.response)
+
+    request = ResponseCreateRequest.model_validate(current.envelope)
+    cancellation_json = (
+        current.response
+        if current.status is ResponseStatus.CANCELLED
+        else response_json(
+            cancelled_response(
+                request,
+                response_id=current.response_id,
+                created_at=current.created_at.timestamp(),
+            )
+        )
+    )
+    cancelled = await background.cancel(
+        response_id,
+        owner_scope,
+        cast("dict[str, JsonValue]", cancellation_json),
+    )
+    if cancelled is None or cancelled.response is None:
+        raise BackgroundResponseNotFoundError(response_id)
+    return Response.model_validate(cancelled.response)
+
+
+def _background_fingerprint(request: ResponseCreateRequest) -> str:
+    normalized = request.model_copy(
+        update={
+            "background": True,
+            "stream": False,
+            "store": bool(request.store),
+        }
+    ).model_dump(mode="json", by_alias=True, exclude_none=True)
+    metadata = normalized.get("metadata")
+    if isinstance(metadata, dict):
+        metadata = {
+            key: value for key, value in metadata.items() if key != "lgos_run_id"
+        }
+        if metadata:
+            normalized["metadata"] = metadata
+        else:
+            normalized.pop("metadata", None)
+    canonical = json.dumps(
+        normalized,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _input_call_ids(messages: list[BaseMessage]) -> tuple[str, ...]:
+    call_ids: list[str] = []
+    for message in messages:
+        if isinstance(message, AIMessage):
+            call_ids.extend(
+                call_id
+                for call in (*message.tool_calls, *message.invalid_tool_calls)
+                if isinstance((call_id := call.get("id")), str)
+            )
+        elif isinstance(message, ToolMessage):
+            call_ids.append(message.tool_call_id)
+    return tuple(call_ids)
 
 
 async def prepare_response_run(
@@ -225,4 +412,12 @@ def _graph_response_events(
     yield from builder.commentary(status_data.description)
 
 
-__all__ = ["collect_response", "prepare_response_run", "stream_response"]
+__all__ = [
+    "BackgroundResponseNotFoundError",
+    "accept_background_response",
+    "cancel_background_response",
+    "collect_response",
+    "prepare_response_run",
+    "retrieve_background_response",
+    "stream_response",
+]

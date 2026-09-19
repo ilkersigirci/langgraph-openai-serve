@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -10,16 +11,17 @@ POSTGRES_URI = "postgresql://example"
 async def test_postgres_runtime_owns_one_ready_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pool = Mock(name="pool", wait=AsyncMock())
-    pool_context = AsyncMock(name="pool_context")
-    pool_context.__aenter__.return_value = pool
+    pool = AsyncMock(name="pool", wait=AsyncMock())
+    pool.__aenter__.return_value = pool
     saver = Mock(name="saver")
     store = Mock(name="store")
     coordinator = Mock(name="coordinator")
-    pool_factory = Mock(return_value=pool_context)
+    response_store = Mock(name="response_store")
+    pool_factory = Mock(return_value=pool)
     saver_factory = Mock(return_value=saver)
     store_factory = Mock(return_value=store)
     coordinator_factory = Mock(return_value=coordinator)
+    response_store_factory = Mock(return_value=response_store)
     monkeypatch.setattr(demo_checkpointer, "AsyncConnectionPool", pool_factory)
     monkeypatch.setattr(demo_checkpointer, "AsyncPostgresSaver", saver_factory)
     monkeypatch.setattr(demo_checkpointer, "AsyncPostgresStore", store_factory)
@@ -28,14 +30,20 @@ async def test_postgres_runtime_owns_one_ready_pool(
         "PostgresRunCoordinator",
         coordinator_factory,
     )
+    monkeypatch.setattr(
+        demo_checkpointer,
+        "PostgresResponseStore",
+        response_store_factory,
+    )
 
     async with demo_checkpointer.postgres_runtime(POSTGRES_URI) as runtime:
         assert runtime.checkpointer is saver
         assert runtime.store is store
         assert runtime.run_coordinator is coordinator
-        pool_context.__aenter__.assert_awaited_once_with()
+        assert runtime.response_store is response_store
+        pool.__aenter__.assert_awaited_once_with()
         pool.wait.assert_awaited_once_with()
-        pool_context.__aexit__.assert_not_awaited()
+        pool.__aexit__.assert_not_awaited()
 
     pool_factory.assert_called_once_with(
         conninfo=POSTGRES_URI,
@@ -54,38 +62,33 @@ async def test_postgres_runtime_owns_one_ready_pool(
         pool,
         max_concurrent_leases=4,
     )
-    pool_context.__aexit__.assert_awaited_once_with(None, None, None)
+    response_store_factory.assert_called_once_with(pool)
+    pool.__aexit__.assert_awaited_once_with(None, None, None)
 
 
 async def test_setup_postgres_schema_runs_langgraph_setups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     saver = Mock(setup=AsyncMock())
-    saver_context = AsyncMock()
-    saver_context.__aenter__.return_value = saver
-    saver_factory = Mock(return_value=saver_context)
     store = Mock(setup=AsyncMock())
-    store_context = AsyncMock()
-    store_context.__aenter__.return_value = store
-    store_factory = Mock(return_value=store_context)
-    monkeypatch.setattr(
-        demo_checkpointer.AsyncPostgresSaver,
-        "from_conn_string",
-        saver_factory,
+    response_store = Mock(setup=AsyncMock())
+    runtime = Mock(
+        checkpointer=saver,
+        store=store,
+        response_store=response_store,
     )
-    monkeypatch.setattr(
-        demo_checkpointer.AsyncPostgresStore,
-        "from_conn_string",
-        store_factory,
-    )
+
+    @asynccontextmanager
+    async def postgres_runtime(postgres_uri: str):
+        assert postgres_uri == POSTGRES_URI
+        yield runtime
+
+    runtime_factory = Mock(wraps=postgres_runtime)
+    monkeypatch.setattr(demo_checkpointer, "postgres_runtime", runtime_factory)
 
     await demo_checkpointer.setup_postgres_schema(POSTGRES_URI)
 
-    saver_factory.assert_called_once_with(POSTGRES_URI)
-    saver_context.__aenter__.assert_awaited_once_with()
+    runtime_factory.assert_called_once_with(POSTGRES_URI)
     saver.setup.assert_awaited_once_with()
-    saver_context.__aexit__.assert_awaited_once_with(None, None, None)
-    store_factory.assert_called_once_with(POSTGRES_URI)
-    store_context.__aenter__.assert_awaited_once_with()
     store.setup.assert_awaited_once_with()
-    store_context.__aexit__.assert_awaited_once_with(None, None, None)
+    response_store.setup.assert_awaited_once_with()

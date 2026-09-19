@@ -10,6 +10,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 - Bash and Just 1.58.0 or newer
 - PostgreSQL (the included Compose service requires Docker)
 - An OpenAI-compatible upstream model only if you call the LLM-backed graphs
+- A Hatchet deployment and client token only for `background-report-agent`
 
 !!! tip "Start without an upstream model"
 
@@ -70,6 +71,9 @@ Each demo graph publishes its API-owned description and feature names in the
 lightweight `lgos` list extension.
 
 The complete model and requirement matrix is in [Example Graphs](graphs/index.md).
+
+The one-shot setup command also creates the background Response-store schema.
+This does not enable the Hatchet backend by itself.
 
 ## Call A Graph
 
@@ -195,6 +199,12 @@ for event in stream:
 See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
 refusal differs from an incomplete response and which terminal events clients
 must handle.
+
+For durable report execution, enable `DEMO_API_BACKGROUND_ENABLED`, start the
+independent `just demo/background-worker` process, and use the polling client in
+[Background Report Agent](graphs/background-report-agent.md). That graph is not
+integrated into the demo UIs; the supported gateway path is the dedicated
+Bifrost provider.
 
 ## Try A Demo Client
 

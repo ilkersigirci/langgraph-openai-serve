@@ -77,6 +77,21 @@ def decode_responses_request(
     )
 
 
+def validate_background_request(request: ResponseCreateRequest) -> None:
+    """Reject request modes unsupported by polling-only background execution."""
+    if not request.background:
+        return
+    if request.stream:
+        message = (
+            "Background responses do not support streaming. Set stream=false or "
+            "omit it, then retrieve the response by ID."
+        )
+        raise UnsupportedResponsesRequestError(message, param="stream")
+    if request.previous_response_id is not None:
+        message = "Background interrupt continuation is not supported."
+        raise UnsupportedResponsesRequestError(message, param="previous_response_id")
+
+
 def _decode_tool_choice(
     tool_choice: ResponseToolChoice | None,
 ) -> ClientToolChoice | None:
@@ -147,18 +162,27 @@ def _tool_name(tool: ResponseTool) -> str:
 
 
 def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
-    if request.store:
-        message = "'store' must be false; response storage is not supported."
-        raise UnsupportedResponsesRequestError(message, param="store")
-    if request.background:
-        message = "Background Responses are not supported."
-        raise UnsupportedResponsesRequestError(message, param="background")
+    _validate_storage_mode(request)
+    _validate_tool_replay_mode(request)
     if request.conversation is not None:
         message = (
             "Responses conversations are not supported; resend the required input "
             "items."
         )
         raise UnsupportedResponsesRequestError(message, param="conversation")
+    if request.previous_response_id is not None and request.instructions is not None:
+        message = "'instructions' cannot be changed while resuming an interrupt."
+        raise UnsupportedResponsesRequestError(message, param="instructions")
+
+
+def _validate_storage_mode(request: ResponseCreateRequest) -> None:
+    if request.store and not request.background:
+        message = "'store' must be false; response storage is not supported."
+        raise UnsupportedResponsesRequestError(message, param="store")
+    validate_background_request(request)
+
+
+def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
     for index, tool in enumerate(request.tools or ()):
         if isinstance(tool, (ResponseFunctionTool, ResponseCustomTool)) and (
             tool.async_ is True
@@ -185,14 +209,12 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
                     message,
                     param=f"input.{index}.async",
                 )
-    if request.previous_response_id is not None and request.instructions is not None:
-        message = "'instructions' cannot be changed while resuming an interrupt."
-        raise UnsupportedResponsesRequestError(message, param="instructions")
 
 
 __all__ = [
     "UnsupportedResponsesRequestError",
     "decode_responses_request",
     "selected_server_tools",
+    "validate_background_request",
     "validate_tools",
 ]

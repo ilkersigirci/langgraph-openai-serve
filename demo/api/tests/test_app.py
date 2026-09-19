@@ -20,6 +20,7 @@ from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
     "advanced-graph",
+    "background-report-agent",
     "mcp-postgres",
     "citation-events",
     "complex-subgraphs",
@@ -106,6 +107,9 @@ async def test_app_lists_exactly_the_documented_models(
         "description": descriptions["interruptible-approval"],
         "features": ["interrupts"],
     }
+
+    background_model = await openai_client.models.retrieve("background-report-agent")
+    assert (background_model.model_extra or {})["lgos"]["features"] == ["background"]
 
     for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)
@@ -295,9 +299,11 @@ async def test_lifespan_installs_shared_postgres_runtime(
     coordinator = InMemoryRunCoordinator()
 
     runtime = PostgresRuntime(
+        pool=Mock(),  # type: ignore[arg-type]
         checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
         store=InMemoryStore(),  # type: ignore[arg-type]
         run_coordinator=coordinator,  # type: ignore[arg-type]
+        response_store=Mock(),  # type: ignore[arg-type]
     )
 
     @asynccontextmanager
@@ -319,6 +325,9 @@ async def test_lifespan_installs_shared_postgres_runtime(
     async with app_module.lifespan(demo_app):
         assert not upstream_clients[0].is_closed
         assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
+        assert (
+            demo_app.state.background_report_graph.checkpointer is sqlite_checkpointer
+        )
         assert demo_app.state.run_coordinator is coordinator
         assert demo_app.state.persistent_plot_agent.store is runtime.store
 

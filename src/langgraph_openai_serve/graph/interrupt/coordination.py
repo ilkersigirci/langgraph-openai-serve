@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 from threading import Lock
 from typing import Protocol, runtime_checkable
 
@@ -14,6 +15,13 @@ class RunBusyError(RuntimeError):
         super().__init__("This interrupt run cannot acquire its coordination lease.")
 
 
+@dataclass(slots=True)
+class RunLease:
+    """Expose whether the exact coordination session was lost while owned."""
+
+    lost: bool = False
+
+
 @runtime_checkable
 class RunCoordinator(Protocol):
     """Acquire a lease that rejects rather than queues an occupied interrupt run."""
@@ -22,7 +30,7 @@ class RunCoordinator(Protocol):
         self,
         key: str,
         /,
-    ) -> AbstractAsyncContextManager[None]:
+    ) -> AbstractAsyncContextManager[RunLease | None]:
         """Acquire lease synchronously."""
         ...
 
@@ -35,11 +43,17 @@ class InMemoryRunCoordinator:
         self._guard = Lock()
 
     @asynccontextmanager
-    async def __call__(self, key: str, /) -> AsyncIterator[None]:
-        """Acquire lease asynchronously."""
+    async def __call__(self, key: str, /) -> AsyncIterator[RunLease]:
+        """
+        Acquire lease asynchronously.
+
+        Yields:
+            The process-local state of the acquired lease.
+
+        """
         self._acquire(key)
         try:
-            yield
+            yield RunLease()
         finally:
             self._release(key)
 
@@ -54,4 +68,4 @@ class InMemoryRunCoordinator:
             self._active_keys.remove(key)
 
 
-__all__ = ["InMemoryRunCoordinator", "RunBusyError", "RunCoordinator"]
+__all__ = ["InMemoryRunCoordinator", "RunBusyError", "RunCoordinator", "RunLease"]

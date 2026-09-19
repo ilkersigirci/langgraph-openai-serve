@@ -143,7 +143,8 @@ settings](reference.md#opentelemetry-settings).
     Run each attached service in a separate terminal. Compose starts the shared
     PostgreSQL dependency automatically. Before either graph API starts,
     `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
-    LangGraph checkpoint and store schemas once. Both APIs use
+    LangGraph checkpoint, Store, and LGOS background Response schemas once.
+    Both APIs use
     [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
     as their readiness dependency.
 
@@ -152,6 +153,33 @@ settings](reference.md#opentelemetry-settings).
 
     For an independently deployed LiteLLM API, run the shared one-shot
     [model-sync job](litellm-sync.md) after the deployment's health check.
+
+=== "Background Worker"
+
+    The worker is an optional Compose profile. Configure a native
+    `HATCHET_CLIENT_TOKEN`, enable background execution, and add the profile
+    alongside Bifrost:
+
+    ```dotenv
+    OPENAI_GATEWAY_TYPE=bifrost
+    COMPOSE_PROFILES=bifrost,background
+    DEMO_API_BACKGROUND_ENABLED=true
+    HATCHET_CLIENT_TOKEN=...
+    ```
+
+    Then start the ordered stack or only the worker and its persistence setup:
+
+    ```bash
+    just demo/compose --dev
+    # Or: just demo/up lgos-background-worker
+    ```
+
+    The `lgos-background-worker` process uses explicit Hatchet slots and the
+    same PostgreSQL Response store, checkpointer, coordinator, registry version,
+    and retention settings as the APIs. It exposes no HTTP port. The API
+    triggers the idempotent Hatchet workflow; Hatchet owns retries, timeouts,
+    failure handling, and recurring maintenance. See [Background Report
+    Agent](graphs/background-report-agent.md).
 
 === "Files API"
 
@@ -334,6 +362,11 @@ settings](reference.md#opentelemetry-settings).
     Token and spend values reflect usage and pricing supplied for the selected
     graph model.
 
+    The pinned LiteLLM 1.100.1 community path is not used for polling-only
+    background Responses: its managed create path attempts to load an
+    unavailable enterprise lifecycle hook. Select Bifrost's dedicated
+    background provider for that separate SDK scenario.
+
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference
     flow, and native streaming fidelity against the direct LGOS test endpoints.
@@ -380,8 +413,9 @@ mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
 required ephemeral writes. The one-shot API and Chainlit setup services
-initialize their respective persistence schemas. A following idempotent setup
-job owns the MCP reporting views, role, and grants before DBHub starts.
+initialize their respective persistence schemas, including the background
+Response table. A following idempotent setup job owns the MCP reporting views,
+role, and grants before DBHub starts.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads generated file elements to the configured `BUCKET_NAME`.
@@ -390,10 +424,11 @@ central Files API uses only its separate `DEMO_API_FILES_BUCKET`,
 `DEMO_API_FILES_S3_ENDPOINT`, and `DEMO_API_FILES_AWS_*` settings. The two S3
 configurations are independent.
 
-The API workers share PostgreSQL for thread-scoped application data, durable
-checkpoints, and fail-fast interrupt coordination. Session-level
+The API and optional background worker share PostgreSQL for thread-scoped
+application data, durable checkpoints, Response lifecycle rows, and fail-fast
+run coordination. Session-level
 [advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
-prevent two workers from advancing the same interrupt run at once; a contended
+prevent two workers from advancing the same interrupt or background run at once; a contended
 request fails instead of waiting. No Redis service is required. The lock is
 held only while an API request executes the graph, never while a human is
 deciding. A per-process capacity gate preserves a pool connection for

@@ -22,15 +22,19 @@ Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
   LGOS-executed custom tools;
 - `previous_response_id` plus matching `function_call_output` items for
   interrupt continuation;
+- polling-only background creation, `GET /v1/responses/{response_id}`, and
+  `POST /v1/responses/{response_id}/cancel`, with the opaque ID sufficient for
+  lifecycle routing after both client and gateway restarts;
 - standard OpenAI error `type`, `param`, and `code` values;
 - Files upload, list, retrieve, content, and delete operations through one file
   namespace independent of graph routing; and
 - downstream disconnect propagation to the upstream streaming request.
 
-LGOS does not require the proxy to retain Responses. It rejects
-`conversation`, `store: true`, and background mode (`previous_response_id` is
-supported for resuming interruptible graphs), so
-the client owns the ordinary conversation input ledger. A proxy
+LGOS does not require the proxy to retain Responses itself. Foreground work
+rejects `store: true`; an opted-in background graph accepts it to select longer
+bounded LGOS result retention. `conversation` remains unsupported, and
+`previous_response_id` is reserved for interrupt resumes rather than background
+continuation. The client owns the ordinary conversation input ledger. A proxy
 must not silently turn `store: false` into a stored response.
 
 `GET /v1/models` is sufficient for ordinary graph selection. A client that uses
@@ -65,6 +69,26 @@ native-stream configuration, and test command. The [Bifrost guide](../demo/bifro
 records its exact remaining strict expected failures. Do not hide an upstream
 failure with a Chat fallback, custom proxy plugin, or LGOS-specific response
 field.
+
+### Background Lifecycle Matrix
+
+The background path is tested separately because create-only routing is not
+enough. Retrieval and cancellation carry only the saved Response ID; a gateway
+must route that ID to any LGOS API replica sharing the authoritative
+`ResponseStore`.
+
+| Pinned path | Background create, poll, cancel | Constraint |
+| --- | --- | --- |
+| Direct LGOS | Pass | Replicas must share the Response store and checkpoint database. |
+| Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-report-agent`; no provider header is required after creation. |
+| Bifrost generic custom-provider group | Unsupported across isolated stores | The opaque Response ID does not retain the provider selected at creation. |
+| LiteLLM 1.100.1 community managed Responses | Unsupported | Background create loads an unavailable enterprise lifecycle hook before forwarding to LGOS. |
+
+These are results for the pinned demo images and configurations, not promises
+about other gateway releases. Run
+`just demo/test-background-gateway --editable` against the exact route you plan
+to expose. Test with a newly constructed SDK client and restart the gateway
+between create and retrieve as part of deployment acceptance.
 
 ## Routing
 
@@ -104,6 +128,12 @@ supplies the catalog-discovered provider in `x-model-provider`. The UIs use
 that route only for provider-specific catalog detail. Responses use native
 `/openai/v1/responses`, and Files use normalized `/v1` with the dedicated
 `lgos-files` provider. No plugin or response adapter is required.
+
+The polling-only demo uses a separate standard `openai` provider pinned to the
+shared-store API deployment. Background clients send the unqualified
+`background-report-agent` model to `/openai/v1` and later retrieve or cancel by
+ID alone. Do not use the provider-qualified `lgos-a`/`lgos-b` catalog path for
+background work when those providers can lead to isolated Response stores.
 
 ## Direct Chat Compatibility
 

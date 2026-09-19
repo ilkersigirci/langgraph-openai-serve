@@ -92,6 +92,15 @@ Run `just demo/test-bifrost --editable` and
 `just demo/test-litellm --editable` for the current compatibility
 matrix.
 
+Polling-only background execution is an optional, non-UI path. Set
+`DEMO_API_BACKGROUND_ENABLED=true`, add `background` to `COMPOSE_PROFILES`, and
+provide `HATCHET_CLIENT_TOKEN` to run the independent
+`lgos-background-worker`. The pinned Bifrost 2.1.1 configuration has a fixed
+shared-store provider for `background-report-agent`; the pinned LiteLLM
+community image does not support this lifecycle. Run
+`just demo/test-background-gateway --editable` and see the
+[background guide](../docs/how-to-guides/background-responses.md).
+
 Compose persists PostgreSQL, Bifrost, and Open WebUI state as ignored host bind
 mounts under `docker/volumes/`. Each service directory is tracked with a
 `.gitkeep`; runtime contents remain ignored. Services run as the configured
@@ -164,6 +173,7 @@ shown for the API processes, to overlay the parent LGOS checkout:
 ```bash
 just demo/api --editable
 just demo/api --editable --port 3005
+just demo/background-worker --editable
 just demo/files
 just demo/chainlit
 ```

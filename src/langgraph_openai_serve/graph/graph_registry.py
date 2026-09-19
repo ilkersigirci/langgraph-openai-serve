@@ -17,6 +17,7 @@ from pydantic import (
     model_validator,
 )
 
+from langgraph_openai_serve.background.contracts import BackgroundPolicy
 from langgraph_openai_serve.graph.client_settings import (
     ClientSettings,
     validate_client_settings_model,
@@ -84,6 +85,7 @@ class GraphConfig(BaseModel):
     context_factory: ContextFactory | None = None
     output_to_message: OutputToMessage | None = None
     run_coordinator: RunCoordinator | None = None
+    background: BackgroundPolicy | None = None
 
     @field_validator("client_settings")
     @classmethod
@@ -98,11 +100,29 @@ class GraphConfig(BaseModel):
     def validate_interrupt_configuration(self) -> Self:
         """Validate feature relationships that do not depend on a resolved graph."""
         interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
-        if self.run_coordinator is not None and not interrupt_enabled:
-            msg = "run_coordinator is only supported by interrupt-enabled graphs."
+        background_enabled = self.background is not None
+        if interrupt_enabled and background_enabled:
+            msg = "Background execution does not support interrupt-enabled graphs."
             raise ValueError(msg)
-        if interrupt_enabled and self.run_coordinator is None:
-            msg = "Interrupt-enabled graphs must configure a run_coordinator."
+        if self.supports(GraphFeature.BACKGROUND):
+            msg = (
+                "Configure GraphConfig.background to enable background execution; "
+                "do not add GraphFeature.BACKGROUND directly."
+            )
+            raise ValueError(msg)
+        if self.run_coordinator is not None and not (
+            interrupt_enabled or background_enabled
+        ):
+            msg = (
+                "run_coordinator is only supported by interrupt-enabled or "
+                "background-enabled graphs."
+            )
+            raise ValueError(msg)
+        if (interrupt_enabled or background_enabled) and self.run_coordinator is None:
+            msg = (
+                "Interrupt-enabled and background-enabled graphs must configure "
+                "a run_coordinator."
+            )
             raise ValueError(msg)
         return self
 
@@ -205,14 +225,15 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
         )
         raise GraphConfigurationError(msg)
 
-    if config.supports(GraphFeature.INTERRUPTS):
+    if config.supports(GraphFeature.INTERRUPTS) or config.background is not None:
         checkpointer = graph.checkpointer
         if checkpointer is None or any(
             not _overrides_checkpointer_method(checkpointer, method_name)
             for method_name in _INTERRUPT_CHECKPOINTER_METHODS
         ):
             msg = (
-                "Interrupt-enabled graphs must use a fully asynchronous "
+                "Interrupt-enabled and background-enabled graphs must use a fully "
+                "asynchronous "
                 "checkpointer with thread deletion."
             )
             raise GraphConfigurationError(msg)

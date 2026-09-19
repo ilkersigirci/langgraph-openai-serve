@@ -24,6 +24,10 @@ each API process.
     only Bifrost model-detail lookup uses a lossless pass-through. See
     [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
 
+    Background polling is a separate tested Bifrost route pinned to a
+    shared-store API deployment. The pinned LiteLLM community image and generic
+    cross-provider lifecycle routing are not supported for it.
+
 ## Request Path
 
 ```mermaid
@@ -52,6 +56,8 @@ flowchart LR
   database[("lgos-db PostgreSQL<br/>dedicated mcp_demo schema")]
 
   model["Upstream OpenAI-compatible model"]
+  hatchet["Hatchet workflow service"]
+  worker["Optional background worker"]
 
   user <--> chainlit
   user <--> openwebui
@@ -69,6 +75,11 @@ flowchart LR
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
+  bifrost <-->|"fixed background lifecycle"| api_a
+  api_a -->|"trigger run_id"| hatchet
+  hatchet -->|"run reference"| worker
+  worker <-->|"checkpoints + Response row"| database
+  worker -->|"report model call"| model
   dbhub -->|"lgos_mcp read-only role"| database
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
@@ -92,18 +103,26 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-At startup, Compose waits for PostgreSQL and runs the one-shot API and Chainlit
-schema migrations. The idempotent MCP setup then creates the reporting views,
-role, and grants before DBHub starts. Both healthy graph APIs and the Files
-service start before the selected gateway and UI clients. The diagram shows
-request traffic rather than those readiness dependencies. Compose runs one
-Files process for the demo; production deployments may run multiple stateless
-replicas over the same repository.
+The background route is intentionally outside UI inference. An OpenAI SDK
+client calls Bifrost's `/openai/v1` route with the unqualified
+`background-report-agent` model, then retrieves or cancels using only the saved
+Response ID. API A, any API replicas added to that fixed group, and the worker
+must share PostgreSQL. Hatchet transports stable run references and retries; it
+does not own the public Response.
+
+At startup, Compose waits for PostgreSQL and runs the one-shot API schema setup
+and Chainlit schema migrations. The idempotent MCP setup then creates the
+reporting views, role, and grants before DBHub starts. Both healthy graph APIs
+and the Files service start before the selected gateway and UI clients. The
+diagram shows request traffic rather than those readiness dependencies.
+Compose runs one Files process for the demo; production deployments may run
+multiple stateless replicas over the same repository.
 
 ## State Ownership
 
-The UIs own their conversations. The API stores only paused interrupt execution
-and explicit graph data; it does not copy either UI transcript into LGOS.
+The UIs own their conversations. The API stores paused interrupt execution,
+bounded background Response state, and explicit graph data; it does not copy
+either UI transcript into LGOS.
 
 ```mermaid
 flowchart LR
@@ -117,6 +136,7 @@ flowchart LR
     direction TB
     interrupts["LGOS interrupt handling"]
     plot["persistent-plot-agent graph"]
+    background["background graph worker"]
   end
 
   subgraph postgres["One PostgreSQL database"]
@@ -125,6 +145,7 @@ flowchart LR
     checkpoints["LangGraph checkpoints"]
     store["LangGraph Store documents"]
     locks["PostgreSQL advisory locks"]
+    response_rows["Background Response rows"]
   end
 
   files_service["Central Files service"]
@@ -138,6 +159,9 @@ flowchart LR
   interrupts -->|"paused execution"| checkpoints
   interrupts -->|"same-run coordination"| locks
   plot -->|"thread-scoped chart document"| store
+  background -->|"public lifecycle + Hatchet ID/intent"| response_rows
+  background -->|"recovery progress"| checkpoints
+  background -->|"worker coordination"| locks
 ```
 
 Both API containers run the same image and graph set, but Bifrost
@@ -148,7 +172,9 @@ keeps its state and native raw-upload copy in its bind-mounted data directory;
 the central Files service owns the separate inference copy. Detailed ownership
 and recovery behavior live in
 [Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
-Human Review](graphs/interruptible-approval.md). When
+Human Review](graphs/interruptible-approval.md). Background Response rows,
+recovery checkpoints, and Hatchet workflow ownership are described in
+[Background Report Agent](graphs/background-report-agent.md). When
 `LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.

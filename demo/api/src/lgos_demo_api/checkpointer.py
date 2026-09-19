@@ -7,6 +7,9 @@ from typing import Any, cast
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from langgraph_openai_serve.integrations.background_postgres import (
+    PostgresResponseStore,
+)
 from langgraph_openai_serve.integrations.postgres import PostgresRunCoordinator
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
@@ -23,19 +26,16 @@ PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 class PostgresRuntime:
     """Process-local graph dependencies backed by one PostgreSQL pool."""
 
+    pool: PostgresPool
     checkpointer: AsyncPostgresSaver
     store: AsyncPostgresStore
     run_coordinator: PostgresRunCoordinator
+    response_store: PostgresResponseStore
 
 
-@asynccontextmanager
-async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
-    """Open one ready pool for checkpoints, Store data, and interrupt coordination.
-
-    Yields:
-        Configured PostgreSQL-backed graph dependencies.
-    """
-    pool_context = cast(
+def _create_postgres_runtime(postgres_uri: str) -> PostgresRuntime:
+    """Construct unopened process-owned PostgreSQL dependencies."""
+    pool = cast(
         "PostgresPool",
         AsyncConnectionPool(
             conninfo=postgres_uri,
@@ -49,26 +49,45 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
             open=False,
         ),
     )
-    async with pool_context as pool:
+    return PostgresRuntime(
+        pool=pool,
+        checkpointer=AsyncPostgresSaver(pool),
+        store=AsyncPostgresStore(pool),
+        run_coordinator=PostgresRunCoordinator(
+            pool,
+            max_concurrent_leases=_MAX_COORDINATION_LEASES,
+        ),
+        response_store=PostgresResponseStore(pool),
+    )
+
+
+@asynccontextmanager
+async def open_postgres_runtime(
+    runtime: PostgresRuntime,
+) -> AsyncIterator[PostgresRuntime]:
+    """Open and own one previously constructed PostgreSQL runtime.
+
+    Yields:
+        Configured PostgreSQL-backed graph dependencies.
+    """
+    async with runtime.pool as pool:
         await pool.wait()
-        yield PostgresRuntime(
-            checkpointer=AsyncPostgresSaver(pool),
-            store=AsyncPostgresStore(pool),
-            run_coordinator=PostgresRunCoordinator(
-                pool,
-                max_concurrent_leases=_MAX_COORDINATION_LEASES,
-            ),
-        )
+        yield runtime
+
+
+@asynccontextmanager
+async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
+    """Construct, open, and own one process-local PostgreSQL runtime."""
+    async with open_postgres_runtime(_create_postgres_runtime(postgres_uri)) as runtime:
+        yield runtime
 
 
 async def setup_postgres_schema(postgres_uri: str) -> None:
-    """Initialize LangGraph's PostgreSQL persistence schemas once."""
-    async with (
-        AsyncPostgresSaver.from_conn_string(postgres_uri) as checkpointer,
-        AsyncPostgresStore.from_conn_string(postgres_uri) as store,
-    ):
-        await checkpointer.setup()
-        await store.setup()
+    """Initialize LangGraph and LGOS background persistence schemas once."""
+    async with postgres_runtime(postgres_uri) as runtime:
+        await runtime.checkpointer.setup()
+        await runtime.store.setup()
+        await runtime.response_store.setup()
 
 
 __all__ = [

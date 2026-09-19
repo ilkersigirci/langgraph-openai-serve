@@ -38,6 +38,32 @@ The package owns the `/v1` transport and adaptation boundary. The host
 application owns graph behavior and every model, tool, store, or data source
 used by that graph.
 
+Polling-only background requests branch after validation. The API stores the
+queued Response, submits its stable reference to Hatchet, and only then
+acknowledges the client. An independently deployed worker later enters the same
+graph runner. Polling never executes the graph in an HTTP request.
+
+```mermaid
+flowchart LR
+  client["OpenAI client"]
+  api["LGOS API"]
+  responses[("ResponseStore")]
+  hatchet["Hatchet workflow"]
+  worker["LGOS worker"]
+  checkpoint[("Persistent checkpointer")]
+  graph["Application graph"]
+
+  client -->|"create"| api
+  api -->|"commit queued row"| responses
+  api -->|"submit persisted reference"| hatchet
+  hatchet -->|"native retries + timeout"| worker
+  worker -->|"shared runner"| graph
+  graph <-->|"sync-durable checkpoints"| checkpoint
+  worker -->|"atomic terminal publish"| responses
+  client -->|"retrieve or cancel by ID"| api
+  api <-->|"authorized snapshot / transition"| responses
+```
+
 ## State Ownership
 
 Ordinary conversations are stateless from LGOS's perspective: the client owns
@@ -92,6 +118,13 @@ LangGraph Store for explicit data.
 PostgreSQL can provide all three roles; Redis is not required by this design.
 The demo shares one PostgreSQL pool per API process among them.
 
+Background-enabled graphs add a fourth state role: a `ResponseStore` owns the
+bounded public lifecycle, authorization, retention, terminal publication, and
+any native cancellation still awaiting delivery. The checkpointer remains the
+source of truth for recoverable graph progress. Hatchet owns queueing, attempts,
+retries, timeouts, cancellation, the terminal failure task, and the recurring
+maintenance schedule.
+
 The Responses adapter owns interrupt function-call encoding and decodes
 `previous_response_id` plus `function_call_output` items into a resume request.
 Under the coordinator lease, preparation either validates that request into a
@@ -121,6 +154,12 @@ Endpoint paths and settings live in [Reference](../reference.md).
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
 6. LGOS releases any interrupt lease and renders a protocol-specific OpenAI
    object or SSE sequence.
+
+For background creation, steps 2–6 happen in a worker after the API commits and
+returns a queued Response. The worker inspects any existing checkpoint before
+deciding whether to apply initial input, resume unfinished work, or only
+republish a completed result. See [Run Responses In The
+Background](../how-to-guides/background-responses.md).
 
 The paused Response ID and interrupt function-call items are client-owned. A UI
 that supports reconnectable interrupt input persists both before asking for a

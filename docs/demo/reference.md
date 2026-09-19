@@ -33,6 +33,7 @@ integration commands:
 | --- | --- |
 | `just demo/up <service>` | Start one published Compose service and its dependencies; add `--dev` for checkout images or `--wait` to detach |
 | `just demo/api [--editable] [--port <port>]` | Set up checkpoints and run one local graph API process |
+| `just demo/background-worker [--editable]` | Run the independently deployed Hatchet worker for polling-only background Responses |
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
@@ -46,12 +47,14 @@ integration commands:
 | `just demo/sync` | Synchronize all four projects from their lockfiles |
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
+| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, and polling-only validation through the dedicated gateway route |
 | `just demo/lint` | Check all four projects with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check all four projects |
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
 Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
+`lgos-background-worker`,
 `lgos-files-api`, `lgos-postgres-mcp`, `lgos-bifrost`, `lgos-litellm`,
 `lgos-chainlit`, and `lgos-openwebui`. Put arguments for the underlying command
 after `--` when a recipe has its own options, for example
@@ -80,6 +83,9 @@ upstream image. See the
 `just demo/test-litellm --editable` and
 `just demo/test-bifrost --editable` run the focused OpenAI SDK
 checks.
+`just demo/test-background-gateway --editable` targets the dedicated Bifrost
+background lifecycle route configured by
+`DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL`.
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
 gateway used by both maintained UIs. Responses and Files use its normal
 managed/native routes. LiteLLM metadata comes from native `/model/info` after
@@ -94,6 +100,7 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
 | `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit process and integration tests |
+| `DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL` | OpenAI `/v1`-compatible base URL used only by the live background lifecycle integration test |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
@@ -161,6 +168,21 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
+| `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
+| `DEMO_API_BACKGROUND_ADMISSION_CAPACITY` | Maximum active queued or in-progress Responses admitted by the shared store. |
+| `DEMO_API_BACKGROUND_RESULT_RETENTION_SECONDS` | Terminal result retention for background requests with `store=false`. |
+| `DEMO_API_BACKGROUND_STORED_RESULT_RETENTION_SECONDS` | Longer bounded terminal result retention for `store=true`. |
+| `DEMO_API_BACKGROUND_IDEMPOTENCY_RETENTION_SECONDS` | Retention of `metadata.lgos_run_id` create reservations. |
+| `DEMO_API_BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS` | Demo-only pause after the report draft checkpoint, used to make worker crash recovery observable. |
+| `DEMO_API_HATCHET_NAMESPACE` | Native Hatchet namespace shared by API submitters and workers. |
+| `DEMO_API_HATCHET_TASK_NAME` | Stable Hatchet workflow name for persisted LGOS runs. |
+| `DEMO_API_HATCHET_WORKER_NAME` | Name of the independent Hatchet worker. |
+| `DEMO_API_HATCHET_WORKER_SLOTS` | Explicit worker concurrency bound. |
+| `DEMO_API_HATCHET_TASK_RETRIES` | Native Hatchet execution-task retry count. |
+| `DEMO_API_HATCHET_IDEMPOTENCY_TTL_SECONDS` | Native workflow-trigger deduplication TTL. |
+| `DEMO_API_HATCHET_SCHEDULE_TIMEOUT_SECONDS` | Native maximum time a Hatchet run may wait to start. |
+| `DEMO_API_HATCHET_EXECUTION_TIMEOUT_SECONDS` | Native timeout for one Hatchet task execution. |
+| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential; leave it out of committed files outside this local template. |
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented

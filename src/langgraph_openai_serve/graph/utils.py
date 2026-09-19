@@ -1,6 +1,7 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
 import sys
+import uuid
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -119,7 +120,7 @@ class GraphRun:
     def begin_execution(self) -> None:
         """Mark checkpoint state as incomplete immediately before execution."""
         self.require_owner()
-        if self.config.supports(GraphFeature.INTERRUPTS):
+        if self.checkpoint_thread_id is not None:
             self._checkpoint_disposition = "delete"
 
     def commit_interrupts(self) -> None:
@@ -175,7 +176,7 @@ class GraphRun:
 
     async def _delete_checkpoint_thread(self) -> None:
         if self.checkpoint_thread_id is None:
-            msg = "Interrupt-enabled run has no checkpoint thread id."
+            msg = "Checkpointed run has no checkpoint thread id."
             raise RuntimeError(msg)
 
         checkpointer = cast("BaseCheckpointSaver", self.graph.checkpointer)
@@ -214,7 +215,7 @@ async def prepare_run(
         extra_callbacks=[usage_callback],
     )
     if identity.checkpoint_thread_id is not None and runnable_config is None:
-        msg = "Interrupt run has no runnable configuration."
+        msg = "Checkpointed run has no runnable configuration."
         raise RuntimeError(msg)
 
     resources = AsyncExitStack()
@@ -260,7 +261,21 @@ def _resolve_run_identity(
     checkpoint_scope: str,
 ) -> _RunIdentity:
     if not graph_config.supports(GraphFeature.INTERRUPTS):
-        return _RunIdentity()
+        if graph_config.background is None:
+            return _RunIdentity()
+        # A background-capable graph necessarily owns a persistent checkpointer.
+        # Foreground Responses and Chat calls still need an isolated thread, but
+        # they are request-scoped and are deleted by GraphRun after quiescence.
+        operation_id = str(uuid.uuid4())
+        checkpoint_thread_id = interrupt_state.checkpoint_key(
+            request.model,
+            operation_id,
+            scope=(
+                "foreground:"
+                f"{interrupt_state.normalize_checkpoint_scope(checkpoint_scope)}"
+            ),
+        )
+        return _RunIdentity(checkpoint_thread_id=checkpoint_thread_id)
 
     requested_run_id = interrupt_state.get_run_id(request)
     run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
@@ -291,6 +306,12 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
         inputs = await graph_config.build_input(request, messages)
         context = await graph_config.build_context(request, graph)
         return _PreparedRunValues(inputs=inputs, context=context)
+
+    if identity.run_id is None:
+        return _PreparedRunValues(
+            inputs=await graph_config.build_input(request, messages),
+            context=await graph_config.build_context(request, graph),
+        )
 
     coordinator = graph_config.run_coordinator
     if coordinator is None:  # resolve_graph() reports this first.

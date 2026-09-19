@@ -15,12 +15,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 from openai import AsyncOpenAI
 
+from lgos_demo_api.background import create_background_components
 from lgos_demo_api.checkpointer import postgres_runtime
 from lgos_demo_api.graphs.advanced_graph import (
     OpenAICompatibleKnowledgeBase,
     create_advanced_graph,
     create_advanced_graph_config,
     create_model,
+)
+from lgos_demo_api.graphs.background_report import (
+    create_background_report_config,
+    create_background_report_graph,
 )
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
@@ -103,6 +108,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ) as files_client,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
+        app.state.background_report_graph = create_background_report_graph(
+            runtime.checkpointer
+        )
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         knowledge = (
@@ -120,7 +128,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             checkpointer=runtime.checkpointer,
             store=runtime.store,
         )
+        background = None
+        if settings.BACKGROUND_ENABLED:
+            components = create_background_components(
+                app.state.graph_registry,
+                runtime.response_store,
+            )
+            background = components.backend
+            app.state.background_components = components
+        app.state.background_backend = background
+        app.state.lgos_openai_app.state.background_backend = background
+
         yield
+
+        app.state.background_backend = None
+        app.state.lgos_openai_app.state.background_backend = None
 
     logger.info("demo.server.stopped")
 
@@ -154,6 +176,10 @@ def create_custom_app() -> FastAPI:
         registry={
             "advanced-graph": create_advanced_graph_config(
                 lambda: app.state.advanced_graph,
+                lambda key: app.state.run_coordinator(key),
+            ),
+            "background-report-agent": create_background_report_config(
+                lambda: app.state.background_report_graph,
                 lambda key: app.state.run_coordinator(key),
             ),
             "citation-events": citation_graph_config,
@@ -190,6 +216,7 @@ def create_custom_app() -> FastAPI:
     )
 
     graph_serve.bind_openai_api()
+    app.state.lgos_openai_app = graph_serve.openai_app
     instrument_fastapi_app(graph_serve.openai_app)
 
     return app

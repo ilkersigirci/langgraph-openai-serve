@@ -1,10 +1,14 @@
 """Run LangGraph workflows from protocol-neutral requests and messages."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import aclosing
+from dataclasses import dataclass
 from typing import Any, cast
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages.ai import add_usage
+from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.types import (
     CustomStreamPart,
     Durability,
@@ -16,6 +20,7 @@ from langgraph.types import (
 
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
+    GraphConfig,
     GraphConfigurationError,
     GraphRegistry,
 )
@@ -26,6 +31,7 @@ from langgraph_openai_serve.graph.interrupt import (
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.graph.utils import (
     GraphRun,
+    build_runnable_config,
     prepare_run,
 )
 
@@ -39,6 +45,22 @@ LangGraphStreamEvent = (
 )
 
 _MISSING = object()
+
+
+class BackgroundGraphInterruptedError(RuntimeError):
+    """Raised when a background graph reaches an unsupported interrupt."""
+
+
+class BackgroundCheckpointIncompleteError(RuntimeError):
+    """Raised when finalization finds no complete checkpointed output."""
+
+
+@dataclass(frozen=True, slots=True)
+class BackgroundGraphResult:
+    """Checkpoint-reconstructible output from one background graph operation."""
+
+    message: AIMessage
+    root_messages: tuple[BaseMessage, ...]
 
 
 async def run_langgraph(
@@ -108,6 +130,123 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
         await run.config.render_output(result.value),
         run,
     )
+
+
+async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit checkpoint recovery boundary.
+    request: GraphRequest,
+    messages: list[BaseMessage],
+    config: GraphConfig,
+    *,
+    checkpoint_thread_id: str,
+    finalize_only: bool,
+    initial_message_count: int,
+) -> BackgroundGraphResult:
+    """Start, recover, or only render one synchronously checkpointed operation."""
+    graph = await config.resolve_graph()
+    usage_callback = UsageMetadataCallbackHandler()
+    runnable_config = build_runnable_config(
+        config.runtime_callbacks,
+        configurable={"thread_id": checkpoint_thread_id},
+        metadata={"lgos.model": request.model},
+        extra_callbacks=[usage_callback],
+    )
+    if runnable_config is None:
+        msg = "Background execution requires checkpoint runnable configuration."
+        raise RuntimeError(msg)
+
+    snapshot = await graph.aget_state(runnable_config, subgraphs=True)
+    checkpoint_exists = _snapshot_has_checkpoint(snapshot.config)
+    if checkpoint_exists and not snapshot.next and not snapshot.interrupts:
+        return await _background_result(
+            config,
+            snapshot.values,
+            usage_callback,
+            initial_message_count=initial_message_count,
+        )
+    if snapshot.interrupts:
+        msg = "Background execution does not support graph interrupts."
+        raise BackgroundGraphInterruptedError(msg)
+    if finalize_only:
+        msg = "No complete checkpointed graph output is available for finalization."
+        raise BackgroundCheckpointIncompleteError(msg)
+
+    inputs = None
+    if not checkpoint_exists:
+        inputs = await config.build_input(request, messages)
+    context = await config.build_context(request, graph)
+    result = await graph.ainvoke(
+        inputs,
+        config=runnable_config,
+        context=context,
+        output_keys=graph.output_channels,
+        durability="sync",
+        version="v2",
+    )
+    if result.interrupts:
+        msg = "Background execution does not support graph interrupts."
+        raise BackgroundGraphInterruptedError(msg)
+
+    # Rendering always uses the durable checkpoint head, including on the first
+    # delivery, so publication recovery exercises the identical path.
+    completed = await graph.aget_state(runnable_config, subgraphs=True)
+    if (
+        not _snapshot_has_checkpoint(completed.config)
+        or completed.next
+        or completed.interrupts
+    ):
+        msg = "Graph execution ended without complete checkpointed output."
+        raise BackgroundCheckpointIncompleteError(msg)
+    return await _background_result(
+        config,
+        completed.values,
+        usage_callback,
+        initial_message_count=initial_message_count,
+    )
+
+
+def _snapshot_has_checkpoint(config: Mapping[str, Any] | None) -> bool:
+    try:
+        return get_checkpoint_id(cast("Any", config)) is not None
+    except (AttributeError, KeyError, TypeError):
+        return False
+
+
+async def _background_result(
+    config: GraphConfig,
+    output: Any,
+    usage_callback: UsageMetadataCallbackHandler,
+    *,
+    initial_message_count: int,
+) -> BackgroundGraphResult:
+    message = await config.render_output(output)
+    root_messages = _root_messages(output)
+    total_usage = None
+    for operation_message in root_messages[initial_message_count:]:
+        if (
+            isinstance(operation_message, AIMessage)
+            and operation_message.usage_metadata is not None
+        ):
+            total_usage = add_usage(total_usage, operation_message.usage_metadata)
+    if total_usage is None:
+        for usage in usage_callback.usage_metadata.values():
+            total_usage = add_usage(total_usage, usage)
+    if total_usage is not None:
+        message = message.model_copy(update={"usage_metadata": total_usage})
+    return BackgroundGraphResult(
+        message=message,
+        root_messages=root_messages,
+    )
+
+
+def _root_messages(output: Any) -> tuple[BaseMessage, ...]:
+    values = (
+        output.get("messages")
+        if isinstance(output, Mapping)
+        else getattr(output, "messages", None)
+    )
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return ()
+    return tuple(message for message in values if isinstance(message, BaseMessage))
 
 
 async def run_langgraph_stream(
@@ -243,8 +382,13 @@ def _stream_modes(
 
 
 def _durability(run: GraphRun) -> Durability | None:
-    """Persist interrupt runs when they pause or exit."""
-    return "exit" if run.config.supports(GraphFeature.INTERRUPTS) else None
+    """Persist checkpointed foreground runs when they pause or exit."""
+    return (
+        "exit"
+        if run.config.supports(GraphFeature.INTERRUPTS)
+        or run.config.background is not None
+        else None
+    )
 
 
 def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:

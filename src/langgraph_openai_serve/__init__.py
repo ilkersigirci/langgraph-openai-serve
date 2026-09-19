@@ -2,6 +2,17 @@
 
 from importlib.metadata import version
 
+from langgraph_openai_serve.background import (
+    BackgroundBackend,
+    BackgroundPolicy,
+    BackgroundSettings,
+    BackgroundWorker,
+    NewRun,
+    ResponseStore,
+    RetryableJobError,
+    RunJob,
+    StoredRun,
+)
 from langgraph_openai_serve.graph.citations import citation_slice
 from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.events import (
@@ -25,6 +36,10 @@ from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
 __version__ = version("langgraph_openai_serve")
 
 __all__ = [
+    "BackgroundBackend",
+    "BackgroundPolicy",
+    "BackgroundSettings",
+    "BackgroundWorker",
     "ClientFunctionTool",
     "ClientSettings",
     "ClientToolChoice",
@@ -35,6 +50,11 @@ __all__ = [
     "LanggraphOpenaiServe",
     "NamedCustomToolChoice",
     "NamedFunctionToolChoice",
+    "NewRun",
+    "ResponseStore",
+    "RetryableJobError",
+    "RunJob",
+    "StoredRun",
     "citation_slice",
     "client_event",
     "status_event",

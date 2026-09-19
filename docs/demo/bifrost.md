@@ -31,6 +31,7 @@ Bifrost exposes each service as a custom provider:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
+| `openai` | `lgos-demo-api-a:8000` | `background-report-agent` polling lifecycle only |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
@@ -84,7 +85,8 @@ must instead receive a URL reachable from the host.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, and MCP requests. Bifrost loads it as one native virtual key whose
-provider policies allow only `lgos-a`, `lgos-b`, and `lgos-files`; the key is
+provider policies allow `lgos-a`, `lgos-b`, and `lgos-files`, plus only
+`background-report-agent` on the fixed standard `openai` provider. The key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
@@ -110,17 +112,69 @@ that pool.
 
 ## Configuration Boundary
 
-All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
+The dedicated `openai` provider is a standard Bifrost provider pinned to API A
+and allowlists only `background-report-agent`. All Bifrost custom providers use
+`openai` as their base provider. `lgos-a` and
 `lgos-b` enable model listing, native Responses and streaming, and pass-through
 for catalog detail and protocol-reference tests. `lgos-files` enables only Files
 operations and targets the standalone S3-backed demo Files service. Upstream
 base URLs omit `/v1`, and private-network access is enabled for the Compose
 network.
 
-Enable both `responses` and `responses_stream` explicitly under each graph
-provider's `allowed_requests`. Bifrost loads this configuration at startup, so
+Enable `responses`, `responses_stream`, `responses_retrieve`, and
+`responses_cancel` explicitly under each custom graph provider's
+`allowed_requests`. Bifrost loads this configuration at startup, so
 restart the service after changing it. The graph providers do not enable Chat
 Completions or Responses-to-Chat fallback.
+
+## Background Responses
+
+Use the dedicated standard provider through Bifrost's normalized OpenAI route:
+
+```python title="Poll a background report through Bifrost"
+import asyncio
+import os
+
+from openai import AsyncOpenAI
+
+
+async def main() -> None:
+    client = AsyncOpenAI(
+        base_url="http://localhost:3000/openai/v1",
+        api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
+    )
+    response = await client.responses.create(
+        model="background-report-agent",
+        input="Write a short reliability report.",
+        background=True,
+        store=True,
+    )
+    while response.status in {"queued", "in_progress"}:
+        await asyncio.sleep(1)
+        response = await client.responses.retrieve(response.id)
+    print(response.output_text)
+
+
+asyncio.run(main())
+```
+
+No `x-model-provider` header is used. Retrieve and cancel requests contain only
+the opaque Response ID, so Bifrost must always send this lifecycle to an LGOS
+deployment sharing the same PostgreSQL Response store. The dedicated provider
+gives that route a stable target. Generic `lgos-a`/`lgos-b` selection cannot
+recover the creation provider from the ID when upstream stores are isolated.
+
+The pinned Bifrost 2.1.1 configuration passes background create, retrieval with
+a fresh client, cancellation, and polling-only validation. Run:
+
+```bash
+just demo/test-background-gateway --editable
+```
+
+The pinned LiteLLM community image is not a fallback for this demo lifecycle;
+its managed background create path attempts to load an unavailable enterprise
+hook. See [Run Responses In The Background](../how-to-guides/background-responses.md)
+for the versioned gateway support matrix and recovery model.
 
 The client header allowlist forwards `traceparent`, `tracestate`, and
 `user-agent` through managed Responses requests. This preserves distributed

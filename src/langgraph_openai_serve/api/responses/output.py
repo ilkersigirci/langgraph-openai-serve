@@ -53,8 +53,19 @@ class ResponseContext:
         request: ResponseCreateRequest,
         *,
         run_id: str | None = None,
+        response_id: str | None = None,
+        created_at: float | None = None,
     ) -> "ResponseContext":
         """Build context, binding an interrupt response ID when run_id is present."""
+        if run_id is not None and response_id is not None:
+            msg = "run_id and response_id cannot both select a Response identity."
+            raise ValueError(msg)
+        if response_id is not None:
+            return cls(
+                request=request,
+                id=response_id,
+                created_at=created_at if created_at is not None else time.time(),
+            )
         if run_id is None:
             return cls(request=request)
         return cls(request=request, id=interrupt_response_id(run_id))
@@ -62,7 +73,14 @@ class ResponseContext:
     def response(
         self,
         *,
-        status: Literal["in_progress", "completed", "failed", "incomplete"],
+        status: Literal[
+            "queued",
+            "in_progress",
+            "completed",
+            "failed",
+            "incomplete",
+            "cancelled",
+        ],
         output: Sequence[ResponseOutputItem],
         error: ResponseError | None = None,
         usage: ResponseUsage | None = None,
@@ -76,7 +94,7 @@ class ResponseContext:
                 "object": "response",
                 "created_at": self.created_at,
                 "status": status,
-                "background": False,
+                "background": bool(request.background),
                 "completed_at": time.time() if status == "completed" else None,
                 "error": error,
                 "incomplete_details": incomplete_details,
@@ -94,7 +112,7 @@ class ResponseContext:
                 # v2 is safe because SDK response models allow extra fields.
                 "prompt_cache_diagnostics": None,
                 "service_tier": "default",
-                "store": False,
+                "store": bool(request.store),
                 "text": {"format": {"type": "text"}},
                 "tool_choice": (
                     request.tool_choice.model_dump(mode="json")

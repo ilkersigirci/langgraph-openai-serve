@@ -25,6 +25,18 @@ cross-worker interrupt coordination, install the optional integration:
 uv add "langgraph-openai-serve[postgres]"
 ```
 
+Polling-only background Responses use Hatchet as the built-in durable backend.
+Install it with the supplied PostgreSQL Response store:
+
+```bash
+uv add "langgraph-openai-serve[postgres,hatchet]"
+```
+
+The core package does not import Hatchet. Applications that deliberately own
+their complete background lifecycle can implement the high-level
+`BackgroundBackend` protocol. See
+[Run Responses In The Background](docs/how-to-guides/background-responses.md).
+
 For built-in Langfuse tracing, install the tracing integration:
 
 ```bash
@@ -150,6 +162,7 @@ for a feature-by-feature comparison.
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
+- Background Responses: [docs/how-to-guides/background-responses.md](docs/how-to-guides/background-responses.md)
 - OpenAI-compatible proxies: [docs/how-to-guides/openai-proxies.md](docs/how-to-guides/openai-proxies.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

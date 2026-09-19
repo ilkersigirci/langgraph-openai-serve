@@ -80,9 +80,16 @@ class ResponsesEventBuilder:
         request: ResponseCreateRequest,
         *,
         run_id: str | None = None,
+        response_id: str | None = None,
+        created_at: float | None = None,
         server_tools: Collection[str] = (),
     ) -> None:
-        self._context = ResponseContext.for_run(request, run_id=run_id)
+        self._context = ResponseContext.for_run(
+            request,
+            run_id=run_id,
+            response_id=response_id,
+            created_at=created_at,
+        )
         self._sequence_number = 0
         self._output: list[ResponseOutputItem] = []
         self._server_tool_tracker = ServerToolTracker(server_tools)
