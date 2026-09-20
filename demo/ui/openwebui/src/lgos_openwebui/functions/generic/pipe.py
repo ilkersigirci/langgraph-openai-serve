@@ -16,6 +16,7 @@ from .api import (
     _model_request,
 )
 from .contracts import (
+    BACKGROUND_SETTING_NAME,
     DISPLAY_FILE_TOOL_NAME,
     INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
@@ -43,6 +44,7 @@ from .interrupts import (
 )
 from .metadata import _request_metadata
 from .responses import (
+    _background_response,
     _emit_response_sources,
     _openwebui_mcp_tools,
     _openwebui_text_chunk,
@@ -70,6 +72,7 @@ class PreparedResponsesRequest:
     """Validated upstream request state retained across client-tool turns."""
 
     model_id: str
+    background: bool
     streaming: bool
     gateway: GatewayConfig
     openwebui_mcp_names: dict[str, str]
@@ -172,6 +175,12 @@ class Pipe:
         answer_parts: list[str] = []
         latest_status = ""
         finished = False
+
+        async def publish_background_status(status: str) -> None:
+            nonlocal latest_status
+            latest_status = f"Background response {status.replace('_', ' ')}."
+            await _emit_status(event_emitter, latest_status, done=False)
+
         try:
             prepared = await self._prepare_request(
                 invocation,
@@ -187,7 +196,17 @@ class Pipe:
                     # live while the SDK assembles the typed final Response.
                     final_text_streamed = False
                     phases: dict[int, str | None] = {}
-                    if prepared.streaming:
+                    if prepared.background:
+                        response = await _background_response(
+                            client,
+                            prepared.request,
+                            publish_background_status,
+                        )
+                        status = response.status or "unknown"
+                        latest_status = (
+                            f"Background response {status.replace('_', ' ')}."
+                        )
+                    elif prepared.streaming:
                         async with client.responses.stream(
                             **prepared.request
                         ) as stream:
@@ -342,8 +361,17 @@ class Pipe:
 
         tools = _responses_tools(model_id, invocation.metadata)
         tools.extend(mcp_tools)
+        background = invocation.metadata.chat_variables.get(
+            BACKGROUND_SETTING_NAME
+        ) is True and invocation.metadata.supports_chat_variable(
+            BACKGROUND_SETTING_NAME
+        )
+        excluded_runtime_settings = {BACKGROUND_SETTING_NAME}
+        if supports_web_search(model_id):
+            excluded_runtime_settings.add(WEB_SEARCH_TOOL_NAME)
         return PreparedResponsesRequest(
             model_id=model_id,
+            background=background,
             streaming=invocation.body.stream,
             gateway=gateway,
             openwebui_mcp_names=openwebui_mcp_names,
@@ -354,11 +382,10 @@ class Pipe:
                 _request_metadata(
                     invocation.metadata,
                     include_runtime_settings=not is_server_tool_model(model_id),
-                    excluded_runtime_settings=(
-                        {WEB_SEARCH_TOOL_NAME} if supports_web_search(model_id) else ()
-                    ),
+                    excluded_runtime_settings=excluded_runtime_settings,
                 ),
                 invocation.user.id or None,
+                background=background,
                 provider_routing=gateway.provider_routing,
                 tools=tools,
                 previous_response_id=previous_response_id,

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 from typing import Any, cast
 
 import chainlit as cl
@@ -26,6 +27,7 @@ from openai.types.responses import Response, ResponseInputParam
 from pydantic import ValidationError
 
 from lgos_chainlit.chat_settings import (
+    background_enabled,
     chat_settings_metadata,
     configure_chat_settings,
     response_tools,
@@ -46,7 +48,11 @@ from lgos_chainlit.interrupts import (
     pending_interrupt_prompt,
     validate_interrupt_outputs,
 )
-from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
+from lgos_chainlit.lgos_protocol import (
+    INTERRUPT_TOOL_NAME,
+    RUN_METADATA_KEY,
+    model_description,
+)
 from lgos_chainlit.mcp import mcp_tools
 
 logger = logging.getLogger(__name__)
@@ -179,7 +185,8 @@ async def _response_message(message: cl.Message, model: str) -> None:
     try:
         input_items = response_input(text_only_chat_messages())
         input_items = await with_response_file_parts(input_items, message)
-        streaming = streaming_enabled()
+        background = background_enabled()
+        streaming = not background and streaming_enabled()
         metadata = _response_metadata()
         model_options = model_request(model)
         upstream_model = cast(str, model_options["model"])
@@ -191,6 +198,15 @@ async def _response_message(message: cl.Message, model: str) -> None:
                 response = await _stream_response(
                     input_items,
                     assistant_message,
+                    model=upstream_model,
+                    extra_headers=extra_headers,
+                    user=user,
+                    metadata=metadata,
+                    commentary_tasks=commentary_tasks,
+                )
+            elif background:
+                response = await _background_response(
+                    input_items,
                     model=upstream_model,
                     extra_headers=extra_headers,
                     user=user,
@@ -258,6 +274,58 @@ def _response_metadata() -> dict[str, str]:
     metadata = chat_settings_metadata()
     metadata.update(conversation_metadata())
     return metadata
+
+
+async def _background_response(
+    input_items: list[dict[str, Any]],
+    *,
+    model: str,
+    extra_headers: dict[str, str] | None,
+    user: str,
+    metadata: dict[str, str],
+    commentary_tasks: CommentaryTaskList,
+) -> Response:
+    """Create and poll one background Response with best-effort cancellation."""
+    client = openai_client.with_options(max_retries=2)
+    response = await client.responses.create(
+        model=model,
+        extra_headers=extra_headers,
+        input=cast("ResponseInputParam", input_items),
+        background=True,
+        store=True,
+        tools=response_tools(),
+        user=user,
+        metadata={**metadata, RUN_METADATA_KEY: str(uuid.uuid4())},
+    )
+    previous_status = None
+    try:
+        while response.status in {"queued", "in_progress"}:
+            if response.status != previous_status:
+                await commentary_tasks.add(
+                    f"Background response {response.status.replace('_', ' ')}"
+                )
+                previous_status = response.status
+            await asyncio.sleep(1)
+            response = await client.responses.retrieve(
+                response.id,
+                extra_headers=extra_headers,
+            )
+    except asyncio.CancelledError:
+        try:
+            await asyncio.shield(
+                client.responses.cancel(
+                    response.id,
+                    extra_headers=extra_headers,
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Background response cancellation failed for %s",
+                response.id,
+                exc_info=True,
+            )
+        raise
+    return response
 
 
 async def _stream_response(

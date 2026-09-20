@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY = "lgos_runtime_settings_defaults"
 MODEL_FEATURES_SESSION_KEY = "lgos_model_features"
 STREAMING_SETTING_ID = "lgos_chainlit_stream"
+BACKGROUND_SETTING_ID = "lgos_chainlit_background"
 PACKAGE_VERSION_SETTING_ID = "lgos_package_version"
 WEB_SEARCH_SETTING_ID = "web_search"
 WEB_SEARCH_PROFILES = {"advanced-graph", "server-tool"}
@@ -95,6 +96,15 @@ async def configure_chat_settings() -> None:
         return
 
     _store_model_features(extension.features)
+    if GraphFeature.BACKGROUND.value in extension.features:
+        widgets.append(
+            Switch(
+                id=BACKGROUND_SETTING_ID,
+                label="Run in background",
+                description="Submit this response to the background worker and poll it.",
+                initial=_selected(candidates, BACKGROUND_SETTING_ID),
+            )
+        )
     client_settings = model_client_settings(model)
     if client_settings is None:
         await cl.ChatSettings(widgets).send()
@@ -143,6 +153,14 @@ def streaming_enabled() -> bool:
     selected = cl.user_session.get("chat_settings")
     value = selected.get(STREAMING_SETTING_ID) if isinstance(selected, dict) else None
     return value if type(value) is bool else True
+
+
+def background_enabled() -> bool:
+    """Return whether this turn should use background execution."""
+    if not model_feature_enabled(GraphFeature.BACKGROUND):
+        return False
+    selected = cl.user_session.get("chat_settings")
+    return isinstance(selected, dict) and _selected(selected, BACKGROUND_SETTING_ID)
 
 
 def chat_settings_metadata() -> dict[str, str]:

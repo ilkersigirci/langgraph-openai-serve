@@ -1,10 +1,12 @@
 """Responses and durable display-file behavior for Chainlit."""
 
+import asyncio
 import importlib
 import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, call
+from uuid import UUID
 
 import httpx2
 import pytest
@@ -461,6 +463,130 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
+
+
+async def test_background_response_is_polled_and_rendered(
+    monkeypatch: pytest.MonkeyPatch,
+    chainlit_context,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    response_id = "resp_background"
+    queued = Response.model_construct(id=response_id, status="queued", output=[])
+    in_progress = Response.model_construct(
+        id=response_id,
+        status="in_progress",
+        output=[],
+    )
+    completed = _response(
+        ResponseOutputMessage(
+            id="msg_final",
+            content=[
+                ResponseOutputText(
+                    annotations=[],
+                    logprobs=[],
+                    text="Report ready.",
+                    type="output_text",
+                )
+            ],
+            role="assistant",
+            status="completed",
+            type="message",
+            phase="final_answer",
+        )
+    ).model_copy(update={"id": response_id})
+    create = AsyncMock(return_value=queued)
+    retrieve = AsyncMock(side_effect=[in_progress, completed])
+    tasks = Mock(add=AsyncMock(), complete=AsyncMock(), stop=AsyncMock())
+    assistant = Mock(content="", elements=[], send=AsyncMock(), update=AsyncMock())
+    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
+    monkeypatch.setattr(chat, "CommentaryTaskList", Mock(return_value=tasks))
+    monkeypatch.setattr(chat, "text_only_chat_messages", list)
+    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
+    monkeypatch.setattr(chat, "background_enabled", lambda: True)
+    monkeypatch.setattr(chat, "streaming_enabled", Mock(side_effect=AssertionError))
+    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
+    monkeypatch.setattr(
+        chat, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
+    )
+    monkeypatch.setattr(
+        chat,
+        "model_request",
+        lambda _: {
+            "model": "background-report-agent",
+            "extra_headers": {"x-model-provider": "openai"},
+        },
+    )
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(chat, "response_tools", list)
+    monkeypatch.setattr(chat.asyncio, "sleep", AsyncMock())
+    with_options = Mock(return_value=chat.openai_client)
+    monkeypatch.setattr(chat.openai_client, "with_options", with_options)
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
+
+    await chat._response_message(Mock(), "openai/background-report-agent")
+
+    request = create.await_args.kwargs
+    assert request["background"] is True
+    assert request["store"] is True
+    assert request["metadata"]["conversation_id"] == "thread-123"
+    UUID(request["metadata"]["lgos_run_id"])
+    assert retrieve.await_args_list == [
+        call(response_id, extra_headers={"x-model-provider": "openai"}),
+        call(response_id, extra_headers={"x-model-provider": "openai"}),
+    ]
+    assert tasks.add.await_args_list == [
+        call("Background response queued"),
+        call("Background response in progress"),
+    ]
+    tasks.complete.assert_awaited_once_with()
+    assert assistant.content == "Report ready."
+    assistant.send.assert_awaited_once_with()
+    with_options.assert_called_once_with(max_retries=2)
+
+
+async def test_background_response_is_cancelled_when_turn_stops(
+    monkeypatch: pytest.MonkeyPatch,
+    chainlit_context,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    response_id = "resp_background"
+    cancel = AsyncMock()
+    monkeypatch.setattr(
+        chat.openai_client.responses,
+        "create",
+        AsyncMock(
+            return_value=Response.model_construct(
+                id=response_id,
+                status="queued",
+                output=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(chat.openai_client.responses, "cancel", cancel)
+    monkeypatch.setattr(chat, "response_tools", list)
+    monkeypatch.setattr(
+        chat.openai_client,
+        "with_options",
+        Mock(return_value=chat.openai_client),
+    )
+    monkeypatch.setattr(
+        chat.asyncio,
+        "sleep",
+        AsyncMock(side_effect=asyncio.CancelledError),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await chat._background_response(
+            [],
+            model="background-report-agent",
+            extra_headers=None,
+            user="demo-user",
+            metadata={},
+            commentary_tasks=Mock(add=AsyncMock()),
+        )
+
+    cancel.assert_awaited_once_with(response_id, extra_headers=None)
 
 
 async def test_interrupt_calls_are_delegated_to_the_durable_workflow(

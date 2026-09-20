@@ -196,6 +196,11 @@ profile. It defaults to enabled and selects `responses.stream` or
 streaming disabled, Chainlit waits for the complete response and sends the
 answer once.
 
+Models advertising `background` also receive an opt-in **Run in
+background** switch. Chainlit uses non-streaming create/retrieve polling,
+renders lifecycle states in its task list, and requests cancellation when the
+turn stops. This client-owned switch is not included in `lgos_settings`.
+
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
 request that needs them. The underlying contract is documented in

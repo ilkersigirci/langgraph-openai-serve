@@ -71,22 +71,19 @@ after execution is quiescent and can be retried independently.
 
 ## Run It
 
-Configure Hatchet and the upstream model in `demo/.env`, then enable both the
-API runtime and optional worker service:
-
-```dotenv
-COMPOSE_PROFILES=bifrost,background
-DEMO_API_BACKGROUND_ENABLED=true
-DEMO_API_OPENAI_API_KEY=...
-```
-
-Start the checkout stack and call it through the tested Bifrost background
-route:
+Configure `HATCHET_CLIENT_TOKEN` and the upstream model in `demo/.env`, then
+start the Bifrost UI stack and worker:
 
 ```bash
-just demo/compose --dev
+just demo/compose-background --dev
 just demo/test-background-gateway --editable
 ```
+
+Open Chainlit on port 3002 or Open WebUI on port 3003, select
+`openai/background-report-agent`, and send a report request. **Run in
+background** must be enabled. The UI shows queued and in-progress states,
+polls the Response ID, and renders the normal final answer. Stopping the active
+turn requests Responses cancellation.
 
 For local processes, run the API, worker, and Hatchet service separately:
 
@@ -119,9 +116,10 @@ connection closes, and the retry resumes from the durable checkpoint.
 ## Boundaries
 
 This graph has no tools and does not demonstrate UI conversation persistence.
-Chainlit and Open WebUI are not automatically taught to poll its lifecycle.
-Use an OpenAI SDK client against direct LGOS or the dedicated Bifrost provider
-documented in the [proxy guide](../../how-to-guides/openai-proxies.md).
+The UIs poll only while the current turn is active; they do not persist a
+background Response ID across a browser refresh. SDK clients can persist the ID
+and resume polling through the dedicated Bifrost provider documented in the
+[proxy guide](../../how-to-guides/openai-proxies.md).
 
 The implementation lives in
 `demo/api/src/lgos_demo_api/graphs/background_report.py`. Shared API/worker

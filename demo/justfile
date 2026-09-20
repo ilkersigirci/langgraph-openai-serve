@@ -199,13 +199,18 @@ compose dev='false' otel='false' *up_args:
     compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
     up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
     gateway_service="$("${compose[@]}" config --services | sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p')"
+    background_service="$("${compose[@]}" config --services | sed -n '/^lgos-background-worker$/p')"
+    background_services=()
+    if [[ -n "$background_service" ]]; then
+        background_services+=("$background_service")
+    fi
 
     case "$OPENAI_GATEWAY_TYPE:$gateway_service" in
         litellm:lgos-litellm|bifrost:lgos-bifrost)
-            "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service"
+            "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service" "${background_services[@]}"
             ;;
         litellm:|bifrost:)
-            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api "${background_services[@]}"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
@@ -220,6 +225,23 @@ compose dev='false' otel='false' *up_args:
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
     OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
+
+# Start the Bifrost UI stack with Hatchet background execution enabled.
+[arg('dev', long, value='true')]
+[arg('otel', long, value='true')]
+[group('docker dev')]
+[group('docker prod')]
+[script]
+compose-background dev='false' otel='false' *up_args:
+    if [[ -z "$HATCHET_CLIENT_TOKEN" ]]; then
+        echo "HATCHET_CLIENT_TOKEN must be configured" >&2
+        exit 1
+    fi
+    export OPENAI_GATEWAY_TYPE=bifrost
+    export OPENAI_GATEWAY_BASE_URL=http://lgos-bifrost:4000
+    export COMPOSE_PROFILES=bifrost,background
+    export DEMO_API_BACKGROUND_ENABLED=true
+    just compose {{ if dev == "true" { "--dev" } else { "" } }} {{ if otel == "true" { "--otel" } else { "" } }} "${@:3}"
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

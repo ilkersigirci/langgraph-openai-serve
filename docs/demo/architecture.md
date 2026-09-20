@@ -103,12 +103,12 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-The background route is intentionally outside UI inference. An OpenAI SDK
-client calls Bifrost's `/openai/v1` route with the unqualified
-`background-report-agent` model, then retrieves or cancels using only the saved
-Response ID. API A, any API replicas added to that fixed group, and the worker
-must share PostgreSQL. Hatchet transports stable run references and retries; it
-does not own the public Response.
+The background model uses Bifrost's fixed provider and `/openai/v1` lifecycle.
+Chainlit and Open WebUI discover its capability, create a non-streaming
+background Response, and poll or cancel through the OpenAI SDK. API A, any API
+replicas added to that fixed group, and the worker must share PostgreSQL.
+Hatchet transports stable run references and retries; it does not own the
+public Response.
 
 At startup, Compose waits for PostgreSQL and runs the one-shot API schema setup
 and Chainlit schema migrations. The idempotent MCP setup then creates the

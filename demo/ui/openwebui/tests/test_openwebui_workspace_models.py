@@ -172,7 +172,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
         lgos={
             "schema_version": 1,
             "description": "  Simple graph  ",
-            "features": ["file_inputs", "mcp_tools"],
+            "features": ["background", "file_inputs", "mcp_tools"],
             "client_settings": {
                 "schema_version": 1,
                 "json_schema": {"properties": {"enabled": {"type": "boolean"}}},
@@ -250,6 +250,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
         assert spec.description == "Simple graph"
         assert spec.supports_mcp_tools is True
         assert spec.supports_file_inputs is True
+        assert spec.supports_background is True
     assert specs[0].fields == (
         {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": False},
     )
@@ -466,6 +467,28 @@ def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
         },
     ]
     assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
+
+
+def test_background_workspace_model_has_delivery_control() -> None:
+    client = _client([])
+    spec = WorkspaceModelSpec(
+        id="openai/background-report-agent",
+        description="Background report",
+        fields=(),
+        supports_background=True,
+    )
+
+    sync_workspace_models(client, (spec,))
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
+        {
+            "key": "lgos_background",
+            "type": "checkbox",
+            "label": "Run in background",
+            "default": False,
+        }
+    ]
 
 
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:

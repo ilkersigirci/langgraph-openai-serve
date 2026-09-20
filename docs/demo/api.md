@@ -201,10 +201,10 @@ refusal differs from an incomplete response and which terminal events clients
 must handle.
 
 For durable report execution, enable `DEMO_API_BACKGROUND_ENABLED`, start the
-independent `just demo/background-worker` process, and use the polling client in
-[Background Report Agent](graphs/background-report-agent.md). That graph is not
-integrated into the demo UIs; the supported gateway path is the dedicated
-Bifrost provider.
+independent `just demo/background-worker` process, or run the complete UI path
+with `just demo/compose-background`. Chainlit and Open WebUI expose polling for
+the model through the dedicated Bifrost provider. See
+[Background Report Agent](graphs/background-report-agent.md).
 
 ## Try A Demo Client
 

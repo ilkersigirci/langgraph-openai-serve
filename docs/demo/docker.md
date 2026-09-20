@@ -167,10 +167,10 @@ settings](reference.md#opentelemetry-settings).
     HATCHET_CLIENT_TOKEN=...
     ```
 
-    Then start the ordered stack or only the worker and its persistence setup:
+    Then start the ordered UI stack or only the worker and its persistence setup:
 
     ```bash
-    just demo/compose --dev
+    just demo/compose-background --dev
     # Or: just demo/up lgos-background-worker
     ```
 

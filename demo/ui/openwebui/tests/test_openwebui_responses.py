@@ -1,5 +1,6 @@
 """Responses-only Open WebUI Function behavior."""
 
+import asyncio
 import base64
 import json
 import sys
@@ -10,7 +11,8 @@ from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
+from uuid import UUID
 
 import httpx2
 import pytest
@@ -31,6 +33,7 @@ from openai.types.responses.response_output_text import AnnotationURLCitation
 from lgos_openwebui.bundle import bundle_function
 from lgos_openwebui.functions.generic import files as generic_files
 from lgos_openwebui.functions.generic import pipe as generic_pipe
+from lgos_openwebui.functions.generic import responses as generic_responses
 from lgos_openwebui.functions.generic.contracts import (
     OpenWebUIInvocation,
     OpenWebUIMessage,
@@ -172,6 +175,15 @@ def body(*, stream: bool) -> dict[str, object]:
     }
 
 
+def background_metadata(*, supported: bool = True) -> dict[str, object]:
+    fields = [{"key": "lgos_background"}] if supported else []
+    return {
+        "chat_id": "thread-123",
+        "chat_variables": {"lgos_background": True},
+        "model": {"info": {"meta": {"chat_variables_schema": {"fields": fields}}}},
+    }
+
+
 def host_messages(messages: list[dict[str, Any]]) -> list[OpenWebUIMessage]:
     return OpenWebUIInvocation.from_host(
         body={"model": QUALIFIED_MODEL_ID, "messages": messages},
@@ -273,6 +285,11 @@ class FakeResponseStream:
 class FakeClient:
     def __init__(self, **responses: object) -> None:
         self.responses = SimpleNamespace(**responses)
+        self.max_retries = 0
+
+    def with_options(self, *, max_retries: int) -> "FakeClient":
+        self.max_retries = max_retries
+        return self
 
     async def __aenter__(self) -> "FakeClient":
         return self
@@ -281,8 +298,10 @@ class FakeClient:
         pass
 
 
-def install_client(monkeypatch: pytest.MonkeyPatch, **responses: object) -> None:
-    monkeypatch.setattr(generic_pipe, "_client", lambda **_: FakeClient(**responses))
+def install_client(monkeypatch: pytest.MonkeyPatch, **responses: object) -> FakeClient:
+    client = FakeClient(**responses)
+    monkeypatch.setattr(generic_pipe, "_client", lambda **_: client)
+    return client
 
 
 @pytest.fixture
@@ -560,6 +579,125 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
         "lgos_settings": '{"audience":"expert"}',
     }
     assert request["tools"] == []
+
+
+async def test_background_response_uses_polling_and_native_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    queued = Response.model_construct(id=response_id, status="queued", output=[])
+    in_progress = Response.model_construct(
+        id=response_id,
+        status="in_progress",
+        output=[],
+    )
+    completed = final_response("Report ready.").model_copy(update={"id": response_id})
+    create = AsyncMock(return_value=queued)
+    retrieve = AsyncMock(side_effect=[in_progress, completed])
+    cancel = AsyncMock()
+    stream = Mock()
+    client = install_client(
+        monkeypatch,
+        create=create,
+        retrieve=retrieve,
+        cancel=cancel,
+        stream=stream,
+    )
+    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
+    events = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        events.append(event)
+
+    result = await collect(
+        generic_pipe.Pipe().pipe(
+            body(stream=True),
+            __metadata__=background_metadata(),
+            __event_emitter__=emit,
+        )
+    )
+
+    assert result[0]["choices"][0]["delta"]["content"] == "Report ready."
+    request = create.await_args.kwargs
+    assert request["background"] is True
+    assert request["store"] is True
+    assert request["metadata"]["conversation_id"] == "thread-123"
+    UUID(request["metadata"]["lgos_run_id"])
+    assert "lgos_settings" not in request["metadata"]
+    assert retrieve.await_args_list == [
+        call(response_id, extra_headers=None),
+        call(response_id, extra_headers=None),
+    ]
+    assert events == [
+        {
+            "type": "status",
+            "data": {"description": "Background response queued.", "done": False},
+        },
+        {
+            "type": "status",
+            "data": {
+                "description": "Background response in progress.",
+                "done": False,
+            },
+        },
+        {
+            "type": "status",
+            "data": {
+                "description": "Background response completed.",
+                "done": True,
+            },
+        },
+    ]
+    stream.assert_not_called()
+    cancel.assert_not_awaited()
+    assert client.max_retries == 2
+
+
+async def test_stale_background_setting_is_ignored_after_model_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock(return_value=final_response("Foreground response."))
+    install_client(monkeypatch, create=create)
+    request_body = body(stream=False)
+    request_body["model"] = "generic.lgos-a/simple-graph"
+
+    result = await generic_pipe.Pipe().pipe(
+        request_body,
+        __metadata__=background_metadata(supported=False),
+    )
+
+    assert result == "Foreground response."
+    request = create.await_args.kwargs
+    assert request["store"] is False
+    assert "background" not in request
+    assert "lgos_settings" not in request["metadata"]
+
+
+async def test_background_response_is_cancelled_when_request_stops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    cancel = AsyncMock()
+    client = FakeClient(
+        create=AsyncMock(
+            return_value=Response.model_construct(
+                id=response_id,
+                status="queued",
+                output=[],
+            )
+        ),
+        cancel=cancel,
+    )
+    monkeypatch.setattr(
+        generic_responses.asyncio,
+        "sleep",
+        AsyncMock(side_effect=asyncio.CancelledError),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await generic_responses._background_response(client, {}, AsyncMock())
+
+    cancel.assert_awaited_once_with(response_id, extra_headers=None)
 
 
 @pytest.mark.parametrize(

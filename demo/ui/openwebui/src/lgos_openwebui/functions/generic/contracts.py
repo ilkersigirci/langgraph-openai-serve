@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any, Literal, Self
 
 from pydantic import (
+    AliasPath,
     BaseModel,
     ConfigDict,
     Field,
@@ -34,12 +35,14 @@ LGOS_EXTENSION_KEY = "lgos"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
+RUN_METADATA_KEY = "lgos_run_id"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 SERVER_TOOL_MODEL_NAME = "server-tool"
 ADVANCED_GRAPH_MODEL_NAME = "advanced-graph"
 PERSISTENT_PLOT_MODEL_NAME = "persistent-plot-agent"
 PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
 WEB_SEARCH_TOOL_NAME = "web_search"
+BACKGROUND_SETTING_NAME = "lgos_background"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 OpenWebUIEventEmitter = Callable[[dict[str, Any]], Awaitable[object]]
@@ -110,10 +113,23 @@ class OpenWebUIUserMessage(OpenWebUIHostModel):
     files: list[OpenWebUIFile] = Field(default_factory=list)
 
 
+class OpenWebUIChatVariableField(OpenWebUIHostModel):
+    key: str | None = None
+
+
 class OpenWebUIMetadata(OpenWebUIHostModel):
     chat_id: str | None = None
     chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
+    model_chat_variables: list[OpenWebUIChatVariableField] = Field(
+        default_factory=list,
+        validation_alias=AliasPath(
+            "model", "info", "meta", "chat_variables_schema", "fields"
+        ),
+    )
     user_message: OpenWebUIUserMessage | None = None
+
+    def supports_chat_variable(self, key: str) -> bool:
+        return any(field.key == key for field in self.model_chat_variables)
 
 
 class OpenWebUIUser(OpenWebUIHostModel):

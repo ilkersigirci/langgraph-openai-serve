@@ -278,6 +278,11 @@ Variables and sends them as
 `metadata.lgos_settings`. LGOS performs the authoritative runtime
 validation.
 
+Models advertising `background` also receive an opt-in **Run in
+background** checkbox. The Pipe keeps this client-owned value out of
+`lgos_settings`, polls the non-streaming Response, and publishes native status
+events until the normal answer renderer takes over.
+
 The shared Pipe maps Open WebUI's stable `chat_id` to
 `metadata.conversation_id` on every Responses request, including the UserValves example.
 Langfuse can therefore group the

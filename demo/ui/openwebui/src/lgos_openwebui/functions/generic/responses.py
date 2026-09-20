@@ -1,7 +1,10 @@
 """Responses API helpers for Open WebUI models."""
 
+import asyncio
 import json as responses_json
-from collections.abc import Mapping, Sequence
+import logging
+import uuid
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Union
 
 import openai.types.responses as response_types
@@ -25,6 +28,7 @@ from .api import _model_request
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     PACKAGE_VERSION_TOOL_NAME,
+    RUN_METADATA_KEY,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
@@ -78,6 +82,8 @@ PACKAGE_VERSION_TOOL: CustomToolParam = {
     "type": "custom",
     "name": PACKAGE_VERSION_TOOL_NAME,
 }
+ACTIVE_BACKGROUND_STATUSES = {"queued", "in_progress"}
+logger = logging.getLogger(__name__)
 
 
 def _responses_tools(
@@ -272,6 +278,7 @@ def _responses_request(
     metadata: dict[str, str] | None,
     user_id: str | None,
     *,
+    background: bool,
     provider_routing: bool,
     tools: list[ToolParam],
     previous_response_id: str | None = None,
@@ -282,9 +289,11 @@ def _responses_request(
             provider_routing=provider_routing,
         ),
         "input": input_items,
-        "store": False,
+        "store": background,
         "tools": tools,
     }
+    if background:
+        request["background"] = True
     if metadata:
         request["metadata"] = metadata
     if user_id is not None:
@@ -292,6 +301,52 @@ def _responses_request(
     if previous_response_id is not None:
         request["previous_response_id"] = previous_response_id
     return request
+
+
+async def _background_response(
+    client: Any,
+    request: dict[str, Any],
+    on_status: Callable[[str], Awaitable[None]],
+) -> Response:
+    """Create and poll one background Response with best-effort cancellation."""
+    client = client.with_options(max_retries=2)
+    metadata = request.get("metadata")
+    background_request = {
+        **request,
+        "metadata": {
+            **(metadata if isinstance(metadata, dict) else {}),
+            RUN_METADATA_KEY: str(uuid.uuid4()),
+        },
+    }
+    extra_headers = request.get("extra_headers")
+    response = await client.responses.create(**background_request)
+    previous_status = None
+    try:
+        while response.status in ACTIVE_BACKGROUND_STATUSES:
+            if response.status != previous_status:
+                await on_status(response.status)
+                previous_status = response.status
+            await asyncio.sleep(1)
+            response = await client.responses.retrieve(
+                response.id,
+                extra_headers=extra_headers,
+            )
+    except asyncio.CancelledError:
+        try:
+            await asyncio.shield(
+                client.responses.cancel(
+                    response.id,
+                    extra_headers=extra_headers,
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Background response cancellation failed for %s",
+                response.id,
+                exc_info=True,
+            )
+        raise
+    return response
 
 
 def _responses_final_text(response: Response) -> str:
