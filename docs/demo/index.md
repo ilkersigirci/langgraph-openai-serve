@@ -132,9 +132,9 @@ Bifrost uses catalog-detail pass-through.
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
     Gateway](bifrost.md) for the precise boundaries.
 
-    Polling-only background work uses a separate Bifrost provider pinned to one
-    shared-store deployment. It is not integrated into either demo UI, and the
-    pinned LiteLLM community image does not support that lifecycle. See the
+    Both bundled gateways support polling-only background work through their
+    normal Responses paths. The APIs and worker share PostgreSQL for lifecycle
+    and checkpoint state. See the
     [background guide](../how-to-guides/background-responses.md).
 
 ## Client Capabilities

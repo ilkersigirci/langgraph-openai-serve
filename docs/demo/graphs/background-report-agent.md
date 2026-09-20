@@ -71,19 +71,31 @@ after execution is quiescent and can be retried independently.
 
 ## Run It
 
-Configure `HATCHET_CLIENT_TOKEN` and the upstream model in `demo/.env`, then
-start the Bifrost UI stack and worker:
+Configure the upstream model and Hatchet in `demo/.env`, select either gateway,
+and enable the worker profile:
+
+```dotenv
+# Choose litellm or bifrost.
+OPENAI_GATEWAY_TYPE=litellm
+COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
+DEMO_API_BACKGROUND_ENABLED=true
+HATCHET_CLIENT_TOKEN=...
+```
+
+Then start the UI stack and worker:
 
 ```bash
-just demo/compose-background --dev
+just demo/compose --dev
 just demo/test-background-gateway --editable
 ```
 
-Open Chainlit on port 3002 or Open WebUI on port 3003, select
-`openai/background-report-agent`, and send a report request. **Run in
-background** must be enabled. The UI shows queued and in-progress states,
-polls the Response ID, and renders the normal final answer. Stopping the active
-turn requests Responses cancellation.
+The live test selects LiteLLM's `/v1` route and synced model, or Bifrost's
+`/openai/v1` route and unqualified model, from `OPENAI_GATEWAY_TYPE`.
+
+Open Chainlit on port 3002 or Open WebUI on port 3003, select a
+`background-report-agent` model, and enable **Run in background**. The UI shows
+queued and in-progress states, polls the Response ID, and renders the normal
+final answer. Stopping the active turn requests Responses cancellation.
 
 For local processes, run the API, worker, and Hatchet service separately:
 
@@ -118,7 +130,7 @@ connection closes, and the retry resumes from the durable checkpoint.
 This graph has no tools and does not demonstrate UI conversation persistence.
 The UIs poll only while the current turn is active; they do not persist a
 background Response ID across a browser refresh. SDK clients can persist the ID
-and resume polling through the dedicated Bifrost provider documented in the
+and resume polling through either tested gateway route documented in the
 [proxy guide](../../how-to-guides/openai-proxies.md).
 
 The implementation lives in

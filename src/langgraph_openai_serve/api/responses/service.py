@@ -97,7 +97,7 @@ async def accept_background_response(
     queued = active_response(
         request,
         response_id=response_id,
-        created_at=now.timestamp(),
+        created_at=int(now.timestamp()),
     )
     initial_call_ids = _input_call_ids(messages)
     accepted = await background.create(
@@ -170,7 +170,7 @@ async def cancel_background_response(
             cancelled_response(
                 request,
                 response_id=current.response_id,
-                created_at=current.created_at.timestamp(),
+                created_at=int(current.created_at.timestamp()),
             )
         )
     )

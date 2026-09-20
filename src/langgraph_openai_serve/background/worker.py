@@ -264,7 +264,7 @@ class BackgroundWorker:
             prepared.request,
             result.message,
             response_id=run.response_id,
-            created_at=run.created_at.timestamp(),
+            created_at=int(run.created_at.timestamp()),
             server_tools=server_tools,
             root_messages=result.root_messages,
             initial_call_ids=frozenset(run.initial_call_ids),
@@ -297,7 +297,7 @@ class BackgroundWorker:
         response = failed_response(
             request,
             response_id=run.response_id,
-            created_at=run.created_at.timestamp(),
+            created_at=int(run.created_at.timestamp()),
             message=message,
         )
         published = await self.store.publish_terminal(

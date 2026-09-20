@@ -92,12 +92,10 @@ Run `just demo/test-bifrost --editable` and
 `just demo/test-litellm --editable` for the current compatibility
 matrix.
 
-Polling-only background execution is optional. Configure `HATCHET_CLIENT_TOKEN`
-and run `just demo/compose-background`; add `--dev` for checkout code. The
-recipe selects Bifrost, enables the API backend, starts the independent worker,
-and synchronizes both UIs. Their generated controls submit and poll
-`background-report-agent`; the pinned LiteLLM community image does not support
-this lifecycle. Run
+Polling-only background execution is optional. Select LiteLLM or Bifrost,
+enable `DEMO_API_BACKGROUND_ENABLED`, add `background` to `COMPOSE_PROFILES`,
+configure `HATCHET_CLIENT_TOKEN`, and run `just demo/compose`. Both UIs can then
+submit and poll `background-report-agent`. Run
 `just demo/test-background-gateway --editable` and see the
 [background guide](../docs/how-to-guides/background-responses.md).
 
@@ -192,11 +190,11 @@ Use the published demo images and pinned service images:
 just demo/compose
 ```
 
-For the Hatchet worker and background-capable UI model, configure
-`HATCHET_CLIENT_TOKEN` and run:
+For the Hatchet worker and background-capable UI model, enable the background
+settings described above and run:
 
 ```bash
-just demo/compose-background --dev
+just demo/compose --dev
 ```
 
 The command leaves a healthy stack running in the background. It starts the

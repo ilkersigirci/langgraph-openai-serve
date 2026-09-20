@@ -80,9 +80,8 @@ must route that ID to any LGOS API replica sharing the authoritative
 | Pinned path | Background create, poll, cancel | Constraint |
 | --- | --- | --- |
 | Direct LGOS | Pass | Replicas must share the Response store and checkpoint database. |
+| LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for 1.100.1 parser compatibility. |
 | Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-report-agent`; no provider header is required after creation. |
-| Bifrost generic custom-provider group | Unsupported across isolated stores | The opaque Response ID does not retain the provider selected at creation. |
-| LiteLLM 1.100.1 community managed Responses | Unsupported | Background create loads an unavailable enterprise lifecycle hook before forwarding to LGOS. |
 
 These are results for the pinned demo images and configurations, not promises
 about other gateway releases. Run
@@ -129,11 +128,10 @@ that route only for provider-specific catalog detail. Responses use native
 `/openai/v1/responses`, and Files use normalized `/v1` with the dedicated
 `lgos-files` provider. No plugin or response adapter is required.
 
-The polling-only demo uses a separate standard `openai` provider pinned to the
-shared-store API deployment. Background clients send the unqualified
-`background-report-agent` model to `/openai/v1` and later retrieve or cancel by
-ID alone. Do not use the provider-qualified `lgos-a`/`lgos-b` catalog path for
-background work when those providers can lead to isolated Response stores.
+LiteLLM recovers managed deployment routing from its opaque Response ID.
+Bifrost's ID-only SDK path uses a standard `openai` provider pinned to an API
+deployment sharing the Response store; its UI clients can instead retain the
+selected custom-provider header while polling.
 
 ## Direct Chat Compatibility
 

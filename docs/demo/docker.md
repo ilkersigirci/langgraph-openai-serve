@@ -158,11 +158,12 @@ settings](reference.md#opentelemetry-settings).
 
     The worker is an optional Compose profile. Configure a native
     `HATCHET_CLIENT_TOKEN`, enable background execution, and add the profile
-    alongside Bifrost:
+    alongside the selected gateway:
 
     ```dotenv
-    OPENAI_GATEWAY_TYPE=bifrost
-    COMPOSE_PROFILES=bifrost,background
+    # Choose litellm or bifrost.
+    OPENAI_GATEWAY_TYPE=litellm
+    COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
     DEMO_API_BACKGROUND_ENABLED=true
     HATCHET_CLIENT_TOKEN=...
     ```
@@ -170,7 +171,7 @@ settings](reference.md#opentelemetry-settings).
     Then start the ordered UI stack or only the worker and its persistence setup:
 
     ```bash
-    just demo/compose-background --dev
+    just demo/compose --dev
     # Or: just demo/up lgos-background-worker
     ```
 
@@ -336,7 +337,8 @@ settings](reference.md#opentelemetry-settings).
     New deployments set `model_info.supports_native_streaming: true`.
     The default public
     [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
-    preserves native Responses streaming. Compose
+    preserves native Responses streaming and polling-only background
+    lifecycles. Compose
     reads its tag and digest from `DEMO_LITELLM_IMAGE` in `demo/.env` and enables
     `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` so it honors the deployment
     capability. Normal demo commands use this image without a local build or
@@ -352,8 +354,9 @@ settings](reference.md#opentelemetry-settings).
 
     Keep the override set for subsequent Compose commands. To restore the
     default, copy the image value from `demo/.env.example`. An alternative image
-    must preserve native Responses streaming, authenticated `/model/info` with
-    custom metadata, managed Files routing, and the Admin UI migration runtime.
+    must preserve native Responses streaming and background IDs, authenticated
+    `/model/info` with custom metadata, managed Files routing, and the Admin UI
+    migration runtime.
 
     Managed routing also passes the tested Files lifecycle, file-ID input, and
     function continuation, while its rewritten standard error metadata remains
@@ -361,11 +364,6 @@ settings](reference.md#opentelemetry-settings).
     Responses requests in LiteLLM's spend logs, including streaming requests.
     Token and spend values reflect usage and pricing supplied for the selected
     graph model.
-
-    The pinned LiteLLM 1.100.1 community path is not used for polling-only
-    background Responses: its managed create path attempts to load an
-    unavailable enterprise lifecycle hook. Select Bifrost's dedicated
-    background provider for that separate SDK scenario.
 
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference

@@ -31,7 +31,7 @@ Bifrost exposes each service as a custom provider:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
-| `openai` | `lgos-demo-api-a:8000` | `background-report-agent` polling lifecycle only |
+| `openai` | `lgos-demo-api-a:8000` | ID-only `background-report-agent` lifecycle |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
@@ -129,52 +129,12 @@ Completions or Responses-to-Chat fallback.
 
 ## Background Responses
 
-Use the dedicated standard provider through Bifrost's normalized OpenAI route:
-
-```python title="Poll a background report through Bifrost"
-import asyncio
-import os
-
-from openai import AsyncOpenAI
-
-
-async def main() -> None:
-    client = AsyncOpenAI(
-        base_url="http://localhost:3000/openai/v1",
-        api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
-    )
-    response = await client.responses.create(
-        model="background-report-agent",
-        input="Write a short reliability report.",
-        background=True,
-        store=True,
-    )
-    while response.status in {"queued", "in_progress"}:
-        await asyncio.sleep(1)
-        response = await client.responses.retrieve(response.id)
-    print(response.output_text)
-
-
-asyncio.run(main())
-```
-
-No `x-model-provider` header is used. Retrieve and cancel requests contain only
-the opaque Response ID, so Bifrost must always send this lifecycle to an LGOS
-deployment sharing the same PostgreSQL Response store. The dedicated provider
-gives that route a stable target. Generic `lgos-a`/`lgos-b` selection cannot
-recover the creation provider from the ID when upstream stores are isolated.
-
-The pinned Bifrost 2.1.1 configuration passes background create, retrieval with
-a fresh client, cancellation, and polling-only validation. Run:
-
-```bash
-just demo/test-background-gateway --editable
-```
-
-The pinned LiteLLM community image is not a fallback for this demo lifecycle;
-its managed background create path attempts to load an unavailable enterprise
-hook. See [Run Responses In The Background](../how-to-guides/background-responses.md)
-for the versioned gateway support matrix and recovery model.
+The standard `openai` provider keeps ID-only retrieval and cancellation pinned
+to API A, while UI requests may retain their `lgos-a` or `lgos-b` provider
+header. All targets share the PostgreSQL Response store. See
+[Background Report Agent](graphs/background-report-agent.md) for startup and
+[Run Responses In The Background](../how-to-guides/background-responses.md) for
+the lifecycle contract.
 
 The client header allowlist forwards `traceparent`, `tracestate`, and
 `user-agent` through managed Responses requests. This preserves distributed

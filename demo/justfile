@@ -146,13 +146,29 @@ test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
     DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_API_KEY="$OPENAI_GATEWAY_API_KEY" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON="Bifrost v2.1.1 governance rejects unknown models before passthrough" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
 
-# Exercise the dedicated polling-only background lifecycle gateway route.
-[arg('DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL', long='base-url')]
+# Exercise polling-only background lifecycle through the selected gateway.
+[arg('base_url', long='base-url')]
 [arg('editable', long, value='true')]
+[arg('model', long)]
 [group('integration')]
+[script]
 [timestamp]
-test-background-gateway $DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL=env("DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL") editable='false' *args:
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:3}"
+test-background-gateway base_url='' model='' editable='false' *args:
+    case "$OPENAI_GATEWAY_TYPE" in
+        litellm)
+            default_url="$DEMO_GATEWAY_HOST_URL/v1"
+            default_model="lgos-a/background-report-agent"
+            ;;
+        bifrost)
+            default_url="$DEMO_GATEWAY_HOST_URL/openai/v1"
+            default_model="background-report-agent"
+            ;;
+        *)
+            echo "OPENAI_GATEWAY_TYPE must be litellm or bifrost" >&2
+            exit 1
+            ;;
+    esac
+    DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL="${1:-$default_url}" DEMO_TEST_BACKGROUND_GATEWAY_MODEL="${2:-$default_model}" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:4}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
@@ -198,8 +214,9 @@ sync-litellm dev='false' *args:
 compose dev='false' otel='false' *up_args:
     compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
     up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
-    gateway_service="$("${compose[@]}" config --services | sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p')"
-    background_service="$("${compose[@]}" config --services | sed -n '/^lgos-background-worker$/p')"
+    services="$("${compose[@]}" config --services)"
+    gateway_service="$(sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p' <<< "$services")"
+    background_service="$(sed -n '/^lgos-background-worker$/p' <<< "$services")"
     background_services=()
     if [[ -n "$background_service" ]]; then
         background_services+=("$background_service")
@@ -225,23 +242,6 @@ compose dev='false' otel='false' *up_args:
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
     OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
-
-# Start the Bifrost UI stack with Hatchet background execution enabled.
-[arg('dev', long, value='true')]
-[arg('otel', long, value='true')]
-[group('docker dev')]
-[group('docker prod')]
-[script]
-compose-background dev='false' otel='false' *up_args:
-    if [[ -z "$HATCHET_CLIENT_TOKEN" ]]; then
-        echo "HATCHET_CLIENT_TOKEN must be configured" >&2
-        exit 1
-    fi
-    export OPENAI_GATEWAY_TYPE=bifrost
-    export OPENAI_GATEWAY_BASE_URL=http://lgos-bifrost:4000
-    export COMPOSE_PROFILES=bifrost,background
-    export DEMO_API_BACKGROUND_ENABLED=true
-    just compose {{ if dev == "true" { "--dev" } else { "" } }} {{ if otel == "true" { "--otel" } else { "" } }} "${@:3}"
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

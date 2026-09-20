@@ -43,12 +43,11 @@ integration commands:
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
 | `just demo/compose --otel` | Run the ordered published stack with the OTEL overlay |
 | `just demo/compose --dev --otel` | Build the checkout and run the ordered stack with the OTEL overlay |
-| `just demo/compose-background [--dev] [--otel]` | Run the Bifrost UI stack with the Hatchet worker and background API enabled |
 | `just demo/down` | Stop and remove every stack variant |
 | `just demo/sync` | Synchronize all four projects from their lockfiles |
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
-| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, and polling-only validation through the dedicated gateway route |
+| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, and polling-only validation through the selected gateway |
 | `just demo/lint` | Check all four projects with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check all four projects |
@@ -84,9 +83,8 @@ upstream image. See the
 `just demo/test-litellm --editable` and
 `just demo/test-bifrost --editable` run the focused OpenAI SDK
 checks.
-`just demo/test-background-gateway --editable` targets the dedicated Bifrost
-background lifecycle route configured by
-`DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL`.
+`just demo/test-background-gateway --editable` selects the route and model from
+`OPENAI_GATEWAY_TYPE`; use `--base-url` and `--model` to override them.
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
 gateway used by both maintained UIs. Responses and Files use its normal
 managed/native routes. LiteLLM metadata comes from native `/model/info` after
@@ -101,7 +99,6 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
 | `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit process and integration tests |
-| `DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL` | OpenAI `/v1`-compatible base URL used only by the live background lifecycle integration test |
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |

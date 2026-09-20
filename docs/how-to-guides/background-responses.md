@@ -317,8 +317,8 @@ retries, transient cancellation failure, and maintenance before deployment.
 
 After a client restart, the opaque Response ID must still route to an LGOS
 replica sharing the same PostgreSQL Response store. The demo verifies direct
-LGOS routing and its pinned Bifrost background route. A gateway must forward
-create, retrieve, and cancel without requiring caller-only routing headers on
+LGOS routing plus the bundled LiteLLM and Bifrost routes. A gateway must
+forward create, retrieve, and cancel while preserving enough routing state for
 later lifecycle calls.
 
 See the [OpenAI-compatible proxy guide](openai-proxies.md) and the

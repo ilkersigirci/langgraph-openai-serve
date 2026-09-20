@@ -202,8 +202,8 @@ must handle.
 
 For durable report execution, enable `DEMO_API_BACKGROUND_ENABLED`, start the
 independent `just demo/background-worker` process, or run the complete UI path
-with `just demo/compose-background`. Chainlit and Open WebUI expose polling for
-the model through the dedicated Bifrost provider. See
+with the `background` Compose profile and `just demo/compose`. Chainlit and
+Open WebUI expose polling through either bundled gateway. See
 [Background Report Agent](graphs/background-report-agent.md).
 
 ## Try A Demo Client

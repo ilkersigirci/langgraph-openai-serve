@@ -24,9 +24,8 @@ each API process.
     only Bifrost model-detail lookup uses a lossless pass-through. See
     [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
 
-    Background polling is a separate tested Bifrost route pinned to a
-    shared-store API deployment. The pinned LiteLLM community image and generic
-    cross-provider lifecycle routing are not supported for it.
+    Both bundled gateways support background create, polling, and cancellation.
+    All routed API replicas and the worker share the same PostgreSQL state.
 
 ## Request Path
 
@@ -75,8 +74,8 @@ flowchart LR
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
-  bifrost <-->|"fixed background lifecycle"| api_a
   api_a -->|"trigger run_id"| hatchet
+  api_b -->|"trigger run_id"| hatchet
   hatchet -->|"run reference"| worker
   worker <-->|"checkpoints + Response row"| database
   worker -->|"report model call"| model
@@ -103,12 +102,11 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-The background model uses Bifrost's fixed provider and `/openai/v1` lifecycle.
+The background model uses the selected gateway's normal Responses lifecycle.
 Chainlit and Open WebUI discover its capability, create a non-streaming
-background Response, and poll or cancel through the OpenAI SDK. API A, any API
-replicas added to that fixed group, and the worker must share PostgreSQL.
-Hatchet transports stable run references and retries; it does not own the
-public Response.
+background Response, and poll or cancel through the OpenAI SDK. All routed API
+replicas and the worker share PostgreSQL. Hatchet transports stable run
+references and retries; it does not own the public Response.
 
 At startup, Compose waits for PostgreSQL and runs the one-shot API schema setup
 and Chainlit schema migrations. The idempotent MCP setup then creates the

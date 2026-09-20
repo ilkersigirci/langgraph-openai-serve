@@ -190,6 +190,7 @@ async def test_background_response_is_polled_and_executed_outside_post() -> None
 
         assert created.status == "queued"
         assert created.background is True
+        assert created.created_at.is_integer()
         assert created.output == []
         assert environment.invocations == []
         assert await environment.client.responses.retrieve(created.id) == created

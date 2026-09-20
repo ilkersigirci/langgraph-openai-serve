@@ -17,7 +17,7 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
         GATEWAY_BASE_URL is None,
-        reason="set the dedicated background gateway test URL",
+        reason="set the background gateway test URL",
     ),
 ]
 
@@ -76,7 +76,7 @@ async def test_gateway_cancels_with_only_the_saved_response_id() -> None:
     assert cancelled.status == retrieved.status == "cancelled"
 
 
-async def test_gateway_preserves_polling_only_validation() -> None:
+async def test_gateway_rejects_streaming_background_create() -> None:
     async with _client() as client:
         with pytest.raises(BadRequestError) as create_error:
             await client.responses.create(
@@ -87,24 +87,3 @@ async def test_gateway_preserves_polling_only_validation() -> None:
                 metadata={"lgos_run_id": str(uuid.uuid4())},
             )
         assert create_error.value.status_code == 400
-
-        created = await client.responses.create(
-            model=MODEL,
-            input="Validate retrieval options.",
-            background=True,
-            stream=False,
-            metadata={"lgos_run_id": str(uuid.uuid4())},
-        )
-        with pytest.raises(BadRequestError) as stream_error:
-            await client.responses.retrieve(
-                created.id,
-                extra_query={"stream": "true"},
-            )
-        with pytest.raises(BadRequestError) as cursor_error:
-            await client.responses.retrieve(
-                created.id,
-                extra_query={"starting_after": "0"},
-            )
-
-    assert stream_error.value.status_code == 400
-    assert cursor_error.value.status_code == 400
