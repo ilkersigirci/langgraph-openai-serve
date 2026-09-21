@@ -11,6 +11,8 @@ from hatchet_sdk.exceptions import IdempotencyCollisionError
 from hatchet_sdk.runnables.types import EmptyModel
 
 from langgraph_openai_serve import BackgroundSettings, InMemoryResponseStore, RunJob
+from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.background.responses import active_response, response_json
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus
 from langgraph_openai_serve.integrations import hatchet
 from langgraph_openai_serve.integrations.hatchet import (
@@ -28,6 +30,17 @@ def _new_run(
 ) -> NewRun:
     now = datetime.now(UTC)
     response_id = f"resp_{name}"
+    envelope = {
+        "model": "model",
+        "input": "hello",
+        "background": True,
+        "stream": False,
+    }
+    response = active_response(
+        ResponseCreateRequest.model_validate(envelope),
+        response_id=response_id,
+        created_at=now.timestamp(),
+    )
     return NewRun(
         run_id=response_id,
         response_id=response_id,
@@ -35,15 +48,10 @@ def _new_run(
         model="model",
         checkpoint_thread_id="checkpoint",
         graph_version="v1",
-        envelope={
-            "model": "model",
-            "input": "hello",
-            "background": True,
-            "stream": False,
-        },
+        envelope=envelope,
         request_fingerprint="fingerprint",
         idempotency_key=idempotency_key,
-        response={"id": response_id, "status": "queued"},
+        response=response_json(response),
         created_at=now,
     )
 
@@ -116,7 +124,7 @@ async def test_backend_uses_hatchet_idempotency_collision_receipt() -> None:
     assert created.workflow_run_id == "existing-native-run"
 
 
-async def test_failed_non_idempotent_submission_discards_unacknowledged_row() -> None:
+async def test_failed_submission_becomes_terminal() -> None:
     store = InMemoryResponseStore()
     workflow = Mock(aio_run=AsyncMock(side_effect=OSError("unavailable")))
     backend = HatchetBackgroundBackend(
@@ -128,16 +136,23 @@ async def test_failed_non_idempotent_submission_discards_unacknowledged_row() ->
     with pytest.raises(OSError, match="unavailable"):
         await backend.create(_new_run())
 
-    assert await store.get_internal("resp_one") is None
+    failed = await store.get_internal("resp_one")
+
+    assert failed is not None
+    assert failed.status is ResponseStatus.FAILED
+    assert failed.result_expires_at is not None
 
 
-async def test_failed_idempotent_submission_keeps_stable_run_for_retry() -> None:
+async def test_failed_idempotent_submission_replays_failure_and_releases_capacity() -> (
+    None
+):
+    expected_submissions = 2
     store = InMemoryResponseStore()
     workflow = Mock(
         aio_run=AsyncMock(
             side_effect=[
                 OSError("acknowledgement lost"),
-                IdempotencyCollisionError("native-run"),
+                SimpleNamespace(workflow_run_id="native-run"),
             ]
         )
     )
@@ -145,19 +160,20 @@ async def test_failed_idempotent_submission_keeps_stable_run_for_retry() -> None
         workflow=workflow,
         runs=Mock(),
         store=store,
+        settings=BackgroundSettings(admission_capacity=1),
     )
     run = _new_run(idempotency_key="stable-key")
     retry = _new_run(name="retry", idempotency_key="stable-key")
 
     with pytest.raises(OSError, match="acknowledgement lost"):
         await backend.create(run)
-    pending = await store.get_internal(run.run_id)
     retried = await backend.create(retry)
+    next_run = await backend.create(_new_run(name="next"))
 
-    assert pending is not None
-    assert pending.workflow_run_id is None
     assert retried.run_id == run.run_id
-    assert retried.workflow_run_id == "native-run"
+    assert retried.status is ResponseStatus.FAILED
+    assert next_run.workflow_run_id == "native-run"
+    assert workflow.aio_run.await_count == expected_submissions
 
 
 async def test_backend_cancellation_uses_native_hatchet_run() -> None:

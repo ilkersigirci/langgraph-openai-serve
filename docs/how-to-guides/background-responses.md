@@ -68,10 +68,11 @@ network failures.
 
 LGOS stores the queued Response, submits its stable run reference to Hatchet,
 stores Hatchet's workflow ID, and only then acknowledges the POST. If the
-submission result is ambiguous, LGOS retains an idempotent request's stable row.
-Retry the same request with the same `metadata.lgos_run_id`; Hatchet
-idempotency deduplicates an already accepted workflow. A failed create without
-that key has no safe retry contract and its unacknowledged row is discarded.
+submission result is ambiguous, Hatchet's native trigger retries and workflow
+idempotency recover the existing workflow ID. If those retries are exhausted,
+LGOS makes the stored Response terminal so it no longer consumes admission. An
+exact retry with the same `metadata.lgos_run_id` returns that stable failed
+Response rather than submitting a second workflow.
 
 ## Make The Graph Recoverable
 
@@ -286,7 +287,7 @@ class BackgroundBackend:
     ) -> StoredRun | None: ...
 ```
 
-`stored` is the normalized `store` value from the persisted request.
+`stored` is the normalized `store` value from the persisted Response snapshot.
 
 Pass it to `LanggraphOpenaiServe(background=...)`. To reuse LGOS execution,
 compose `BackgroundWorker` with `PostgresResponseStore`, or
@@ -302,11 +303,12 @@ compose `BackgroundWorker` with `PostgresResponseStore`, or
 | Cancel | `store.request_cancellation()`, native cancel, then `store.finish_cancellation()` |
 
 Submission must be durable and idempotent by `run_id`; resolve ambiguous submits
-with that ID and record the native run ID before acknowledging create. Call
-`store.discard_unsubmitted()` only after a definitely failed, non-idempotent
-submit. Cancellation must become terminal in the store before native
-cancellation. If native cancellation fails, leave `cancellation_pending` set
-and retry `store.claim_cancellations()` rows on the recurring task.
+with that ID and record the native run ID before acknowledging create. If native
+submission retries are exhausted, publish a terminal failed Response instead of
+leaving an active row without a receipt. Cancellation must become terminal in
+the store before native cancellation. If native cancellation fails, leave
+`cancellation_pending` set and retry `store.claim_cancellations()` rows on the
+recurring task.
 
 The engine must supply durable queueing, retries/backoff, schedule and execution
 timeouts, cancellation, a retries-exhausted hook, recurring tasks, and replay or

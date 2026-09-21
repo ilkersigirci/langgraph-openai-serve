@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from anyio import CancelScope, get_cancelled_exc_class
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from openai.types.responses import Response
 from pydantic import ValidationError
 
 from langgraph_openai_serve.api.responses.output import (
@@ -27,6 +28,7 @@ from langgraph_openai_serve.background.contracts import (
 )
 from langgraph_openai_serve.background.responses import (
     failed_response,
+    is_stored_response,
     output_response,
     response_json,
 )
@@ -274,7 +276,7 @@ class BackgroundWorker:
             response_json(response),
             now=datetime.now(UTC),
             result_retention=self.settings.result_retention_for(
-                stored=bool(prepared.request.store)
+                stored=is_stored_response(response)
             ),
             idempotency_retention=self.settings.idempotency_retention,
         )
@@ -296,13 +298,15 @@ class BackgroundWorker:
         if run.response is None:
             msg = "Background failure publication lost its Response snapshot."
             raise RetryableJobError(msg)
-        response = failed_response(run.response, message=message)
+        response = failed_response(
+            Response.model_validate(run.response), message=message
+        )
         published = await self.store.publish_terminal(
             run.run_id,
             response_json(response),
             now=datetime.now(UTC),
             result_retention=self.settings.result_retention_for(
-                stored=run.envelope.get("store") is True
+                stored=is_stored_response(response)
             ),
             idempotency_retention=self.settings.idempotency_retention,
         )
@@ -353,19 +357,10 @@ class BackgroundWorker:
         try:
             graph_config = self.graphs.get_graph(run.model)
         except GraphNotFoundError:
-            abandoned = await self.store.abandon_cleanup(
-                run.run_id,
-                now=datetime.now(UTC),
-            )
-            if abandoned:
-                logger.warning(
-                    "background.checkpoint_cleanup_abandoned",
-                    extra={"run_id": run.run_id, "model": run.model},
-                )
-            return False
+            return await self._abandon_cleanup(run)
         coordinator = graph_config.run_coordinator
         if coordinator is None:
-            return False
+            return await self._abandon_cleanup(run)
         async with coordinator(run.checkpoint_thread_id):
             current = await self.store.get_internal(run.run_id)
             if current is None or not current.terminal or not current.cleanup_pending:
@@ -377,12 +372,27 @@ class BackgroundWorker:
         run: StoredRun,
         graph_config: GraphConfig,
     ) -> bool:
-        graph = await graph_config.resolve_graph()
+        try:
+            graph = await graph_config.resolve_graph()
+        except GraphConfigurationError:
+            return await self._abandon_cleanup(run)
         checkpointer = graph.checkpointer
         if not isinstance(checkpointer, BaseCheckpointSaver):
-            return False
+            return await self._abandon_cleanup(run)
         await checkpointer.adelete_thread(run.checkpoint_thread_id)
         return await self.store.finish_cleanup(run.run_id, now=datetime.now(UTC))
+
+    async def _abandon_cleanup(self, run: StoredRun) -> bool:
+        abandoned = await self.store.abandon_cleanup(
+            run.run_id,
+            now=datetime.now(UTC),
+        )
+        if abandoned:
+            logger.warning(
+                "background.checkpoint_cleanup_abandoned",
+                extra={"run_id": run.run_id, "model": run.model},
+            )
+        return False
 
 
 _FAILURE_DETAILS: tuple[tuple[type[BaseException], str, str], ...] = (

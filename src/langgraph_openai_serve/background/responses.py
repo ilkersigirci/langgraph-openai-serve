@@ -44,27 +44,25 @@ def active_response(
     ).response(status=status, output=[])
 
 
-def cancelled_response(
-    request: ResponseCreateRequest,
-    *,
-    response_id: str,
-    created_at: float,
-) -> Response:
-    """Build the immutable logical cancellation winner."""
-    return ResponseContext.for_run(
-        request,
-        response_id=response_id,
-        created_at=created_at,
-    ).response(status="cancelled", output=[])
+def cancelled_response(response: Response) -> Response:
+    """Turn a persisted Response snapshot into a cancellation winner."""
+    return response.model_copy(
+        update={
+            "status": "cancelled",
+            "output": [],
+            "error": None,
+            "incomplete_details": None,
+        }
+    )
 
 
 def failed_response(
-    response: dict[str, JsonValue],
+    response: Response,
     *,
     message: str,
 ) -> Response:
     """Turn a persisted Response snapshot into a terminal failure."""
-    return Response.model_validate(response).model_copy(
+    return response.model_copy(
         update={
             "status": "failed",
             "output": [],
@@ -81,6 +79,11 @@ def failed_response(
             "incomplete_details": None,
         }
     )
+
+
+def is_stored_response(response: Response) -> bool:
+    """Return the retention choice preserved on the Response snapshot."""
+    return response.model_dump(mode="json").get("store") is True
 
 
 def output_response(  # ruff: ignore[too-many-arguments] - Rendering needs the persisted Response identity and transcript boundary.
@@ -199,6 +202,7 @@ __all__ = [
     "active_response",
     "cancelled_response",
     "failed_response",
+    "is_stored_response",
     "output_response",
     "response_json",
 ]

@@ -79,7 +79,6 @@ class PostgresResponseStore:
                                     "idempotency_key": None,
                                     "idempotency_expires_at": None,
                                     "updated_at": run.created_at,
-                                    "version": existing.version + 1,
                                 }
                             ),
                         )
@@ -132,23 +131,10 @@ class PostgresResponseStore:
                 update={
                     "workflow_run_id": workflow_run_id,
                     "updated_at": now,
-                    "version": run.version + 1,
                 }
             )
             await self._write(connection, updated)
             return updated
-
-    async def discard_unsubmitted(self, run_id: str) -> bool:
-        """Remove only an active row with no native workflow receipt."""
-        async with self._locked_run(run_id) as locked:
-            connection, run = locked
-            if run is None or run.terminal or run.workflow_run_id is not None:
-                return False
-            await connection.execute(
-                _table_sql("DELETE FROM {table} WHERE run_id = %s"),
-                (run_id,),
-            )
-            return True
 
     async def get(
         self,
@@ -214,7 +200,6 @@ class PostgresResponseStore:
                     "status": ResponseStatus.IN_PROGRESS,
                     "response": response,
                     "updated_at": now,
-                    "version": run.version + 1,
                 }
             )
             await self._write(connection, updated)
@@ -296,7 +281,6 @@ class PostgresResponseStore:
                 update={
                     "cancellation_pending": False,
                     "updated_at": now,
-                    "version": run.version + 1,
                 }
             )
             await self._write(connection, updated)
@@ -337,12 +321,7 @@ class PostgresResponseStore:
             claimed: list[StoredRun] = []
             for row in await cursor.fetchall():
                 run = _stored(row)
-                updated = run.model_copy(
-                    update={
-                        "updated_at": now,
-                        "version": run.version + 1,
-                    }
-                )
+                updated = run.model_copy(update={"updated_at": now})
                 await self._write(connection, updated)
                 claimed.append(updated)
             return claimed
@@ -358,7 +337,6 @@ class PostgresResponseStore:
                     "cleanup_pending": False,
                     "recovery_cleaned": True,
                     "updated_at": now,
-                    "version": run.version + 1,
                 }
             )
             await self._write(connection, updated)
@@ -374,7 +352,6 @@ class PostgresResponseStore:
                 update={
                     "cleanup_pending": False,
                     "updated_at": now,
-                    "version": run.version + 1,
                 }
             )
             await self._write(connection, updated)
@@ -515,7 +492,6 @@ def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]
         "cleanup_pending",
         "recovery_cleaned",
         "updated_at",
-        "version",
         "record",
     )
     values: tuple[object, ...] = (
@@ -534,7 +510,6 @@ def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]
         run.cleanup_pending,
         run.recovery_cleaned,
         run.updated_at,
-        run.version,
         Jsonb(run.model_dump(mode="json")),
     )
     return columns, values

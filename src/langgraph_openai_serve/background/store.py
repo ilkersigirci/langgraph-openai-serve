@@ -97,7 +97,6 @@ class StoredRun(BaseModel):
     cancellation_pending: bool = False
     cleanup_pending: bool = False
     recovery_cleaned: bool = False
-    version: int = 0
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -132,10 +131,6 @@ class ResponseStore(Protocol):
         now: datetime,
     ) -> StoredRun | None:
         """Store the native workflow ID used for cancellation."""
-        ...
-
-    async def discard_unsubmitted(self, run_id: str) -> bool:
-        """Remove an active row that has no native workflow receipt."""
         ...
 
     async def get(
@@ -252,7 +247,6 @@ def terminal_run(
             ),
             "cleanup_pending": True,
             "updated_at": now,
-            "version": run.version + 1,
         }
     )
 
@@ -266,7 +260,6 @@ def tombstone_run(run: StoredRun, *, now: datetime) -> StoredRun:
             "initial_call_ids": (),
             "initial_message_count": 0,
             "updated_at": now,
-            "version": run.version + 1,
         }
     )
 

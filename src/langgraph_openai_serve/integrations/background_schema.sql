@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS lgos_background_responses (
     cleanup_pending boolean NOT NULL,
     recovery_cleaned boolean NOT NULL,
     updated_at timestamptz NOT NULL,
-    version bigint NOT NULL,
     record jsonb NOT NULL
 );
 

@@ -64,13 +64,10 @@ async def test_accept_enforces_capacity_and_idempotency() -> None:
         )
 
 
-async def test_workflow_receipt_is_idempotent_and_unsubmitted_rows_can_be_removed() -> (
-    None
-):
+async def test_workflow_receipt_is_idempotent() -> None:
     store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=2)
-    await store.accept(_new_run("two", now=now), capacity=2)
 
     recorded = await store.record_workflow_run(
         "run-one",
@@ -81,9 +78,6 @@ async def test_workflow_receipt_is_idempotent_and_unsubmitted_rows_can_be_remove
     assert recorded is not None
     assert recorded.workflow_run_id == "hatchet-one"
     assert await store.record_workflow_run("run-one", "other", now=now) is None
-    assert await store.discard_unsubmitted("run-one") is False
-    assert await store.discard_unsubmitted("run-two") is True
-    assert await store.get_internal("run-two") is None
 
 
 async def test_cancellation_and_completion_have_one_terminal_winner() -> None:

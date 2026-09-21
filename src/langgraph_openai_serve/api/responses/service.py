@@ -37,6 +37,7 @@ from langgraph_openai_serve.background.contracts import BackgroundBackend
 from langgraph_openai_serve.background.responses import (
     active_response,
     cancelled_response,
+    is_stored_response,
     response_json,
 )
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus
@@ -159,26 +160,20 @@ async def cancel_background_response(
     current = await background.retrieve(response_id, owner_scope)
     if current is None or current.response is None:
         raise BackgroundResponseNotFoundError(response_id)
+    response = Response.model_validate(current.response)
     if current.terminal and current.status is not ResponseStatus.CANCELLED:
-        return Response.model_validate(current.response)
+        return response
 
-    request = ResponseCreateRequest.model_validate(current.envelope)
     cancellation_json = (
         current.response
         if current.status is ResponseStatus.CANCELLED
-        else response_json(
-            cancelled_response(
-                request,
-                response_id=current.response_id,
-                created_at=int(current.created_at.timestamp()),
-            )
-        )
+        else response_json(cancelled_response(response))
     )
     cancelled = await background.cancel(
         response_id,
         owner_scope,
         cast("dict[str, JsonValue]", cancellation_json),
-        stored=bool(request.store),
+        stored=is_stored_response(response),
     )
     if cancelled is None or cancelled.response is None:
         raise BackgroundResponseNotFoundError(response_id)

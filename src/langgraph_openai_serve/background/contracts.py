@@ -79,7 +79,7 @@ class BackgroundBackend(Protocol):
         *,
         stored: bool,
     ) -> StoredRun | None:
-        """Cancel using the original request's normalized storage decision."""
+        """Cancel using the persisted Response's normalized storage decision."""
         ...
 
 

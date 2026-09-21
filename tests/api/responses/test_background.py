@@ -30,6 +30,7 @@ from langgraph_openai_serve import (
     RunJob,
     StoredRun,
 )
+from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.background.fakes import MemoryBackgroundBackend
 from tests.graph.support.schemas import MessageState
@@ -444,6 +445,52 @@ async def test_in_memory_backend_preserves_stored_cancellation_retention() -> No
         )
 
 
+async def test_cancellation_uses_the_persisted_response_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = BackgroundSettings(
+        result_retention=timedelta(seconds=1),
+        stored_result_retention=timedelta(days=30),
+    )
+    async with _environment(settings=settings) as environment:
+        created = await environment.client.responses.create(
+            model="background",
+            input="Hello",
+            background=True,
+            store=True,
+        )
+        retrieve = environment.backend.retrieve
+
+        async def retrieve_without_envelope(
+            response_id: str,
+            owner_scope: str,
+        ) -> StoredRun | None:
+            current = await retrieve(response_id, owner_scope)
+            return (
+                current.model_copy(update={"envelope": {}})
+                if current is not None
+                else None
+            )
+
+        monkeypatch.setattr(
+            environment.backend,
+            "retrieve",
+            retrieve_without_envelope,
+        )
+
+        cancelled = await environment.client.responses.cancel(created.id)
+        stored = await environment.store.get_internal(created.id)
+
+        assert cancelled.status == "cancelled"
+        assert stored is not None
+        assert stored.result_expires_at is not None
+        assert stored.terminal_at is not None
+        assert (
+            stored.result_expires_at - stored.terminal_at
+            == settings.stored_result_retention
+        )
+
+
 async def test_idempotent_create_reuses_response_and_rejects_conflicts() -> None:
     key = str(uuid.uuid4())
     async with _environment() as environment:
@@ -555,11 +602,16 @@ async def test_incompatible_hatchet_envelope_fails_the_public_response() -> None
 
 
 async def test_invalid_persisted_request_still_publishes_failure() -> None:
-    async with _environment() as environment:
+    settings = BackgroundSettings(
+        result_retention=timedelta(seconds=1),
+        stored_result_retention=timedelta(days=30),
+    )
+    async with _environment(settings=settings) as environment:
         await environment.client.responses.create(
             model="background",
             input="Hello",
             background=True,
+            store=True,
         )
         job = await environment.backend.receive()
         assert job is not None
@@ -573,7 +625,11 @@ async def test_invalid_persisted_request_still_publishes_failure() -> None:
         payload["envelope"] = {}
         store = InMemoryResponseStore()
         await store.accept(NewRun.model_validate(payload), capacity=1)
-        worker = BackgroundWorker(graphs=environment.worker.graphs, store=store)
+        worker = BackgroundWorker(
+            graphs=environment.worker.graphs,
+            store=store,
+            settings=settings,
+        )
 
         await worker.execute(job)
 
@@ -582,6 +638,12 @@ async def test_invalid_persisted_request_still_publishes_failure() -> None:
         assert failed.status == "failed"
         assert failed.response is not None
         assert failed.response["status"] == "failed"
+        assert failed.result_expires_at is not None
+        assert failed.terminal_at is not None
+        assert (
+            failed.result_expires_at - failed.terminal_at
+            == settings.stored_result_retention
+        )
 
 
 async def test_removed_graph_abandons_unresolvable_cleanup() -> None:
@@ -611,6 +673,42 @@ async def test_removed_graph_abandons_unresolvable_cleanup() -> None:
         future = datetime.now(UTC) + timedelta(days=31)
         assert await environment.store.expire(now=future, limit=1) == 1
         assert await environment.store.get_internal(job.run_id) is None
+
+
+async def test_invalid_graph_abandons_unresolvable_cleanup() -> None:
+    async with _environment() as environment:
+        created = await environment.client.responses.create(
+            model="background",
+            input="Hello",
+            background=True,
+        )
+        job = await environment.backend.receive()
+        assert job is not None
+        graph_config = environment.worker.graphs.get_graph("background")
+
+        def invalid_graph():
+            message = "invalid graph"
+            raise GraphConfigurationError(message)
+
+        worker = BackgroundWorker(
+            graphs=GraphRegistry(
+                registry={
+                    "background": graph_config.model_copy(
+                        update={"graph": invalid_graph}
+                    )
+                }
+            ),
+            store=environment.store,
+        )
+
+        await worker.execute(job)
+
+        failed = await environment.client.responses.retrieve(created.id)
+        stored = await environment.store.get_internal(job.run_id)
+        assert failed.status == "failed"
+        assert stored is not None
+        assert stored.cleanup_pending is False
+        assert stored.recovery_cleaned is False
 
 
 async def test_unknown_and_cursor_retrieval_use_openai_errors() -> None:

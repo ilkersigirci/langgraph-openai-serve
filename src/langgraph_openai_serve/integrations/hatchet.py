@@ -14,11 +14,17 @@ from hatchet_sdk.exceptions import IdempotencyCollisionError
 from hatchet_sdk.runnables.types import EmptyModel
 from hatchet_sdk.runnables.workflow import Standalone, Workflow
 from hatchet_sdk.types.idempotency import TTLBasedIdempotencyConfig
+from openai.types.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from langgraph_openai_serve.background.contracts import (
     BackgroundSettings,
     RunJob,
+)
+from langgraph_openai_serve.background.responses import (
+    failed_response,
+    is_stored_response,
+    response_json,
 )
 from langgraph_openai_serve.background.store import (
     NewRun,
@@ -149,15 +155,14 @@ class HatchetBackgroundBackend:
             run,
             capacity=self.settings.admission_capacity,
         )
-        if accepted.run.workflow_run_id is not None:
+        if accepted.run.terminal or accepted.run.workflow_run_id is not None:
             return accepted.run
 
         try:
             return await _submit_run(self._workflow, self.store, accepted.run)
         except BaseException:
             with CancelScope(shield=True):
-                if accepted.created and accepted.run.idempotency_key is None:
-                    await self.store.discard_unsubmitted(accepted.run.run_id)
+                await _fail_submission(self.store, self.settings, accepted.run)
             raise
 
     async def retrieve(self, response_id: str, owner_scope: str) -> StoredRun | None:
@@ -302,6 +307,28 @@ async def _submit_run(
         msg = "Hatchet workflow receipt could not be persisted."
         raise RuntimeError(msg)
     return recorded
+
+
+async def _fail_submission(
+    store: ResponseStore,
+    settings: BackgroundSettings,
+    run: StoredRun,
+) -> None:
+    if run.response is None:
+        return
+    response = failed_response(
+        Response.model_validate(run.response),
+        message="The background workflow could not be scheduled.",
+    )
+    await store.publish_terminal(
+        run.run_id,
+        response_json(response),
+        now=datetime.now(UTC),
+        result_retention=settings.result_retention_for(
+            stored=is_stored_response(response)
+        ),
+        idempotency_retention=settings.idempotency_retention,
+    )
 
 
 async def _deliver_cancellation(

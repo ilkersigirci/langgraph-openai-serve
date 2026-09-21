@@ -66,7 +66,6 @@ class InMemoryResponseStore:
                                 "idempotency_key": None,
                                 "idempotency_expires_at": None,
                                 "updated_at": run.created_at,
-                                "version": existing.version + 1,
                             }
                         )
                     )
@@ -113,19 +112,9 @@ class InMemoryResponseStore:
                     update={
                         "workflow_run_id": workflow_run_id,
                         "updated_at": now,
-                        "version": run.version + 1,
                     }
                 )
             )
-
-    async def discard_unsubmitted(self, run_id: str) -> bool:
-        """Remove only an active row without a process-local task receipt."""
-        async with self._lock:
-            run = self._runs.get(run_id)
-            if run is None or run.terminal or run.workflow_run_id is not None:
-                return False
-            self._remove(run)
-            return True
 
     async def get(
         self,
@@ -178,7 +167,6 @@ class InMemoryResponseStore:
                         "status": ResponseStatus.IN_PROGRESS,
                         "response": response,
                         "updated_at": now,
-                        "version": run.version + 1,
                     }
                 )
             )
@@ -263,7 +251,6 @@ class InMemoryResponseStore:
                     update={
                         "cancellation_pending": False,
                         "updated_at": now,
-                        "version": run.version + 1,
                     }
                 )
             )
@@ -299,7 +286,6 @@ class InMemoryResponseStore:
                         "cleanup_pending": False,
                         "recovery_cleaned": True,
                         "updated_at": now,
-                        "version": run.version + 1,
                     }
                 )
             )
@@ -316,7 +302,6 @@ class InMemoryResponseStore:
                     update={
                         "cleanup_pending": False,
                         "updated_at": now,
-                        "version": run.version + 1,
                     }
                 )
             )
@@ -355,14 +340,7 @@ class InMemoryResponseStore:
         return self._copy(run)
 
     def _claim(self, run: StoredRun, *, now: datetime) -> StoredRun:
-        return self._put(
-            run.model_copy(
-                update={
-                    "updated_at": now,
-                    "version": run.version + 1,
-                }
-            )
-        )
+        return self._put(run.model_copy(update={"updated_at": now}))
 
     def _remove(self, run: StoredRun) -> None:
         self._runs.pop(run.run_id, None)
