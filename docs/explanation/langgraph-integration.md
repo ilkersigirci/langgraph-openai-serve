@@ -128,9 +128,9 @@ OpenAI response mode; server tools additionally need intermediate updates.
     standard Responses commentary messages. Chat Completions ignores custom
     events. Root value parts supply the durable final output and complete
     interrupt set; LGOS accumulates parallel interrupts when LangGraph emits
-    them across multiple parts. After execution quiesces, LGOS binds that
-    native set to the durable continuation generation and renders one complete
-    interrupt batch. Unknown custom events stay private.
+    them across multiple parts. After execution quiesces, LGOS renders that
+    native set as one complete interrupt batch. Unknown custom events stay
+    private.
 
 === "Background response"
 
@@ -169,20 +169,18 @@ state before releasing the lease. Cleanup is idempotent, shielded from outer
 request cancellation, and never replaces an execution or cancellation failure.
 
 The graph therefore needs an async checkpointer implementing `aget_tuple()`,
-`alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator
-shared by all workers. See
+`aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator shared by
+all workers. See
 [PostgreSQL Coordination](../reference.md#postgresql-coordination) for the
 production adapter.
 
-!!! warning "Test the interrupt contract before every LangGraph upgrade"
+!!! warning "Call interrupt once per node invocation"
 
-    Sequential interrupts can reuse their interrupt and checkpoint IDs, so the
-    opaque continuation-generation token fingerprints every checkpoint namespace
-    and its durable resume-channel generations.
-    Keep the sequential, parallel, nested, stale-resume, and restart tests as
-    an upgrade gate before widening the supported LangGraph range. See the
-    official
-    [interrupt ordering rule](https://docs.langchain.com/oss/python/langgraph/interrupts#do-not-reorder-interrupt-calls-within-a-node).
+    LGOS uses LangGraph's native interrupt IDs as continuation identity. A node
+    invocation must therefore call `interrupt()` at most once. Put another human
+    turn in a later node invocation and route with an edge. Parallel nodes may
+    each interrupt once. This follows LangGraph's recommended
+    [human-input validation pattern](https://docs.langchain.com/oss/python/langgraph/interrupts#validating-human-input).
 
 ### Paused Runs Across Deployments
 

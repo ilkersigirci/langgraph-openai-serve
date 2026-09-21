@@ -4,14 +4,9 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterable
-from typing import cast
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import (
-    RESUME,
-    BaseCheckpointSaver,
-    get_checkpoint_id,
-)
+from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 
@@ -48,17 +43,12 @@ async def prepare_interrupt_state(
         msg = "No durable interrupt state exists for this run."
         raise InterruptStateConflictError(msg)
 
-    batch = await durable_interrupt_batch(
-        graph, snapshot.interrupts, runnable_config, run_id
-    )
+    batch = interrupt_batch(snapshot.interrupts, run_id)
     if batch is None:
         msg = "This run no longer has pending interrupts."
         raise InterruptStateConflictError(msg)
     if resume is None:
         return batch
-    if resume.generation_token != batch.generation_token:
-        msg = "The interrupt result is stale for the current interrupt generation."
-        raise InterruptStateConflictError(msg)
     if set(resume.values) != {item.id for item in batch.interrupts}:
         msg = "Interrupt results do not match the complete pending interrupt set."
         raise InterruptStateConflictError(msg)
@@ -121,105 +111,27 @@ def normalize_checkpoint_scope(value: str) -> str:
 def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
     """Derive a fixed-length storage key scoped to this protocol and model."""
     identity = json.dumps(
-        ["langgraph-openai-serve.interrupt.v2", scope, model, run_id],
+        ["langgraph-openai-serve.interrupt.v3", scope, model, run_id],
         ensure_ascii=False,
         separators=(",", ":"),
     )
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
-async def continuation_generation_token(
-    graph: CompiledStateGraph,
-    runnable_config: RunnableConfig,
-) -> str | None:
-    """
-    Fingerprint the durable continuation generation across all namespaces.
-
-    Nested resumes may not advance the root checkpoint, and indirectly invoked
-    subgraphs are not exposed through state snapshots. Scanning the checkpointer
-    keeps stale-resume detection generic without introducing separate state.
-
-    Performance impact: Local PostgreSQL measurements were 0.5-0.7 ms for the
-    current 1-2 tuple runs, scaling linearly to about 5 ms at 100 and 45 ms at
-    1,000 small tuples.
-    """
-    checkpointer = cast("BaseCheckpointSaver", graph.checkpointer)
-    thread_id = runnable_config["configurable"]["thread_id"]
-    heads: dict[str, tuple[str, list[tuple[str, int]]]] = {}
-
-    async for checkpoint_tuple in checkpointer.alist(
-        {"configurable": {"thread_id": thread_id}}
-    ):
-        namespace = checkpoint_tuple.config["configurable"].get("checkpoint_ns", "")
-        checkpoint_id = require_checkpoint_id(checkpoint_tuple.config)
-        head = heads.get(namespace)
-        if head is not None and checkpoint_id <= head[0]:
-            continue
-
-        # Locked LangGraph 1.2.9 can reuse both its interrupt ID and checkpoint
-        # ID for a later pause in one task. Only the durable RESUME-write count
-        # distinguishes that continuation generation without storing answers.
-        heads[namespace] = (
-            checkpoint_id,
-            sorted(
-                (
-                    task_id,
-                    len(value) if isinstance(value, (list, tuple)) else 1,
-                )
-                for task_id, channel, value in checkpoint_tuple.pending_writes or ()
-                if channel == RESUME
-            ),
-        )
-
-    if not heads:
-        return None
-
-    identity = json.dumps(
-        [
-            "langgraph-openai-serve.interrupt-state.v2",
-            sorted((namespace, *head) for namespace, head in heads.items()),
-        ],
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(identity.encode()).hexdigest()
-
-
-def require_checkpoint_id(config: RunnableConfig) -> str:
-    """Return the checkpoint id from a validated LangGraph config."""
-    try:
-        checkpoint_id = get_checkpoint_id(config)
-    except (AttributeError, KeyError, TypeError):
-        checkpoint_id = None
-    if not isinstance(checkpoint_id, str) or not checkpoint_id:
-        msg = "Durable interrupt state has no checkpoint_id."
-        raise RuntimeError(msg)
-    return checkpoint_id
-
-
-async def durable_interrupt_batch(
-    graph: CompiledStateGraph,
+def interrupt_batch(
     interrupts: Iterable[Interrupt],
-    runnable_config: RunnableConfig | None,
     run_id: str | None,
 ) -> LangGraphInterruptBatch | None:
-    """Bind native execution interrupts to the durable checkpoint head."""
+    """Validate one native pending interrupt set."""
     pending_interrupts = _native_interrupts_by_id(interrupts)
     if not pending_interrupts:
         return None
 
-    if runnable_config is None:
-        msg = "Interrupt-enabled runs require runnable configuration."
-        raise RuntimeError(msg)
     if run_id is None:
         msg = "run_id cannot be None"
         raise RuntimeError(msg)
-    generation_token = await continuation_generation_token(graph, runnable_config)
-    if generation_token is None:
-        msg = "Interrupted LangGraph state has no checkpoint tuple."
-        raise RuntimeError(msg)
     return LangGraphInterruptBatch(
         run_id=run_id,
-        generation_token=generation_token,
         interrupts=tuple(pending_interrupts.values()),
     )
 

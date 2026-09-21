@@ -1,4 +1,4 @@
-"""PostgreSQL coordination for interrupt-enabled graph runs."""
+"""PostgreSQL coordination for checkpointed graph runs."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 class PostgresRunCoordinator:
     """
-    Coordinate interrupt runs with PostgreSQL session advisory locks.
+    Coordinate graph runs with PostgreSQL session advisory locks.
 
     The pool must return mapping rows, as required by ``AsyncPostgresSaver``
     when both components share one pool (for example, ``row_factory=dict_row``).

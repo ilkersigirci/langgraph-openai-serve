@@ -36,9 +36,8 @@ ContextFactory = Callable[
     Any | Awaitable[Any],
 ]
 OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
-_INTERRUPT_CHECKPOINTER_METHODS = (
+_DURABLE_CHECKPOINTER_METHODS = (
     "aget_tuple",
-    "alist",
     "aput",
     "aput_writes",
     "adelete_thread",
@@ -229,7 +228,7 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
         checkpointer = graph.checkpointer
         if checkpointer is None or any(
             not _overrides_checkpointer_method(checkpointer, method_name)
-            for method_name in _INTERRUPT_CHECKPOINTER_METHODS
+            for method_name in _DURABLE_CHECKPOINTER_METHODS
         ):
             msg = (
                 "Interrupt-enabled and background-enabled graphs must use a fully "

@@ -11,6 +11,7 @@ from langchain_core.messages.ai import add_usage
 from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import (
+    Command,
     CustomStreamPart,
     Durability,
     Interrupt,
@@ -123,7 +124,7 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
         version="v2",
     )
 
-    interrupt_batch = await _commit_interrupts(run, result.interrupts)
+    interrupt_batch = _commit_interrupts(run, result.interrupts)
     if interrupt_batch is not None:
         return interrupt_batch
 
@@ -370,7 +371,7 @@ async def stream_run(
             if visible_part is not None:
                 yield visible_part
 
-    interrupt_batch = await _commit_interrupts(run, tuple(interrupts))
+    interrupt_batch = _commit_interrupts(run, tuple(interrupts))
     if interrupt_batch is not None:
         yield interrupt_batch
         return
@@ -430,7 +431,7 @@ async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
     return _with_usage(await run.config.render_output(output), run)
 
 
-async def _commit_interrupts(
+def _commit_interrupts(
     run: GraphRun,
     interrupts: tuple[Interrupt, ...],
 ) -> interrupt_models.LangGraphInterruptBatch | None:
@@ -439,12 +440,14 @@ async def _commit_interrupts(
     if not run.config.supports(GraphFeature.INTERRUPTS):
         msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
         raise GraphConfigurationError(msg)
-    batch = await interrupt_state.durable_interrupt_batch(
-        run.graph,
-        interrupts,
-        run.runnable_config,
-        run.run_id,
-    )
+    if (
+        isinstance(run.inputs, Command)
+        and isinstance(run.inputs.resume, dict)
+        and set(run.inputs.resume).intersection(item.id for item in interrupts)
+    ):
+        msg = "A graph node may call interrupt() only once per invocation."
+        raise GraphConfigurationError(msg)
+    batch = interrupt_state.interrupt_batch(interrupts, run.run_id)
     if batch is not None:
         run.commit_interrupts()
     return batch

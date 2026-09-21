@@ -248,7 +248,7 @@ class ResponsesEventBuilder:
                 self._final_item,
                 response_output_text(AIMessage(content=self._final_item.text)),
             )
-        for call in interrupt_output_items(batch, response_id=self._context.id):
+        for call in interrupt_output_items(batch):
             yield from self._tool_item(call)
         yield self._terminal(
             ResponseCompletedEvent(

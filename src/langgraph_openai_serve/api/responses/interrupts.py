@@ -14,7 +14,6 @@ from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME as _INTERRUPT_TO
 
 _INTERRUPT_CALL_PREFIX = "call_lg_"
 _INTERRUPT_RESPONSE_PREFIX = "resp_lg_"
-_GENERATION_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _RESPONSE_ID_PATTERN = re.compile(
     rf"^{_INTERRUPT_RESPONSE_PREFIX}(?P<run>[0-9a-f]{{32}})_[0-9a-f]{{32}}$"
 )
@@ -25,18 +24,12 @@ def interrupt_response_id(run_id: str) -> str:
     return f"{_INTERRUPT_RESPONSE_PREFIX}{uuid.UUID(run_id).hex}_{uuid.uuid4().hex}"
 
 
-def interrupt_tool_call_id(
-    interrupt_id: str, generation_token: str, *, response_id: str
-) -> str:
-    """Bind one interrupt to its Response and durable checkpoint generation."""
+def interrupt_tool_call_id(interrupt_id: str) -> str:
+    """Expose one native LangGraph interrupt ID as an OpenAI call ID."""
     if not interrupt_id:
         msg = "LangGraph interrupt IDs must be non-empty strings."
         raise ValueError(msg)
-    if _GENERATION_TOKEN_PATTERN.fullmatch(generation_token) is None:
-        msg = "Interrupt generation tokens must be SHA-256 hex digests."
-        raise ValueError(msg)
-    response_nonce = response_id.rsplit("_", 1)[-1]
-    return f"{_INTERRUPT_CALL_PREFIX}{generation_token}_{response_nonce}_{interrupt_id}"
+    return f"{_INTERRUPT_CALL_PREFIX}{interrupt_id}"
 
 
 def parse_responses_resume(
@@ -56,7 +49,6 @@ def parse_responses_resume(
         raise InvalidResumeRequestError(msg)
 
     run_id = _parse_interrupt_response_id(previous_response_id)
-    generation_token: str | None = None
     values: dict[str, str] = {}
     for item in input_value:
         if not isinstance(item, ResponseFunctionCallOutputInput):
@@ -65,25 +57,17 @@ def parse_responses_resume(
                 "the previous Response."
             )
             raise InvalidResumeRequestError(msg)
-        output_generation, interrupt_id = _parse_interrupt_tool_call_id(
-            item.call_id, previous_response_id
-        )
-        if generation_token is None:
-            generation_token = output_generation
-        elif output_generation != generation_token:
-            msg = "Interrupt outputs must belong to one checkpoint generation."
-            raise InvalidResumeRequestError(msg)
+        interrupt_id = _parse_interrupt_tool_call_id(item.call_id)
         if interrupt_id in values:
             msg = "Interrupt function_call_output call_id values must be unique."
             raise InvalidResumeRequestError(msg)
         values[interrupt_id] = item.output
 
-    if generation_token is None:  # Response input lists are non-empty by schema.
+    if not values:  # Response input lists are non-empty by schema.
         msg = "Interrupt resumes require at least one function_call_output item."
         raise InvalidResumeRequestError(msg)
     return InterruptResume(
         run_id=run_id,
-        generation_token=generation_token,
         values=values,
     )
 
@@ -116,27 +100,12 @@ def _parse_interrupt_response_id(response_id: str) -> str:
     return str(uuid.UUID(hex=match.group("run")))
 
 
-def _parse_interrupt_tool_call_id(
-    call_id: str, previous_response_id: str
-) -> tuple[str, str]:
-    if not call_id.startswith(_INTERRUPT_CALL_PREFIX):
+def _parse_interrupt_tool_call_id(call_id: str) -> str:
+    interrupt_id = call_id.removeprefix(_INTERRUPT_CALL_PREFIX)
+    if interrupt_id == call_id or not interrupt_id:
         msg = "Interrupt function_call_output call_id is invalid."
         raise InvalidResumeRequestError(msg)
-    generation_token, _, response_call = call_id.removeprefix(
-        _INTERRUPT_CALL_PREFIX
-    ).partition("_")
-    response_nonce, separator, interrupt_id = response_call.partition("_")
-    if (
-        not separator
-        or not interrupt_id
-        or _GENERATION_TOKEN_PATTERN.fullmatch(generation_token) is None
-    ):
-        msg = "Interrupt function_call_output call_id is invalid."
-        raise InvalidResumeRequestError(msg)
-    if response_nonce != previous_response_id.rsplit("_", 1)[-1]:
-        msg = "Interrupt outputs do not belong to previous_response_id."
-        raise InvalidResumeRequestError(msg, param="previous_response_id")
-    return generation_token, interrupt_id
+    return interrupt_id
 
 
 __all__ = [

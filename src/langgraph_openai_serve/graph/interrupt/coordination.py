@@ -1,4 +1,4 @@
-"""Nonblocking coordination for interrupt-enabled graph runs."""
+"""Nonblocking coordination for checkpointed graph runs."""
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -12,7 +12,7 @@ class RunBusyError(RuntimeError):
 
     def __init__(self, key: str) -> None:
         self.key = key
-        super().__init__("This interrupt run cannot acquire its coordination lease.")
+        super().__init__("This graph run cannot acquire its coordination lease.")
 
 
 @dataclass(slots=True)
@@ -36,7 +36,7 @@ class RunCoordinator(Protocol):
 
 
 class InMemoryRunCoordinator:
-    """Coordinate interrupt runs within one process without waiting."""
+    """Coordinate graph runs within one process without waiting."""
 
     def __init__(self) -> None:
         self._active_keys: set[str] = set()

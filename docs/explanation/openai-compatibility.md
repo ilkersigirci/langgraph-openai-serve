@@ -687,11 +687,10 @@ Every pending LangGraph interrupt becomes an OpenAI function tool call named
 ```
 
 Response and call IDs are opaque. The Response ID locates the paused operation;
-each call ID binds an interrupt to that Response and exact checkpoint generation.
-Clients must persist and return both values unchanged. Mixing a Response ID with
-another Response's calls returns HTTP 400 with `param: "previous_response_id"`.
-Retrying an initial request returns new Response and call IDs for the same pending
-work; either complete exchange can resume it while that checkpoint remains current.
+each call ID carries one native LangGraph interrupt ID. Clients must persist and
+return both values unchanged. Retrying an initial request returns a new Response ID
+and the same call IDs for unchanged pending work; either Response can resume it
+while that checkpoint remains current.
 
 ### Resuming an Interrupt
 
@@ -711,7 +710,7 @@ Clients can resume using standard OpenAI `previous_response_id`:
   "input": [
     {
       "type": "function_call_output",
-      "call_id": "call_lg_47ecb7c6f7b901230fc4d3119976daae11888d39c973953060b8a849c3d8a5f2_0123456789abcdef0123456789abcdef_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
+      "call_id": "call_lg_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
       "output": "Verify the delivery address first."
     }
   ],
@@ -730,6 +729,12 @@ request, duplicate a result, or synthesize a call ID. Streaming clients persist
 the terminal Response ID and completed function-call items instead of reconstructing
 them from argument deltas.
 
+Each node invocation may call `interrupt()` once. To collect another answer,
+finish the node and route to another node invocation, including by looping through
+an edge. Parallel nodes may each interrupt once. LGOS rejects a node that reaches
+a second `interrupt()` after it resumes, matching LangGraph's recommended
+[human-input validation pattern](https://docs.langchain.com/oss/python/langgraph/interrupts#validating-human-input).
+
 Metadata is not required on a resume, but `metadata.lgos_run_id`, when
 present, must match the operation encoded by `previous_response_id`.
 
@@ -745,9 +750,9 @@ executes the graph. Same-key contention is rejected instead of queued. Exit
 durability stores state when the invocation pauses or finishes without
 retaining every intermediate superstep.
 LGOS drains the invocation before it exposes interrupt tool calls. It compares
-the submitted pending IDs and opaque state token with the durable checkpoint
-before passing answers to LangGraph. The displayed interrupt payload is not part
-of the resume input.
+the submitted native interrupt IDs with the complete pending set in the durable
+checkpoint before passing answers to LangGraph. The displayed interrupt payload
+is not part of the resume input.
 Concurrent work for another operation remains independent; a second request
 for the same operation receives HTTP 409.
 

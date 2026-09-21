@@ -10,11 +10,11 @@ from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 
 MODEL = "interruptible"
 PARALLEL_MODEL = "parallel-interrupts"
-SEQUENTIAL_MODEL = "sequential-interrupts"
+MULTI_TURN_MODEL = "multi-turn-interrupts"
 CONCURRENT_MODEL = "concurrent-resume"
 INVALID_PAYLOAD_MODEL = "invalid-interrupt-payload"
 NESTED_MODEL = "nested-parallel-interrupts"
-NESTED_SEQUENTIAL_MODEL = "nested-sequential-interrupts"
+NESTED_MULTI_TURN_MODEL = "nested-multi-turn-interrupts"
 CHECKPOINT_SCOPE_HEADER = "x-test-checkpoint-scope"
 
 

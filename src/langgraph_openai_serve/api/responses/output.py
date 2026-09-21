@@ -180,17 +180,11 @@ def response_function_call(call: ToolCall) -> ResponseFunctionToolCall:
 
 def interrupt_output_items(
     batch: LangGraphInterruptBatch,
-    *,
-    response_id: str,
 ) -> list[ResponseFunctionToolCall]:
     """Serialize one durable interrupt batch as function-call items."""
     return [
         _function_call_item(
-            call_id=interrupt_tool_call_id(
-                interrupt.id,
-                generation_token=batch.generation_token,
-                response_id=response_id,
-            ),
+            call_id=interrupt_tool_call_id(interrupt.id),
             name=INTERRUPT_TOOL_NAME,
             arguments=_dump_arguments(interrupt.value),
         )

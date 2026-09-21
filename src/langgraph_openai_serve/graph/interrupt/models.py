@@ -7,10 +7,9 @@ from langgraph.types import Interrupt
 
 @dataclass(frozen=True, slots=True)
 class InterruptResume:
-    """A complete, causally bound set of interrupt answers."""
+    """A complete set of interrupt answers for one run."""
 
     run_id: str
-    generation_token: str
     values: dict[str, str]
 
 
@@ -19,7 +18,6 @@ class LangGraphInterruptBatch:
     """The durable interrupts awaiting answers for one graph run."""
 
     run_id: str
-    generation_token: str
     interrupts: tuple[Interrupt, ...]
 
 
