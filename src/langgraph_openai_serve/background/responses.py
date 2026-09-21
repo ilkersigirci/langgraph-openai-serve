@@ -59,30 +59,27 @@ def cancelled_response(
 
 
 def failed_response(
-    request: ResponseCreateRequest,
+    response: dict[str, JsonValue],
     *,
-    response_id: str,
-    created_at: float,
     message: str,
 ) -> Response:
-    """Build a retrievable terminal failure without exposing internals."""
-    return ResponseContext.for_run(
-        request,
-        response_id=response_id,
-        created_at=created_at,
-    ).response(
-        status="failed",
-        output=[],
-        error=ResponseError.model_validate(
-            {
-                # ResponseError.code is an OpenAI-owned closed vocabulary. Keep
-                # LGOS's more specific operational reason in structured logs
-                # rather than inventing a nonstandard wire value.
-                "code": "server_error",
-                "message": message,
-                "misalignment": None,
-            }
-        ),
+    """Turn a persisted Response snapshot into a terminal failure."""
+    return Response.model_validate(response).model_copy(
+        update={
+            "status": "failed",
+            "output": [],
+            "error": ResponseError.model_validate(
+                {
+                    # ResponseError.code is an OpenAI-owned closed vocabulary. Keep
+                    # LGOS's more specific operational reason in structured logs
+                    # rather than inventing a nonstandard wire value.
+                    "code": "server_error",
+                    "message": message,
+                    "misalignment": None,
+                }
+            ),
+            "incomplete_details": None,
+        }
     )
 
 

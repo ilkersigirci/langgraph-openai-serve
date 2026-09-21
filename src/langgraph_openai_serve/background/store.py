@@ -212,6 +212,10 @@ class ResponseStore(Protocol):
         """Record successful removal of one checkpoint lineage."""
         ...
 
+    async def abandon_cleanup(self, run_id: str, *, now: datetime) -> bool:
+        """Stop retrying cleanup when its graph configuration is unavailable."""
+        ...
+
     async def expire(self, *, now: datetime, limit: int) -> int:
         """Expire terminal results and idempotency tombstones."""
         ...

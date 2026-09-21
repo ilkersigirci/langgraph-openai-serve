@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -25,6 +25,7 @@ from langgraph_openai_serve import (
     InMemoryBackgroundBackend,
     InMemoryResponseStore,
     LanggraphOpenaiServe,
+    NewRun,
     RetryableJobError,
     RunJob,
     StoredRun,
@@ -551,6 +552,65 @@ async def test_incompatible_hatchet_envelope_fails_the_public_response() -> None
         assert failed.status == "failed"
         assert failed.error is not None
         assert "envelope version" in failed.error.message
+
+
+async def test_invalid_persisted_request_still_publishes_failure() -> None:
+    async with _environment() as environment:
+        await environment.client.responses.create(
+            model="background",
+            input="Hello",
+            background=True,
+        )
+        job = await environment.backend.receive()
+        assert job is not None
+        original = await environment.store.get_internal(job.run_id)
+        assert original is not None
+        graph = await environment.worker.graphs.get_graph("background").resolve_graph()
+        assert isinstance(graph.checkpointer, AsyncSqliteSaver)
+        await graph.checkpointer.setup()
+
+        payload = {field: getattr(original, field) for field in NewRun.model_fields}
+        payload["envelope"] = {}
+        store = InMemoryResponseStore()
+        await store.accept(NewRun.model_validate(payload), capacity=1)
+        worker = BackgroundWorker(graphs=environment.worker.graphs, store=store)
+
+        await worker.execute(job)
+
+        failed = await store.get_internal(job.run_id)
+        assert failed is not None
+        assert failed.status == "failed"
+        assert failed.response is not None
+        assert failed.response["status"] == "failed"
+
+
+async def test_removed_graph_abandons_unresolvable_cleanup() -> None:
+    async with _environment() as environment:
+        created = await environment.client.responses.create(
+            model="background",
+            input="Hello",
+            background=True,
+        )
+        job = await environment.backend.receive()
+        assert job is not None
+        replacement = environment.worker.graphs.get_graph("background")
+        worker = BackgroundWorker(
+            graphs=GraphRegistry(registry={"replacement": replacement}),
+            store=environment.store,
+        )
+
+        await worker.execute(job)
+
+        failed = await environment.client.responses.retrieve(created.id)
+        stored = await environment.store.get_internal(job.run_id)
+        assert failed.status == "failed"
+        assert stored is not None
+        assert stored.cleanup_pending is False
+        assert stored.recovery_cleaned is False
+
+        future = datetime.now(UTC) + timedelta(days=31)
+        assert await environment.store.expire(now=future, limit=1) == 1
+        assert await environment.store.get_internal(job.run_id) is None
 
 
 async def test_unknown_and_cursor_retrieval_use_openai_errors() -> None:

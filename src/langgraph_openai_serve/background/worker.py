@@ -293,19 +293,16 @@ class BackgroundWorker:
         message: str,
         code: str,
     ) -> StoredRun | None:
-        request = ResponseCreateRequest.model_validate(run.envelope)
-        response = failed_response(
-            request,
-            response_id=run.response_id,
-            created_at=int(run.created_at.timestamp()),
-            message=message,
-        )
+        if run.response is None:
+            msg = "Background failure publication lost its Response snapshot."
+            raise RetryableJobError(msg)
+        response = failed_response(run.response, message=message)
         published = await self.store.publish_terminal(
             run.run_id,
             response_json(response),
             now=datetime.now(UTC),
             result_retention=self.settings.result_retention_for(
-                stored=bool(request.store)
+                stored=run.envelope.get("store") is True
             ),
             idempotency_retention=self.settings.idempotency_retention,
         )
@@ -353,7 +350,19 @@ class BackgroundWorker:
     async def _cleanup_run(self, run: StoredRun) -> bool:
         if not run.cleanup_pending or run.recovery_cleaned:
             return False
-        graph_config = self.graphs.get_graph(run.model)
+        try:
+            graph_config = self.graphs.get_graph(run.model)
+        except GraphNotFoundError:
+            abandoned = await self.store.abandon_cleanup(
+                run.run_id,
+                now=datetime.now(UTC),
+            )
+            if abandoned:
+                logger.warning(
+                    "background.checkpoint_cleanup_abandoned",
+                    extra={"run_id": run.run_id, "model": run.model},
+                )
+            return False
         coordinator = graph_config.run_coordinator
         if coordinator is None:
             return False

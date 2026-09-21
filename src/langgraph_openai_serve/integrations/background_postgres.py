@@ -364,6 +364,22 @@ class PostgresResponseStore:
             await self._write(connection, updated)
             return True
 
+    async def abandon_cleanup(self, run_id: str, *, now: datetime) -> bool:
+        """Stop retrying cleanup without claiming checkpoint deletion."""
+        async with self._locked_run(run_id) as locked:
+            connection, run = locked
+            if run is None or not run.terminal or not run.cleanup_pending:
+                return False
+            updated = run.model_copy(
+                update={
+                    "cleanup_pending": False,
+                    "updated_at": now,
+                    "version": run.version + 1,
+                }
+            )
+            await self._write(connection, updated)
+            return True
+
     async def expire(self, *, now: datetime, limit: int) -> int:
         """Convert expired results to tombstones, then remove expired keys."""
         async with (

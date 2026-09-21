@@ -305,6 +305,23 @@ class InMemoryResponseStore:
             )
             return True
 
+    async def abandon_cleanup(self, run_id: str, *, now: datetime) -> bool:
+        """Stop retrying cleanup without claiming checkpoint deletion."""
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None or not run.terminal or not run.cleanup_pending:
+                return False
+            self._put(
+                run.model_copy(
+                    update={
+                        "cleanup_pending": False,
+                        "updated_at": now,
+                        "version": run.version + 1,
+                    }
+                )
+            )
+            return True
+
     async def expire(self, *, now: datetime, limit: int) -> int:
         """Convert expired results to tombstones, then remove expired keys."""
         async with self._lock:
