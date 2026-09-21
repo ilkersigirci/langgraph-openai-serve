@@ -394,7 +394,9 @@ also retries pending native cancellations on that schedule.
 
 Install `langgraph-openai-serve[postgres]` for
 `integrations.background_postgres.PostgresResponseStore`. Its `setup()` method
-creates the packaged final schema explicitly. Install
+transactionally applies pending packaged migrations and records their versions
+in `lgos_background_migrations`. Run it as a deployment step before starting
+workers. Repeated calls are safe. Install
 `langgraph-openai-serve[hatchet]` for
 `HatchetBackgroundBackend`, `HatchetAdapterSettings`,
 `create_hatchet_workflows()`, and `check_hatchet_connection()`. The registered

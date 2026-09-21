@@ -135,7 +135,7 @@ server.bind_openai_api()
 
 ## Configure PostgreSQL And Hatchet
 
-Create the Response-store schema once during deployment setup:
+Apply Response-store migrations during each deployment setup:
 
 ```python
 from langgraph_openai_serve.integrations.background_postgres import (
@@ -145,6 +145,9 @@ from langgraph_openai_serve.integrations.background_postgres import (
 response_store = PostgresResponseStore(pool)
 await response_store.setup()
 ```
+
+`setup()` applies only pending migrations and is safe to repeat. Run it before
+starting API or background-worker processes rather than from every worker.
 
 Build the same worker and Hatchet workflow definitions in the API and worker
 processes:

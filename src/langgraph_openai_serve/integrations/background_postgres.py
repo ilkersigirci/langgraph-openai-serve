@@ -31,6 +31,19 @@ if TYPE_CHECKING:
 
 _TABLE = "lgos_background_responses"
 _CAPACITY_LOCK = 5_494_716_043_740_046_884
+# Tuple positions are persisted schema versions. Only append new migrations.
+_MIGRATION_FILES = ("background_schema.sql",)
+_CREATE_MIGRATIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS lgos_background_migrations (
+    version integer PRIMARY KEY
+)
+"""
+_CURRENT_MIGRATION_SQL = """
+SELECT version FROM lgos_background_migrations ORDER BY version DESC LIMIT 1
+"""
+_RECORD_MIGRATION_SQL = """
+INSERT INTO lgos_background_migrations (version) VALUES (%s)
+"""
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 _Connection = AsyncConnection[dict[str, Any]]
@@ -46,13 +59,28 @@ class PostgresResponseStore:
         self._pool = pool
 
     async def setup(self) -> None:
-        """Create the final background Response schema."""
-        schema = files("langgraph_openai_serve.integrations").joinpath(
-            "background_schema.sql"
-        )
-        async with self._pool.connection() as connection:
-            statement = cast("LiteralString", schema.read_text(encoding="utf-8"))
-            await connection.execute(sql.SQL(statement), prepare=False)
+        """Apply pending background Response schema migrations."""
+        migrations = files("langgraph_openai_serve.integrations")
+        async with (
+            self._pool.connection() as connection,
+            connection.transaction(),
+        ):
+            await connection.execute(_CREATE_MIGRATIONS_TABLE_SQL)
+            cursor = await connection.execute(_CURRENT_MIGRATION_SQL)
+            row = await cursor.fetchone()
+            current_version = -1 if row is None else int(row["version"])
+
+            for version, filename in enumerate(
+                _MIGRATION_FILES[current_version + 1 :],
+                start=current_version + 1,
+            ):
+                migration = migrations.joinpath(filename)
+                statement = cast(
+                    "LiteralString",
+                    migration.read_text(encoding="utf-8"),
+                )
+                await connection.execute(sql.SQL(statement), prepare=False)
+                await connection.execute(_RECORD_MIGRATION_SQL, (version,))
 
     async def accept(self, run: NewRun, *, capacity: int) -> Acceptance:
         """Atomically enforce capacity and optional create idempotency."""

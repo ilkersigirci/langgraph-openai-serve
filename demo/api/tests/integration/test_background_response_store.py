@@ -46,6 +46,22 @@ def _new_run(*, response_id: str, run_key: str, created_at: datetime) -> NewRun:
     )
 
 
+async def test_setup_is_idempotent_and_records_the_schema_version() -> None:
+    await setup_postgres_schema(POSTGRES_URI)
+    await setup_postgres_schema(POSTGRES_URI)
+
+    async with (
+        postgres_runtime(POSTGRES_URI) as runtime,
+        runtime.pool.connection() as connection,
+    ):
+        cursor = await connection.execute(
+            "SELECT version FROM lgos_background_migrations ORDER BY version"
+        )
+        rows = await cursor.fetchall()
+
+    assert [row["version"] for row in rows] == [0]
+
+
 async def _delete_runs(run_ids: set[str]) -> None:
     if not run_ids:
         return

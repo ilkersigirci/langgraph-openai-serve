@@ -1,3 +1,4 @@
+-- Migration 0. Keep applied migrations immutable; append a new migration file.
 CREATE TABLE IF NOT EXISTS lgos_background_responses (
     run_id text PRIMARY KEY,
     response_id text NOT NULL UNIQUE,
