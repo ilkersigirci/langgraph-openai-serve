@@ -28,6 +28,7 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import state as interrupt_state
+from langgraph_openai_serve.graph.interrupt.coordination import RunLease
 from langgraph_openai_serve.graph.interrupt.models import (
     InterruptResume,
     LangGraphInterruptBatch,
@@ -61,6 +62,7 @@ class _PreparedRunValues:
     inputs: Any
     context: Any
     pending_batch: LangGraphInterruptBatch | None = None
+    lease: RunLease | None = None
 
 
 @dataclass
@@ -89,6 +91,7 @@ class GraphRun:
         repr=False,
     )
     _primary_error: BaseException | None = field(default=None, init=False, repr=False)
+    _lease: RunLease | None = field(default=None, repr=False)
     _entered: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
 
@@ -144,7 +147,7 @@ class GraphRun:
 
         with CancelScope(shield=True):
             cleanup_error: BaseException | None = None
-            if self._checkpoint_disposition == "delete":
+            if self._checkpoint_disposition == "delete" and self._owns_lease():
                 try:
                     await self._delete_checkpoint_thread()
                 except BaseException as exc:
@@ -173,6 +176,10 @@ class GraphRun:
         if not self._entered:
             msg = "Graph execution requires an active GraphRun context."
             raise RuntimeError(msg)
+
+    def _owns_lease(self) -> bool:
+        """Reject destructive cleanup after a coordinator reports lease loss."""
+        return self._lease is None or not self._lease.lost
 
     async def _delete_checkpoint_thread(self) -> None:
         if self.checkpoint_thread_id is None:
@@ -250,6 +257,7 @@ async def prepare_run(
         pending_batch=values.pending_batch,
         usage_callback=usage_callback,
         _resources=resources,
+        _lease=values.lease,
     )
 
 
@@ -321,7 +329,9 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
         msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
-    await resources.enter_async_context(coordinator(identity.checkpoint_thread_id))
+    lease = await resources.enter_async_context(
+        coordinator(identity.checkpoint_thread_id)
+    )
     state = await interrupt_state.prepare_interrupt_state(
         graph,
         runnable_config,
@@ -329,7 +339,12 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
         resume,
     )
     if isinstance(state, LangGraphInterruptBatch):
-        return _PreparedRunValues(inputs=None, context=None, pending_batch=state)
+        return _PreparedRunValues(
+            inputs=None,
+            context=None,
+            pending_batch=state,
+            lease=lease,
+        )
     return _PreparedRunValues(
         inputs=(
             state
@@ -337,6 +352,7 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
             else await graph_config.build_input(request, messages)
         ),
         context=await graph_config.build_context(request, graph),
+        lease=lease,
     )
 
 

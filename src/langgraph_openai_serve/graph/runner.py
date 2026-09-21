@@ -9,6 +9,7 @@ from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.ai import add_usage
 from langgraph.checkpoint.base import get_checkpoint_id
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import (
     CustomStreamPart,
     Durability,
@@ -159,6 +160,7 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
     if checkpoint_exists and not snapshot.next and not snapshot.interrupts:
         return await _background_result(
             config,
+            graph,
             snapshot.values,
             usage_callback,
             initial_message_count=initial_message_count,
@@ -198,6 +200,7 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
         raise BackgroundCheckpointIncompleteError(msg)
     return await _background_result(
         config,
+        graph,
         completed.values,
         usage_callback,
         initial_message_count=initial_message_count,
@@ -213,13 +216,14 @@ def _snapshot_has_checkpoint(config: Mapping[str, Any] | None) -> bool:
 
 async def _background_result(
     config: GraphConfig,
-    output: Any,
+    graph: CompiledStateGraph,
+    state: Any,
     usage_callback: UsageMetadataCallbackHandler,
     *,
     initial_message_count: int,
 ) -> BackgroundGraphResult:
-    message = await config.render_output(output)
-    root_messages = _root_messages(output)
+    message = await config.render_output(_checkpoint_output(graph, state))
+    root_messages = _root_messages(state)
     total_usage = None
     for operation_message in root_messages[initial_message_count:]:
         if (
@@ -236,6 +240,29 @@ async def _background_result(
         message=message,
         root_messages=root_messages,
     )
+
+
+def _checkpoint_output(graph: CompiledStateGraph, state: Any) -> Any:
+    """Reconstruct the graph's declared v2 output from its full checkpoint state."""
+    output_channels = graph.output_channels
+    if isinstance(output_channels, str):
+        output = (
+            state[output_channels]
+            if isinstance(state, Mapping) and output_channels in state
+            else state
+        )
+    else:
+        if not isinstance(state, Mapping):
+            msg = "Checkpoint state does not expose the graph's output channels."
+            raise BackgroundCheckpointIncompleteError(msg)
+        output = {
+            channel: state[channel] for channel in output_channels if channel in state
+        }
+
+    # LangGraph applies this mapper to v2 invocation output after selecting the
+    # channels. Recovery must do the same for Pydantic and dataclass schemas.
+    output_mapper = graph._output_mapper  # ruff: ignore[private-member-access] - Required for parity with LangGraph's v2 output coercion.
+    return output_mapper(output) if output_mapper is not None else output
 
 
 def _root_messages(output: Any) -> tuple[BaseMessage, ...]:

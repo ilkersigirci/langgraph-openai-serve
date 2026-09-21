@@ -2,7 +2,7 @@ import base64
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 from hatchet_sdk import Hatchet
@@ -12,6 +12,7 @@ from hatchet_sdk.runnables.types import EmptyModel
 
 from langgraph_openai_serve import BackgroundSettings, InMemoryResponseStore, RunJob
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus
+from langgraph_openai_serve.integrations import hatchet
 from langgraph_openai_serve.integrations.hatchet import (
     HatchetAdapterSettings,
     HatchetBackgroundBackend,
@@ -386,3 +387,53 @@ async def test_maintenance_delivers_cancellation_after_transient_api_failure() -
     assert runs.aio_cancel.await_count == expected_attempts
     assert persisted is not None
     assert persisted.cancellation_pending is False
+
+
+async def test_maintenance_continues_after_one_cancellation_fails() -> None:
+    store = InMemoryResponseStore()
+    first = await store.accept(_new_run(name="first"), capacity=2)
+    second = await store.accept(_new_run(name="second"), capacity=2)
+    await store.record_workflow_run(
+        first.run.run_id,
+        "native-first",
+        now=datetime.now(UTC),
+    )
+    await store.record_workflow_run(
+        second.run.run_id,
+        "native-second",
+        now=datetime.now(UTC),
+    )
+    for run in (first.run, second.run):
+        await store.request_cancellation(
+            run.response_id,
+            "owner",
+            {"id": run.response_id, "status": "cancelled"},
+            now=datetime.now(UTC),
+            result_retention=timedelta(hours=1),
+            idempotency_retention=timedelta(hours=1),
+        )
+
+    async def cancel(workflow_run_id: str) -> None:
+        if workflow_run_id == "native-first":
+            message = "transient"
+            raise OSError(message)
+
+    runs = Mock(aio_cancel=AsyncMock(side_effect=cancel))
+    worker = Mock(
+        store=store,
+        settings=BackgroundSettings(maintenance_batch_size=2),
+    )
+
+    delivered = await hatchet._deliver_pending_cancellations(worker, runs)
+    first_persisted = await store.get_internal(first.run.run_id)
+    second_persisted = await store.get_internal(second.run.run_id)
+
+    assert delivered == 1
+    assert runs.aio_cancel.await_args_list == [
+        call("native-first"),
+        call("native-second"),
+    ]
+    assert first_persisted is not None
+    assert first_persisted.cancellation_pending is True
+    assert second_persisted is not None
+    assert second_persisted.cancellation_pending is False

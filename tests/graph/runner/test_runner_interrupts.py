@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,7 @@ from langgraph.checkpoint.base import (
     CheckpointMetadata,
     CheckpointTuple,
 )
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.types import (
@@ -42,6 +44,7 @@ from langgraph_openai_serve.graph.interrupt import (
     InMemoryRunCoordinator,
     InterruptResume,
     LangGraphInterruptBatch,
+    RunLease,
 )
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from langgraph_openai_serve.graph.runner import (
@@ -177,6 +180,63 @@ async def test_cancelled_preparation_finishes_lease_release(
     assert release_started.is_set()
     assert released.is_set()
     assert cancellation_propagated.is_set()
+
+
+async def test_lost_execution_lease_preserves_checkpoint_thread(make_request) -> None:
+    class RecordingSaver(InMemorySaver):
+        def __init__(self) -> None:
+            super().__init__()
+            self.deleted_threads: list[str] = []
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted_threads.append(thread_id)
+            await super().adelete_thread(thread_id)
+
+    saver = RecordingSaver()
+    lease = RunLease()
+    owner: asyncio.Task[object] | None = None
+
+    @asynccontextmanager
+    async def coordinator(_key: str):
+        nonlocal owner
+        owner = asyncio.current_task()
+        yield lease
+
+    async def lose_lease(_state: MessageState):
+        lease.lost = True
+        assert owner is not None
+        owner.cancel()
+        await sleep_forever()
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("lose_lease", lose_lease)
+        .set_entry_point("lose_lease")
+        .set_finish_point("lose_lease")
+        .compile(checkpointer=saver)
+    )
+    registry = GraphRegistry(
+        registry={
+            "interruptible": GraphConfig(
+                graph=graph,
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                run_coordinator=coordinator,
+            )
+        }
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_langgraph(
+            make_request(
+                "interruptible",
+                metadata={RUN_METADATA_KEY: RUN_ID},
+            ),
+            [HumanMessage(content="question")],
+            registry,
+        )
+
+    assert saver.deleted_threads == []
 
 
 def test_checkpoint_key_is_model_scoped_and_does_not_expose_public_run_id() -> None:

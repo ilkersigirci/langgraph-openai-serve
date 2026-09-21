@@ -325,7 +325,13 @@ async def _deliver_pending_cancellations(
     )
     delivered = 0
     for run in pending:
-        delivered += int(await _deliver_cancellation(runs, worker.store, run))
+        try:
+            delivered += int(await _deliver_cancellation(runs, worker.store, run))
+        except Exception:
+            logger.exception(
+                "background.hatchet_cancellation_failed",
+                extra={"run_id": run.run_id},
+            )
     return delivered
 
 
