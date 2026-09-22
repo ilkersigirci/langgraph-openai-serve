@@ -16,7 +16,9 @@ from langgraph_openai_serve.background.store import (
     NewRun,
     ResponseStatus,
 )
-from langgraph_openai_serve.integrations.hatchet import HatchetBackgroundBackend
+from langgraph_openai_serve.integrations.background.hatchet import (
+    HatchetBackgroundBackend,
+)
 
 from lgos_demo_api.graphs.background_report import (
     create_background_report_config,

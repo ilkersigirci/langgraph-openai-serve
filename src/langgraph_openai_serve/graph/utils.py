@@ -22,13 +22,13 @@ from langgraph_openai_serve.core.logging import (
     get_logger,
 )
 from langgraph_openai_serve.core.settings import settings
+from langgraph_openai_serve.graph.coordination import RunLease
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import state as interrupt_state
-from langgraph_openai_serve.graph.interrupt.coordination import RunLease
 from langgraph_openai_serve.graph.interrupt.models import (
     InterruptResume,
     LangGraphInterruptBatch,
@@ -176,6 +176,8 @@ class GraphRun:
         if not self._entered:
             msg = "Graph execution requires an active GraphRun context."
             raise RuntimeError(msg)
+        if self._lease is not None:
+            self._lease.ensure_owned()
 
     def _owns_lease(self) -> bool:
         """Reject destructive cleanup after a coordinator reports lease loss."""
@@ -332,12 +334,14 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
     lease = await resources.enter_async_context(
         coordinator(identity.checkpoint_thread_id)
     )
+    lease.ensure_owned()
     state = await interrupt_state.prepare_interrupt_state(
         graph,
         runnable_config,
         identity.run_id,
         resume,
     )
+    lease.ensure_owned()
     if isinstance(state, LangGraphInterruptBatch):
         return _PreparedRunValues(
             inputs=None,

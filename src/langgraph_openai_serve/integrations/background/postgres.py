@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 _TABLE = "lgos_background_responses"
 _STORE_LOCK = 5_494_716_043_740_046_884
-_SCHEMA_FILE = "background_schema.sql"
+_SCHEMA_FILE = "postgres_schema.sql"
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 _Connection = AsyncConnection[dict[str, Any]]
@@ -47,7 +47,9 @@ class PostgresResponseStore:
 
     async def setup(self) -> None:
         """Create the background Response schema."""
-        schema = files("langgraph_openai_serve.integrations").joinpath(_SCHEMA_FILE)
+        schema = files("langgraph_openai_serve.integrations.background").joinpath(
+            _SCHEMA_FILE
+        )
         statement = cast(
             "LiteralString",
             schema.read_text(encoding="utf-8"),
@@ -128,7 +130,7 @@ class PostgresResponseStore:
         *,
         now: datetime,
     ) -> StoredRun | None:
-        """Store an idempotent Hatchet workflow receipt."""
+        """Store an idempotent native workflow receipt."""
         async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None:
@@ -296,7 +298,7 @@ class PostgresResponseStore:
         )
 
     async def finish_cancellation(self, response_id: str, *, now: datetime) -> bool:
-        """Record successful delivery of one Hatchet cancellation."""
+        """Record successful delivery of one native cancellation."""
         async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or not run.cancellation_pending:

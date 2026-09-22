@@ -9,7 +9,7 @@ from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import GraphConfig, GraphRequest, InMemoryResponseStore
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module

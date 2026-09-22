@@ -15,8 +15,8 @@ from langgraph_openai_serve import BackgroundSettings, InMemoryResponseStore
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background.responses import active_response, response_json
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus
-from langgraph_openai_serve.integrations import hatchet
-from langgraph_openai_serve.integrations.hatchet import (
+from langgraph_openai_serve.integrations.background import hatchet
+from langgraph_openai_serve.integrations.background.hatchet import (
     HatchetAdapterSettings,
     HatchetBackgroundBackend,
     HatchetResponseInput,

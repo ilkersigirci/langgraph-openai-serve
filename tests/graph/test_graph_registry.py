@@ -9,8 +9,8 @@ from langgraph_openai_serve import (
     GraphFeature,
     GraphRegistry,
 )
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
 

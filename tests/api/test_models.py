@@ -12,7 +12,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph

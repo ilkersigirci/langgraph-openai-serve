@@ -93,7 +93,7 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 | --- | --- |
 | `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
-| `background` | The graph can run in a Hatchet workflow and be polled through the standard Response lifecycle. This value is derived from `GraphConfig.background`. |
+| `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. This value is derived from `GraphConfig.background`. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
@@ -294,15 +294,18 @@ coordinator prevents overlapping runs. There is no separate interrupt-response
 store or Chat Completions resume codec.
 
 LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
-only paused workflow execution; a graph Store keeps explicit application data.
-Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
+recoverable workflow execution state; a graph Store keeps explicit application
+data. Neither makes a Response ID retrievable or lets LGOS reconstruct a
+conversation.
 
 ### Polling-Only Background Lifecycle
 
-For an opted-in graph, `background=true` first stores a queued Response, then
-best-effort triggers its Hatchet workflow. The queued Response is returned even
-when a workflow receipt is not immediately available; maintenance recovers
-pending submissions. The caller keeps the opaque Response ID and uses:
+For an opted-in graph, `background=true` delegates acceptance and execution to
+the configured `BackgroundBackend`. The supplied Hatchet backend first stores
+a queued Response, then best-effort triggers its workflow. The queued Response
+is returned even when a workflow receipt is not immediately available;
+maintenance recovers pending submissions. The caller keeps the opaque Response
+ID and uses:
 
 - `GET /v1/responses/{response_id}` for a current JSON snapshot; and
 - `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.

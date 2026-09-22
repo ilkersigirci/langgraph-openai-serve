@@ -1,1 +1,0 @@
-"""Graph interrupt test package."""

@@ -11,7 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_openai_serve import BackgroundPolicy, GraphConfig
-from langgraph_openai_serve.graph.interrupt import RunCoordinator
+from langgraph_openai_serve.graph.coordination import RunCoordinator
 
 from lgos_demo_api.core.settings import settings
 

@@ -13,7 +13,7 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError, RunLease
+from langgraph_openai_serve.graph.coordination import RunBusyError, RunLease
 
 _TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock(%s) AS acquired"
 _UNLOCK_ADVISORY_LOCK_SQL = "SELECT pg_advisory_unlock(%s) AS released"
@@ -93,6 +93,7 @@ class PostgresRunCoordinator:
                 )
                 try:
                     yield lease
+                    lease.ensure_owned()
                 except get_cancelled_exc_class() as exc:
                     if monitor_errors:
                         body_error = monitor_errors[0]

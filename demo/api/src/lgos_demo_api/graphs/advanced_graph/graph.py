@@ -22,7 +22,7 @@ from langgraph_openai_serve import (
     GraphRequest,
     NamedFunctionToolChoice,
 )
-from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
+from langgraph_openai_serve.graph.coordination import RunCoordinator
 from openai import AsyncOpenAI
 
 from lgos_demo_api.core.settings import settings

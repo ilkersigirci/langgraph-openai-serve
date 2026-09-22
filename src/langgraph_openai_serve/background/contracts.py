@@ -49,9 +49,10 @@ class BackgroundBackend(Protocol):
     """
     Own the complete lifecycle behind the OpenAI polling API.
 
-    Hatchet is LGOS's built-in implementation. Applications may implement this
-    small boundary when they deliberately want to own persistence, scheduling,
-    cancellation, and recovery themselves.
+    Hatchet is LGOS's supplied durable implementation. Applications may implement
+    this boundary to own scheduling, cancellation, and recovery. Replacing only
+    persistence needs a ResponseStore implementation, not a new backend.
+    Backend construction and resource lifetime belong to the application.
     """
 
     async def create(self, run: NewRun) -> StoredRun:

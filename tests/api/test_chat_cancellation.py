@@ -21,7 +21,7 @@ from langgraph_openai_serve import (
     LanggraphOpenaiServe,
 )
 from langgraph_openai_serve.api.streaming import StreamOwner
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.utils import GraphRun
 
 if TYPE_CHECKING:

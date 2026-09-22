@@ -38,29 +38,40 @@ The package owns the `/v1` transport and adaptation boundary. The host
 application owns graph behavior and every model, tool, store, or data source
 used by that graph.
 
-Polling-only background requests branch after validation. The API first stores
-the queued Response, then best-effort submits its stable reference to Hatchet.
+The application also constructs and owns infrastructure clients. LGOS consumes
+native LangGraph checkpointers and explicit `RunCoordinator`, `ResponseStore`,
+and `BackgroundBackend` contracts. Optional PostgreSQL and Hatchet integrations
+implement those contracts; applications may supply alternatives. Sharing a
+database or pool is a deployment choice. See
+[Configure Persistence And Coordination](../how-to-guides/infrastructure.md)
+for lifecycle ownership, adapter requirements, and composition constraints.
+
+Polling-only background requests branch after validation. With the supplied
+Hatchet backend, the API first stores the queued Response, then best-effort
+submits its stable reference to Hatchet.
 It returns the queued Response even when a workflow receipt is not immediately
 available; maintenance recovers pending submissions. An independently deployed
 worker later enters the same graph runner. Polling never executes the graph in
 an HTTP request.
 
 ```mermaid
-flowchart LR
+flowchart TB
   client["OpenAI client"]
   api["LGOS API"]
   responses[("ResponseStore")]
   hatchet["Hatchet workflow"]
   worker["LGOS worker"]
+  coordinator["Run coordinator"]
   checkpoint[("Persistent checkpointer")]
-  graph["Application graph"]
+  app_graph["Application graph"]
 
   client -->|"create"| api
   api -->|"commit queued row"| responses
   api -->|"submit persisted reference"| hatchet
   hatchet -->|"native retries + timeout"| worker
-  worker -->|"shared runner"| graph
-  graph <-->|"sync-durable checkpoints"| checkpoint
+  worker -->|"execution and cleanup lease"| coordinator
+  worker -->|"shared runner"| app_graph
+  app_graph <-->|"sync-durable checkpoints"| checkpoint
   worker -->|"atomic terminal publish"| responses
   client -->|"retrieve or cancel by ID"| api
   api <-->|"authorized snapshot / transition"| responses
@@ -117,15 +128,16 @@ Interrupt-enabled graphs add a narrow durable boundary: an asynchronous
 checkpointer stores paused workflow state. A run coordinator serializes one
 interrupt run across replicas. Application graphs may independently use a
 LangGraph Store for explicit data.
-PostgreSQL can provide all three roles; Redis is not required by this design.
-The demo shares one PostgreSQL pool per API process among them.
+PostgreSQL can provide all three roles. The demo shares one PostgreSQL pool per
+process among them and its response store; the package does not require this
+composition.
 
 Background-enabled graphs add a fourth state role: a `ResponseStore` owns the
 bounded public lifecycle, authorization, retention, terminal publication, and
 any native cancellation still awaiting delivery. The checkpointer remains the
-source of truth for recoverable graph progress. Hatchet owns queueing, attempts,
-retries, timeouts, cancellation, the terminal failure task, and the recurring
-maintenance schedule.
+source of truth for recoverable graph progress. In the supplied durable backend,
+Hatchet owns queueing, attempts, retries, timeouts, cancellation, the terminal
+failure task, and the recurring maintenance schedule.
 
 The Responses adapter owns interrupt function-call encoding and decodes
 `previous_response_id` plus `function_call_output` items into a resume request.

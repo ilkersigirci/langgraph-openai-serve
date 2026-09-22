@@ -53,4 +53,11 @@ application.
 
     [:octicons-arrow-right-24: Configure a proxy](openai-proxies.md)
 
+-   :material-database-outline:{ .lg .middle } __Choose persistence and coordination__
+
+    Compose application-owned checkpointers, response stores, run coordinators,
+    and background engines through public contracts.
+
+    [:octicons-arrow-right-24: Configure infrastructure](infrastructure.md)
+
 </div>

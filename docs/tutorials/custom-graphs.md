@@ -284,7 +284,7 @@ Enable the interrupt feature for checkpointed human-in-the-loop graphs:
 
 ```python
 from langgraph_openai_serve import GraphConfig, GraphFeature
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve import InMemoryRunCoordinator
 
 GraphConfig(
     graph=interruptible_graph,
@@ -307,11 +307,13 @@ node invocation when the graph needs another human turn.
 
     `InMemoryRunCoordinator` coordinates only one Python process. It is useful
     only for tests or a single-process server. Production deployments need a
-    durable checkpointer and coordinator shared by every replica. Install
-    `langgraph-openai-serve[postgres]` and combine
-    `langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator` with
+    durable checkpointer and coordinator shared by every replica. One supported
+    combination installs `langgraph-openai-serve[postgres]` and pairs
+    `langgraph_openai_serve.integrations.coordination.postgres.PostgresRunCoordinator`
+    with
     LangGraph's official `AsyncPostgresSaver`; see
-    [package reference](../reference.md#postgresql-coordination).
+    [package reference](../reference.md#postgresql-coordination). For other
+    providers, see [Configure Persistence And Coordination](../how-to-guides/infrastructure.md).
 
 Clients must preserve the paused Response ID and every complete `function_call`
 item, then submit exactly one result for every pending call in one resume

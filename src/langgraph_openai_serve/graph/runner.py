@@ -125,6 +125,7 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
         version="v2",
     )
 
+    run.require_owner()
     interrupt_batch = _commit_interrupts(run, result.interrupts)
     if interrupt_batch is not None:
         return interrupt_batch
@@ -364,6 +365,7 @@ async def stream_run(
     )
     async with aclosing(graph_stream):
         async for part in graph_stream:
+            run.require_owner()
             if part["type"] == "values":
                 if not part["ns"]:
                     final_output = part["data"]
@@ -375,6 +377,7 @@ async def stream_run(
             if visible_part is not None:
                 yield visible_part
 
+    run.require_owner()
     interrupt_batch = _commit_interrupts(run, tuple(interrupts))
     if interrupt_batch is not None:
         yield interrupt_batch
@@ -424,6 +427,7 @@ def _durability(run: GraphRun) -> Durability | None:
 
 
 def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:
+    run.require_owner()
     usage = run.usage_metadata()
     return message.model_copy(update={"usage_metadata": usage}) if usage else message
 

@@ -105,10 +105,35 @@ class StoredRun(BaseModel):
 
 @runtime_checkable
 class ResponseStore(Protocol):
-    """Atomic Response persistence used by a background backend and worker."""
+    """
+    Atomic Response persistence shared by a backend and its workers.
+
+    Implementations own atomicity and visibility across their documented
+    deployment scope. They must preserve idempotency, first-terminal-wins
+    transitions, and recovery intents under concurrent calls. Public reads
+    enforce owner scope and expiry; internal reads retain recovery metadata.
+
+    Claim methods return bounded, fairly rotated work, not exclusive leases:
+    callers tolerate redelivery and coordinate checkpoint cleanup separately.
+    Expiry removes result payloads independently of idempotency reservations
+    and must retain records with pending cancellation or checkpoint cleanup.
+
+    The application owns initialization, connections, migrations, and shutdown.
+    No database, pool, or transaction type is part of this interface. See the
+    infrastructure guide for the complete method and failure contracts.
+    """
 
     async def accept(self, run: NewRun, *, capacity: int) -> StoredRun:
-        """Commit a queued Response or resolve its idempotency key."""
+        """
+        Atomically accept or replay a run, checking replay before capacity.
+
+        A live idempotency digest with a different fingerprint raises
+        ``BackgroundIdempotencyConflictError``; an expired result with a live
+        reservation raises ``BackgroundResponseExpiredError``. Matching replay
+        returns the original record even at capacity. A new acceptance beyond
+        capacity raises ``BackgroundCapacityError``. Release expired terminal
+        reservations before accepting a new run with the same digest.
+        """
         ...
 
     async def record_workflow_run(
@@ -118,7 +143,12 @@ class ResponseStore(Protocol):
         *,
         now: datetime,
     ) -> StoredRun | None:
-        """Store the native workflow ID used for cancellation."""
+        """
+        Set the receipt once; replay returns it, a conflicting ID returns None.
+
+        Missing records return None. Cancelled records remain eligible so an
+        ambiguous submission can be resolved and its cancellation delivered.
+        """
         ...
 
     async def claim_pending_submissions(
@@ -127,7 +157,12 @@ class ResponseStore(Protocol):
         now: datetime,
         limit: int,
     ) -> Sequence[StoredRun]:
-        """Claim accepted or cancelled runs without a native workflow receipt."""
+        """
+        Rotate receipt-less active runs and pending cancellations fairly.
+
+        Return at most ``limit`` records; keep failed submissions eligible for
+        later passes without letting an unfinished record starve later work.
+        """
         ...
 
     async def get(
@@ -137,7 +172,12 @@ class ResponseStore(Protocol):
         *,
         now: datetime | None = None,
     ) -> StoredRun | None:
-        """Read one authorized, unexpired public Response snapshot."""
+        """
+        Return None for unknown, wrong-owner, expired, or tombstoned results.
+
+        Use ``now`` when provided, otherwise current UTC time. Expiry applies
+        on read even when physical cleanup has not run yet.
+        """
         ...
 
     async def get_internal(self, response_id: str) -> StoredRun | None:
@@ -163,7 +203,13 @@ class ResponseStore(Protocol):
         result_retention: timedelta,
         idempotency_retention: timedelta,
     ) -> StoredRun | None:
-        """Atomically choose cancellation unless a terminal result won."""
+        """
+        Atomically cancel for the owner, retaining delivery and cleanup intent.
+
+        Return the existing terminal record if another outcome won, or None
+        for a missing, wrong-owner, or tombstoned record. Set retention from
+        ``now`` only on the winning transition; repeats must not extend it.
+        """
         ...
 
     async def publish_terminal(
@@ -175,7 +221,12 @@ class ResponseStore(Protocol):
         result_retention: timedelta,
         idempotency_retention: timedelta,
     ) -> StoredRun | None:
-        """Commit the immutable terminal Response if the run is active."""
+        """
+        Publish once with retention and cleanup intent in the same transition.
+
+        Return None for a missing or already terminal record. A late result
+        cannot overwrite cancellation or any other committed terminal outcome.
+        """
         ...
 
     async def claim_cancellations(
@@ -209,7 +260,13 @@ class ResponseStore(Protocol):
         ...
 
     async def expire(self, *, now: datetime, limit: int) -> int:
-        """Expire terminal results and idempotency tombstones."""
+        """
+        Process at most ``limit`` expired terminal records and count changes.
+
+        Remove expired payloads, but retain tombstones while reservations or
+        cancellation/cleanup intents remain. Skip unchanged tombstones so
+        bounded passes progress to later records. Never expire active work.
+        """
         ...
 
 

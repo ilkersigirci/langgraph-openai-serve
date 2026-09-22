@@ -136,7 +136,7 @@ belong to an external OpenAI Files API, not the LGOS package. See
   queueing it and returns an async context manager.
 - `background`: optional immutable `BackgroundPolicy` that opts the model into
   polling-only execution and records its graph version. Native retries and
-  timeouts are configured on the Hatchet backend.
+  timeouts are configured on the selected backend, such as Hatchet.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
@@ -323,10 +323,22 @@ when execution fails or is cancelled before producing that batch. Operators
 must separately define an expiry policy for runs abandoned after a batch is
 returned.
 
+### Run Coordination
+
+The general coordination API exports `RunCoordinator`, `RunLease`,
+`RunBusyError`, `RunLeaseLostError`, and `InMemoryRunCoordinator` from
+`langgraph_openai_serve` and `langgraph_openai_serve.graph.coordination`.
+These types apply to both interrupts and background execution. Custom
+coordinators must yield a fresh `RunLease`, mark ownership loss before
+cancelling the owner, and propagate failure on exit. `lease.ensure_owned()`
+raises `RunLeaseLostError` after loss.
+See [the coordinator contract](how-to-guides/infrastructure.md#implement-a-run-coordinator).
+
 ### PostgreSQL Coordination
 
 Install `langgraph-openai-serve[postgres]` to use the public
-`langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator`. Use
+`langgraph_openai_serve.integrations.coordination.postgres.PostgresRunCoordinator`.
+Use
 LangGraph's official
 [`AsyncPostgresSaver`](https://reference.langchain.com/python/langgraph.checkpoint.postgres/aio/AsyncPostgresSaver)
 for checkpoints and
@@ -350,10 +362,10 @@ locks require direct PostgreSQL connections or session-mode pooling;
 transaction-mode poolers cannot preserve the lease. Lock contention itself
 fails immediately through PostgreSQL's `pg_try_advisory_lock`; connection
 checkout still follows the pool's configured timeout. The
-[demo deployment](demo/docker.md#demo-services) uses one pool for both
-storage adapters and interrupt coordination, plus a separate one-shot schema
-setup process. Busy interrupt leases fail before streaming begins with HTTP 409
-and `code: "run_busy"`.
+[demo deployment](demo/docker.md#demo-services) uses one pool for the
+checkpointer, LangGraph Store, Response store, and interrupt/background run
+coordination, plus a separate one-shot schema setup process. Busy interrupt
+leases fail before streaming begins with HTTP 409 and `code: "run_busy"`.
 
 ## Background Execution
 
@@ -362,6 +374,12 @@ The package exports the lifecycle-level `BackgroundBackend`, `NewRun`,
 and `BackgroundWorker` public interfaces. It also exports
 `InMemoryBackgroundBackend` and `InMemoryResponseStore` for single-process
 development. Hatchet is the only durable built-in backend.
+
+`HatchetBackgroundBackend` and `BackgroundWorker` accept any implementation
+of `ResponseStore`; PostgreSQL is the supplied durable store, not a core
+requirement. See [Persistence And Coordination](how-to-guides/infrastructure.md)
+for the response-store contract, native checkpointer selection, and
+application-owned resource lifetime.
 
 `BackgroundSettings` defaults are:
 
@@ -403,7 +421,7 @@ and is rejected on background requests. Configure Hatchet's `idempotency_ttl`
 to cover the longest expected pending-submission recovery window.
 
 Install `langgraph-openai-serve[postgres]` for
-`integrations.background_postgres.PostgresResponseStore`. Its `setup()` method
+`integrations.background.postgres.PostgresResponseStore`. Its `setup()` method
 transactionally creates its schema. Run it as a deployment step before
 starting workers. Repeated and concurrent calls are safe. Install
 `langgraph-openai-serve[hatchet]` for

@@ -11,6 +11,12 @@ Install the supplied persistence and backend adapters:
 uv add "langgraph-openai-serve[postgres,hatchet]"
 ```
 
+The PostgreSQL store is replaceable independently of Hatchet. Both the backend
+and worker accept `ResponseStore`; the graph accepts a native LangGraph
+checkpointer and `GraphConfig.run_coordinator` accepts `RunCoordinator`.
+See [Configure Persistence And Coordination](infrastructure.md) for custom
+implementations, resource ownership, and deployment requirements.
+
 ## Client Contract
 
 Create with `background=True`, retain the returned ID, and poll until the
@@ -83,7 +89,9 @@ Opt in with a versioned background policy:
 
 ```python
 from langgraph_openai_serve import BackgroundPolicy, GraphConfig
-from langgraph_openai_serve.integrations.postgres import PostgresRunCoordinator
+from langgraph_openai_serve.integrations.coordination.postgres import (
+    PostgresRunCoordinator,
+)
 
 
 config = GraphConfig(
@@ -142,7 +150,7 @@ server.bind_openai_api()
 Create the Response-store schema during deployment setup:
 
 ```python
-from langgraph_openai_serve.integrations.background_postgres import (
+from langgraph_openai_serve.integrations.background.postgres import (
     PostgresResponseStore,
 )
 
@@ -164,7 +172,7 @@ from langgraph_openai_serve import (
     BackgroundWorker,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.integrations.hatchet import (
+from langgraph_openai_serve.integrations.background.hatchet import (
     HatchetAdapterSettings,
     HatchetBackgroundBackend,
     create_hatchet_workflows,
@@ -303,8 +311,9 @@ class BackgroundBackend:
 `stored` is the normalized `store` value from the persisted Response snapshot.
 
 Pass it to `LanggraphOpenaiServe(background=...)`. To reuse LGOS execution,
-compose `BackgroundWorker` with `PostgresResponseStore`, or
-`InMemoryResponseStore` locally:
+compose `BackgroundWorker` with any implementation of `ResponseStore`.
+`PostgresResponseStore` is the supplied durable adapter;
+`InMemoryResponseStore` is for local development:
 
 | Engine event | LGOS operation |
 | --- | --- |
@@ -332,7 +341,7 @@ retries, transient cancellation failure, and maintenance before deployment.
 ## Gateway Compatibility
 
 After a client restart, the opaque Response ID must still route to an LGOS
-replica sharing the same PostgreSQL Response store. The demo verifies direct
+replica sharing the same logical Response store. The demo verifies direct
 LGOS routing plus the bundled LiteLLM and Bifrost routes. A gateway must
 forward create, retrieve, and cancel while preserving enough routing state for
 later lifecycle calls.

@@ -144,8 +144,9 @@ OpenAI response mode; server tools additionally need intermediate updates.
 
     After graph execution quiesces, the worker renders the final message and
     server-tool transcript from checkpointed state. After native retries are
-    exhausted, Hatchet's failure task may reconstruct and publish a completed
-    result but is forbidden from advancing the graph. Streaming and interrupt
+    exhausted, the worker's finalization path may reconstruct and publish a
+    completed result but is forbidden from advancing the graph. The Hatchet
+    integration invokes this path from its failure task. Streaming and interrupt
     semantics are unavailable in this mode. See [Run Responses In The
     Background](../how-to-guides/background-responses.md).
 
@@ -165,14 +166,17 @@ One prepared-run async context owns that lease and its checkpoint disposition.
 State is left untouched until execution starts, becomes cleanup-eligible while
 execution is incomplete, and becomes retained only when the runner commits a
 validated interrupt batch. The context deletes terminal or incomplete temporary
-state before releasing the lease. Cleanup is idempotent, shielded from outer
-request cancellation, and never replaces an execution or cancellation failure.
+state before releasing the lease, unless ownership has been lost. Cleanup is
+idempotent, shielded from outer request cancellation, and never replaces an
+execution or cancellation failure.
 
 The graph therefore needs an async checkpointer implementing `aget_tuple()`,
 `aput()`, `aput_writes()`, and `adelete_thread()`, plus a coordinator shared by
 all workers. See
+[Configure Persistence And Coordination](../how-to-guides/infrastructure.md)
+for adapter requirements and
 [PostgreSQL Coordination](../reference.md#postgresql-coordination) for the
-production adapter.
+supplied production adapter.
 
 !!! warning "Call interrupt once per node invocation"
 

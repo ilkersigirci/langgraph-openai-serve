@@ -37,13 +37,13 @@ from langgraph_openai_serve.background.store import (
     StoredRun,
 )
 from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.graph.coordination import RunBusyError, RunLease
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphConfigurationError,
     GraphNotFoundError,
     GraphRegistry,
 )
-from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
 from langgraph_openai_serve.graph.runner import (
     BackgroundCheckpointIncompleteError,
     BackgroundGraphInterruptedError,
@@ -136,10 +136,11 @@ class BackgroundWorker:
             return
 
         try:
-            async with coordinator(run.checkpoint_thread_id):
+            async with coordinator(run.checkpoint_thread_id) as lease:
                 await self._run_coordinated(
                     run,
                     prepared,
+                    lease,
                     finalize_only=finalize_only,
                 )
         except RunBusyError as exc:
@@ -155,14 +156,17 @@ class BackgroundWorker:
         self,
         run: StoredRun,
         prepared: _PreparedRun,
+        lease: RunLease,
         *,
         finalize_only: bool,
     ) -> None:
+        lease.ensure_owned()
         current = await self.store.get_internal(run.response_id)
+        lease.ensure_owned()
         if current is None:
             return
         if current.terminal:
-            await self._cleanup_locked(current, prepared.graph_config)
+            await self._cleanup_locked(current, prepared.graph_config, lease)
             return
         if not finalize_only:
             current = await self.store.mark_in_progress(
@@ -171,13 +175,16 @@ class BackgroundWorker:
             )
             if current is None:
                 return
+        lease.ensure_owned()
         try:
             terminal = await self._run_and_publish(
                 current,
                 prepared,
+                lease,
                 finalize_only=finalize_only,
             )
         except _PERMANENT_ERRORS as exc:
+            lease.ensure_owned()
             message, code = _public_failure(exc)
             terminal = await self._publish_failure(
                 current,
@@ -185,7 +192,7 @@ class BackgroundWorker:
                 code=code,
             )
         if terminal is not None:
-            await self._cleanup_locked(terminal, prepared.graph_config)
+            await self._cleanup_locked(terminal, prepared.graph_config, lease)
 
     async def _prepare_or_fail(
         self,
@@ -228,6 +235,7 @@ class BackgroundWorker:
         self,
         run: StoredRun,
         prepared: _PreparedRun,
+        lease: RunLease,
         *,
         finalize_only: bool = False,
     ) -> StoredRun | None:
@@ -239,6 +247,7 @@ class BackgroundWorker:
             finalize_only=finalize_only,
             initial_message_count=run.initial_message_count,
         )
+        lease.ensure_owned()
         server_tools = selected_server_tools(
             prepared.request,
             prepared.graph_config.server_tools,
@@ -348,25 +357,32 @@ class BackgroundWorker:
         coordinator = graph_config.run_coordinator
         if coordinator is None:
             return await self._abandon_cleanup(run)
-        async with coordinator(run.checkpoint_thread_id):
+        async with coordinator(run.checkpoint_thread_id) as lease:
+            lease.ensure_owned()
             current = await self.store.get_internal(run.response_id)
+            lease.ensure_owned()
             if current is None or not current.terminal or not current.cleanup_pending:
                 return False
-            return await self._cleanup_locked(current, graph_config)
+            return await self._cleanup_locked(current, graph_config, lease)
 
     async def _cleanup_locked(
         self,
         run: StoredRun,
         graph_config: GraphConfig,
+        lease: RunLease,
     ) -> bool:
+        lease.ensure_owned()
         try:
             graph = await graph_config.resolve_graph()
         except GraphConfigurationError:
+            lease.ensure_owned()
             return await self._abandon_cleanup(run)
+        lease.ensure_owned()
         checkpointer = graph.checkpointer
         if not isinstance(checkpointer, BaseCheckpointSaver):
             return await self._abandon_cleanup(run)
         await checkpointer.adelete_thread(run.checkpoint_thread_id)
+        lease.ensure_owned()
         return await self.store.finish_cleanup(
             run.response_id,
             now=datetime.now(UTC),

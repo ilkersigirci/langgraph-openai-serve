@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from langgraph_openai_serve import BackgroundPolicy, GraphConfig
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import (
     BackgroundCheckpointIncompleteError,
     run_background_graph,

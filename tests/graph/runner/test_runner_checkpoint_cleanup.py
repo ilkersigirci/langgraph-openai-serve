@@ -8,8 +8,8 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import GraphOutput, StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun
 

@@ -7,7 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
-from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
+from langgraph_openai_serve.graph.coordination import RunCoordinator
 
 ReviewOutcome = Literal["approve", "reject", "feedback"]
 

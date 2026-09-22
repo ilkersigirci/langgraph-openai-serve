@@ -164,7 +164,8 @@ flowchart LR
 
 Both API containers run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
-checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
+checkpoints, thread-scoped data, background Response rows, and
+interrupt/background run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
 keeps its state and native raw-upload copy in its bind-mounted data directory;
 the central Files service owns the separate inference copy. Detailed ownership

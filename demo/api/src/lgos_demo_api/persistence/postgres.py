@@ -7,10 +7,12 @@ from typing import Any, cast
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
-from langgraph_openai_serve.integrations.background_postgres import (
+from langgraph_openai_serve.integrations.background.postgres import (
     PostgresResponseStore,
 )
-from langgraph_openai_serve.integrations.postgres import PostgresRunCoordinator
+from langgraph_openai_serve.integrations.coordination.postgres import (
+    PostgresRunCoordinator,
+)
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool

@@ -7,11 +7,9 @@ from langgraph_openai_serve import (
     BackgroundSettings,
     BackgroundWorker,
     GraphRegistry,
+    ResponseStore,
 )
-from langgraph_openai_serve.integrations.background_postgres import (
-    PostgresResponseStore,
-)
-from langgraph_openai_serve.integrations.hatchet import (
+from langgraph_openai_serve.integrations.background.hatchet import (
     HatchetBackgroundBackend,
     HatchetWorkflows,
     create_hatchet_workflows,
@@ -44,7 +42,7 @@ def create_hatchet_client() -> Hatchet:
 
 def create_background_components(
     graphs: GraphRegistry,
-    response_store: PostgresResponseStore,
+    response_store: ResponseStore,
 ) -> BackgroundComponents:
     """Build equivalent components in either the API or worker process."""
     background_settings = create_background_settings()

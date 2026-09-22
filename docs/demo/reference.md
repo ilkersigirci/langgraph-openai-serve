@@ -164,7 +164,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
-| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
+| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, background Response storage, and interrupt/background run coordination |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 | `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
 | `DEMO_API_BACKGROUND_ADMISSION_CAPACITY` | Maximum active queued or in-progress Responses admitted by the shared store. |

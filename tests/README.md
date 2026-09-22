@@ -144,6 +144,24 @@ Keep them excluded from default runs and invoke them through
 `just demo/test-postgres --editable` so ordinary and parallel unit
 runs never share an external database.
 
+## Infrastructure Adapter Contracts
+
+`tests/background/test_store.py` consumes `response_store_pair` and
+`response_store` fixtures from its nearest `conftest.py`.
+`tests/graph/test_coordination.py` consumes `coordinator_pair`.
+Keep these test modules provider-independent so adapter authors can reuse them
+with their own fixtures. Each pair represents two clients sharing a fresh,
+isolated namespace; coordinators need capacity for two different keys.
+In-memory fixtures share one instance. Durable fixtures should open independent
+clients and own setup and teardown.
+
+Concurrency tests use events and bounded task groups. Extend these contracts
+when adding observable guarantees; do not assert SQL statements or lock
+implementation details here. Add adapter-specific process-restart and
+ownership-loss tests separately. The
+[infrastructure guide](../docs/how-to-guides/infrastructure.md#test-a-custom-adapter)
+describes the supported customization boundary.
+
 ## Client Event Tests
 
 - Graphs that emit client events must declare

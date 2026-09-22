@@ -60,6 +60,7 @@ nav = [
     { "Production Logging" = "how-to-guides/production-logging.md" },
     { "File Inputs" = "how-to-guides/file-inputs.md" },
     { "Background Responses" = "how-to-guides/background-responses.md" },
+    { "Persistence And Coordination" = "how-to-guides/infrastructure.md" },
     { "OpenAI-Compatible Proxies" = "how-to-guides/openai-proxies.md" },
   ]},
   { Reference = "reference.md" },

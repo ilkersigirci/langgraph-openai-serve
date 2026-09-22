@@ -33,6 +33,11 @@ from langgraph.types import (
 )
 from pydantic import ValidationError
 
+from langgraph_openai_serve.graph.coordination import (
+    InMemoryRunCoordinator,
+    RunLease,
+    RunLeaseLostError,
+)
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
@@ -40,10 +45,8 @@ from langgraph_openai_serve.graph.graph_registry import (
     GraphRegistry,
 )
 from langgraph_openai_serve.graph.interrupt import (
-    InMemoryRunCoordinator,
     InterruptResume,
     LangGraphInterruptBatch,
-    RunLease,
 )
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from langgraph_openai_serve.graph.runner import (
@@ -138,7 +141,7 @@ async def test_cancelled_preparation_finishes_lease_release(
     @asynccontextmanager
     async def coordinator(_key: str):
         try:
-            yield
+            yield RunLease()
         finally:
             release_started.set()
             await checkpoint()
@@ -177,7 +180,11 @@ async def test_cancelled_preparation_finishes_lease_release(
     assert cancellation_propagated.is_set()
 
 
-async def test_lost_execution_lease_preserves_checkpoint_thread(make_request) -> None:
+@pytest.mark.parametrize("cancel_owner", [False, True])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_lost_execution_lease_preserves_checkpoint_thread(
+    make_request, cancel_owner, stream
+) -> None:
     class RecordingSaver(InMemorySaver):
         def __init__(self) -> None:
             super().__init__()
@@ -200,8 +207,10 @@ async def test_lost_execution_lease_preserves_checkpoint_thread(make_request) ->
     async def lose_lease(_state: MessageState):
         lease.lost = True
         assert owner is not None
-        owner.cancel()
-        await sleep_forever()
+        if cancel_owner:
+            owner.cancel()
+            await sleep_forever()
+        return {"messages": [AIMessage(content="late output")]}
 
     graph = (
         StateGraph(MessageState)
@@ -221,15 +230,23 @@ async def test_lost_execution_lease_preserves_checkpoint_thread(make_request) ->
         }
     )
 
-    with pytest.raises(asyncio.CancelledError):
-        await run_langgraph(
-            make_request(
-                "interruptible",
-                metadata={RUN_METADATA_KEY: RUN_ID},
-            ),
-            [HumanMessage(content="question")],
-            registry,
-        )
+    request = make_request(
+        "interruptible",
+        metadata={RUN_METADATA_KEY: RUN_ID},
+    )
+    error = asyncio.CancelledError if cancel_owner else RunLeaseLostError
+
+    async def execute():
+        if stream:
+            async for _event in run_langgraph_stream(
+                request, [HumanMessage(content="question")], registry
+            ):
+                pass
+        else:
+            await run_langgraph(request, [HumanMessage(content="question")], registry)
+
+    with pytest.raises(error):
+        await execute()
 
     assert saver.deleted_threads == []
 

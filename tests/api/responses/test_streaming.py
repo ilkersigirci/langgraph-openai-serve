@@ -23,7 +23,7 @@ from langgraph_openai_serve import (
     client_event,
     status_event,
 )
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from tests.api.responses.support import (
     load_stream_fixture,

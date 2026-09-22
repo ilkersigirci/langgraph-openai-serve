@@ -9,7 +9,9 @@ from langgraph_openai_serve import (
     ResponseStore,
     RetryableJobError,
 )
-from langgraph_openai_serve.integrations.hatchet import create_hatchet_workflows
+from langgraph_openai_serve.integrations.background.hatchet import (
+    create_hatchet_workflows,
+)
 
 from lgos_demo_api.background.components import (
     create_background_settings,

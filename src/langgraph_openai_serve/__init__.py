@@ -16,6 +16,13 @@ from langgraph_openai_serve.background import (
 )
 from langgraph_openai_serve.graph.citations import citation_slice
 from langgraph_openai_serve.graph.client_settings import ClientSettings
+from langgraph_openai_serve.graph.coordination import (
+    InMemoryRunCoordinator,
+    RunBusyError,
+    RunCoordinator,
+    RunLease,
+    RunLeaseLostError,
+)
 from langgraph_openai_serve.graph.events import (
     client_event,
     status_event,
@@ -50,12 +57,17 @@ __all__ = [
     "GraphRequest",
     "InMemoryBackgroundBackend",
     "InMemoryResponseStore",
+    "InMemoryRunCoordinator",
     "LanggraphOpenaiServe",
     "NamedCustomToolChoice",
     "NamedFunctionToolChoice",
     "NewRun",
     "ResponseStore",
     "RetryableJobError",
+    "RunBusyError",
+    "RunCoordinator",
+    "RunLease",
+    "RunLeaseLostError",
     "StoredRun",
     "citation_slice",
     "client_event",

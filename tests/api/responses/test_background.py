@@ -28,10 +28,13 @@ from langgraph_openai_serve import (
     LanggraphOpenaiServe,
     NewRun,
     RetryableJobError,
+    RunCoordinator,
+    RunLease,
+    RunLeaseLostError,
     StoredRun,
 )
+from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.background.fakes import MemoryBackgroundBackend
 from tests.graph.support.schemas import MessageState
 
@@ -62,6 +65,8 @@ async def _environment(  # ruff: ignore[too-many-arguments] - Test fixture optio
     fail_after_checkpoint: int = 0,
     execution_gate: tuple[Event, Event] | None = None,
     render_error: Exception | None = None,
+    coordinator: RunCoordinator | None = None,
+    response_store: InMemoryResponseStore | None = None,
 ) -> AsyncIterator[_Environment]:
     async with AsyncSqliteSaver.from_conn_string(":memory:") as checkpointer:
         model = FakeListChatModel(responses=["background hello"])
@@ -108,13 +113,15 @@ async def _environment(  # ruff: ignore[too-many-arguments] - Test fixture optio
                         BackgroundPolicy(version="test-v1") if model_enabled else None
                     ),
                     run_coordinator=(
-                        InMemoryRunCoordinator() if model_enabled else None
+                        (coordinator or InMemoryRunCoordinator())
+                        if model_enabled
+                        else None
                     ),
                     output_to_message=render_output if render_error else None,
                 )
             }
         )
-        store = InMemoryResponseStore()
+        store = response_store or InMemoryResponseStore()
         backend = MemoryBackgroundBackend(store=store, settings=settings)
         worker = BackgroundWorker(graphs=registry, store=store, settings=settings)
 
@@ -618,7 +625,94 @@ async def test_admission_capacity_counts_only_active_responses() -> None:
         assert second.id != first.id
 
 
-async def test_hatchet_retry_resumes_from_the_checkpoint() -> None:
+@pytest.mark.parametrize("render_error", [None, ValueError("broken renderer")])
+async def test_lost_lease_preserves_background_state_for_recovery(render_error):
+    leases = []
+
+    @asynccontextmanager
+    async def coordinator(_key):
+        lease = RunLease()
+        leases.append(lease)
+        yield lease
+
+    started, proceed = Event(), Event()
+    async with _environment(
+        coordinator=coordinator,
+        execution_gate=(started, proceed),
+        render_error=render_error,
+    ) as environment:
+        created = await environment.client.responses.create(
+            model="background", input="Hello", background=True
+        )
+
+        async def execute():
+            with pytest.raises(RetryableJobError) as error:
+                await environment.worker.execute(created.id)
+            assert isinstance(error.value.__cause__, RunLeaseLostError)
+
+        with fail_after(5):
+            async with create_task_group() as tasks:
+                tasks.start_soon(execute)
+                await started.wait()
+                # Model a late graph result after ownership has been revoked.
+                leases[0].lost = True
+                proceed.set()
+
+        current = await environment.client.responses.retrieve(created.id)
+        assert current.status == "in_progress"
+        stored = await environment.store.get_internal(created.id)
+        assert stored is not None
+        graph = await environment.worker.graphs.get_graph("background").resolve_graph()
+        checkpoint_config = {"configurable": {"thread_id": stored.checkpoint_thread_id}}
+        assert await graph.checkpointer.aget_tuple(checkpoint_config) is not None
+
+        await environment.worker.finalize(created.id)
+        final = await environment.client.responses.retrieve(created.id)
+        assert final.status == ("failed" if render_error else "completed")
+        assert environment.invocations == ["Hello"]
+        assert await graph.checkpointer.aget_tuple(checkpoint_config) is None
+
+
+async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
+    leases = []
+
+    @asynccontextmanager
+    async def coordinator(_key):
+        lease = RunLease()
+        leases.append(lease)
+        yield lease
+
+    class LosingStore(InMemoryResponseStore):
+        async def publish_terminal(self, *args, **kwargs):
+            result = await super().publish_terminal(*args, **kwargs)
+            leases[-1].lost = True
+            return result
+
+    async with _environment(
+        coordinator=coordinator, response_store=LosingStore()
+    ) as environment:
+        created = await environment.client.responses.create(
+            model="background", input="Hello", background=True
+        )
+        with pytest.raises(RetryableJobError):
+            await environment.worker.execute(created.id)
+
+        stored = await environment.store.get_internal(created.id)
+        assert stored is not None
+        assert stored.status == "completed"
+        assert stored.cleanup_pending
+        graph = await environment.worker.graphs.get_graph("background").resolve_graph()
+        checkpoint_config = {"configurable": {"thread_id": stored.checkpoint_thread_id}}
+        assert await graph.checkpointer.aget_tuple(checkpoint_config) is not None
+
+        assert await environment.worker.cleanup_once() == 1
+        assert await graph.checkpointer.aget_tuple(checkpoint_config) is None
+        cleaned = await environment.store.get_internal(created.id)
+        assert cleaned is not None
+        assert not cleaned.cleanup_pending
+
+
+async def test_worker_retry_resumes_from_the_checkpoint() -> None:
     async with _environment(fail_after_checkpoint=1) as environment:
         created = await environment.client.responses.create(
             model="background",
@@ -637,7 +731,7 @@ async def test_hatchet_retry_resumes_from_the_checkpoint() -> None:
         assert environment.invocations == ["Hello"]
 
 
-async def test_hatchet_failure_hook_publishes_failed_response() -> None:
+async def test_worker_finalization_publishes_failed_response() -> None:
     async with _environment(fail_after_checkpoint=2) as environment:
         created = await environment.client.responses.create(
             model="background",

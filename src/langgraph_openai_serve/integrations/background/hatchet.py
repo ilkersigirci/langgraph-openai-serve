@@ -1,4 +1,4 @@
-"""Hatchet-first background Responses backend."""
+"""Optional Hatchet integration for durable background Responses."""
 
 from __future__ import annotations
 
