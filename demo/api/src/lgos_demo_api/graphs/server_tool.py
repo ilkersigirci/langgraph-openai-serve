@@ -24,7 +24,7 @@ from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from openai.types.shared import ErrorObject
 from pydantic import BaseModel
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
 from lgos_demo_api.utils.web_search import search_web
 

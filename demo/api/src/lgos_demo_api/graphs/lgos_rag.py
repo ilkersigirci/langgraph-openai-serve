@@ -28,7 +28,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
 from pydantic import BaseModel, Field, SecretStr
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
 
 DOCS_ROOT = Path(__file__).resolve().parents[1] / "corpus"

@@ -30,7 +30,7 @@ def _():
     import sqlalchemy
     from sqlalchemy.engine import make_url
 
-    from lgos_demo_api.settings import settings
+    from lgos_demo_api.core.settings import settings
 
     _url = make_url(settings.POSTGRES_URI).set(drivername="postgresql+psycopg")
     postgres = sqlalchemy.create_engine(

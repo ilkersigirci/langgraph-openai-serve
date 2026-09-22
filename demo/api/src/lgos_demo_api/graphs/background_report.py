@@ -13,7 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph_openai_serve import BackgroundPolicy, GraphConfig
 from langgraph_openai_serve.graph.interrupt import RunCoordinator
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 
 
 class BackgroundReportState(TypedDict, total=False):

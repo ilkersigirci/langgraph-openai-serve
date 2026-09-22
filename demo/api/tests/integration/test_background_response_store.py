@@ -18,11 +18,11 @@ from langgraph_openai_serve.background.store import (
 )
 from langgraph_openai_serve.integrations.hatchet import HatchetBackgroundBackend
 
-from lgos_demo_api.checkpointer import postgres_runtime, setup_postgres_schema
 from lgos_demo_api.graphs.background_report import (
     create_background_report_config,
     create_background_report_graph,
 )
+from lgos_demo_api.persistence.postgres import postgres_runtime, setup_postgres_schema
 
 POSTGRES_URI = os.environ.get(
     "DEMO_API_TEST_POSTGRES_URI",

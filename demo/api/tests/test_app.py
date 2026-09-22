@@ -13,9 +13,9 @@ from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module
-from lgos_demo_api.checkpointer import PostgresRuntime
 from lgos_demo_api.graphs import server_tool
 from lgos_demo_api.graphs.simple import SimpleContext
+from lgos_demo_api.persistence.postgres import PostgresRuntime
 from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {

@@ -17,7 +17,7 @@ from langgraph_openai_serve.integrations.hatchet import (
     create_hatchet_workflows,
 )
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 
 
 @dataclass(frozen=True, slots=True)

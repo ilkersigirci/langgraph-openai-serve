@@ -15,7 +15,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.file_inputs import load_file_block
 
 DEFAULT_PROMPT = "Describe the attached file."

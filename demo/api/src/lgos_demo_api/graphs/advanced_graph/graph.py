@@ -25,6 +25,7 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 from openai import AsyncOpenAI
 
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph.knowledge import KnowledgeBase
 from lgos_demo_api.graphs.advanced_graph.notebook import create_notebook_graph
 from lgos_demo_api.graphs.advanced_graph.research import (
@@ -40,7 +41,6 @@ from lgos_demo_api.graphs.advanced_graph.state import (
     terminal_message,
 )
 from lgos_demo_api.graphs.server_tool import web_search
-from lgos_demo_api.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
 from lgos_demo_api.utils.file_inputs import resolve_file_inputs
 

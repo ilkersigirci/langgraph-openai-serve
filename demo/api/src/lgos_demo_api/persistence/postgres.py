@@ -1,4 +1,4 @@
-"""PostgreSQL persistence wiring for the demo API."""
+"""PostgreSQL persistence wiring for the demo API and background worker."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager

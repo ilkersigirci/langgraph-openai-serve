@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from lgos_demo_api import checkpointer as demo_checkpointer
+from lgos_demo_api.persistence import postgres as demo_postgres
 
 POSTGRES_URI = "postgresql://example"
 
@@ -22,21 +22,21 @@ async def test_postgres_runtime_owns_one_ready_pool(
     store_factory = Mock(return_value=store)
     coordinator_factory = Mock(return_value=coordinator)
     response_store_factory = Mock(return_value=response_store)
-    monkeypatch.setattr(demo_checkpointer, "AsyncConnectionPool", pool_factory)
-    monkeypatch.setattr(demo_checkpointer, "AsyncPostgresSaver", saver_factory)
-    monkeypatch.setattr(demo_checkpointer, "AsyncPostgresStore", store_factory)
+    monkeypatch.setattr(demo_postgres, "AsyncConnectionPool", pool_factory)
+    monkeypatch.setattr(demo_postgres, "AsyncPostgresSaver", saver_factory)
+    monkeypatch.setattr(demo_postgres, "AsyncPostgresStore", store_factory)
     monkeypatch.setattr(
-        demo_checkpointer,
+        demo_postgres,
         "PostgresRunCoordinator",
         coordinator_factory,
     )
     monkeypatch.setattr(
-        demo_checkpointer,
+        demo_postgres,
         "PostgresResponseStore",
         response_store_factory,
     )
 
-    async with demo_checkpointer.postgres_runtime(POSTGRES_URI) as runtime:
+    async with demo_postgres.postgres_runtime(POSTGRES_URI) as runtime:
         assert runtime.checkpointer is saver
         assert runtime.store is store
         assert runtime.run_coordinator is coordinator
@@ -50,7 +50,7 @@ async def test_postgres_runtime_owns_one_ready_pool(
         kwargs={
             "autocommit": True,
             "prepare_threshold": 0,
-            "row_factory": demo_checkpointer.dict_row,
+            "row_factory": demo_postgres.dict_row,
         },
         min_size=1,
         max_size=5,
@@ -84,9 +84,9 @@ async def test_setup_postgres_schema_runs_langgraph_setups(
         yield runtime
 
     runtime_factory = Mock(wraps=postgres_runtime)
-    monkeypatch.setattr(demo_checkpointer, "postgres_runtime", runtime_factory)
+    monkeypatch.setattr(demo_postgres, "postgres_runtime", runtime_factory)
 
-    await demo_checkpointer.setup_postgres_schema(POSTGRES_URI)
+    await demo_postgres.setup_postgres_schema(POSTGRES_URI)
 
     runtime_factory.assert_called_once_with(POSTGRES_URI)
     saver.setup.assert_awaited_once_with()

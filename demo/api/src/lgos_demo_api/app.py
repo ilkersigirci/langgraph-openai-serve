@@ -15,8 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 from openai import AsyncOpenAI
 
-from lgos_demo_api.background import create_background_components
-from lgos_demo_api.checkpointer import postgres_runtime
+from lgos_demo_api.background.components import create_background_components
+from lgos_demo_api.core.logging import LOGGING_CONFIG
+from lgos_demo_api.core.otel import instrument_fastapi_app
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph import (
     OpenAICompatibleKnowledgeBase,
     create_advanced_graph,
@@ -53,9 +55,7 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.logging import LOGGING_CONFIG
-from lgos_demo_api.otel import instrument_fastapi_app
-from lgos_demo_api.settings import settings
+from lgos_demo_api.persistence.postgres import postgres_runtime
 
 logger = logging.getLogger(__name__)
 

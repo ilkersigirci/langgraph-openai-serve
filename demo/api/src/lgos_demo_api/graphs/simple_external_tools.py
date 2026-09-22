@@ -15,8 +15,8 @@ from langgraph_openai_serve import (
 )
 from pydantic import BaseModel, Field
 
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.simple import DEFAULT_SYSTEM_PROMPT
-from lgos_demo_api.settings import settings
 
 
 class ExternalToolsState(BaseModel):

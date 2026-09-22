@@ -9,7 +9,6 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 
-from lgos_demo_api.checkpointer import postgres_runtime, setup_postgres_schema
 from lgos_demo_api.graphs.persistent_plot_agent import (
     ARTIFACT_KEY,
     PersistentPlotAgentContext,
@@ -18,6 +17,7 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     _thread_namespace,
     create_persistent_plot_agent,
 )
+from lgos_demo_api.persistence.postgres import postgres_runtime, setup_postgres_schema
 
 POSTGRES_URI = os.environ.get("DEMO_API_TEST_POSTGRES_URI")
 

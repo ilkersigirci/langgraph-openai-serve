@@ -3,9 +3,9 @@
 import asyncio
 import logging
 
-from lgos_demo_api.checkpointer import setup_postgres_schema
-from lgos_demo_api.logging import configure_logging
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.logging import configure_logging
+from lgos_demo_api.core.settings import settings
+from lgos_demo_api.persistence.postgres import setup_postgres_schema
 
 logger = logging.getLogger(__name__)
 

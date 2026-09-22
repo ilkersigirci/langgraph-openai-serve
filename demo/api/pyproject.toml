@@ -32,9 +32,9 @@ dependencies = [
 
 [project.scripts]
 lgos-demo-api = "lgos_demo_api.app:main"
-lgos-demo-background-worker = "lgos_demo_api.background_worker:main"
-lgos-demo-api-setup = "lgos_demo_api.setup_checkpointer:main"
-lgos-demo-api-sync-litellm = "lgos_demo_api.sync_litellm:main"
+lgos-demo-background-worker = "lgos_demo_api.background.worker:main"
+lgos-demo-api-setup = "lgos_demo_api.persistence.setup:main"
+lgos-demo-api-sync-litellm = "lgos_demo_api.utils.sync_litellm:main"
 
 [dependency-groups]
 dev = [

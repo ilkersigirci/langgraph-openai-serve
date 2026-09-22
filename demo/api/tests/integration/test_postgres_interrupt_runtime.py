@@ -14,14 +14,14 @@ from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from openai import AsyncOpenAI, ConflictError
 from openai.types.responses import ResponseFunctionToolCall
 
-from lgos_demo_api.checkpointer import (
-    PostgresRuntime,
-    postgres_runtime,
-    setup_postgres_schema,
-)
 from lgos_demo_api.graphs.interruptible import (
     create_interruptible_graph,
     create_interruptible_graph_config,
+)
+from lgos_demo_api.persistence.postgres import (
+    PostgresRuntime,
+    postgres_runtime,
+    setup_postgres_schema,
 )
 
 POSTGRES_URI = os.environ.get("DEMO_API_TEST_POSTGRES_URI")

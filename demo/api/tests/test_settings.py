@@ -1,6 +1,6 @@
 import pytest
 
-from lgos_demo_api.settings import Settings
+from lgos_demo_api.core.settings import Settings
 
 
 def test_settings_read_demo_prefixed_environment(

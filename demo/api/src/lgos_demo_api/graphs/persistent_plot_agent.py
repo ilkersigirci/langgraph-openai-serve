@@ -27,7 +27,7 @@ from openai.types.shared import ErrorObject
 from plotly import graph_objects as go
 from pydantic import BaseModel, ConfigDict, Field
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 
 ARTIFACT_KEY = "quarterly-revenue"
 DISPLAY_FILE_TOOL_NAME = "display_file"

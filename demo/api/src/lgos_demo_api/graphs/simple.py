@@ -10,7 +10,7 @@ from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig
 from pydantic import BaseModel, Field
 
-from lgos_demo_api.settings import settings
+from lgos_demo_api.core.settings import settings
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful assistant called Langgraph Openai Serve. "

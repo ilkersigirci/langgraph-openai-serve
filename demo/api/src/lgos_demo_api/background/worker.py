@@ -11,16 +11,16 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.integrations.hatchet import create_hatchet_workflows
 
-from lgos_demo_api.background import (
+from lgos_demo_api.background.components import (
     create_background_settings,
     create_hatchet_client,
 )
-from lgos_demo_api.checkpointer import postgres_runtime
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.background_report import (
     create_background_report_config,
     create_background_report_graph,
 )
-from lgos_demo_api.settings import settings
+from lgos_demo_api.persistence.postgres import postgres_runtime
 
 
 class _LifespanWorker:

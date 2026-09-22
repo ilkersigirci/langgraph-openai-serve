@@ -13,7 +13,7 @@ from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 
 from lgos_demo_api import app as app_module
-from lgos_demo_api.otel import instrument_fastapi_app
+from lgos_demo_api.core.otel import instrument_fastapi_app
 
 
 class _TraceContextHandler(logging.Handler):

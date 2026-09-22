@@ -135,5 +135,6 @@ and resume polling through either tested gateway route documented in the
 
 The implementation lives in
 `demo/api/src/lgos_demo_api/graphs/background_report.py`. Shared API/worker
-wiring is in `background.py`; `background_worker.py` provides the separately
+wiring is in `demo/api/src/lgos_demo_api/background/components.py`;
+`demo/api/src/lgos_demo_api/background/worker.py` provides the separately
 deployed worker.
