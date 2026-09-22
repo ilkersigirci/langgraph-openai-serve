@@ -168,19 +168,15 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 | `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
 | `DEMO_API_BACKGROUND_ADMISSION_CAPACITY` | Maximum active queued or in-progress Responses admitted by the shared store. |
-| `DEMO_API_BACKGROUND_RESULT_RETENTION_SECONDS` | Terminal result retention for background requests with `store=false`. |
-| `DEMO_API_BACKGROUND_STORED_RESULT_RETENTION_SECONDS` | Longer bounded terminal result retention for `store=true`. |
-| `DEMO_API_BACKGROUND_IDEMPOTENCY_RETENTION_SECONDS` | Retention of `metadata.lgos_run_id` create reservations. |
 | `DEMO_API_BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS` | Demo-only pause after the report draft checkpoint, used to make worker crash recovery observable. |
-| `DEMO_API_HATCHET_NAMESPACE` | Native Hatchet namespace shared by API submitters and workers. |
-| `DEMO_API_HATCHET_TASK_NAME` | Stable Hatchet workflow name for persisted LGOS runs. |
-| `DEMO_API_HATCHET_WORKER_NAME` | Name of the independent Hatchet worker. |
 | `DEMO_API_HATCHET_WORKER_SLOTS` | Explicit worker concurrency bound. |
-| `DEMO_API_HATCHET_TASK_RETRIES` | Native Hatchet execution-task retry count. |
-| `DEMO_API_HATCHET_IDEMPOTENCY_TTL_SECONDS` | Native workflow-trigger deduplication TTL. |
-| `DEMO_API_HATCHET_SCHEDULE_TIMEOUT_SECONDS` | Native maximum time a Hatchet run may wait to start. |
-| `DEMO_API_HATCHET_EXECUTION_TIMEOUT_SECONDS` | Native timeout for one Hatchet task execution. |
-| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential; leave it out of committed files outside this local template. |
+| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
+| `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
+
+The background demo uses the package's source-controlled retention, workflow,
+retry, timeout, and idempotency defaults. Self-hosted deployments should inject
+any additional native `HATCHET_CLIENT_*` connection settings into both the API
+and worker processes.
 
 The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
 `LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented

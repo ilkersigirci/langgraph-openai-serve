@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import GraphConfig, GraphRequest
+from langgraph_openai_serve import GraphConfig, GraphRequest, InMemoryResponseStore
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
@@ -303,7 +303,7 @@ async def test_lifespan_installs_shared_postgres_runtime(
         checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
         store=InMemoryStore(),  # type: ignore[arg-type]
         run_coordinator=coordinator,  # type: ignore[arg-type]
-        response_store=Mock(),  # type: ignore[arg-type]
+        response_store=InMemoryResponseStore(),
     )
 
     @asynccontextmanager

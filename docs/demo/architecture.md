@@ -74,8 +74,8 @@ flowchart LR
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
-  api_a -->|"trigger run_id"| hatchet
-  api_b -->|"trigger run_id"| hatchet
+  api_a -->|"trigger response_id"| hatchet
+  api_b -->|"trigger response_id"| hatchet
   hatchet -->|"run reference"| worker
   worker <-->|"checkpoints + Response row"| database
   worker -->|"report model call"| model
@@ -173,7 +173,7 @@ and recovery behavior live in
 Human Review](graphs/interruptible-approval.md). Background Response rows,
 recovery checkpoints, and Hatchet workflow ownership are described in
 [Background Report Agent](graphs/background-report-agent.md). When
-`LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
+`LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.
 

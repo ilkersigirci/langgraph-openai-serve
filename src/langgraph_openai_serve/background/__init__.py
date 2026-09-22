@@ -5,7 +5,6 @@ from langgraph_openai_serve.background.contracts import (
     BackgroundPolicy,
     BackgroundSettings,
     RetryableJobError,
-    RunJob,
 )
 from langgraph_openai_serve.background.in_memory import (
     InMemoryBackgroundBackend,
@@ -28,6 +27,5 @@ __all__ = [
     "NewRun",
     "ResponseStore",
     "RetryableJobError",
-    "RunJob",
     "StoredRun",
 ]

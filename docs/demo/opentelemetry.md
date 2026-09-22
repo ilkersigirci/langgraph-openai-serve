@@ -84,11 +84,13 @@ the mounted FastAPI application so spans retain LGOS route templates without
 duplicate host-application spans. W3C trace context connects requests across
 the UI, proxy, gateway, and API when every hop preserves `traceparent`.
 
-Bifrost's managed Responses route forwards `traceparent`, `tracestate`, and
-`user-agent` through the explicit client header allowlist in
+Bifrost's managed Responses route forwards `Idempotency-Key`, `traceparent`,
+`tracestate`, and `user-agent` through the explicit client header allowlist in
 `demo/docker/configs/bifrost/config.json`. The API receives `lgos-chainlit` or
 `lgos-openwebui` as the user agent, which allows dashboards to distinguish the
-originating UI.
+originating UI. The Collector removes Bifrost's high-cardinality idempotency
+header attribute before export; the header does not replace or alter W3C trace
+context.
 
 LiteLLM continues an incoming W3C `traceparent` and forwards it to its bundled
 LGOS model targets, so its HTTP, authentication, database, and model-call spans
@@ -136,8 +138,9 @@ those panels and conversation links.
 
 The API also keeps structured JSON logs on stdout. Enabling OTLP logs adds a
 second delivery path for those standard-library records; it does not remove
-container diagnostics. `X-Request-ID`, the LGOS interrupt operation ID, and
-the OpenTelemetry trace ID remain separate correlation values. See
+container diagnostics. `X-Request-ID`, background `Idempotency-Key`, the LGOS
+interrupt operation ID, and the OpenTelemetry trace ID remain separate
+correlation values. See
 [Production Logging](../how-to-guides/production-logging.md) for their ownership.
 
 ## Collector Behavior
@@ -164,7 +167,7 @@ rejected-data metrics in that backend.
 
 ## Langfuse Remains Separate
 
-When `LGOS_ENABLE_LANGFUSE=true`, LGOS adds the Langfuse callback to graph runs.
+When `LGOS_ENABLE_LANGFUSE=True`, LGOS adds the Langfuse callback to graph runs.
 Langfuse exports its observations through its native integration; the local
 Collector is not a Langfuse proxy. Do not add a second Langfuse exporter unless
 the deployment intentionally owns and tests that additional path.

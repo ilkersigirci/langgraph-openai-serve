@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 
@@ -10,14 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 if TYPE_CHECKING:
     from langgraph_openai_serve.background.store import NewRun, StoredRun
-
-
-@dataclass(frozen=True, slots=True)
-class RunJob:
-    """Reference one persisted background Response."""
-
-    run_id: str
-    schema_version: int = 1
 
 
 class BackgroundPolicy(BaseModel):
@@ -92,5 +83,4 @@ __all__ = [
     "BackgroundPolicy",
     "BackgroundSettings",
     "RetryableJobError",
-    "RunJob",
 ]

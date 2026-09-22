@@ -3,7 +3,12 @@
   "client": {
     "enforce_auth_on_inference": true,
     "header_filter_config": {
-      "allowlist": ["traceparent", "tracestate", "user-agent"]
+      "allowlist": [
+        "idempotency-key",
+        "traceparent",
+        "tracestate",
+        "user-agent"
+      ]
     }
   },
   "mcp": {

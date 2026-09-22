@@ -511,10 +511,12 @@ async def test_background_response_is_polled_and_rendered(
     monkeypatch.setattr(
         chat,
         "model_request",
-        lambda _: {
-            "model": "background-report-agent",
-            "extra_headers": {"x-model-provider": "openai"},
-        },
+        lambda _: {"model": "lgos-a/background-report-agent"},
+    )
+    monkeypatch.setattr(
+        chat,
+        "gateway",
+        SimpleNamespace(provider_routing=False),
     )
     monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(chat, "response_tools", list)
@@ -530,10 +532,11 @@ async def test_background_response_is_polled_and_rendered(
     assert request["background"] is True
     assert request["store"] is True
     assert request["metadata"]["conversation_id"] == "thread-123"
-    UUID(request["metadata"]["lgos_run_id"])
+    assert request["extra_headers"] is None
+    UUID(request["extra_body"]["extra_headers"]["Idempotency-Key"])
     assert retrieve.await_args_list == [
-        call(response_id, extra_headers={"x-model-provider": "openai"}),
-        call(response_id, extra_headers={"x-model-provider": "openai"}),
+        call(response_id, extra_headers=None),
+        call(response_id, extra_headers=None),
     ]
     assert tasks.add.await_args_list == [
         call("Background response queued"),
@@ -543,6 +546,42 @@ async def test_background_response_is_polled_and_rendered(
     assert assistant.content == "Report ready."
     assistant.send.assert_awaited_once_with()
     with_options.assert_called_once_with(max_retries=2)
+
+
+async def test_background_response_forwards_idempotency_through_bifrost(
+    monkeypatch: pytest.MonkeyPatch,
+    chainlit_context,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    completed = Response.model_construct(
+        id="resp_background",
+        status="completed",
+        output=[],
+    )
+    create = AsyncMock(return_value=completed)
+    monkeypatch.setattr(chat, "response_tools", list)
+    monkeypatch.setattr(
+        chat.openai_client,
+        "with_options",
+        Mock(return_value=chat.openai_client),
+    )
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+
+    response = await chat._background_response(
+        [],
+        model="background-report-agent",
+        extra_headers={"x-model-provider": "openai"},
+        provider_routing=True,
+        user="demo-user",
+        metadata={},
+        commentary_tasks=Mock(add=AsyncMock()),
+    )
+
+    request = create.await_args.kwargs
+    assert response is completed
+    assert request["extra_headers"]["x-model-provider"] == "openai"
+    UUID(request["extra_headers"]["Idempotency-Key"])
+    assert "extra_body" not in request
 
 
 async def test_background_response_is_cancelled_when_turn_stops(
@@ -581,6 +620,7 @@ async def test_background_response_is_cancelled_when_turn_stops(
             [],
             model="background-report-agent",
             extra_headers=None,
+            provider_routing=False,
             user="demo-user",
             metadata={},
             commentary_tasks=Mock(add=AsyncMock()),

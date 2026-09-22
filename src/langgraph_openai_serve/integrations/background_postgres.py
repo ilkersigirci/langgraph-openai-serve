@@ -12,7 +12,6 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from langgraph_openai_serve.background.store import (
-    Acceptance,
     BackgroundCapacityError,
     BackgroundIdempotencyConflictError,
     BackgroundResponseExpiredError,
@@ -30,20 +29,8 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
 _TABLE = "lgos_background_responses"
-_CAPACITY_LOCK = 5_494_716_043_740_046_884
-# Tuple positions are persisted schema versions. Only append new migrations.
-_MIGRATION_FILES = ("background_schema.sql",)
-_CREATE_MIGRATIONS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS lgos_background_migrations (
-    version integer PRIMARY KEY
-)
-"""
-_CURRENT_MIGRATION_SQL = """
-SELECT version FROM lgos_background_migrations ORDER BY version DESC LIMIT 1
-"""
-_RECORD_MIGRATION_SQL = """
-INSERT INTO lgos_background_migrations (version) VALUES (%s)
-"""
+_STORE_LOCK = 5_494_716_043_740_046_884
+_SCHEMA_FILE = "background_schema.sql"
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 _Connection = AsyncConnection[dict[str, Any]]
@@ -59,30 +46,23 @@ class PostgresResponseStore:
         self._pool = pool
 
     async def setup(self) -> None:
-        """Apply pending background Response schema migrations."""
-        migrations = files("langgraph_openai_serve.integrations")
+        """Create the background Response schema."""
+        schema = files("langgraph_openai_serve.integrations").joinpath(_SCHEMA_FILE)
+        statement = cast(
+            "LiteralString",
+            schema.read_text(encoding="utf-8"),
+        )
         async with (
             self._pool.connection() as connection,
             connection.transaction(),
         ):
-            await connection.execute(_CREATE_MIGRATIONS_TABLE_SQL)
-            cursor = await connection.execute(_CURRENT_MIGRATION_SQL)
-            row = await cursor.fetchone()
-            current_version = -1 if row is None else int(row["version"])
+            await connection.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_STORE_LOCK,),
+            )
+            await connection.execute(sql.SQL(statement), prepare=False)
 
-            for version, filename in enumerate(
-                _MIGRATION_FILES[current_version + 1 :],
-                start=current_version + 1,
-            ):
-                migration = migrations.joinpath(filename)
-                statement = cast(
-                    "LiteralString",
-                    migration.read_text(encoding="utf-8"),
-                )
-                await connection.execute(sql.SQL(statement), prepare=False)
-                await connection.execute(_RECORD_MIGRATION_SQL, (version,))
-
-    async def accept(self, run: NewRun, *, capacity: int) -> Acceptance:
+    async def accept(self, run: NewRun, *, capacity: int) -> StoredRun:
         """Atomically enforce capacity and optional create idempotency."""
         async with (
             self._pool.connection() as connection,
@@ -90,9 +70,9 @@ class PostgresResponseStore:
         ):
             await connection.execute(
                 "SELECT pg_advisory_xact_lock(%s)",
-                (_CAPACITY_LOCK,),
+                (_STORE_LOCK,),
             )
-            if run.idempotency_key is not None:
+            if run.idempotency_digest is not None:
                 existing = await self._idempotent_for_update(connection, run)
                 if existing is not None:
                     reservation_expired = (
@@ -104,7 +84,7 @@ class PostgresResponseStore:
                             connection,
                             existing.model_copy(
                                 update={
-                                    "idempotency_key": None,
+                                    "idempotency_digest": None,
                                     "idempotency_expires_at": None,
                                     "updated_at": run.created_at,
                                 }
@@ -118,7 +98,7 @@ class PostgresResponseStore:
                     ):
                         raise BackgroundResponseExpiredError
                     else:
-                        return Acceptance(run=existing, created=False)
+                        return existing
 
             cursor = await connection.execute(
                 _table_sql(
@@ -139,17 +119,17 @@ class PostgresResponseStore:
                 updated_at=run.created_at,
             )
             await self._insert(connection, stored)
-            return Acceptance(run=stored, created=True)
+            return stored
 
     async def record_workflow_run(
         self,
-        run_id: str,
+        response_id: str,
         workflow_run_id: str,
         *,
         now: datetime,
     ) -> StoredRun | None:
         """Store an idempotent Hatchet workflow receipt."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None:
                 return None
@@ -163,6 +143,22 @@ class PostgresResponseStore:
             )
             await self._write(connection, updated)
             return updated
+
+    async def claim_pending_submissions(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> Sequence[StoredRun]:
+        """Rotate through accepted or cancelled runs without a workflow receipt."""
+        return await self._claim_ready(
+            "SELECT record FROM {table} "
+            "WHERE workflow_run_id IS NULL "
+            "AND (status IN ('queued', 'in_progress') OR cancellation_pending) "
+            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
+            now=now,
+            limit=limit,
+        )
 
     async def get(
         self,
@@ -195,24 +191,24 @@ class PostgresResponseStore:
             return None
         return run
 
-    async def get_internal(self, run_id: str) -> StoredRun | None:
+    async def get_internal(self, response_id: str) -> StoredRun | None:
         """Read one trusted run snapshot without a row lock."""
         async with self._pool.connection() as connection:
             cursor = await connection.execute(
-                _table_sql("SELECT record FROM {table} WHERE run_id = %s"),
-                (run_id,),
+                _table_sql("SELECT record FROM {table} WHERE response_id = %s"),
+                (response_id,),
             )
             row = await cursor.fetchone()
         return _stored(row) if row is not None else None
 
     async def mark_in_progress(
         self,
-        run_id: str,
+        response_id: str,
         *,
         now: datetime,
     ) -> StoredRun | None:
         """Mark an active queued Response in progress."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or run.terminal:
                 return None
@@ -244,7 +240,7 @@ class PostgresResponseStore:
         idempotency_retention: timedelta,
     ) -> StoredRun | None:
         """Choose cancellation under a row lock unless a terminal result won."""
-        async with self._locked_response(response_id, owner_scope) as locked:
+        async with self._locked_for_owner(response_id, owner_scope) as locked:
             connection, run = locked
             if run is None or run.response is None:
                 return None
@@ -262,7 +258,7 @@ class PostgresResponseStore:
 
     async def publish_terminal(
         self,
-        run_id: str,
+        response_id: str,
         response: dict[str, JsonValue],
         *,
         now: datetime,
@@ -270,7 +266,7 @@ class PostgresResponseStore:
         idempotency_retention: timedelta,
     ) -> StoredRun | None:
         """Commit a terminal snapshot unless another terminal outcome won."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or run.terminal:
                 return None
@@ -294,14 +290,14 @@ class PostgresResponseStore:
         return await self._claim_ready(
             "SELECT record FROM {table} "
             "WHERE cancellation_pending AND workflow_run_id IS NOT NULL "
-            "ORDER BY updated_at, run_id FOR UPDATE SKIP LOCKED LIMIT %s",
+            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
             now=now,
             limit=limit,
         )
 
-    async def finish_cancellation(self, run_id: str, *, now: datetime) -> bool:
+    async def finish_cancellation(self, response_id: str, *, now: datetime) -> bool:
         """Record successful delivery of one Hatchet cancellation."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or not run.cancellation_pending:
                 return False
@@ -324,8 +320,8 @@ class PostgresResponseStore:
         return await self._claim_ready(
             "SELECT record FROM {table} "
             "WHERE terminal_at IS NOT NULL "
-            "AND cleanup_pending AND NOT recovery_cleaned "
-            "ORDER BY updated_at, run_id FOR UPDATE SKIP LOCKED LIMIT %s",
+            "AND cleanup_pending "
+            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
             now=now,
             limit=limit,
         )
@@ -354,25 +350,24 @@ class PostgresResponseStore:
                 claimed.append(updated)
             return claimed
 
-    async def finish_cleanup(self, run_id: str, *, now: datetime) -> bool:
+    async def finish_cleanup(self, response_id: str, *, now: datetime) -> bool:
         """Record checkpoint deletion under the run row lock."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or not run.terminal:
                 return False
             updated = run.model_copy(
                 update={
                     "cleanup_pending": False,
-                    "recovery_cleaned": True,
                     "updated_at": now,
                 }
             )
             await self._write(connection, updated)
             return True
 
-    async def abandon_cleanup(self, run_id: str, *, now: datetime) -> bool:
+    async def abandon_cleanup(self, response_id: str, *, now: datetime) -> bool:
         """Stop retrying cleanup without claiming checkpoint deletion."""
-        async with self._locked_run(run_id) as locked:
+        async with self._locked(response_id) as locked:
             connection, run = locked
             if run is None or not run.terminal or not run.cleanup_pending:
                 return False
@@ -399,9 +394,9 @@ class PostgresResponseStore:
                     "COALESCE(record -> 'response', 'null'::jsonb) <> 'null'::jsonb "
                     "OR COALESCE(record -> 'envelope', '{{}}'::jsonb) <> '{{}}'::jsonb "
                     "OR (NOT cancellation_pending "
-                    "AND (idempotency_key IS NULL OR idempotency_expires_at IS NULL "
+                    "AND (idempotency_digest IS NULL OR idempotency_expires_at IS NULL "
                     "OR idempotency_expires_at <= %s) "
-                    "AND (recovery_cleaned OR NOT cleanup_pending))) "
+                    "AND NOT cleanup_pending)) "
                     "ORDER BY result_expires_at FOR UPDATE SKIP LOCKED LIMIT %s"
                 ),
                 (now, now, limit),
@@ -411,8 +406,8 @@ class PostgresResponseStore:
                 run = _stored(row)
                 if expired_run_deletable(run, now=now):
                     await connection.execute(
-                        _table_sql("DELETE FROM {table} WHERE run_id = %s"),
-                        (run.run_id,),
+                        _table_sql("DELETE FROM {table} WHERE response_id = %s"),
+                        (run.response_id,),
                     )
                 else:
                     await self._write(connection, tombstone_run(run, now=now))
@@ -426,33 +421,33 @@ class PostgresResponseStore:
     ) -> StoredRun | None:
         cursor = await connection.execute(
             _table_sql(
-                "SELECT record FROM {table} "
-                "WHERE owner_scope = %s AND model = %s AND idempotency_key = %s "
-                "FOR UPDATE"
+                "SELECT record FROM {table} WHERE idempotency_digest = %s FOR UPDATE"
             ),
-            (run.owner_scope, run.model, run.idempotency_key),
+            (run.idempotency_digest,),
         )
         row = await cursor.fetchone()
         return _stored(row) if row is not None else None
 
     @asynccontextmanager
-    async def _locked_run(
+    async def _locked(
         self,
-        run_id: str,
+        response_id: str,
     ) -> AsyncIterator[tuple[_Connection, StoredRun | None]]:
         async with (
             self._pool.connection() as connection,
             connection.transaction(),
         ):
             cursor = await connection.execute(
-                _table_sql("SELECT record FROM {table} WHERE run_id = %s FOR UPDATE"),
-                (run_id,),
+                _table_sql(
+                    "SELECT record FROM {table} WHERE response_id = %s FOR UPDATE"
+                ),
+                (response_id,),
             )
             row = await cursor.fetchone()
             yield connection, _stored(row) if row is not None else None
 
     @asynccontextmanager
-    async def _locked_response(
+    async def _locked_for_owner(
         self,
         response_id: str,
         owner_scope: str,
@@ -491,11 +486,11 @@ class PostgresResponseStore:
             sql.SQL("{} = %s").format(sql.Identifier(column)) for column in columns[1:]
         )
         await connection.execute(
-            sql.SQL("UPDATE {} SET {} WHERE run_id = %s").format(
+            sql.SQL("UPDATE {} SET {} WHERE response_id = %s").format(
                 sql.Identifier(_TABLE),
                 assignments,
             ),
-            (*values[1:], run.run_id),
+            (*values[1:], run.response_id),
         )
 
 
@@ -505,11 +500,10 @@ def _table_sql(statement: LiteralString) -> sql.Composed:
 
 def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]]:
     columns = (
-        "run_id",
         "response_id",
         "owner_scope",
         "model",
-        "idempotency_key",
+        "idempotency_digest",
         "request_fingerprint",
         "status",
         "workflow_run_id",
@@ -518,16 +512,14 @@ def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]
         "idempotency_expires_at",
         "cancellation_pending",
         "cleanup_pending",
-        "recovery_cleaned",
         "updated_at",
         "record",
     )
     values: tuple[object, ...] = (
-        run.run_id,
         run.response_id,
         run.owner_scope,
         run.model,
-        run.idempotency_key,
+        run.idempotency_digest,
         run.request_fingerprint,
         run.status.value,
         run.workflow_run_id,
@@ -536,7 +528,6 @@ def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]
         run.idempotency_expires_at,
         run.cancellation_pending,
         run.cleanup_pending,
-        run.recovery_cleaned,
         run.updated_at,
         Jsonb(run.model_dump(mode="json")),
     )

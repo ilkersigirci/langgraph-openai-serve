@@ -46,7 +46,7 @@ For built-in Langfuse tracing, install the tracing integration:
 uv add "langgraph-openai-serve[tracing]"
 ```
 
-Set `LGOS_ENABLE_LANGFUSE=true` together with `LANGFUSE_PUBLIC_KEY` and
+Set `LGOS_ENABLE_LANGFUSE=True` together with `LANGFUSE_PUBLIC_KEY` and
 `LANGFUSE_SECRET_KEY`. LGOS creates the callback lazily on the first graph run;
 importing the package never initializes Langfuse.
 

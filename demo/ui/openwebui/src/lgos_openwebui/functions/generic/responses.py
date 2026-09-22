@@ -28,7 +28,6 @@ from .api import _model_request
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     PACKAGE_VERSION_TOOL_NAME,
-    RUN_METADATA_KEY,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
@@ -307,18 +306,23 @@ async def _background_response(
     client: Any,
     request: dict[str, Any],
     on_status: Callable[[str], Awaitable[None]],
+    *,
+    provider_routing: bool,
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
     client = client.with_options(max_retries=2)
-    metadata = request.get("metadata")
-    background_request = {
-        **request,
-        "metadata": {
-            **(metadata if isinstance(metadata, dict) else {}),
-            RUN_METADATA_KEY: str(uuid.uuid4()),
-        },
-    }
     extra_headers = request.get("extra_headers")
+    background_request = dict(request)
+    idempotency_key = str(uuid.uuid4())
+    if provider_routing:
+        background_request["extra_headers"] = {
+            **(extra_headers if isinstance(extra_headers, Mapping) else {}),
+            "Idempotency-Key": idempotency_key,
+        }
+    else:
+        background_request["extra_body"] = {
+            "extra_headers": {"Idempotency-Key": idempotency_key}
+        }
     response = await client.responses.create(**background_request)
     previous_status = None
     try:

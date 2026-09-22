@@ -11,10 +11,8 @@ from anyio import CancelScope, Lock, create_task_group, get_cancelled_exc_class
 from langgraph_openai_serve.background.contracts import (
     BackgroundSettings,
     RetryableJobError,
-    RunJob,
 )
 from langgraph_openai_serve.background.store import (
-    Acceptance,
     BackgroundCapacityError,
     BackgroundIdempotencyConflictError,
     BackgroundResponseExpiredError,
@@ -44,26 +42,25 @@ class InMemoryResponseStore:
 
     def __init__(self) -> None:
         self._runs: dict[str, StoredRun] = {}
-        self._response_ids: dict[str, str] = {}
-        self._idempotency: dict[tuple[str, str, str], str] = {}
+        self._idempotency: dict[str, str] = {}
         self._lock = Lock()
 
-    async def accept(self, run: NewRun, *, capacity: int) -> Acceptance:
+    async def accept(self, run: NewRun, *, capacity: int) -> StoredRun:
         """Atomically enforce capacity and optional create idempotency."""
         async with self._lock:
-            key = self._key(run)
-            if key is not None and (
-                existing := self._runs.get(self._idempotency.get(key, ""))
+            digest = run.idempotency_digest
+            if digest is not None and (
+                existing := self._runs.get(self._idempotency.get(digest, ""))
             ):
                 if (
                     existing.idempotency_expires_at is not None
                     and existing.idempotency_expires_at <= run.created_at
                 ):
-                    self._idempotency.pop(key, None)
+                    self._idempotency.pop(digest, None)
                     self._put(
                         existing.model_copy(
                             update={
-                                "idempotency_key": None,
+                                "idempotency_digest": None,
                                 "idempotency_expires_at": None,
                                 "updated_at": run.created_at,
                             }
@@ -77,7 +74,7 @@ class InMemoryResponseStore:
                 ):
                     raise BackgroundResponseExpiredError
                 else:
-                    return Acceptance(run=self._copy(existing), created=False)
+                    return self._copy(existing)
             if sum(not item.terminal for item in self._runs.values()) >= capacity:
                 raise BackgroundCapacityError
             stored = StoredRun(
@@ -86,21 +83,20 @@ class InMemoryResponseStore:
                 updated_at=run.created_at,
             )
             self._put(stored)
-            self._response_ids[stored.response_id] = stored.run_id
-            if key is not None:
-                self._idempotency[key] = stored.run_id
-            return Acceptance(run=self._copy(stored), created=True)
+            if digest is not None:
+                self._idempotency[digest] = stored.response_id
+            return self._copy(stored)
 
     async def record_workflow_run(
         self,
-        run_id: str,
+        response_id: str,
         workflow_run_id: str,
         *,
         now: datetime,
     ) -> StoredRun | None:
         """Store an idempotent process-local task receipt."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None:
                 return None
             if run.workflow_run_id is not None:
@@ -116,6 +112,25 @@ class InMemoryResponseStore:
                 )
             )
 
+    async def claim_pending_submissions(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> Sequence[StoredRun]:
+        """Rotate through accepted or cancelled runs without a workflow receipt."""
+        async with self._lock:
+            runs = [
+                run
+                for run in sorted(
+                    self._runs.values(),
+                    key=lambda item: (item.updated_at, item.response_id),
+                )
+                if run.workflow_run_id is None
+                and (not run.terminal or run.cancellation_pending)
+            ][:limit]
+            return [self._claim(run, now=now) for run in runs]
+
     async def get(
         self,
         response_id: str,
@@ -126,7 +141,7 @@ class InMemoryResponseStore:
         """Read one authorized, unexpired public Response snapshot."""
         checked_at = now or datetime.now(UTC)
         async with self._lock:
-            run = self._runs.get(self._response_ids.get(response_id, ""))
+            run = self._runs.get(response_id)
             if run is None or run.owner_scope != owner_scope or run.response is None:
                 return None
             if (
@@ -137,21 +152,21 @@ class InMemoryResponseStore:
                 return None
             return self._copy(run)
 
-    async def get_internal(self, run_id: str) -> StoredRun | None:
+    async def get_internal(self, response_id: str) -> StoredRun | None:
         """Read one trusted run snapshot."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             return self._copy(run) if run is not None else None
 
     async def mark_in_progress(
         self,
-        run_id: str,
+        response_id: str,
         *,
         now: datetime,
     ) -> StoredRun | None:
         """Mark an active queued Response in progress."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None or run.terminal:
                 return None
             if run.status is ResponseStatus.IN_PROGRESS:
@@ -183,7 +198,7 @@ class InMemoryResponseStore:
     ) -> StoredRun | None:
         """Choose cancellation atomically unless a terminal result won."""
         async with self._lock:
-            run = self._runs.get(self._response_ids.get(response_id, ""))
+            run = self._runs.get(response_id)
             if run is None or run.owner_scope != owner_scope or run.response is None:
                 return None
             if run.terminal:
@@ -200,7 +215,7 @@ class InMemoryResponseStore:
 
     async def publish_terminal(
         self,
-        run_id: str,
+        response_id: str,
         response: dict[str, JsonValue],
         *,
         now: datetime,
@@ -209,7 +224,7 @@ class InMemoryResponseStore:
     ) -> StoredRun | None:
         """Commit a terminal snapshot unless another terminal outcome won."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None or run.terminal:
                 return None
             return self._put(
@@ -234,16 +249,16 @@ class InMemoryResponseStore:
                 run
                 for run in sorted(
                     self._runs.values(),
-                    key=lambda item: (item.updated_at, item.run_id),
+                    key=lambda item: (item.updated_at, item.response_id),
                 )
                 if run.cancellation_pending and run.workflow_run_id is not None
             ][:limit]
             return [self._claim(run, now=now) for run in runs]
 
-    async def finish_cancellation(self, run_id: str, *, now: datetime) -> bool:
+    async def finish_cancellation(self, response_id: str, *, now: datetime) -> bool:
         """Record successful process-local cancellation."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None or not run.cancellation_pending:
                 return False
             self._put(
@@ -268,33 +283,32 @@ class InMemoryResponseStore:
                 run
                 for run in sorted(
                     self._runs.values(),
-                    key=lambda item: (item.updated_at, item.run_id),
+                    key=lambda item: (item.updated_at, item.response_id),
                 )
-                if run.terminal and run.cleanup_pending and not run.recovery_cleaned
+                if run.terminal and run.cleanup_pending
             ][:limit]
             return [self._claim(run, now=now) for run in runs]
 
-    async def finish_cleanup(self, run_id: str, *, now: datetime) -> bool:
+    async def finish_cleanup(self, response_id: str, *, now: datetime) -> bool:
         """Record successful removal of one checkpoint lineage."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None or not run.terminal:
                 return False
             self._put(
                 run.model_copy(
                     update={
                         "cleanup_pending": False,
-                        "recovery_cleaned": True,
                         "updated_at": now,
                     }
                 )
             )
             return True
 
-    async def abandon_cleanup(self, run_id: str, *, now: datetime) -> bool:
+    async def abandon_cleanup(self, response_id: str, *, now: datetime) -> bool:
         """Stop retrying cleanup without claiming checkpoint deletion."""
         async with self._lock:
-            run = self._runs.get(run_id)
+            run = self._runs.get(response_id)
             if run is None or not run.terminal or not run.cleanup_pending:
                 return False
             self._put(
@@ -329,25 +343,18 @@ class InMemoryResponseStore:
                     self._put(tombstone_run(run, now=now))
             return len(actionable)
 
-    @staticmethod
-    def _key(run: NewRun | StoredRun) -> tuple[str, str, str] | None:
-        if run.idempotency_key is None:
-            return None
-        return (run.owner_scope, run.model, run.idempotency_key)
-
     def _put(self, run: StoredRun) -> StoredRun:
-        self._runs[run.run_id] = run
+        self._runs[run.response_id] = run
         return self._copy(run)
 
     def _claim(self, run: StoredRun, *, now: datetime) -> StoredRun:
         return self._put(run.model_copy(update={"updated_at": now}))
 
     def _remove(self, run: StoredRun) -> None:
-        self._runs.pop(run.run_id, None)
-        self._response_ids.pop(run.response_id, None)
-        key = self._key(run)
-        if key is not None and self._idempotency.get(key) == run.run_id:
-            self._idempotency.pop(key, None)
+        self._runs.pop(run.response_id, None)
+        digest = run.idempotency_digest
+        if digest is not None and self._idempotency.get(digest) == run.response_id:
+            self._idempotency.pop(digest, None)
 
     @staticmethod
     def _copy(run: StoredRun) -> StoredRun:
@@ -403,18 +410,18 @@ class InMemoryBackgroundBackend:
                 run,
                 capacity=self.settings.admission_capacity,
             )
-            if accepted.run.workflow_run_id is not None:
-                return accepted.run
+            if accepted.workflow_run_id is not None:
+                return accepted
             with CancelScope(shield=True):
                 recorded = await self.store.record_workflow_run(
-                    accepted.run.run_id,
-                    accepted.run.run_id,
+                    accepted.response_id,
+                    accepted.response_id,
                     now=datetime.now(UTC),
                 )
                 if recorded is None:
                     msg = "The process-local task receipt could not be persisted."
                     raise RuntimeError(msg)
-                tasks.start_soon(self._execute, RunJob(run_id=recorded.run_id))
+                tasks.start_soon(self._execute, recorded.response_id)
             return recorded
 
     async def retrieve(self, response_id: str, owner_scope: str) -> StoredRun | None:
@@ -446,43 +453,43 @@ class InMemoryBackgroundBackend:
             return cancelled
         with CancelScope(shield=True):
             async with self._scope_lock:
-                scope = self._scopes.get(cancelled.run_id)
+                scope = self._scopes.get(cancelled.response_id)
                 if scope is not None:
                     scope.cancel()
             await self.store.finish_cancellation(
-                cancelled.run_id,
+                cancelled.response_id,
                 now=datetime.now(UTC),
             )
         return await self.store.get(response_id, owner_scope)
 
-    async def _execute(self, job: RunJob) -> None:
+    async def _execute(self, response_id: str) -> None:
         scope = CancelScope()
         async with self._scope_lock:
-            self._scopes[job.run_id] = scope
+            self._scopes[response_id] = scope
         try:
-            await self._run_job(job, scope)
+            await self._run_job(response_id, scope)
         except get_cancelled_exc_class():
             raise
         except Exception:
             logger.exception(
                 "background.in_memory_execution_failed",
-                extra={"run_id": job.run_id},
+                extra={"response_id": response_id},
             )
         finally:
             with CancelScope(shield=True):
                 async with self._scope_lock:
-                    if self._scopes.get(job.run_id) is scope:
-                        self._scopes.pop(job.run_id)
+                    if self._scopes.get(response_id) is scope:
+                        self._scopes.pop(response_id)
 
-    async def _run_job(self, job: RunJob, scope: CancelScope) -> None:
+    async def _run_job(self, response_id: str, scope: CancelScope) -> None:
         with scope:
             try:
-                await self.worker.execute(job)
+                await self.worker.execute(response_id)
             except RetryableJobError:
-                await self.worker.finalize(job)
+                await self.worker.finalize(response_id)
         if scope.cancel_called:
             with CancelScope(shield=True):
-                await self.worker.execute(job)
+                await self.worker.execute(response_id)
 
 
 __all__ = ["InMemoryBackgroundBackend", "InMemoryResponseStore"]

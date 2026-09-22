@@ -42,7 +42,7 @@ sequenceDiagram
 
   Client->>API: responses.create(background=true)
   API->>DB: store queued Response
-  API->>Hatchet: start idempotent workflow(run_id)
+  API->>Hatchet: start idempotent workflow(response_id)
   API->>DB: store Hatchet workflow ID
   API-->>Client: queued Response ID
   Hatchet->>Worker: deliver execute task
@@ -78,7 +78,7 @@ and enable the worker profile:
 # Choose litellm or bifrost.
 OPENAI_GATEWAY_TYPE=litellm
 COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
-DEMO_API_BACKGROUND_ENABLED=true
+DEMO_API_BACKGROUND_ENABLED=True
 HATCHET_CLIENT_TOKEN=...
 ```
 

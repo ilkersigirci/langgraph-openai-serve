@@ -72,7 +72,7 @@ level.
 
 ## Langfuse correlation
 
-When `LGOS_ENABLE_LANGFUSE=true`, LGOS passes the following correlation
+When `LGOS_ENABLE_LANGFUSE=True`, LGOS passes the following correlation
 metadata through LangChain's `RunnableConfig`:
 
 - `lgos.request_id`, when an HTTP request context exists;

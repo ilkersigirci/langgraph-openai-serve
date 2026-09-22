@@ -1,6 +1,8 @@
 from typing import Annotated
 
+import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel
@@ -8,7 +10,10 @@ from typing_extensions import TypedDict
 
 from langgraph_openai_serve import BackgroundPolicy, GraphConfig
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.runner import run_background_graph
+from langgraph_openai_serve.graph.runner import (
+    BackgroundCheckpointIncompleteError,
+    run_background_graph,
+)
 
 
 class BackgroundState(TypedDict, total=False):
@@ -28,6 +33,67 @@ class PydanticBackgroundState(BaseModel):
 
 class PydanticAnswerOutput(BaseModel):
     answer: str
+
+
+class _InterruptedCheckpointSaver(AsyncSqliteSaver):
+    _interrupted = False
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        if metadata["step"] == 1 and not self._interrupted:
+            self._interrupted = True
+            message = "checkpoint write interrupted"
+            raise OSError(message)
+        return await super().aput(config, checkpoint, metadata, new_versions)
+
+
+async def test_pending_writes_are_resumed_before_background_completion(make_request):
+    calls = []
+
+    async def first(_state: BackgroundState):
+        calls.append("first")
+        return {"answer": "intermediate"}
+
+    async def second(_state: BackgroundState):
+        calls.append("second")
+        return {"answer": "final"}
+
+    async with _InterruptedCheckpointSaver.from_conn_string(":memory:") as saver:
+        graph = (
+            StateGraph(BackgroundState, output_schema=AnswerOutput)
+            .add_node("first", first)
+            .add_node("second", second)
+            .set_entry_point("first")
+            .add_edge("first", "second")
+            .set_finish_point("second")
+            .compile(checkpointer=saver)
+        )
+        config = GraphConfig(
+            graph=graph,
+            description="Checkpoint recovery",
+            background=BackgroundPolicy(version="v1"),
+            output_to_message=lambda output: AIMessage(content=output["answer"]),
+            run_coordinator=InMemoryRunCoordinator(),
+        )
+        request = make_request("background")
+        arguments = {
+            "checkpoint_thread_id": "pending-writes",
+            "initial_message_count": 0,
+        }
+        with pytest.raises(OSError, match="checkpoint write interrupted"):
+            await run_background_graph(
+                request, [], config, finalize_only=False, **arguments
+            )
+        with pytest.raises(BackgroundCheckpointIncompleteError):
+            await run_background_graph(
+                request, [], config, finalize_only=True, **arguments
+            )
+
+        recovered = await run_background_graph(
+            request, [], config, finalize_only=False, **arguments
+        )
+
+    assert recovered.message.text == "final"
+    assert calls == ["first", "second"]
 
 
 async def test_background_recovery_renders_only_declared_output_channels(

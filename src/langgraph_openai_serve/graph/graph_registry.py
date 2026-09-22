@@ -176,7 +176,17 @@ class GraphConfig(BaseModel):
     async def render_output(self, output: Any) -> AIMessage:
         """Convert native graph output into the durable assistant message."""
         if self.output_to_message is not None:
-            return await _maybe_await(self.output_to_message(output))
+            try:
+                message = await _maybe_await(self.output_to_message(output))
+            except GraphConfigurationError:
+                raise
+            except Exception as exc:
+                message = str(exc) or "output_to_message failed."
+                raise GraphConfigurationError(message) from exc
+            if not isinstance(message, AIMessage):
+                msg = "output_to_message must return an AIMessage."
+                raise GraphConfigurationError(msg)
+            return message
 
         messages = (
             output["messages"]

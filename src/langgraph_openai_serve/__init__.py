@@ -12,7 +12,6 @@ from langgraph_openai_serve.background import (
     NewRun,
     ResponseStore,
     RetryableJobError,
-    RunJob,
     StoredRun,
 )
 from langgraph_openai_serve.graph.citations import citation_slice
@@ -57,7 +56,6 @@ __all__ = [
     "NewRun",
     "ResponseStore",
     "RetryableJobError",
-    "RunJob",
     "StoredRun",
     "citation_slice",
     "client_event",

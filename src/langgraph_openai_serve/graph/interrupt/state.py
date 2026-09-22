@@ -111,7 +111,7 @@ def normalize_checkpoint_scope(value: str) -> str:
 def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
     """Derive a fixed-length storage key scoped to this protocol and model."""
     identity = json.dumps(
-        ["langgraph-openai-serve.interrupt.v3", scope, model, run_id],
+        ["langgraph-openai-serve.interrupt.v2", scope, model, run_id],
         ensure_ascii=False,
         separators=(",", ":"),
     )

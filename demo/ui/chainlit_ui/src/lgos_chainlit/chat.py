@@ -33,7 +33,7 @@ from lgos_chainlit.chat_settings import (
     response_tools,
     streaming_enabled,
 )
-from lgos_chainlit.clients import list_models, model_request, openai_client
+from lgos_chainlit.clients import gateway, list_models, model_request, openai_client
 from lgos_chainlit.conversation import (
     LIMITED_FUNCTIONALITY_MESSAGE,
     conversation_metadata,
@@ -50,7 +50,6 @@ from lgos_chainlit.interrupts import (
 )
 from lgos_chainlit.lgos_protocol import (
     INTERRUPT_TOOL_NAME,
-    RUN_METADATA_KEY,
     model_description,
 )
 from lgos_chainlit.mcp import mcp_tools
@@ -209,6 +208,7 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     input_items,
                     model=upstream_model,
                     extra_headers=extra_headers,
+                    provider_routing=gateway.provider_routing,
                     user=user,
                     metadata=metadata,
                     commentary_tasks=commentary_tasks,
@@ -281,21 +281,33 @@ async def _background_response(
     *,
     model: str,
     extra_headers: dict[str, str] | None,
+    provider_routing: bool,
     user: str,
     metadata: dict[str, str],
     commentary_tasks: CommentaryTaskList,
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
     client = openai_client.with_options(max_retries=2)
+    idempotency_key = str(uuid.uuid4())
+    create_options: dict[str, Any] = {"extra_headers": extra_headers}
+    if provider_routing:
+        create_options["extra_headers"] = {
+            **(extra_headers or {}),
+            "Idempotency-Key": idempotency_key,
+        }
+    else:
+        create_options["extra_body"] = {
+            "extra_headers": {"Idempotency-Key": idempotency_key}
+        }
     response = await client.responses.create(
         model=model,
-        extra_headers=extra_headers,
         input=cast("ResponseInputParam", input_items),
         background=True,
         store=True,
         tools=response_tools(),
         user=user,
-        metadata={**metadata, RUN_METADATA_KEY: str(uuid.uuid4())},
+        metadata=metadata,
+        **create_options,
     )
     previous_status = None
     try:

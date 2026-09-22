@@ -49,7 +49,6 @@ from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.interrupt.state import (
     checkpoint_key,
     normalize_checkpoint_scope,
-    normalize_run_id,
 )
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun, prepare_run
@@ -70,6 +69,7 @@ async def accept_background_response(
     background: BackgroundBackend | None,
     *,
     checkpoint_scope: str,
+    idempotency_key: str | None = None,
 ) -> Response:
     """Validate and durably accept one polling-only background Response."""
     validate_background_request(request)
@@ -87,12 +87,27 @@ async def accept_background_response(
         request,
         graph_config.server_tools,
     )
+    if graph_config.client_settings is not None:
+        graph_config.client_settings.validate_request(graph_request)
+    if "lgos_run_id" in graph_request.metadata:
+        message = (
+            "metadata.lgos_run_id is only supported for interrupt-enabled "
+            "foreground Responses."
+        )
+        raise UnsupportedResponsesRequestError(
+            message,
+            param="metadata.lgos_run_id",
+        )
+    if idempotency_key is not None and not idempotency_key:
+        message = "Idempotency-Key must not be empty."
+        raise UnsupportedResponsesRequestError(message, param="Idempotency-Key")
 
     owner_scope = normalize_checkpoint_scope(checkpoint_scope)
-    idempotency_key = graph_request.metadata.get("lgos_run_id")
-    if idempotency_key is not None:
-        idempotency_key = normalize_run_id(idempotency_key)
-    operation_id = str(uuid.uuid4())
+    idempotency_digest = (
+        _json_digest((owner_scope, request.model, idempotency_key))
+        if idempotency_key is not None
+        else None
+    )
     response_id = f"resp_{uuid.uuid4().hex}"
     now = datetime.now(UTC)
     queued = active_response(
@@ -103,13 +118,12 @@ async def accept_background_response(
     initial_call_ids = _input_call_ids(messages)
     accepted = await background.create(
         NewRun(
-            run_id=response_id,
             response_id=response_id,
             owner_scope=owner_scope,
             model=request.model,
             checkpoint_thread_id=checkpoint_key(
                 request.model,
-                operation_id,
+                response_id,
                 scope=f"background:{owner_scope}",
             ),
             graph_version=policy.version,
@@ -118,7 +132,7 @@ async def accept_background_response(
                 request.model_dump(mode="json", by_alias=True),
             ),
             request_fingerprint=_background_fingerprint(request),
-            idempotency_key=idempotency_key,
+            idempotency_digest=idempotency_digest,
             response=cast("dict[str, JsonValue]", response_json(queued)),
             created_at=now,
             initial_call_ids=initial_call_ids,
@@ -188,17 +202,12 @@ def _background_fingerprint(request: ResponseCreateRequest) -> str:
             "store": bool(request.store),
         }
     ).model_dump(mode="json", by_alias=True, exclude_none=True)
-    metadata = normalized.get("metadata")
-    if isinstance(metadata, dict):
-        metadata = {
-            key: value for key, value in metadata.items() if key != "lgos_run_id"
-        }
-        if metadata:
-            normalized["metadata"] = metadata
-        else:
-            normalized.pop("metadata", None)
+    return _json_digest(normalized)
+
+
+def _json_digest(value: object) -> str:
     canonical = json.dumps(
-        normalized,
+        value,
         allow_nan=False,
         ensure_ascii=False,
         separators=(",", ":"),

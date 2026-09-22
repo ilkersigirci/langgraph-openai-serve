@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from anyio import Lock
 
-from langgraph_openai_serve.background.contracts import BackgroundSettings, RunJob
+from langgraph_openai_serve.background.contracts import BackgroundSettings
 from langgraph_openai_serve.background.in_memory import InMemoryResponseStore
 from langgraph_openai_serve.background.store import (
     NewRun,
@@ -31,7 +31,7 @@ class MemoryBackgroundBackend:
     ) -> None:
         self.store = store or InMemoryResponseStore()
         self.settings = settings or BackgroundSettings()
-        self._pending: deque[RunJob] = deque()
+        self._pending: deque[str] = deque()
         self._cancelled: set[str] = set()
         self._lock = Lock()
 
@@ -40,18 +40,18 @@ class MemoryBackgroundBackend:
             run,
             capacity=self.settings.admission_capacity,
         )
-        if accepted.run.workflow_run_id is not None:
-            return accepted.run
+        if accepted.workflow_run_id is not None:
+            return accepted
         recorded = await self.store.record_workflow_run(
-            accepted.run.run_id,
-            accepted.run.run_id,
+            accepted.response_id,
+            accepted.response_id,
             now=datetime.now(UTC),
         )
         if recorded is None:
             msg = "Test workflow receipt could not be persisted."
             raise RuntimeError(msg)
         async with self._lock:
-            self._pending.append(RunJob(run_id=recorded.run_id))
+            self._pending.append(recorded.response_id)
         return recorded
 
     async def retrieve(self, response_id: str, owner_scope: str) -> StoredRun | None:
@@ -75,14 +75,14 @@ class MemoryBackgroundBackend:
         )
         if result is not None and result.status is ResponseStatus.CANCELLED:
             async with self._lock:
-                self._cancelled.add(result.run_id)
+                self._cancelled.add(result.response_id)
         return result
 
-    async def receive(self) -> RunJob | None:
+    async def receive(self) -> str | None:
         async with self._lock:
             while self._pending:
                 job = self._pending.popleft()
-                if job.run_id not in self._cancelled:
+                if job not in self._cancelled:
                     return job
             return None
 

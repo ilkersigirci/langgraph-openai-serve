@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import GraphOutput, StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun
@@ -96,7 +97,7 @@ async def test_rendering_failure_deletes_without_replacing_error(
     graph = CleanupGraph(events, delete_error=delete_error)
 
     run = cleanup_run(graph, output_to_message=fail_rendering)
-    with pytest.raises(ValueError, match="rendering failed"):
+    with pytest.raises(GraphConfigurationError, match="rendering failed"):
         async with run:
             await invoke_run(run)
 

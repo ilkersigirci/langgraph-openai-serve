@@ -243,6 +243,9 @@ def test_checkpoint_key_is_model_scoped_and_does_not_expose_public_run_id() -> N
     assert model_a_key != tenant_b_key
     assert RUN_ID not in model_a_key
     assert len(model_a_key) == SHA256_HEX_LENGTH
+    assert model_a_key == (
+        "160c905f783b1e8560a915e2cf14fa2aa1c990372e1edb0f2d1eb79e48d97648"
+    )
 
 
 async def test_thread_id_reaches_runnable_config(

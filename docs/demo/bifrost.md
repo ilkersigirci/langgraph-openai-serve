@@ -136,10 +136,11 @@ header. All targets share the PostgreSQL Response store. See
 [Run Responses In The Background](../how-to-guides/background-responses.md) for
 the lifecycle contract.
 
-The client header allowlist forwards `traceparent`, `tracestate`, and
-`user-agent` through managed Responses requests. This preserves distributed
-trace context and the originating UI's identity at LGOS. See the
-[OpenTelemetry guide](opentelemetry.md#signal-ownership).
+The client header allowlist forwards `Idempotency-Key`, `traceparent`,
+`tracestate`, and `user-agent` through managed Responses requests. The first
+supports safe background-create retries; the others preserve distributed trace
+context and the originating UI's identity at LGOS. See the [OpenTelemetry
+guide](opentelemetry.md#signal-ownership).
 
 The gateway uses `DUMMY` only for its private upstream connections because LGOS
 authentication is not enabled. This is separate from the required client-facing

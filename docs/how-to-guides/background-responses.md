@@ -32,9 +32,7 @@ async def main() -> None:
             input="Summarize the migration risks and next actions.",
             background=True,
             store=True,
-            metadata={
-                "lgos_run_id": "5cb3d79a-e37f-4f22-9d0d-959e024ad1c8"
-            },
+            extra_headers={"Idempotency-Key": "create-migration-report-2026-09"},
         )
 
         while True:
@@ -61,18 +59,23 @@ retrieval cursors; it does not persist or replay SSE events. The server-trusted
 
 ### Idempotent Creation
 
-Set `metadata.lgos_run_id` to a non-null UUID. A retry with the same scope,
-model, UUID, and normalized request returns the same Response. Reusing it with
-different content returns `409`. This is strongly recommended around API or
-network failures.
+Set a non-empty `Idempotency-Key` header. A retry with the same scope, model,
+key, and normalized request returns the same Response. Reusing it with different
+content returns `409`. This is strongly recommended around API or network
+failures. `metadata.lgos_run_id` is reserved for interrupt-enabled foreground
+operations and is rejected on background requests. LGOS persists only a
+SHA-256 digest of the scoped idempotency identity, not the raw header value.
 
-LGOS stores the queued Response, submits its stable run reference to Hatchet,
-stores Hatchet's workflow ID, and only then acknowledges the POST. If the
-submission result is ambiguous, Hatchet's native trigger retries and workflow
-idempotency recover the existing workflow ID. If those retries are exhausted,
-LGOS makes the stored Response terminal so it no longer consumes admission. An
-exact retry with the same `metadata.lgos_run_id` returns that stable failed
-Response rather than submitting a second workflow.
+LGOS stores the queued Response, submits its Response ID to Hatchet,
+stores Hatchet's workflow ID when available, and returns the queued Response.
+If the submission result is ambiguous, Hatchet's workflow idempotency and the
+maintenance task recover the existing workflow ID. Retrying the create with the
+same idempotency key immediately returns the same Response. Maintenance also
+resubmits accepted records without a workflow receipt, covering API process
+death between the database commit and submission. For an already-cancelled
+record, this resolves an ambiguous trigger receipt and then delivers native
+cancellation. A failed duplicate submission never changes the public status of
+a successfully submitted run.
 
 ## Make The Graph Recoverable
 
@@ -104,6 +107,7 @@ A background graph must:
   for durable deployments;
 - configure a run coordinator, cross-process for multi-worker deployments;
 - reconstruct its output from checkpointed state;
+- keep `output_to_message` deterministic and side-effect free;
 - support `durability="sync"`; and
 - avoid LangGraph interrupts, which are mutually exclusive with background
   execution.
@@ -135,7 +139,7 @@ server.bind_openai_api()
 
 ## Configure PostgreSQL And Hatchet
 
-Apply Response-store migrations during each deployment setup:
+Create the Response-store schema during deployment setup:
 
 ```python
 from langgraph_openai_serve.integrations.background_postgres import (
@@ -146,8 +150,8 @@ response_store = PostgresResponseStore(pool)
 await response_store.setup()
 ```
 
-`setup()` applies only pending migrations and is safe to repeat. Run it before
-starting API or background-worker processes rather than from every worker.
+`setup()` is safe to repeat or call concurrently. Run it before starting API
+or background-worker processes rather than from every worker.
 
 Build the same worker and Hatchet workflow definitions in the API and worker
 processes:
@@ -213,10 +217,16 @@ The response workflow uses Hatchet-native TTL idempotency, retries, exponential
 backoff, schedule timeout, execution timeout, and an `on_failure_task`. The
 failure task only inspects a completed checkpoint or publishes a failed
 Response; it never advances an unfinished graph. The maintenance task is a
-Hatchet cron that retries persisted native cancellations, deletes terminal
-checkpoint lineages, and expires retained Response data. Failed maintenance
+Hatchet cron that recovers pending submissions, retries persisted native
+cancellations, deletes terminal checkpoint lineages, and expires retained
+Response data. Failed maintenance
 rows move behind later work before the next bounded pass, so one bad
 checkpoint cannot monopolize a bounded batch.
+
+Set `idempotency_ttl` longer than the longest period in which an accepted run
+could await submission recovery. The default is 24 hours. The Response-store
+outbox is authoritative, while Hatchet's TTL prevents an ambiguous trigger from
+starting a duplicate workflow during that recovery window.
 
 Supply `HATCHET_CLIENT_TOKEN` and the SDK's standard endpoint/TLS settings to
 both processes. `check_hatchet_connection()` provides a read-only deployment
@@ -229,7 +239,7 @@ The boundary is deliberately small:
 | Owner | Responsibilities |
 | --- | --- |
 | Hatchet | queue, concurrency, attempts, retry/backoff, schedule and execution timeouts, cancellation, failure task, maintenance cron |
-| LGOS Response store | authorization, public status/result, create idempotency, retention, Hatchet workflow ID, undelivered cancellation intent |
+| LGOS Response store | authorization, public status/result, create idempotency, retention, pending submission, Hatchet workflow ID, undelivered cancellation intent |
 | LangGraph checkpointer | recoverable graph progress and final state |
 | LGOS worker | request decoding, checkpoint-aware graph invocation, OpenAI Response rendering |
 
@@ -262,7 +272,7 @@ await hatchet.runs.aio_replay(stored.workflow_run_id)
 ```
 
 The Response store retains `workflow_run_id`, and the replay re-enters the same
-checkpoint-aware workflow using the same stable LGOS run ID. It does not need a
+checkpoint-aware workflow using the same stable Response ID. It does not need a
 second LGOS dispatcher or status reconciler. Keep the failed Hatchet run and its
 active Response row until replay publishes a terminal result.
 
@@ -298,20 +308,21 @@ compose `BackgroundWorker` with `PostgresResponseStore`, or
 
 | Engine event | LGOS operation |
 | --- | --- |
-| Submit | `store.accept()`, submit `RunJob`, then `store.record_workflow_run()` |
+| Submit | `store.accept()`, submit its Response ID, then `store.record_workflow_run()` |
 | Deliver | `worker.execute()`; retry `RetryableJobError` |
 | Retries exhausted | `worker.finalize()`; retry `RetryableJobError` |
-| Recurring maintenance | `worker.maintain()` |
+| Recurring maintenance | Recover `store.claim_pending_submissions()` rows, deliver pending cancellations, then run `worker.maintain()` |
 | Retrieve | `store.get()` |
 | Cancel | `store.request_cancellation()`, native cancel, then `store.finish_cancellation()` |
 
-Submission must be durable and idempotent by `run_id`; resolve ambiguous submits
-with that ID and record the native run ID before acknowledging create. If native
-submission retries are exhausted, publish a terminal failed Response instead of
-leaving an active row without a receipt. Cancellation must become terminal in
-the store before native cancellation. If native cancellation fails, leave
-`cancellation_pending` set and retry `store.claim_cancellations()` rows on the
-recurring task.
+Submission must be durable and idempotent by `response_id`; resolve ambiguous
+submits with that ID and record the native run ID when available. Recover
+accepted or cancelled rows without a receipt through
+`store.claim_pending_submissions()` on the recurring task. An ambiguous
+submission failure must not publish a terminal failure: another submission may
+already have succeeded. Cancellation must become terminal in the store before
+native cancellation. If its receipt is not known yet or native cancellation
+fails, leave `cancellation_pending` set and retry it on the recurring task.
 
 The engine must supply durable queueing, retries/backoff, schedule and execution
 timeouts, cancellation, a retries-exhausted hook, recurring tasks, and replay or
@@ -325,6 +336,27 @@ replica sharing the same PostgreSQL Response store. The demo verifies direct
 LGOS routing plus the bundled LiteLLM and Bifrost routes. A gateway must
 forward create, retrieve, and cancel while preserving enough routing state for
 later lifecycle calls.
+
+Bifrost forwards the canonical `Idempotency-Key` header through its explicit
+client-header allowlist. LiteLLM accepts upstream per-request headers in its
+Responses request body, so an OpenAI client sends the same canonical upstream
+header through `extra_body`:
+
+```python
+# Bifrost
+extra_headers = {"Idempotency-Key": key}
+
+# LiteLLM
+extra_body = {"extra_headers": {"Idempotency-Key": key}}
+```
+
+These are gateway transport details. LGOS receives the same
+`Idempotency-Key` header in both cases.
+
+LiteLLM's default Response ID security may return a new encrypted proxy alias
+when an idempotent request is replayed. Both aliases resolve to the same LGOS
+Response. Keep that security enabled for multi-user gateways; treat Response
+IDs as opaque instead of comparing their encoded text.
 
 See the [OpenAI-compatible proxy guide](openai-proxies.md) and the
 [background report demo](../demo/graphs/background-report-agent.md).

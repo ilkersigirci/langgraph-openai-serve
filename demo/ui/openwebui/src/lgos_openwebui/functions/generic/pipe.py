@@ -201,6 +201,7 @@ class Pipe:
                             client,
                             prepared.request,
                             publish_background_status,
+                            provider_routing=prepared.gateway.provider_routing,
                         )
                         status = response.status or "unknown"
                         latest_status = (

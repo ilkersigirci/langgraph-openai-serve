@@ -41,7 +41,7 @@ unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEMO_CHAINLIT_LOGIN_TYPE=oauth` enables OIDC browser login independently of
 gateway authorization. By default, mock and OAuth login both use
 `OPENAI_GATEWAY_API_KEY` for Responses, Files, and MCP. Set
-`DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true` to send the signed-in user's
+`DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True` to send the signed-in user's
 access token instead. Delegated mode disables the static MCP connection and needs the gateway's
 API permission and `offline_access`; point `OPENAI_GATEWAY_BASE_URL` at the
 LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses

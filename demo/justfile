@@ -89,10 +89,10 @@ type-check editable='false':
 [group('checks')]
 [timestamp]
 compose-config:
-    {{ compose_command }} --profile model-sync config --quiet
-    {{ compose_dev_command }} --profile model-sync config --quiet
-    {{ compose_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
-    {{ compose_dev_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_command }} --env-file .env.example --profile model-sync config --quiet
+    {{ compose_dev_command }} --env-file .env.example --profile model-sync config --quiet
+    {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync config --quiet
 
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]
@@ -168,7 +168,7 @@ test-background-gateway base_url='' model='' editable='false' *args:
             exit 1
             ;;
     esac
-    DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL="${1:-$default_url}" DEMO_TEST_BACKGROUND_GATEWAY_MODEL="${2:-$default_model}" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:4}"
+    DEMO_TEST_BACKGROUND_GATEWAY_TYPE="$OPENAI_GATEWAY_TYPE" DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL="${1:-$default_url}" DEMO_TEST_BACKGROUND_GATEWAY_MODEL="${2:-$default_model}" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:4}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]

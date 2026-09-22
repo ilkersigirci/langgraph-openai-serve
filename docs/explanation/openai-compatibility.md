@@ -146,7 +146,8 @@ The request keeps each concern in its standard OpenAI location:
 | System instructions | Responses `instructions` or an input `system`/`developer` message; a `system` message in Chat |
 | Small graph-specific values | One `metadata.lgos_settings` string containing a JSON object |
 | Graph selection | `model` |
-| Caller-selected interrupt operation ID or background create idempotency key | Optional `metadata.lgos_run_id` UUID |
+| Caller-selected interrupt operation ID | Optional `metadata.lgos_run_id` UUID |
+| Background create retry identity | Optional `Idempotency-Key` HTTP header |
 | Conversation correlation | Optional `metadata.conversation_id` string |
 
 Only small graph-specific values belong to `ClientSettings`. A graph may expose
@@ -298,9 +299,10 @@ Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 
 ### Polling-Only Background Lifecycle
 
-For an opted-in graph, `background=true` stores a queued Response, triggers its
-Hatchet workflow, and returns only after Hatchet accepts the run. The caller
-keeps the opaque Response ID and uses:
+For an opted-in graph, `background=true` first stores a queued Response, then
+best-effort triggers its Hatchet workflow. The queued Response is returned even
+when a workflow receipt is not immediately available; maintenance recovers
+pending submissions. The caller keeps the opaque Response ID and uses:
 
 - `GET /v1/responses/{response_id}` for a current JSON snapshot; and
 - `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.
@@ -312,12 +314,13 @@ Retrieval has no streaming or cursor mode, and LGOS does not replay background
 events. Unknown, unauthorized, expired, and wrong-scope IDs share the same
 non-revealing not-found behavior.
 
-`metadata.lgos_run_id` is optional create idempotency in this mode. The same
-authenticated scope, model, UUID, and exact request returns the existing
+`Idempotency-Key` is optional create idempotency in this mode. The same
+authenticated scope, model, key, and exact request returns the existing
 Response. Reusing it for different content, or after the Response result has
-expired while its reservation remains, returns a conflict. Unlike interrupt
-identity, a terminal background reservation has its own configured tombstone
-window.
+expired while its reservation remains, returns a conflict. A terminal
+background reservation has its own configured tombstone window.
+`metadata.lgos_run_id` remains interrupt-operation identity and is rejected on
+background requests.
 
 The durable Response row is not a Conversation. `store=true` changes only the
 bounded terminal-result retention, and `previous_response_id` cannot continue a

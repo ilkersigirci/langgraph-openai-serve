@@ -18,11 +18,10 @@ def _new_run(
     name: str,
     *,
     now: datetime,
-    idempotency_key: str | None = None,
+    idempotency_digest: str | None = None,
     fingerprint: str = "fingerprint",
 ) -> NewRun:
     return NewRun(
-        run_id=f"run-{name}",
         response_id=f"resp-{name}",
         owner_scope="owner",
         model="model",
@@ -30,7 +29,7 @@ def _new_run(
         graph_version="v1",
         envelope={"model": "model", "input": "hello"},
         request_fingerprint=fingerprint,
-        idempotency_key=idempotency_key,
+        idempotency_digest=idempotency_digest,
         response={"id": f"resp-{name}", "status": "queued"},
         created_at=now,
     )
@@ -39,17 +38,16 @@ def _new_run(
 async def test_accept_enforces_capacity_and_idempotency() -> None:
     store = InMemoryResponseStore()
     now = datetime.now(UTC)
-    original = _new_run("one", now=now, idempotency_key="key")
+    original = _new_run("one", now=now, idempotency_digest="digest")
 
     first = await store.accept(original, capacity=1)
     replay = await store.accept(
-        _new_run("other", now=now, idempotency_key="key"),
+        _new_run("other", now=now, idempotency_digest="digest"),
         capacity=1,
     )
 
-    assert first.created is True
-    assert replay.created is False
-    assert replay.run.run_id == original.run_id
+    assert first.response_id == original.response_id
+    assert replay.response_id == original.response_id
     with pytest.raises(BackgroundCapacityError):
         await store.accept(_new_run("two", now=now), capacity=1)
     with pytest.raises(BackgroundIdempotencyConflictError):
@@ -57,7 +55,7 @@ async def test_accept_enforces_capacity_and_idempotency() -> None:
             _new_run(
                 "conflict",
                 now=now,
-                idempotency_key="key",
+                idempotency_digest="digest",
                 fingerprint="different",
             ),
             capacity=2,
@@ -70,22 +68,41 @@ async def test_workflow_receipt_is_idempotent() -> None:
     await store.accept(_new_run("one", now=now), capacity=2)
 
     recorded = await store.record_workflow_run(
-        "run-one",
+        "resp-one",
         "hatchet-one",
         now=now,
     )
 
     assert recorded is not None
     assert recorded.workflow_run_id == "hatchet-one"
-    assert await store.record_workflow_run("run-one", "other", now=now) is None
+    assert await store.record_workflow_run("resp-one", "other", now=now) is None
+
+
+async def test_pending_submission_claim_skips_submitted_and_terminal_runs():
+    store = InMemoryResponseStore()
+    now = datetime.now(UTC)
+    for name in ("pending", "submitted", "terminal"):
+        await store.accept(_new_run(name, now=now), capacity=3)
+    await store.record_workflow_run("resp-submitted", "native-run", now=now)
+    await store.publish_terminal(
+        "resp-terminal",
+        {"id": "resp-terminal", "status": "completed"},
+        now=now,
+        result_retention=timedelta(hours=1),
+        idempotency_retention=timedelta(hours=1),
+    )
+
+    pending = await store.claim_pending_submissions(now=now, limit=10)
+
+    assert [run.response_id for run in pending] == ["resp-pending"]
 
 
 async def test_cancellation_and_completion_have_one_terminal_winner() -> None:
     store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=1)
-    await store.record_workflow_run("run-one", "native-run", now=now)
-    in_progress = await store.mark_in_progress("run-one", now=now)
+    await store.record_workflow_run("resp-one", "native-run", now=now)
+    in_progress = await store.mark_in_progress("resp-one", now=now)
 
     cancelled = await store.request_cancellation(
         "resp-one",
@@ -96,7 +113,7 @@ async def test_cancellation_and_completion_have_one_terminal_winner() -> None:
         idempotency_retention=timedelta(hours=24),
     )
     completed = await store.publish_terminal(
-        "run-one",
+        "resp-one",
         {"id": "resp-one", "status": "completed"},
         now=now,
         result_retention=timedelta(hours=1),
@@ -112,24 +129,53 @@ async def test_cancellation_and_completion_have_one_terminal_winner() -> None:
     assert completed is None
 
 
+async def test_cancelled_run_without_receipt_remains_recoverable() -> None:
+    store = InMemoryResponseStore()
+    now = datetime.now(UTC)
+    await store.accept(_new_run("one", now=now), capacity=1)
+
+    cancelled = await store.request_cancellation(
+        "resp-one",
+        "owner",
+        {"id": "resp-one", "status": "cancelled"},
+        now=now,
+        result_retention=timedelta(seconds=1),
+        idempotency_retention=timedelta(seconds=1),
+    )
+    pending = await store.claim_pending_submissions(now=now, limit=1)
+    recorded = await store.record_workflow_run(
+        "resp-one",
+        "native-run",
+        now=now,
+    )
+    cancellations = await store.claim_cancellations(now=now, limit=1)
+
+    assert cancelled is not None
+    assert cancelled.cancellation_pending is True
+    assert [run.response_id for run in pending] == ["resp-one"]
+    assert recorded is not None
+    assert recorded.cancellation_pending is True
+    assert [run.response_id for run in cancellations] == ["resp-one"]
+
+
 async def test_expiry_retains_then_removes_an_idempotency_tombstone() -> None:
     store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(
-        _new_run("one", now=now, idempotency_key="key"),
+        _new_run("one", now=now, idempotency_digest="digest"),
         capacity=1,
     )
     await store.publish_terminal(
-        "run-one",
+        "resp-one",
         {"id": "resp-one", "status": "completed"},
         now=now,
         result_retention=timedelta(seconds=1),
         idempotency_retention=timedelta(hours=1),
     )
-    await store.finish_cleanup("run-one", now=now)
+    await store.finish_cleanup("resp-one", now=now)
 
     assert await store.expire(now=now + timedelta(seconds=2), limit=10) == 1
-    tombstone = await store.get_internal("run-one")
+    tombstone = await store.get_internal("resp-one")
     assert tombstone is not None
     assert tombstone.response is None
     assert tombstone.envelope == {}
@@ -138,13 +184,13 @@ async def test_expiry_retains_then_removes_an_idempotency_tombstone() -> None:
             _new_run(
                 "replay",
                 now=now + timedelta(seconds=2),
-                idempotency_key="key",
+                idempotency_digest="digest",
             ),
             capacity=1,
         )
 
     assert await store.expire(now=now + timedelta(hours=2), limit=10) == 1
-    assert await store.get_internal("run-one") is None
+    assert await store.get_internal("resp-one") is None
 
 
 async def test_expiry_skips_retained_tombstones_without_starving_later_work() -> None:
@@ -152,22 +198,22 @@ async def test_expiry_skips_retained_tombstones_without_starving_later_work() ->
     now = datetime.now(UTC)
     for name, key in (("one", "key"), ("two", None)):
         await store.accept(
-            _new_run(name, now=now, idempotency_key=key),
+            _new_run(name, now=now, idempotency_digest=key),
             capacity=2,
         )
         await store.publish_terminal(
-            f"run-{name}",
+            f"resp-{name}",
             {"id": f"resp-{name}", "status": "completed"},
             now=now,
             result_retention=timedelta(seconds=1),
             idempotency_retention=timedelta(hours=1),
         )
-        await store.finish_cleanup(f"run-{name}", now=now)
+        await store.finish_cleanup(f"resp-{name}", now=now)
 
     expired_at = now + timedelta(seconds=2)
     assert await store.expire(now=expired_at, limit=1) == 1
     assert await store.expire(now=expired_at, limit=1) == 1
-    assert await store.get_internal("run-two") is None
+    assert await store.get_internal("resp-two") is None
 
 
 async def test_cleanup_claim_rotates_past_an_unfinished_row() -> None:
@@ -176,7 +222,7 @@ async def test_cleanup_claim_rotates_past_an_unfinished_row() -> None:
     for name in ("one", "two"):
         await store.accept(_new_run(name, now=now), capacity=2)
         await store.publish_terminal(
-            f"run-{name}",
+            f"resp-{name}",
             {"id": f"resp-{name}", "status": "completed"},
             now=now,
             result_retention=timedelta(hours=1),
@@ -193,14 +239,14 @@ async def test_cleanup_claim_rotates_past_an_unfinished_row() -> None:
     )
 
     assert len(first) == len(second) == 1
-    assert first[0].run_id != second[0].run_id
+    assert first[0].response_id != second[0].response_id
 
 
 async def test_expiry_retains_a_pending_native_cancellation() -> None:
     store = InMemoryResponseStore()
     now = datetime.now(UTC)
     await store.accept(_new_run("one", now=now), capacity=1)
-    await store.record_workflow_run("run-one", "native-run", now=now)
+    await store.record_workflow_run("resp-one", "native-run", now=now)
     await store.request_cancellation(
         "resp-one",
         "owner",
@@ -209,16 +255,16 @@ async def test_expiry_retains_a_pending_native_cancellation() -> None:
         result_retention=timedelta(seconds=1),
         idempotency_retention=timedelta(seconds=1),
     )
-    await store.finish_cleanup("run-one", now=now)
+    await store.finish_cleanup("resp-one", now=now)
     expired_at = now + timedelta(seconds=2)
 
     assert await store.expire(now=expired_at, limit=10) == 1
     assert await store.expire(now=expired_at, limit=10) == 0
-    retained = await store.get_internal("run-one")
+    retained = await store.get_internal("resp-one")
     assert retained is not None
     assert retained.response is None
     assert retained.cancellation_pending is True
 
-    assert await store.finish_cancellation("run-one", now=expired_at) is True
+    assert await store.finish_cancellation("resp-one", now=expired_at) is True
     assert await store.expire(now=expired_at, limit=10) == 1
-    assert await store.get_internal("run-one") is None
+    assert await store.get_internal("resp-one") is None

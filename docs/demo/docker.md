@@ -164,7 +164,7 @@ settings](reference.md#opentelemetry-settings).
     # Choose litellm or bifrost.
     OPENAI_GATEWAY_TYPE=litellm
     COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
-    DEMO_API_BACKGROUND_ENABLED=true
+    DEMO_API_BACKGROUND_ENABLED=True
     HATCHET_CLIENT_TOKEN=...
     ```
 
@@ -215,7 +215,7 @@ settings](reference.md#opentelemetry-settings).
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
     ```
 
     Use the gateway root without `/v1`. Both UIs share the gateway type, base
@@ -432,7 +432,7 @@ held only while an API request executes the graph, never while a human is
 deciding. A per-process capacity gate preserves a pool connection for
 persistence I/O.
 
-Compose also forces `LANGGRAPH_STRICT_MSGPACK=true` for the APIs. Strict
+Compose also forces `LANGGRAPH_STRICT_MSGPACK=True` for the APIs. Strict
 deserialization narrows which checkpoint object types LangGraph may
 reconstruct, following its
 [security guidance](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).

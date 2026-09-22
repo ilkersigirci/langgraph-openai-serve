@@ -24,7 +24,6 @@ from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background.contracts import (
     BackgroundSettings,
     RetryableJobError,
-    RunJob,
 )
 from langgraph_openai_serve.background.responses import (
     failed_response,
@@ -98,17 +97,17 @@ class BackgroundWorker:
         self.store = store
         self.settings = settings or BackgroundSettings()
 
-    async def execute(self, job: RunJob) -> None:
+    async def execute(self, response_id: str) -> None:
         """Execute one engine delivery, resuming from LangGraph checkpoints."""
-        await self._with_retry(job, finalize_only=False)
+        await self._with_retry(response_id, finalize_only=False)
 
-    async def finalize(self, job: RunJob) -> None:
+    async def finalize(self, response_id: str) -> None:
         """Publish checkpointed output or failure after the engine exhausts retries."""
-        await self._with_retry(job, finalize_only=True)
+        await self._with_retry(response_id, finalize_only=True)
 
-    async def _with_retry(self, job: RunJob, *, finalize_only: bool) -> None:
+    async def _with_retry(self, response_id: str, *, finalize_only: bool) -> None:
         try:
-            await self._deliver(job, finalize_only=finalize_only)
+            await self._deliver(response_id, finalize_only=finalize_only)
         except (RetryableJobError, get_cancelled_exc_class()):
             raise
         except Exception as exc:
@@ -116,8 +115,8 @@ class BackgroundWorker:
             msg = f"Background {operation} needs another engine attempt."
             raise RetryableJobError(msg) from exc
 
-    async def _deliver(self, job: RunJob, *, finalize_only: bool) -> None:
-        run = await self._load(job)
+    async def _deliver(self, response_id: str, *, finalize_only: bool) -> None:
+        run = await self.store.get_internal(response_id)
         if run is None:
             return
         if run.terminal:
@@ -147,7 +146,7 @@ class BackgroundWorker:
             raise RetryableJobError(str(exc)) from exc
         except get_cancelled_exc_class():
             with CancelScope(shield=True):
-                latest = await self.store.get_internal(run.run_id)
+                latest = await self.store.get_internal(run.response_id)
             if latest is not None and latest.status is ResponseStatus.CANCELLED:
                 return
             raise
@@ -159,7 +158,7 @@ class BackgroundWorker:
         *,
         finalize_only: bool,
     ) -> None:
-        current = await self.store.get_internal(run.run_id)
+        current = await self.store.get_internal(run.response_id)
         if current is None:
             return
         if current.terminal:
@@ -167,7 +166,7 @@ class BackgroundWorker:
             return
         if not finalize_only:
             current = await self.store.mark_in_progress(
-                run.run_id,
+                run.response_id,
                 now=datetime.now(UTC),
             )
             if current is None:
@@ -187,18 +186,6 @@ class BackgroundWorker:
             )
         if terminal is not None:
             await self._cleanup_locked(terminal, prepared.graph_config)
-
-    async def _load(self, job: RunJob) -> StoredRun | None:
-        if job.schema_version != 1:
-            run = await self.store.get_internal(job.run_id)
-            if run is not None and not run.terminal:
-                await self._publish_failure(
-                    run,
-                    message="The background job envelope version is not supported.",
-                    code="background_schema_incompatible",
-                )
-            return None
-        return await self.store.get_internal(job.run_id)
 
     async def _prepare_or_fail(
         self,
@@ -272,7 +259,7 @@ class BackgroundWorker:
             initial_call_ids=frozenset(run.initial_call_ids),
         )
         published = await self.store.publish_terminal(
-            run.run_id,
+            run.response_id,
             response_json(response),
             now=datetime.now(UTC),
             result_retention=self.settings.result_retention_for(
@@ -282,7 +269,7 @@ class BackgroundWorker:
         )
         if published is not None:
             return published
-        latest = await self.store.get_internal(run.run_id)
+        latest = await self.store.get_internal(run.response_id)
         if latest is not None and latest.terminal:
             return latest
         msg = "Background terminal publication lost its persisted run."
@@ -302,7 +289,7 @@ class BackgroundWorker:
             Response.model_validate(run.response), message=message
         )
         published = await self.store.publish_terminal(
-            run.run_id,
+            run.response_id,
             response_json(response),
             now=datetime.now(UTC),
             result_retention=self.settings.result_retention_for(
@@ -313,10 +300,10 @@ class BackgroundWorker:
         if published is not None:
             logger.warning(
                 "background.response_failed",
-                extra={"run_id": run.run_id, "failure_code": code},
+                extra={"response_id": run.response_id, "failure_code": code},
             )
             return published
-        latest = await self.store.get_internal(run.run_id)
+        latest = await self.store.get_internal(run.response_id)
         if latest is not None and latest.terminal:
             return latest
         msg = "Background failure publication lost its persisted run."
@@ -337,7 +324,7 @@ class BackgroundWorker:
             except Exception:
                 logger.exception(
                     "background.checkpoint_cleanup_failed",
-                    extra={"run_id": run.run_id},
+                    extra={"response_id": run.response_id},
                 )
                 continue
         return cleaned
@@ -352,7 +339,7 @@ class BackgroundWorker:
         return {"cleaned": cleaned, "expired": expired}
 
     async def _cleanup_run(self, run: StoredRun) -> bool:
-        if not run.cleanup_pending or run.recovery_cleaned:
+        if not run.cleanup_pending:
             return False
         try:
             graph_config = self.graphs.get_graph(run.model)
@@ -362,7 +349,7 @@ class BackgroundWorker:
         if coordinator is None:
             return await self._abandon_cleanup(run)
         async with coordinator(run.checkpoint_thread_id):
-            current = await self.store.get_internal(run.run_id)
+            current = await self.store.get_internal(run.response_id)
             if current is None or not current.terminal or not current.cleanup_pending:
                 return False
             return await self._cleanup_locked(current, graph_config)
@@ -380,17 +367,20 @@ class BackgroundWorker:
         if not isinstance(checkpointer, BaseCheckpointSaver):
             return await self._abandon_cleanup(run)
         await checkpointer.adelete_thread(run.checkpoint_thread_id)
-        return await self.store.finish_cleanup(run.run_id, now=datetime.now(UTC))
+        return await self.store.finish_cleanup(
+            run.response_id,
+            now=datetime.now(UTC),
+        )
 
     async def _abandon_cleanup(self, run: StoredRun) -> bool:
         abandoned = await self.store.abandon_cleanup(
-            run.run_id,
+            run.response_id,
             now=datetime.now(UTC),
         )
         if abandoned:
             logger.warning(
                 "background.checkpoint_cleanup_abandoned",
-                extra={"run_id": run.run_id, "model": run.model},
+                extra={"response_id": run.response_id, "model": run.model},
             )
         return False
 

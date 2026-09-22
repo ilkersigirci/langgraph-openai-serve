@@ -267,7 +267,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
     ```
 
     This authenticates users with SSO while sending the static Chainlit key to
@@ -283,7 +283,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     To delegate gateway authorization to the signed-in user instead:
 
     ```dotenv
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True
     DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
     OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com

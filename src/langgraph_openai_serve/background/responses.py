@@ -15,7 +15,10 @@ from openai.types.responses import (
 )
 
 from langgraph_openai_serve.api.responses.events import ResponsesEventBuilder
-from langgraph_openai_serve.api.responses.output import ResponseContext
+from langgraph_openai_serve.api.responses.output import (
+    ResponseContext,
+    UnsupportedResponsesOutputError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -124,7 +127,7 @@ def output_response(  # ruff: ignore[too-many-arguments] - Rendering needs the p
             terminal = event.response
     if terminal is None:
         msg = "Background output rendering produced no terminal Response."
-        raise RuntimeError(msg)
+        raise UnsupportedResponsesOutputError(msg)
     return _stable_output_ids(terminal)
 
 

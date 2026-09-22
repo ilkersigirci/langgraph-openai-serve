@@ -8,6 +8,7 @@ from typing import Any, cast
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.ai import add_usage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import (
@@ -158,10 +159,17 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
 
     snapshot = await graph.aget_state(runnable_config, subgraphs=True)
     checkpoint_exists = _snapshot_has_checkpoint(snapshot.config)
-    if checkpoint_exists and not snapshot.next and not snapshot.interrupts:
+    # Pending task writes can make `next` empty before the super-step checkpoint
+    # commits. LangGraph must resume those tasks to schedule downstream nodes.
+    if (
+        checkpoint_exists
+        and not snapshot.next
+        and not snapshot.tasks
+        and not snapshot.interrupts
+    ):
         return await _background_result(
             config,
-            graph,
+            await _background_output(graph, runnable_config),
             snapshot.values,
             usage_callback,
             initial_message_count=initial_message_count,
@@ -195,13 +203,14 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
     if (
         not _snapshot_has_checkpoint(completed.config)
         or completed.next
+        or completed.tasks
         or completed.interrupts
     ):
         msg = "Graph execution ended without complete checkpointed output."
         raise BackgroundCheckpointIncompleteError(msg)
     return await _background_result(
         config,
-        graph,
+        await _background_output(graph, runnable_config),
         completed.values,
         usage_callback,
         initial_message_count=initial_message_count,
@@ -217,13 +226,13 @@ def _snapshot_has_checkpoint(config: Mapping[str, Any] | None) -> bool:
 
 async def _background_result(
     config: GraphConfig,
-    graph: CompiledStateGraph,
+    output: Any,
     state: Any,
     usage_callback: UsageMetadataCallbackHandler,
     *,
     initial_message_count: int,
 ) -> BackgroundGraphResult:
-    message = await config.render_output(_checkpoint_output(graph, state))
+    message = await config.render_output(output)
     root_messages = _root_messages(state)
     total_usage = None
     for operation_message in root_messages[initial_message_count:]:
@@ -243,27 +252,22 @@ async def _background_result(
     )
 
 
-def _checkpoint_output(graph: CompiledStateGraph, state: Any) -> Any:
-    """Reconstruct the graph's declared v2 output from its full checkpoint state."""
-    output_channels = graph.output_channels
-    if isinstance(output_channels, str):
-        output = (
-            state[output_channels]
-            if isinstance(state, Mapping) and output_channels in state
-            else state
-        )
-    else:
-        if not isinstance(state, Mapping):
-            msg = "Checkpoint state does not expose the graph's output channels."
-            raise BackgroundCheckpointIncompleteError(msg)
-        output = {
-            channel: state[channel] for channel in output_channels if channel in state
-        }
-
-    # LangGraph applies this mapper to v2 invocation output after selecting the
-    # channels. Recovery must do the same for Pydantic and dataclass schemas.
-    output_mapper = graph._output_mapper  # ruff: ignore[private-member-access] - Required for parity with LangGraph's v2 output coercion.
-    return output_mapper(output) if output_mapper is not None else output
+async def _background_output(
+    graph: CompiledStateGraph,
+    runnable_config: RunnableConfig,
+) -> Any:
+    """Read a completed checkpoint through LangGraph's public output path."""
+    result = await graph.ainvoke(
+        None,
+        config=runnable_config,
+        output_keys=graph.output_channels,
+        durability="sync",
+        version="v2",
+    )
+    if result.interrupts:
+        msg = "Background execution does not support graph interrupts."
+        raise BackgroundGraphInterruptedError(msg)
+    return result.value
 
 
 def _root_messages(output: Any) -> tuple[BaseMessage, ...]:

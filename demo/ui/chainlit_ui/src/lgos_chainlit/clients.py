@@ -65,6 +65,7 @@ async def list_models() -> list[Model]:
     catalog = await openai_client.with_options(
         base_url=f"{gateway.root_url}/v1"
     ).models.list()
+    allowed_models = {model.id for model in catalog.data}
     providers = sorted(
         {
             _bifrost_model(model.id)[0]
@@ -80,6 +81,7 @@ async def list_models() -> list[Model]:
         models.extend(
             model.model_copy(update={"id": f"{provider}/{model.id}"})
             for model in provider_models.data
+            if f"{provider}/{model.id}" in allowed_models
         )
     return models
 

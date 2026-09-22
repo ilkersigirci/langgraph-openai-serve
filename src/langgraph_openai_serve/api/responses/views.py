@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, status
 from fastapi.responses import StreamingResponse
 from openai.types.responses import Response
 from openai.types.shared import ErrorObject
@@ -36,7 +36,7 @@ router = APIRouter(tags=["openai"])
 
 
 @router.post("/responses", response_model=Response)
-async def create_response(
+async def create_response(  # ruff: ignore[too-many-arguments, too-many-positional-arguments] - Explicit FastAPI dependencies.
     response_request: ResponseCreateRequest,
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry)],
     checkpoint_scope: Annotated[str, Depends(get_checkpoint_scope)],
@@ -48,6 +48,10 @@ async def create_response(
         StreamOwner,
         Depends(get_stream_owner, scope="request"),
     ],
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
 ) -> StreamingResponse | Response:
     """Create one stateless OpenAI Response, optionally as an SSE stream."""
     bind_log_context(model=response_request.model, stream=response_request.stream)
@@ -60,6 +64,7 @@ async def create_response(
                     graph_registry,
                     background,
                     checkpoint_scope=checkpoint_scope,
+                    idempotency_key=idempotency_key,
                 )
             except (
                 UnsupportedResponsesRequestError,
@@ -176,13 +181,17 @@ def _invalid_request(
     )
 
 
-def _idempotency_conflict(message: str, *, code: str) -> OpenAIHTTPException:
+def _idempotency_conflict(
+    message: str,
+    *,
+    code: str,
+) -> OpenAIHTTPException:
     return OpenAIHTTPException(
         status_code=status.HTTP_409_CONFLICT,
         error=ErrorObject(
             message=message,
             type="invalid_request_error",
-            param="metadata.lgos_run_id",
+            param="Idempotency-Key",
             code=code,
         ),
     )

@@ -17,7 +17,7 @@ deployment's ASGI server or ingress proxy.
 | `GET` | `/v1/health` | Health check. |
 
 FastAPI docs for the mounted OpenAI app are disabled by default. Set
-`LGOS_OPENAI_API_DOCS_ENABLED=true` to expose `{prefix}/docs`, `{prefix}/redoc`,
+`LGOS_OPENAI_API_DOCS_ENABLED=True` to expose `{prefix}/docs`, `{prefix}/redoc`,
 and `{prefix}/openapi.json`.
 
 ### Responses Request
@@ -77,8 +77,8 @@ Package settings:
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
-| `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
-| `LGOS_ENABLE_LANGFUSE` | `false` | Lazily adds the package Langfuse callback to every graph run. |
+| `LGOS_OPENAI_API_DOCS_ENABLED` | `False` | Enables docs only for the mounted OpenAI app. |
+| `LGOS_ENABLE_LANGFUSE` | `False` | Lazily adds the package Langfuse callback to every graph run. |
 
 Settings prefixed with `DEMO_` belong to the independent example applications
 and are documented under [Demo Settings and Commands](demo/reference.md).
@@ -143,6 +143,8 @@ belong to an external OpenAI Files API, not the LGOS package. See
   runtime context from normalized request values, server-owned values, and optional
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
+  Keep it deterministic and side-effect free because background recovery can
+  render a completed checkpoint again; an exception is a configuration failure.
 
 `GraphConfig` is immutable after construction. Pydantic snapshots `features`
 and `server_tools` as frozen sets, so later mutations of the input collections
@@ -211,7 +213,7 @@ default callback through process environment settings:
 
 ```bash
 uv add "langgraph-openai-serve[tracing]"
-export LGOS_ENABLE_LANGFUSE=true
+export LGOS_ENABLE_LANGFUSE=True
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
@@ -357,7 +359,7 @@ and `code: "run_busy"`.
 
 The package exports the lifecycle-level `BackgroundBackend`, `NewRun`,
 `StoredRun`, `ResponseStore`, `BackgroundPolicy`, `BackgroundSettings`,
-`RunJob`, and `BackgroundWorker` public interfaces. It also exports
+and `BackgroundWorker` public interfaces. It also exports
 `InMemoryBackgroundBackend` and `InMemoryResponseStore` for single-process
 development. Hatchet is the only durable built-in backend.
 
@@ -390,13 +392,20 @@ and executes through the shared graph runner. `execute()` raises
 `RetryableJobError` for the engine to retry. Call `finalize()` after native
 retries are exhausted; it never advances an unfinished graph. Schedule
 `maintain()` for checkpoint cleanup and Response expiry. The Hatchet adapter
-also retries pending native cancellations on that schedule.
+also recovers pending submissions and retries native cancellations on that
+schedule. A submission error leaves its accepted record recoverable; it cannot
+overwrite a successfully submitted run with a failed Response.
+Cancelled records without a workflow receipt remain pending until maintenance
+resolves the idempotent trigger and delivers native cancellation.
+Background create accepts a non-empty `Idempotency-Key` header. The separate
+`metadata.lgos_run_id` field identifies interrupt-enabled foreground operations
+and is rejected on background requests. Configure Hatchet's `idempotency_ttl`
+to cover the longest expected pending-submission recovery window.
 
 Install `langgraph-openai-serve[postgres]` for
 `integrations.background_postgres.PostgresResponseStore`. Its `setup()` method
-transactionally applies pending packaged migrations and records their versions
-in `lgos_background_migrations`. Run it as a deployment step before starting
-workers. Repeated calls are safe. Install
+transactionally creates its schema. Run it as a deployment step before
+starting workers. Repeated and concurrent calls are safe. Install
 `langgraph-openai-serve[hatchet]` for
 `HatchetBackgroundBackend`, `HatchetAdapterSettings`,
 `create_hatchet_workflows()`, and `check_hatchet_connection()`. The registered

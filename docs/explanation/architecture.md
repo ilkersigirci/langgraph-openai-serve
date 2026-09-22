@@ -38,10 +38,12 @@ The package owns the `/v1` transport and adaptation boundary. The host
 application owns graph behavior and every model, tool, store, or data source
 used by that graph.
 
-Polling-only background requests branch after validation. The API stores the
-queued Response, submits its stable reference to Hatchet, and only then
-acknowledges the client. An independently deployed worker later enters the same
-graph runner. Polling never executes the graph in an HTTP request.
+Polling-only background requests branch after validation. The API first stores
+the queued Response, then best-effort submits its stable reference to Hatchet.
+It returns the queued Response even when a workflow receipt is not immediately
+available; maintenance recovers pending submissions. An independently deployed
+worker later enters the same graph runner. Polling never executes the graph in
+an HTTP request.
 
 ```mermaid
 flowchart LR

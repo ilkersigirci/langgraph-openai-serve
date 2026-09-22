@@ -622,7 +622,8 @@ async def test_background_response_uses_polling_and_native_statuses(
     assert request["background"] is True
     assert request["store"] is True
     assert request["metadata"]["conversation_id"] == "thread-123"
-    UUID(request["metadata"]["lgos_run_id"])
+    assert request.get("extra_headers") is None
+    UUID(request["extra_body"]["extra_headers"]["Idempotency-Key"])
     assert "lgos_settings" not in request["metadata"]
     assert retrieve.await_args_list == [
         call(response_id, extra_headers=None),
@@ -651,6 +652,23 @@ async def test_background_response_uses_polling_and_native_statuses(
     stream.assert_not_called()
     cancel.assert_not_awaited()
     assert client.max_retries == 2
+
+
+async def test_background_response_forwards_idempotency_through_bifrost() -> None:
+    create = AsyncMock(return_value=final_response("Report ready."))
+    client = FakeClient(create=create)
+
+    await generic_responses._background_response(
+        client,
+        {"extra_headers": {"x-model-provider": "openai"}},
+        AsyncMock(),
+        provider_routing=True,
+    )
+
+    request = create.await_args.kwargs
+    assert request["extra_headers"]["x-model-provider"] == "openai"
+    UUID(request["extra_headers"]["Idempotency-Key"])
+    assert "extra_body" not in request
 
 
 async def test_stale_background_setting_is_ignored_after_model_switch(
@@ -695,7 +713,12 @@ async def test_background_response_is_cancelled_when_request_stops(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await generic_responses._background_response(client, {}, AsyncMock())
+        await generic_responses._background_response(
+            client,
+            {},
+            AsyncMock(),
+            provider_routing=False,
+        )
 
     cancel.assert_awaited_once_with(response_id, extra_headers=None)
 

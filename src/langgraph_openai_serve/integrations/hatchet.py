@@ -14,18 +14,9 @@ from hatchet_sdk.exceptions import IdempotencyCollisionError
 from hatchet_sdk.runnables.types import EmptyModel
 from hatchet_sdk.runnables.workflow import Standalone, Workflow
 from hatchet_sdk.types.idempotency import TTLBasedIdempotencyConfig
-from openai.types.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
-from langgraph_openai_serve.background.contracts import (
-    BackgroundSettings,
-    RunJob,
-)
-from langgraph_openai_serve.background.responses import (
-    failed_response,
-    is_stored_response,
-    response_json,
-)
+from langgraph_openai_serve.background.contracts import BackgroundSettings
 from langgraph_openai_serve.background.store import (
     NewRun,
     ResponseStatus,
@@ -54,11 +45,11 @@ class BackgroundJobExecutor(Protocol):
         """LGOS-owned maintenance limits."""
         ...
 
-    async def execute(self, job: RunJob) -> None:
+    async def execute(self, response_id: str) -> None:
         """Execute or resume one persisted run."""
         ...
 
-    async def finalize(self, job: RunJob) -> None:
+    async def finalize(self, response_id: str) -> None:
         """Publish a result after native retries are exhausted."""
         ...
 
@@ -104,16 +95,15 @@ class HatchetAdapterSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class HatchetRunInput(BaseModel):
-    """Versioned workflow input containing only a persisted run reference."""
+class HatchetResponseInput(BaseModel):
+    """Workflow input containing only a persisted Response reference."""
 
-    run_id: str
-    schema_version: int = 1
+    response_id: str
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-HatchetResponseWorkflow = Workflow[HatchetRunInput]
+HatchetResponseWorkflow = Workflow[HatchetResponseInput]
 HatchetMaintenanceTask = Standalone[EmptyModel, dict[str, int]]
 
 
@@ -150,20 +140,24 @@ class HatchetBackgroundBackend:
         self.settings = settings or BackgroundSettings()
 
     async def create(self, run: NewRun) -> StoredRun:
-        """Persist, submit idempotently, and retain Hatchet's workflow ID."""
+        """Persist the run, then best-effort submit it to Hatchet."""
         accepted = await self.store.accept(
             run,
             capacity=self.settings.admission_capacity,
         )
-        if accepted.run.terminal or accepted.run.workflow_run_id is not None:
-            return accepted.run
+        if accepted.terminal or accepted.workflow_run_id is not None:
+            return accepted
 
+        # A failed or interrupted trigger may already exist in Hatchet. Keep
+        # the accepted run recoverable by an idempotent retry or maintenance.
         try:
-            return await _submit_run(self._workflow, self.store, accepted.run)
-        except BaseException:
-            with CancelScope(shield=True):
-                await _fail_submission(self.store, self.settings, accepted.run)
-            raise
+            return await _submit_run(self._workflow, self.store, accepted)
+        except Exception:
+            logger.exception(
+                "background.hatchet_submission_failed",
+                extra={"response_id": accepted.response_id},
+            )
+            return accepted
 
     async def retrieve(self, response_id: str, owner_scope: str) -> StoredRun | None:
         """Read one authorized Response snapshot."""
@@ -196,7 +190,7 @@ class HatchetBackgroundBackend:
             except Exception:
                 logger.exception(
                     "background.hatchet_cancellation_failed",
-                    extra={"run_id": cancelled.run_id},
+                    extra={"response_id": cancelled.response_id},
                 )
         return cancelled
 
@@ -211,9 +205,9 @@ def create_hatchet_workflows(
     task_settings = settings or HatchetAdapterSettings()
     workflow = hatchet.workflow(
         name=task_settings.workflow_name,
-        input_validator=HatchetRunInput,
+        input_validator=HatchetResponseInput,
         idempotency=TTLBasedIdempotencyConfig(
-            key_expression="input.run_id",
+            key_expression="input.response_id",
             ttl=task_settings.idempotency_ttl,
         ),
     )
@@ -227,16 +221,11 @@ def create_hatchet_workflows(
         execution_timeout=task_settings.execution_timeout,
     )
     async def execute(
-        job_input: HatchetRunInput,
+        job_input: HatchetResponseInput,
         _context: Context,
     ) -> dict[str, str]:
-        await worker.execute(
-            RunJob(
-                run_id=job_input.run_id,
-                schema_version=job_input.schema_version,
-            )
-        )
-        return {"run_id": job_input.run_id}
+        await worker.execute(job_input.response_id)
+        return {"response_id": job_input.response_id}
 
     @workflow.on_failure_task(
         name=f"{task_settings.workflow_name}-finalize",
@@ -247,16 +236,11 @@ def create_hatchet_workflows(
         execution_timeout=task_settings.finalization_timeout,
     )
     async def finalize(
-        job_input: HatchetRunInput,
+        job_input: HatchetResponseInput,
         _context: Context,
     ) -> dict[str, str]:
-        await worker.finalize(
-            RunJob(
-                run_id=job_input.run_id,
-                schema_version=job_input.schema_version,
-            )
-        )
-        return {"run_id": job_input.run_id}
+        await worker.finalize(job_input.response_id)
+        return {"response_id": job_input.response_id}
 
     @hatchet.task(
         name=task_settings.maintenance_task_name,
@@ -272,12 +256,16 @@ def create_hatchet_workflows(
         _input: EmptyModel,
         _context: Context,
     ) -> dict[str, int]:
-        result = await worker.maintain()
-        result["cancelled"] = await _deliver_pending_cancellations(
+        submitted = await _submit_pending_runs(worker, workflow)
+        cancelled = await _deliver_pending_cancellations(
             worker,
             hatchet.runs,
         )
-        return result
+        return {
+            **await worker.maintain(),
+            "submitted": submitted,
+            "cancelled": cancelled,
+        }
 
     return HatchetWorkflows(response=workflow, maintenance=maintain)
 
@@ -287,7 +275,7 @@ async def _submit_run(
     store: ResponseStore,
     run: StoredRun,
 ) -> StoredRun:
-    task_input = HatchetRunInput(run_id=run.run_id)
+    task_input = HatchetResponseInput(response_id=run.response_id)
     try:
         reference = await workflow.aio_run(
             input=task_input,
@@ -299,7 +287,7 @@ async def _submit_run(
 
     with CancelScope(shield=True):
         recorded = await store.record_workflow_run(
-            run.run_id,
+            run.response_id,
             workflow_run_id,
             now=datetime.now(UTC),
         )
@@ -309,26 +297,25 @@ async def _submit_run(
     return recorded
 
 
-async def _fail_submission(
-    store: ResponseStore,
-    settings: BackgroundSettings,
-    run: StoredRun,
-) -> None:
-    if run.response is None:
-        return
-    response = failed_response(
-        Response.model_validate(run.response),
-        message="The background workflow could not be scheduled.",
-    )
-    await store.publish_terminal(
-        run.run_id,
-        response_json(response),
+async def _submit_pending_runs(
+    worker: BackgroundJobExecutor,
+    workflow: HatchetResponseWorkflow,
+) -> int:
+    pending = await worker.store.claim_pending_submissions(
         now=datetime.now(UTC),
-        result_retention=settings.result_retention_for(
-            stored=is_stored_response(response)
-        ),
-        idempotency_retention=settings.idempotency_retention,
+        limit=worker.settings.maintenance_batch_size,
     )
+    submitted = 0
+    for run in pending:
+        try:
+            await _submit_run(workflow, worker.store, run)
+            submitted += 1
+        except Exception:
+            logger.exception(
+                "background.hatchet_submission_failed",
+                extra={"response_id": run.response_id},
+            )
+    return submitted
 
 
 async def _deliver_cancellation(
@@ -339,7 +326,10 @@ async def _deliver_cancellation(
     if not run.cancellation_pending or run.workflow_run_id is None:
         return False
     await runs.aio_cancel(run.workflow_run_id)
-    return await store.finish_cancellation(run.run_id, now=datetime.now(UTC))
+    return await store.finish_cancellation(
+        run.response_id,
+        now=datetime.now(UTC),
+    )
 
 
 async def _deliver_pending_cancellations(
@@ -357,7 +347,7 @@ async def _deliver_pending_cancellations(
         except Exception:
             logger.exception(
                 "background.hatchet_cancellation_failed",
-                extra={"run_id": run.run_id},
+                extra={"response_id": run.response_id},
             )
     return delivered
 
@@ -372,8 +362,8 @@ __all__ = [
     "HatchetAdapterSettings",
     "HatchetBackgroundBackend",
     "HatchetMaintenanceTask",
+    "HatchetResponseInput",
     "HatchetResponseWorkflow",
-    "HatchetRunInput",
     "HatchetWorkflows",
     "check_hatchet_connection",
     "create_hatchet_workflows",

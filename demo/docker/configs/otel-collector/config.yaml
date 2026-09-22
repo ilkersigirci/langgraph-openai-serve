@@ -30,8 +30,11 @@ processors:
         - 'instrumentation_scope.name == "opentelemetry.instrumentation.fastapi" and IsMatch(name, " http (send|receive)$")'
   # Langfuse and GenAI integrations intentionally keep payloads for Langfuse,
   # but the general Grafana trace store only needs the graph shape and metadata.
+  # Bifrost also records forwarded headers; do not export retry identity.
   attributes/redact_payload:
     actions:
+      - key: gen_ai.request.extra_header.idempotency-key
+        action: delete
       - key: langfuse.observation.input
         action: delete
       - key: langfuse.observation.output
