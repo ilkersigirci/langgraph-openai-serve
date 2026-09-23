@@ -35,7 +35,6 @@ def _new_run() -> NewRun:
         owner_scope="owner",
         model="model",
         checkpoint_thread_id="checkpoint",
-        graph_version="v1",
         envelope=envelope,
         response=response_json(response),
         created_at=now,

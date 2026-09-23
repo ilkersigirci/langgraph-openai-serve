@@ -53,7 +53,7 @@ def _assert_workspace_reads(client: Mock) -> None:
     assert client.get.call_count == 2
 
 
-def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
+def test_chat_variable_fields_maps_the_supported_scalar_settings() -> None:
     model = SimpleNamespace(
         model_extra={
             "lgos": {
@@ -79,6 +79,12 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
                                 "title": "Assistant name",
                             },
                             "retries": {"type": "integer"},
+                            "delay": {
+                                "type": "integer",
+                                "title": "Delay",
+                                "minimum": 0,
+                                "maximum": 300,
+                            },
                         },
                     },
                     "defaults": {
@@ -86,6 +92,7 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
                         "mode": "brief",
                         "assistant_name": "Helper",
                         "retries": 3,
+                        "delay": 5,
                     },
                 },
             }
@@ -112,6 +119,22 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
             "label": "Assistant name",
             "default": "Helper",
         },
+        {
+            "key": "retries",
+            "type": "number",
+            "label": "Retries",
+            "default": 3,
+            "step": 1,
+        },
+        {
+            "key": "delay",
+            "type": "number",
+            "label": "Delay",
+            "default": 5,
+            "step": 1,
+            "min": 0,
+            "max": 300,
+        },
     )
     assert chat_variable_fields(SimpleNamespace(model_extra={})) is None
 
@@ -128,6 +151,8 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
         ("invalid", {"type": "string", "enum": ["a", {}]}, "a"),
         ("invalid", {"type": "string", "enum": ["a"]}, "b"),
         ("invalid", {"type": "object"}, {}),
+        ("invalid", {"type": "integer"}, "3"),
+        ("invalid", {"type": "integer"}, True),
         ("invalid", None, "value"),
     ],
 )

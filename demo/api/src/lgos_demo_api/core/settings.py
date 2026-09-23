@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
     BACKGROUND_ENABLED: bool = False
-    BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS: int = Field(default=5, ge=0, le=300)
     HATCHET_WORKER_SLOTS: WorkerSlots = 4
 
 

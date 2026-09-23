@@ -261,7 +261,10 @@ uses the same deliberately small JSON Schema subset as the Chainlit demo:
 - boolean with a boolean default becomes a checkbox;
 - string enum with a valid string default becomes a selector;
 - string with a string default becomes a text input;
-- nested objects, arrays, numbers, and unsupported schemas are omitted.
+- integer with an integer default becomes a number input, keeping its
+  `minimum` and `maximum` as bounds;
+- nested objects, arrays, non-integer numbers, and unsupported schemas are
+  omitted.
 
 Open WebUI stores Chat Variable values on the conversation. Select a generated
 LGOS model, then use the Chat Variables control beside the message input. Since

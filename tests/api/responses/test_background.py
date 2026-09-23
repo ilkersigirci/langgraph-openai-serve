@@ -26,6 +26,7 @@ from langgraph_openai_serve import (
     BackgroundWorker,
     ClientSettings,
     GraphConfig,
+    GraphFeature,
     GraphRegistry,
     InMemoryBackgroundBackend,
     InMemoryResponseStore,
@@ -112,7 +113,11 @@ async def _environment(  # ruff: ignore[too-many-arguments] - Test fixture optio
                 "background": GraphConfig(
                     graph=graph,
                     description="Background test graph",
-                    background_version="test-v1" if model_enabled else None,
+                    features=(
+                        frozenset({GraphFeature.BACKGROUND})
+                        if model_enabled
+                        else frozenset()
+                    ),
                     run_coordinator=(
                         (coordinator or InMemoryRunCoordinator())
                         if model_enabled
@@ -348,7 +353,7 @@ async def test_background_requires_a_backend_and_an_opted_in_model() -> None:
 
 
 @pytest.mark.parametrize("encoded", ['{"count":"invalid"}', "not-json"])
-async def test_invalid_background_settings_are_rejected_before_admission(encoded):
+async def test_invalid_background_settings_are_rejected_before_persistence(encoded):
     class Settings(ClientSettings):
         count: int = 1
 

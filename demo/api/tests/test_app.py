@@ -109,7 +109,14 @@ async def test_app_lists_exactly_the_documented_models(
     }
 
     background_model = await openai_client.models.retrieve("background-report-agent")
-    assert (background_model.model_extra or {})["lgos"]["features"] == ["background"]
+    background_extension = (background_model.model_extra or {})["lgos"]
+    assert background_extension["features"] == ["background"]
+    background_settings = background_extension["client_settings"]
+    assert background_settings["defaults"] == {"finalize_delay_seconds": 5}
+    delay_schema = background_settings["json_schema"]["properties"][
+        "finalize_delay_seconds"
+    ]
+    assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
 
     for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)

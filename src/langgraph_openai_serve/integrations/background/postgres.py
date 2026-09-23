@@ -34,7 +34,6 @@ MIGRATIONS: tuple[LiteralString, ...] = (
     owner_scope text NOT NULL,
     model text NOT NULL,
     checkpoint_thread_id text NOT NULL,
-    graph_version text NOT NULL,
     envelope jsonb NOT NULL,
     response jsonb NOT NULL,
     status text NOT NULL CHECK (
@@ -102,12 +101,12 @@ class PostgresResponseStore:
         """Persist a new queued run, or return the run holding its digest."""
         inserted = await self._one(
             "INSERT INTO lgos_background_responses ("
-            "response_id, owner_scope, model, checkpoint_thread_id, graph_version, "
+            "response_id, owner_scope, model, checkpoint_thread_id, "
             "envelope, response, status, initial_call_ids, "
             "idempotency_digest, request_fingerprint, "
             "created_at, updated_at, cleanup_pending"
             ") VALUES ("
-            "%s, %s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, false"
+            "%s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, false"
             ") ON CONFLICT (idempotency_digest) WHERE idempotency_digest IS NOT NULL "
             "DO NOTHING RETURNING *",
             (
@@ -115,7 +114,6 @@ class PostgresResponseStore:
                 run.owner_scope,
                 run.model,
                 run.checkpoint_thread_id,
-                run.graph_version,
                 Jsonb(run.envelope),
                 Jsonb(run.response),
                 list(run.initial_call_ids),

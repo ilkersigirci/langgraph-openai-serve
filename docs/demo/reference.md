@@ -47,7 +47,7 @@ integration commands:
 | `just demo/sync` | Synchronize all four projects from their lockfiles |
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
-| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, and polling-only validation through the selected gateway |
+| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, idempotent replay, and polling-only validation through the selected gateway |
 | `just demo/lint` | Check all four projects with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check all four projects |
@@ -167,7 +167,6 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, background Response storage, and interrupt/background run coordination |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 | `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
-| `DEMO_API_BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS` | Demo-only pause after the report draft checkpoint, used to make worker crash recovery observable. |
 | `DEMO_API_HATCHET_WORKER_SLOTS` | Explicit worker concurrency bound. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |

@@ -43,7 +43,6 @@ class NewRun(BaseModel):
     owner_scope: str
     model: str
     checkpoint_thread_id: str
-    graph_version: str
     envelope: dict[str, JsonValue]
     response: dict[str, JsonValue]
     created_at: datetime

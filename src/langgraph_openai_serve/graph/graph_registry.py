@@ -83,11 +83,6 @@ class GraphConfig(BaseModel):
     context_factory: ContextFactory | None = None
     output_to_message: OutputToMessage | None = None
     run_coordinator: RunCoordinator | None = None
-    # Opts the model into background Responses. Bump the version when a graph
-    # change cannot resume checkpoints persisted by the previous version.
-    background_version: (
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
-    ) = None
 
     @field_validator("client_settings")
     @classmethod
@@ -102,15 +97,9 @@ class GraphConfig(BaseModel):
     def validate_interrupt_configuration(self) -> Self:
         """Validate feature relationships that do not depend on a resolved graph."""
         interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
-        background_enabled = self.background_version is not None
+        background_enabled = self.supports(GraphFeature.BACKGROUND)
         if interrupt_enabled and background_enabled:
             msg = "Background execution does not support interrupt-enabled graphs."
-            raise ValueError(msg)
-        if self.supports(GraphFeature.BACKGROUND):
-            msg = (
-                "Configure GraphConfig.background_version to enable background execution; "
-                "do not add GraphFeature.BACKGROUND directly."
-            )
             raise ValueError(msg)
         if self.run_coordinator is not None and not (
             interrupt_enabled or background_enabled
@@ -237,9 +226,8 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
         )
         raise GraphConfigurationError(msg)
 
-    if (
-        config.supports(GraphFeature.INTERRUPTS)
-        or config.background_version is not None
+    if config.supports(GraphFeature.INTERRUPTS) or config.supports(
+        GraphFeature.BACKGROUND
     ):
         checkpointer = graph.checkpointer
         if checkpointer is None or any(

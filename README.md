@@ -40,9 +40,9 @@ With an application-provided `ResponseStore`, install only
 For local single-process trials, `InMemoryBackgroundBackend` needs no optional
 dependency. It is not durable and is not intended for deployment.
 
-The core package does not import Hatchet. Applications that deliberately own
-their complete background lifecycle can implement the high-level
-`BackgroundBackend` protocol. See
+The core package does not import Hatchet. Applications using another execution
+engine implement the two-method `BackgroundBackend` protocol, `submit` and
+`stop`; LGOS keeps owning every Response state change. See
 [Run Responses In The Background](docs/how-to-guides/background-responses.md).
 
 Applications choose their LangGraph checkpointer, response store, and run

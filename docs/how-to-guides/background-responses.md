@@ -103,10 +103,10 @@ in both cases:
 
 ## Make The Graph Recoverable
 
-Opt in with a background version:
+Opt in with the background feature:
 
 ```python
-from langgraph_openai_serve import GraphConfig
+from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.integrations.coordination.postgres import (
     PostgresRunCoordinator,
 )
@@ -119,13 +119,12 @@ config = GraphConfig(
         pool,
         max_concurrent_leases=7,
     ),
-    background_version="report-v1",
+    features={GraphFeature.BACKGROUND},
 )
 ```
 
-The version prevents old queued inputs from running against incompatible graph
-code. Retry counts and timeouts belong in `HatchetAdapterSettings`, not in the
-graph configuration.
+Retry counts and timeouts belong in `HatchetAdapterSettings`, not in the graph
+configuration.
 
 A background graph must:
 
@@ -134,9 +133,12 @@ A background graph must:
 - configure a run coordinator, cross-process for multi-worker deployments;
 - reconstruct its output from checkpointed state;
 - keep `output_to_message` deterministic and side-effect free;
-- support `durability="sync"`; and
+- support `durability="sync"`;
 - avoid LangGraph interrupts, which are mutually exclusive with background
-  execution.
+  execution; and
+- stay compatible with checkpoints of runs in flight during a deploy. LGOS, like
+  LangGraph itself, does not version checkpoints; an incompatible checkpoint
+  fails the run after its retries.
 
 Hatchet retries a failed task. On each attempt, LGOS inspects the checkpoint,
 applies initial input only when no checkpoint exists, and resumes unfinished

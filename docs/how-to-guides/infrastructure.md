@@ -76,6 +76,7 @@ graph `builder`, FastAPI `app`, and trusted `resolve_scope`:
 ```python
 from langgraph_openai_serve import (
     GraphConfig,
+    GraphFeature,
     GraphRegistry,
     LanggraphOpenaiServe,
 )
@@ -90,7 +91,7 @@ graphs = GraphRegistry(
         "report": GraphConfig(
             graph=graph,
             description="Prepare a report.",
-            background_version="v1",
+            features={GraphFeature.BACKGROUND},
             run_coordinator=coordinator,
         )
     }
@@ -111,8 +112,9 @@ LanggraphOpenaiServe(
 
 The worker process registers `workflows.registrations` with Hatchet and yields
 a `BackgroundWorker`, built from its own connections to the same logical
-resources, from the Hatchet worker lifespan. Use consistent graph versions and
-background settings in both processes. See [Background Responses](background-responses.md) for worker setup.
+resources, from the Hatchet worker lifespan. Deploy the same graph code and
+background settings to both processes. See
+[Background Responses](background-responses.md) for worker setup.
 
 The application owns credentials, pool sizing, startup, and shutdown. Run
 adapter setup, such as `PostgresResponseStore.setup()` migrations, before

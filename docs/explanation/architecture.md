@@ -49,9 +49,8 @@ for lifecycle ownership, adapter requirements, and composition constraints.
 Polling-only background requests branch after validation. With the supplied
 Hatchet backend, the API first stores the queued Response, then submits its
 stable reference to Hatchet; maintenance resubmits a run that stays queued. An
-independently deployed
-worker later enters the same graph runner. Polling never executes the graph in
-an HTTP request.
+independently deployed worker later enters the same graph runner. Polling never
+executes the graph in an HTTP request.
 
 ```mermaid
 flowchart TB

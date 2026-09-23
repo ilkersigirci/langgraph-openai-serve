@@ -402,7 +402,7 @@ def _durability(run: GraphRun) -> Durability | None:
     return (
         "exit"
         if run.config.supports(GraphFeature.INTERRUPTS)
-        or run.config.background_version is not None
+        or run.config.supports(GraphFeature.BACKGROUND)
         else None
     )
 

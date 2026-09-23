@@ -14,7 +14,6 @@ def _new_run(name: str, *, now: datetime, digest: str | None = None) -> NewRun:
         owner_scope="owner",
         model="model",
         checkpoint_thread_id=f"checkpoint-{name}",
-        graph_version="v1",
         envelope={"model": "model", "input": "hello"},
         response={"id": f"resp-{name}", "status": "queued"},
         created_at=now,

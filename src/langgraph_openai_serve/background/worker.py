@@ -28,6 +28,7 @@ from langgraph_openai_serve.background.responses import (
 )
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.coordination import RunBusyError
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphConfigurationError,
@@ -52,10 +53,6 @@ if TYPE_CHECKING:
     from langgraph_openai_serve.graph.request import GraphRequest
 
 
-class _GraphVersionMismatchError(RuntimeError):
-    """The registered graph cannot resume a job persisted for another version."""
-
-
 @dataclass(frozen=True, slots=True)
 class _PreparedRun:
     request: ResponseCreateRequest
@@ -74,7 +71,6 @@ _PERMANENT_ERRORS = (
     UnsupportedResponsesOutputError,
     UnsupportedResponsesRequestError,
     ValidationError,
-    _GraphVersionMismatchError,
 )
 
 
@@ -145,9 +141,9 @@ class BackgroundWorker:
     def _prepare(self, run: StoredRun) -> _PreparedRun:
         request = ResponseCreateRequest.model_validate(run.envelope)
         graph_config = self.graphs.get_graph(run.model)
-        if graph_config.background_version != run.graph_version:
-            msg = "The registered background graph version is incompatible."
-            raise _GraphVersionMismatchError(msg)
+        if not graph_config.supports(GraphFeature.BACKGROUND):
+            msg = "The model no longer supports background execution."
+            raise GraphConfigurationError(msg)
         validate_tools(request, graph_config.server_tools)
         graph_request, messages, _ = decode_responses_request(
             request,
@@ -351,11 +347,6 @@ _FAILURE_DETAILS: tuple[tuple[type[BaseException], str, str], ...] = (
         GraphNotFoundError,
         "The background model is no longer registered.",
         "background_configuration_error",
-    ),
-    (
-        _GraphVersionMismatchError,
-        "The registered background graph version is incompatible with this job.",
-        "background_graph_incompatible",
     ),
 )
 

@@ -293,6 +293,14 @@ def _chat_variable_field(
     schema_type = schema.get("type")
     if schema_type == "boolean" and type(default) is bool:
         return {**field, "type": "checkbox"}
+    if schema_type == "integer" and type(default) is int:
+        # Open WebUI binds number inputs as JSON numbers, so values stay integers.
+        field = {**field, "type": "number", "step": 1}
+        if type(schema.get("minimum")) is int:
+            field["min"] = schema["minimum"]
+        if type(schema.get("maximum")) is int:
+            field["max"] = schema["maximum"]
+        return field
     if schema_type != "string" or not isinstance(default, str):
         return None
 

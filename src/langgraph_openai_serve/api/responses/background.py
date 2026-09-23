@@ -25,6 +25,7 @@ from langgraph_openai_serve.background.responses import (
 )
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus, StoredRun
 from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt.state import (
     checkpoint_key,
@@ -144,8 +145,7 @@ def _new_run(
         raise UnsupportedResponsesRequestError(message, param="Idempotency-Key")
 
     graph_config = graph_registry.get_graph(request.model)
-    graph_version = graph_config.background_version
-    if graph_version is None:
+    if not graph_config.supports(GraphFeature.BACKGROUND):
         message = f"Model '{request.model}' does not support background execution."
         raise UnsupportedResponsesRequestError(message, param="background")
     validate_tools(request, graph_config.server_tools)
@@ -177,7 +177,6 @@ def _new_run(
             response_id,
             scope=f"background:{owner_scope}",
         ),
-        graph_version=graph_version,
         envelope=cast(
             "dict[str, JsonValue]",
             request.model_dump(mode="json", by_alias=True),

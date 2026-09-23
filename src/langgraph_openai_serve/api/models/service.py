@@ -12,8 +12,7 @@ from langgraph_openai_serve.graph.client_settings import (
     client_settings_default_values,
     client_settings_json_schema,
 )
-from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 MODEL_CREATED = 1743771509
 MODEL_OWNER = "langgraph-openai-serve"
@@ -38,7 +37,7 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
             lgos=LangGraphModelSummaryExtension(
                 description=graph_config.description,
                 features=sorted(
-                    _public_features(graph_config),
+                    graph_config.features,
                     key=lambda feature: feature.value,
                 ),
             ),
@@ -67,17 +66,9 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
         lgos=LangGraphModelExtension(
             description=graph_config.description,
             features=sorted(
-                _public_features(graph_config),
+                graph_config.features,
                 key=lambda feature: feature.value,
             ),
             client_settings=client_settings_details,
         ),
     )
-
-
-def _public_features(graph_config: GraphConfig) -> set[GraphFeature]:
-    """Derive capability discovery from the background_version opt-in."""
-    features = set(graph_config.features)
-    if graph_config.background_version is not None:
-        features.add(GraphFeature.BACKGROUND)
-    return features

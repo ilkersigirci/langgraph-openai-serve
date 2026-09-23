@@ -45,7 +45,7 @@ the bundled demo chooses an HTTP or upstream provider backend.
 Foreground LGOS Responses are not persisted for retrieval or deletion. Omitted,
 null, and false `store` values are accepted, and the returned foreground
 Response reports `store=false`; foreground `store=true` is rejected.
-For a model with `GraphConfig.background_version`, `background=true` selects the
+For a model declaring `GraphFeature.BACKGROUND`, `background=true` selects the
 polling-only durable path and permits either `store=false` or `store=true`.
 The latter selects the configured longer bounded result retention; it is not a
 conversation store. Background streaming and cursor/event replay are rejected.
@@ -134,10 +134,6 @@ belong to an external OpenAI Files API, not the LGOS package. See
 - `run_coordinator`: asynchronous single-flight coordination for interrupt
   or background runs. It rejects an occupied LGOS checkpoint key instead of
   queueing it and returns an async context manager.
-- `background_version`: optional non-empty version string that opts the model
-  into polling-only execution. Bump it when a graph change cannot resume
-  checkpoints persisted by the previous version. Native retries and
-  timeouts are configured on the selected backend, such as Hatchet.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
@@ -165,7 +161,7 @@ called for every request and is never cached; LGOS validates each resolved value
 as a compiled state graph and rechecks its context schema and interrupt
 checkpointer capabilities before execution. Static configuration relationships,
 including the requirement that `run_coordinator` appear exactly when
-`GraphFeature.INTERRUPTS` or `background_version` is set, fail during
+`GraphFeature.INTERRUPTS` or `GraphFeature.BACKGROUND` is declared, fail during
 `GraphConfig` construction. Interrupt and background execution are mutually
 exclusive.
 
@@ -253,9 +249,9 @@ from its configured MCP gateway; it does not publish tool definitions or grant
 access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
-advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` is derived for
-model discovery from `GraphConfig.background_version`; declaring it directly is an
-error.
+advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
+advertises polling-only background Responses; native retries and timeouts are
+configured on the selected backend, such as Hatchet.
 
 ### Runtime Settings
 
@@ -370,9 +366,8 @@ leases fail before streaming begins with HTTP 409 and `code: "run_busy"`.
 
 ## Background Execution
 
-The package exports the lifecycle-level `BackgroundBackend`, `NewRun`,
-`StoredRun`, `ResponseStore`, `BackgroundSettings`,
-and `BackgroundWorker` public interfaces. It also exports
+The package exports the `BackgroundBackend`, `NewRun`, `StoredRun`,
+`ResponseStore`, `BackgroundSettings`, and `BackgroundWorker` public interfaces. It also exports
 `InMemoryBackgroundBackend` and `InMemoryResponseStore` for single-process
 development. Hatchet is the only durable built-in backend.
 

@@ -26,7 +26,6 @@ def _new_run(*, created_at: datetime) -> NewRun:
         owner_scope="integration-owner",
         model="background-report-agent",
         checkpoint_thread_id=f"background-integration:{response_id}",
-        graph_version="background-report-v1",
         envelope={
             "model": "background-report-agent",
             "input": "Prepare a test report.",

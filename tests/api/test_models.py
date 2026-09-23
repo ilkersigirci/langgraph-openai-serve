@@ -120,26 +120,6 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)
 
 
-async def test_background_feature_is_derived_from_policy(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-    sqlite_checkpointer,
-) -> None:
-    graph_registry.register(
-        "test",
-        GraphConfig(
-            graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-            description="DUMMY",
-            background_version="test-v1",
-            run_coordinator=InMemoryRunCoordinator(),
-        ),
-    )
-
-    retrieved = await openai_client.models.retrieve("test")
-
-    assert (retrieved.model_extra or {})["lgos"]["features"] == ["background"]
-
-
 async def test_model_retrieval_reuses_the_registration_schema(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,

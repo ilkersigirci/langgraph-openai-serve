@@ -5,8 +5,8 @@ graph. It makes the recovery boundary visible: one node generates and
 checkpoints a draft, then a second node waits briefly before publishing that
 durable draft as the final assistant message.
 
-The graph is registered with `GraphConfig.background_version`, a PostgreSQL
-checkpointer, and a PostgreSQL run coordinator. The API persists the public
+The graph declares `GraphFeature.BACKGROUND` and uses a PostgreSQL
+checkpointer and run coordinator. The API persists the public
 Response and starts its Hatchet workflow; an independently deployed worker
 executes the graph. PostgreSQL remains authoritative for both the public
 lifecycle and graph recovery.
@@ -23,12 +23,23 @@ graph TD;
 | Node | Role | Durable boundary |
 | --- | --- | --- |
 | `draft_report` | Calls the configured `ChatOpenAI` model with a report-writing system instruction and the caller's messages. | Its `AIMessage` is stored in the `draft` state field at the node checkpoint. |
-| `publish_report` | Waits for the demo-only finalization delay, then copies the checkpointed draft into `messages`. | The completed checkpoint can be rendered again if terminal Response publication must be retried. |
+| `publish_report` | Waits for the `finalize_delay_seconds` setting, then copies the checkpointed draft into `messages`. | The completed checkpoint can be rendered again if terminal Response publication must be retried. |
 
-The five-second default delay in `publish_report` is intentional. It provides
-a repeatable window for terminating a worker after the expensive draft is
-durable but before the Response is published. It is a demonstration aid, not a
-recommended production latency.
+The delay in `publish_report` is intentional. It provides a repeatable window
+for terminating a worker after the expensive draft is durable but before the
+Response is published. It is a demonstration aid, not a recommended production
+latency.
+
+`finalize_delay_seconds` is a public graph setting: 5 seconds by default, from
+0 to 300. Chainlit and Open WebUI show it with the model's other settings, and
+SDK clients send it in `metadata.lgos_settings`:
+
+```python
+metadata={"lgos_settings": '{"finalize_delay_seconds": 30}'}
+```
+
+The value is stored with the background request, so a retried delivery waits
+for the same delay.
 
 ## Recovery Behavior
 
@@ -116,7 +127,8 @@ requirements.
 
 1. Create a background Response and retain its public Response ID.
 2. Inspect the worker logs or checkpoint state until `draft_report` has
-   completed and `publish_report` is in its configured delay.
+   completed and `publish_report` is in its delay. Raise
+   `finalize_delay_seconds` for a wider window.
 3. Terminate the exact worker process without allowing graceful task cleanup.
 4. Restart the Hatchet worker and continue polling the original Response ID.
 

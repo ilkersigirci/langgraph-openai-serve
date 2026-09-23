@@ -53,31 +53,21 @@ def test_graph_config_rejects_unknown_fields(message_graph) -> None:
         )
 
 
-def test_background_feature_must_be_derived_from_policy(message_graph) -> None:
-    with pytest.raises(ValidationError, match=r"GraphConfig\.background"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            features={GraphFeature.BACKGROUND},
-        )
-
-
-def test_background_policy_requires_coordinator_and_excludes_interrupts(
+def test_background_requires_coordinator_and_excludes_interrupts(
     message_graph,
 ) -> None:
     with pytest.raises(ValidationError, match="run_coordinator"):
         GraphConfig(
             graph=message_graph,
             description="DUMMY",
-            background_version="v1",
+            features={GraphFeature.BACKGROUND},
         )
 
     with pytest.raises(ValidationError, match="does not support interrupt"):
         GraphConfig(
             graph=message_graph,
             description="DUMMY",
-            features={GraphFeature.INTERRUPTS},
-            background_version="v1",
+            features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
             run_coordinator=InMemoryRunCoordinator(),
         )
 
@@ -88,7 +78,7 @@ async def test_background_graph_requires_persistent_async_checkpointer(
     config = GraphConfig(
         graph=message_graph,
         description="DUMMY",
-        background_version="v1",
+        features={GraphFeature.BACKGROUND},
         run_coordinator=InMemoryRunCoordinator(),
     )
 

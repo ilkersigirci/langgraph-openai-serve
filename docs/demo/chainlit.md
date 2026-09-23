@@ -176,13 +176,16 @@ After a profile is selected, Chainlit:
 5. Sends changed values as JSON text in
    `metadata.lgos_settings` on every Responses request.
 
-Booleans become switches, inline string enums become selects, and strings
-become text inputs. Other schema shapes are not rendered. The adapter checks
-only boolean/string types and select membership when restoring the UI; it does
-not interpret general JSON Schema constraints. LGOS remains the validation
-authority. If the required LGOS model extension is unavailable, Chainlit hides
-the controls, uses server defaults, and shows a transient **Limited
-functionality** warning after selection. Profile discovery itself stays
+Booleans become switches, inline string enums become selects, strings become
+text inputs, and integers become sliders when they declare both `minimum` and
+`maximum`, or number inputs otherwise. Other schema shapes are not rendered.
+Chainlit stores number widget values as floats, so whole numbers are sent as
+integers. The adapter checks only these types, integer bounds, and select
+membership when restoring the UI; it does not interpret general JSON Schema
+constraints. LGOS remains the validation authority. If the required LGOS
+model extension is unavailable, Chainlit hides the controls, uses server
+defaults, and shows a transient **Limited functionality** warning after
+selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
