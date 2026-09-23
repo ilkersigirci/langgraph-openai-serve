@@ -95,7 +95,8 @@ matrix.
 Polling-only background execution is optional. Select LiteLLM or Bifrost,
 enable `DEMO_API_BACKGROUND_ENABLED`, add `background` to `COMPOSE_PROFILES`,
 configure `HATCHET_CLIENT_TOKEN`, and run `just demo/compose`. Both UIs can then
-submit and poll `background-report-agent`. Run
+run `advanced-graph` or the model-free `background-report-agent` in the
+background. Run
 `just demo/test-background-gateway --editable` and see the
 [background guide](../docs/how-to-guides/background-responses.md).
 

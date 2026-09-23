@@ -162,8 +162,8 @@ as a compiled state graph and rechecks its context schema and interrupt
 checkpointer capabilities before execution. Static configuration relationships,
 including the requirement that `run_coordinator` appear exactly when
 `GraphFeature.INTERRUPTS` or `GraphFeature.BACKGROUND` is declared, fail during
-`GraphConfig` construction. Interrupt and background execution are mutually
-exclusive.
+`GraphConfig` construction. A graph may declare both interrupts and background;
+a background run that reaches an interrupt fails.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is

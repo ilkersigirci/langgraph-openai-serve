@@ -1,9 +1,11 @@
 # Background Report Agent
 
-`background-report-agent` is the demo's model-backed, polling-only background
-graph. It makes the recovery boundary visible: one node generates and
-checkpoints a draft, then a second node waits briefly before publishing that
-durable draft as the final assistant message.
+`background-report-agent` is a deterministic, polling-only background graph that
+shows background execution working. It calls no model, so it needs no provider.
+It makes the recovery boundary visible: one node checkpoints a draft, then a
+second node waits before publishing that durable draft as the final assistant
+message. For a real agent running in the background, use
+[`advanced-graph`](advanced-graph.md#background-execution).
 
 The graph declares `GraphFeature.BACKGROUND` and uses a PostgreSQL
 checkpointer and run coordinator. The API persists the public
@@ -22,12 +24,12 @@ graph TD;
 
 | Node | Role | Durable boundary |
 | --- | --- | --- |
-| `draft_report` | Calls the configured `ChatOpenAI` model with a report-writing system instruction and the caller's messages. | Its `AIMessage` is stored in the `draft` state field at the node checkpoint. |
+| `draft_report` | Builds a fixed draft that quotes the caller's last message. | Its `AIMessage` is stored in the `draft` state field at the node checkpoint. |
 | `publish_report` | Waits for the `finalize_delay_seconds` setting, then copies the checkpointed draft into `messages`. | The completed checkpoint can be rendered again if terminal Response publication must be retried. |
 
 The delay in `publish_report` is intentional. It provides a repeatable window
-for terminating a worker after the expensive draft is durable but before the
-Response is published. It is a demonstration aid, not a recommended production
+for terminating a worker after the draft is durable but before the Response is
+published. It is a demonstration aid, not a recommended production
 latency.
 
 `finalize_delay_seconds` is a public graph setting: 5 seconds by default, from
@@ -69,9 +71,9 @@ sequenceDiagram
 ```
 
 If the process stops before the `draft_report` checkpoint commits, Hatchet may
-redeliver and the model call can run again. If it stops after that checkpoint,
+redeliver and `draft_report` runs again. If it stops after that checkpoint,
 LGOS resumes at `publish_report`; it does not resubmit the original graph input
-or call the model again. Work performed inside any unfinished node may repeat,
+or rerun `draft_report`. Work performed inside any unfinished node may repeat,
 so production side effects still need their own idempotency design.
 
 The worker runs the graph with synchronous checkpoint durability. Terminal

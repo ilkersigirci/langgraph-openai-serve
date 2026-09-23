@@ -13,8 +13,9 @@ There is no graph-specific request envelope, and the graph is not available
 through Chat Completions because its interrupt workflow requires Responses.
 Its upstream model calls also use the Responses API with `store=false`.
 
-The model advertises four LGOS capabilities:
+The model advertises five LGOS capabilities:
 
+- `background` for running the same agent as a polled background Response;
 - `client_events` for streaming status commentary;
 - `file_inputs` for Files API attachments;
 - `interrupts` for review and resume;
@@ -234,6 +235,21 @@ status instead of claiming that the note is searchable.
     the application and storage boundaries. Caller-provided IDs are
     correlation values, not proof of identity. Attachment and retrieved
     contents are sent to the configured model as context.
+
+## Background Execution
+
+Send `background=true`, or enable **Run in background** in either UI, to run the
+same agent in the independently deployed Hatchet worker and poll it by Response
+ID. The worker builds the graph with the same model, knowledge, files, and
+PostgreSQL checkpointer and Store as the API. In background mode:
+
+- the final Response carries the answer, tool items, and citations; streaming
+  and status commentary are not delivered;
+- a request that reaches the save-note approval fails, because a polled
+  Response cannot collect a human answer. Save notes in the foreground.
+
+See [Background Report Agent](background-report-agent.md) for the worker
+lifecycle and a model-free way to watch recovery from a checkpoint.
 
 ## Output And Failure Behavior
 

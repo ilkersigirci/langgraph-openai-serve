@@ -98,9 +98,6 @@ class GraphConfig(BaseModel):
         """Validate feature relationships that do not depend on a resolved graph."""
         interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
         background_enabled = self.supports(GraphFeature.BACKGROUND)
-        if interrupt_enabled and background_enabled:
-            msg = "Background execution does not support interrupt-enabled graphs."
-            raise ValueError(msg)
         if self.run_coordinator is not None and not (
             interrupt_enabled or background_enabled
         ):

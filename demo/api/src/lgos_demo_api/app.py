@@ -9,24 +9,20 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import httpx2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
 from langgraph_openai_serve.integrations.background.postgres import (
     PostgresResponseStore,
 )
-from openai import AsyncOpenAI
 
 from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
 from lgos_demo_api.core.otel import instrument_fastapi_app
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph import (
-    OpenAICompatibleKnowledgeBase,
-    create_advanced_graph,
     create_advanced_graph_config,
-    create_model,
+    open_advanced_graph,
 )
 from lgos_demo_api.graphs.background_report import (
     create_background_report_config,
@@ -67,19 +63,6 @@ from lgos_demo_api.persistence.postgres import (
 logger = logging.getLogger(__name__)
 
 
-def _vector_store_connection() -> tuple[str, str]:
-    """Resolve storage credentials without leaking the model provider's key."""
-    if settings.VECTOR_STORE_BASE_URL:
-        return (
-            settings.VECTOR_STORE_BASE_URL,
-            settings.VECTOR_STORE_API_KEY or "DUMMY",
-        )
-    return (
-        settings.OPENAI_BASE_URL,
-        settings.VECTOR_STORE_API_KEY or settings.OPENAI_API_KEY,
-    )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
@@ -92,29 +75,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     """
     logger.info("demo.server.starting")
-    vector_store_base_url, vector_store_api_key = _vector_store_connection()
-
     async with (
         open_postgres_runtime(
             create_postgres_runtime(app.state.postgres_pool)
         ) as runtime,
-        httpx2.AsyncClient(timeout=60) as upstream_http,
-        AsyncOpenAI(
-            base_url=vector_store_base_url,
-            api_key=vector_store_api_key,
-            default_headers=(
-                {"x-bf-api-key": settings.VECTOR_STORE_BIFROST_KEY_NAME}
-                if settings.VECTOR_STORE_BIFROST_KEY_NAME
-                else None
-            ),
-            http_client=upstream_http,
-            max_retries=0,
-        ) as vector_store_client,
-        AsyncOpenAI(
-            base_url=settings.FILES_BASE_URL,
-            api_key="DUMMY",
-            max_retries=0,
-        ) as files_client,
+        open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.background_report_graph = create_background_report_graph(
@@ -122,21 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
-        knowledge = (
-            OpenAICompatibleKnowledgeBase(
-                vector_store_client,
-                settings.VECTOR_STORE_ID,
-            )
-            if settings.VECTOR_STORE_ID
-            else None
-        )
-        app.state.advanced_graph = create_advanced_graph(
-            model=create_model(upstream_http),
-            knowledge=knowledge,
-            files=files_client,
-            checkpointer=runtime.checkpointer,
-            store=runtime.store,
-        )
+        app.state.advanced_graph = advanced_graph
         yield
 
     logger.info("demo.server.stopped")

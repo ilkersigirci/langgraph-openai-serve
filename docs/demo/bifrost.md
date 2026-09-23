@@ -31,7 +31,7 @@ Bifrost exposes each service as a custom provider:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
-| `openai` | `lgos-demo-api-a:8000` | ID-only `background-report-agent` lifecycle |
+| `openai` | `lgos-demo-api-a:8000` | ID-only retrieve and cancel for background Responses |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |

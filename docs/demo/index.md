@@ -100,7 +100,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
-| Background worker | Executes persisted report jobs outside the API process with bounded concurrency | Optional `background` Compose profile using the demo API image and Hatchet |
+| Background worker | Executes persisted background Responses outside the API process with bounded concurrency | Optional `background` Compose profile using the demo API image and Hatchet |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Host-run locked sync project plus the unchanged pinned official image |

@@ -355,6 +355,7 @@ def create_advanced_graph_config(
             "notes."
         ),
         features={
+            GraphFeature.BACKGROUND,
             GraphFeature.CLIENT_EVENTS,
             GraphFeature.FILE_INPUTS,
             GraphFeature.INTERRUPTS,

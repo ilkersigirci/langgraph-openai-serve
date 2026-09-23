@@ -1,4 +1,4 @@
-"""Independent Hatchet worker entry point for the background report agent."""
+"""Independent Hatchet worker entry point for background Responses."""
 
 from collections.abc import AsyncGenerator
 
@@ -9,6 +9,10 @@ from langgraph_openai_serve.integrations.background.hatchet import (
 
 from lgos_demo_api.background.components import create_hatchet_client
 from lgos_demo_api.core.settings import settings
+from lgos_demo_api.graphs.advanced_graph import (
+    create_advanced_graph_config,
+    open_advanced_graph,
+)
 from lgos_demo_api.graphs.background_report import (
     create_background_report_config,
     create_background_report_graph,
@@ -18,14 +22,22 @@ from lgos_demo_api.persistence.postgres import postgres_runtime
 
 async def _lifespan() -> AsyncGenerator[BackgroundWorker, None]:
     """Yield the worker that Hatchet tasks read from ``context.lifespan``."""
-    async with postgres_runtime(settings.POSTGRES_URI) as runtime:
-        graph = create_background_report_graph(runtime.checkpointer)
+    async with (
+        postgres_runtime(settings.POSTGRES_URI) as runtime,
+        open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
+    ):
+        report_graph = create_background_report_graph(runtime.checkpointer)
+        # Register every background-capable model under its API model ID.
         registry = GraphRegistry(
             registry={
-                "background-report-agent": create_background_report_config(
-                    lambda: graph,
+                "advanced-graph": create_advanced_graph_config(
+                    lambda: advanced_graph,
                     runtime.run_coordinator,
-                )
+                ),
+                "background-report-agent": create_background_report_config(
+                    lambda: report_graph,
+                    runtime.run_coordinator,
+                ),
             }
         )
         yield BackgroundWorker(graphs=registry, store=runtime.response_store)

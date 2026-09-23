@@ -40,6 +40,7 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 from tests.background.fakes import MemoryBackgroundBackend
+from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.schemas import MessageState
 
 if TYPE_CHECKING:
@@ -706,6 +707,48 @@ async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
         cleaned = await environment.store.get(created.id)
         assert cleaned is not None
         assert not cleaned.cleanup_pending
+
+
+async def test_interrupt_graph_pauses_in_foreground_and_fails_in_background(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    registry = GraphRegistry(
+        registry={
+            "approval": GraphConfig(
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="Approval graph",
+                features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
+                run_coordinator=InMemoryRunCoordinator(),
+            )
+        }
+    )
+    backend = MemoryBackgroundBackend()
+    worker = BackgroundWorker(graphs=registry, store=backend.store)
+    app = LanggraphOpenaiServe(graphs=registry, background=backend)
+    app.bind_openai_api()
+    transport = ASGITransport(app=app.app)
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as http,
+        AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=http,
+            max_retries=0,
+        ) as client,
+    ):
+        foreground = await client.responses.create(model="approval", input="Hello")
+        created = await client.responses.create(
+            model="approval", input="Hello", background=True
+        )
+        job = await backend.receive()
+        assert job is not None
+        await worker.execute(job)
+        failed = await client.responses.retrieve(created.id)
+
+    assert [item.name for item in foreground.output] == ["lgos_interrupt"]
+    assert failed.status == "failed"
+    assert failed.error is not None
+    assert "Run it without background mode" in failed.error.message
 
 
 async def test_worker_retry_resumes_from_the_checkpoint() -> None:

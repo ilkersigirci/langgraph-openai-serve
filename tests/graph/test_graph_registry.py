@@ -53,22 +53,12 @@ def test_graph_config_rejects_unknown_fields(message_graph) -> None:
         )
 
 
-def test_background_requires_coordinator_and_excludes_interrupts(
-    message_graph,
-) -> None:
+def test_background_requires_coordinator(message_graph) -> None:
     with pytest.raises(ValidationError, match="run_coordinator"):
         GraphConfig(
             graph=message_graph,
             description="DUMMY",
             features={GraphFeature.BACKGROUND},
-        )
-
-    with pytest.raises(ValidationError, match="does not support interrupt"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
-            run_coordinator=InMemoryRunCoordinator(),
         )
 
 

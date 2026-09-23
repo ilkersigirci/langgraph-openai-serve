@@ -134,11 +134,14 @@ A background graph must:
 - reconstruct its output from checkpointed state;
 - keep `output_to_message` deterministic and side-effect free;
 - support `durability="sync"`;
-- avoid LangGraph interrupts, which are mutually exclusive with background
-  execution; and
 - stay compatible with checkpoints of runs in flight during a deploy. LGOS, like
   LangGraph itself, does not version checkpoints; an incompatible checkpoint
   fails the run after its retries.
+
+A graph may declare both `GraphFeature.INTERRUPTS` and
+`GraphFeature.BACKGROUND`. Foreground requests keep the interrupt flow; a
+background run that reaches an interrupt fails, because a polled Response has no
+way to collect the answer.
 
 Hatchet retries a failed task. On each attempt, LGOS inspects the checkpoint,
 applies initial input only when no checkpoint exists, and resumes unfinished

@@ -78,7 +78,7 @@ flowchart LR
   api_b -->|"trigger response_id"| hatchet
   hatchet -->|"run reference"| worker
   worker <-->|"checkpoints + Response row"| database
-  worker -->|"report model call"| model
+  worker -->|"when a graph calls a model"| model
   dbhub -->|"lgos_mcp read-only role"| database
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
@@ -102,8 +102,8 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-The background model uses the selected gateway's normal Responses lifecycle.
-Chainlit and Open WebUI discover its capability, create a non-streaming
+Background-capable models use the selected gateway's normal Responses
+lifecycle. Chainlit and Open WebUI discover the capability, create a non-streaming
 background Response, and poll or cancel through the OpenAI SDK. All routed API
 replicas and the worker share PostgreSQL. Hatchet transports stable run
 references and retries; it does not own the public Response.
@@ -173,7 +173,8 @@ and recovery behavior live in
 [Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
 Human Review](graphs/interruptible-approval.md). Background Response rows,
 recovery checkpoints, and Hatchet workflow ownership are described in
-[Background Report Agent](graphs/background-report-agent.md). When
+[Background Report Agent](graphs/background-report-agent.md); `advanced-graph`
+runs in the same worker when a client requests background mode. When
 `LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.

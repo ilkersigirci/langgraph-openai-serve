@@ -1,11 +1,15 @@
-"""Checkpointed model-backed report agent for the background Responses demo."""
+"""
+Deterministic two-step graph that shows background execution working.
+
+It calls no model, so the demo needs no provider to exercise queueing, polling,
+cancellation, and resuming from a checkpoint after a worker restart.
+"""
 
 from collections.abc import Callable
 from typing import Annotated, Any, TypedDict
 
 from anyio import sleep
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -14,8 +18,6 @@ from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphFeature
 from langgraph_openai_serve.graph.coordination import RunCoordinator
 from pydantic import Field
-
-from lgos_demo_api.core.settings import settings
 
 
 class BackgroundReportState(TypedDict, total=False):
@@ -44,23 +46,14 @@ BackgroundReportGraph = CompiledStateGraph[Any, BackgroundReportSettings, Any, A
 
 
 async def draft_report(state: BackgroundReportState) -> dict[str, AIMessage]:
-    """Generate the costly draft that should survive a worker restart."""
-    model = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0.2,
-    )
-    draft = await model.ainvoke(
-        [
-            SystemMessage(
-                content=(
-                    "Prepare a concise report with a title, findings, and next "
-                    "actions. State assumptions instead of inventing sources."
-                )
-            ),
-            *state["messages"],
-        ]
+    """Checkpoint a draft that a resumed worker must not recompute."""
+    request = state["messages"][-1].text
+    draft = AIMessage(
+        content=(
+            f"Background report for: {request}\n\n"
+            "`draft_report` checkpointed this draft, then `publish_report` "
+            "published it after the finalize delay."
+        )
     )
     return {"draft": draft}
 
@@ -99,8 +92,8 @@ def create_background_report_config(
     return GraphConfig(
         graph=graph_factory,
         description=(
-            "Creates a checkpointed report in an independently deployed "
-            "background worker."
+            "Demonstrates background execution with a deterministic two-step "
+            "graph that calls no model."
         ),
         run_coordinator=run_coordinator,
         features={GraphFeature.BACKGROUND},

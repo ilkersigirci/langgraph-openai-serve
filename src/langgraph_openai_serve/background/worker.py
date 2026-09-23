@@ -330,7 +330,10 @@ _FAILURE_DETAILS: tuple[tuple[type[BaseException], str, str], ...] = (
     ),
     (
         BackgroundGraphInterruptedError,
-        "Background responses do not support graph interrupts.",
+        (
+            "This request needs human input, which background mode cannot "
+            "collect. Run it without background mode."
+        ),
         "background_interrupt_unsupported",
     ),
     (

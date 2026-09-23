@@ -10,7 +10,7 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 - Bash and Just 1.58.0 or newer
 - PostgreSQL (the included Compose service requires Docker)
 - An OpenAI-compatible upstream model only if you call the LLM-backed graphs
-- A Hatchet deployment and client token only for `background-report-agent`
+- A Hatchet deployment and client token only for background Responses
 
 !!! tip "Start without an upstream model"
 
@@ -200,9 +200,10 @@ See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
 refusal differs from an incomplete response and which terminal events clients
 must handle.
 
-For durable report execution, enable `DEMO_API_BACKGROUND_ENABLED`, start the
+For background Responses, enable `DEMO_API_BACKGROUND_ENABLED`, start the
 independent `just demo/background-worker` process, or run the complete UI path
-with the `background` Compose profile and `just demo/compose`. Chainlit and
+with the `background` Compose profile and `just demo/compose`. Both
+`advanced-graph` and `background-report-agent` support it, and Chainlit and
 Open WebUI expose polling through either bundled gateway. See
 [Background Report Agent](graphs/background-report-agent.md).
 

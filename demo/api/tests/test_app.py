@@ -8,12 +8,19 @@ from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import GraphConfig, GraphRequest, InMemoryResponseStore
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphFeature,
+    GraphRequest,
+    InMemoryResponseStore,
+)
 from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module
+from lgos_demo_api.background import worker as worker_module
 from lgos_demo_api.graphs import server_tool
+from lgos_demo_api.graphs.advanced_graph import resources as advanced_resources
 from lgos_demo_api.graphs.simple import SimpleContext
 from lgos_demo_api.persistence.postgres import PostgresRuntime
 from lgos_demo_api.utils.web_search import WebSearchResult
@@ -93,6 +100,7 @@ async def test_app_lists_exactly_the_documented_models(
     advanced_model = await openai_client.models.retrieve("advanced-graph")
     advanced_extension = (advanced_model.model_extra or {})["lgos"]
     assert advanced_extension["features"] == [
+        "background",
         "client_events",
         "file_inputs",
         "interrupts",
@@ -321,13 +329,13 @@ async def test_lifespan_installs_shared_postgres_runtime(
     runtime_factory = Mock(wraps=open_postgres_runtime)
     monkeypatch.setattr(app_module, "open_postgres_runtime", runtime_factory)
     upstream_clients: list[httpx2.AsyncClient] = []
-    create_model = app_module.create_model
+    create_model = advanced_resources.create_model
 
     def capture_upstream_client(client: httpx2.AsyncClient):
         upstream_clients.append(client)
         return create_model(client)
 
-    monkeypatch.setattr(app_module, "create_model", capture_upstream_client)
+    monkeypatch.setattr(advanced_resources, "create_model", capture_upstream_client)
 
     async with app_module.lifespan(demo_app):
         assert not upstream_clients[0].is_closed
@@ -345,6 +353,42 @@ async def test_lifespan_installs_shared_postgres_runtime(
 
     assert upstream_clients[0].is_closed
     runtime_factory.assert_called_once()
+
+
+async def test_worker_registers_every_background_model_the_api_serves(
+    demo_app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    runtime = PostgresRuntime(
+        pool=Mock(),  # type: ignore[arg-type]
+        checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
+        store=InMemoryStore(),  # type: ignore[arg-type]
+        run_coordinator=InMemoryRunCoordinator(),  # type: ignore[arg-type]
+        response_store=InMemoryResponseStore(),
+    )
+
+    @asynccontextmanager
+    async def postgres_runtime(_postgres_uri: str):
+        yield runtime
+
+    @asynccontextmanager
+    async def open_advanced_graph(_checkpointer: object, _store: object):
+        yield Mock()
+
+    monkeypatch.setattr(worker_module, "postgres_runtime", postgres_runtime)
+    monkeypatch.setattr(worker_module, "open_advanced_graph", open_advanced_graph)
+    lifespan = worker_module._lifespan()
+    worker = await anext(lifespan)
+    await lifespan.aclose()
+
+    # A job's model ID must resolve in the worker, or its run fails.
+    api_background_models = {
+        name
+        for name, config in demo_app.state.graph_registry.registry.items()
+        if config.supports(GraphFeature.BACKGROUND)
+    }
+    assert set(worker.graphs.registry) == api_background_models
 
 
 @pytest.mark.parametrize(
@@ -380,7 +424,7 @@ def test_vector_store_credentials_are_isolated_from_a_separate_endpoint(
     monkeypatch.setattr(app_module.settings, "VECTOR_STORE_BASE_URL", vector_base_url)
     monkeypatch.setattr(app_module.settings, "VECTOR_STORE_API_KEY", vector_api_key)
 
-    assert app_module._vector_store_connection() == expected
+    assert advanced_resources._vector_store_connection() == expected
 
 
 def test_main_leaves_access_logging_to_the_deployment(
