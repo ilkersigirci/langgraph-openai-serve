@@ -76,8 +76,8 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
 
 
 def _public_features(graph_config: GraphConfig) -> set[GraphFeature]:
-    """Derive capability discovery from the background policy opt-in."""
+    """Derive capability discovery from the background_version opt-in."""
     features = set(graph_config.features)
-    if graph_config.background is not None:
+    if graph_config.background_version is not None:
         features.add(GraphFeature.BACKGROUND)
     return features

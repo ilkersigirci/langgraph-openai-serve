@@ -47,10 +47,9 @@ database or pool is a deployment choice. See
 for lifecycle ownership, adapter requirements, and composition constraints.
 
 Polling-only background requests branch after validation. With the supplied
-Hatchet backend, the API first stores the queued Response, then best-effort
-submits its stable reference to Hatchet.
-It returns the queued Response even when a workflow receipt is not immediately
-available; maintenance recovers pending submissions. An independently deployed
+Hatchet backend, the API first stores the queued Response, then submits its
+stable reference to Hatchet; maintenance resubmits a run that stays queued. An
+independently deployed
 worker later enters the same graph runner. Polling never executes the graph in
 an HTTP request.
 
@@ -134,7 +133,7 @@ composition.
 
 Background-enabled graphs add a fourth state role: a `ResponseStore` owns the
 bounded public lifecycle, authorization, retention, terminal publication, and
-any native cancellation still awaiting delivery. The checkpointer remains the
+pending checkpoint cleanup. The checkpointer remains the
 source of truth for recoverable graph progress. In the supplied durable backend,
 Hatchet owns queueing, attempts, retries, timeouts, cancellation, the terminal
 failure task, and the recurring maintenance schedule.

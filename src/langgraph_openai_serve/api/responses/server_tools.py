@@ -1,6 +1,6 @@
 """Translate LGOS-executed tools into native Responses output items."""
 
-from collections.abc import Collection, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from typing import TypeAlias
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -45,13 +45,25 @@ class ServerToolTracker:
         if event["ns"]:
             return
         for update in event["data"].values():
-            for message in _update_messages(update):
-                if isinstance(message, AIMessage):
-                    yield from self._tool_calls(message)
-                elif isinstance(message, ToolMessage):
-                    item = self._tool_result(message)
-                    if item is not None:
-                        yield item
+            yield from self.message_items(_update_messages(update))
+
+    def message_items(
+        self, messages: Iterable[BaseMessage]
+    ) -> Iterator[ServerToolItem]:
+        """
+        Yield public tool items represented by new root-graph messages.
+
+        Yields:
+            Selected calls and graph-produced results.
+
+        """
+        for message in messages:
+            if isinstance(message, AIMessage):
+                yield from self._tool_calls(message)
+            elif isinstance(message, ToolMessage):
+                item = self._tool_result(message)
+                if item is not None:
+                    yield item
 
     def ensure_complete(self) -> None:
         """Reject a response whose selected call has no graph-produced result."""

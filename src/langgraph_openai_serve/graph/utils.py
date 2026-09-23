@@ -271,7 +271,7 @@ def _resolve_run_identity(
     checkpoint_scope: str,
 ) -> _RunIdentity:
     if not graph_config.supports(GraphFeature.INTERRUPTS):
-        if graph_config.background is None:
+        if graph_config.background_version is None:
             return _RunIdentity()
         # A background-capable graph necessarily owns a persistent checkpointer.
         # Foreground Responses and Chat calls still need an isolated thread, but

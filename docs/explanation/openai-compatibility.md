@@ -93,7 +93,7 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 | --- | --- |
 | `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
-| `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. This value is derived from `GraphConfig.background`. |
+| `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. This value is derived from `GraphConfig.background_version`. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
@@ -247,7 +247,7 @@ not claim every field in the upstream OpenAI API.
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background `store=true` is supported and selects the longer configured bounded result retention. |
 | `text.format.type="text"` | Supported. |
 | `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible and background graphs. |
-| `background` | Omitted, null, and false select foreground execution. True is supported only for a model declared with `GraphConfig.background` and a server configured with a `BackgroundBackend`. |
+| `background` | Omitted, null, and false select foreground execution. True is supported only for a model declared with `GraphConfig.background_version` and a server configured with a `BackgroundBackend`. |
 | `conversation` | Rejected because LGOS has no Responses conversation store. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
 
@@ -300,12 +300,10 @@ conversation.
 
 ### Polling-Only Background Lifecycle
 
-For an opted-in graph, `background=true` delegates acceptance and execution to
-the configured `BackgroundBackend`. The supplied Hatchet backend first stores
-a queued Response, then best-effort triggers its workflow. The queued Response
-is returned even when a workflow receipt is not immediately available;
-maintenance recovers pending submissions. The caller keeps the opaque Response
-ID and uses:
+For an opted-in graph, `background=true` stores a queued Response, then submits
+it to the configured `BackgroundBackend`; if submission fails, the Response
+stays `queued` and maintenance submits it again. The caller keeps the opaque Response ID and
+uses:
 
 - `GET /v1/responses/{response_id}` for a current JSON snapshot; and
 - `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.
@@ -317,11 +315,12 @@ Retrieval has no streaming or cursor mode, and LGOS does not replay background
 events. Unknown, unauthorized, expired, and wrong-scope IDs share the same
 non-revealing not-found behavior.
 
-`Idempotency-Key` is optional create idempotency in this mode. The same
-authenticated scope, model, key, and exact request returns the existing
-Response. Reusing it for different content, or after the Response result has
-expired while its reservation remains, returns a conflict. A terminal
-background reservation has its own configured tombstone window.
+Background create accepts an optional `Idempotency-Key` header. OpenAI does
+not document one for Responses, but LGOS runs behind retrying SDKs and
+gateways, where a resent create would otherwise start a second run. A replay
+returns the original Response, and reusing a key with different content returns
+`422`, following the
+[IETF Idempotency-Key draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header).
 `metadata.lgos_run_id` remains interrupt-operation identity and is rejected on
 background requests.
 

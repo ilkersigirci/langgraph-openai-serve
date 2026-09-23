@@ -4,14 +4,12 @@ from importlib.metadata import version
 
 from langgraph_openai_serve.background import (
     BackgroundBackend,
-    BackgroundPolicy,
     BackgroundSettings,
     BackgroundWorker,
     InMemoryBackgroundBackend,
     InMemoryResponseStore,
     NewRun,
     ResponseStore,
-    RetryableJobError,
     StoredRun,
 )
 from langgraph_openai_serve.graph.citations import citation_slice
@@ -45,7 +43,6 @@ __version__ = version("langgraph_openai_serve")
 
 __all__ = [
     "BackgroundBackend",
-    "BackgroundPolicy",
     "BackgroundSettings",
     "BackgroundWorker",
     "ClientFunctionTool",
@@ -63,7 +60,6 @@ __all__ = [
     "NamedFunctionToolChoice",
     "NewRun",
     "ResponseStore",
-    "RetryableJobError",
     "RunBusyError",
     "RunCoordinator",
     "RunLease",

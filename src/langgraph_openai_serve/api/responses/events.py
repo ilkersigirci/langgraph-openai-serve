@@ -1,11 +1,11 @@
 """Build SDK-typed OpenAI Responses events and named SSE frames."""
 
 import uuid
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.types import UpdatesStreamPart
 from openai.types.responses import (
     Response,
@@ -575,6 +575,21 @@ class ResponsesEventBuilder:
         """
         self._ensure_active()
         for item in self._server_tool_tracker.items(event):
+            yield from self._tool_item(item)
+
+    def server_tool_messages(
+        self,
+        messages: Iterable[BaseMessage],
+    ) -> Iterator[ResponseStreamEvent]:
+        """
+        Expose selected tool activity from new root-graph messages.
+
+        Yields:
+            Native application-tool item lifecycle events.
+
+        """
+        self._ensure_active()
+        for item in self._server_tool_tracker.message_items(messages):
             yield from self._tool_item(item)
 
     def _response(

@@ -8,7 +8,7 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
-from langgraph_openai_serve import BackgroundPolicy, GraphConfig
+from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import (
     BackgroundCheckpointIncompleteError,
@@ -70,14 +70,13 @@ async def test_pending_writes_are_resumed_before_background_completion(make_requ
         config = GraphConfig(
             graph=graph,
             description="Checkpoint recovery",
-            background=BackgroundPolicy(version="v1"),
+            background_version="v1",
             output_to_message=lambda output: AIMessage(content=output["answer"]),
             run_coordinator=InMemoryRunCoordinator(),
         )
         request = make_request("background")
         arguments = {
             "checkpoint_thread_id": "pending-writes",
-            "initial_message_count": 0,
         }
         with pytest.raises(OSError, match="checkpoint write interrupted"):
             await run_background_graph(
@@ -124,7 +123,7 @@ async def test_background_recovery_renders_only_declared_output_channels(
     config = GraphConfig(
         graph=graph,
         description="DUMMY",
-        background=BackgroundPolicy(version="v1"),
+        background_version="v1",
         request_to_input=lambda _request, messages: {"messages": messages},
         output_to_message=render,
         run_coordinator=InMemoryRunCoordinator(),
@@ -138,7 +137,6 @@ async def test_background_recovery_renders_only_declared_output_channels(
         config,
         checkpoint_thread_id="background-output-filter",
         finalize_only=False,
-        initial_message_count=len(messages),
     )
     recovered = await run_background_graph(
         request,
@@ -146,7 +144,6 @@ async def test_background_recovery_renders_only_declared_output_channels(
         config,
         checkpoint_thread_id="background-output-filter",
         finalize_only=True,
-        initial_message_count=len(messages),
     )
 
     assert executed.message.text == recovered.message.text == "rendered answer"
@@ -188,7 +185,7 @@ async def test_background_recovery_restores_pydantic_output_schema(
     config = GraphConfig(
         graph=graph,
         description="DUMMY",
-        background=BackgroundPolicy(version="v1"),
+        background_version="v1",
         request_to_input=lambda _request, _messages: {},
         output_to_message=render,
         run_coordinator=InMemoryRunCoordinator(),
@@ -200,7 +197,6 @@ async def test_background_recovery_restores_pydantic_output_schema(
         config,
         checkpoint_thread_id="background-pydantic-output",
         finalize_only=False,
-        initial_message_count=0,
     )
 
     assert result.message.text == "public answer"

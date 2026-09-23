@@ -5,7 +5,6 @@ from openai import AsyncOpenAI, BadRequestError
 from pydantic import ConfigDict, Field
 
 from langgraph_openai_serve import (
-    BackgroundPolicy,
     ClientSettings,
     GraphConfig,
     GraphFeature,
@@ -131,7 +130,7 @@ async def test_background_feature_is_derived_from_policy(
         GraphConfig(
             graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
             description="DUMMY",
-            background=BackgroundPolicy(version="test-v1"),
+            background_version="test-v1",
             run_coordinator=InMemoryRunCoordinator(),
         ),
     )

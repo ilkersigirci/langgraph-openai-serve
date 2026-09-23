@@ -9,7 +9,6 @@ from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import (
     Command,
@@ -136,14 +135,13 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
     )
 
 
-async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit checkpoint recovery boundary.
+async def run_background_graph(
     request: GraphRequest,
     messages: list[BaseMessage],
     config: GraphConfig,
     *,
     checkpoint_thread_id: str,
     finalize_only: bool,
-    initial_message_count: int,
 ) -> BackgroundGraphResult:
     """Start, recover, or only render one synchronously checkpointed operation."""
     graph = await config.resolve_graph()
@@ -159,7 +157,7 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
         raise RuntimeError(msg)
 
     snapshot = await graph.aget_state(runnable_config, subgraphs=True)
-    checkpoint_exists = _snapshot_has_checkpoint(snapshot.config)
+    checkpoint_exists = snapshot.created_at is not None
     # Pending task writes can make `next` empty before the super-step checkpoint
     # commits. LangGraph must resume those tasks to schedule downstream nodes.
     if (
@@ -173,7 +171,6 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
             await _background_output(graph, runnable_config),
             snapshot.values,
             usage_callback,
-            initial_message_count=initial_message_count,
         )
     if snapshot.interrupts:
         msg = "Background execution does not support graph interrupts."
@@ -198,31 +195,18 @@ async def run_background_graph(  # ruff: ignore[too-many-arguments] - Explicit c
         msg = "Background execution does not support graph interrupts."
         raise BackgroundGraphInterruptedError(msg)
 
-    # Rendering always uses the durable checkpoint head, including on the first
-    # delivery, so publication recovery exercises the identical path.
+    # Static breakpoints return without interrupts, so confirm the checkpoint
+    # head is complete before publishing its output.
     completed = await graph.aget_state(runnable_config, subgraphs=True)
-    if (
-        not _snapshot_has_checkpoint(completed.config)
-        or completed.next
-        or completed.tasks
-        or completed.interrupts
-    ):
+    if completed.next or completed.tasks or completed.interrupts:
         msg = "Graph execution ended without complete checkpointed output."
         raise BackgroundCheckpointIncompleteError(msg)
     return await _background_result(
         config,
-        await _background_output(graph, runnable_config),
+        result.value,
         completed.values,
         usage_callback,
-        initial_message_count=initial_message_count,
     )
-
-
-def _snapshot_has_checkpoint(config: Mapping[str, Any] | None) -> bool:
-    try:
-        return get_checkpoint_id(cast("Any", config)) is not None
-    except (AttributeError, KeyError, TypeError):
-        return False
 
 
 async def _background_result(
@@ -230,18 +214,15 @@ async def _background_result(
     output: Any,
     state: Any,
     usage_callback: UsageMetadataCallbackHandler,
-    *,
-    initial_message_count: int,
 ) -> BackgroundGraphResult:
     message = await config.render_output(output)
     root_messages = _root_messages(state)
+    # Checkpointed messages keep usage across retried deliveries, which the
+    # per-attempt callback cannot. Decoded input messages never carry usage.
     total_usage = None
-    for operation_message in root_messages[initial_message_count:]:
-        if (
-            isinstance(operation_message, AIMessage)
-            and operation_message.usage_metadata is not None
-        ):
-            total_usage = add_usage(total_usage, operation_message.usage_metadata)
+    for root_message in root_messages:
+        if isinstance(root_message, AIMessage) and root_message.usage_metadata:
+            total_usage = add_usage(total_usage, root_message.usage_metadata)
     if total_usage is None:
         for usage in usage_callback.usage_metadata.values():
             total_usage = add_usage(total_usage, usage)
@@ -421,7 +402,7 @@ def _durability(run: GraphRun) -> Durability | None:
     return (
         "exit"
         if run.config.supports(GraphFeature.INTERRUPTS)
-        or run.config.background is not None
+        or run.config.background_version is not None
         else None
     )
 

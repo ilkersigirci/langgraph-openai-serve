@@ -5,7 +5,7 @@ graph. It makes the recovery boundary visible: one node generates and
 checkpoints a draft, then a second node waits briefly before publishing that
 durable draft as the final assistant message.
 
-The graph is registered with `GraphConfig.background`, a PostgreSQL
+The graph is registered with `GraphConfig.background_version`, a PostgreSQL
 checkpointer, and a PostgreSQL run coordinator. The API persists the public
 Response and starts its Hatchet workflow; an independently deployed worker
 executes the graph. PostgreSQL remains authoritative for both the public
@@ -42,8 +42,7 @@ sequenceDiagram
 
   Client->>API: responses.create(background=true)
   API->>DB: store queued Response
-  API->>Hatchet: start idempotent workflow(response_id)
-  API->>DB: store Hatchet workflow ID
+  API->>Hatchet: start workflow(response_id)
   API-->>Client: queued Response ID
   Hatchet->>Worker: deliver execute task
   Worker->>DB: acquire coordinator lease

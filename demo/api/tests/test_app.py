@@ -307,12 +307,12 @@ async def test_lifespan_installs_shared_postgres_runtime(
     )
 
     @asynccontextmanager
-    async def postgres_runtime(postgres_uri: str):
-        assert postgres_uri == app_module.settings.POSTGRES_URI
+    async def open_postgres_runtime(unopened: PostgresRuntime):
+        assert unopened.pool is demo_app.state.postgres_pool
         yield runtime
 
-    runtime_factory = Mock(wraps=postgres_runtime)
-    monkeypatch.setattr(app_module, "postgres_runtime", runtime_factory)
+    runtime_factory = Mock(wraps=open_postgres_runtime)
+    monkeypatch.setattr(app_module, "open_postgres_runtime", runtime_factory)
     upstream_clients: list[httpx2.AsyncClient] = []
     create_model = app_module.create_model
 
@@ -337,7 +337,7 @@ async def test_lifespan_installs_shared_postgres_runtime(
             pass
 
     assert upstream_clients[0].is_closed
-    runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
+    runtime_factory.assert_called_once()
 
 
 @pytest.mark.parametrize(

@@ -9,7 +9,6 @@ HttpUrlStr = Annotated[
     PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda value: str(value).rstrip("/")),
 ]
-AdmissionCapacity = Annotated[int, Field(ge=1, le=10_000)]
 WorkerSlots = Annotated[int, Field(ge=1, le=128)]
 
 
@@ -50,7 +49,6 @@ class Settings(BaseSettings):
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
     BACKGROUND_ENABLED: bool = False
-    BACKGROUND_ADMISSION_CAPACITY: AdmissionCapacity = 100
     BACKGROUND_REPORT_FINALIZE_DELAY_SECONDS: int = Field(default=5, ge=0, le=300)
     HATCHET_WORKER_SLOTS: WorkerSlots = 4
 

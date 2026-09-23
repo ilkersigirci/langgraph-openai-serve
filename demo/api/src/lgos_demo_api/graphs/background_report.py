@@ -10,7 +10,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
-from langgraph_openai_serve import BackgroundPolicy, GraphConfig
+from langgraph_openai_serve import GraphConfig
 from langgraph_openai_serve.graph.coordination import RunCoordinator
 
 from lgos_demo_api.core.settings import settings
@@ -78,7 +78,7 @@ def create_background_report_config(
             "background worker."
         ),
         run_coordinator=run_coordinator,
-        background=BackgroundPolicy(version="background-report-v1"),
+        background_version="background-report-v1",
     )
 
 

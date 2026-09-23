@@ -14,10 +14,14 @@ from httpx2 import ASGITransport, AsyncClient
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
-from openai import AsyncOpenAI, BadRequestError, ConflictError, RateLimitError
+from openai import (
+    AsyncOpenAI,
+    BadRequestError,
+    NotFoundError,
+    UnprocessableEntityError,
+)
 
 from langgraph_openai_serve import (
-    BackgroundPolicy,
     BackgroundSettings,
     BackgroundWorker,
     ClientSettings,
@@ -27,7 +31,6 @@ from langgraph_openai_serve import (
     InMemoryResponseStore,
     LanggraphOpenaiServe,
     NewRun,
-    RetryableJobError,
     RunCoordinator,
     RunLease,
     RunLeaseLostError,
@@ -109,9 +112,7 @@ async def _environment(  # ruff: ignore[too-many-arguments] - Test fixture optio
                 "background": GraphConfig(
                     graph=graph,
                     description="Background test graph",
-                    background=(
-                        BackgroundPolicy(version="test-v1") if model_enabled else None
-                    ),
+                    background_version="test-v1" if model_enabled else None,
                     run_coordinator=(
                         (coordinator or InMemoryRunCoordinator())
                         if model_enabled
@@ -162,10 +163,12 @@ async def _in_memory_client(
     environment: _Environment,
     *,
     settings: BackgroundSettings | None = None,
+    maintenance_interval: timedelta = timedelta(minutes=1),
 ) -> AsyncIterator[tuple[AsyncOpenAI, InMemoryBackgroundBackend]]:
     backend = InMemoryBackgroundBackend(
         graphs=environment.worker.graphs,
         settings=settings,
+        maintenance_interval=maintenance_interval,
     )
     app = FastAPI(lifespan=backend.lifespan)
     LanggraphOpenaiServe(
@@ -250,36 +253,46 @@ async def test_in_memory_backend_finalizes_execution_failure() -> None:
         assert failed.error is not None
 
 
-async def test_in_memory_backend_finishes_a_cancelled_submission(
+async def test_in_memory_backend_expires_results_and_checkpoints() -> None:
+    settings = BackgroundSettings(result_retention=timedelta(milliseconds=50))
+    async with _environment() as environment:
+        async with _in_memory_client(
+            environment,
+            settings=settings,
+            maintenance_interval=timedelta(milliseconds=10),
+        ) as (client, backend):
+            created = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+            )
+            completed = await _terminal_response(client, created.id)
+            with fail_after(2):
+                while await backend.store.get(created.id) is not None:
+                    await checkpoint()
+            with pytest.raises(NotFoundError):
+                await client.responses.retrieve(created.id)
+
+        assert completed.status == "completed"
+
+
+async def test_in_memory_backend_starts_a_run_whose_request_was_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async with _environment() as environment:
         async with _in_memory_client(environment) as (client, backend):
-            receipt_started = Event()
-            release_receipt = Event()
+            create_started = Event()
+            release_create = Event()
             response_ids: list[str] = []
-            record_workflow_run = backend.store.record_workflow_run
+            store_create = backend.store.create
 
-            async def delayed_receipt(
-                response_id: str,
-                workflow_run_id: str,
-                *,
-                now: datetime,
-            ) -> StoredRun | None:
-                response_ids.append(response_id)
-                receipt_started.set()
-                await release_receipt.wait()
-                return await record_workflow_run(
-                    response_id,
-                    workflow_run_id,
-                    now=now,
-                )
+            async def delayed_create(run: NewRun) -> StoredRun:
+                response_ids.append(run.response_id)
+                create_started.set()
+                await release_create.wait()
+                return await store_create(run)
 
-            monkeypatch.setattr(
-                backend.store,
-                "record_workflow_run",
-                delayed_receipt,
-            )
+            monkeypatch.setattr(backend.store, "create", delayed_create)
             request_scope = CancelScope()
 
             async def create() -> None:
@@ -293,16 +306,13 @@ async def test_in_memory_backend_finishes_a_cancelled_submission(
             with fail_after(2):
                 async with create_task_group() as tasks:
                     tasks.start_soon(create)
-                    await receipt_started.wait()
+                    await create_started.wait()
                     request_scope.cancel()
                     await checkpoint()
-                    release_receipt.set()
+                    release_create.set()
 
             assert len(response_ids) == 1
-            stored = await backend.store.get_internal(response_ids[0])
-            assert stored is not None
-            assert stored.workflow_run_id == stored.response_id
-            completed = await _terminal_response(client, stored.response_id)
+            completed = await _terminal_response(client, response_ids[0])
 
         assert completed.status == "completed"
 
@@ -404,6 +414,54 @@ async def test_retrieval_and_cancellation_are_owner_scoped() -> None:
         assert await environment.backend.receive() is None
 
 
+async def test_maintenance_resubmits_a_run_whose_submission_failed() -> None:
+    settings = BackgroundSettings(resubmit_after=timedelta(microseconds=1))
+    async with _environment(settings=settings) as environment:
+        environment.backend.submit_error = OSError("engine unavailable")
+        created = await environment.client.responses.create(
+            model="background", input="Hello", background=True
+        )
+        started = await environment.client.responses.create(
+            model="background", input="Running", background=True
+        )
+        await environment.store.mark_in_progress(started.id, now=datetime.now(UTC))
+        environment.backend.submit_error = None
+
+        upkeep = await environment.worker.maintain(resubmit=environment.backend.submit)
+        job = await environment.backend.receive()
+        assert job is not None
+        await environment.worker.execute(job)
+
+        completed = await environment.client.responses.retrieve(created.id)
+        assert created.status == "queued"
+        assert upkeep["resubmitted"] == 1
+        assert job == created.id
+        assert await environment.backend.receive() is None
+        assert completed.status == "completed"
+
+
+async def test_cancellation_stops_the_run_and_survives_a_stop_failure() -> None:
+    async with _environment() as environment:
+        stopped = await environment.client.responses.create(
+            model="background", input="Hello", background=True
+        )
+        unstoppable = await environment.client.responses.create(
+            model="background", input="Hello", background=True
+        )
+
+        await environment.client.responses.cancel(stopped.id)
+
+        async def fail_stop(_run: StoredRun) -> None:
+            message = "engine unavailable"
+            raise OSError(message)
+
+        environment.backend.stop = fail_stop
+        cancelled = await environment.client.responses.cancel(unstoppable.id)
+
+        assert environment.backend.stopped == [stopped.id]
+        assert cancelled.status == "cancelled"
+
+
 async def test_cancellation_wins_a_race_with_graph_publication() -> None:
     started = Event()
     allow_execution = Event()
@@ -431,7 +489,10 @@ async def test_in_memory_backend_cancels_active_execution() -> None:
     started = Event()
     allow_execution = Event()
     async with _environment(execution_gate=(started, allow_execution)) as environment:
-        async with _in_memory_client(environment) as (client, backend):
+        async with _in_memory_client(
+            environment,
+            maintenance_interval=timedelta(milliseconds=10),
+        ) as (client, backend):
             created = await client.responses.create(
                 model="background",
                 input="Hello",
@@ -441,19 +502,13 @@ async def test_in_memory_backend_cancels_active_execution() -> None:
             cancelled = await client.responses.cancel(created.id)
             with fail_after(2):
                 while True:
-                    stored = await backend.store.get_internal(created.id)
-                    if (
-                        stored is not None
-                        and not stored.cancellation_pending
-                        and not stored.cleanup_pending
-                    ):
+                    stored = await backend.store.get(created.id)
+                    if stored is not None and not stored.cleanup_pending:
                         break
                     await checkpoint()
 
         assert cancelled.status == "cancelled"
-        assert stored is not None
-        assert not stored.cancellation_pending
-        assert not stored.cleanup_pending
+        assert stored.status == "cancelled"
 
 
 async def test_in_memory_backend_preserves_stored_cancellation_retention() -> None:
@@ -476,61 +531,11 @@ async def test_in_memory_backend_preserves_stored_cancellation_retention() -> No
             )
             await started.wait()
             await client.responses.cancel(created.id)
-            stored = await backend.store.get_internal(created.id)
+            stored = await backend.store.get(created.id)
 
         assert stored is not None
         assert stored.result_expires_at is not None
-        assert stored.terminal_at is not None
-        assert (
-            stored.result_expires_at - stored.terminal_at
-            == settings.stored_result_retention
-        )
-
-
-async def test_cancellation_uses_the_persisted_response_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    settings = BackgroundSettings(
-        result_retention=timedelta(seconds=1),
-        stored_result_retention=timedelta(days=30),
-    )
-    async with _environment(settings=settings) as environment:
-        created = await environment.client.responses.create(
-            model="background",
-            input="Hello",
-            background=True,
-            store=True,
-        )
-        retrieve = environment.backend.retrieve
-
-        async def retrieve_without_envelope(
-            response_id: str,
-            owner_scope: str,
-        ) -> StoredRun | None:
-            current = await retrieve(response_id, owner_scope)
-            return (
-                current.model_copy(update={"envelope": {}})
-                if current is not None
-                else None
-            )
-
-        monkeypatch.setattr(
-            environment.backend,
-            "retrieve",
-            retrieve_without_envelope,
-        )
-
-        cancelled = await environment.client.responses.cancel(created.id)
-        stored = await environment.store.get_internal(created.id)
-
-        assert cancelled.status == "cancelled"
-        assert stored is not None
-        assert stored.result_expires_at is not None
-        assert stored.terminal_at is not None
-        assert (
-            stored.result_expires_at - stored.terminal_at
-            == settings.stored_result_retention
-        )
+        assert stored.result_expires_at - datetime.now(UTC) > timedelta(days=29)
 
 
 async def test_background_rejects_interrupt_run_id_metadata() -> None:
@@ -546,49 +551,14 @@ async def test_background_rejects_interrupt_run_id_metadata() -> None:
         assert await environment.backend.receive() is None
 
 
-async def test_idempotency_header_reuses_response_and_rejects_conflicts() -> None:
-    headers = {"Idempotency-Key": "create-background-report"}
+async def test_idempotency_key_replays_the_original_response() -> None:
+    headers = {"Idempotency-Key": "create-report-1"}
     async with _environment() as environment:
         first = await environment.client.responses.create(
-            model="background",
-            input="Hello",
-            background=True,
-            extra_headers=headers,
+            model="background", input="Hello", background=True, extra_headers=headers
         )
         replay = await environment.client.responses.create(
-            model="background",
-            input="Hello",
-            background=True,
-            extra_headers=headers,
-        )
-        stored = await environment.store.get_internal(first.id)
-
-        assert replay == first
-        assert stored is not None
-        assert stored.idempotency_digest == (
-            "252f3fe49ded85e663315f02074be81b747f7be603889b989967858a36072ed0"
-        )
-        assert headers["Idempotency-Key"] not in stored.model_dump_json()
-        with pytest.raises(ConflictError) as error:
-            await environment.client.responses.create(
-                model="background",
-                input="Different",
-                background=True,
-                extra_headers=headers,
-            )
-        assert error.value.response.json()["error"]["param"] == "Idempotency-Key"
-        assert await environment.backend.receive() is not None
-        assert await environment.backend.receive() is None
-
-
-async def test_idempotency_header_is_owner_scoped() -> None:
-    headers = {"Idempotency-Key": "shared-client-key"}
-    async with _environment() as environment:
-        first = await environment.client.responses.create(
-            model="background",
-            input="Hello",
-            background=True,
-            extra_headers=headers,
+            model="background", input="Hello", background=True, extra_headers=headers
         )
         other_owner = await environment.client.responses.create(
             model="background",
@@ -596,33 +566,55 @@ async def test_idempotency_header_is_owner_scoped() -> None:
             background=True,
             extra_headers={**headers, "x-owner": "tenant-b"},
         )
-
-        assert other_owner.id != first.id
-
-
-async def test_admission_capacity_counts_only_active_responses() -> None:
-    async with _environment(
-        settings=BackgroundSettings(admission_capacity=1)
-    ) as environment:
-        first = await environment.client.responses.create(
-            model="background",
-            input="First",
-            background=True,
-        )
-        with pytest.raises(RateLimitError):
+        with pytest.raises(UnprocessableEntityError) as reused:
             await environment.client.responses.create(
                 model="background",
-                input="Second",
+                input="Different",
                 background=True,
+                extra_headers=headers,
             )
 
-        await _execute_next(environment)
-        second = await environment.client.responses.create(
-            model="background",
-            input="Second",
-            background=True,
-        )
-        assert second.id != first.id
+        assert replay == first
+        assert other_owner.id != first.id
+        assert reused.value.response.json()["error"]["param"] == "Idempotency-Key"
+        submitted = {await environment.backend.receive() for _ in range(3)}
+        assert submitted == {first.id, other_owner.id, None}
+
+
+@pytest.mark.parametrize("key", ["", "k" * 256])
+async def test_invalid_idempotency_key_is_rejected(key: str) -> None:
+    async with _environment() as environment:
+        with pytest.raises(BadRequestError) as error:
+            await environment.client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+                extra_headers={"Idempotency-Key": key},
+            )
+        assert error.value.response.json()["error"]["param"] == "Idempotency-Key"
+
+
+async def test_in_memory_backend_executes_an_idempotent_replay_once() -> None:
+    headers = {"Idempotency-Key": "create-report-1"}
+    async with _environment() as environment:
+        async with _in_memory_client(environment) as (client, _backend):
+            first = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+                extra_headers=headers,
+            )
+            replay = await client.responses.create(
+                model="background",
+                input="Hello",
+                background=True,
+                extra_headers=headers,
+            )
+            completed = await _terminal_response(client, first.id)
+
+        assert replay.id == first.id
+        assert completed.status == "completed"
+        assert environment.invocations == ["Hello"]
 
 
 @pytest.mark.parametrize("render_error", [None, ValueError("broken renderer")])
@@ -646,9 +638,8 @@ async def test_lost_lease_preserves_background_state_for_recovery(render_error):
         )
 
         async def execute():
-            with pytest.raises(RetryableJobError) as error:
+            with pytest.raises(RunLeaseLostError):
                 await environment.worker.execute(created.id)
-            assert isinstance(error.value.__cause__, RunLeaseLostError)
 
         with fail_after(5):
             async with create_task_group() as tasks:
@@ -660,7 +651,7 @@ async def test_lost_lease_preserves_background_state_for_recovery(render_error):
 
         current = await environment.client.responses.retrieve(created.id)
         assert current.status == "in_progress"
-        stored = await environment.store.get_internal(created.id)
+        stored = await environment.store.get(created.id)
         assert stored is not None
         graph = await environment.worker.graphs.get_graph("background").resolve_graph()
         checkpoint_config = {"configurable": {"thread_id": stored.checkpoint_thread_id}}
@@ -683,8 +674,8 @@ async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
         yield lease
 
     class LosingStore(InMemoryResponseStore):
-        async def publish_terminal(self, *args, **kwargs):
-            result = await super().publish_terminal(*args, **kwargs)
+        async def finish(self, *args, **kwargs):
+            result = await super().finish(*args, **kwargs)
             leases[-1].lost = True
             return result
 
@@ -694,10 +685,10 @@ async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
         created = await environment.client.responses.create(
             model="background", input="Hello", background=True
         )
-        with pytest.raises(RetryableJobError):
+        with pytest.raises(RunLeaseLostError):
             await environment.worker.execute(created.id)
 
-        stored = await environment.store.get_internal(created.id)
+        stored = await environment.store.get(created.id)
         assert stored is not None
         assert stored.status == "completed"
         assert stored.cleanup_pending
@@ -705,9 +696,9 @@ async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
         checkpoint_config = {"configurable": {"thread_id": stored.checkpoint_thread_id}}
         assert await graph.checkpointer.aget_tuple(checkpoint_config) is not None
 
-        assert await environment.worker.cleanup_once() == 1
+        assert (await environment.worker.maintain())["cleaned"] == 1
         assert await graph.checkpointer.aget_tuple(checkpoint_config) is None
-        cleaned = await environment.store.get_internal(created.id)
+        cleaned = await environment.store.get(created.id)
         assert cleaned is not None
         assert not cleaned.cleanup_pending
 
@@ -722,7 +713,7 @@ async def test_worker_retry_resumes_from_the_checkpoint() -> None:
         job = await environment.backend.receive()
         assert job is not None
 
-        with pytest.raises(RetryableJobError):
+        with pytest.raises(OSError, match="injected graph failure"):
             await environment.worker.execute(job)
         await environment.worker.execute(job)
 
@@ -741,7 +732,7 @@ async def test_worker_finalization_publishes_failed_response() -> None:
         job = await environment.backend.receive()
         assert job is not None
 
-        with pytest.raises(RetryableJobError):
+        with pytest.raises(OSError, match="injected graph failure"):
             await environment.worker.execute(job)
         await environment.worker.finalize(job)
 
@@ -783,7 +774,7 @@ async def test_invalid_persisted_request_still_publishes_failure() -> None:
         )
         job = await environment.backend.receive()
         assert job is not None
-        original = await environment.store.get_internal(job)
+        original = await environment.store.get(job)
         assert original is not None
         graph = await environment.worker.graphs.get_graph("background").resolve_graph()
         assert isinstance(graph.checkpointer, AsyncSqliteSaver)
@@ -792,7 +783,7 @@ async def test_invalid_persisted_request_still_publishes_failure() -> None:
         payload = {field: getattr(original, field) for field in NewRun.model_fields}
         payload["envelope"] = {}
         store = InMemoryResponseStore()
-        await store.accept(NewRun.model_validate(payload), capacity=1)
+        await store.create(NewRun.model_validate(payload))
         worker = BackgroundWorker(
             graphs=environment.worker.graphs,
             store=store,
@@ -801,17 +792,12 @@ async def test_invalid_persisted_request_still_publishes_failure() -> None:
 
         await worker.execute(job)
 
-        failed = await store.get_internal(job)
+        failed = await store.get(job)
         assert failed is not None
         assert failed.status == "failed"
-        assert failed.response is not None
         assert failed.response["status"] == "failed"
         assert failed.result_expires_at is not None
-        assert failed.terminal_at is not None
-        assert (
-            failed.result_expires_at - failed.terminal_at
-            == settings.stored_result_retention
-        )
+        assert failed.result_expires_at - datetime.now(UTC) > timedelta(days=29)
 
 
 async def test_removed_graph_abandons_unresolvable_cleanup() -> None:
@@ -832,14 +818,14 @@ async def test_removed_graph_abandons_unresolvable_cleanup() -> None:
         await worker.execute(job)
 
         failed = await environment.client.responses.retrieve(created.id)
-        stored = await environment.store.get_internal(job)
+        stored = await environment.store.get(job)
         assert failed.status == "failed"
         assert stored is not None
         assert stored.cleanup_pending is False
 
         future = datetime.now(UTC) + timedelta(days=31)
         assert await environment.store.expire(now=future, limit=1) == 1
-        assert await environment.store.get_internal(job) is None
+        assert await environment.store.get(job) is None
 
 
 async def test_invalid_graph_abandons_unresolvable_cleanup() -> None:
@@ -871,7 +857,7 @@ async def test_invalid_graph_abandons_unresolvable_cleanup() -> None:
         await worker.execute(job)
 
         failed = await environment.client.responses.retrieve(created.id)
-        stored = await environment.store.get_internal(job)
+        stored = await environment.store.get(job)
         assert failed.status == "failed"
         assert stored is not None
         assert stored.cleanup_pending is False

@@ -35,9 +35,9 @@ class PostgresRuntime:
     response_store: PostgresResponseStore
 
 
-def _create_postgres_runtime(postgres_uri: str) -> PostgresRuntime:
-    """Construct unopened process-owned PostgreSQL dependencies."""
-    pool = cast(
+def create_postgres_pool(postgres_uri: str) -> PostgresPool:
+    """Construct an unopened pool; construction needs no event loop."""
+    return cast(
         "PostgresPool",
         AsyncConnectionPool(
             conninfo=postgres_uri,
@@ -51,6 +51,10 @@ def _create_postgres_runtime(postgres_uri: str) -> PostgresRuntime:
             open=False,
         ),
     )
+
+
+def create_postgres_runtime(pool: PostgresPool) -> PostgresRuntime:
+    """Construct dependencies on an unopened pool inside the event loop."""
     return PostgresRuntime(
         pool=pool,
         checkpointer=AsyncPostgresSaver(pool),
@@ -80,7 +84,8 @@ async def open_postgres_runtime(
 @asynccontextmanager
 async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
     """Construct, open, and own one process-local PostgreSQL runtime."""
-    async with open_postgres_runtime(_create_postgres_runtime(postgres_uri)) as runtime:
+    runtime = create_postgres_runtime(create_postgres_pool(postgres_uri))
+    async with open_postgres_runtime(runtime) as runtime:
         yield runtime
 
 
@@ -94,6 +99,9 @@ async def setup_postgres_schema(postgres_uri: str) -> None:
 
 __all__ = [
     "PostgresRuntime",
+    "create_postgres_pool",
+    "create_postgres_runtime",
+    "open_postgres_runtime",
     "postgres_runtime",
     "setup_postgres_schema",
 ]

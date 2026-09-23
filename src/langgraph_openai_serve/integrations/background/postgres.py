@@ -2,206 +2,147 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-from importlib.resources import files
-from typing import TYPE_CHECKING, Any, LiteralString, cast
+from typing import TYPE_CHECKING, Any, LiteralString
 
-from psycopg import AsyncConnection, sql
+from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from langgraph_openai_serve.background.store import (
-    BackgroundCapacityError,
-    BackgroundIdempotencyConflictError,
-    BackgroundResponseExpiredError,
     NewRun,
-    ResponseStatus,
     StoredRun,
-    expired_run_deletable,
-    terminal_run,
-    tombstone_run,
+    terminal_status,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Sequence
+    from collections.abc import Sequence
+    from datetime import datetime, timedelta
 
     from pydantic import JsonValue
 
-_TABLE = "lgos_background_responses"
-_STORE_LOCK = 5_494_716_043_740_046_884
-_SCHEMA_FILE = "postgres_schema.sql"
+# Serializes concurrent setup calls from several processes.
+_SETUP_LOCK = 5_494_716_043_740_046_884
+
+# Append-only, like LangGraph's AsyncPostgresSaver.MIGRATIONS: setup() applies
+# every entry after the highest recorded version. Never edit a released entry.
+MIGRATIONS: tuple[LiteralString, ...] = (
+    """CREATE TABLE IF NOT EXISTS lgos_background_migrations (
+    v INTEGER PRIMARY KEY
+)""",
+    """CREATE TABLE lgos_background_responses (
+    response_id text PRIMARY KEY,
+    owner_scope text NOT NULL,
+    model text NOT NULL,
+    checkpoint_thread_id text NOT NULL,
+    graph_version text NOT NULL,
+    envelope jsonb NOT NULL,
+    response jsonb NOT NULL,
+    status text NOT NULL CHECK (
+        status IN (
+            'queued', 'in_progress', 'completed', 'incomplete', 'failed', 'cancelled'
+        )
+    ),
+    initial_call_ids text[] NOT NULL,
+    idempotency_digest text,
+    request_fingerprint text,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    result_expires_at timestamptz,
+    cleanup_pending boolean NOT NULL
+)""",
+    """CREATE UNIQUE INDEX lgos_background_idempotency
+    ON lgos_background_responses (idempotency_digest)
+    WHERE idempotency_digest IS NOT NULL""",
+    """CREATE INDEX lgos_background_queued
+    ON lgos_background_responses (updated_at, response_id)
+    WHERE status = 'queued'""",
+    """CREATE INDEX lgos_background_cleanup
+    ON lgos_background_responses (updated_at, response_id)
+    WHERE cleanup_pending""",
+    """CREATE INDEX lgos_background_expiry
+    ON lgos_background_responses (result_expires_at)
+    WHERE NOT cleanup_pending""",
+)
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
-_Connection = AsyncConnection[dict[str, Any]]
 
 
 class PostgresResponseStore:
-    """Persist canonical Response snapshots with small atomic transitions."""
+    """
+    Persist Response runs with single-statement atomic transitions.
+
+    The pool must return mapping rows (``row_factory=dict_row``), as
+    ``AsyncPostgresSaver`` also requires when both share one pool.
+    """
 
     def __init__(self, pool: _PostgresPool) -> None:
-        if getattr(pool, "close_returns", False) is True:
-            msg = "PostgresResponseStore requires a pool with close_returns=False."
-            raise ValueError(msg)
         self._pool = pool
 
     async def setup(self) -> None:
-        """Create the background Response schema."""
-        schema = files("langgraph_openai_serve.integrations.background").joinpath(
-            _SCHEMA_FILE
-        )
-        statement = cast(
-            "LiteralString",
-            schema.read_text(encoding="utf-8"),
-        )
+        """Apply pending schema migrations."""
         async with (
             self._pool.connection() as connection,
             connection.transaction(),
         ):
-            await connection.execute(
-                "SELECT pg_advisory_xact_lock(%s)",
-                (_STORE_LOCK,),
-            )
-            await connection.execute(sql.SQL(statement), prepare=False)
-
-    async def accept(self, run: NewRun, *, capacity: int) -> StoredRun:
-        """Atomically enforce capacity and optional create idempotency."""
-        async with (
-            self._pool.connection() as connection,
-            connection.transaction(),
-        ):
-            await connection.execute(
-                "SELECT pg_advisory_xact_lock(%s)",
-                (_STORE_LOCK,),
-            )
-            if run.idempotency_digest is not None:
-                existing = await self._idempotent_for_update(connection, run)
-                if existing is not None:
-                    reservation_expired = (
-                        existing.idempotency_expires_at is not None
-                        and existing.idempotency_expires_at <= run.created_at
-                    )
-                    if reservation_expired:
-                        await self._write(
-                            connection,
-                            existing.model_copy(
-                                update={
-                                    "idempotency_digest": None,
-                                    "idempotency_expires_at": None,
-                                    "updated_at": run.created_at,
-                                }
-                            ),
-                        )
-                    elif existing.request_fingerprint != run.request_fingerprint:
-                        raise BackgroundIdempotencyConflictError
-                    elif existing.response is None or (
-                        existing.result_expires_at is not None
-                        and existing.result_expires_at <= run.created_at
-                    ):
-                        raise BackgroundResponseExpiredError
-                    else:
-                        return existing
-
+            await connection.execute("SELECT pg_advisory_xact_lock(%s)", (_SETUP_LOCK,))
+            await connection.execute(MIGRATIONS[0])
             cursor = await connection.execute(
-                _table_sql(
-                    "SELECT count(*) AS count FROM ("
-                    "SELECT 1 FROM {table} "
-                    "WHERE status IN ('queued', 'in_progress') LIMIT %s"
-                    ") AS active"
-                ),
-                (capacity,),
+                "SELECT max(v) AS v FROM lgos_background_migrations"
             )
             row = await cursor.fetchone()
-            if row is None or int(row["count"]) >= capacity:
-                raise BackgroundCapacityError
+            applied = row["v"] if row is not None and row["v"] is not None else 0
+            for version in range(applied + 1, len(MIGRATIONS)):
+                await connection.execute(MIGRATIONS[version])
+                await connection.execute(
+                    "INSERT INTO lgos_background_migrations (v) VALUES (%s)",
+                    (version,),
+                )
 
-            stored = StoredRun(
-                **run.model_dump(),
-                status=ResponseStatus.QUEUED,
-                updated_at=run.created_at,
-            )
-            await self._insert(connection, stored)
-            return stored
-
-    async def record_workflow_run(
-        self,
-        response_id: str,
-        workflow_run_id: str,
-        *,
-        now: datetime,
-    ) -> StoredRun | None:
-        """Store an idempotent native workflow receipt."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None:
-                return None
-            if run.workflow_run_id is not None:
-                return run if run.workflow_run_id == workflow_run_id else None
-            updated = run.model_copy(
-                update={
-                    "workflow_run_id": workflow_run_id,
-                    "updated_at": now,
-                }
-            )
-            await self._write(connection, updated)
-            return updated
-
-    async def claim_pending_submissions(
-        self,
-        *,
-        now: datetime,
-        limit: int,
-    ) -> Sequence[StoredRun]:
-        """Rotate through accepted or cancelled runs without a workflow receipt."""
-        return await self._claim_ready(
-            "SELECT record FROM {table} "
-            "WHERE workflow_run_id IS NULL "
-            "AND (status IN ('queued', 'in_progress') OR cancellation_pending) "
-            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
-            now=now,
-            limit=limit,
+    async def create(self, run: NewRun) -> StoredRun:
+        """Persist a new queued run, or return the run holding its digest."""
+        inserted = await self._one(
+            "INSERT INTO lgos_background_responses ("
+            "response_id, owner_scope, model, checkpoint_thread_id, graph_version, "
+            "envelope, response, status, initial_call_ids, "
+            "idempotency_digest, request_fingerprint, "
+            "created_at, updated_at, cleanup_pending"
+            ") VALUES ("
+            "%s, %s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, false"
+            ") ON CONFLICT (idempotency_digest) WHERE idempotency_digest IS NOT NULL "
+            "DO NOTHING RETURNING *",
+            (
+                run.response_id,
+                run.owner_scope,
+                run.model,
+                run.checkpoint_thread_id,
+                run.graph_version,
+                Jsonb(run.envelope),
+                Jsonb(run.response),
+                list(run.initial_call_ids),
+                run.idempotency_digest,
+                run.request_fingerprint,
+                run.created_at,
+                run.created_at,
+            ),
         )
+        if inserted is not None:
+            return inserted
+        existing = await self._one(
+            "SELECT * FROM lgos_background_responses WHERE idempotency_digest = %s",
+            (run.idempotency_digest,),
+        )
+        if existing is None:
+            # The conflicting run expired between both statements.
+            msg = "The idempotent background run expired during creation; retry."
+            raise RuntimeError(msg)
+        return existing
 
-    async def get(
-        self,
-        response_id: str,
-        owner_scope: str,
-        *,
-        now: datetime | None = None,
-    ) -> StoredRun | None:
-        """Read one authorized public snapshot without a row lock."""
-        checked_at = now or datetime.now(UTC)
-        async with self._pool.connection() as connection:
-            cursor = await connection.execute(
-                _table_sql(
-                    "SELECT record FROM {table} "
-                    "WHERE response_id = %s AND owner_scope = %s"
-                ),
-                (response_id, owner_scope),
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return None
-        run = _stored(row)
-        if run.response is None:
-            return None
-        if (
-            run.terminal
-            and run.result_expires_at is not None
-            and run.result_expires_at <= checked_at
-        ):
-            return None
-        return run
-
-    async def get_internal(self, response_id: str) -> StoredRun | None:
-        """Read one trusted run snapshot without a row lock."""
-        async with self._pool.connection() as connection:
-            cursor = await connection.execute(
-                _table_sql("SELECT record FROM {table} WHERE response_id = %s"),
-                (response_id,),
-            )
-            row = await cursor.fetchone()
-        return _stored(row) if row is not None else None
+    async def get(self, response_id: str) -> StoredRun | None:
+        """Read one run."""
+        return await self._one(
+            "SELECT * FROM lgos_background_responses WHERE response_id = %s",
+            (response_id,),
+        )
 
     async def mark_in_progress(
         self,
@@ -209,108 +150,60 @@ class PostgresResponseStore:
         *,
         now: datetime,
     ) -> StoredRun | None:
-        """Mark an active queued Response in progress."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None or run.terminal:
-                return None
-            if run.status is ResponseStatus.IN_PROGRESS:
-                return run
-            response = (
-                {**run.response, "status": ResponseStatus.IN_PROGRESS.value}
-                if run.response is not None
-                else None
-            )
-            updated = run.model_copy(
-                update={
-                    "status": ResponseStatus.IN_PROGRESS,
-                    "response": response,
-                    "updated_at": now,
-                }
-            )
-            await self._write(connection, updated)
-            return updated
+        """Move a queued run in progress."""
+        return await self._one(
+            "UPDATE lgos_background_responses SET status = 'in_progress', "
+            "response = jsonb_set(response, '{status}', to_jsonb('in_progress'::text)), "
+            "updated_at = %s "
+            "WHERE response_id = %s AND status IN ('queued', 'in_progress') "
+            "RETURNING *",
+            (now, response_id),
+        )
 
-    async def request_cancellation(  # ruff: ignore[too-many-arguments] - Mirrors the atomic store contract.
-        self,
-        response_id: str,
-        owner_scope: str,
-        response: dict[str, JsonValue],
-        *,
-        now: datetime,
-        result_retention: timedelta,
-        idempotency_retention: timedelta,
-    ) -> StoredRun | None:
-        """Choose cancellation under a row lock unless a terminal result won."""
-        async with self._locked_for_owner(response_id, owner_scope) as locked:
-            connection, run = locked
-            if run is None or run.response is None:
-                return None
-            if run.terminal:
-                return run
-            updated = terminal_run(
-                run,
-                response,
-                now=now,
-                result_retention=result_retention,
-                idempotency_retention=idempotency_retention,
-            )
-            await self._write(connection, updated)
-            return updated
-
-    async def publish_terminal(
+    async def finish(
         self,
         response_id: str,
         response: dict[str, JsonValue],
         *,
         now: datetime,
         result_retention: timedelta,
-        idempotency_retention: timedelta,
     ) -> StoredRun | None:
-        """Commit a terminal snapshot unless another terminal outcome won."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None or run.terminal:
-                return None
-            updated = terminal_run(
-                run,
-                response,
-                now=now,
-                result_retention=result_retention,
-                idempotency_retention=idempotency_retention,
-            )
-            await self._write(connection, updated)
-            return updated
+        """Commit a terminal Response unless another terminal outcome won."""
+        finished = await self._one(
+            "UPDATE lgos_background_responses SET status = %s, response = %s, "
+            "result_expires_at = %s, cleanup_pending = true, updated_at = %s "
+            "WHERE response_id = %s AND status IN ('queued', 'in_progress') "
+            "RETURNING *",
+            (
+                terminal_status(response).value,
+                Jsonb(response),
+                now + result_retention,
+                now,
+                response_id,
+            ),
+        )
+        # A terminal row never changes status again, so a plain read returns
+        # the stable winner when the guarded update matched nothing.
+        return finished or await self.get(response_id)
 
-    async def claim_cancellations(
+    async def claim_queued(
         self,
         *,
+        created_before: datetime,
         now: datetime,
         limit: int,
     ) -> Sequence[StoredRun]:
-        """Rotate through native cancellations awaiting delivery."""
-        return await self._claim_ready(
-            "SELECT record FROM {table} "
-            "WHERE cancellation_pending AND workflow_run_id IS NOT NULL "
-            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
-            now=now,
-            limit=limit,
+        """Rotate through runs still queued since before a time."""
+        return await self._all(
+            "UPDATE lgos_background_responses SET updated_at = %s "
+            "WHERE response_id IN ("
+            "SELECT response_id FROM lgos_background_responses "
+            "WHERE status = 'queued' AND created_at < %s "
+            "ORDER BY updated_at, response_id "
+            "LIMIT %s FOR UPDATE SKIP LOCKED"
+            ") RETURNING *",
+            (now, created_before, limit),
         )
-
-    async def finish_cancellation(self, response_id: str, *, now: datetime) -> bool:
-        """Record successful delivery of one native cancellation."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None or not run.cancellation_pending:
-                return False
-            updated = run.model_copy(
-                update={
-                    "cancellation_pending": False,
-                    "updated_at": now,
-                }
-            )
-            await self._write(connection, updated)
-            return True
 
     async def claim_cleanup_ready(
         self,
@@ -318,226 +211,55 @@ class PostgresResponseStore:
         now: datetime,
         limit: int,
     ) -> Sequence[StoredRun]:
-        """Rotate through terminal checkpoint lineages awaiting deletion."""
-        return await self._claim_ready(
-            "SELECT record FROM {table} "
-            "WHERE terminal_at IS NOT NULL "
-            "AND cleanup_pending "
-            "ORDER BY updated_at, response_id FOR UPDATE SKIP LOCKED LIMIT %s",
-            now=now,
-            limit=limit,
+        """Rotate through terminal runs awaiting checkpoint deletion."""
+        return await self._all(
+            "UPDATE lgos_background_responses SET updated_at = %s "
+            "WHERE response_id IN ("
+            "SELECT response_id FROM lgos_background_responses "
+            "WHERE cleanup_pending ORDER BY updated_at, response_id "
+            "LIMIT %s FOR UPDATE SKIP LOCKED"
+            ") RETURNING *",
+            (now, limit),
         )
 
-    async def _claim_ready(
-        self,
-        statement: LiteralString,
-        *,
-        now: datetime,
-        limit: int,
-    ) -> Sequence[StoredRun]:
-        """Persist attempt order so one bad row cannot starve later work."""
-        async with (
-            self._pool.connection() as connection,
-            connection.transaction(),
-        ):
-            cursor = await connection.execute(
-                _table_sql(statement),
-                (limit,),
+    async def finish_cleanup(self, response_id: str, *, now: datetime) -> None:
+        """Record that checkpoint cleanup is done or cannot be performed."""
+        async with self._pool.connection() as connection:
+            await connection.execute(
+                "UPDATE lgos_background_responses "
+                "SET cleanup_pending = false, updated_at = %s WHERE response_id = %s",
+                (now, response_id),
             )
-            claimed: list[StoredRun] = []
-            for row in await cursor.fetchall():
-                run = _stored(row)
-                updated = run.model_copy(update={"updated_at": now})
-                await self._write(connection, updated)
-                claimed.append(updated)
-            return claimed
-
-    async def finish_cleanup(self, response_id: str, *, now: datetime) -> bool:
-        """Record checkpoint deletion under the run row lock."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None or not run.terminal:
-                return False
-            updated = run.model_copy(
-                update={
-                    "cleanup_pending": False,
-                    "updated_at": now,
-                }
-            )
-            await self._write(connection, updated)
-            return True
-
-    async def abandon_cleanup(self, response_id: str, *, now: datetime) -> bool:
-        """Stop retrying cleanup without claiming checkpoint deletion."""
-        async with self._locked(response_id) as locked:
-            connection, run = locked
-            if run is None or not run.terminal or not run.cleanup_pending:
-                return False
-            updated = run.model_copy(
-                update={
-                    "cleanup_pending": False,
-                    "updated_at": now,
-                }
-            )
-            await self._write(connection, updated)
-            return True
 
     async def expire(self, *, now: datetime, limit: int) -> int:
-        """Convert expired results to tombstones, then remove expired keys."""
-        async with (
-            self._pool.connection() as connection,
-            connection.transaction(),
-        ):
+        """Delete expired runs without pending cleanup."""
+        async with self._pool.connection() as connection:
             cursor = await connection.execute(
-                _table_sql(
-                    "SELECT record FROM {table} "
-                    "WHERE terminal_at IS NOT NULL AND result_expires_at <= %s "
-                    "AND ("
-                    "COALESCE(record -> 'response', 'null'::jsonb) <> 'null'::jsonb "
-                    "OR COALESCE(record -> 'envelope', '{{}}'::jsonb) <> '{{}}'::jsonb "
-                    "OR (NOT cancellation_pending "
-                    "AND (idempotency_digest IS NULL OR idempotency_expires_at IS NULL "
-                    "OR idempotency_expires_at <= %s) "
-                    "AND NOT cleanup_pending)) "
-                    "ORDER BY result_expires_at FOR UPDATE SKIP LOCKED LIMIT %s"
-                ),
-                (now, now, limit),
+                "DELETE FROM lgos_background_responses WHERE response_id IN ("
+                "SELECT response_id FROM lgos_background_responses "
+                "WHERE NOT cleanup_pending AND result_expires_at <= %s "
+                "LIMIT %s FOR UPDATE SKIP LOCKED"
+                ")",
+                (now, limit),
             )
-            changed = 0
-            for row in await cursor.fetchall():
-                run = _stored(row)
-                if expired_run_deletable(run, now=now):
-                    await connection.execute(
-                        _table_sql("DELETE FROM {table} WHERE response_id = %s"),
-                        (run.response_id,),
-                    )
-                else:
-                    await self._write(connection, tombstone_run(run, now=now))
-                changed += 1
-            return changed
+            return cursor.rowcount
 
-    @staticmethod
-    async def _idempotent_for_update(
-        connection: _Connection,
-        run: NewRun,
+    async def _one(
+        self,
+        statement: LiteralString,
+        params: tuple[object, ...],
     ) -> StoredRun | None:
-        cursor = await connection.execute(
-            _table_sql(
-                "SELECT record FROM {table} WHERE idempotency_digest = %s FOR UPDATE"
-            ),
-            (run.idempotency_digest,),
-        )
-        row = await cursor.fetchone()
-        return _stored(row) if row is not None else None
+        runs = await self._all(statement, params)
+        return runs[0] if runs else None
 
-    @asynccontextmanager
-    async def _locked(
+    async def _all(
         self,
-        response_id: str,
-    ) -> AsyncIterator[tuple[_Connection, StoredRun | None]]:
-        async with (
-            self._pool.connection() as connection,
-            connection.transaction(),
-        ):
-            cursor = await connection.execute(
-                _table_sql(
-                    "SELECT record FROM {table} WHERE response_id = %s FOR UPDATE"
-                ),
-                (response_id,),
-            )
-            row = await cursor.fetchone()
-            yield connection, _stored(row) if row is not None else None
-
-    @asynccontextmanager
-    async def _locked_for_owner(
-        self,
-        response_id: str,
-        owner_scope: str,
-    ) -> AsyncIterator[tuple[_Connection, StoredRun | None]]:
-        async with (
-            self._pool.connection() as connection,
-            connection.transaction(),
-        ):
-            cursor = await connection.execute(
-                _table_sql(
-                    "SELECT record FROM {table} "
-                    "WHERE response_id = %s AND owner_scope = %s FOR UPDATE"
-                ),
-                (response_id, owner_scope),
-            )
-            row = await cursor.fetchone()
-            yield connection, _stored(row) if row is not None else None
-
-    @staticmethod
-    async def _insert(connection: _Connection, run: StoredRun) -> None:
-        columns, values = _indexed_values(run)
-        placeholders = ", ".join(["%s"] * len(columns))
-        await connection.execute(
-            sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
-                sql.Identifier(_TABLE),
-                sql.SQL(", ").join(map(sql.Identifier, columns)),
-                sql.SQL(placeholders),
-            ),
-            values,
-        )
-
-    @staticmethod
-    async def _write(connection: _Connection, run: StoredRun) -> None:
-        columns, values = _indexed_values(run)
-        assignments = sql.SQL(", ").join(
-            sql.SQL("{} = %s").format(sql.Identifier(column)) for column in columns[1:]
-        )
-        await connection.execute(
-            sql.SQL("UPDATE {} SET {} WHERE response_id = %s").format(
-                sql.Identifier(_TABLE),
-                assignments,
-            ),
-            (*values[1:], run.response_id),
-        )
+        statement: LiteralString,
+        params: tuple[object, ...],
+    ) -> list[StoredRun]:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(statement, params)
+            return [StoredRun.model_validate(row) for row in await cursor.fetchall()]
 
 
-def _table_sql(statement: LiteralString) -> sql.Composed:
-    return sql.SQL(statement).format(table=sql.Identifier(_TABLE))
-
-
-def _indexed_values(run: StoredRun) -> tuple[tuple[str, ...], tuple[object, ...]]:
-    columns = (
-        "response_id",
-        "owner_scope",
-        "model",
-        "idempotency_digest",
-        "request_fingerprint",
-        "status",
-        "workflow_run_id",
-        "terminal_at",
-        "result_expires_at",
-        "idempotency_expires_at",
-        "cancellation_pending",
-        "cleanup_pending",
-        "updated_at",
-        "record",
-    )
-    values: tuple[object, ...] = (
-        run.response_id,
-        run.owner_scope,
-        run.model,
-        run.idempotency_digest,
-        run.request_fingerprint,
-        run.status.value,
-        run.workflow_run_id,
-        run.terminal_at,
-        run.result_expires_at,
-        run.idempotency_expires_at,
-        run.cancellation_pending,
-        run.cleanup_pending,
-        run.updated_at,
-        Jsonb(run.model_dump(mode="json")),
-    )
-    return columns, values
-
-
-def _stored(row: dict[str, Any]) -> StoredRun:
-    return StoredRun.model_validate(row["record"])
-
-
-__all__ = ["PostgresResponseStore"]
+__all__ = ["MIGRATIONS", "PostgresResponseStore"]

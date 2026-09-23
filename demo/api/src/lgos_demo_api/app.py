@@ -13,9 +13,12 @@ import httpx2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve.integrations.background.postgres import (
+    PostgresResponseStore,
+)
 from openai import AsyncOpenAI
 
-from lgos_demo_api.background.components import create_background_components
+from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
 from lgos_demo_api.core.otel import instrument_fastapi_app
 from lgos_demo_api.core.settings import settings
@@ -55,7 +58,11 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.persistence.postgres import postgres_runtime
+from lgos_demo_api.persistence.postgres import (
+    create_postgres_pool,
+    create_postgres_runtime,
+    open_postgres_runtime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +95,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     vector_store_base_url, vector_store_api_key = _vector_store_connection()
 
     async with (
-        postgres_runtime(settings.POSTGRES_URI) as runtime,
+        open_postgres_runtime(
+            create_postgres_runtime(app.state.postgres_pool)
+        ) as runtime,
         httpx2.AsyncClient(timeout=60) as upstream_http,
         AsyncOpenAI(
             base_url=vector_store_base_url,
@@ -128,21 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             checkpointer=runtime.checkpointer,
             store=runtime.store,
         )
-        background = None
-        if settings.BACKGROUND_ENABLED:
-            components = create_background_components(
-                app.state.graph_registry,
-                runtime.response_store,
-            )
-            background = components.backend
-            app.state.background_components = components
-        app.state.background_backend = background
-        app.state.lgos_openai_app.state.background_backend = background
-
         yield
-
-        app.state.background_backend = None
-        app.state.lgos_openai_app.state.background_backend = None
 
     logger.info("demo.server.stopped")
 
@@ -210,13 +205,20 @@ def create_custom_app() -> FastAPI:
         }
     )
 
+    # The pool opens in the lifespan; the Response store only needs its
+    # reference, so the background backend can be passed to LGOS directly.
+    app.state.postgres_pool = create_postgres_pool(settings.POSTGRES_URI)
     graph_serve = LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
+        background=(
+            create_background_backend(PostgresResponseStore(app.state.postgres_pool))
+            if settings.BACKGROUND_ENABLED
+            else None
+        ),
     )
 
     graph_serve.bind_openai_api()
-    app.state.lgos_openai_app = graph_serve.openai_app
     instrument_fastapi_app(graph_serve.openai_app)
 
     return app

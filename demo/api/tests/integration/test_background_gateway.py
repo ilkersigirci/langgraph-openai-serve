@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 import pytest
-from openai import AsyncOpenAI, BadRequestError, ConflictError
+from openai import APIStatusError, AsyncOpenAI, BadRequestError
 
 GATEWAY_BASE_URL = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL")
 GATEWAY_TYPE = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_TYPE")
@@ -121,7 +121,7 @@ async def test_gateway_forwards_background_idempotency_key() -> None:
             assert replay.created_at == first.created_at
         else:
             assert replay.id == first.id
-        with pytest.raises(ConflictError) as conflict:
+        with pytest.raises(APIStatusError) as reused:
             await client.responses.create(
                 model=MODEL,
                 input="Use the same key for different content.",
@@ -130,8 +130,5 @@ async def test_gateway_forwards_background_idempotency_key() -> None:
                 **options,
             )
 
-        error = conflict.value.response.json()["error"]
-        if GATEWAY_TYPE == "litellm":
-            assert "background_idempotency_conflict" in error["message"]
-        else:
-            assert error["param"] == "Idempotency-Key"
+        # LGOS answers 422; a gateway may rewrap the status but keeps the code.
+        assert "idempotency_key_reused" in reused.value.response.text

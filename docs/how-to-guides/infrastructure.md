@@ -11,9 +11,9 @@ backend, or initialize a schema.
 | --- | --- | --- |
 | LangGraph checkpointer | Recoverable execution state for one thread | `builder.compile(checkpointer=...)` |
 | LangGraph Store | Application data and memory across threads | `builder.compile(store=...)` |
-| LGOS `ResponseStore` | Background response snapshots, authorization scope, idempotency, retention, and recovery records | `BackgroundWorker(store=...)` and `HatchetBackgroundBackend(store=...)` |
+| LGOS `ResponseStore` | Background response snapshots, owner scope, retention, and checkpoint-cleanup intent | `BackgroundWorker(store=...)` and `HatchetBackgroundBackend(store=...)` |
 | LGOS `RunCoordinator` | Coordination of execution and cleanup for a checkpoint thread | `GraphConfig(run_coordinator=...)` |
-| LGOS `BackgroundBackend` | Submission, retrieval, cancellation, and recovery behind the polling API | `LanggraphOpenaiServe(background=...)` |
+| LGOS `BackgroundBackend` | Submission and cancellation behind the polling API | `LanggraphOpenaiServe(background=...)` |
 
 Ordinary foreground serving requires none of the LGOS persistence components.
 Interrupt-enabled graphs require a checkpointer and coordinator.
@@ -75,8 +75,6 @@ graph `builder`, FastAPI `app`, and trusted `resolve_scope`:
 
 ```python
 from langgraph_openai_serve import (
-    BackgroundPolicy,
-    BackgroundWorker,
     GraphConfig,
     GraphRegistry,
     LanggraphOpenaiServe,
@@ -92,13 +90,12 @@ graphs = GraphRegistry(
         "report": GraphConfig(
             graph=graph,
             description="Prepare a report.",
-            background=BackgroundPolicy(version="v1"),
+            background_version="v1",
             run_coordinator=coordinator,
         )
     }
 )
-worker = BackgroundWorker(graphs=graphs, store=response_store)
-workflows = create_hatchet_workflows(hatchet, worker)
+workflows = create_hatchet_workflows(hatchet)
 background = HatchetBackgroundBackend(
     workflow=workflows.response,
     runs=hatchet.runs,
@@ -112,13 +109,14 @@ LanggraphOpenaiServe(
 ).bind_openai_api()
 ```
 
-The worker process constructs equivalent components with its own connections
-to the same logical resources and registers `workflows.registrations` with
-Hatchet. Use consistent graph versions and background settings in both
-processes. See [Background Responses](background-responses.md) for worker setup.
+The worker process registers `workflows.registrations` with Hatchet and yields
+a `BackgroundWorker`, built from its own connections to the same logical
+resources, from the Hatchet worker lifespan. Use consistent graph versions and
+background settings in both processes. See [Background Responses](background-responses.md) for worker setup.
 
-The application owns credentials, pool sizing, startup, schema migrations, and
-shutdown. Run adapter setup before accepting work. Stop and drain workers
+The application owns credentials, pool sizing, startup, and shutdown. Run
+adapter setup, such as `PostgresResponseStore.setup()` migrations, before
+accepting work. Stop and drain workers
 before closing their clients. An injected pool remains application-owned.
 When sharing a PostgreSQL pool with the coordinator, reserve connections for
 checkpoint and response I/O; see
@@ -127,27 +125,22 @@ checkpoint and response I/O; see
 ## Implement A Response Store
 
 Implement the public `ResponseStore` protocol from `langgraph_openai_serve`.
-It operates on `NewRun` and `StoredRun`, with no SQL or client types. Its error
-types and `ResponseStatus` are public in
-`langgraph_openai_serve.background.store`.
+It operates on `NewRun` and `StoredRun`, with no SQL or client types.
+`ResponseStatus` is public in `langgraph_openai_serve.background.store`.
 
 | Operation | Required behavior |
 | --- | --- |
-| `accept` | Atomically resolve idempotency before admission capacity. Matching retries return the original record, conflicting fingerprints raise `BackgroundIdempotencyConflictError`, and expired results with retained reservations raise `BackgroundResponseExpiredError`. New work beyond capacity raises `BackgroundCapacityError`. |
-| `record_workflow_run` | Persist one native receipt, including for cancelled work. Repeating the same ID succeeds; a different ID or missing record returns `None`. |
-| `get` | Enforce owner scope and result expiry, returning `None` for unknown, unauthorized, expired, or tombstoned records even before maintenance removes payloads. |
-| `get_internal` | Return trusted execution and recovery state, including retained tombstones. |
-| `mark_in_progress` | Transition active work without reviving a terminal record. |
-| `request_cancellation` / `publish_terminal` | Atomically choose the first terminal outcome, retention deadlines, and cleanup intent. Cancellation also records delivery intent. Retries never overwrite the winner or extend retention. |
-| `claim_pending_submissions` / `claim_cancellations` / `claim_cleanup_ready` | Return bounded eligible batches and rotate unfinished work fairly. Claims are not exclusive execution leases; callers must tolerate redelivery. |
-| `finish_cancellation` / `finish_cleanup` / `abandon_cleanup` | Resolve recovery intent idempotently. Abandoning cleanup records that it cannot be performed, not that checkpoints were deleted. |
-| `expire` | Remove expired terminal payloads independently of idempotency reservations. Retain records needed for pending cancellation or cleanup, and progress past retained tombstones. Never expire active work. |
+| `create` | Persist a new `queued` run. When another stored run holds the same `idempotency_digest`, return that run instead; concurrent creates with one digest must yield one run. The digest is released when its run is deleted. |
+| `get` | Return the run, including an expired one not yet removed. LGOS checks owner scope and expiry with `StoredRun.visible_to()`. |
+| `mark_in_progress` | Move active work in progress without reviving a terminal record; return `None` for a missing or terminal record. |
+| `finish` | Atomically commit the first terminal Response with its retention deadline and cleanup intent. Return the winner, which is the existing run when another outcome already won, or `None` when the run is missing. |
+| `claim_queued` | Return a bounded batch of runs still `queued` that were created before a cutoff, touching `updated_at` so a queued backlog rotates. Maintenance resubmits them. |
+| `claim_cleanup_ready` | Return a bounded batch of runs with pending checkpoint cleanup and touch `updated_at` so unfinished work rotates fairly. Claims are not exclusive leases. |
+| `finish_cleanup` | Clear cleanup intent after deletion, or when deletion cannot be performed. |
+| `expire` | Delete a bounded batch of expired runs whose cleanup is no longer pending. Never expire active work. |
 
-Every state transition must be atomic across all clients in the supported
-deployment. Redis adapters need conditional atomic updates and persistence,
-eviction, and expiry policies compatible with authoritative records. SQLite
-adapters need transaction and contention handling suitable for their shared
-file deployment. Generic key-value `get`/`set` operations alone are insufficient.
+Every transition must be atomic across all clients in the deployment, so plain
+key-value `get`/`set` is not enough; use conditional updates or transactions.
 
 ## Implement A Run Coordinator
 
@@ -199,17 +192,18 @@ before implementing an expiring distributed lease.
 Separate stores and the execution engine do not share an atomic transaction.
 LGOS recovers the gaps in stages:
 
-1. Commit the accepted Response before submitting its ID to the engine.
-   Maintenance recovers records without a submission receipt.
+1. Commit the accepted Response before submitting its ID to the engine. There
+   is no outbox: after a failed submission, or a process crash between the
+   commit and the submission, maintenance resubmits the still-queued Response.
+   The engine must treat a duplicate submission as a no-op.
 2. Persist graph progress and final output in checkpoints. If publication fails,
    a retry reconstructs the Response from the completed checkpoint.
 3. Commit the terminal Response before deleting checkpoints. Retain cleanup
-   intent until deletion succeeds or is explicitly abandoned.
+   intent until deletion succeeds or cannot be performed.
 
-Keep checkpoints available for the entire active/retry/recovery period.
-Configure engine idempotency and response retention consistently with those
-periods. Application tools must tolerate replay of unfinished work; neither
-coordination nor checkpoint recovery promises exactly-once external effects.
+Keep checkpoints for the whole active, retry, and recovery period. Application
+tools must tolerate replay of unfinished work; neither coordination nor
+checkpoint recovery promises exactly-once external effects.
 
 ## Test A Custom Adapter
 
@@ -226,8 +220,8 @@ connections with yield fixtures. The default LGOS fixtures use the same
 in-memory instance twice; durable adapters should use independently opened
 clients against the same isolated storage.
 
-The suites exercise idempotency, admission and terminal races, authorized
-reads, retention, recovery intents, contention, and release after failure or
-cancellation. Also add adapter-specific tests for process restart, connection
-loss, lease revocation, and concurrent processes. Passing in-process contracts
-alone does not establish distributed safety.
+The suites exercise idempotent creation, terminal races, retention, cleanup
+rotation, contention, and release after failure or cancellation. Add
+adapter-specific tests for process restart, connection loss, lease revocation,
+and concurrent processes; in-process contracts alone do not establish
+distributed safety.

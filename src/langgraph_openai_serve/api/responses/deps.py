@@ -1,6 +1,7 @@
 """FastAPI dependencies local to the Responses route."""
 
 import inspect
+from typing import NoReturn
 
 from fastapi import Request, status
 from openai.types.shared import ErrorObject
@@ -23,33 +24,26 @@ def get_background_backend(request: Request) -> BackgroundBackend | None:
 
 
 def validate_background_retrieval(
-    request: Request,
     *,
     stream: bool | None = None,
     starting_after: str | None = None,
 ) -> None:
-    """Reject streaming and every supplied cursor before a store read."""
-    del starting_after
+    """Reject streaming and cursors before a store read."""
     if stream:
-        message = "Background response retrieval does not support streaming."
-        raise OpenAIHTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error=ErrorObject(
-                message=message,
-                type="invalid_request_error",
-                param="stream",
-            ),
-        )
-    if "starting_after" in request.query_params:
-        message = "Background response retrieval does not support cursors."
-        raise OpenAIHTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error=ErrorObject(
-                message=message,
-                type="invalid_request_error",
-                param="starting_after",
-            ),
-        )
+        _reject_retrieval("stream")
+    if starting_after is not None:
+        _reject_retrieval("starting_after")
+
+
+def _reject_retrieval(param: str) -> NoReturn:
+    raise OpenAIHTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error=ErrorObject(
+            message=f"Background response retrieval does not support {param}.",
+            type="invalid_request_error",
+            param=param,
+        ),
+    )
 
 
 __all__ = [

@@ -4,7 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from langgraph_openai_serve import (
-    BackgroundPolicy,
     GraphConfig,
     GraphFeature,
     GraphRegistry,
@@ -70,7 +69,7 @@ def test_background_policy_requires_coordinator_and_excludes_interrupts(
         GraphConfig(
             graph=message_graph,
             description="DUMMY",
-            background=BackgroundPolicy(version="v1"),
+            background_version="v1",
         )
 
     with pytest.raises(ValidationError, match="does not support interrupt"):
@@ -78,7 +77,7 @@ def test_background_policy_requires_coordinator_and_excludes_interrupts(
             graph=message_graph,
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
-            background=BackgroundPolicy(version="v1"),
+            background_version="v1",
             run_coordinator=InMemoryRunCoordinator(),
         )
 
@@ -89,7 +88,7 @@ async def test_background_graph_requires_persistent_async_checkpointer(
     config = GraphConfig(
         graph=message_graph,
         description="DUMMY",
-        background=BackgroundPolicy(version="v1"),
+        background_version="v1",
         run_coordinator=InMemoryRunCoordinator(),
     )
 
