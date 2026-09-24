@@ -5,11 +5,14 @@ from types import SimpleNamespace
 
 import grpc
 import pytest
-from hatchet_sdk import Hatchet
-from hatchet_sdk.clients.admin import RunStatus, TaskRunDetail, WorkflowRunDetail
-from hatchet_sdk.clients.rest.models.v1_task_status import V1TaskStatus
-from hatchet_sdk.config import ClientConfig
-from hatchet_sdk.exceptions import IdempotencyCollisionError
+from hatchet_sdk import (
+    ClientConfig,
+    Hatchet,
+    IdempotencyCollisionError,
+    RunStatus,
+    V1TaskStatus,
+)
+from hatchet_sdk.clients.admin import TaskRunDetail, WorkflowRunDetail
 from tests.graph.support.message import make_message_graph
 
 from langgraph_openai_serve import (

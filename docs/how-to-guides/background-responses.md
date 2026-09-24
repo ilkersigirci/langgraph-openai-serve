@@ -71,13 +71,13 @@ every retry:
 
 | Result | Response |
 | --- | --- |
-| Same owner scope, model, key, and request | The original Response; no second run starts |
+| Same owner scope, key, and request | The original Response; no second run starts |
 | Same key with different request content | `422` with `code="idempotency_key_reused"` |
 | Key missing | A new Response, as in OpenAI |
 
 The engine holds the key, so concurrent retries and retries routed to another
 instance still create one run. Hatchet keeps it for 24 hours. LGOS sends only a
-SHA-256 digest of the owner scope, model, and key.
+SHA-256 digest of the owner scope and key.
 
 Each gateway needs the key in its own transport. LGOS receives the same header
 in both cases:
@@ -207,9 +207,9 @@ worker.start()
 Supply `HATCHET_CLIENT_TOKEN` and the SDK's standard endpoint and TLS settings
 to both processes. Hatchet stores each run's request and Response, so its
 [data retention](https://docs.hatchet.run/self-hosting/data-retention) decides
-how long a Response stays retrievable. A run that waits in the queue longer
-than `schedule_timeout` (30 minutes) is cancelled, and one that runs longer
-than `execution_timeout` (one hour) fails:
+how long a Response stays retrievable. A run that waits in the queue longer than
+`schedule_timeout` (30 minutes), or runs longer than `execution_timeout` (one
+hour), is [cancelled](https://docs.hatchet.run/home/timeouts) by Hatchet:
 
 ```python
 from datetime import timedelta

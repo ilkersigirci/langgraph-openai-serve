@@ -264,7 +264,10 @@ async def test_unexpected_graph_failure_fails_the_response() -> None:
 async def test_idempotency_key_returns_the_first_response() -> None:
     headers = {"Idempotency-Key": "create-report-1"}
     graph = _Graph()
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    registry = GraphRegistry(
+        registry={MODEL: graph.config(), "other-model": graph.config()}
+    )
+    async with _client(registry) as client:
         first = await client.responses.create(
             model=MODEL, input="Hello", background=True, extra_headers=headers
         )
@@ -280,6 +283,13 @@ async def test_idempotency_key_returns_the_first_response() -> None:
             await client.responses.create(
                 model=MODEL, input="Different", background=True, extra_headers=headers
             )
+        with pytest.raises(UnprocessableEntityError) as other_model:
+            await client.responses.create(
+                model="other-model",
+                input="Hello",
+                background=True,
+                extra_headers=headers,
+            )
         with pytest.raises(BadRequestError) as too_long:
             await client.responses.create(
                 model=MODEL,
@@ -292,7 +302,7 @@ async def test_idempotency_key_returns_the_first_response() -> None:
     assert replay.id == first.id
     assert replay.status == "completed"
     assert other_owner.id != first.id
-    assert reused.value.code == "idempotency_key_reused"
+    assert reused.value.code == other_model.value.code == "idempotency_key_reused"
     assert too_long.value.param == "Idempotency-Key"
     assert graph.inputs == ["Hello", "Hello"]
 

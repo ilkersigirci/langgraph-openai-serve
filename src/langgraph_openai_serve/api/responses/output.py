@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, InvalidToolCall, UsageMetadata
@@ -44,8 +44,8 @@ class ResponseContext:
     """Stable identity and request fields shared by one response lifecycle."""
 
     request: ResponseCreateRequest
-    id: str = field(default_factory=lambda: f"resp_{uuid.uuid4().hex}")
-    created_at: float = field(default_factory=time.time)
+    id: str
+    created_at: float
 
     @classmethod
     def for_run(
@@ -62,13 +62,16 @@ class ResponseContext:
         A background Response passes the ``response_id`` and ``created_at`` it
         was accepted with, so every snapshot keeps one identity.
         """
-        if response_id is None and run_id is not None:
-            response_id = interrupt_response_id(run_id)
-        context = cls(request=request)
-        return replace(
-            context,
-            id=context.id if response_id is None else response_id,
-            created_at=context.created_at if created_at is None else created_at,
+        if response_id is None:
+            response_id = (
+                interrupt_response_id(run_id)
+                if run_id is not None
+                else f"resp_{uuid.uuid4().hex}"
+            )
+        return cls(
+            request=request,
+            id=response_id,
+            created_at=time.time() if created_at is None else created_at,
         )
 
     def response(

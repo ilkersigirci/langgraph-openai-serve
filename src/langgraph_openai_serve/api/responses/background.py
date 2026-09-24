@@ -60,7 +60,7 @@ async def create_background_response(
         idempotency_key=idempotency_key,
     )
     run = await background.submit(job)
-    if run.job.request_fingerprint != job.request_fingerprint:
+    if run.job.request != job.request:
         raise IdempotencyKeyReusedError
     return run.snapshot()
 
@@ -121,39 +121,29 @@ def _job(
         raise UnsupportedResponsesRequestError(
             message, param=f"metadata.{RUN_METADATA_KEY}"
         )
-    digest, fingerprint = _idempotency(request, owner_scope, idempotency_key)
     return BackgroundJob(
         request=request.model_dump(mode="json", by_alias=True),
         owner_scope=owner_scope,
         # An answer continues its paused run's checkpoint thread.
         run_id=resume.run_id if resume is not None else str(uuid.uuid4()),
         created_at=int(time.time()),
-        idempotency_key=digest or uuid.uuid4().hex,
-        request_fingerprint=fingerprint,
+        idempotency_key=(
+            _scoped_idempotency_key(owner_scope, idempotency_key)
+            if idempotency_key is not None
+            else uuid.uuid4().hex
+        ),
     )
 
 
-def _idempotency(
-    request: ResponseCreateRequest,
-    owner_scope: str,
-    idempotency_key: str | None,
-) -> tuple[str | None, str | None]:
-    """Return the scoped key digest and the request fingerprint it protects."""
-    if idempotency_key is None:
-        return None, None
+def _scoped_idempotency_key(owner_scope: str, idempotency_key: str) -> str:
+    """Digest the key with its owner so the engine never sees the client value."""
     if not 0 < len(idempotency_key) <= _MAX_IDEMPOTENCY_KEY_LENGTH:
         message = (
             f"Idempotency-Key must be 1 to {_MAX_IDEMPOTENCY_KEY_LENGTH} characters."
         )
         raise UnsupportedResponsesRequestError(message, param="Idempotency-Key")
-    # Equivalent spellings of the accepted mode must not look like new content.
-    normalized = request.model_copy(
-        update={"stream": False, "store": bool(request.store)}
-    ).model_dump(mode="json", by_alias=True, exclude_none=True)
-    return (
-        _json_digest([owner_scope, request.model, idempotency_key]),
-        _json_digest(normalized),
-    )
+    identity = json.dumps([owner_scope, idempotency_key], separators=(",", ":"))
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 async def _visible_run(
@@ -170,13 +160,6 @@ async def _visible_run(
     ):
         raise BackgroundResponseNotFoundError(response_id)
     return run
-
-
-def _json_digest(value: object) -> str:
-    canonical = json.dumps(
-        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 __all__ = [

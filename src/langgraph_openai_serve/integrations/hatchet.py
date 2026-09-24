@@ -1,18 +1,17 @@
 """Hatchet engine for background Responses."""
 
-from __future__ import annotations
-
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
 import grpc
-from hatchet_sdk.clients.admin import RunStatus
-from hatchet_sdk.context.context import (
-    Context,  # ruff: ignore[typing-only-third-party-import] - Hatchet resolves annotations while registering.
+from hatchet_sdk import (
+    Context,
+    Hatchet,
+    IdempotencyCollisionError,
+    RunStatus,
+    TTLBasedIdempotencyConfig,
 )
-from hatchet_sdk.exceptions import IdempotencyCollisionError
+from hatchet_sdk.features.runs import RunsClient
 from hatchet_sdk.runnables.workflow import Standalone
-from hatchet_sdk.types.idempotency import TTLBasedIdempotencyConfig
 from pydantic import JsonValue, ValidationError
 
 from langgraph_openai_serve.background import (
@@ -22,10 +21,6 @@ from langgraph_openai_serve.background import (
     execute_background_job,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
-
-if TYPE_CHECKING:
-    from hatchet_sdk import Hatchet
-    from hatchet_sdk.features.runs import RunsClient
 
 # A retried create within this window returns the run holding its key; Stripe
 # keeps idempotency keys for the same 24 hours.

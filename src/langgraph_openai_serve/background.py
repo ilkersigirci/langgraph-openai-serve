@@ -67,7 +67,6 @@ class BackgroundJob(BaseModel):
     created_at: int
     # Scoped Idempotency-Key digest, or a unique value when the client sent none.
     idempotency_key: str
-    request_fingerprint: str | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
