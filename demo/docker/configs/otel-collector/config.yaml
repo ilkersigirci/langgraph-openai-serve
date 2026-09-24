@@ -43,11 +43,11 @@ processors:
         action: delete
       - key: gen_ai.output.messages
         action: delete
-  # LGOS sends a UI conversation ID to Langfuse's session grouping API.
+  # API and worker graphs send a UI conversation ID to Langfuse's session API.
   transform/lgos_conversation:
     error_mode: ignore
     trace_statements:
-      - 'set(span.attributes["gen_ai.conversation.id"], span.attributes["session.id"]) where resource.attributes["service.name"] == "lgos-demo-api" and span.attributes["gen_ai.conversation.id"] == nil and span.attributes["session.id"] != nil'
+      - 'set(span.attributes["gen_ai.conversation.id"], span.attributes["session.id"]) where (resource.attributes["service.name"] == "lgos-demo-api" or resource.attributes["service.name"] == "lgos-background-worker") and span.attributes["gen_ai.conversation.id"] == nil and span.attributes["session.id"] != nil'
   resource/defaults:
     attributes:
       - key: service.namespace

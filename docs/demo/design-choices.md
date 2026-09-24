@@ -5,6 +5,13 @@ decisions. Add a row for each significant decision; when one changes, update
 its row. Package decisions live in
 [Design Choices](../explanation/design-choices.md).
 
+## OpenTelemetry
+
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| The Collector normalizes `session.id` to `gen_ai.conversation.id` for API and worker spans; conversation tables select `lgos.graph_run`, and graph latency metrics include both services. | Both execution modes use the GenAI conversation attribute. Background submission finishes before execution and has no graph conversation attributes on its HTTP span. | Rows require the Langfuse callback, ingestion mapping, and a finished graph span; durations exclude Hatchet queue time. Older worker traces retain only `session.id`. | Graph spans supply `gen_ai.conversation.id` directly or dashboards need queue and submission latency. |
+| The API and background worker use Hatchet's native instrumentor with the provider configured by `opentelemetry-instrument`; direct Hatchet collector export is disabled. | Native spans and trace propagation join background execution to the request through the existing Collector. SDK exclusions omit payloads and caller metadata. | Traces go to the configured observability backend; deployments must keep the native exclusions configured. | The deployment needs application spans in Hatchet's own trace viewer. |
+
 ## Gateways
 
 | Choice | Why | Cost | Revisit when |

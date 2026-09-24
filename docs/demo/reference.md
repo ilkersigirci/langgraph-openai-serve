@@ -170,6 +170,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_HATCHET_WORKER_SLOTS` | Worker concurrency, 1 to 4: each interrupt graph run holds one of the worker's four PostgreSQL run leases. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
+| `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |
 
 The background demo uses the `create_hatchet_task` defaults: 30-minute
 schedule and one-hour execution timeouts with no retries. Hatchet's data

@@ -1102,6 +1102,16 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/30/492486b8d91f6c7e87be9b16fc2764d827e78b36f713f6846124da9085a0/hatchet_sdk-1.40.3-py3-none-any.whl", hash = "sha256:ed48b3fe6ffc7755cb6e4eb0499b34cdabceed26cdc3adc458a096cc9abd06c7", size = 663519, upload-time = "2026-09-18T16:48:00.024Z" },
 ]
 
+[package.optional-dependencies]
+otel = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-distro" },
+    { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-sdk" },
+]
+
 [[package]]
 name = "httpcore"
 version = "1.0.9"
@@ -1632,7 +1642,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
-    { name = "hatchet-sdk" },
+    { name = "hatchet-sdk", extra = ["otel"] },
     { name = "httpx2" },
     { name = "langchain" },
     { name = "langchain-openai" },
@@ -1678,7 +1688,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
-    { name = "hatchet-sdk", specifier = ">=1.40.3,<2" },
+    { name = "hatchet-sdk", extras = ["otel"], specifier = ">=1.40.3,<2" },
     { name = "httpx2", specifier = ">=2.13,<3" },
     { name = "langchain", specifier = ">=1.2.0" },
     { name = "langchain-openai", specifier = ">=1.6.2" },
@@ -2337,6 +2347,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5f/61/29e94c78299b173486e6e3b10d63e89cbe340745743c6ed6ae2055433743/opentelemetry_distro-0.65b0.tar.gz", hash = "sha256:e2fef26fdf72978ab172530c13338aff367edae41ae8d90b7f6133efedde10ab", size = 2334, upload-time = "2026-07-16T15:25:47.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/25/d5/603a29962542152331c6e37a121129a26e24917daa4298ca00bea97571bb/opentelemetry_distro-0.65b0-py3-none-any.whl", hash = "sha256:0e15bb1a54c638e6c361bc66bc43e9de9ead442e1ae06f8099a2c1d27b6ef845", size = 2775, upload-time = "2026-07-16T15:24:47.562Z" },
+]
+
+[[package]]
+name = "opentelemetry-exporter-otlp"
+version = "1.44.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/45/7af37fe54e5d3e66e7dcd7ba8b8aeee73f202bfac909cc94b8c4e428f9ac/opentelemetry_exporter_otlp-1.44.0.tar.gz", hash = "sha256:af1cde7c33ea8ed624bf04ac49a885730fe44c1f1ad698656e592c38f70ce106", size = 6090, upload-time = "2026-07-16T15:25:34.585Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/c3/7b466a9463944e70b37b744072a0c1b88a425dade3fff0631adec66c9bcc/opentelemetry_exporter_otlp-1.44.0-py3-none-any.whl", hash = "sha256:4a498fa8d8fd8be9e8e2d175fe5524a3fe581ccffadd8509db86526a5fb97051", size = 6727, upload-time = "2026-07-16T15:25:14.445Z" },
 ]
 
 [[package]]

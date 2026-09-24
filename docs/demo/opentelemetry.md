@@ -18,11 +18,13 @@ flowchart LR
     clients["Chainlit and Open WebUI"]
     gateways["Bifrost or LiteLLM"]
     apis["LGOS API A and B"]
+    worker["Hatchet background worker"]
     collector["Local OpenTelemetry Collector"]
 
     clients -->|"traces"| collector
     gateways -->|"traces; LiteLLM metrics"| collector
     apis -->|"traces, metrics, and logs"| collector
+    worker -->|"traces, metrics, and logs"| collector
   end
 
   collector -->|"OTLP/HTTP"| gateway["External Collector gateway"]
@@ -31,7 +33,7 @@ flowchart LR
 ```
 
 The local Collector handles standard OTLP signals. Langfuse remains a separate
-native export path from the API processes.
+native export path from the API and worker processes.
 
 ## Run The Overlay
 
@@ -72,7 +74,8 @@ Exact environment settings are listed in
 
 | Producer | Exported signals | Demo integration |
 | --- | --- | --- |
-| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation plus explicit instrumentation of the mounted `/v1` app |
+| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, explicit instrumentation of the mounted `/v1` app, and Hatchet's native producer spans |
+| Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation plus Hatchet's native task spans |
 | Chainlit | Traces | Python auto-instrumentation; long-lived Socket.IO traffic and prompt-recording OpenAI instrumentors are excluded |
 | Open WebUI | Traces | Open WebUI's native OpenTelemetry settings |
 | Bifrost | Traces | Bifrost's OpenTelemetry plugin with content logging disabled |
@@ -126,9 +129,10 @@ Use these values when querying Responses telemetry for `lgos-demo-api`:
 | Conversation correlation | `gen_ai.conversation.id`, supplied through `metadata.conversation_id` |
 
 Graph spans and Langfuse's `session.id` come from the optional Langfuse callback;
-HTTP spans and metrics come from FastAPI instrumentation. For `lgos-demo-api`,
-the Collector copies `session.id` to `gen_ai.conversation.id` when the latter is
-absent. Here the value identifies a UI conversation, not a browser session.
+HTTP spans and metrics come from FastAPI instrumentation. For `lgos-demo-api`
+and `lgos-background-worker`, the Collector copies `session.id` to
+`gen_ai.conversation.id` when the latter is absent. Here the value identifies a
+UI conversation, not a browser session.
 Langfuse's original attribute is preserved, and no fallback ID is generated.
 
 The mounted API's route template omits `/v1`; the actual request URL remains
@@ -142,6 +146,69 @@ container diagnostics. `X-Request-ID`, background `Idempotency-Key`, the LGOS
 interrupt operation ID, and the OpenTelemetry trace ID remain separate
 correlation values. See
 [Production Logging](../how-to-guides/production-logging.md) for their ownership.
+
+## Hatchet Background Runs
+
+Enable the [background worker](docker.md) and run the same
+`just demo/compose --dev --otel` command. The worker uses service name
+`lgos-background-worker` and sends telemetry to the local Collector alongside
+the API replicas.
+
+Both processes use the SDK's
+[`HatchetInstrumentor`](https://docs.hatchet.run/v1/opentelemetry). The API's
+`hatchet.run_workflow` span continues the HTTP request trace. Hatchet carries
+its W3C `traceparent` through native task metadata, so the worker's
+`hatchet.start_step_run` span continues that trace after the request finishes.
+The worker span includes `hatchet.workflow_run_id` for correlation with Hatchet.
+
+`opentelemetry-instrument` configures the shared provider, exporters, and exit
+flush in each process. The demo passes `enable_hatchet_otel_collector=False`
+to the Hatchet instrumentor so all spans follow the existing Collector path.
+Instrumentation is enabled when `OTEL_TRACES_EXPORTER` selects an exporter.
+Hatchet's native `otel` extra supplies its instrumentation dependencies.
+
+The API and worker route Hatchet SDK logs through the shared JSON and OTel root
+handlers. The worker also sets the root level to `INFO`, which Hatchet uses as
+the threshold for forwarding task logs to its own log viewer.
+
+Keep this setting from `demo/.env.example` in `demo/.env`:
+
+```dotenv
+HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES='["payload","additional_metadata"]'
+```
+
+The SDK excludes task inputs and caller metadata from span attributes while
+preserving trace propagation. Hatchet still stores task inputs and results as
+part of normal execution. To verify tracing without an LLM provider, submit a
+background Response to `background-report-agent` and find its producer and
+worker spans under the same trace ID.
+
+### Query Foreground And Background Runs
+
+Graph-duration dashboards must include both `lgos-demo-api` and
+`lgos-background-worker`. In background mode, the API span ends after submission;
+the worker's `lgos.graph_run` span carries the execution duration and the
+normalized `gen_ai.conversation.id`. Requiring a conversation ID on
+`POST /responses` omits these runs.
+
+For a Chainlit conversation table, query the graph span and
+`gen_ai.conversation.id` in both execution modes:
+
+```traceql
+{ resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && resource.service.name = "lgos-chainlit" }
+>> { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && resource.service.name =~ "lgos-demo-api|lgos-background-worker" && name = "lgos.graph_run" && span.gen_ai.conversation.id != nil }
+| select(span.gen_ai.conversation.id)
+```
+
+Use `lgos-openwebui` for the other client. The descendant operator preserves
+client attribution through the gateway and Hatchet. Match both service names
+in graph span-metric queries with
+`service=~"lgos-demo-api|lgos-background-worker"` as well. These durations exclude
+Hatchet queue time, and graph rows appear after the span finishes. Graph spans
+and conversation links require the optional Langfuse callback in both processes.
+
+The mapping applies during ingestion. Worker traces stored before it was enabled
+retain only `session.id` and need that attribute when queried historically.
 
 ## Collector Behavior
 

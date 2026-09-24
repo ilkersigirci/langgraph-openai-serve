@@ -1,10 +1,13 @@
 """OpenTelemetry boundary tests for the demo deployment."""
 
 import logging
+from logging.config import DictConfigurator
 from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
+from hatchet_sdk import ClientConfig, Hatchet
+from hatchet_sdk.opentelemetry import instrumentor as hatchet_otel
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
 from opentelemetry import trace
@@ -13,7 +16,68 @@ from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 
 from lgos_demo_api import app as app_module
-from lgos_demo_api.core.otel import instrument_fastapi_app
+from lgos_demo_api.background import components as background_components
+from lgos_demo_api.background import worker as background_worker
+from lgos_demo_api.core.logging import LOGGING_CONFIG
+from lgos_demo_api.core.otel import instrument_fastapi_app, instrument_hatchet
+
+
+@pytest.mark.parametrize("exporter_setting", [None, "none", " NONE "])
+def test_hatchet_instrumentation_requires_trace_export(
+    monkeypatch: pytest.MonkeyPatch,
+    exporter_setting: str | None,
+) -> None:
+    if exporter_setting is None:
+        monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)
+    else:
+        monkeypatch.setenv("OTEL_TRACES_EXPORTER", exporter_setting)
+    monkeypatch.setenv("OTEL_METRICS_EXPORTER", "otlp")
+    monkeypatch.setattr(
+        hatchet_otel,
+        "HatchetInstrumentor",
+        Mock(side_effect=AssertionError("Tracing is disabled")),
+    )
+
+    instrument_hatchet(Mock(spec=ClientConfig))
+
+
+@pytest.mark.parametrize("entrypoint", ["api", "worker"])
+def test_hatchet_entrypoints_enable_native_tracing_once(
+    entrypoint: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    config = Mock(spec=ClientConfig)
+    hatchet = Mock(spec=Hatchet, config=config)
+    instrumentor = Mock(is_instrumented_by_opentelemetry=False)
+
+    def mark_instrumented() -> None:
+        instrumentor.is_instrumented_by_opentelemetry = True
+
+    instrumentor.instrument.side_effect = mark_instrumented
+    instrumentor_factory = Mock(return_value=instrumentor)
+    monkeypatch.setattr(hatchet_otel, "HatchetInstrumentor", instrumentor_factory)
+    logging_setup = Mock()
+
+    if entrypoint == "api":
+        monkeypatch.setattr(background_components, "Hatchet", lambda: hatchet)
+        start = background_components.create_background_backend
+    else:
+        monkeypatch.setattr(background_worker, "Hatchet", lambda: hatchet)
+        monkeypatch.setattr(background_worker.settings, "BACKGROUND_ENABLED", True)
+        monkeypatch.setattr(background_worker, "configure_logging", logging_setup)
+        start = background_worker.main
+
+    start()
+    start()
+
+    instrumentor_factory.assert_called_with(
+        config=config,
+        enable_hatchet_otel_collector=False,
+    )
+    instrumentor.instrument.assert_called_once_with()
+    if entrypoint == "worker":
+        logging_setup.assert_called_with(root_level=logging.INFO)
 
 
 class _TraceContextHandler(logging.Handler):
@@ -25,6 +89,33 @@ class _TraceContextHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         self.records.append(record)
         self.contexts.append(trace.get_current_span().get_span_context())
+
+
+def test_hatchet_logs_reach_root_handlers_with_trace_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = logging.getLogger("hatchet")
+    monkeypatch.setattr(logger, "handlers", logger.handlers.copy())
+    for attribute in ("level", "propagate", "disabled"):
+        monkeypatch.setattr(logger, attribute, getattr(logger, attribute))
+    # Apply only this logger's configuration without replacing pytest's handlers.
+    DictConfigurator(LOGGING_CONFIG).configure_logger(
+        "hatchet", LOGGING_CONFIG["loggers"]["hatchet"]
+    )
+    handler = _TraceContextHandler()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    provider = TracerProvider()
+    try:
+        with provider.get_tracer(__name__).start_as_current_span("task") as span:
+            logger.info("task.started")
+    finally:
+        root.removeHandler(handler)
+        provider.shutdown()
+
+    assert [record.getMessage() for record in handler.records] == ["task.started"]
+    assert handler.contexts == [span.get_span_context()]
+    assert not logger.handlers
 
 
 def test_api_instruments_the_mounted_openai_app(
