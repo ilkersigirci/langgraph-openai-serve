@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, InvalidToolCall, UsageMetadata
@@ -56,31 +56,25 @@ class ResponseContext:
         response_id: str | None = None,
         created_at: float | None = None,
     ) -> "ResponseContext":
-        """Build context, binding an interrupt response ID when run_id is present."""
-        if run_id is not None and response_id is not None:
-            msg = "run_id and response_id cannot both select a Response identity."
-            raise ValueError(msg)
-        if response_id is not None:
-            return cls(
-                request=request,
-                id=response_id,
-                created_at=created_at if created_at is not None else time.time(),
-            )
-        if run_id is None:
-            return cls(request=request)
-        return cls(request=request, id=interrupt_response_id(run_id))
+        """
+        Build context, binding an interrupt response ID when run_id is present.
+
+        A background Response passes the ``response_id`` and ``created_at`` it
+        was accepted with, so every snapshot keeps one identity.
+        """
+        if response_id is None and run_id is not None:
+            response_id = interrupt_response_id(run_id)
+        context = cls(request=request)
+        return replace(
+            context,
+            id=context.id if response_id is None else response_id,
+            created_at=context.created_at if created_at is None else created_at,
+        )
 
     def response(
         self,
         *,
-        status: Literal[
-            "queued",
-            "in_progress",
-            "completed",
-            "failed",
-            "incomplete",
-            "cancelled",
-        ],
+        status: Literal["queued", "in_progress", "completed", "failed", "incomplete"],
         output: Sequence[ResponseOutputItem],
         error: ResponseError | None = None,
         usage: ResponseUsage | None = None,

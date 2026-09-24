@@ -11,8 +11,8 @@ deployment's ASGI server or ingress proxy.
 | `GET` | `/v1/models` | List registered graph models with LGOS descriptions and features. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/responses` | Run a graph now or accept an opted-in polling-only background Response. |
-| `GET` | `/v1/responses/{response_id}` | Retrieve an authorized, unexpired background Response snapshot. |
-| `POST` | `/v1/responses/{response_id}/cancel` | Atomically request cancellation or return the terminal result that already won. |
+| `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response. |
+| `POST` | `/v1/responses/{response_id}/cancel` | Cancel an active background Response or return a finished one. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 
@@ -46,13 +46,14 @@ Foreground LGOS Responses are not persisted for retrieval or deletion. Omitted,
 null, and false `store` values are accepted, and the returned foreground
 Response reports `store=false`; foreground `store=true` is rejected.
 For a model declaring `GraphFeature.BACKGROUND`, `background=true` selects the
-polling-only durable path and permits either `store=false` or `store=true`.
-The latter selects the configured longer bounded result retention; it is not a
-conversation store. Background streaming and cursor/event replay are rejected.
-`conversation` is unsupported in both modes.
+polling-only path and permits either `store=false` or `store=true`; the
+background engine keeps the result either way, and Hatchet keeps it for its
+[data retention](https://docs.hatchet.run/self-hosting/data-retention) period
+(30 days by default when self-hosted). Background streaming and
+cursor/event replay are rejected. `conversation` is unsupported in both modes.
 `previous_response_id` is supported for interruptible graphs to resume execution
-(and rejected for non-interruptible and background graphs); new `instructions`
-are rejected on those resumes. The route also rejects unregistered custom tools, client-supplied
+(and rejected for non-interruptible graphs); new `instructions` are rejected on
+those resumes. The route also rejects unregistered custom tools, client-supplied
 custom descriptions or formats, other built-in tools,
 structured output, image/audio input, URL or inline file input, function
 result-content lists, reasoning and generation controls, `include`, stream options,
@@ -95,9 +96,10 @@ rejects empty model IDs, `.`, `..`, and IDs containing `/`. The public
 `registry.register(model_id, config)` to add or replace a graph. Replacing an
 existing ID preserves its position.
 
-`LanggraphOpenaiServe(..., checkpoint_scope=resolver, background=execution)`
-accepts an optional sync
-or async callable from FastAPI `Request` to a non-empty, server-trusted string.
+`LanggraphOpenaiServe(..., background=backend)` accepts an optional
+`BackgroundBackend`. `LanggraphOpenaiServe(..., checkpoint_scope=resolver)`
+accepts an optional sync or async callable from FastAPI `Request` to a
+non-empty, server-trusted string.
 Interrupt checkpoint keys and background Response authorization include this
 scope before model and run identity. Use
 an authenticated tenant or principal identifier when caller-chosen run UUIDs
@@ -132,16 +134,14 @@ belong to an external OpenAI Files API, not the LGOS package. See
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
 - `run_coordinator`: asynchronous single-flight coordination for interrupt
-  or background runs. It rejects an occupied LGOS checkpoint key instead of
-  queueing it and returns an async context manager.
+  runs. It rejects an occupied LGOS checkpoint key instead of queueing it and
+  returns an async context manager.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
   runtime context from normalized request values, server-owned values, and optional
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
-  Keep it deterministic and side-effect free because background recovery can
-  render a completed checkpoint again; an exception is a configuration failure.
 
 `GraphConfig` is immutable after construction. Pydantic snapshots `features`
 and `server_tools` as frozen sets, so later mutations of the input collections
@@ -161,10 +161,10 @@ called for every request and is never cached; LGOS validates each resolved value
 as a compiled state graph and rechecks its context schema and interrupt
 checkpointer capabilities before execution. Static configuration relationships,
 including the requirement that `run_coordinator` appear exactly when
-`GraphFeature.INTERRUPTS` or `GraphFeature.BACKGROUND` is declared, fail during
-`GraphConfig` construction. A graph may declare both interrupts and background;
-a background run that reaches an interrupt completes with `lgos_interrupt`
-function calls, and an answer in either mode continues it.
+`GraphFeature.INTERRUPTS` is enabled, fail during `GraphConfig` construction.
+A graph may declare both interrupts and background; a background run that
+reaches an interrupt completes with `lgos_interrupt` function calls, and an
+answer in either mode continues it.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -251,8 +251,7 @@ access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
-advertises polling-only background Responses; native retries and timeouts are
-configured on the selected backend, such as Hatchet.
+advertises polling-only background Responses.
 
 ### Runtime Settings
 
@@ -321,30 +320,16 @@ when execution fails or is cancelled before producing that batch. Operators
 must separately define an expiry policy for runs abandoned after a batch is
 returned.
 
-### Run Coordination
-
-The general coordination API exports `RunCoordinator`, `RunLease`,
-`RunBusyError`, `RunLeaseLostError`, and `InMemoryRunCoordinator` from
-`langgraph_openai_serve` and `langgraph_openai_serve.graph.coordination`.
-These types apply to both interrupts and background execution. Custom
-coordinators must yield a fresh `RunLease`, mark ownership loss before
-cancelling the owner, and propagate failure on exit. `lease.ensure_owned()`
-raises `RunLeaseLostError` after loss.
-See [the coordinator contract](how-to-guides/infrastructure.md#implement-a-run-coordinator).
-
 ### PostgreSQL Coordination
 
 Install `langgraph-openai-serve[postgres]` to use the public
-`langgraph_openai_serve.integrations.coordination.postgres.PostgresRunCoordinator`.
-Use
+`langgraph_openai_serve.integrations.postgres.PostgresRunCoordinator`. Use
 LangGraph's official
 [`AsyncPostgresSaver`](https://reference.langchain.com/python/langgraph.checkpoint.postgres/aio/AsyncPostgresSaver)
 for checkpoints and
 [`AsyncPostgresStore`](https://reference.langchain.com/python/langgraph.store.postgres/aio/AsyncPostgresStore)
 for application data. The LGOS adapter supplies only the cross-worker
-interrupt/background run lease; it does not replace either storage primitive.
-Background Response rows use the separate `PostgresResponseStore` described
-below. Run each
+interrupt-run lease; it does not replace either storage primitive. Run each
 configured storage adapter's `setup()` once before API workers start. A shared
 pool must follow the upstream connection requirements: `autocommit=True`,
 `prepare_threshold=0`, and mapping rows.
@@ -360,90 +345,48 @@ locks require direct PostgreSQL connections or session-mode pooling;
 transaction-mode poolers cannot preserve the lease. Lock contention itself
 fails immediately through PostgreSQL's `pg_try_advisory_lock`; connection
 checkout still follows the pool's configured timeout. The
-[demo deployment](demo/docker.md#demo-services) uses one pool for the
-checkpointer, LangGraph Store, Response store, and interrupt/background run
-coordination, plus a separate one-shot schema setup process. Busy interrupt
-leases fail before streaming begins with HTTP 409 and `code: "run_busy"`.
+[demo deployment](demo/docker.md#demo-services) uses one pool for both
+storage adapters and interrupt coordination, plus a separate one-shot schema
+setup process. Busy interrupt leases fail before streaming begins with HTTP 409
+and `code: "run_busy"`.
 
 ## Background Execution
 
-The package exports the `BackgroundBackend`, `NewRun`, `StoredRun`,
-`ResponseStore`, `BackgroundSettings`, and `BackgroundWorker` public interfaces. It also exports
-`InMemoryBackgroundBackend` and `InMemoryResponseStore` for single-process
-development. Hatchet is the only durable built-in backend.
+`LanggraphOpenaiServe(background=...)` accepts any `BackgroundBackend`: an
+engine that runs `BackgroundJob`s and stores their status and result.
 
-`HatchetBackgroundBackend` and `BackgroundWorker` accept any implementation
-of `ResponseStore`; PostgreSQL is the supplied durable store, not a core
-requirement. See [Persistence And Coordination](how-to-guides/infrastructure.md)
-for the response-store contract, native checkpointer selection, and
-application-owned resource lifetime.
-
-`BackgroundSettings` defaults are:
-
-| Field | Default |
+| Method | Contract |
 | --- | --- |
-| `result_retention` | 10 minutes |
-| `stored_result_retention` | 30 days |
-| `resubmit_after` | 1 minute |
-| `maintenance_batch_size` | 100 rows |
+| `submit(job)` | Start the job, or return the run already holding `job.idempotency_key`. |
+| `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
+| `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
 
-`HatchetAdapterSettings` keeps native orchestration policy in Hatchet:
+The engine's worker calls `execute_background_job(job, run_id, graphs)`. It
+runs the job through the foreground Responses path and returns the Response
+JSON the engine stores. Run IDs must be UUIDs because the public Response ID
+embeds the run ID, so reading a Response needs no lookup table.
+`InMemoryBackgroundBackend(graphs)` runs jobs as tasks of one process for
+development and tests; enter its `lifespan` in the application's lifespan.
 
-| Field | Default |
-| --- | --- |
-| `workflow_name` | `lgos-background-response` |
-| `maintenance_task_name` | `lgos-background-maintenance` |
-| `retries` | 3 |
-| `backoff_factor` / `backoff_max_seconds` | 2.0 / 30 |
-| `schedule_timeout` | 30 minutes |
-| `execution_timeout` | 20 minutes |
-| `finalization_retries` / `finalization_timeout` | 3 / 5 minutes |
-| `maintenance_cron` / `maintenance_timeout` | every 5 minutes / 5 minutes |
-
-`BackgroundWorker` loads the persisted envelope, obtains its coordinator lease,
-and executes through the shared graph runner. Permanent failures become a
-`failed` Response; any exception `execute()` raises should be retried by the
-engine. Call `finalize()` after native
-retries are exhausted; it never advances an unfinished graph. Schedule
-`maintain()` for checkpoint cleanup and Response expiry. Pass `resubmit` to
-also resubmit runs queued longer than `resubmit_after`, which recovers failed
-or interrupted submissions; both supplied backends do.
-`InMemoryBackgroundBackend` runs it every `maintenance_interval` (default one
-minute) inside its lifespan; the Hatchet adapter runs it as a cron task.
+Install `langgraph-openai-serve[hatchet]` for
+`langgraph_openai_serve.integrations.hatchet`. `create_hatchet_task(hatchet)`
+registers the task in the API and worker processes, with a 30-minute
+`schedule_timeout` and a one-hour `execution_timeout` by default.
+`HatchetBackgroundBackend(task, hatchet.runs)` submits, reads, and cancels its
+runs. The worker's Hatchet lifespan yields the `GraphRegistry` the task
+executes. The task has no retries, and its 24-hour Hatchet idempotency key is
+the scoped `Idempotency-Key` digest. The adapter is never imported by the core
+package.
 
 Background create accepts an optional `Idempotency-Key` header of 1 to 255
-characters. A replay returns the original Response without submitting it again;
-reuse with different content returns `422` with `code="idempotency_key_reused"`.
-LGOS persists the queued Response, then calls
-`HatchetBackgroundBackend.submit()`, which triggers the workflow with
-`lgos_response_id` and `lgos_checkpoint_thread_id` run metadata. The workflow's
-Hatchet idempotency key is the Response ID, with `max_queue_time` as its TTL, so
-maintenance can resubmit a failed trigger without starting a duplicate run. Its
-concurrency key is the checkpoint thread, so Responses that continue one run
-execute one at a time. Cancellation commits the
-cancelled Response first, then `stop()` best-effort cancels the Hatchet run
-found by that metadata. The `metadata.lgos_run_id` request field identifies
-interrupt-enabled foreground operations and is rejected on background requests.
-
-Install `langgraph-openai-serve[postgres]` for
-`integrations.background.postgres.PostgresResponseStore`. Its `setup()` method
-applies pending schema migrations in one transaction, recording versions in
-`lgos_background_migrations` like LangGraph's `AsyncPostgresSaver.setup()`. Run
-it as a deployment step before starting workers. Repeated and concurrent calls
-are safe. Install
-`langgraph-openai-serve[hatchet]` for
-`HatchetBackgroundBackend`, `HatchetAdapterSettings`,
-and `create_hatchet_workflows()`. Its tasks run the `BackgroundWorker` yielded
-by the Hatchet worker lifespan. The registered workflow gives Hatchet native
-ownership of retries, backoff,
-schedule and execution timeouts, cancellation, final-failure handling, and the
-maintenance schedule. Finalization and maintenance use the configured
-`schedule_timeout` rather than Hatchet's shorter SDK default. The adapter is
-optional and is never imported by the core package.
+characters. A retry returns the original Response without starting a second
+run; reuse with different content returns `422` with
+`code="idempotency_key_reused"`. The `metadata.lgos_run_id` request field
+identifies interrupt-enabled foreground operations and is rejected on
+background requests.
 
 See [Run Responses In The Background](how-to-guides/background-responses.md)
-for graph requirements, lifecycle semantics, deployment wiring, custom adapter
-obligations, and operator recovery.
+for the client contract, graph requirements, and deployment wiring.
 
 ## Streaming Status
 

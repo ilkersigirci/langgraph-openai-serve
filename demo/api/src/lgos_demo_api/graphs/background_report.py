@@ -1,109 +1,70 @@
 """
-Deterministic two-step graph that shows background execution working.
+Deterministic graph that shows background execution working.
 
-It calls no model, so the demo needs no provider to exercise queueing, polling,
-cancellation, and resuming from a checkpoint after a worker restart.
+It calls no model, so the demo needs no provider to exercise queueing,
+polling, and cancellation.
 """
 
-from collections.abc import Callable
-from typing import Annotated, Any, TypedDict
+from collections.abc import Sequence
+from typing import Annotated
 
 from anyio import sleep
 from langchain_core.messages import AIMessage, BaseMessage
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphFeature
-from langgraph_openai_serve.graph.coordination import RunCoordinator
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
-class BackgroundReportState(TypedDict, total=False):
-    """Durable input, intermediate draft, and final transcript."""
+class BackgroundReportState(BaseModel):
+    """Transcript that receives the report."""
 
-    messages: Annotated[list[BaseMessage], add_messages]
-    draft: AIMessage
+    messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
 class BackgroundReportSettings(ClientSettings):
-    """Per-request settings; retries reuse them from the persisted request."""
+    """Per-request settings of the report."""
 
-    finalize_delay_seconds: int = Field(
+    delay_seconds: int = Field(
         default=5,
         ge=0,
         le=300,
-        title="Finalize delay (seconds)",
-        description=(
-            "Pause after the draft checkpoint before publishing, leaving time "
-            "to stop the worker and watch the run resume from the checkpoint."
-        ),
+        title="Delay (seconds)",
+        description="Time the report takes, leaving room to poll or cancel it.",
     )
 
 
-BackgroundReportGraph = CompiledStateGraph[Any, BackgroundReportSettings, Any, Any]
-
-
-async def draft_report(state: BackgroundReportState) -> dict[str, AIMessage]:
-    """Checkpoint a draft that a resumed worker must not recompute."""
-    request = state["messages"][-1].text
-    draft = AIMessage(
-        content=(
-            f"Background report for: {request}\n\n"
-            "`draft_report` checkpointed this draft, then `publish_report` "
-            "published it after the finalize delay."
-        )
-    )
-    return {"draft": draft}
-
-
-async def publish_report(
+async def write_report(
     state: BackgroundReportState,
     runtime: Runtime[BackgroundReportSettings],
 ) -> dict[str, list[AIMessage]]:
-    """Publish the durable draft after a visible crash-recovery window."""
+    """Reply with a fixed report after the configured delay."""
     report_settings = runtime.context or BackgroundReportSettings()
-    await sleep(report_settings.finalize_delay_seconds)
-    return {"messages": [state["draft"]]}
+    await sleep(report_settings.delay_seconds)
+    request = state.messages[-1].text
+    return {"messages": [AIMessage(content=f"Background report for: {request}")]}
 
 
-def create_background_report_graph(
-    checkpointer: BaseCheckpointSaver,
-) -> BackgroundReportGraph:
-    """Compile a two-boundary report agent with persistent checkpoints."""
-    workflow = StateGraph(
-        BackgroundReportState,  # ty: ignore[invalid-argument-type]  # LangGraph supports TypedDict state at runtime.
-        context_schema=BackgroundReportSettings,
-    )
-    workflow.add_node("draft_report", draft_report)
-    workflow.add_node("publish_report", publish_report)
-    workflow.add_edge(START, "draft_report")
-    workflow.add_edge("draft_report", "publish_report")
-    workflow.add_edge("publish_report", END)
-    return workflow.compile(checkpointer=checkpointer)
+workflow = StateGraph(BackgroundReportState, context_schema=BackgroundReportSettings)
+workflow.add_node("write_report", write_report)
+workflow.add_edge(START, "write_report")
+workflow.add_edge("write_report", END)
 
+background_report_graph = workflow.compile()
 
-def create_background_report_config(
-    graph_factory: Callable[[], BackgroundReportGraph],
-    run_coordinator: RunCoordinator,
-) -> GraphConfig:
-    """Declare the background graph shared by the API and Hatchet worker."""
-    return GraphConfig(
-        graph=graph_factory,
-        description=(
-            "Demonstrates background execution with a deterministic two-step "
-            "graph that calls no model."
-        ),
-        run_coordinator=run_coordinator,
-        features={GraphFeature.BACKGROUND},
-        client_settings=BackgroundReportSettings,
-    )
-
+background_report_graph_config = GraphConfig(
+    graph=background_report_graph,
+    description=(
+        "Demonstrates background execution with a deterministic, delayed "
+        "report that calls no model."
+    ),
+    features={GraphFeature.BACKGROUND},
+    client_settings=BackgroundReportSettings,
+)
 
 __all__ = [
     "BackgroundReportSettings",
-    "BackgroundReportState",
-    "create_background_report_config",
-    "create_background_report_graph",
+    "background_report_graph",
+    "background_report_graph_config",
 ]

@@ -8,13 +8,8 @@ from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphFeature,
-    GraphRequest,
-    InMemoryResponseStore,
-)
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api import app as app_module
@@ -120,10 +115,8 @@ async def test_app_lists_exactly_the_documented_models(
     background_extension = (background_model.model_extra or {})["lgos"]
     assert background_extension["features"] == ["background"]
     background_settings = background_extension["client_settings"]
-    assert background_settings["defaults"] == {"finalize_delay_seconds": 5}
-    delay_schema = background_settings["json_schema"]["properties"][
-        "finalize_delay_seconds"
-    ]
+    assert background_settings["defaults"] == {"delay_seconds": 5}
+    delay_schema = background_settings["json_schema"]["properties"]["delay_seconds"]
     assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
 
     for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
@@ -314,20 +307,18 @@ async def test_lifespan_installs_shared_postgres_runtime(
     coordinator = InMemoryRunCoordinator()
 
     runtime = PostgresRuntime(
-        pool=Mock(),  # type: ignore[arg-type]
         checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
         store=InMemoryStore(),  # type: ignore[arg-type]
         run_coordinator=coordinator,  # type: ignore[arg-type]
-        response_store=InMemoryResponseStore(),
     )
 
     @asynccontextmanager
-    async def open_postgres_runtime(unopened: PostgresRuntime):
-        assert unopened.pool is demo_app.state.postgres_pool
+    async def postgres_runtime(postgres_uri: str):
+        assert postgres_uri == app_module.settings.POSTGRES_URI
         yield runtime
 
-    runtime_factory = Mock(wraps=open_postgres_runtime)
-    monkeypatch.setattr(app_module, "open_postgres_runtime", runtime_factory)
+    runtime_factory = Mock(wraps=postgres_runtime)
+    monkeypatch.setattr(app_module, "postgres_runtime", runtime_factory)
     upstream_clients: list[httpx2.AsyncClient] = []
     create_model = advanced_resources.create_model
 
@@ -340,9 +331,6 @@ async def test_lifespan_installs_shared_postgres_runtime(
     async with app_module.lifespan(demo_app):
         assert not upstream_clients[0].is_closed
         assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
-        assert (
-            demo_app.state.background_report_graph.checkpointer is sqlite_checkpointer
-        )
         assert demo_app.state.run_coordinator is coordinator
         assert demo_app.state.persistent_plot_agent.store is runtime.store
 
@@ -352,7 +340,7 @@ async def test_lifespan_installs_shared_postgres_runtime(
             pass
 
     assert upstream_clients[0].is_closed
-    runtime_factory.assert_called_once()
+    runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
 
 
 async def test_worker_registers_every_background_model_the_api_serves(
@@ -361,11 +349,9 @@ async def test_worker_registers_every_background_model_the_api_serves(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     runtime = PostgresRuntime(
-        pool=Mock(),  # type: ignore[arg-type]
         checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
         store=InMemoryStore(),  # type: ignore[arg-type]
         run_coordinator=InMemoryRunCoordinator(),  # type: ignore[arg-type]
-        response_store=InMemoryResponseStore(),
     )
 
     @asynccontextmanager
@@ -379,7 +365,7 @@ async def test_worker_registers_every_background_model_the_api_serves(
     monkeypatch.setattr(worker_module, "postgres_runtime", postgres_runtime)
     monkeypatch.setattr(worker_module, "open_advanced_graph", open_advanced_graph)
     lifespan = worker_module._lifespan()
-    worker = await anext(lifespan)
+    worker_graphs = await anext(lifespan)
     await lifespan.aclose()
 
     # A job's model ID must resolve in the worker, or its run fails.
@@ -388,7 +374,7 @@ async def test_worker_registers_every_background_model_the_api_serves(
         for name, config in demo_app.state.graph_registry.registry.items()
         if config.supports(GraphFeature.BACKGROUND)
     }
-    assert set(worker.graphs.registry) == api_background_models
+    assert set(worker_graphs.registry) == api_background_models
 
 
 @pytest.mark.parametrize(

@@ -2,45 +2,35 @@
 
 from collections.abc import AsyncGenerator
 
-from langgraph_openai_serve import BackgroundWorker, GraphRegistry
-from langgraph_openai_serve.integrations.background.hatchet import (
-    create_hatchet_workflows,
-)
+from hatchet_sdk import Hatchet
+from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve.integrations.hatchet import create_hatchet_task
 
-from lgos_demo_api.background.components import create_hatchet_client
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
-from lgos_demo_api.graphs.background_report import (
-    create_background_report_config,
-    create_background_report_graph,
-)
+from lgos_demo_api.graphs.background_report import background_report_graph_config
 from lgos_demo_api.persistence.postgres import postgres_runtime
 
 
-async def _lifespan() -> AsyncGenerator[BackgroundWorker, None]:
-    """Yield the worker that Hatchet tasks read from ``context.lifespan``."""
+async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
+    """Yield the graphs that Hatchet tasks read from ``context.lifespan``."""
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
-        report_graph = create_background_report_graph(runtime.checkpointer)
         # Register every background-capable model under its API model ID.
-        registry = GraphRegistry(
+        yield GraphRegistry(
             registry={
                 "advanced-graph": create_advanced_graph_config(
                     lambda: advanced_graph,
                     runtime.run_coordinator,
                 ),
-                "background-report-agent": create_background_report_config(
-                    lambda: report_graph,
-                    runtime.run_coordinator,
-                ),
+                "background-report-agent": background_report_graph_config,
             }
         )
-        yield BackgroundWorker(graphs=registry, store=runtime.response_store)
 
 
 def main() -> None:
@@ -49,15 +39,14 @@ def main() -> None:
         msg = "Set DEMO_API_BACKGROUND_ENABLED=True before starting the worker."
         raise RuntimeError(msg)
 
-    hatchet = create_hatchet_client()
-    workflows = create_hatchet_workflows(hatchet)
-    native_worker = hatchet.worker(
+    hatchet = Hatchet()
+    worker = hatchet.worker(
         name="background-agent-worker",
         slots=settings.HATCHET_WORKER_SLOTS,
-        workflows=list(workflows.registrations),
+        workflows=[create_hatchet_task(hatchet)],
         lifespan=_lifespan,
     )
-    native_worker.start()
+    worker.start()
 
 
 if __name__ == "__main__":

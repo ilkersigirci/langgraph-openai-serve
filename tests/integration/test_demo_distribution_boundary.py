@@ -64,7 +64,7 @@ esac
     uv = tmp_path / "uv"
     uv.write_text(
         """#!/bin/sh
-printf "uv OPENAI_GATEWAY_BASE_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$*" >> "$DEPLOY_TEST_LOG"
+printf "uv OPENAI_GATEWAY_BASE_URL=%s DEMO_GATEWAY_HOST_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$DEMO_GATEWAY_HOST_URL" "$*" >> "$DEPLOY_TEST_LOG"
 """
     )
     uv.chmod(0o755)
@@ -124,8 +124,11 @@ printf "uv OPENAI_GATEWAY_BASE_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$*" >> 
     expected.extend(
         [
             f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
+            # Open WebUI stores the gateway root it reaches; the sync command
+            # discovers models through the host root.
             (
-                "uv OPENAI_GATEWAY_BASE_URL="
+                "uv OPENAI_GATEWAY_BASE_URL=https://gateway.example "
+                "DEMO_GATEWAY_HOST_URL="
                 f"{'http://localhost:3000' if gateway_service else 'https://gateway.example'} "
                 "run --directory ui/openwebui --locked python -m "
                 "lgos_openwebui.sync_functions"

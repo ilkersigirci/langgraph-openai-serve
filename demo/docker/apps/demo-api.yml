@@ -90,7 +90,6 @@ services:
     profiles: [background]
     container_name: lgos-background-worker
     command: ["lgos-demo-background-worker"]
-    restart: "$RESTART_POLICY"
     depends_on:
       lgos-demo-api-setup:
         condition: service_completed_successfully

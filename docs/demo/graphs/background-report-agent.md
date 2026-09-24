@@ -2,102 +2,63 @@
 
 `background-report-agent` is a deterministic, polling-only background graph that
 shows background execution working. It calls no model, so it needs no provider.
-It makes the recovery boundary visible: one node checkpoints a draft, then a
-second node waits before publishing that durable draft as the final assistant
-message. For a real agent running in the background, use
+Its one node waits for a configurable delay, which leaves time to watch the
+Response move from queued to in progress and to cancel it. For a real agent
+running in the background, use
 [`advanced-graph`](advanced-graph.md#background-execution).
 
-The graph declares `GraphFeature.BACKGROUND` and uses a PostgreSQL
-checkpointer and run coordinator. The API persists the public
-Response and starts its Hatchet workflow; an independently deployed worker
-executes the graph. PostgreSQL remains authoritative for both the public
-lifecycle and graph recovery.
+The graph declares `GraphFeature.BACKGROUND`. The API submits the request to
+Hatchet; an independently deployed worker executes the graph, and Hatchet
+stores the resulting Response.
 
 ## Topology
 
 ```mermaid
 graph TD;
-    __start__ --> draft_report;
-    draft_report --> publish_report;
-    publish_report --> __end__;
+    __start__ --> write_report;
+    write_report --> __end__;
 ```
 
-| Node | Role | Durable boundary |
-| --- | --- | --- |
-| `draft_report` | Builds a fixed draft that quotes the caller's last message. | Its `AIMessage` is stored in the `draft` state field at the node checkpoint. |
-| `publish_report` | Waits for the `finalize_delay_seconds` setting, then copies the checkpointed draft into `messages`. | The completed checkpoint can be rendered again if terminal Response publication must be retried. |
+`write_report` waits for the `delay_seconds` setting, then replies with a fixed
+report that quotes the caller's last message.
 
-The delay in `publish_report` is intentional. It provides a repeatable window
-for terminating a worker after the draft is durable but before the Response is
-published. It is a demonstration aid, not a recommended production
-latency.
-
-`finalize_delay_seconds` is a public graph setting: 5 seconds by default, from
-0 to 300. Chainlit and Open WebUI show it with the model's other settings, and
-SDK clients send it in `metadata.lgos_settings`:
+`delay_seconds` is a public graph setting: 5 seconds by default, from 0 to 300.
+Chainlit and Open WebUI show it with the model's other settings, and SDK
+clients send it in `metadata.lgos_settings`:
 
 ```python
-metadata={"lgos_settings": '{"finalize_delay_seconds": 30}'}
+metadata={"lgos_settings": '{"delay_seconds": 30}'}
 ```
 
-The value is stored with the background request, so a retried delivery waits
-for the same delay.
-
-## Recovery Behavior
+## Lifecycle
 
 ```mermaid
 sequenceDiagram
   participant Client
   participant API
-  participant DB as PostgreSQL
   participant Hatchet
   participant Worker
 
   Client->>API: responses.create(background=true)
-  API->>DB: store queued Response
-  API->>Hatchet: start workflow(response_id)
-  API-->>Client: queued Response ID
-  Hatchet->>Worker: deliver execute task
-  Worker->>DB: acquire coordinator lease
-  Worker->>DB: checkpoint generated draft
-  Worker--xWorker: process terminates during publish_report
-  Hatchet->>Worker: retry with native backoff
-  Worker->>DB: inspect checkpoint
-  Worker->>Worker: resume publish_report with no new input
-  Worker->>DB: atomically publish terminal Response
+  API->>Hatchet: trigger task(job)
+  API-->>Client: queued Response
+  Hatchet->>Worker: deliver task
+  Worker->>Worker: run write_report
+  Worker-->>Hatchet: completed Response
   Client->>API: responses.retrieve(response_id)
-  API->>DB: read completed snapshot
+  API->>Hatchet: read run
   API-->>Client: completed Response
 ```
 
-If the process stops before the `draft_report` checkpoint commits, Hatchet may
-redeliver and `draft_report` runs again. If it stops after that checkpoint,
-LGOS resumes at `publish_report`; it does not resubmit the original graph input
-or rerun `draft_report`. Work performed inside any unfinished node may repeat,
-so production side effects still need their own idempotency design.
-
-The worker runs the graph with synchronous checkpoint durability. Terminal
-publication and checkpoint deletion are ordered separately: LGOS first commits
-the completed, failed, incomplete, or cancelled Response; cleanup occurs only
-after execution is quiescent and can be retried independently.
+A run that raises fails its Response; create a new one to try again. Hatchet
+reassigns a run whose worker dies, and that run starts over.
 
 ## Run It
 
-Configure the upstream model and Hatchet in `demo/.env`, select either gateway,
-and enable the worker profile:
-
-```dotenv
-# Choose litellm or bifrost.
-OPENAI_GATEWAY_TYPE=litellm
-COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
-DEMO_API_BACKGROUND_ENABLED=True
-HATCHET_CLIENT_TOKEN=...
-```
-
-Then start the UI stack and worker:
+Start the stack with the worker as described under **Background Worker** in
+[Docker Compose](../docker.md#demo-services), then run the live gateway test:
 
 ```bash
-just demo/compose --dev
 just demo/test-background-gateway --editable
 ```
 
@@ -118,25 +79,11 @@ just demo/background-worker --editable
 
 The graph's advertised model entry exists even when the background runtime is
 disabled, but `background=true` creation then fails explicitly because no
-backend is configured. Ordinary foreground use is not the purpose of this
-example.
+backend is configured.
 
 See [Run Responses In The Background](../../how-to-guides/background-responses.md)
-for a polling client, deployment wiring, retention, cancellation, and gateway
+for a polling client, deployment wiring, cancellation, and gateway
 requirements.
-
-## Reproduce A Worker Crash
-
-1. Create a background Response and retain its public Response ID.
-2. Inspect the worker logs or checkpoint state until `draft_report` has
-   completed and `publish_report` is in its delay. Raise
-   `finalize_delay_seconds` for a wider window.
-3. Terminate the exact worker process without allowing graceful task cleanup.
-4. Restart the Hatchet worker and continue polling the original Response ID.
-
-Hatchet detects the lost task and applies its configured native retry policy.
-The PostgreSQL coordinator session is released when the dead worker's database
-connection closes, and the retry resumes from the durable checkpoint.
 
 ## Boundaries
 
@@ -147,7 +94,7 @@ and resume polling through either tested gateway route documented in the
 [proxy guide](../../how-to-guides/openai-proxies.md).
 
 The implementation lives in
-`demo/api/src/lgos_demo_api/graphs/background_report.py`. Shared API/worker
-wiring is in `demo/api/src/lgos_demo_api/background/components.py`;
+`demo/api/src/lgos_demo_api/graphs/background_report.py`. The API-side backend
+is in `demo/api/src/lgos_demo_api/background/components.py`;
 `demo/api/src/lgos_demo_api/background/worker.py` provides the separately
 deployed worker.

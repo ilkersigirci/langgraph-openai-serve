@@ -42,7 +42,7 @@ from langgraph_openai_serve.api.health import views as health_views
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.api.models import views as models_views
 from langgraph_openai_serve.api.responses import views as responses_views
-from langgraph_openai_serve.background.contracts import BackgroundBackend
+from langgraph_openai_serve.background import BackgroundBackend
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings

@@ -72,9 +72,6 @@ lightweight `lgos` list extension.
 
 The complete model and requirement matrix is in [Example Graphs](graphs/index.md).
 
-The one-shot setup command also creates the background Response-store schema.
-This does not enable the Hatchet backend by itself.
-
 ## Call A Graph
 
 ```python title="Call a registered graph"

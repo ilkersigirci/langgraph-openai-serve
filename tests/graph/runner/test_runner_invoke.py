@@ -12,13 +12,13 @@ from langgraph_openai_serve.core.logging import (
 )
 from langgraph_openai_serve.core.settings import Settings
 from langgraph_openai_serve.graph import utils as graph_utils
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
     GraphNotFoundError,
     GraphRegistry,
 )
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.runner import (
     invoke_run,
     run_langgraph,

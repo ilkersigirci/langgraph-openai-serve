@@ -192,13 +192,6 @@ Use the published demo images and pinned service images:
 just demo/compose
 ```
 
-For the Hatchet worker and background-capable UI model, enable the background
-settings described above and run:
-
-```bash
-just demo/compose --dev
-```
-
 The command leaves a healthy stack running in the background. It starts the
 selected gateway and its dependencies, syncs LiteLLM when selected, starts the
 UIs, and syncs Open WebUI. The stack publishes the gateway on port 3000,

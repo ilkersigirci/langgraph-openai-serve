@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
+from dataclasses import replace
 
 from langchain_core.messages import AIMessage
 from langgraph.types import CustomStreamPart, UpdatesStreamPart
@@ -32,6 +33,7 @@ from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.runner import invoke_run, stream_run
 from langgraph_openai_serve.graph.utils import GraphRun, prepare_run
+from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 logger = get_logger(__name__)
 
@@ -41,12 +43,23 @@ async def prepare_response_run(
     graph_registry: GraphRegistry,
     *,
     checkpoint_scope: str,
+    run_id: str | None = None,
 ) -> GraphRun:
-    """Validate a Responses request and prepare its graph run."""
+    """
+    Validate a Responses request and prepare its graph run.
+
+    A background run passes its server-chosen interrupt ``run_id``, which the
+    run uses like a caller's ``metadata.lgos_run_id``.
+    """
     graph_request, messages, resume = decode_graph_request(
         request,
         graph_registry.get_graph(request.model),
     )
+    if run_id is not None:
+        graph_request = replace(
+            graph_request,
+            metadata={**graph_request.metadata, RUN_METADATA_KEY: run_id},
+        )
     return await prepare_run(
         graph_request,
         messages,
@@ -56,13 +69,21 @@ async def prepare_response_run(
     )
 
 
-async def collect_response(request: ResponseCreateRequest, run: GraphRun) -> Response:
+async def collect_response(
+    request: ResponseCreateRequest,
+    run: GraphRun,
+    *,
+    response_id: str | None = None,
+    created_at: float | None = None,
+) -> Response:
     """Build one non-streaming Response from the graph's durable output."""
     try:
         server_tools = selected_server_tools(request, run.config.server_tools)
         builder = ResponsesEventBuilder(
             request,
             run_id=run.run_id,
+            response_id=response_id,
+            created_at=created_at,
             server_tools=server_tools,
         )
     except BaseException as exc:
@@ -209,8 +230,4 @@ def _graph_response_events(
     yield from builder.commentary(status_data.description)
 
 
-__all__ = [
-    "collect_response",
-    "prepare_response_run",
-    "stream_response",
-]
+__all__ = ["collect_response", "prepare_response_run", "stream_response"]

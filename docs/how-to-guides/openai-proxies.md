@@ -31,11 +31,11 @@ Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
 - downstream disconnect propagation to the upstream streaming request.
 
 LGOS does not require the proxy to retain Responses itself. Foreground work
-rejects `store: true`; an opted-in background graph accepts it to select longer
-bounded LGOS result retention. `conversation` remains unsupported, and
-`previous_response_id` is reserved for interrupt resumes rather than background
-continuation. The client owns the ordinary conversation input ledger. A proxy
-must not silently turn `store: false` into a stored response.
+rejects `store: true`; an opted-in background graph accepts it, and the
+background engine keeps the result either way. `conversation` remains
+unsupported, and `previous_response_id` is reserved for interrupt resumes. The
+client owns the ordinary conversation input ledger. A proxy must not silently
+turn `store: false` into a stored response.
 
 `GET /v1/models` is sufficient for ordinary graph selection. A client that uses
 LGOS descriptions, feature discovery, or runtime-settings forms also needs
@@ -74,12 +74,11 @@ field.
 
 The background path is tested separately because create-only routing is not
 enough. Retrieval and cancellation carry only the saved Response ID; a gateway
-must route that ID to any LGOS API replica sharing the authoritative
-`ResponseStore`.
+must route that ID to any LGOS API replica using the same background engine.
 
 | Pinned path | Background create, poll, cancel | Constraint |
 | --- | --- | --- |
-| Direct LGOS | Pass | Replicas must share the Response store and checkpoint database. |
+| Direct LGOS | Pass | Replicas must use the same background engine. |
 | LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for 1.100.1 parser compatibility. |
 | Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-report-agent`; no provider header is required after creation. |
 
@@ -130,7 +129,7 @@ that route only for provider-specific catalog detail. Responses use native
 
 LiteLLM recovers managed deployment routing from its opaque Response ID.
 Bifrost's ID-only SDK path uses a standard `openai` provider pinned to an API
-deployment sharing the Response store; its UI clients can instead retain the
+deployment using the same background engine; its UI clients can instead retain the
 selected custom-provider header while polling.
 
 ## Direct Chat Compatibility

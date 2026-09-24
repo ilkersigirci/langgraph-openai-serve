@@ -4,8 +4,8 @@ from unittest.mock import ANY, AsyncMock, Mock, call
 import pytest
 from anyio import fail_after
 
-from langgraph_openai_serve.graph.coordination import RunBusyError, RunLease
-from langgraph_openai_serve.integrations.coordination import postgres
+from langgraph_openai_serve.graph.interrupt import RunBusyError
+from langgraph_openai_serve.integrations import postgres
 
 THREAD_1_LOCK_KEY = 5407239785987761849
 THREAD_NEGATIVE_LOCK_KEY = -7821029440514528571
@@ -225,23 +225,3 @@ def test_advisory_lock_key_is_stable_signed_bigint() -> None:
     assert lock_key == THREAD_1_LOCK_KEY
     assert -(2**63) <= lock_key < 2**63
     assert postgres._advisory_lock_key("thread-negative") == THREAD_NEGATIVE_LOCK_KEY
-
-
-async def test_session_monitor_marks_lease_lost_before_cancelling_owner() -> None:
-    failure = RuntimeError("connection lost")
-    connection = Mock(execute=AsyncMock(side_effect=failure))
-    owner = Mock()
-    lease = RunLease()
-    errors: list[BaseException] = []
-
-    await postgres._monitor_advisory_lock_session(
-        connection,
-        0,
-        owner,
-        lease,
-        errors,
-    )
-
-    assert lease.lost
-    assert errors == [failure]
-    owner.cancel.assert_called_once_with()

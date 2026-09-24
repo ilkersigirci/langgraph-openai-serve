@@ -143,8 +143,7 @@ settings](reference.md#opentelemetry-settings).
     Run each attached service in a separate terminal. Compose starts the shared
     PostgreSQL dependency automatically. Before either graph API starts,
     `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
-    LangGraph checkpoint, Store, and LGOS background Response schemas once.
-    Both APIs use
+    LangGraph checkpoint and Store schemas once. Both APIs use
     [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
     as their readiness dependency.
 
@@ -176,10 +175,9 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     The `lgos-background-worker` process uses explicit Hatchet slots and the
-    same PostgreSQL Response store, checkpointer, coordinator, graph code, and
-    retention settings as the APIs. It exposes no HTTP port. The API
-    triggers the Hatchet workflow; Hatchet owns retries, timeouts,
-    failure handling, and recurring maintenance. See [Background Report
+    same PostgreSQL checkpointer, coordinator, and graph code as the APIs. It
+    exposes no HTTP port. The API triggers the Hatchet task and reads its
+    status and Response from Hatchet. See [Background Report
     Agent](graphs/background-report-agent.md).
 
 === "Files API"
@@ -411,9 +409,8 @@ mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
 required ephemeral writes. The one-shot API and Chainlit setup services
-initialize their respective persistence schemas, including the background
-Response table. A following idempotent setup job owns the MCP reporting views,
-role, and grants before DBHub starts.
+initialize their respective persistence schemas. A following idempotent setup
+job owns the MCP reporting views, role, and grants before DBHub starts.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads generated file elements to the configured `BUCKET_NAME`.
@@ -423,12 +420,13 @@ central Files API uses only its separate `DEMO_API_FILES_BUCKET`,
 configurations are independent.
 
 The API and optional background worker share PostgreSQL for thread-scoped
-application data, durable checkpoints, Response lifecycle rows, and fail-fast
-run coordination. Session-level
+application data, durable checkpoints, and fail-fast interrupt coordination.
+Session-level
 [advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
-prevent two workers from advancing the same interrupt or background run at once; a contended
+prevent two workers from advancing the same interrupt run at once; a contended
 request fails instead of waiting. No Redis service is required. The lock is
-held only while an API request executes the graph, never while a human is
+held only while an API request or the background worker executes the graph,
+never while a human is
 deciding. A per-process capacity gate preserves a pool connection for
 persistence I/O.
 
@@ -450,9 +448,10 @@ well.
     interrupt tool calls. Whether the resulting commit survives loss of the
     primary depends on the PostgreSQL replication policy.
 
-    Budget connections across every API replica. Each demo API process has a
-    five-connection pool and permits at most four simultaneous interrupt
-    leases, preserving one connection for checkpoint I/O. Psycopg recommends
+    Budget connections across every API replica and background worker. Each
+    demo API or worker process has a five-connection pool and permits at most
+    four simultaneous interrupt leases, preserving one connection for
+    checkpoint I/O. Psycopg recommends
     monitoring pool statistics and sizing from observed workload; see its
     [pool guidance](https://www.psycopg.org/psycopg3/docs/advanced/pool.html#pool-connection-and-sizing).
 

@@ -43,9 +43,13 @@ Read official release notes, relevant pull requests, and implementation at the
 requested tag. A fix mentioning Responses does not necessarily affect the
 route or provider used here. In particular:
 
-- Distinguish native Responses from Responses-to-Chat bridging. LGOS uses
-  `store: false`, owns interrupt checkpoints, and leaves ordinary history to
-  clients. Bridge history fixes do not replace that contract.
+- Distinguish native Responses from Responses-to-Chat bridging. Foreground
+  LGOS requests use `store: false`; LGOS owns interrupt checkpoints and leaves
+  ordinary history to clients. Bridge history fixes do not replace that
+  contract.
+- Background Responses need ID-only retrieve and cancel routing and a
+  forwarded `Idempotency-Key`; verify them with
+  `just demo/test-background-gateway --editable`.
 - For LiteLLM streaming, inspect concrete-model capability lookup as well as
   wildcard deployment metadata. A wildcard capability flag alone does not
   prove upstream commentary events survive.

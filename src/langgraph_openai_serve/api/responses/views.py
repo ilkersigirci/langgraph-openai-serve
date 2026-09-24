@@ -25,7 +25,7 @@ from langgraph_openai_serve.api.responses.request import (
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.streaming import StreamOwner
-from langgraph_openai_serve.background.contracts import BackgroundBackend
+from langgraph_openai_serve.background import BackgroundBackend
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.core.logging import bind_log_context
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
@@ -51,39 +51,19 @@ async def create_response(  # ruff: ignore[too-many-arguments, too-many-position
         Header(alias="Idempotency-Key"),
     ] = None,
 ) -> StreamingResponse | Response:
-    """Create one stateless OpenAI Response, optionally as an SSE stream."""
+    """Create one OpenAI Response, as JSON, an SSE stream, or a background run."""
     bind_log_context(model=response_request.model, stream=response_request.stream)
 
     with graph_errors(input_param="input"):
-        if response_request.background:
-            try:
-                return await responses_background.accept_background_response(
+        try:
+            if response_request.background:
+                return await responses_background.create_background_response(
                     response_request,
                     graph_registry,
                     background,
                     checkpoint_scope=checkpoint_scope,
                     idempotency_key=idempotency_key,
                 )
-            except (
-                UnsupportedResponsesRequestError,
-                InvalidResponsesInputError,
-            ) as exc:
-                raise _invalid_request(exc) from exc
-            except responses_background.IdempotencyKeyReusedError as exc:
-                # 422 follows the IETF Idempotency-Key draft; SDKs do not retry it.
-                raise OpenAIHTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    error=ErrorObject(
-                        message=(
-                            "This Idempotency-Key was already used with a "
-                            "different request."
-                        ),
-                        type="invalid_request_error",
-                        param="Idempotency-Key",
-                        code="idempotency_key_reused",
-                    ),
-                ) from exc
-        try:
             run = await responses_service.prepare_response_run(
                 response_request,
                 graph_registry,
@@ -91,6 +71,20 @@ async def create_response(  # ruff: ignore[too-many-arguments, too-many-position
             )
         except (UnsupportedResponsesRequestError, InvalidResponsesInputError) as exc:
             raise _invalid_request(exc) from exc
+        except responses_background.IdempotencyKeyReusedError as exc:
+            # 422 follows the IETF Idempotency-Key draft; SDKs do not retry it.
+            raise OpenAIHTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                error=ErrorObject(
+                    message=(
+                        "This Idempotency-Key was already used with a "
+                        "different request."
+                    ),
+                    type="invalid_request_error",
+                    param="Idempotency-Key",
+                    code="idempotency_key_reused",
+                ),
+            ) from exc
         if response_request.stream:
             body = stream_owner.start(
                 responses_service.stream_response(response_request, run),
@@ -106,17 +100,16 @@ async def create_response(  # ruff: ignore[too-many-arguments, too-many-position
             ) from exc
 
 
-@router.get("/responses/{response_id}")
+@router.get(
+    "/responses/{response_id}",
+    dependencies=[Depends(validate_background_retrieval)],
+)
 async def retrieve_response(
     response_id: str,
     checkpoint_scope: Annotated[str, Depends(get_checkpoint_scope)],
     background: Annotated[
         BackgroundBackend | None,
         Depends(get_background_backend),
-    ],
-    _retrieval_validation: Annotated[
-        None,
-        Depends(validate_background_retrieval),
     ],
 ) -> Response:
     """Retrieve one authorized background Response snapshot."""
@@ -140,7 +133,7 @@ async def cancel_response(
         Depends(get_background_backend),
     ],
 ) -> Response:
-    """Atomically cancel one authorized active background Response."""
+    """Cancel one authorized active background Response."""
     with graph_errors(input_param="input"):
         try:
             return await responses_background.cancel_background_response(

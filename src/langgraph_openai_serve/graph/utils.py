@@ -1,7 +1,6 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
 import sys
-import uuid
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -22,7 +21,6 @@ from langgraph_openai_serve.core.logging import (
     get_logger,
 )
 from langgraph_openai_serve.core.settings import settings
-from langgraph_openai_serve.graph.coordination import RunLease
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfig,
@@ -62,7 +60,6 @@ class _PreparedRunValues:
     inputs: Any
     context: Any
     pending_batch: LangGraphInterruptBatch | None = None
-    lease: RunLease | None = None
 
 
 @dataclass
@@ -91,7 +88,6 @@ class GraphRun:
         repr=False,
     )
     _primary_error: BaseException | None = field(default=None, init=False, repr=False)
-    _lease: RunLease | None = field(default=None, repr=False)
     _entered: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
 
@@ -123,7 +119,7 @@ class GraphRun:
     def begin_execution(self) -> None:
         """Mark checkpoint state as incomplete immediately before execution."""
         self.require_owner()
-        if self.checkpoint_thread_id is not None:
+        if self.config.supports(GraphFeature.INTERRUPTS):
             self._checkpoint_disposition = "delete"
 
     def commit_interrupts(self) -> None:
@@ -147,7 +143,7 @@ class GraphRun:
 
         with CancelScope(shield=True):
             cleanup_error: BaseException | None = None
-            if self._checkpoint_disposition == "delete" and self._owns_lease():
+            if self._checkpoint_disposition == "delete":
                 try:
                     await self._delete_checkpoint_thread()
                 except BaseException as exc:
@@ -176,16 +172,10 @@ class GraphRun:
         if not self._entered:
             msg = "Graph execution requires an active GraphRun context."
             raise RuntimeError(msg)
-        if self._lease is not None:
-            self._lease.ensure_owned()
-
-    def _owns_lease(self) -> bool:
-        """Reject destructive cleanup after a coordinator reports lease loss."""
-        return self._lease is None or not self._lease.lost
 
     async def _delete_checkpoint_thread(self) -> None:
         if self.checkpoint_thread_id is None:
-            msg = "Checkpointed run has no checkpoint thread id."
+            msg = "Interrupt-enabled run has no checkpoint thread id."
             raise RuntimeError(msg)
 
         checkpointer = cast("BaseCheckpointSaver", self.graph.checkpointer)
@@ -224,7 +214,7 @@ async def prepare_run(
         extra_callbacks=[usage_callback],
     )
     if identity.checkpoint_thread_id is not None and runnable_config is None:
-        msg = "Checkpointed run has no runnable configuration."
+        msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
     resources = AsyncExitStack()
@@ -259,7 +249,6 @@ async def prepare_run(
         pending_batch=values.pending_batch,
         usage_callback=usage_callback,
         _resources=resources,
-        _lease=values.lease,
     )
 
 
@@ -271,21 +260,7 @@ def _resolve_run_identity(
     checkpoint_scope: str,
 ) -> _RunIdentity:
     if not graph_config.supports(GraphFeature.INTERRUPTS):
-        if not graph_config.supports(GraphFeature.BACKGROUND):
-            return _RunIdentity()
-        # A background-capable graph necessarily owns a persistent checkpointer.
-        # Foreground Responses and Chat calls still need an isolated thread, but
-        # they are request-scoped and are deleted by GraphRun after quiescence.
-        operation_id = str(uuid.uuid4())
-        checkpoint_thread_id = interrupt_state.checkpoint_key(
-            request.model,
-            operation_id,
-            scope=(
-                "foreground:"
-                f"{interrupt_state.normalize_checkpoint_scope(checkpoint_scope)}"
-            ),
-        )
-        return _RunIdentity(checkpoint_thread_id=checkpoint_thread_id)
+        return _RunIdentity()
 
     requested_run_id = interrupt_state.get_run_id(request)
     run_id = interrupt_state.resolve_run_id(requested_run_id, resume)
@@ -317,12 +292,6 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
         context = await graph_config.build_context(request, graph)
         return _PreparedRunValues(inputs=inputs, context=context)
 
-    if identity.run_id is None:
-        return _PreparedRunValues(
-            inputs=await graph_config.build_input(request, messages),
-            context=await graph_config.build_context(request, graph),
-        )
-
     coordinator = graph_config.run_coordinator
     if coordinator is None:  # resolve_graph() reports this first.
         msg = "Interrupt run has no coordinator."
@@ -331,24 +300,15 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
         msg = "Interrupt run has no runnable configuration."
         raise RuntimeError(msg)
 
-    lease = await resources.enter_async_context(
-        coordinator(identity.checkpoint_thread_id)
-    )
-    lease.ensure_owned()
+    await resources.enter_async_context(coordinator(identity.checkpoint_thread_id))
     state = await interrupt_state.prepare_interrupt_state(
         graph,
         runnable_config,
         identity.run_id,
         resume,
     )
-    lease.ensure_owned()
     if isinstance(state, LangGraphInterruptBatch):
-        return _PreparedRunValues(
-            inputs=None,
-            context=None,
-            pending_batch=state,
-            lease=lease,
-        )
+        return _PreparedRunValues(inputs=None, context=None, pending_batch=state)
     return _PreparedRunValues(
         inputs=(
             state
@@ -356,7 +316,6 @@ async def _prepare_run_values(  # ruff: ignore[too-many-arguments] - One resourc
             else await graph_config.build_input(request, messages)
         ),
         context=await graph_config.build_context(request, graph),
-        lease=lease,
     )
 
 

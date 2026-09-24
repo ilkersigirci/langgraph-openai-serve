@@ -39,7 +39,6 @@ LGOS_MODEL_OWNER = "langgraph-openai-serve"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
-RUN_METADATA_KEY = "lgos_run_id"
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
 
 

@@ -15,13 +15,25 @@ from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME as _INTERRUPT_TO
 _INTERRUPT_CALL_PREFIX = "call_lg_"
 _INTERRUPT_RESPONSE_PREFIX = "resp_lg_"
 _RESPONSE_ID_PATTERN = re.compile(
-    rf"^{_INTERRUPT_RESPONSE_PREFIX}(?P<run>[0-9a-f]{{32}})_[0-9a-f]{{32}}$"
+    rf"^{_INTERRUPT_RESPONSE_PREFIX}(?P<run>[0-9a-f]{{32}})_(?P<nonce>[0-9a-f]{{32}})$"
 )
 
 
-def interrupt_response_id(run_id: str) -> str:
-    """Create a unique Response ID that carries its interrupt run identity."""
-    return f"{_INTERRUPT_RESPONSE_PREFIX}{uuid.UUID(run_id).hex}_{uuid.uuid4().hex}"
+def interrupt_response_id(run_id: str, nonce: str | None = None) -> str:
+    """
+    Create a Response ID that carries its interrupt run identity.
+
+    A background Response passes its engine run UUID as ``nonce``, so the ID
+    alone locates that run.
+    """
+    suffix = uuid.UUID(nonce).hex if nonce is not None else uuid.uuid4().hex
+    return f"{_INTERRUPT_RESPONSE_PREFIX}{uuid.UUID(run_id).hex}_{suffix}"
+
+
+def interrupt_response_nonce(response_id: str) -> str | None:
+    """Return the nonce UUID of an interrupt-style Response ID."""
+    match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
+    return str(uuid.UUID(hex=match.group("nonce"))) if match else None
 
 
 def interrupt_tool_call_id(interrupt_id: str) -> str:
@@ -48,7 +60,7 @@ def parse_responses_resume(
         )
         raise InvalidResumeRequestError(msg)
 
-    run_id = interrupt_run_id(previous_response_id)
+    run_id = _parse_interrupt_response_id(previous_response_id)
     values: dict[str, str] = {}
     for item in input_value:
         if not isinstance(item, ResponseFunctionCallOutputInput):
@@ -92,8 +104,7 @@ def _reject_interrupt_items_without_response_id(
         raise InvalidResumeRequestError(msg)
 
 
-def interrupt_run_id(response_id: str) -> str:
-    """Return the run ID carried by an interrupt-style Response ID."""
+def _parse_interrupt_response_id(response_id: str) -> str:
     match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
     if match is None or uuid.UUID(hex=match.group("run")).int == 0:
         msg = "previous_response_id is not an LGOS interrupt Response ID."
@@ -111,7 +122,7 @@ def _parse_interrupt_tool_call_id(call_id: str) -> str:
 
 __all__ = [
     "interrupt_response_id",
-    "interrupt_run_id",
+    "interrupt_response_nonce",
     "interrupt_tool_call_id",
     "parse_responses_resume",
 ]

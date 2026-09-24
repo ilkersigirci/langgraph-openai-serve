@@ -12,9 +12,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
-from langgraph_openai_serve.integrations.background.postgres import (
-    PostgresResponseStore,
-)
 
 from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
@@ -24,10 +21,7 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
-from lgos_demo_api.graphs.background_report import (
-    create_background_report_config,
-    create_background_report_graph,
-)
+from lgos_demo_api.graphs.background_report import background_report_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
@@ -54,11 +48,7 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.persistence.postgres import (
-    create_postgres_pool,
-    create_postgres_runtime,
-    open_postgres_runtime,
-)
+from lgos_demo_api.persistence.postgres import postgres_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +66,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("demo.server.starting")
     async with (
-        open_postgres_runtime(
-            create_postgres_runtime(app.state.postgres_pool)
-        ) as runtime,
+        postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
-        app.state.background_report_graph = create_background_report_graph(
-            runtime.checkpointer
-        )
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         app.state.advanced_graph = advanced_graph
@@ -124,10 +109,7 @@ def create_custom_app() -> FastAPI:
                 lambda: app.state.advanced_graph,
                 lambda key: app.state.run_coordinator(key),
             ),
-            "background-report-agent": create_background_report_config(
-                lambda: app.state.background_report_graph,
-                lambda key: app.state.run_coordinator(key),
-            ),
+            "background-report-agent": background_report_graph_config,
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,
@@ -156,17 +138,10 @@ def create_custom_app() -> FastAPI:
         }
     )
 
-    # The pool opens in the lifespan; the Response store only needs its
-    # reference, so the background backend can be passed to LGOS directly.
-    app.state.postgres_pool = create_postgres_pool(settings.POSTGRES_URI)
     graph_serve = LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
-        background=(
-            create_background_backend(PostgresResponseStore(app.state.postgres_pool))
-            if settings.BACKGROUND_ENABLED
-            else None
-        ),
+        background=create_background_backend() if settings.BACKGROUND_ENABLED else None,
     )
 
     graph_serve.bind_openai_api()

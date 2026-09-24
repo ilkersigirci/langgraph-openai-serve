@@ -68,8 +68,8 @@ OpenAI-compatible `/v1` API.
 
 -   :material-progress-clock:{ .lg .middle } __Run work in the background__
 
-    Commit a queued OpenAI Response, execute it in a separate durable worker,
-    and poll or cancel it by its opaque ID.
+    Run a graph in a separate worker, then poll or cancel its OpenAI Response
+    by ID.
 
     [:octicons-arrow-right-24: Background Responses](how-to-guides/background-responses.md)
 
@@ -96,7 +96,7 @@ and the [proxy guide](how-to-guides/openai-proxies.md) to preserve the contract
 through a gateway. Use [file inputs](how-to-guides/file-inputs.md) to store
 uploads in an external Files service and pass native `file_id` references to
 graphs. Use [background Responses](how-to-guides/background-responses.md) for
-durable polling-only agent work. See
+polling-only agent work. See
 the package [reference](reference.md) for endpoints,
 settings, events, and public classes. Demo-owned models, settings, and commands
 have their own [reference](demo/reference.md).

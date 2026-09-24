@@ -318,8 +318,8 @@ class ResponseCreateRequest(_ResponsesRequestModel):
     parallel_tool_calls: bool | None = None
     user: str | None = None
 
-    # Background storage is accepted only by the polling path. Foreground
-    # storage and conversation chaining remain outside the supported subset.
+    # Accept OpenAI's values; the decoder allows `store=true` only for a
+    # background Response and rejects conversation chaining.
     background: bool | None = False
     conversation: JsonValue | None = None
     previous_response_id: str | None = None

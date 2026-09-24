@@ -1,18 +1,13 @@
 # Run Responses In The Background
 
 LGOS can accept an OpenAI Responses request, run its graph in a separate
-worker, and let the caller poll the standard Response resource. Hatchet is the
-built-in durable backend. It owns queueing, retries, backoff, timeouts,
-cancellation, final-failure handling, and recurring maintenance.
-
-Install the supplied persistence and backend adapters:
+worker, and let the caller poll the standard Response resource. A background
+engine runs the work and stores its status and result. Hatchet is the built-in
+engine; an in-memory engine serves local trials.
 
 ```bash
-uv add "langgraph-openai-serve[postgres,hatchet]"
+uv add "langgraph-openai-serve[hatchet]"
 ```
-
-The Response store, checkpointer, and run coordinator are each replaceable; see
-[Configure Persistence And Coordination](infrastructure.md).
 
 ## Client Contract
 
@@ -49,17 +44,22 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Use `POST /v1/responses/{response_id}/cancel` to cancel. Completion and
-cancellation use one atomic terminal transition, so whichever commits first
-wins, and a late graph result cannot overwrite a cancellation. Cancelling a
-terminal Response returns it unchanged. Cancellation cannot undo an external
-side effect that already happened.
+Use `POST /v1/responses/{response_id}/cancel` to cancel. Cancelling a finished
+Response returns it unchanged. Cancellation cannot undo an external side effect
+that already happened.
+
+LGOS configures no retries: when a run raises, the Response becomes `failed`;
+create a new Response to try again. A request problem found by the worker, such
+as a stale interrupt answer, keeps its message; other failures report a generic
+message and leave details in the worker logs. Hatchet
+[reassigns](https://docs.hatchet.run/v1/faq) a run whose worker dies, and that
+run starts over, so graph side effects must tolerate a second execution.
 
 Creation and retrieval are polling-only. LGOS rejects background streaming and
-retrieval cursors; it does not persist or replay SSE events. The server-trusted
-`checkpoint_scope` is also the authorization scope for retrieve and cancel.
-`metadata.lgos_run_id` is reserved for interrupt-enabled foreground operations
-and is rejected on background requests.
+retrieval cursors. The server-trusted `checkpoint_scope` is also the
+authorization scope for retrieve and cancel. `metadata.lgos_run_id` is reserved
+for interrupt-enabled foreground operations and is rejected on background
+requests.
 
 ### Idempotent Creation
 
@@ -75,12 +75,9 @@ every retry:
 | Same key with different request content | `422` with `code="idempotency_key_reused"` |
 | Key missing | A new Response, as in OpenAI |
 
-The key is unique in the shared Response store, so concurrent retries and
-retries routed to another instance still create one run. A replay returns the
-original Response before validating the request again, so a retried interrupt
-answer is not rejected as stale. It lives as long as
-its Response: `result_retention` or `stored_result_retention` after the run
-ends. LGOS stores only a SHA-256 digest of the owner scope, model, and key.
+The engine holds the key, so concurrent retries and retries routed to another
+instance still create one run. Hatchet keeps it for 24 hours. LGOS sends only a
+SHA-256 digest of the owner scope, model, and key.
 
 Each gateway needs the key in its own transport. LGOS receives the same header
 in both cases:
@@ -103,51 +100,31 @@ in both cases:
     extra_body = {"extra_headers": {"Idempotency-Key": key}}
     ```
 
-## Make The Graph Recoverable
+## Opt A Graph In
 
-Opt in with the background feature:
+Declare the background feature:
 
 ```python
 from langgraph_openai_serve import GraphConfig, GraphFeature
-from langgraph_openai_serve.integrations.coordination.postgres import (
-    PostgresRunCoordinator,
-)
-
 
 config = GraphConfig(
-    graph=lambda: compiled_graph,
-    description="Creates a durable report.",
-    run_coordinator=PostgresRunCoordinator(
-        pool,
-        max_concurrent_leases=7,
-    ),
+    graph=compiled_graph,
+    description="Creates a report.",
     features={GraphFeature.BACKGROUND},
 )
 ```
 
-Retry counts and timeouts belong in `HatchetAdapterSettings`, not in the graph
-configuration.
-
-A background graph must:
-
-- use an asynchronous LangGraph checkpointer with thread deletion, persistent
-  for durable deployments;
-- configure a run coordinator, cross-process for multi-worker deployments;
-- reconstruct its output from checkpointed state;
-- keep `output_to_message` deterministic and side-effect free;
-- support `durability="sync"`;
-- stay compatible with checkpoints of runs in flight during a deploy. LGOS, like
-  LangGraph itself, does not version checkpoints; an incompatible checkpoint
-  fails the run after its retries.
+The worker runs the graph like a non-streaming foreground request. Register
+every background model in the worker under the same model ID as in the API.
 
 A graph may declare both `GraphFeature.INTERRUPTS` and
-`GraphFeature.BACKGROUND`. A background run that reaches an interrupt completes
-with the same `lgos_interrupt` function calls as a foreground turn and keeps its
-checkpoint. The client answers with `previous_response_id` and
-`function_call_output` items, in the foreground or with `background=true`; see
-[interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt).
-A background answer is a new queued Response that continues the paused run's
-checkpoint in the worker, and it may pause again:
+`GraphFeature.BACKGROUND`. Its checkpointer and run coordinator must then be
+shared by the API and worker processes, for example LangGraph's
+`AsyncPostgresSaver` and LGOS's `PostgresRunCoordinator`. A background run that
+reaches an interrupt completes with the same `lgos_interrupt` function calls as
+a foreground turn. Answer it with `previous_response_id` and
+`function_call_output` items, in either mode; see
+[interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
 
 ```python
 answer = await client.responses.create(
@@ -162,81 +139,42 @@ answer = await client.responses.create(
 )
 ```
 
-LGOS validates an answer when it is created, like a foreground answer, so a
-stale answer fails at once with `409`. An unanswered pause keeps its checkpoint
-like any interrupt; the answer's run deletes it when that run ends. A background
-run that reaches an interrupt in a graph without `GraphFeature.INTERRUPTS`
-fails.
-
-Hatchet retries a failed task. On each attempt, LGOS inspects the checkpoint,
-applies initial input only when no checkpoint exists, and resumes unfinished
-work otherwise. A completed node normally is not rerun, but unfinished node
-side effects still need application-level idempotency.
+A background answer is validated when its run holds the checkpoint lease. When
+two answers race, or an answer is stale, that answer's Response fails with the
+conflict message and the run continues from the answer that won.
 
 ## Try It In One Process
 
-For local trials, pair LangGraph's `InMemorySaver` with
-`InMemoryRunCoordinator`, then run the backend in the application lifespan:
+Run jobs as tasks of the application process:
 
 ```python
 from fastapi import FastAPI
 from langgraph_openai_serve import InMemoryBackgroundBackend, LanggraphOpenaiServe
 
-background = InMemoryBackgroundBackend(graphs=graphs)
+background = InMemoryBackgroundBackend(graphs)
 app = FastAPI(lifespan=background.lifespan)
 server = LanggraphOpenaiServe(app=app, graphs=graphs, background=background)
 server.bind_openai_api()
 ```
 
 !!! warning
-    This backend keeps all state and tasks in one process. It has no durable
-    queue, retries, or timeouts, and restarts lose every Response. A maintenance
-    loop in its lifespan deletes checkpoints and expired Responses every
-    `maintenance_interval` (one minute by default). Do not deploy it.
+    This backend keeps every Response in memory until the process exits, and a
+    restart loses them. Do not deploy it.
 
-## Configure PostgreSQL And Hatchet
+## Deploy With Hatchet
 
-Create the Response-store schema during deployment setup:
+The API process submits, reads, and cancels Hatchet runs:
 
 ```python
-from langgraph_openai_serve.integrations.background.postgres import (
-    PostgresResponseStore,
-)
-
-response_store = PostgresResponseStore(pool)
-await response_store.setup()
-```
-
-`setup()` is safe to repeat or call concurrently. Run it before starting API
-or background-worker processes rather than from every worker.
-
-Register the same Hatchet workflow definitions in the API and worker
-processes. The API process only triggers and cancels them:
-
-```python
-from datetime import timedelta
-
-from langgraph_openai_serve import BackgroundSettings, LanggraphOpenaiServe
-from langgraph_openai_serve.integrations.background.hatchet import (
-    HatchetAdapterSettings,
+from hatchet_sdk import Hatchet
+from langgraph_openai_serve import LanggraphOpenaiServe
+from langgraph_openai_serve.integrations.hatchet import (
     HatchetBackgroundBackend,
-    create_hatchet_workflows,
+    create_hatchet_task,
 )
 
-response_settings = BackgroundSettings(stored_result_retention=timedelta(days=7))
-hatchet_settings = HatchetAdapterSettings(
-    retries=3,
-    schedule_timeout=timedelta(minutes=30),
-    execution_timeout=timedelta(minutes=20),
-)
-workflows = create_hatchet_workflows(hatchet, settings=hatchet_settings)
-backend = HatchetBackgroundBackend(
-    workflow=workflows.response,
-    runs=hatchet.runs,
-    store=response_store,
-    settings=response_settings,
-)
-
+hatchet = Hatchet()
+backend = HatchetBackgroundBackend(create_hatchet_task(hatchet), hatchet.runs)
 server = LanggraphOpenaiServe(
     app=app,
     graphs=graphs,
@@ -246,153 +184,76 @@ server = LanggraphOpenaiServe(
 server.bind_openai_api()
 ```
 
-The worker process runs them. Hatchet tasks use the `BackgroundWorker` that
-the native worker
-[lifespan](https://docs.hatchet.run/reference/python/lifespans) yields, so
-database pools open inside that lifespan:
+The worker process runs the task. Its Hatchet
+[lifespan](https://docs.hatchet.run/reference/python/lifespans) yields the
+`GraphRegistry` of background models, so database pools open inside it:
 
 ```python
-from langgraph_openai_serve import BackgroundWorker
-
-
 async def lifespan():
     async with open_resources() as resources:
-        yield BackgroundWorker(
-            graphs=resources.graphs,
-            store=resources.response_store,
-            settings=response_settings,
-        )
+        yield resources.background_graphs
 
 
-native_worker = hatchet.worker(
+hatchet = Hatchet()
+worker = hatchet.worker(
     name="background-agent-worker",
     slots=8,
-    workflows=list(workflows.registrations),
+    workflows=[create_hatchet_task(hatchet)],
     lifespan=lifespan,
 )
-native_worker.start()
+worker.start()
 ```
 
-The response workflow uses Hatchet-native retries, backoff, timeouts, and an
-`on_failure_task` that only publishes checkpointed output or a failure; it never
-advances an unfinished graph. A maintenance cron deletes terminal checkpoints
-and expired Responses. LGOS triggers the workflow with the Response ID as input
-and as `lgos_response_id` run metadata, which cancellation and replay use to
-find the run. `lgos_checkpoint_thread_id` metadata is the workflow's
-concurrency key, so Hatchet queues an interrupt answer behind any run still
-active on the same checkpoint.
-
-!!! note "Failed submissions are resubmitted"
-    LGOS has no transactional outbox. If the trigger fails, or the API process
-    dies after persisting a Response but before triggering Hatchet, the Response
-    stays `queued`. The maintenance cron resubmits Responses queued longer than
-    `BackgroundSettings.resubmit_after` (one minute). The workflow's Hatchet
-    idempotency key is the Response ID, so resubmitting a run Hatchet already
-    has is a no-op for `HatchetAdapterSettings.max_queue_time`, the longest time
-    Hatchet can keep a submitted run queued.
-
-Supply `HATCHET_CLIENT_TOKEN` and the SDK's standard endpoint/TLS settings to
-both processes.
-
-## Ownership And Retention
-
-The boundary is deliberately small:
-
-| Owner | Responsibilities |
-| --- | --- |
-| Hatchet | queue, concurrency, attempts, retry/backoff, schedule and execution timeouts, cancellation, failure task, maintenance cron |
-| LGOS Response store | authorization, public status/result, retention, pending checkpoint cleanup |
-| LangGraph checkpointer | recoverable graph progress and final state |
-| LGOS worker | request decoding, checkpoint-aware graph invocation, OpenAI Response rendering |
-
-`BackgroundSettings` contains only LGOS-owned limits:
-
-| Field | Default |
-| --- | --- |
-| `result_retention` | 10 minutes for `store=false`, like OpenAI |
-| `stored_result_retention` | 30 days for `store=true` |
-| `resubmit_after` | 1 minute queued before maintenance resubmits a run |
-| `maintenance_batch_size` | 100 rows per maintenance run |
-
-## Operate Failure Recovery
-
-Alert on failed `*-finalize-on-failure` tasks and on Responses that remain
-`queued` or `in_progress` beyond the configured schedule, execution, and retry
-budgets. Once the worker, PostgreSQL, or checkpointer is healthy, replay the
-failed workflow with Hatchet's dashboard or its native SDK:
+Supply `HATCHET_CLIENT_TOKEN` and the SDK's standard endpoint and TLS settings
+to both processes. Hatchet stores each run's request and Response, so its
+[data retention](https://docs.hatchet.run/self-hosting/data-retention) decides
+how long a Response stays retrievable. A run that waits in the queue longer
+than `schedule_timeout` (30 minutes) is cancelled, and one that runs longer
+than `execution_timeout` (one hour) fails:
 
 ```python
-from hatchet_sdk.features.runs import BulkCancelReplayOpts, RunFilter
+from datetime import timedelta
 
-await hatchet.runs.aio_bulk_replay(
-    BulkCancelReplayOpts(
-        filters=RunFilter(
-            since=created_at,
-            additional_metadata={"lgos_response_id": response_id},
-        )
-    )
-)
+task = create_hatchet_task(hatchet, execution_timeout=timedelta(hours=2))
 ```
 
-The replay re-enters the same checkpoint-aware workflow with the same Response
-ID. Keep the failed Hatchet run and its active Response row until replay
-publishes a terminal result.
-
-Use the OpenAI cancellation endpoint for application cancellations. Directly
-cancelling a run in the Hatchet dashboard bypasses the atomic public Response
-transition and is reserved for operator intervention followed by recovery.
+Idempotent creation uses
+[Hatchet idempotency keys](https://docs.hatchet.run/v1/idempotency); run a
+Hatchet engine release that supports them.
 
 ## Bring Another Engine
 
-`BackgroundBackend` is the escape hatch for applications that own another
-engine. Hatchet remains the only durable built-in adapter. A backend only starts
-and stops work; LGOS owns every Response state change:
+`BackgroundBackend` is the contract behind the polling API:
 
 ```python
-class BackgroundBackend:
-    store: ResponseStore
-    settings: BackgroundSettings
-
-    async def submit(self, run: StoredRun) -> None: ...
-    async def stop(self, run: StoredRun) -> None: ...
+class BackgroundBackend(Protocol):
+    async def submit(self, job: BackgroundJob) -> BackgroundRun: ...
+    async def get(self, run_id: str) -> BackgroundRun | None: ...
+    async def cancel(self, run_id: str) -> None: ...
 ```
 
-LGOS persists the run, then calls `submit`; an idempotent replay is never
-submitted again. If `submit` raises, the run stays `queued`, and
-`worker.maintain(resubmit=backend.submit)` submits it again, so `submit` must
-ignore a run the engine already has. On cancel, LGOS commits the cancelled Response first and calls `stop`
-only when that cancellation won; a failed `stop` is logged, not returned.
+An engine must:
 
-Pass the backend to `LanggraphOpenaiServe(background=...)`. To reuse LGOS
-execution, compose `BackgroundWorker` with any implementation of
-`ResponseStore`. `PostgresResponseStore` is the supplied durable adapter;
-`InMemoryResponseStore` is for local development:
-
-| Engine event | LGOS operation |
-| --- | --- |
-| Submit | Enqueue the Response ID given to `backend.submit()` |
-| Deliver | `worker.execute()`; retry any exception it raises |
-| Retries exhausted | `worker.finalize()`; retry any exception it raises |
-| Recurring maintenance | `worker.maintain(resubmit=...)` |
-| Cancel | Cancel natively in `backend.stop()` |
-
-The engine must supply durable queueing, retries/backoff, schedule and execution
-timeouts, cancellation, a retries-exhausted hook, recurring tasks, and replay or
-redrive. Test completion-versus-cancellation, exhausted retries, and
-maintenance before deployment.
+- give each run a UUID; the public Response ID embeds it;
+- start at most one run per `job.idempotency_key` and return that run again for
+  a repeated key;
+- execute a run with `execute_background_job(job, run_id, graphs)` and keep the
+  returned Response JSON as the run's result;
+- report `queued`, `in_progress`, `completed`, `failed`, or `cancelled`.
 
 ## Gateway Compatibility
 
-Retrieve and cancel must reach an LGOS instance that shares the Response store;
+Retrieve and cancel must reach an LGOS instance that uses the same engine;
 every such instance answers for any Response ID, so gateway routing mistakes do
 not lose Responses. Treat Response IDs as opaque:
 
 - LiteLLM encodes the creating deployment in the Response ID it returns and
   routes retrieve and cancel back to it. A replayed create may get a different
   proxy alias for the same LGOS Response.
-- Bifrost sends retrieve and cancel to its default provider unless the client
-  passes `?provider=`. Provider-prefixed models make create placement
-  predictable and avoid automatic fallbacks to other instances.
+- Bifrost sends retrieve and cancel to its default provider unless the
+  request carries an `x-model-provider` header. Provider-prefixed models make
+  create placement predictable and avoid automatic fallbacks to other
+  instances.
 
 See the [OpenAI-compatible proxy guide](openai-proxies.md) and the
 [background report demo](../demo/graphs/background-report-agent.md).

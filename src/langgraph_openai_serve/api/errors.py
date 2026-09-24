@@ -9,11 +9,11 @@ from openai.types.shared import ErrorObject
 
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.client_settings import ClientSettingsValidationError
-from langgraph_openai_serve.graph.coordination import RunBusyError
 from langgraph_openai_serve.graph.graph_registry import (
     GraphConfigurationError,
     GraphNotFoundError,
 )
+from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
 from langgraph_openai_serve.graph.interrupt.errors import (
     InvalidInterruptPayloadError,
     InvalidResumeRequestError,

@@ -1,10 +1,10 @@
 """Exercise the installed wheel without optional or test dependencies."""
 
 import asyncio
+import importlib.util
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
-from importlib import import_module, util
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,13 +12,13 @@ from tempfile import TemporaryDirectory
 def assert_optional_integrations_are_not_installed() -> None:
     for module in (
         "langchain",
+        "hatchet_sdk",
         "langfuse",
         "langgraph.checkpoint.postgres",
-        "hatchet_sdk",
         "psycopg",
         "psycopg_pool",
     ):
-        assert util.find_spec(module) is None, (
+        assert importlib.util.find_spec(module) is None, (
             f"Optional integration dependency unexpectedly installed: {module}"
         )
 
@@ -44,9 +44,6 @@ async def main() -> None:
     # Import only after proving no optional integration was installed, and from
     # a directory whose dotenv values must not configure the library.
     with hostile_working_directory():
-        import_module("langgraph_openai_serve.integrations.background")
-        import_module("langgraph_openai_serve.integrations.coordination")
-
         from httpx2 import (
             ASGITransport,
             AsyncClient,

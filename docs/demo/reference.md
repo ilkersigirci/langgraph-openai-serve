@@ -164,15 +164,17 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
-| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, background Response storage, and interrupt/background run coordination |
+| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 | `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
-| `DEMO_API_HATCHET_WORKER_SLOTS` | Explicit worker concurrency bound. |
+| `DEMO_API_HATCHET_WORKER_SLOTS` | Worker concurrency, 1 to 4: each interrupt graph run holds one of the worker's four PostgreSQL run leases. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
 
-The background demo uses the package's source-controlled retention, workflow,
-retry, and timeout defaults. Self-hosted deployments should inject
+The background demo uses the `create_hatchet_task` defaults: 30-minute
+schedule and one-hour execution timeouts with no retries. Hatchet's data
+retention decides how long Responses stay retrievable. Self-hosted deployments
+should inject
 any additional native `HATCHET_CLIENT_*` connection settings into both the API
 and worker processes.
 

@@ -6,7 +6,7 @@ from typing import NoReturn
 from fastapi import Request, status
 from openai.types.shared import ErrorObject
 
-from langgraph_openai_serve.background.contracts import BackgroundBackend
+from langgraph_openai_serve.background import BackgroundBackend
 from langgraph_openai_serve.core.errors import OpenAIHTTPException
 
 
@@ -28,7 +28,7 @@ def validate_background_retrieval(
     stream: bool | None = None,
     starting_after: str | None = None,
 ) -> None:
-    """Reject streaming and cursors before a store read."""
+    """Reject streaming and cursors before reading the background engine."""
     if stream:
         _reject_retrieval("stream")
     if starting_after is not None:

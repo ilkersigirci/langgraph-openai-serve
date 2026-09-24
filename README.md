@@ -18,38 +18,20 @@ The equivalent `pip` command is:
 pip install langgraph-openai-serve
 ```
 
-For deployments that use PostgreSQL for LangGraph checkpoints, Store data,
-background Response storage, or cross-worker run coordination, install the
-optional integration:
+For deployments that use PostgreSQL for LangGraph checkpoints, Store data, or
+cross-worker interrupt coordination, install the optional integration:
 
 ```bash
 uv add "langgraph-openai-serve[postgres]"
 ```
 
-Hatchet is the supplied durable backend for polling-only background Responses.
-Its extra is independent of response persistence; install both extras to pair
-it with the supplied PostgreSQL Response store:
-
-```bash
-uv add "langgraph-openai-serve[postgres,hatchet]"
-```
-
-With an application-provided `ResponseStore`, install only
-`langgraph-openai-serve[hatchet]`.
-
-For local single-process trials, `InMemoryBackgroundBackend` needs no optional
-dependency. It is not durable and is not intended for deployment.
-
-The core package does not import Hatchet. Applications using another execution
-engine implement the two-method `BackgroundBackend` protocol, `submit` and
-`stop`; LGOS keeps owning every Response state change. See
+For polling-only background Responses executed by Hatchet, install its
+integration. `InMemoryBackgroundBackend` needs no extra for local trials; see
 [Run Responses In The Background](docs/how-to-guides/background-responses.md).
 
-Applications choose their LangGraph checkpointer, response store, and run
-coordinator independently. LGOS supplies optional PostgreSQL adapters and
-public contracts for custom implementations. Applications own connections,
-schema setup, and shutdown. See
-[Configure Persistence And Coordination](docs/how-to-guides/infrastructure.md).
+```bash
+uv add "langgraph-openai-serve[hatchet]"
+```
 
 For built-in Langfuse tracing, install the tracing integration:
 
@@ -177,7 +159,6 @@ for a feature-by-feature comparison.
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
 - Background Responses: [docs/how-to-guides/background-responses.md](docs/how-to-guides/background-responses.md)
-- Persistence and coordination: [docs/how-to-guides/infrastructure.md](docs/how-to-guides/infrastructure.md)
 - OpenAI-compatible proxies: [docs/how-to-guides/openai-proxies.md](docs/how-to-guides/openai-proxies.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

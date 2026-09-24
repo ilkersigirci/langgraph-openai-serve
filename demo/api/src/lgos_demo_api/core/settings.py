@@ -9,7 +9,9 @@ HttpUrlStr = Annotated[
     PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda value: str(value).rstrip("/")),
 ]
-WorkerSlots = Annotated[int, Field(ge=1, le=128)]
+# An interrupt graph run holds one of the process's four PostgreSQL run leases
+# (see persistence/postgres.py), so more slots would fail those runs as busy.
+WorkerSlots = Annotated[int, Field(ge=1, le=4)]
 
 
 class Settings(BaseSettings):

@@ -24,9 +24,6 @@ each API process.
     only Bifrost model-detail lookup uses a lossless pass-through. See
     [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
 
-    Both bundled gateways support background create, polling, and cancellation.
-    All routed API replicas and the worker share the same PostgreSQL state.
-
 ## Request Path
 
 ```mermaid
@@ -74,10 +71,10 @@ flowchart LR
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
-  api_a -->|"trigger response_id"| hatchet
-  api_b -->|"trigger response_id"| hatchet
-  hatchet -->|"run reference"| worker
-  worker <-->|"checkpoints + Response row"| database
+  api_a <-->|"trigger, read, cancel run"| hatchet
+  api_b <-->|"trigger, read, cancel run"| hatchet
+  hatchet <-->|"job + Response"| worker
+  worker <-->|"checkpoints, Store, locks"| database
   worker -->|"when a graph calls a model"| model
   dbhub -->|"lgos_mcp read-only role"| database
   api_a <-->|"when a graph calls a model"| model
@@ -104,9 +101,8 @@ make that direct connection.
 
 Background-capable models use the selected gateway's normal Responses
 lifecycle. Chainlit and Open WebUI discover the capability, create a non-streaming
-background Response, and poll or cancel through the OpenAI SDK. All routed API
-replicas and the worker share PostgreSQL. Hatchet transports stable run
-references and retries; it does not own the public Response.
+background Response, and poll or cancel through the OpenAI SDK. Hatchet runs
+each job and stores its status and Response, which every API replica reads.
 
 At startup, Compose waits for PostgreSQL and runs the one-shot API schema setup
 and Chainlit schema migrations. The idempotent MCP setup then creates the
@@ -118,8 +114,8 @@ multiple stateless replicas over the same repository.
 
 ## State Ownership
 
-The UIs own their conversations. The API stores paused interrupt execution,
-bounded background Response state, and explicit graph data; it does not copy
+The UIs own their conversations. The API stores paused interrupt execution
+and explicit graph data, and Hatchet stores background runs; neither copies
 either UI transcript into LGOS.
 
 ```mermaid
@@ -134,7 +130,6 @@ flowchart LR
     direction TB
     interrupts["LGOS interrupt handling"]
     plot["persistent-plot-agent graph"]
-    background["background graph worker"]
   end
 
   subgraph postgres["One PostgreSQL database"]
@@ -143,7 +138,6 @@ flowchart LR
     checkpoints["LangGraph checkpoints"]
     store["LangGraph Store documents"]
     locks["PostgreSQL advisory locks"]
-    response_rows["Background Response rows"]
   end
 
   files_service["Central Files service"]
@@ -157,24 +151,20 @@ flowchart LR
   interrupts -->|"paused execution"| checkpoints
   interrupts -->|"same-run coordination"| locks
   plot -->|"thread-scoped chart document"| store
-  background -->|"public lifecycle + Hatchet ID/intent"| response_rows
-  background -->|"recovery progress"| checkpoints
-  background -->|"worker coordination"| locks
 ```
 
 Both API containers run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
-checkpoints, thread-scoped data, background Response rows, and
-interrupt/background run coordination. Chainlit
+checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
 keeps its state and native raw-upload copy in its bind-mounted data directory;
 the central Files service owns the separate inference copy. Detailed ownership
 and recovery behavior live in
 [Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
-Human Review](graphs/interruptible-approval.md). Background Response rows,
-recovery checkpoints, and Hatchet workflow ownership are described in
-[Background Report Agent](graphs/background-report-agent.md); `advanced-graph`
-runs in the same worker when a client requests background mode. When
+Human Review](graphs/interruptible-approval.md). Background execution is
+described in [Background Report Agent](graphs/background-report-agent.md);
+`advanced-graph` runs in the same worker when a client requests background
+mode. When
 `LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.

@@ -244,7 +244,7 @@ not claim every field in the upstream OpenAI API.
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
-| `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background `store=true` is supported and selects the longer configured bounded result retention. |
+| `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |
 | `previous_response_id` | Supported for interruptible graphs to answer pending interrupts, in the foreground or with `background=true`. Rejected for non-interruptible graphs. |
 | `background` | Omitted, null, and false select foreground execution. True is supported only for a model declaring `GraphFeature.BACKGROUND` and a server configured with a `BackgroundBackend`. |
@@ -261,7 +261,7 @@ does not persist it. Foreground IDs are not retrievable, and there are no
 delete, compact, or input-item routes. Clients therefore keep an input ledger
 and resend the items needed by the next turn instead of using a server-side
 Conversation. The retrieve and cancel routes described below address only
-persisted background Response IDs.
+background Response IDs.
 
 When continuing a response, append every item from `response.output` unchanged.
 Execute returned client function calls, then append their `function_call_output`
@@ -294,44 +294,40 @@ coordinator prevents overlapping runs. There is no separate interrupt-response
 store or Chat Completions resume codec.
 
 LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
-recoverable workflow execution state; a graph Store keeps explicit application
-data. Neither makes a Response ID retrievable or lets LGOS reconstruct a
-conversation.
+only paused workflow execution; a graph Store keeps explicit application data.
+Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 
 ### Polling-Only Background Lifecycle
 
-For an opted-in graph, `background=true` stores a queued Response, then submits
-it to the configured `BackgroundBackend`; if submission fails, the Response
-stays `queued` and maintenance submits it again. The caller keeps the opaque
-Response ID and uses:
+For an opted-in graph, `background=true` submits the validated request to the
+configured `BackgroundBackend` and returns the queued Response. The caller
+keeps the opaque Response ID and uses:
 
 - `GET /v1/responses/{response_id}` for a current JSON snapshot; and
 - `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.
 
 The public states are `queued`, `in_progress`, `completed`, `incomplete`,
-`failed`, and `cancelled`. Completion and cancellation compete through one
-atomic terminal transition, so the first terminal result remains authoritative.
-Retrieval has no streaming or cursor mode, and LGOS does not replay background
-events. Unknown, unauthorized, expired, and wrong-scope IDs share the same
+`failed`, and `cancelled`. LGOS configures no retries, so a run that raises
+fails its Response; create a new Response to try again. Retrieval has no
+streaming or cursor mode, and LGOS does not replay
+background events. Unknown, unauthorized, and wrong-scope IDs share the same
 non-revealing not-found behavior.
 
-Background create accepts an optional `Idempotency-Key` header. OpenAI does
-not document one for Responses, but LGOS runs behind retrying SDKs and
-gateways, where a resent create would otherwise start a second run. A replay
-returns the original Response, and reusing a key with different content returns
-`422`, following the
-[IETF Idempotency-Key draft](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header).
+Background create also accepts an
+[IETF `Idempotency-Key`](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header)
+header, which OpenAI does not define, so retrying SDKs and gateways cannot
+start a second run; see
+[idempotent creation](../how-to-guides/background-responses.md#idempotent-creation).
 `metadata.lgos_run_id` remains interrupt-operation identity and is rejected on
 background requests.
 
-The durable Response row is not a Conversation. `store=true` changes only the
-bounded terminal-result retention. `previous_response_id` answers a run paused
-at an interrupt in either mode; with `background=true`, the answer is a new
-queued Response on the paused run's checkpoint. Recovery uses a persistent LangGraph checkpointer internally;
-clients still receive only standard Responses objects.
+The engine's run record is not a Conversation. `previous_response_id` answers
+a run paused at an interrupt in either mode. A background answer is a new
+queued Response that the worker validates once it holds the run's checkpoint
+lease, so a stale or racing answer fails its own Response.
 
 See [Run Responses In The Background](../how-to-guides/background-responses.md)
-for graph constraints, backend configuration, retention, and recovery.
+for graph constraints and backend configuration.
 
 ### Responses Output
 
@@ -718,7 +714,7 @@ Clients can resume using standard OpenAI `previous_response_id`:
   "input": [
     {
       "type": "function_call_output",
-      "call_id": "call_lg_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
+      "call_id": "call_lg_5f2b3c9d8e7a41f0b6c2d4e8a9f01b3c",
       "output": "Verify the delivery address first."
     }
   ],
@@ -799,8 +795,9 @@ for the underlying checkpoint model.
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
 - Responses implements the explicit subset above. It has no general foreground
   response storage, Conversations, or general previous-response chaining.
-  Background storage is limited to opted-in polling-only runs with bounded
-  retention; it has no event replay, delete, input-item, or compact routes.
+  Background Responses exist only for opted-in polling-only runs, and the
+  background engine keeps them; there are no event replay, delete, input-item,
+  or compact routes.
   Arbitrary client-defined custom tools and formats, built-in tools beyond the
   documented `web_search` subset, structured output, and unconsumed generation
   controls are rejected.

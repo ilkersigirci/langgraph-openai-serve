@@ -247,10 +247,10 @@ PostgreSQL checkpointer and Store as the API. In background mode:
   and status commentary are not delivered;
 - a request that reaches the save-note approval completes with the same
   `lgos_interrupt` call as a foreground turn; both UIs show the approval, and
-  the answer also runs in the worker, which saves the note.
+  the answer runs in the worker while **Run in background** stays enabled.
 
 See [Background Report Agent](background-report-agent.md) for the worker
-lifecycle and a model-free way to watch recovery from a checkpoint.
+lifecycle and a model-free way to watch it.
 
 ## Output And Failure Behavior
 

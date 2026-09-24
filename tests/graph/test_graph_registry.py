@@ -3,12 +3,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphFeature,
-    GraphRegistry,
-)
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
@@ -51,29 +46,6 @@ def test_graph_config_rejects_unknown_fields(message_graph) -> None:
                 "unknown": True,
             }
         )
-
-
-def test_background_requires_coordinator(message_graph) -> None:
-    with pytest.raises(ValidationError, match="run_coordinator"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            features={GraphFeature.BACKGROUND},
-        )
-
-
-async def test_background_graph_requires_persistent_async_checkpointer(
-    message_graph,
-) -> None:
-    config = GraphConfig(
-        graph=message_graph,
-        description="DUMMY",
-        features={GraphFeature.BACKGROUND},
-        run_coordinator=InMemoryRunCoordinator(),
-    )
-
-    with pytest.raises(GraphConfigurationError, match="checkpointer"):
-        await config.resolve_graph()
 
 
 def test_graph_registry_requires_at_least_one_graph() -> None:

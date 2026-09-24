@@ -24,7 +24,6 @@ from langgraph_openai_serve.protocol import (
     CONVERSATION_METADATA_KEY,
     INTERRUPT_TOOL_NAME,
     MODEL_EXTENSION_KEY,
-    RUN_METADATA_KEY,
     SETTINGS_METADATA_KEY,
 )
 
@@ -90,7 +89,6 @@ def test_demo_clients_mirror_lgos_protocol_names(protocol: dict[str, object]) ->
     assert protocol["LGOS_EXTENSION_KEY"] == MODEL_EXTENSION_KEY
     assert protocol["CONVERSATION_METADATA_KEY"] == CONVERSATION_METADATA_KEY
     assert protocol["SETTINGS_METADATA_KEY"] == SETTINGS_METADATA_KEY
-    assert protocol["RUN_METADATA_KEY"] == RUN_METADATA_KEY
     assert protocol["INTERRUPT_TOOL_NAME"] == INTERRUPT_TOOL_NAME
 
 

@@ -195,10 +195,10 @@ conversation state; LangGraph checkpoints remain a separate temporary store for
 paused interrupts.
 
 An opted-in `background=True` request has a different, polling-only lifecycle:
-LGOS retains that single Response for a bounded period and supports retrieve and
-cancel by ID. It still does not retain a conversation or support
-`previous_response_id` chaining. See [Run Responses In The
-Background](../how-to-guides/background-responses.md).
+the background engine keeps that single Response, and LGOS supports retrieve
+and cancel by ID. It still does not retain a conversation or support
+`previous_response_id` chaining beyond interrupt answers. See [Run Responses In
+The Background](../how-to-guides/background-responses.md).
 
 ## Continue Function Calls
 

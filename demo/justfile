@@ -47,7 +47,7 @@ marimo editable='false' host='0.0.0.0' port='2718' *args:
 [arg('DEMO_API_TEST_POSTGRES_URI', long='uri')]
 [group('integration')]
 test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false' *args:
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_response_store.py tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
 
 # Check lint and formatting for all four projects.
 [group('local')]
@@ -89,10 +89,10 @@ type-check editable='false':
 [group('checks')]
 [timestamp]
 compose-config:
-    {{ compose_command }} --env-file .env.example --profile model-sync config --quiet
-    {{ compose_dev_command }} --env-file .env.example --profile model-sync config --quiet
-    {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync config --quiet
-    {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_command }} --env-file .env.example --profile model-sync --profile background config --quiet
+    {{ compose_dev_command }} --env-file .env.example --profile model-sync --profile background config --quiet
+    {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
+    {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
 
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]

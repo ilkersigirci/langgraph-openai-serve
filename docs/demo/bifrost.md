@@ -127,20 +127,20 @@ Enable `responses`, `responses_stream`, `responses_retrieve`, and
 restart the service after changing it. The graph providers do not enable Chat
 Completions or Responses-to-Chat fallback.
 
-## Background Responses
-
-The standard `openai` provider keeps ID-only retrieval and cancellation pinned
-to API A, while UI requests may retain their `lgos-a` or `lgos-b` provider
-header. All targets share the PostgreSQL Response store. See
-[Background Report Agent](graphs/background-report-agent.md) for startup and
-[Run Responses In The Background](../how-to-guides/background-responses.md) for
-the lifecycle contract.
-
 The client header allowlist forwards `Idempotency-Key`, `traceparent`,
 `tracestate`, and `user-agent` through managed Responses requests. The first
 supports safe background-create retries; the others preserve distributed trace
 context and the originating UI's identity at LGOS. See the [OpenTelemetry
 guide](opentelemetry.md#signal-ownership).
+
+## Background Responses
+
+The standard `openai` provider keeps ID-only retrieval and cancellation pinned
+to API A, while UI requests may retain their `lgos-a` or `lgos-b` provider
+header. All targets read background Responses from the same Hatchet service. See
+[Background Report Agent](graphs/background-report-agent.md) for startup and
+[Run Responses In The Background](../how-to-guides/background-responses.md) for
+the lifecycle contract.
 
 The gateway uses `DUMMY` only for its private upstream connections because LGOS
 authentication is not enabled. This is separate from the required client-facing

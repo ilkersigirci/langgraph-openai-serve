@@ -1,50 +1,38 @@
 # Demo Design Choices
 
-## Chainlit human review is event-driven
+Why the demo works the way it does. Each section owns its component's
+decisions. Add a row for each significant decision; when one changes, update
+its row. Package decisions live in
+[Design Choices](../explanation/design-choices.md).
 
-### Decision
+## Gateways
 
-A pending review is a persisted `cl.Message` with a `cl.CustomElement`.
-`on_message` publishes it and returns. The element submits the complete batch
-through `callAction`; the callback validates it and performs one Responses
-continuation. A chained interrupt updates the same form, while a terminal
-response completes the ledger and removes it.
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| Both UIs reach LGOS only through the gateway selected by `OPENAI_GATEWAY_TYPE`; neither connects to an API container or imports LGOS. | The demo exercises a real OpenAI-compatible edge, and UI inference cannot bypass the gateway's data plane. | Gateways normalize some metadata: error `type`, `param`, and `code`, and Bifrost's model detail. | A gateway preserves LGOS metadata and errors unchanged. |
 
-Message metadata is authoritative for the model, Response, function calls,
-revision, and element ID. The browser sends only opaque references and answers.
+### LiteLLM
 
-### Why not the alternatives?
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| Run the `homeserver-litellm` image and sync LGOS catalogs into native `model_info.lgos`. | The image preserves native Responses streaming and background lifecycles; the sync gives both UIs LGOS metadata through `/model/info`. | A custom image to maintain, and a sync to rerun after graph changes. | Upstream LiteLLM preserves streaming and background Responses. |
 
-- `Ask*Message` keeps the handler waiting on its WebSocket. Navigation then
-  needs task, reconnect, and cancellation bookkeeping. Our former `on_chat_end`
-  cancellation could also stop an unrelated stream and persist partial output.
-- Plain `cl.Action` controls use native callbacks but are not persisted thread
-  elements in Chainlit 2.12, so history hydration cannot restore them.
+### Bifrost
 
-A custom element provides the durable form, while `callAction` keeps the native
-Chainlit endpoint and callback registry. No custom API route is needed.
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| One custom provider per API, a dedicated `lgos-files` provider, and a standard `openai` provider pinned to API A. | Separate identities show independent APIs behind one endpoint; normalized Files need their own provider; ID-only background retrieve and cancel need a standard provider. | More provider configuration, and model detail still needs pass-through. | Bifrost routes ID-only Responses calls to custom providers. |
 
-### Pros
+## Chainlit
 
-- Navigation and reload restore reviews through normal history hydration.
-- No waiter, resume task, timer, or HITL session cache is needed.
-- Batch validation, persisted revisions, and a per-step lock reject incomplete,
-  stale, or duplicate submissions.
-- Ordinary responses can finish and persist after a thread switch.
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| Human review is a persisted message whose custom form element submits through `callAction`. | Reload and navigation restore reviews from history, with no waiter, resume task, or session cache. `Ask*Message` blocks on its WebSocket, and Chainlit 2.12 does not persist plain `cl.Action` controls. | Custom JSX; a process-local submission lock; continuation and persistence are not transactional; a running response is not rebound to a new WebSocket, so returning early may need a refresh. | Chainlit persists actions or resumable asks, or the demo runs several Chainlit workers. |
+| `HitlWorkflow` normalizes `createdAt` before updating a restored ledger. | Chainlit 2.12's PostgreSQL layer rejects the timestamp format it hydrates; without this, a ghost `pending` ledger blocks the next turn. | A workaround coupled to Chainlit internals. | After every Chainlit upgrade. |
 
-### Cons
+## Open WebUI
 
-- The form needs custom JSX; drafts and decisions are not a separate audit log.
-- The lock is process-local; cross-worker submission needs durable coordination.
-- Continuation and persistence are not transactional. Completing the ledger
-  first favors replay safety over guaranteed final rendering.
-- Running responses are not rebound to another WebSocket. Returning early may
-  require a refresh to hydrate the completed message.
-
-### Chainlit 2.12 timestamp workaround
-
-The official PostgreSQL layer hydrates `createdAt` in a format rejected by its
-own update path. `HitlWorkflow` normalizes it before updating a restored ledger.
-Otherwise the UI can look complete while PostgreSQL keeps a ghost `pending`
-ledger that blocks the next turn. Recheck this workaround after upgrading
-Chainlit.
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| One manifold Pipe serves every graph, and sync generates a Workspace Model per LGOS model from native `meta.chat_variables_schema`. | Each model gets Open WebUI's native settings form; JSON booleans survive, and UI settings never become prompt content. | The form is a generated projection tied to Open WebUI v0.11.3: rerun the sync after an LGOS schema change. | Open WebUI fetches a model's settings schema itself, or the image pin changes. |
+| Open WebUI keeps its own raw upload copy; the central Files API owns the inference copy. | Open WebUI's native attachment UI requires its own file record. | Every upload is stored twice. | Open WebUI can attach an external file ID. |

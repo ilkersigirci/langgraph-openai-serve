@@ -46,7 +46,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
     Compare schema adapters, RAG, citations, stream-event filtering, file output,
-    subgraphs, HITL, and checkpointed background recovery.
+    subgraphs, HITL, and polling-only background execution.
 
     [:octicons-arrow-right-24: Example graphs](graphs/index.md)
 
@@ -100,14 +100,14 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
-| Background worker | Executes persisted background Responses outside the API process with bounded concurrency | Optional `background` Compose profile using the demo API image and Hatchet |
+| Background worker | Runs Hatchet background tasks outside the API process with a fixed slot count | Optional `background` Compose profile using the demo API image and Hatchet |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Host-run locked sync project plus the unchanged pinned official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
 | LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
 | DBHub | Six fixed read-only reports over curated live-data PostgreSQL views | Pinned official image and demo-owned TOML configuration |
-| PostgreSQL | Thread-scoped graph data, pending interrupts, background Responses and checkpoints, cross-worker coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
+| PostgreSQL | Thread-scoped graph data, pending interrupts, cross-worker interrupt coordination, and Chainlit persistence | Official image with a demo-owned bind directory |
 | S3-compatible storage | Files API objects and separate Chainlit element bodies | External endpoint with independently configured buckets |
 
 Only the graph API project imports `langgraph-openai-serve`. The Files API
@@ -133,8 +133,8 @@ Bifrost uses catalog-detail pass-through.
     Gateway](bifrost.md) for the precise boundaries.
 
     Both bundled gateways support polling-only background work through their
-    normal Responses paths. The APIs and worker share PostgreSQL for lifecycle
-    and checkpoint state. See the
+    normal Responses paths. Hatchet stores each run's status and Response. See
+    the
     [background guide](../how-to-guides/background-responses.md).
 
 ## Client Capabilities
@@ -156,16 +156,16 @@ Chainlit and Open WebUI adapters show that client behavior without importing LGO
 
 ## Persistence Boundary
 
-The UI owns chat history. LGOS stores resumable interrupt state, bounded
-background Response state, and explicit thread-scoped application data, not
-the transcript. PostgreSQL provides the checkpointer, LangGraph store,
-Response store, and cross-worker coordination, with no Redis service.
+The UI owns chat history. LGOS stores resumable interrupt state and explicit
+thread-scoped application data, not the transcript; Hatchet stores background
+runs. PostgreSQL provides the checkpointer, LangGraph store, and cross-worker
+interrupt coordination, with no Redis service.
 See [Persistent Plot Agent](graphs/persistent-plot-agent.md#ownership-boundaries)
 for Store and UI ownership,
 [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
 for the server lifecycle,
-[Background Report Agent](graphs/background-report-agent.md) for separately
-deployed worker recovery, and
+[Background Report Agent](graphs/background-report-agent.md) for the
+separately deployed worker, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative continuation and retention contract.
 

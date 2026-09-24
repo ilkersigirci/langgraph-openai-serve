@@ -21,8 +21,8 @@ from langgraph_openai_serve.graph.client_settings import (
     ClientSettings,
     validate_client_settings_model,
 )
-from langgraph_openai_serve.graph.coordination import RunCoordinator
 from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
 from langgraph_openai_serve.graph.request import GraphRequest
 
 GraphResolver = (
@@ -35,7 +35,7 @@ ContextFactory = Callable[
     Any | Awaitable[Any],
 ]
 OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
-_DURABLE_CHECKPOINTER_METHODS = (
+_INTERRUPT_CHECKPOINTER_METHODS = (
     "aget_tuple",
     "aput",
     "aput_writes",
@@ -97,20 +97,11 @@ class GraphConfig(BaseModel):
     def validate_interrupt_configuration(self) -> Self:
         """Validate feature relationships that do not depend on a resolved graph."""
         interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
-        background_enabled = self.supports(GraphFeature.BACKGROUND)
-        if self.run_coordinator is not None and not (
-            interrupt_enabled or background_enabled
-        ):
-            msg = (
-                "run_coordinator is only supported by interrupt-enabled or "
-                "background-enabled graphs."
-            )
+        if self.run_coordinator is not None and not interrupt_enabled:
+            msg = "run_coordinator is only supported by interrupt-enabled graphs."
             raise ValueError(msg)
-        if (interrupt_enabled or background_enabled) and self.run_coordinator is None:
-            msg = (
-                "Interrupt-enabled and background-enabled graphs must configure "
-                "a run_coordinator."
-            )
+        if interrupt_enabled and self.run_coordinator is None:
+            msg = "Interrupt-enabled graphs must configure a run_coordinator."
             raise ValueError(msg)
         return self
 
@@ -165,17 +156,7 @@ class GraphConfig(BaseModel):
     async def render_output(self, output: Any) -> AIMessage:
         """Convert native graph output into the durable assistant message."""
         if self.output_to_message is not None:
-            try:
-                message = await _maybe_await(self.output_to_message(output))
-            except GraphConfigurationError:
-                raise
-            except Exception as exc:
-                message = str(exc) or "output_to_message failed."
-                raise GraphConfigurationError(message) from exc
-            if not isinstance(message, AIMessage):
-                msg = "output_to_message must return an AIMessage."
-                raise GraphConfigurationError(msg)
-            return message
+            return await _maybe_await(self.output_to_message(output))
 
         messages = (
             output["messages"]
@@ -223,17 +204,14 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
         )
         raise GraphConfigurationError(msg)
 
-    if config.supports(GraphFeature.INTERRUPTS) or config.supports(
-        GraphFeature.BACKGROUND
-    ):
+    if config.supports(GraphFeature.INTERRUPTS):
         checkpointer = graph.checkpointer
         if checkpointer is None or any(
             not _overrides_checkpointer_method(checkpointer, method_name)
-            for method_name in _DURABLE_CHECKPOINTER_METHODS
+            for method_name in _INTERRUPT_CHECKPOINTER_METHODS
         ):
             msg = (
-                "Interrupt-enabled and background-enabled graphs must use a fully "
-                "asynchronous "
+                "Interrupt-enabled graphs must use a fully asynchronous "
                 "checkpointer with thread deletion."
             )
             raise GraphConfigurationError(msg)

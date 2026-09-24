@@ -31,4 +31,11 @@ the architecture, then read only the detail needed for your task.
 
     [:octicons-arrow-right-24: Read the contract](openai-compatibility.md)
 
+-   :material-scale-balance:{ .lg .middle } __Design choices__
+
+    Why LGOS works the way it does, with each choice's cost and when to
+    revisit it.
+
+    [:octicons-arrow-right-24: Review the trade-offs](design-choices.md)
+
 </div>

@@ -8,7 +8,7 @@ demo model catalogs.
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
 | [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `client_events`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
-| [`background-report-agent`](background-report-agent.md) | Deterministic background execution recovered through checkpoints in an independently deployed worker, with no model call | `background` | Hatchet, PostgreSQL checkpointer, Response store, and run coordinator |
+| [`background-report-agent`](background-report-agent.md) | Deterministic background execution in an independently deployed worker, with no model call | `background` | Hatchet |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
 | [`citation-events`](events-and-citations.md) | Structured OpenAI URL citations with portable Markdown content | None | None |
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
@@ -36,9 +36,8 @@ checkpoints for human review and Store receipts for vector-service uploads. None
 makes LGOS the owner of UI conversation history.
 
 Background Responses from `advanced-graph` and `background-report-agent` are
-different: each owns one bounded, polling-only Response lifecycle and its
-recovery checkpoint. It still does not persist a UI
-conversation or expose event replay.
+polling-only and stored by Hatchet. They still do not persist a UI conversation
+or expose event replay.
 
 ## Source Map
 

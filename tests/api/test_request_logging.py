@@ -17,7 +17,7 @@ from langgraph_openai_serve.core.logging import (
     get_log_context,
     get_logger,
 )
-from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
 from tests.graph.support.schemas import MessageState
 

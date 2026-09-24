@@ -420,7 +420,7 @@ interrupt updates the same form, while a terminal response marks the ledger
 complete and removes it. The client therefore depends only on the standard
 tool-call batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
-[design rationale](design-choices.md#chainlit-human-review-is-event-driven).
+[design rationale](design-choices.md#chainlit).
 
 The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
 note uploads after an explicit natural-language save request. The payload

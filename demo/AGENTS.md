@@ -24,6 +24,9 @@ behavior. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
 Compose files only pass environment variables through. Put defaults in
 `demo/.env.example`; it is the source of truth.
 
+Record each significant demo decision as a row in its component's section of
+[Demo design choices](../docs/demo/design-choices.md).
+
 ## Modular OpenWebUI Function
 
 - The source of truth for the Generic Function is

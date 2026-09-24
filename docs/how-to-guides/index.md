@@ -39,10 +39,9 @@ application.
 
     [:octicons-arrow-right-24: Configure files](file-inputs.md)
 
--   :material-progress-clock:{ .lg .middle } __Run durable background work__
+-   :material-progress-clock:{ .lg .middle } __Run background work__
 
-    Dispatch a graph to a separate worker, poll its standard Response resource,
-    and recover safely from process failure.
+    Run a graph in a separate worker and poll its standard Response resource.
 
     [:octicons-arrow-right-24: Configure background Responses](background-responses.md)
 
@@ -52,12 +51,5 @@ application.
     streaming cancellation through an OpenAI-compatible gateway.
 
     [:octicons-arrow-right-24: Configure a proxy](openai-proxies.md)
-
--   :material-database-outline:{ .lg .middle } __Choose persistence and coordination__
-
-    Compose application-owned checkpointers, response stores, run coordinators,
-    and background engines through public contracts.
-
-    [:octicons-arrow-right-24: Configure infrastructure](infrastructure.md)
 
 </div>

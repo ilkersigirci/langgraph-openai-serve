@@ -44,7 +44,7 @@ async def test_gateway_polls_saved_response_id_with_a_new_client() -> None:
     async with _client() as client:
         created = await client.responses.create(
             model=MODEL,
-            input="Write a two-sentence report about durable background execution.",
+            input="Quarterly migration risks.",
             background=True,
             stream=False,
             store=True,
@@ -117,7 +117,7 @@ async def test_gateway_forwards_background_idempotency_key() -> None:
 
         if GATEWAY_TYPE == "litellm":
             # LiteLLM encrypts the provider ID into a fresh proxy alias on each
-            # response. The stored Response timestamp remains stable.
+            # response. The original job's created_at remains stable.
             assert replay.created_at == first.created_at
         else:
             assert replay.id == first.id

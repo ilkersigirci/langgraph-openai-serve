@@ -35,7 +35,6 @@ LGOS_EXTENSION_KEY = "lgos"
 OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
-RUN_METADATA_KEY = "lgos_run_id"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
 SERVER_TOOL_MODEL_NAME = "server-tool"
 ADVANCED_GRAPH_MODEL_NAME = "advanced-graph"

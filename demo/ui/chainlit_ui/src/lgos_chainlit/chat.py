@@ -48,10 +48,7 @@ from lgos_chainlit.interrupts import (
     pending_interrupt_prompt,
     validate_interrupt_outputs,
 )
-from lgos_chainlit.lgos_protocol import (
-    INTERRUPT_TOOL_NAME,
-    model_description,
-)
+from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
 from lgos_chainlit.mcp import mcp_tools
 
 logger = logging.getLogger(__name__)
