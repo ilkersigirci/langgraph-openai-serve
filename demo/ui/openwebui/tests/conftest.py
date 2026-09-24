@@ -7,6 +7,7 @@ def gateway_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "litellm")
     monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://lgos-litellm:4000")
     monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-api-key")
+    monkeypatch.delenv("DEMO_GATEWAY_HOST_URL", raising=False)
 
 
 @pytest.fixture

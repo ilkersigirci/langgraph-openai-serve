@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated
 
+from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy
 from hatchet_sdk.clients.rest.models.v1_task_status import V1TaskStatus
 from hatchet_sdk.context.context import (
     Context,  # ruff: ignore[typing-only-third-party-import] - Hatchet resolves annotations while registering.
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
 
 # Hatchet run metadata that lets cancellation find a run by Response ID.
 _RESPONSE_ID_METADATA = "lgos_response_id"
+# Hatchet run metadata that keys concurrency by the shared checkpoint thread.
+_CHECKPOINT_THREAD_METADATA = "lgos_checkpoint_thread_id"
 
 
 class HatchetAdapterSettings(BaseModel):
@@ -156,6 +159,14 @@ def create_hatchet_workflows(
             key_expression="input.response_id",
             ttl=task_settings.max_queue_time,
         ),
+        # An interrupt answer is a new Response on its paused run's checkpoint
+        # thread; queue it behind that thread's active run instead of failing
+        # on the busy coordinator lease.
+        concurrency=ConcurrencyExpression(
+            expression=f"additional_metadata.{_CHECKPOINT_THREAD_METADATA}",
+            max_runs=1,
+            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
+        ),
     )
 
     @workflow.task(
@@ -215,7 +226,10 @@ async def _trigger(workflow: HatchetResponseWorkflow, run: StoredRun) -> None:
         await workflow.aio_run(
             HatchetResponseInput(response_id=run.response_id),
             wait_for_result=False,
-            additional_metadata={_RESPONSE_ID_METADATA: run.response_id},
+            additional_metadata={
+                _RESPONSE_ID_METADATA: run.response_id,
+                _CHECKPOINT_THREAD_METADATA: run.checkpoint_thread_id,
+            },
         )
 
 

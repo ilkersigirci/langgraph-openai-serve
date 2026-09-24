@@ -17,7 +17,7 @@ def _new_run(name: str, *, now: datetime, digest: str | None = None) -> NewRun:
         envelope={"model": "model", "input": "hello"},
         response={"id": f"resp-{name}", "status": "queued"},
         created_at=now,
-        initial_call_ids=("call-1",),
+        prior_ids=("call-1",),
         idempotency_digest=digest,
         request_fingerprint="fingerprint" if digest else None,
     )
@@ -77,15 +77,20 @@ async def test_expiry_releases_the_idempotency_digest(
     response_store: ResponseStore,
 ) -> None:
     now = datetime.now(UTC)
-    await response_store.create(_new_run("first", now=now, digest="key"))
+    first = await response_store.create(_new_run("first", now=now, digest="key"))
     await _finish(
         response_store, "first", "completed", now=now, retention=timedelta(seconds=1)
     )
     await response_store.finish_cleanup("resp-first", now=now)
+    found = await response_store.find("key")
     await response_store.expire(now=now + timedelta(seconds=2), limit=10)
+    released = await response_store.find("key")
 
     second = await response_store.create(_new_run("second", now=now, digest="key"))
 
+    assert found is not None
+    assert found.response_id == first.response_id
+    assert released is None
     assert second.response_id == "resp-second"
 
 

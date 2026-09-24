@@ -41,7 +41,7 @@ MIGRATIONS: tuple[LiteralString, ...] = (
             'queued', 'in_progress', 'completed', 'incomplete', 'failed', 'cancelled'
         )
     ),
-    initial_call_ids text[] NOT NULL,
+    prior_ids text[] NOT NULL,
     idempotency_digest text,
     request_fingerprint text,
     created_at timestamptz NOT NULL,
@@ -102,7 +102,7 @@ class PostgresResponseStore:
         inserted = await self._one(
             "INSERT INTO lgos_background_responses ("
             "response_id, owner_scope, model, checkpoint_thread_id, "
-            "envelope, response, status, initial_call_ids, "
+            "envelope, response, status, prior_ids, "
             "idempotency_digest, request_fingerprint, "
             "created_at, updated_at, cleanup_pending"
             ") VALUES ("
@@ -116,7 +116,7 @@ class PostgresResponseStore:
                 run.checkpoint_thread_id,
                 Jsonb(run.envelope),
                 Jsonb(run.response),
-                list(run.initial_call_ids),
+                list(run.prior_ids),
                 run.idempotency_digest,
                 run.request_fingerprint,
                 run.created_at,
@@ -125,9 +125,10 @@ class PostgresResponseStore:
         )
         if inserted is not None:
             return inserted
-        existing = await self._one(
-            "SELECT * FROM lgos_background_responses WHERE idempotency_digest = %s",
-            (run.idempotency_digest,),
+        existing = (
+            await self.find(run.idempotency_digest)
+            if run.idempotency_digest is not None
+            else None
         )
         if existing is None:
             # The conflicting run expired between both statements.
@@ -140,6 +141,13 @@ class PostgresResponseStore:
         return await self._one(
             "SELECT * FROM lgos_background_responses WHERE response_id = %s",
             (response_id,),
+        )
+
+    async def find(self, idempotency_digest: str) -> StoredRun | None:
+        """Read the run holding one idempotency digest."""
+        return await self._one(
+            "SELECT * FROM lgos_background_responses WHERE idempotency_digest = %s",
+            (idempotency_digest,),
         )
 
     async def mark_in_progress(

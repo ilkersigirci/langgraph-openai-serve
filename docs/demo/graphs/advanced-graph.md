@@ -245,8 +245,9 @@ PostgreSQL checkpointer and Store as the API. In background mode:
 
 - the final Response carries the answer, tool items, and citations; streaming
   and status commentary are not delivered;
-- a request that reaches the save-note approval fails, because a polled
-  Response cannot collect a human answer. Save notes in the foreground.
+- a request that reaches the save-note approval completes with the same
+  `lgos_interrupt` call as a foreground turn; both UIs show the approval, and
+  the answer also runs in the worker, which saves the note.
 
 See [Background Report Agent](background-report-agent.md) for the worker
 lifecycle and a model-free way to watch recovery from a checkpoint.

@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from anyio import CancelScope
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from openai.types.responses import Response
 
+from langgraph_openai_serve.api.responses.interrupts import interrupt_response_id
 from langgraph_openai_serve.api.responses.request import (
     UnsupportedResponsesRequestError,
-    decode_responses_request,
-    validate_tools,
+    decode_graph_request,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background.contracts import BackgroundBackend
@@ -22,15 +22,19 @@ from langgraph_openai_serve.background.responses import (
     finish_response,
     queued_response,
     response_json,
+    transcript_ids,
 )
 from langgraph_openai_serve.background.store import NewRun, ResponseStatus, StoredRun
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
+from langgraph_openai_serve.graph.interrupt.models import InterruptResume
 from langgraph_openai_serve.graph.interrupt.state import (
     checkpoint_key,
     normalize_checkpoint_scope,
+    prepare_interrupt_state,
 )
+from langgraph_openai_serve.graph.runner import root_messages
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -67,20 +71,25 @@ async def accept_background_response(
     if background is None:
         message = "Background Responses are not configured for this server."
         raise UnsupportedResponsesRequestError(message, param="background")
-    new_run = _new_run(
+    owner_scope = normalize_checkpoint_scope(checkpoint_scope)
+    digest, fingerprint = _idempotency(request, owner_scope, idempotency_key)
+    # Like Stripe, return a retried request's first result before validation:
+    # an accepted interrupt answer changes the state it was validated against.
+    if digest is not None and (existing := await background.store.find(digest)):
+        return _replayed(existing, fingerprint)
+    new_run = await _new_run(
         request,
         graph_registry,
-        checkpoint_scope=checkpoint_scope,
-        idempotency_key=idempotency_key,
+        owner_scope=owner_scope,
+        idempotency_digest=digest,
+        request_fingerprint=fingerprint,
     )
     # A cancelled request must not leave a persisted run unsubmitted.
     with CancelScope(shield=True):
         run = await background.store.create(new_run)
         if run.response_id == new_run.response_id:
             await _submit(background, run)
-    if run.request_fingerprint != new_run.request_fingerprint:
-        raise IdempotencyKeyReusedError(idempotency_key)
-    return Response.model_validate(run.response)
+    return _replayed(run, fingerprint)
 
 
 async def retrieve_background_response(
@@ -129,30 +138,44 @@ async def cancel_background_response(
     return Response.model_validate(winner.response)
 
 
-def _new_run(
+def _idempotency(
     request: ResponseCreateRequest,
-    graph_registry: GraphRegistry,
-    *,
-    checkpoint_scope: str,
+    owner_scope: str,
     idempotency_key: str | None,
-) -> NewRun:
-    if idempotency_key is not None and not (
-        0 < len(idempotency_key) <= _MAX_IDEMPOTENCY_KEY_LENGTH
-    ):
+) -> tuple[str | None, str | None]:
+    """Return the scoped key digest and the request fingerprint it protects."""
+    if idempotency_key is None:
+        return None, None
+    if not 0 < len(idempotency_key) <= _MAX_IDEMPOTENCY_KEY_LENGTH:
         message = (
             f"Idempotency-Key must be 1 to {_MAX_IDEMPOTENCY_KEY_LENGTH} characters."
         )
         raise UnsupportedResponsesRequestError(message, param="Idempotency-Key")
+    return (
+        _json_digest([owner_scope, request.model, idempotency_key]),
+        _background_fingerprint(request),
+    )
 
+
+def _replayed(run: StoredRun, request_fingerprint: str | None) -> Response:
+    if run.request_fingerprint != request_fingerprint:
+        raise IdempotencyKeyReusedError
+    return Response.model_validate(run.response)
+
+
+async def _new_run(
+    request: ResponseCreateRequest,
+    graph_registry: GraphRegistry,
+    *,
+    owner_scope: str,
+    idempotency_digest: str | None,
+    request_fingerprint: str | None,
+) -> NewRun:
     graph_config = graph_registry.get_graph(request.model)
     if not graph_config.supports(GraphFeature.BACKGROUND):
         message = f"Model '{request.model}' does not support background execution."
         raise UnsupportedResponsesRequestError(message, param="background")
-    validate_tools(request, graph_config.server_tools)
-    graph_request, messages, _ = decode_responses_request(
-        request,
-        graph_config.server_tools,
-    )
+    graph_request, messages, resume = decode_graph_request(request, graph_config)
     if graph_config.client_settings is not None:
         graph_config.client_settings.validate_request(graph_request)
     if "lgos_run_id" in graph_request.metadata:
@@ -165,18 +188,22 @@ def _new_run(
             param="metadata.lgos_run_id",
         )
 
-    owner_scope = normalize_checkpoint_scope(checkpoint_scope)
-    response_id = f"resp_{uuid.uuid4().hex}"
+    # Every Response of one run shares the foreground interrupt identity and
+    # checkpoint thread, so an answer in either mode continues the paused run.
+    run_id = resume.run_id if resume is not None else str(uuid.uuid4())
+    response_id = interrupt_response_id(run_id)
+    checkpoint_thread_id = checkpoint_key(request.model, run_id, scope=owner_scope)
+    prior_ids = (
+        await _paused_transcript_ids(graph_config, checkpoint_thread_id, resume)
+        if resume is not None
+        else transcript_ids(messages)
+    )
     now = datetime.now(UTC)
     return NewRun(
         response_id=response_id,
         owner_scope=owner_scope,
         model=request.model,
-        checkpoint_thread_id=checkpoint_key(
-            request.model,
-            response_id,
-            scope=f"background:{owner_scope}",
-        ),
+        checkpoint_thread_id=checkpoint_thread_id,
         envelope=cast(
             "dict[str, JsonValue]",
             request.model_dump(mode="json", by_alias=True),
@@ -189,16 +216,23 @@ def _new_run(
             )
         ),
         created_at=now,
-        initial_call_ids=_input_call_ids(messages),
-        idempotency_digest=(
-            _json_digest([owner_scope, request.model, idempotency_key])
-            if idempotency_key is not None
-            else None
-        ),
-        request_fingerprint=(
-            _background_fingerprint(request) if idempotency_key is not None else None
-        ),
+        prior_ids=prior_ids,
+        idempotency_digest=idempotency_digest,
+        request_fingerprint=request_fingerprint,
     )
+
+
+async def _paused_transcript_ids(
+    graph_config: GraphConfig,
+    checkpoint_thread_id: str,
+    resume: InterruptResume,
+) -> tuple[str, ...]:
+    """Validate an answer like a foreground resume; return what precedes it."""
+    graph = await graph_config.resolve_graph()
+    config = RunnableConfig(configurable={"thread_id": checkpoint_thread_id})
+    await prepare_interrupt_state(graph, config, resume.run_id, resume)
+    snapshot = await graph.aget_state(config)
+    return transcript_ids(root_messages(snapshot.values))
 
 
 async def _submit(background: BackgroundBackend, run: StoredRun) -> None:
@@ -237,20 +271,6 @@ def _json_digest(value: object) -> str:
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-def _input_call_ids(messages: list[BaseMessage]) -> tuple[str, ...]:
-    call_ids: list[str] = []
-    for message in messages:
-        if isinstance(message, AIMessage):
-            call_ids.extend(
-                call_id
-                for call in (*message.tool_calls, *message.invalid_tool_calls)
-                if isinstance((call_id := call.get("id")), str)
-            )
-        elif isinstance(message, ToolMessage):
-            call_ids.append(message.tool_call_id)
-    return tuple(call_ids)
 
 
 __all__ = [

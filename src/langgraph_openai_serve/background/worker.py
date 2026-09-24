@@ -10,20 +10,21 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from openai.types.responses import Response
 from pydantic import ValidationError
 
+from langgraph_openai_serve.api.responses.interrupts import interrupt_run_id
 from langgraph_openai_serve.api.responses.output import (
     UnsupportedResponsesOutputError,
 )
 from langgraph_openai_serve.api.responses.request import (
     UnsupportedResponsesRequestError,
-    decode_responses_request,
+    decode_graph_request,
     selected_server_tools,
-    validate_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background.contracts import BackgroundSettings
 from langgraph_openai_serve.background.responses import (
     failed_response,
     finish_response,
+    is_paused,
     output_response,
 )
 from langgraph_openai_serve.core.logging import get_logger
@@ -36,7 +37,6 @@ from langgraph_openai_serve.graph.graph_registry import (
 )
 from langgraph_openai_serve.graph.runner import (
     BackgroundCheckpointIncompleteError,
-    BackgroundGraphInterruptedError,
     run_background_graph,
 )
 
@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from langgraph_openai_serve.background.store import ResponseStore, StoredRun
     from langgraph_openai_serve.graph.coordination import RunLease
     from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+    from langgraph_openai_serve.graph.interrupt.models import InterruptResume
     from langgraph_openai_serve.graph.request import GraphRequest
 
 
@@ -59,13 +60,13 @@ class _PreparedRun:
     graph_config: GraphConfig
     graph_request: GraphRequest
     messages: list[BaseMessage]
+    resume: InterruptResume | None
 
 
 # Retrying cannot fix these, so they become a failed Response. Every other
 # exception propagates and the background engine retries the delivery.
 _PERMANENT_ERRORS = (
     BackgroundCheckpointIncompleteError,
-    BackgroundGraphInterruptedError,
     GraphConfigurationError,
     GraphNotFoundError,
     UnsupportedResponsesOutputError,
@@ -144,12 +145,8 @@ class BackgroundWorker:
         if not graph_config.supports(GraphFeature.BACKGROUND):
             msg = "The model no longer supports background execution."
             raise GraphConfigurationError(msg)
-        validate_tools(request, graph_config.server_tools)
-        graph_request, messages, _ = decode_responses_request(
-            request,
-            graph_config.server_tools,
-        )
-        return _PreparedRun(request, graph_config, graph_request, messages)
+        graph_request, messages, resume = decode_graph_request(request, graph_config)
+        return _PreparedRun(request, graph_config, graph_request, messages, resume)
 
     async def _run_locked(
         self,
@@ -200,6 +197,8 @@ class BackgroundWorker:
             prepared.messages,
             prepared.graph_config,
             checkpoint_thread_id=run.checkpoint_thread_id,
+            run_id=interrupt_run_id(run.response_id),
+            resume=prepared.resume,
             finalize_only=finalize_only,
         )
         server_tools = selected_server_tools(
@@ -212,14 +211,17 @@ class BackgroundWorker:
                 "transcript until publication."
             )
             raise UnsupportedResponsesOutputError(msg)
+        # A paused Response carries the same lgos_interrupt calls as a
+        # foreground turn; an answer in either mode continues it.
         return output_response(
             prepared.request,
-            result.message,
+            result.output,
             response_id=run.response_id,
             created_at=int(run.created_at.timestamp()),
+            attempt_usage=result.attempt_usage,
             server_tools=server_tools,
             root_messages=result.root_messages,
-            initial_call_ids=frozenset(run.initial_call_ids),
+            prior_ids=frozenset(run.prior_ids),
         )
 
     @staticmethod
@@ -301,6 +303,11 @@ class BackgroundWorker:
         graph_config: GraphConfig,
         lease: RunLease,
     ) -> bool:
+        if is_paused(run.response):
+            # The answer's run owns the paused checkpoint and deletes it when
+            # that run finishes.
+            await self.store.finish_cleanup(run.response_id, now=datetime.now(UTC))
+            return False
         try:
             graph = await graph_config.resolve_graph()
         except GraphConfigurationError:
@@ -327,14 +334,6 @@ _FAILURE_DETAILS: tuple[tuple[type[BaseException], str, str], ...] = (
         BackgroundCheckpointIncompleteError,
         "Background execution ended before producing complete output.",
         "background_execution_failed",
-    ),
-    (
-        BackgroundGraphInterruptedError,
-        (
-            "This request needs human input, which background mode cannot "
-            "collect. Run it without background mode."
-        ),
-        "background_interrupt_unsupported",
     ),
     (
         UnsupportedResponsesOutputError,

@@ -196,7 +196,7 @@ reset-litellm-db:
 [group('docker dev')]
 [group('docker prod')]
 sync-openwebui:
-    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
+    {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
 # Register one LGOS catalog in LiteLLM; add --dev for the checkout image.
 [arg('dev', long, value='true')]
@@ -241,7 +241,7 @@ compose dev='false' otel='false' *up_args:
     fi
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
-    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
+    {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

@@ -150,8 +150,9 @@ Models:
 just demo/sync-openwebui
 ```
 
-The recipe runs the locked `ui/openwebui` project on the host. It uses
-`DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`, so the
+The recipe runs the locked `ui/openwebui` project on the host. It discovers
+models through `DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`
+and registers `OPENAI_GATEWAY_BASE_URL` as Open WebUI's MCP server, so the
 official Open WebUI image remains unchanged.
 
 Compose starts each selected service's dependencies. One API setup job

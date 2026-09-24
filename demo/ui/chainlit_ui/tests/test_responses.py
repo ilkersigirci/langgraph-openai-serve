@@ -766,12 +766,44 @@ async def test_interrupt_action_returns_a_stale_submission_error(
     }
 
 
+async def test_interrupt_answer_follows_the_background_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    chainlit_context,
+) -> None:
+    chat = importlib.import_module("lgos_chainlit.chat")
+    completed = _response()
+    create = AsyncMock(return_value=completed)
+    monkeypatch.setattr(chat, "background_enabled", lambda: True)
+    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "approval"})
+    monkeypatch.setattr(chat, "response_tools", list)
+    monkeypatch.setattr(chat, "_response_metadata", dict)
+    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
+    monkeypatch.setattr(
+        chat.openai_client,
+        "with_options",
+        Mock(return_value=chat.openai_client),
+    )
+    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+
+    response = await chat._continue_interrupt_response(
+        [{"type": "function_call_output", "call_id": "call-1", "output": "approve"}],
+        model_id="lgos-a/approval",
+        previous_response_id="resp-review",
+    )
+
+    request = create.await_args.kwargs
+    assert response is completed
+    assert request["background"] is True
+    assert request["previous_response_id"] == "resp-review"
+
+
 async def test_interrupt_continuation_keeps_response_cursor_and_request_context(
     monkeypatch,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
     completed = _response()
     create = AsyncMock(return_value=completed)
+    monkeypatch.setattr(chat, "background_enabled", lambda: False)
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
     monkeypatch.setattr(
         chat,

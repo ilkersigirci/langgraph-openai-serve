@@ -246,7 +246,7 @@ not claim every field in the upstream OpenAI API.
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background `store=true` is supported and selects the longer configured bounded result retention. |
 | `text.format.type="text"` | Supported. |
-| `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible and background graphs. |
+| `previous_response_id` | Supported for interruptible graphs to answer pending interrupts, in the foreground or with `background=true`. Rejected for non-interruptible graphs. |
 | `background` | Omitted, null, and false select foreground execution. True is supported only for a model declaring `GraphFeature.BACKGROUND` and a server configured with a `BackgroundBackend`. |
 | `conversation` | Rejected because LGOS has no Responses conversation store. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
@@ -325,8 +325,9 @@ returns the original Response, and reusing a key with different content returns
 background requests.
 
 The durable Response row is not a Conversation. `store=true` changes only the
-bounded terminal-result retention, and `previous_response_id` cannot continue a
-background run. Recovery uses a persistent LangGraph checkpointer internally;
+bounded terminal-result retention. `previous_response_id` answers a run paused
+at an interrupt in either mode; with `background=true`, the answer is a new
+queued Response on the paused run's checkpoint. Recovery uses a persistent LangGraph checkpointer internally;
 clients still receive only standard Responses objects.
 
 See [Run Responses In The Background](../how-to-guides/background-responses.md)
@@ -705,6 +706,8 @@ Each pause finishes the current Response with `status: "completed"` and
 The workflow waits in its LangGraph checkpoint. Submitting the function outputs
 creates a new Response with its own ID and a `previous_response_id` link to the
 paused Response. The client needs no checkpoint fields or payload envelope.
+Add `background=true` to continue the paused run in the background worker; see
+[Run Responses In The Background](../how-to-guides/background-responses.md).
 
 Clients can resume using standard OpenAI `previous_response_id`:
 

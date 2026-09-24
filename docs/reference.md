@@ -163,7 +163,8 @@ checkpointer capabilities before execution. Static configuration relationships,
 including the requirement that `run_coordinator` appear exactly when
 `GraphFeature.INTERRUPTS` or `GraphFeature.BACKGROUND` is declared, fail during
 `GraphConfig` construction. A graph may declare both interrupts and background;
-a background run that reaches an interrupt fails.
+a background run that reaches an interrupt completes with `lgos_interrupt`
+function calls, and an answer in either mode continues it.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -415,9 +416,11 @@ characters. A replay returns the original Response without submitting it again;
 reuse with different content returns `422` with `code="idempotency_key_reused"`.
 LGOS persists the queued Response, then calls
 `HatchetBackgroundBackend.submit()`, which triggers the workflow with
-`lgos_response_id` run metadata. The workflow's Hatchet idempotency key is the
-Response ID, with `max_queue_time` as its TTL, so maintenance can resubmit a
-failed trigger without starting a duplicate run. Cancellation commits the
+`lgos_response_id` and `lgos_checkpoint_thread_id` run metadata. The workflow's
+Hatchet idempotency key is the Response ID, with `max_queue_time` as its TTL, so
+maintenance can resubmit a failed trigger without starting a duplicate run. Its
+concurrency key is the checkpoint thread, so Responses that continue one run
+execute one at a time. Cancellation commits the
 cancelled Response first, then `stop()` best-effort cancels the Hatchet run
 found by that metadata. The `metadata.lgos_run_id` request field identifies
 interrupt-enabled foreground operations and is rejected on background requests.

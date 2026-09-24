@@ -32,7 +32,15 @@ class Settings(BaseSettings):
     )
     OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
         validation_alias="OPENAI_GATEWAY_BASE_URL",
-        description="Gateway root used for model discovery and MCP synchronization.",
+        description="Gateway root reached by Open WebUI, stored as its MCP server.",
+    )
+    DEMO_GATEWAY_HOST_URL: GatewayRoot | None = Field(
+        default=None,
+        validation_alias="DEMO_GATEWAY_HOST_URL",
+        description=(
+            "Gateway root reached by the sync command for model discovery; "
+            "defaults to OPENAI_GATEWAY_BASE_URL."
+        ),
     )
     OPENAI_GATEWAY_API_KEY: str = Field(
         min_length=1,

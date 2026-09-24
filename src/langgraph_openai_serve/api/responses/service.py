@@ -21,10 +21,8 @@ from langgraph_openai_serve.api.responses.output import (
     response_usage,
 )
 from langgraph_openai_serve.api.responses.request import (
-    UnsupportedResponsesRequestError,
-    decode_responses_request,
+    decode_graph_request,
     selected_server_tools,
-    validate_tools,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.core.logging import get_logger
@@ -45,23 +43,9 @@ async def prepare_response_run(
     checkpoint_scope: str,
 ) -> GraphRun:
     """Validate a Responses request and prepare its graph run."""
-    graph_config = graph_registry.get_graph(request.model)
-    validate_tools(request, graph_config.server_tools)
-    if request.previous_response_id is not None and not graph_config.supports(
-        GraphFeature.INTERRUPTS
-    ):
-        message = (
-            "Previous response state is not supported for model "
-            f"'{request.model}'; only interruptible graphs support "
-            "'previous_response_id'."
-        )
-        raise UnsupportedResponsesRequestError(
-            message,
-            param="previous_response_id",
-        )
-    graph_request, messages, resume = decode_responses_request(
+    graph_request, messages, resume = decode_graph_request(
         request,
-        graph_config.server_tools,
+        graph_registry.get_graph(request.model),
     )
     return await prepare_run(
         graph_request,

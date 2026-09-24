@@ -17,6 +17,7 @@ from langgraph.graph import StateGraph
 from openai import (
     AsyncOpenAI,
     BadRequestError,
+    ConflictError,
     NotFoundError,
     UnprocessableEntityError,
 )
@@ -39,6 +40,7 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.graph.coordination import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from tests.api.interrupt.support import resume_outputs
 from tests.background.fakes import MemoryBackgroundBackend
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.schemas import MessageState
@@ -709,17 +711,23 @@ async def test_lease_loss_after_publication_defers_cleanup_to_a_new_owner():
         assert not cleaned.cleanup_pending
 
 
-async def test_interrupt_graph_pauses_in_foreground_and_fails_in_background(
+@pytest.mark.parametrize("background", [True, False])
+async def test_interrupt_answer_continues_a_paused_background_run(
     sqlite_checkpointer: AsyncSqliteSaver,
+    background: bool,
 ) -> None:
+    def config(features: set[GraphFeature]) -> GraphConfig:
+        return GraphConfig(
+            graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+            description="Approval graph",
+            features=features,
+            run_coordinator=InMemoryRunCoordinator(),
+        )
+
     registry = GraphRegistry(
         registry={
-            "approval": GraphConfig(
-                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-                description="Approval graph",
-                features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
-                run_coordinator=InMemoryRunCoordinator(),
-            )
+            "approval": config({GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND}),
+            "undeclared": config({GraphFeature.BACKGROUND}),
         }
     )
     backend = MemoryBackgroundBackend()
@@ -727,6 +735,11 @@ async def test_interrupt_graph_pauses_in_foreground_and_fails_in_background(
     app = LanggraphOpenaiServe(graphs=registry, background=backend)
     app.bind_openai_api()
     transport = ASGITransport(app=app.app)
+
+    async def run_jobs() -> None:
+        while (job := await backend.receive()) is not None:
+            await worker.execute(job)
+
     async with (
         AsyncClient(transport=transport, base_url="http://test") as http,
         AsyncOpenAI(
@@ -736,19 +749,42 @@ async def test_interrupt_graph_pauses_in_foreground_and_fails_in_background(
             max_retries=0,
         ) as client,
     ):
-        foreground = await client.responses.create(model="approval", input="Hello")
         created = await client.responses.create(
             model="approval", input="Hello", background=True
         )
-        job = await backend.receive()
-        assert job is not None
-        await worker.execute(job)
-        failed = await client.responses.retrieve(created.id)
+        undeclared = await client.responses.create(
+            model="undeclared", input="Hello", background=True
+        )
+        await run_jobs()
+        # Maintenance must leave the paused checkpoint for the answer.
+        await worker.maintain()
+        paused = await client.responses.retrieve(created.id)
+        failed = await client.responses.retrieve(undeclared.id)
+        answer = {
+            "model": "approval",
+            "previous_response_id": paused.id,
+            "input": resume_outputs(paused, ["approved"]),
+            "background": background,
+            "extra_headers": {"Idempotency-Key": "answer"} if background else None,
+        }
+        answered = await client.responses.create(**answer)
+        await run_jobs()
+        if background:
+            # A retried answer returns its first Response, not a conflict.
+            assert (await client.responses.create(**answer)).id == answered.id
+            answered = await client.responses.retrieve(answered.id)
+        with pytest.raises(ConflictError):
+            await client.responses.create(**{**answer, "extra_headers": None})
+        stored = await backend.store.get(paused.id)
+        assert stored is not None
+        thread = {"configurable": {"thread_id": stored.checkpoint_thread_id}}
 
-    assert [item.name for item in foreground.output] == ["lgos_interrupt"]
+    assert paused.status == "completed"
+    assert [item.name for item in paused.output] == ["lgos_interrupt"]
     assert failed.status == "failed"
-    assert failed.error is not None
-    assert "Run it without background mode" in failed.error.message
+    assert answered.id != paused.id
+    assert answered.output_text == "resumed:approved"
+    assert await sqlite_checkpointer.aget_tuple(thread) is None
 
 
 async def test_worker_retry_resumes_from_the_checkpoint() -> None:

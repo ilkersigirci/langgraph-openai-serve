@@ -38,7 +38,8 @@ def _new_run(*, created_at: datetime) -> NewRun:
             "output": [],
         },
         created_at=created_at,
-        initial_call_ids=("call-1",),
+        prior_ids=("call-1",),
+        idempotency_digest=f"digest-{response_id}",
     )
 
 
@@ -102,12 +103,13 @@ async def test_run_survives_restart_and_keeps_one_terminal_winner() -> None:
                 ),
             )
             recovered = await store.get(run.response_id)
+            found = await store.find(f"digest-{run.response_id}")
 
         assert created.model_dump(include=set(NewRun.model_fields)) == run.model_dump()
         assert in_progress is not None
         assert in_progress.response["status"] == "in_progress"
         assert winners[0] is not None
-        assert winners[0] == winners[1] == recovered
+        assert winners[0] == winners[1] == recovered == found
         assert winners[0].status in {
             ResponseStatus.CANCELLED,
             ResponseStatus.COMPLETED,

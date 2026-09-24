@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
-from langchain_core.messages.ai import add_usage
+from langchain_core.messages.ai import UsageMetadata, add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import (
@@ -49,20 +49,18 @@ LangGraphStreamEvent = (
 _MISSING = object()
 
 
-class BackgroundGraphInterruptedError(RuntimeError):
-    """Raised when a background graph reaches an unsupported interrupt."""
-
-
 class BackgroundCheckpointIncompleteError(RuntimeError):
     """Raised when finalization finds no complete checkpointed output."""
 
 
 @dataclass(frozen=True, slots=True)
 class BackgroundGraphResult:
-    """Checkpoint-reconstructible output from one background graph operation."""
+    """Checkpointed output, or pending interrupts, of one background operation."""
 
-    message: AIMessage
+    output: LangGraphOutput
     root_messages: tuple[BaseMessage, ...]
+    # Only callbacks of this delivery attempt report this usage.
+    attempt_usage: UsageMetadata | None
 
 
 async def run_langgraph(
@@ -135,15 +133,17 @@ async def invoke_run(run: GraphRun) -> LangGraphOutput:
     )
 
 
-async def run_background_graph(
+async def run_background_graph(  # ruff: ignore[too-many-arguments] - A background run needs its checkpoint, interrupt identity, and answer.
     request: GraphRequest,
     messages: list[BaseMessage],
     config: GraphConfig,
     *,
     checkpoint_thread_id: str,
+    run_id: str,
+    resume: interrupt_models.InterruptResume | None,
     finalize_only: bool,
 ) -> BackgroundGraphResult:
-    """Start, recover, or only render one synchronously checkpointed operation."""
+    """Start, answer, recover, or only render one synchronously checkpointed run."""
     graph = await config.resolve_graph()
     usage_callback = UsageMetadataCallbackHandler()
     runnable_config = build_runnable_config(
@@ -157,31 +157,40 @@ async def run_background_graph(
         raise RuntimeError(msg)
 
     snapshot = await graph.aget_state(runnable_config, subgraphs=True)
-    checkpoint_exists = snapshot.created_at is not None
+    batch = _interrupt_batch(config, snapshot.interrupts, run_id)
+    # An answer applies only while its interrupts are pending, so a retried
+    # delivery continues from the checkpoint instead of answering twice.
+    answer = (
+        Command(resume=resume.values)
+        if resume is not None
+        and batch is not None
+        and set(resume.values) == {item.id for item in batch.interrupts}
+        else None
+    )
+    # A run paused at unanswered interrupts is published again, not advanced.
+    if batch is not None and answer is None:
+        return _background_result(batch, snapshot.values, usage_callback)
     # Pending task writes can make `next` empty before the super-step checkpoint
     # commits. LangGraph must resume those tasks to schedule downstream nodes.
-    if (
-        checkpoint_exists
-        and not snapshot.next
-        and not snapshot.tasks
-        and not snapshot.interrupts
-    ):
-        return await _background_result(
-            config,
-            await _background_output(graph, runnable_config),
-            snapshot.values,
-            usage_callback,
+    checkpoint_exists = snapshot.created_at is not None
+    if checkpoint_exists and not snapshot.next and not snapshot.tasks:
+        output = await config.render_output(
+            await _background_output(graph, runnable_config)
         )
-    if snapshot.interrupts:
-        msg = "Background execution does not support graph interrupts."
-        raise BackgroundGraphInterruptedError(msg)
+        return _background_result(output, snapshot.values, usage_callback)
     if finalize_only:
         msg = "No complete checkpointed graph output is available for finalization."
         raise BackgroundCheckpointIncompleteError(msg)
 
-    inputs = None
-    if not checkpoint_exists:
+    if answer is not None:
+        inputs = answer
+    elif checkpoint_exists:
+        inputs = None
+    elif resume is None:
         inputs = await config.build_input(request, messages)
+    else:
+        msg = "The interrupted run no longer has a checkpoint."
+        raise BackgroundCheckpointIncompleteError(msg)
     context = await config.build_context(request, graph)
     result = await graph.ainvoke(
         inputs,
@@ -191,46 +200,30 @@ async def run_background_graph(
         durability="sync",
         version="v2",
     )
-    if result.interrupts:
-        msg = "Background execution does not support graph interrupts."
-        raise BackgroundGraphInterruptedError(msg)
-
+    completed = await graph.aget_state(runnable_config, subgraphs=True)
+    if batch := _interrupt_batch(config, result.interrupts, run_id):
+        return _background_result(batch, completed.values, usage_callback)
     # Static breakpoints return without interrupts, so confirm the checkpoint
     # head is complete before publishing its output.
-    completed = await graph.aget_state(runnable_config, subgraphs=True)
     if completed.next or completed.tasks or completed.interrupts:
         msg = "Graph execution ended without complete checkpointed output."
         raise BackgroundCheckpointIncompleteError(msg)
-    return await _background_result(
-        config,
-        result.value,
-        completed.values,
-        usage_callback,
-    )
+    output = await config.render_output(result.value)
+    return _background_result(output, completed.values, usage_callback)
 
 
-async def _background_result(
-    config: GraphConfig,
-    output: Any,
+def _background_result(
+    output: LangGraphOutput,
     state: Any,
     usage_callback: UsageMetadataCallbackHandler,
 ) -> BackgroundGraphResult:
-    message = await config.render_output(output)
-    root_messages = _root_messages(state)
-    # Checkpointed messages keep usage across retried deliveries, which the
-    # per-attempt callback cannot. Decoded input messages never carry usage.
-    total_usage = None
-    for root_message in root_messages:
-        if isinstance(root_message, AIMessage) and root_message.usage_metadata:
-            total_usage = add_usage(total_usage, root_message.usage_metadata)
-    if total_usage is None:
-        for usage in usage_callback.usage_metadata.values():
-            total_usage = add_usage(total_usage, usage)
-    if total_usage is not None:
-        message = message.model_copy(update={"usage_metadata": total_usage})
+    attempt_usage = None
+    for usage in usage_callback.usage_metadata.values():
+        attempt_usage = add_usage(attempt_usage, usage)
     return BackgroundGraphResult(
-        message=message,
-        root_messages=root_messages,
+        output=output,
+        root_messages=root_messages(state),
+        attempt_usage=attempt_usage,
     )
 
 
@@ -246,13 +239,11 @@ async def _background_output(
         durability="sync",
         version="v2",
     )
-    if result.interrupts:
-        msg = "Background execution does not support graph interrupts."
-        raise BackgroundGraphInterruptedError(msg)
     return result.value
 
 
-def _root_messages(output: Any) -> tuple[BaseMessage, ...]:
+def root_messages(output: Any) -> tuple[BaseMessage, ...]:
+    """Return the root ``messages`` channel of graph state or output."""
     values = (
         output.get("messages")
         if isinstance(output, Mapping)
@@ -420,15 +411,26 @@ async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
     return _with_usage(await run.config.render_output(output), run)
 
 
+def _interrupt_batch(
+    config: GraphConfig,
+    interrupts: tuple[Interrupt, ...],
+    run_id: str | None,
+) -> interrupt_models.LangGraphInterruptBatch | None:
+    if not interrupts:
+        return None
+    if not config.supports(GraphFeature.INTERRUPTS):
+        msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
+        raise GraphConfigurationError(msg)
+    return interrupt_state.interrupt_batch(interrupts, run_id)
+
+
 def _commit_interrupts(
     run: GraphRun,
     interrupts: tuple[Interrupt, ...],
 ) -> interrupt_models.LangGraphInterruptBatch | None:
-    if not interrupts:
+    batch = _interrupt_batch(run.config, interrupts, run.run_id)
+    if batch is None:
         return None
-    if not run.config.supports(GraphFeature.INTERRUPTS):
-        msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
-        raise GraphConfigurationError(msg)
     if (
         isinstance(run.inputs, Command)
         and isinstance(run.inputs.resume, dict)
@@ -436,7 +438,5 @@ def _commit_interrupts(
     ):
         msg = "A graph node may call interrupt() only once per invocation."
         raise GraphConfigurationError(msg)
-    batch = interrupt_state.interrupt_batch(interrupts, run.run_id)
-    if batch is not None:
-        run.commit_interrupts()
+    run.commit_interrupts()
     return batch

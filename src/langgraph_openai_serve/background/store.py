@@ -46,7 +46,9 @@ class NewRun(BaseModel):
     envelope: dict[str, JsonValue]
     response: dict[str, JsonValue]
     created_at: datetime
-    initial_call_ids: tuple[str, ...] = ()
+    # Transcript item IDs that precede this Response: the input's, or those of
+    # the paused transcript an answer continues.
+    prior_ids: tuple[str, ...] = ()
     # Scoped digest of the client's Idempotency-Key and of the request it
     # protects. A replay with the same digest returns the stored run.
     idempotency_digest: str | None = None
@@ -95,6 +97,10 @@ class ResponseStore(Protocol):
 
     async def get(self, response_id: str) -> StoredRun | None:
         """Read one run, including expired runs not yet removed."""
+        ...
+
+    async def find(self, idempotency_digest: str) -> StoredRun | None:
+        """Read the run holding one idempotency digest."""
         ...
 
     async def mark_in_progress(

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages.ai import add_usage
 from openai.types.responses import (
     Response,
     ResponseCompletedEvent,
@@ -17,11 +18,15 @@ from langgraph_openai_serve.api.responses.events import ResponsesEventBuilder
 from langgraph_openai_serve.api.responses.output import (
     ResponseContext,
     UnsupportedResponsesOutputError,
+    response_usage,
 )
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
+from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from langchain_core.messages.ai import UsageMetadata
     from pydantic import JsonValue
 
     from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
@@ -82,15 +87,25 @@ def failed_response(
 
 def output_response(  # ruff: ignore[too-many-arguments] - Rendering needs the persisted Response identity and transcript boundary.
     request: ResponseCreateRequest,
-    message: AIMessage,
+    output: AIMessage | LangGraphInterruptBatch,
     *,
     response_id: str,
     created_at: float,
+    attempt_usage: UsageMetadata | None = None,
     server_tools: Sequence[str] = (),
     root_messages: Iterable[BaseMessage] = (),
-    initial_call_ids: frozenset[str] = frozenset(),
+    prior_ids: frozenset[str] = frozenset(),
 ) -> Response:
-    """Render checkpointed output through the existing Responses builder."""
+    """
+    Render checkpointed output through the existing Responses builder.
+
+    Transcript items named by ``prior_ids`` precede this Response, so they are
+    neither rendered nor counted again. Pending interrupts become the same
+    ``lgos_interrupt`` function calls a foreground run returns.
+    """
+    messages = tuple(
+        message for message in root_messages if message.id not in prior_ids
+    )
     builder = ResponsesEventBuilder(
         request,
         response_id=response_id,
@@ -100,13 +115,26 @@ def output_response(  # ruff: ignore[too-many-arguments] - Rendering needs the p
     if server_tools:
         operation_messages = (
             visible
-            for message in root_messages
-            if (visible := _new_operation_message(message, initial_call_ids))
-            is not None
+            for message in messages
+            if (visible := _new_operation_message(message, prior_ids)) is not None
         )
         tuple(builder.server_tool_messages(operation_messages))
 
-    for event in builder.finish(message):
+    # Checkpointed messages keep usage across retried deliveries, which the
+    # per-attempt callbacks cannot.
+    usage = None
+    for message in messages:
+        if isinstance(message, AIMessage) and message.usage_metadata:
+            usage = add_usage(usage, message.usage_metadata)
+    usage = usage or attempt_usage
+    events = (
+        builder.finish_interrupt(output, usage=response_usage(usage))
+        if isinstance(output, LangGraphInterruptBatch)
+        else builder.finish(
+            output.model_copy(update={"usage_metadata": usage}) if usage else output
+        )
+    )
+    for event in events:
         if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
             return event.response
     msg = "Background output rendering produced no terminal Response."
@@ -115,25 +143,49 @@ def output_response(  # ruff: ignore[too-many-arguments] - Rendering needs the p
 
 def _new_operation_message(
     message: BaseMessage,
-    initial_call_ids: frozenset[str],
+    prior_ids: frozenset[str],
 ) -> BaseMessage | None:
-    """Drop tool activity replayed from the request input."""
+    """Drop tool activity that precedes this Response."""
     if isinstance(message, ToolMessage):
-        return None if message.tool_call_id in initial_call_ids else message
+        return None if message.tool_call_id in prior_ids else message
     if not isinstance(message, AIMessage):
         return None
-    calls = [
-        call for call in message.tool_calls if call.get("id") not in initial_call_ids
-    ]
+    calls = [call for call in message.tool_calls if call.get("id") not in prior_ids]
     invalid_calls = [
-        call
-        for call in message.invalid_tool_calls
-        if call.get("id") not in initial_call_ids
+        call for call in message.invalid_tool_calls if call.get("id") not in prior_ids
     ]
     if not calls and not invalid_calls:
         return None
     return message.model_copy(
         update={"tool_calls": calls, "invalid_tool_calls": invalid_calls}
+    )
+
+
+def transcript_ids(messages: Iterable[BaseMessage]) -> tuple[str, ...]:
+    """Return the message and tool-call IDs that identify transcript items."""
+    ids: list[str] = []
+    for message in messages:
+        if message.id:
+            ids.append(message.id)
+        if isinstance(message, AIMessage):
+            ids.extend(
+                call_id
+                for call in (*message.tool_calls, *message.invalid_tool_calls)
+                if isinstance((call_id := call.get("id")), str)
+            )
+        elif isinstance(message, ToolMessage):
+            ids.append(message.tool_call_id)
+    return tuple(ids)
+
+
+def is_paused(response: dict[str, JsonValue]) -> bool:
+    """Whether a stored Response waits for interrupt answers."""
+    output = response.get("output")
+    return isinstance(output, list) and any(
+        isinstance(item, dict)
+        and item.get("type") == "function_call"
+        and item.get("name") == INTERRUPT_TOOL_NAME
+        for item in output
     )
 
 
@@ -164,7 +216,9 @@ __all__ = [
     "cancelled_response",
     "failed_response",
     "finish_response",
+    "is_paused",
     "output_response",
     "queued_response",
     "response_json",
+    "transcript_ids",
 ]

@@ -76,7 +76,9 @@ every retry:
 | Key missing | A new Response, as in OpenAI |
 
 The key is unique in the shared Response store, so concurrent retries and
-retries routed to another instance still create one run. It lives as long as
+retries routed to another instance still create one run. A replay returns the
+original Response before validating the request again, so a retried interrupt
+answer is not rejected as stale. It lives as long as
 its Response: `result_retention` or `stored_result_retention` after the run
 ends. LGOS stores only a SHA-256 digest of the owner scope, model, and key.
 
@@ -139,9 +141,32 @@ A background graph must:
   fails the run after its retries.
 
 A graph may declare both `GraphFeature.INTERRUPTS` and
-`GraphFeature.BACKGROUND`. Foreground requests keep the interrupt flow; a
-background run that reaches an interrupt fails, because a polled Response has no
-way to collect the answer.
+`GraphFeature.BACKGROUND`. A background run that reaches an interrupt completes
+with the same `lgos_interrupt` function calls as a foreground turn and keeps its
+checkpoint. The client answers with `previous_response_id` and
+`function_call_output` items, in the foreground or with `background=true`; see
+[interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt).
+A background answer is a new queued Response that continues the paused run's
+checkpoint in the worker, and it may pause again:
+
+```python
+answer = await client.responses.create(
+    model="advanced-graph",
+    background=True,
+    previous_response_id=paused.id,
+    input=[
+        {"type": "function_call_output", "call_id": call.call_id, "output": "approve"}
+        for call in paused.output
+        if call.type == "function_call" and call.name == "lgos_interrupt"
+    ],
+)
+```
+
+LGOS validates an answer when it is created, like a foreground answer, so a
+stale answer fails at once with `409`. An unanswered pause keeps its checkpoint
+like any interrupt; the answer's run deletes it when that run ends. A background
+run that reaches an interrupt in a graph without `GraphFeature.INTERRUPTS`
+fails.
 
 Hatchet retries a failed task. On each attempt, LGOS inspects the checkpoint,
 applies initial input only when no checkpoint exists, and resumes unfinished
@@ -253,7 +278,9 @@ The response workflow uses Hatchet-native retries, backoff, timeouts, and an
 advances an unfinished graph. A maintenance cron deletes terminal checkpoints
 and expired Responses. LGOS triggers the workflow with the Response ID as input
 and as `lgos_response_id` run metadata, which cancellation and replay use to
-find the run.
+find the run. `lgos_checkpoint_thread_id` metadata is the workflow's
+concurrency key, so Hatchet queues an interrupt answer behind any run still
+active on the same checkpoint.
 
 !!! note "Failed submissions are resubmitted"
     LGOS has no transactional outbox. If the trigger fails, or the API process

@@ -63,15 +63,36 @@ async def _continue_interrupt_response(
     model_id: str,
     previous_response_id: str,
 ) -> Response:
-    return await openai_client.responses.create(
-        **model_request(model_id),
-        input=cast("ResponseInputParam", input_items),
-        previous_response_id=previous_response_id,
-        store=False,
-        tools=response_tools(),
-        user=authenticated_user_identifier(),
-        metadata=_response_metadata(),
-    )
+    model_options = model_request(model_id)
+    if not background_enabled():
+        return await openai_client.responses.create(
+            **model_options,
+            input=cast("ResponseInputParam", input_items),
+            previous_response_id=previous_response_id,
+            store=False,
+            tools=response_tools(),
+            user=authenticated_user_identifier(),
+            metadata=_response_metadata(),
+        )
+    commentary_tasks = CommentaryTaskList()
+    try:
+        response = await _background_response(
+            input_items,
+            model=cast(str, model_options["model"]),
+            extra_headers=cast(
+                dict[str, str] | None, model_options.get("extra_headers")
+            ),
+            provider_routing=gateway.provider_routing,
+            user=authenticated_user_identifier(),
+            metadata=_response_metadata(),
+            commentary_tasks=commentary_tasks,
+            previous_response_id=previous_response_id,
+        )
+    except BaseException:
+        await commentary_tasks.stop()
+        raise
+    await commentary_tasks.complete()
+    return response
 
 
 async def _publish_interrupt_final(response: Response) -> None:
@@ -285,6 +306,7 @@ async def _background_response(
     user: str,
     metadata: dict[str, str],
     commentary_tasks: CommentaryTaskList,
+    previous_response_id: str | None = None,
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
     client = openai_client.with_options(max_retries=2)
@@ -299,6 +321,8 @@ async def _background_response(
         create_options["extra_body"] = {
             "extra_headers": {"Idempotency-Key": idempotency_key}
         }
+    if previous_response_id is not None:
+        create_options["previous_response_id"] = previous_response_id
     response = await client.responses.create(
         model=model,
         input=cast("ResponseInputParam", input_items),

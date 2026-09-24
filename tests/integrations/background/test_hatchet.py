@@ -91,7 +91,10 @@ async def test_submit_triggers_the_workflow_with_response_metadata() -> None:
     workflow.aio_run.assert_awaited_once_with(
         HatchetResponseInput(response_id="resp_one"),
         wait_for_result=False,
-        additional_metadata={"lgos_response_id": "resp_one"},
+        additional_metadata={
+            "lgos_response_id": "resp_one",
+            "lgos_checkpoint_thread_id": run.checkpoint_thread_id,
+        },
     )
 
 

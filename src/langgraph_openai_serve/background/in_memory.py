@@ -59,6 +59,12 @@ class InMemoryResponseStore:
             run = self._runs.get(response_id)
             return self._copy(run) if run is not None else None
 
+    async def find(self, idempotency_digest: str) -> StoredRun | None:
+        """Read the run holding one idempotency digest."""
+        async with self._lock:
+            response_id = self._idempotency.get(idempotency_digest)
+            return self._copy(self._runs[response_id]) if response_id else None
+
     async def mark_in_progress(
         self,
         response_id: str,

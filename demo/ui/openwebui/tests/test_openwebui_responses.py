@@ -671,6 +671,36 @@ async def test_background_response_forwards_idempotency_through_bifrost() -> Non
     assert "extra_body" not in request
 
 
+async def test_interrupt_answers_follow_the_background_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create = AsyncMock(return_value=final_response("Approved."))
+    install_client(monkeypatch, create=create)
+    ask_user = _interrupts_to_ask_user(RESPONSE_ID, [interrupt_call()])
+    request_body = body(stream=False)
+    request_body["messages"].extend(
+        [
+            {"role": "assistant", "content": None, "tool_calls": [ask_user]},
+            {
+                "role": "tool",
+                "tool_call_id": ask_user["id"],
+                "content": json.dumps(
+                    {
+                        "status": "answered",
+                        "answers": {"resume_0": {"type": "option", "option_index": 0}},
+                    }
+                ),
+            },
+        ]
+    )
+
+    await generic_pipe.Pipe().pipe(request_body, __metadata__=background_metadata())
+
+    request = create.await_args.kwargs
+    assert request["previous_response_id"] == RESPONSE_ID
+    assert request["background"] is True
+
+
 async def test_stale_background_setting_is_ignored_after_model_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -134,6 +134,7 @@ It operates on `NewRun` and `StoredRun`, with no SQL or client types.
 | --- | --- |
 | `create` | Persist a new `queued` run. When another stored run holds the same `idempotency_digest`, return that run instead; concurrent creates with one digest must yield one run. The digest is released when its run is deleted. |
 | `get` | Return the run, including an expired one not yet removed. LGOS checks owner scope and expiry with `StoredRun.visible_to()`. |
+| `find` | Return the run holding an `idempotency_digest`, or `None`. LGOS replays it before validating a retried request. |
 | `mark_in_progress` | Move active work in progress without reviving a terminal record; return `None` for a missing or terminal record. |
 | `finish` | Atomically commit the first terminal Response with its retention deadline and cleanup intent. Return the winner, which is the existing run when another outcome already won, or `None` when the run is missing. |
 | `claim_queued` | Return a bounded batch of runs still `queued` that were created before a cutoff, touching `updated_at` so a queued backlog rotates. Maintenance resubmits them. |

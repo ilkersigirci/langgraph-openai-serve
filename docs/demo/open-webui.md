@@ -119,12 +119,13 @@ synchronization project on the host:
 just demo/sync-openwebui
 ```
 
-The command replaces the container-only gateway root with
-`DEMO_GATEWAY_HOST_URL` and reuses the same credential as the Open WebUI
-runtime. For a standalone Open WebUI deployment, run
+The command discovers models through `DEMO_GATEWAY_HOST_URL` and stores
+`OPENAI_GATEWAY_BASE_URL`, the root that Open WebUI itself reaches, as the
+native MCP server. It reuses the same credential as the Open WebUI runtime. For
+a standalone Open WebUI deployment, run
 `uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
-environment where `DEMO_OPENWEBUI_URL` and the shared gateway URL are both
-reachable.
+environment where `DEMO_OPENWEBUI_URL` and the gateway are reachable; without
+`DEMO_GATEWAY_HOST_URL`, discovery uses `OPENAI_GATEWAY_BASE_URL`.
 
 The full-stack `just demo/compose [--dev] [--otel]` variants handle
 synchronization automatically after their dependencies are healthy.
@@ -284,7 +285,8 @@ validation.
 Models advertising `background` also receive an opt-in **Run in
 background** checkbox. The Pipe keeps this client-owned value out of
 `lgos_settings`, polls the non-streaming Response, and publishes native status
-events until the normal answer renderer takes over.
+events until the normal answer renderer takes over. Interrupt answers follow
+the same checkbox.
 
 The shared Pipe maps Open WebUI's stable `chat_id` to
 `metadata.conversation_id` on every Responses request, including the UserValves example.

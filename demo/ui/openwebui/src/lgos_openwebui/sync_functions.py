@@ -158,14 +158,20 @@ def main() -> None:
     """Synchronize the bundled Function and generated Workspace Models."""
     try:
         settings = Settings()
+        # Open WebUI connects to MCP from its own network; this command may
+        # reach the same gateway through a different root.
         gateway = gateway_config(
             settings.OPENAI_GATEWAY_TYPE,
             settings.OPENAI_GATEWAY_BASE_URL,
         )
+        discovery_gateway = gateway_config(
+            settings.OPENAI_GATEWAY_TYPE,
+            settings.DEMO_GATEWAY_HOST_URL or settings.OPENAI_GATEWAY_BASE_URL,
+        )
         with (
             httpx2.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
-                base_url=f"{gateway.root_url}/v1",
+                base_url=f"{discovery_gateway.root_url}/v1",
                 api_key=settings.OPENAI_GATEWAY_API_KEY,
                 timeout=10,
             ) as openai_client,
@@ -173,7 +179,7 @@ def main() -> None:
             sign_in(client, settings.ADMIN_EMAIL, settings.ADMIN_PASSWORD)
             model_specs = discover_workspace_model_specs(
                 openai_client,
-                gateway=gateway,
+                gateway=discovery_gateway,
             )
             mcp_action = sync_mcp_gateway(
                 client,
