@@ -31,6 +31,7 @@ Bifrost exposes each service as a custom provider:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
+| `openai` | `lgos-demo-api-a:8000` | ID-only retrieve and cancel for background Responses |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
@@ -84,7 +85,8 @@ must instead receive a URL reachable from the host.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, and MCP requests. Bifrost loads it as one native virtual key whose
-provider policies allow only `lgos-a`, `lgos-b`, and `lgos-files`; the key is
+provider policies allow `lgos-a`, `lgos-b`, and `lgos-files`, plus only
+`background-mock` and `background-interrupt` on the fixed standard `openai` provider. The key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
@@ -110,22 +112,35 @@ that pool.
 
 ## Configuration Boundary
 
-All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
+The dedicated `openai` provider is a standard Bifrost provider pinned to API A
+and allowlists `background-mock` and `background-interrupt`. All Bifrost custom providers use
+`openai` as their base provider. `lgos-a` and
 `lgos-b` enable model listing, native Responses and streaming, and pass-through
 for catalog detail and protocol-reference tests. `lgos-files` enables only Files
 operations and targets the standalone S3-backed demo Files service. Upstream
 base URLs omit `/v1`, and private-network access is enabled for the Compose
 network.
 
-Enable both `responses` and `responses_stream` explicitly under each graph
-provider's `allowed_requests`. Bifrost loads this configuration at startup, so
+Enable `responses`, `responses_stream`, `responses_retrieve`, and
+`responses_cancel` explicitly under each custom graph provider's
+`allowed_requests`. Bifrost loads this configuration at startup, so
 restart the service after changing it. The graph providers do not enable Chat
 Completions or Responses-to-Chat fallback.
 
-The client header allowlist forwards `traceparent`, `tracestate`, and
-`user-agent` through managed Responses requests. This preserves distributed
-trace context and the originating UI's identity at LGOS. See the
-[OpenTelemetry guide](opentelemetry.md#signal-ownership).
+The client header allowlist forwards `Idempotency-Key`, `traceparent`,
+`tracestate`, and `user-agent` through managed Responses requests. The first
+supports safe background-create retries; the others preserve distributed trace
+context and the originating UI's identity at LGOS. See the [OpenTelemetry
+guide](opentelemetry.md#signal-ownership).
+
+## Background Responses
+
+The standard `openai` provider keeps ID-only retrieval and cancellation pinned
+to API A, while UI requests may retain their `lgos-a` or `lgos-b` provider
+header. All targets read background Responses from the same Hatchet service. See
+[Background Mock](graphs/background-mock.md) for startup and
+[Run Responses In The Background](../how-to-guides/background-responses.md) for
+the lifecycle contract.
 
 The gateway uses `DUMMY` only for its private upstream connections because LGOS
 authentication is not enabled. This is separate from the required client-facing

@@ -143,7 +143,7 @@ settings](reference.md#opentelemetry-settings).
     Run each attached service in a separate terminal. Compose starts the shared
     PostgreSQL dependency automatically. Before either graph API starts,
     `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
-    LangGraph checkpoint and store schemas once. Both APIs use
+    LangGraph checkpoint and Store schemas once. Both APIs use
     [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
     as their readiness dependency.
 
@@ -152,6 +152,32 @@ settings](reference.md#opentelemetry-settings).
 
     For an independently deployed LiteLLM API, run the shared one-shot
     [model-sync job](litellm-sync.md) after the deployment's health check.
+
+=== "Background Worker"
+
+    The worker is an optional Compose profile. Configure a native
+    `HATCHET_CLIENT_TOKEN`, enable background execution, and add the profile
+    alongside the selected gateway:
+
+    ```dotenv
+    # Choose litellm or bifrost.
+    OPENAI_GATEWAY_TYPE=litellm
+    COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
+    DEMO_API_BACKGROUND_ENABLED=True
+    HATCHET_CLIENT_TOKEN=...
+    ```
+
+    Then start the ordered UI stack or only the worker and its persistence setup:
+
+    ```bash
+    just demo/compose --dev
+    # Or: just demo/up lgos-background-worker
+    ```
+
+    The `lgos-background-worker` process uses explicit Hatchet slots and the
+    same PostgreSQL checkpointer, coordinator, and graph code as the APIs. It
+    exposes no HTTP port. The API triggers the Hatchet task and reads its
+    status and Response from Hatchet. See [Background Mock](graphs/background-mock.md).
 
 === "Files API"
 
@@ -186,7 +212,7 @@ settings](reference.md#opentelemetry-settings).
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
     ```
 
     Use the gateway root without `/v1`. Both UIs share the gateway type, base
@@ -308,7 +334,8 @@ settings](reference.md#opentelemetry-settings).
     New deployments set `model_info.supports_native_streaming: true`.
     The default public
     [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
-    preserves native Responses streaming. Compose
+    preserves native Responses streaming and polling-only background
+    lifecycles. Compose
     reads its tag and digest from `DEMO_LITELLM_IMAGE` in `demo/.env` and enables
     `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` so it honors the deployment
     capability. Normal demo commands use this image without a local build or
@@ -324,8 +351,9 @@ settings](reference.md#opentelemetry-settings).
 
     Keep the override set for subsequent Compose commands. To restore the
     default, copy the image value from `demo/.env.example`. An alternative image
-    must preserve native Responses streaming, authenticated `/model/info` with
-    custom metadata, managed Files routing, and the Admin UI migration runtime.
+    must preserve native Responses streaming and background IDs, authenticated
+    `/model/info` with custom metadata, managed Files routing, and the Admin UI
+    migration runtime.
 
     Managed routing also passes the tested Files lifecycle, file-ID input, and
     function continuation, while its rewritten standard error metadata remains
@@ -390,16 +418,18 @@ central Files API uses only its separate `DEMO_API_FILES_BUCKET`,
 `DEMO_API_FILES_S3_ENDPOINT`, and `DEMO_API_FILES_AWS_*` settings. The two S3
 configurations are independent.
 
-The API workers share PostgreSQL for thread-scoped application data, durable
-checkpoints, and fail-fast interrupt coordination. Session-level
+The API and optional background worker share PostgreSQL for thread-scoped
+application data, durable checkpoints, and fail-fast interrupt coordination.
+Session-level
 [advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
 prevent two workers from advancing the same interrupt run at once; a contended
 request fails instead of waiting. No Redis service is required. The lock is
-held only while an API request executes the graph, never while a human is
+held only while an API request or the background worker executes the graph,
+never while a human is
 deciding. A per-process capacity gate preserves a pool connection for
 persistence I/O.
 
-Compose also forces `LANGGRAPH_STRICT_MSGPACK=true` for the APIs. Strict
+Compose also forces `LANGGRAPH_STRICT_MSGPACK=True` for the APIs. Strict
 deserialization narrows which checkpoint object types LangGraph may
 reconstruct, following its
 [security guidance](https://github.com/langchain-ai/langgraph/security/advisories/GHSA-g48c-2wqr-h844).
@@ -417,9 +447,10 @@ well.
     interrupt tool calls. Whether the resulting commit survives loss of the
     primary depends on the PostgreSQL replication policy.
 
-    Budget connections across every API replica. Each demo API process has a
-    five-connection pool and permits at most four simultaneous interrupt
-    leases, preserving one connection for checkpoint I/O. Psycopg recommends
+    Budget connections across every API replica and background worker. Each
+    demo API or worker process has a five-connection pool and permits at most
+    four simultaneous interrupt leases, preserving one connection for
+    checkpoint I/O. Psycopg recommends
     monitoring pool statistics and sizing from observed workload; see its
     [pool guidance](https://www.psycopg.org/psycopg3/docs/advanced/pool.html#pool-connection-and-sizing).
 

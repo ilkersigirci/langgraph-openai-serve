@@ -11,7 +11,7 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
         """
         import logging
 
-        from lgos_demo_api.logging import configure_logging
+        from lgos_demo_api.core.logging import configure_logging
 
         configure_logging()
         logging.getLogger("langgraph_openai_serve.test").info(

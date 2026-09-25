@@ -11,13 +11,10 @@ from langgraph_openai_serve.api.responses.output import interrupt_output_items
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
-GENERATION_TOKEN = "a" * 64
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
-RESPONSE_NONCE = "b" * 32
-RESPONSE_ID = f"resp_lg_{RUN_ID.replace('-', '')}_{RESPONSE_NONCE}"
 EXPECTED_CALL_IDS = [
-    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-b",
-    f"call_lg_{GENERATION_TOKEN}_{RESPONSE_NONCE}_interrupt-a",
+    "call_lg_interrupt-b",
+    "call_lg_interrupt-a",
 ]
 EXPECTED_ARGUMENTS = [
     {"question": "B?"},
@@ -28,7 +25,6 @@ EXPECTED_ARGUMENTS = [
 def _interrupt_batch() -> LangGraphInterruptBatch:
     return LangGraphInterruptBatch(
         run_id=RUN_ID,
-        generation_token=GENERATION_TOKEN,
         interrupts=(
             Interrupt(id="interrupt-b", value={"question": "B?"}),
             Interrupt(id="interrupt-a", value={"question": "A?"}),
@@ -37,7 +33,7 @@ def _interrupt_batch() -> LangGraphInterruptBatch:
 
 
 def test_interrupt_output_items_preserves_order() -> None:
-    calls = interrupt_output_items(_interrupt_batch(), response_id=RESPONSE_ID)
+    calls = interrupt_output_items(_interrupt_batch())
 
     assert len(calls) == len(EXPECTED_CALL_IDS)
     assert [call.call_id for call in calls] == EXPECTED_CALL_IDS
@@ -51,8 +47,8 @@ def test_interrupt_output_items_preserves_order() -> None:
 def test_event_builder_finish_interrupt_uses_stable_indices() -> None:
     request = ResponseCreateRequest(model="interruptible", input="Hi")
     builder = ResponsesEventBuilder(request, run_id=RUN_ID)
-    response_id = builder.created().response.id
-    expected_calls = interrupt_output_items(_interrupt_batch(), response_id=response_id)
+    builder.created()
+    expected_calls = interrupt_output_items(_interrupt_batch())
     events = list(builder.finish_interrupt(_interrupt_batch(), usage=None))
 
     added_events = [e for e in events if e.type == "response.output_item.added"]

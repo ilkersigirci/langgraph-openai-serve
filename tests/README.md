@@ -123,7 +123,7 @@ timer only masks the environment failure.
   checkpointer, and recreate the graph with a reopened checkpointer before
   resuming.
 - Initial interrupt requests need no metadata. Tests for caller-owned
-  idempotency should pass a non-nil UUID as
+  interrupt identity should pass a non-nil UUID as
   `metadata.lgos_run_id`; invalid or reused UUID cases should remain
   separate assertions.
 - Resume helpers should use standard `previous_response_id` and provide one

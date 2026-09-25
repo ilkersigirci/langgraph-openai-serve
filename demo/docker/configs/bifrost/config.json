@@ -3,7 +3,12 @@
   "client": {
     "enforce_auth_on_inference": true,
     "header_filter_config": {
-      "allowlist": ["traceparent", "tracestate", "user-agent"]
+      "allowlist": [
+        "idempotency-key",
+        "traceparent",
+        "tracestate",
+        "user-agent"
+      ]
     }
   },
   "mcp": {
@@ -65,6 +70,12 @@
         "is_active": true,
         "provider_configs": [
           {
+            "provider": "openai",
+            "allowed_models": ["background-mock", "background-interrupt"],
+            "key_ids": ["*"],
+            "weight": 1.0
+          },
+          {
             "provider": "lgos-a",
             "allowed_models": ["*"],
             "key_ids": ["*"],
@@ -87,6 +98,20 @@
     ]
   },
   "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "lgos-background",
+          "value": "DUMMY",
+          "models": ["background-mock", "background-interrupt"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://lgos-demo-api-a:8000",
+        "allow_private_network": true
+      }
+    },
     "lgos-a": {
       "keys": [
         {
@@ -106,6 +131,8 @@
           "list_models": true,
           "responses": true,
           "responses_stream": true,
+          "responses_retrieve": true,
+          "responses_cancel": true,
           "passthrough": true,
           "passthrough_stream": true
         }
@@ -130,6 +157,8 @@
           "list_models": true,
           "responses": true,
           "responses_stream": true,
+          "responses_retrieve": true,
+          "responses_cancel": true,
           "passthrough": true,
           "passthrough_stream": true
         }

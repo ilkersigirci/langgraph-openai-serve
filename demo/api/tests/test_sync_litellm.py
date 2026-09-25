@@ -7,7 +7,7 @@ import httpx2
 import pytest
 from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 
-from lgos_demo_api.sync_litellm import sync_models
+from lgos_demo_api.utils.sync_litellm import sync_models
 
 
 @pytest.fixture

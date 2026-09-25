@@ -13,8 +13,9 @@ There is no graph-specific request envelope, and the graph is not available
 through Chat Completions because its interrupt workflow requires Responses.
 Its upstream model calls also use the Responses API with `store=false`.
 
-The model advertises four LGOS capabilities:
+The model advertises five LGOS capabilities:
 
+- `background` for running the same agent as a polled background Response;
 - `client_events` for streaming status commentary;
 - `file_inputs` for Files API attachments;
 - `interrupts` for review and resume;
@@ -101,12 +102,28 @@ write, and approval alone reaches `save`.
 
 ## Request Flow
 
+The graph's chat, research, and reviewed-save routes are the same in both
+execution modes. Request delivery differs:
+
+| Mode | Where the graph runs | How the UI receives the result |
+| --- | --- | --- |
+| Foreground | API process | The create request returns the result, optionally with streaming and commentary |
+| **Run in background** enabled | Independent Hatchet worker | Create returns a queued Response ID; the UI polls until it receives an answer or review call |
+
+The diagram below shows **foreground delivery**, including a review and its
+continuation. A review completes its Response while the graph stays paused at
+a checkpoint. For background delivery, follow the
+[create, poll, and cancel diagram](background-mock.md#request-flow) and the
+[interrupt/resume diagram](background-interrupt.md#request-flow), using
+`advanced-graph` as the model. The [Background Execution](#background-execution)
+section explains how those lifecycles apply to reviewed saves.
+
 ```mermaid
 sequenceDiagram
   actor User
   participant UI as Chainlit / Open WebUI
   participant Gateway as Selected gateway
-  participant LGOS as LGOS / advanced-graph
+  participant LGOS as API / advanced-graph
   participant Model as Responses model
   participant Services as State and data services
 
@@ -128,7 +145,7 @@ sequenceDiagram
     end
     LGOS->>Model: Draft exact Markdown
     LGOS->>Services: Checkpoint before review
-    LGOS-->>Gateway: Paused Response with lgos_interrupt
+    LGOS-->>Gateway: completed Response with lgos_interrupt
     Gateway-->>UI: Review request
     User->>UI: Approve, reject, or request a revision
     UI->>Gateway: previous_response_id + function_call_output
@@ -147,7 +164,8 @@ sequenceDiagram
   Gateway-->>UI: Answer or requested action
 ```
 
-For each initial request:
+For each initial request, the graph runs these steps in the API process or
+background worker:
 
 1. LGOS validates the standard Responses request, converts input items to
    LangChain messages, and supplies normalized tools and `tool_choice` as
@@ -158,8 +176,9 @@ For each initial request:
 3. The selected path runs. Files are resolved only inside a model node that
    needs them; research and note drafting use private
    `ChatOpenAI(disable_streaming=True)` calls.
-4. `answer` is the only token-streaming model call. Research and notebook work can
-   emit validated status events, which LGOS exposes as commentary.
+4. With foreground streaming enabled, `answer` is the only token-streaming model
+   call. Research and notebook status events appear as commentary. Background
+   clients receive the polled result without streaming or commentary.
 5. LGOS maps the result to standard Responses messages, tool calls, citations,
    terminal status, or an interrupt continuation.
 
@@ -171,7 +190,7 @@ them behind one agent loop:
 | Tool or action | Execution owner | Continuation |
 | --- | --- | --- |
 | Gateway MCP or another client function | Calling UI or client | LGOS returns `function_call`; the client executes it and sends `function_call_output` in a new request |
-| Public `web_search` | Graph API | The research subgraph executes it and returns `web_search_call` in the same Response |
+| Public `web_search` | Graph runtime | The research subgraph executes it and returns `web_search_call` in the same Response |
 | Private `knowledge_search` | Research subgraph | It is selected and executed internally; clients never send or receive its tool definition |
 | `lgos_interrupt` review | Graph and client | The graph checkpoints the pause; the client resumes it with `previous_response_id` and `function_call_output` |
 
@@ -234,6 +253,31 @@ status instead of claiming that the note is searchable.
     the application and storage boundaries. Caller-provided IDs are
     correlation values, not proof of identity. Attachment and retrieved
     contents are sent to the configured model as context.
+
+## Background Execution
+
+Send `background=true`, or enable **Run in background** in either UI, to run the
+same agent in the independently deployed Hatchet worker and poll it by Response
+ID. The worker builds the graph with the same model, knowledge, files, and
+PostgreSQL checkpointer and Store as the API. In background mode:
+
+- the final Response carries the answer, tool items, and citations; streaming
+  and status commentary are not delivered;
+- a request that reaches the save-note approval completes with the same
+  `lgos_interrupt` call as a foreground turn; the graph remains checkpointed
+  while both UIs show the review;
+- each review answer creates a new background Response ID while **Run in
+  background** stays enabled. Approval runs the save, rejection finishes without
+  writing, and revision feedback can complete with another review call.
+
+Stop requests cancellation of the active Response being polled. At a review,
+choose **Reject** to finish without saving; cancelling the already completed
+review Response leaves the graph paused. See the
+[cancellation-by-stage diagram](background-interrupt.md#cancellation).
+Cancellation cannot undo an upload or indexing operation that already succeeded.
+
+The linked background examples exercise these lifecycles deterministically
+without model calls.
 
 ## Output And Failure Behavior
 
@@ -497,6 +541,16 @@ MCP tool.
     )
     print(completed.output_text)
     ```
+
+For a background save, follow the
+[background review SDK example](background-interrupt.md#python-sdk) with this
+page's gateway client and `advanced-graph` model name. Use a prompt that explicitly
+asks to save a note, omit the mock-specific `delay_seconds` metadata, and inspect
+the returned review content before approving. Approval uploads and indexes the
+actual note. The shared [polling helper](../api.md#background-python-client)
+works with either client;
+background calls use `client.responses.create` directly with `background=True`
+and `store=True`.
 
 For the complete client contract, including streaming commentary and terminal
 events, see [OpenAI Clients](../../tutorials/openai-clients.md).

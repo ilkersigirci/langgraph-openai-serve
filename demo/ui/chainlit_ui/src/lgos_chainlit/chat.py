@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 from typing import Any, cast
 
 import chainlit as cl
@@ -26,12 +27,13 @@ from openai.types.responses import Response, ResponseInputParam
 from pydantic import ValidationError
 
 from lgos_chainlit.chat_settings import (
+    background_enabled,
     chat_settings_metadata,
     configure_chat_settings,
     response_tools,
     streaming_enabled,
 )
-from lgos_chainlit.clients import list_models, model_request, openai_client
+from lgos_chainlit.clients import gateway, list_models, model_request, openai_client
 from lgos_chainlit.conversation import (
     LIMITED_FUNCTIONALITY_MESSAGE,
     conversation_metadata,
@@ -58,15 +60,36 @@ async def _continue_interrupt_response(
     model_id: str,
     previous_response_id: str,
 ) -> Response:
-    return await openai_client.responses.create(
-        **model_request(model_id),
-        input=cast("ResponseInputParam", input_items),
-        previous_response_id=previous_response_id,
-        store=False,
-        tools=response_tools(),
-        user=authenticated_user_identifier(),
-        metadata=_response_metadata(),
-    )
+    model_options = model_request(model_id)
+    if not background_enabled():
+        return await openai_client.responses.create(
+            **model_options,
+            input=cast("ResponseInputParam", input_items),
+            previous_response_id=previous_response_id,
+            store=False,
+            tools=response_tools(),
+            user=authenticated_user_identifier(),
+            metadata=_response_metadata(),
+        )
+    commentary_tasks = CommentaryTaskList()
+    try:
+        response = await _background_response(
+            input_items,
+            model=cast(str, model_options["model"]),
+            extra_headers=cast(
+                dict[str, str] | None, model_options.get("extra_headers")
+            ),
+            provider_routing=gateway.provider_routing,
+            user=authenticated_user_identifier(),
+            metadata=_response_metadata(),
+            commentary_tasks=commentary_tasks,
+            previous_response_id=previous_response_id,
+        )
+    except BaseException:
+        await commentary_tasks.stop()
+        raise
+    await commentary_tasks.complete()
+    return response
 
 
 async def _publish_interrupt_final(response: Response) -> None:
@@ -179,7 +202,8 @@ async def _response_message(message: cl.Message, model: str) -> None:
     try:
         input_items = response_input(text_only_chat_messages())
         input_items = await with_response_file_parts(input_items, message)
-        streaming = streaming_enabled()
+        background = background_enabled()
+        streaming = not background and streaming_enabled()
         metadata = _response_metadata()
         model_options = model_request(model)
         upstream_model = cast(str, model_options["model"])
@@ -193,6 +217,16 @@ async def _response_message(message: cl.Message, model: str) -> None:
                     assistant_message,
                     model=upstream_model,
                     extra_headers=extra_headers,
+                    user=user,
+                    metadata=metadata,
+                    commentary_tasks=commentary_tasks,
+                )
+            elif background:
+                response = await _background_response(
+                    input_items,
+                    model=upstream_model,
+                    extra_headers=extra_headers,
+                    provider_routing=gateway.provider_routing,
                     user=user,
                     metadata=metadata,
                     commentary_tasks=commentary_tasks,
@@ -258,6 +292,73 @@ def _response_metadata() -> dict[str, str]:
     metadata = chat_settings_metadata()
     metadata.update(conversation_metadata())
     return metadata
+
+
+async def _background_response(
+    input_items: list[dict[str, Any]],
+    *,
+    model: str,
+    extra_headers: dict[str, str] | None,
+    provider_routing: bool,
+    user: str,
+    metadata: dict[str, str],
+    commentary_tasks: CommentaryTaskList,
+    previous_response_id: str | None = None,
+) -> Response:
+    """Create and poll one background Response with best-effort cancellation."""
+    client = openai_client.with_options(max_retries=2)
+    idempotency_key = str(uuid.uuid4())
+    create_options: dict[str, Any] = {"extra_headers": extra_headers}
+    if provider_routing:
+        create_options["extra_headers"] = {
+            **(extra_headers or {}),
+            "Idempotency-Key": idempotency_key,
+        }
+    else:
+        create_options["extra_body"] = {
+            "extra_headers": {"Idempotency-Key": idempotency_key}
+        }
+    if previous_response_id is not None:
+        create_options["previous_response_id"] = previous_response_id
+    response = await client.responses.create(
+        model=model,
+        input=cast("ResponseInputParam", input_items),
+        background=True,
+        store=True,
+        tools=response_tools(),
+        user=user,
+        metadata=metadata,
+        **create_options,
+    )
+    previous_status = None
+    try:
+        while response.status in {"queued", "in_progress"}:
+            if response.status != previous_status:
+                await commentary_tasks.add(
+                    f"Background response {response.status.replace('_', ' ')}"
+                )
+                previous_status = response.status
+            await asyncio.sleep(1)
+            response = await client.responses.retrieve(
+                response.id,
+                extra_headers=extra_headers,
+            )
+    except asyncio.CancelledError:
+        try:
+            await asyncio.shield(
+                client.responses.cancel(
+                    response.id,
+                    extra_headers=extra_headers,
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Background response cancellation failed for %s",
+                response.id,
+                exc_info=True,
+            )
+        raise
+    return response
 
 
 async def _stream_response(

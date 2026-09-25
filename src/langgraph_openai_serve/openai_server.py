@@ -42,6 +42,7 @@ from langgraph_openai_serve.api.health import views as health_views
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.api.models import views as models_views
 from langgraph_openai_serve.api.responses import views as responses_views
+from langgraph_openai_serve.background import BackgroundBackend
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
@@ -71,6 +72,7 @@ class LanggraphOpenaiServe:
         graphs: GraphRegistry,
         app: FastAPI | None = None,
         checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
+        background: BackgroundBackend | None = None,
     ) -> None:
         """
         Initialize the server with a FastAPI app and a populated graph registry.
@@ -81,6 +83,7 @@ class LanggraphOpenaiServe:
             graphs: A GraphRegistry instance containing the graphs to serve.
             checkpoint_scope: Optional server-trusted resolver used to isolate
                 interrupt checkpoints by deployment or authenticated principal.
+            background: Optional polling-only background backend.
 
         Raises:
             TypeError: If graphs is not a GraphRegistry instance.
@@ -99,6 +102,7 @@ class LanggraphOpenaiServe:
         self.app: FastAPI = app
         self._openai_app: FastAPI | None = None
         self.checkpoint_scope = checkpoint_scope or (lambda _request: "default")
+        self.background = background
 
         self.graph_registry = graphs
 
@@ -106,6 +110,7 @@ class LanggraphOpenaiServe:
         # mounted OpenAI sub-application.
         self.app.state.graph_registry = self.graph_registry
         self.app.state.checkpoint_scope = self.checkpoint_scope
+        self.app.state.background_backend = self.background
 
         logger.info(
             "server.initialized",
@@ -144,6 +149,7 @@ class LanggraphOpenaiServe:
         # Dependencies in mounted routes resolve against the mounted app.
         openai_app.state.graph_registry = self.graph_registry
         openai_app.state.checkpoint_scope = self.checkpoint_scope
+        openai_app.state.background_backend = self.background
         configure_openai_error_handlers(openai_app)
         openai_app.include_router(chat_views.router)
         openai_app.include_router(health_views.router)

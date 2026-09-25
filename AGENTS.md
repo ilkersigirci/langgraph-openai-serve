@@ -29,6 +29,11 @@ entry point.
   `.agents/CODE_STYLE.md` for test-design guidance.
 - For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
   `openai.types.shared.ErrorObject`.
+- Keep `docs/explanation/design-choices.md` limited to important decisions that
+  materially affect architecture, public contracts, ownership, or operational
+  cost. Routine implementation choices, renames, and refactors do not belong
+  there. Ask the user before independently adding or changing an entry; a
+  direct user request to update the file is approval.
 
 
 ## Documentation Style
@@ -60,5 +65,9 @@ entry point.
 - `src/langgraph_openai_serve/api/`: OpenAI-compatible routes and schemas.
 - `src/langgraph_openai_serve/graph/`: graph registration, adapters, execution.
 - `src/langgraph_openai_serve/openai_server.py`: FastAPI binding.
+- `src/langgraph_openai_serve/background.py`: background engine contract,
+  job execution, and the in-memory engine.
+- `src/langgraph_openai_serve/integrations/`: optional Hatchet, PostgreSQL, and
+  Langfuse adapters.
 - `demo/`: runnable API and UI examples.
 - `tests/`: pytest coverage.

@@ -89,10 +89,10 @@ type-check editable='false':
 [group('checks')]
 [timestamp]
 compose-config:
-    {{ compose_command }} --profile model-sync config --quiet
-    {{ compose_dev_command }} --profile model-sync config --quiet
-    {{ compose_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
-    {{ compose_dev_command }} -f docker/compose/otel.yml --profile model-sync config --quiet
+    {{ compose_command }} --env-file .env.example --profile model-sync --profile background config --quiet
+    {{ compose_dev_command }} --env-file .env.example --profile model-sync --profile background config --quiet
+    {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
+    {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
 
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]
@@ -106,6 +106,12 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 api $DEMO_API_PORT=env("LGOS_A_PORT") editable='false':
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api-setup
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api
+
+# Run the independent Hatchet agent worker for background Responses.
+[arg('editable', long, value='true')]
+[group('local')]
+background-worker editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-background-worker
 
 # Run the OpenAI Files service locally.
 [arg('DEMO_API_FILES_PORT', long='port')]
@@ -140,6 +146,30 @@ test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
     DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_API_KEY="$OPENAI_GATEWAY_API_KEY" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON="Bifrost v2.1.1 governance rejects unknown models before passthrough" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
 
+# Exercise polling-only background lifecycle through the selected gateway.
+[arg('base_url', long='base-url')]
+[arg('editable', long, value='true')]
+[arg('model', long)]
+[group('integration')]
+[script]
+[timestamp]
+test-background-gateway base_url='' model='' editable='false' *args:
+    case "$OPENAI_GATEWAY_TYPE" in
+        litellm)
+            default_url="$DEMO_GATEWAY_HOST_URL/v1"
+            default_model="lgos-a/background-mock"
+            ;;
+        bifrost)
+            default_url="$DEMO_GATEWAY_HOST_URL/openai/v1"
+            default_model="background-mock"
+            ;;
+        *)
+            echo "OPENAI_GATEWAY_TYPE must be litellm or bifrost" >&2
+            exit 1
+            ;;
+    esac
+    DEMO_TEST_BACKGROUND_GATEWAY_TYPE="$OPENAI_GATEWAY_TYPE" DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL="${1:-$default_url}" DEMO_TEST_BACKGROUND_GATEWAY_MODEL="${2:-$default_model}" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:4}"
+
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
 [arg('DEMO_TEST_DIRECT_BASE_URLS', long='direct-urls')]
@@ -166,7 +196,7 @@ reset-litellm-db:
 [group('docker dev')]
 [group('docker prod')]
 sync-openwebui:
-    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
+    {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
 # Register one LGOS catalog in LiteLLM; add --dev for the checkout image.
 [arg('dev', long, value='true')]
@@ -184,14 +214,20 @@ sync-litellm dev='false' *args:
 compose dev='false' otel='false' *up_args:
     compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
     up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
-    gateway_service="$("${compose[@]}" config --services | sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p')"
+    services="$("${compose[@]}" config --services)"
+    gateway_service="$(sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p' <<< "$services")"
+    background_service="$(sed -n '/^lgos-background-worker$/p' <<< "$services")"
+    background_services=()
+    if [[ -n "$background_service" ]]; then
+        background_services+=("$background_service")
+    fi
 
     case "$OPENAI_GATEWAY_TYPE:$gateway_service" in
         litellm:lgos-litellm|bifrost:lgos-bifrost)
-            "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service"
+            "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service" "${background_services[@]}"
             ;;
         litellm:|bifrost:)
-            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api "${background_services[@]}"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
@@ -205,7 +241,7 @@ compose dev='false' otel='false' *up_args:
     fi
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
-    OPENAI_GATEWAY_BASE_URL="$DEMO_GATEWAY_HOST_URL" {{ openwebui_run }} python -m lgos_openwebui.sync_functions
+    {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

@@ -318,8 +318,8 @@ class ResponseCreateRequest(_ResponsesRequestModel):
     parallel_tool_calls: bool | None = None
     user: str | None = None
 
-    # Accept OpenAI's no-op values; LGOS has no background or stored-response
-    # lifecycle, so the decoder rejects their stateful forms.
+    # Accept OpenAI's values; the decoder allows `store=true` only for a
+    # background Response and rejects conversation chaining.
     background: bool | None = False
     conversation: JsonValue | None = None
     previous_response_id: str | None = None

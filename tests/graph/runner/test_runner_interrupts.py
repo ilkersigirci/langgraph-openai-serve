@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,6 @@ from langgraph.checkpoint.base import (
     ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
-    CheckpointTuple,
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
@@ -58,9 +57,11 @@ from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
     make_interrupt_graph,
+    make_multiple_interrupts_in_one_node_graph,
+    make_nested_multi_interrupt_graph,
+    make_nested_multiple_interrupts_in_one_node_graph,
     make_parallel_interrupt_graph,
     make_parallel_nested_interrupt_graph,
-    make_sequential_nested_interrupt_graph,
 )
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.schemas import MessageState
@@ -73,18 +74,6 @@ RUN_ID = "11111111-1111-4111-8111-111111111111"
 class AsyncReadOnlyCheckpointer(BaseCheckpointSaver):
     async def aget_tuple(self, config: RunnableConfig):
         return None
-
-    async def alist(
-        self,
-        config: RunnableConfig | None,
-        *,
-        filter: dict[str, Any] | None = None,  # ruff: ignore[builtin-argument-shadowing]
-        before: RunnableConfig | None = None,
-        limit: int | None = None,
-    ) -> AsyncIterator[CheckpointTuple]:
-        items: tuple[CheckpointTuple, ...] = ()
-        for item in items:
-            yield item
 
 
 class AsyncCheckpointerWithoutPendingWrites(AsyncReadOnlyCheckpointer):
@@ -101,7 +90,7 @@ class AsyncCheckpointerWithoutPendingWrites(AsyncReadOnlyCheckpointer):
         return None
 
 
-class AsyncCheckpointerWithoutList(AsyncCheckpointerWithoutPendingWrites):
+class AsyncCheckpointerWithoutDelete(AsyncCheckpointerWithoutPendingWrites):
     async def aput_writes(
         self,
         config: RunnableConfig,
@@ -111,12 +100,18 @@ class AsyncCheckpointerWithoutList(AsyncCheckpointerWithoutPendingWrites):
     ) -> None:
         return None
 
-    alist = BaseCheckpointSaver.alist
-
-
-class AsyncCheckpointerWithoutDelete(AsyncCheckpointerWithoutList):
-    alist = AsyncReadOnlyCheckpointer.alist
     adelete_thread = BaseCheckpointSaver.adelete_thread
+
+
+class MinimalAsyncCheckpointer(AsyncCheckpointerWithoutPendingWrites):
+    async def aput_writes(
+        self,
+        config: RunnableConfig,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        return None
 
 
 async def test_cancelled_preparation_finishes_lease_release(
@@ -188,6 +183,9 @@ def test_checkpoint_key_is_model_scoped_and_does_not_expose_public_run_id() -> N
     assert model_a_key != tenant_b_key
     assert RUN_ID not in model_a_key
     assert len(model_a_key) == SHA256_HEX_LENGTH
+    assert model_a_key == (
+        "160c905f783b1e8560a915e2cf14fa2aa1c990372e1edb0f2d1eb79e48d97648"
+    )
 
 
 async def test_thread_id_reaches_runnable_config(
@@ -416,7 +414,7 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
             id="nested-parallel",
         ),
         pytest.param(
-            make_sequential_nested_interrupt_graph,
+            make_nested_multi_interrupt_graph,
             {"first"},
             id="indirectly-nested",
         ),
@@ -463,6 +461,85 @@ async def test_stream_returns_nested_interrupts_from_root_values(
     assert {interrupt.value["question"] for interrupt in batch.interrupts} == (
         expected_questions
     )
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["invoke", "stream"])
+@pytest.mark.parametrize(
+    "graph_factory",
+    [
+        pytest.param(
+            make_multiple_interrupts_in_one_node_graph,
+            id="root",
+        ),
+        pytest.param(
+            make_nested_multiple_interrupts_in_one_node_graph,
+            id="nested",
+        ),
+    ],
+)
+async def test_multiple_interrupts_in_one_node_are_rejected(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+    graph_factory,
+    stream: bool,
+) -> None:
+    model = "multiple-interrupts-in-one-node"
+    registry = GraphRegistry(
+        registry={
+            model: GraphConfig(
+                graph=graph_factory(sqlite_checkpointer),
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                request_to_input=lambda _request, _messages: {"answers": []},
+                output_to_message=lambda output: AIMessage(
+                    content=str(output["answers"])
+                ),
+                run_coordinator=InMemoryRunCoordinator(),
+            )
+        }
+    )
+    request = make_request(model, metadata={RUN_METADATA_KEY: RUN_ID})
+    paused = await run_langgraph(
+        request,
+        [HumanMessage(content="question")],
+        registry,
+    )
+    assert isinstance(paused, LangGraphInterruptBatch)
+    resume = InterruptResume(
+        run_id=paused.run_id,
+        values={paused.interrupts[0].id: "approve"},
+    )
+
+    async def resume_graph() -> None:
+        if stream:
+            _ = [
+                event
+                async for event in run_langgraph_stream(
+                    make_request(model),
+                    [],
+                    registry,
+                    resume=resume,
+                )
+            ]
+        else:
+            await run_langgraph(
+                make_request(model),
+                [],
+                registry,
+                resume=resume,
+            )
+
+    with pytest.raises(GraphConfigurationError, match="only once per invocation"):
+        await resume_graph()
+
+    checkpoint_tuple = await sqlite_checkpointer.aget_tuple(
+        {
+            "configurable": {
+                "thread_id": checkpoint_key(model, RUN_ID),
+            }
+        }
+    )
+    assert checkpoint_tuple is None
 
 
 async def test_stream_rejects_conflicting_duplicate_interrupt_id(
@@ -592,7 +669,6 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
     assert isinstance(paused, LangGraphInterruptBatch)
     resume = InterruptResume(
         run_id=paused.run_id,
-        generation_token=paused.generation_token,
         values={paused.interrupts[0].id: "approve"},
     )
 
@@ -638,7 +714,6 @@ def test_interrupt_enabled_graph_requires_run_coordinator() -> None:
             AsyncCheckpointerWithoutPendingWrites,
             id="missing-pending-writes",
         ),
-        pytest.param(AsyncCheckpointerWithoutList, id="missing-list"),
         pytest.param(AsyncCheckpointerWithoutDelete, id="missing-thread-deletion"),
     ],
 )
@@ -655,3 +730,15 @@ async def test_interrupt_checkpointer_must_override_required_async_methods(
 
     with pytest.raises(GraphConfigurationError, match="fully asynchronous"):
         await config.resolve_graph()
+
+
+async def test_interrupt_checkpointer_accepts_minimal_async_interface() -> None:
+    checkpointer = MinimalAsyncCheckpointer()
+    config = GraphConfig(
+        graph=make_interrupt_graph(checkpointer=checkpointer),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+
+    assert (await config.resolve_graph()).checkpointer is checkpointer

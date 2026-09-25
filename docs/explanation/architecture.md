@@ -38,6 +38,27 @@ The package owns the `/v1` transport and adaptation boundary. The host
 application owns graph behavior and every model, tool, store, or data source
 used by that graph.
 
+Polling-only background requests branch after validation. The API submits the
+validated request to a background engine and returns a queued Response. An
+independently deployed worker runs the same foreground Responses path, and the
+engine stores the resulting Response. Polling reads the engine; it never
+executes the graph in an HTTP request.
+
+```mermaid
+flowchart TB
+  client["OpenAI client"]
+  api["LGOS API"]
+  engine["Background engine (Hatchet)"]
+  worker["LGOS worker"]
+  app_graph["Application graph"]
+
+  client -->|"create, retrieve, cancel"| api
+  api -->|"submit, read, cancel run"| engine
+  engine -->|"deliver job"| worker
+  worker -->|"foreground Responses path"| app_graph
+  worker -->|"Response JSON"| engine
+```
+
 ## State Ownership
 
 Ordinary conversations are stateless from LGOS's perspective: the client owns
@@ -90,7 +111,10 @@ checkpointer stores paused workflow state. A run coordinator serializes one
 interrupt run across replicas. Application graphs may independently use a
 LangGraph Store for explicit data.
 PostgreSQL can provide all three roles; Redis is not required by this design.
-The demo shares one PostgreSQL pool per API process among them.
+The demo shares one PostgreSQL pool per API or worker process among them.
+
+Background Responses add no LGOS state: the background engine stores each
+run's request, status, and Response.
 
 The Responses adapter owns interrupt function-call encoding and decodes
 `previous_response_id` plus `function_call_output` items into a resume request.
@@ -121,6 +145,10 @@ Endpoint paths and settings live in [Reference](../reference.md).
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
 6. LGOS releases any interrupt lease and renders a protocol-specific OpenAI
    object or SSE sequence.
+
+For background creation, steps 2–6 happen in a worker after the API returns a
+queued Response. See
+[Run Responses In The Background](../how-to-guides/background-responses.md).
 
 The paused Response ID and interrupt function-call items are client-owned. A UI
 that supports reconnectable interrupt input persists both before asking for a

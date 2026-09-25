@@ -53,7 +53,7 @@ def _assert_workspace_reads(client: Mock) -> None:
     assert client.get.call_count == 2
 
 
-def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
+def test_chat_variable_fields_maps_the_supported_scalar_settings() -> None:
     model = SimpleNamespace(
         model_extra={
             "lgos": {
@@ -79,6 +79,12 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
                                 "title": "Assistant name",
                             },
                             "retries": {"type": "integer"},
+                            "delay": {
+                                "type": "integer",
+                                "title": "Delay",
+                                "minimum": 0,
+                                "maximum": 300,
+                            },
                         },
                     },
                     "defaults": {
@@ -86,6 +92,7 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
                         "mode": "brief",
                         "assistant_name": "Helper",
                         "retries": 3,
+                        "delay": 5,
                     },
                 },
             }
@@ -112,6 +119,22 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
             "label": "Assistant name",
             "default": "Helper",
         },
+        {
+            "key": "retries",
+            "type": "number",
+            "label": "Retries",
+            "default": 3,
+            "step": 1,
+        },
+        {
+            "key": "delay",
+            "type": "number",
+            "label": "Delay",
+            "default": 5,
+            "step": 1,
+            "min": 0,
+            "max": 300,
+        },
     )
     assert chat_variable_fields(SimpleNamespace(model_extra={})) is None
 
@@ -128,6 +151,8 @@ def test_chat_variable_fields_reuses_the_chainlit_scalar_subset() -> None:
         ("invalid", {"type": "string", "enum": ["a", {}]}, "a"),
         ("invalid", {"type": "string", "enum": ["a"]}, "b"),
         ("invalid", {"type": "object"}, {}),
+        ("invalid", {"type": "integer"}, "3"),
+        ("invalid", {"type": "integer"}, True),
         ("invalid", None, "value"),
     ],
 )
@@ -172,7 +197,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
         lgos={
             "schema_version": 1,
             "description": "  Simple graph  ",
-            "features": ["file_inputs", "mcp_tools"],
+            "features": ["background", "file_inputs", "mcp_tools"],
             "client_settings": {
                 "schema_version": 1,
                 "json_schema": {"properties": {"enabled": {"type": "boolean"}}},
@@ -250,6 +275,7 @@ def test_discovery_projects_settings_from_gateway_model_details(
         assert spec.description == "Simple graph"
         assert spec.supports_mcp_tools is True
         assert spec.supports_file_inputs is True
+        assert spec.supports_background is True
     assert specs[0].fields == (
         {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": False},
     )
@@ -466,6 +492,28 @@ def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
         },
     ]
     assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
+
+
+def test_background_workspace_model_has_delivery_control() -> None:
+    client = _client([])
+    spec = WorkspaceModelSpec(
+        id="openai/background-mock",
+        description="Background report",
+        fields=(),
+        supports_background=True,
+    )
+
+    sync_workspace_models(client, (spec,))
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
+        {
+            "key": "lgos_background",
+            "type": "checkbox",
+            "label": "Run in background",
+            "default": False,
+        }
+    ]
 
 
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:

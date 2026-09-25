@@ -46,7 +46,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
     Compare schema adapters, RAG, citations, stream-event filtering, file output,
-    subgraphs, and HITL.
+    subgraphs, HITL, and polling-only background execution.
 
     [:octicons-arrow-right-24: Example graphs](graphs/index.md)
 
@@ -100,6 +100,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Component | Demo-owned responsibility | Distribution |
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
+| Background worker | Runs Hatchet background tasks outside the API process with a fixed slot count | Optional `background` Compose profile using the demo API image and Hatchet |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Host-run locked sync project plus the unchanged pinned official image |
@@ -131,12 +132,17 @@ Bifrost uses catalog-detail pass-through.
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
     Gateway](bifrost.md) for the precise boundaries.
 
+    Both bundled gateways support polling-only background work through their
+    normal Responses paths. Hatchet stores each run's status and Response. See
+    the
+    [background guide](../how-to-guides/background-responses.md).
+
 ## Client Capabilities
 
-| Demo client | File input | MCP | Runtime settings | Interrupts | UI feedback | Citations |
-| --- | --- | --- | --- | --- | --- | --- |
-| Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Native status and persisted image elements | Markdown content |
-| Open WebUI generated models | Uploads attachments to the central Files API | One synchronized gateway connection attached from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Native status and persisted file events | Native source events and Markdown |
+| Demo client | File input | MCP | Runtime settings | Interrupts | Background | UI feedback | Citations |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and polling | Native status and persisted image elements | Markdown content |
+| Open WebUI generated models | Uploads attachments to the central Files API | One synchronized gateway connection attached from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Generated Chat Variable and polling | Native status and persisted file events | Native source events and Markdown |
 
 Both clients still expose limited-functionality models when LGOS metadata is
 missing; see their client-specific guides for that behavior.
@@ -151,13 +157,15 @@ Chainlit and Open WebUI adapters show that client behavior without importing LGO
 ## Persistence Boundary
 
 The UI owns chat history. LGOS stores resumable interrupt state and explicit
-thread-scoped application data, not the transcript. PostgreSQL provides the
-checkpointer, LangGraph store, and cross-worker interrupt coordination, with no
-Redis service.
+thread-scoped application data, not the transcript; Hatchet stores background
+runs. PostgreSQL provides the checkpointer, LangGraph store, and cross-worker
+interrupt coordination, with no Redis service.
 See [Persistent Plot Agent](graphs/persistent-plot-agent.md#ownership-boundaries)
 for Store and UI ownership,
 [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
-for the server lifecycle, and
+for the server lifecycle,
+[Background Mock](graphs/background-mock.md) for the
+separately deployed worker, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative continuation and retention contract.
 

@@ -176,13 +176,16 @@ After a profile is selected, Chainlit:
 5. Sends changed values as JSON text in
    `metadata.lgos_settings` on every Responses request.
 
-Booleans become switches, inline string enums become selects, and strings
-become text inputs. Other schema shapes are not rendered. The adapter checks
-only boolean/string types and select membership when restoring the UI; it does
-not interpret general JSON Schema constraints. LGOS remains the validation
-authority. If the required LGOS model extension is unavailable, Chainlit hides
-the controls, uses server defaults, and shows a transient **Limited
-functionality** warning after selection. Profile discovery itself stays
+Booleans become switches, inline string enums become selects, strings become
+text inputs, and integers become sliders when they declare both `minimum` and
+`maximum`, or number inputs otherwise. Other schema shapes are not rendered.
+Chainlit stores number widget values as floats, so whole numbers are sent as
+integers. The adapter checks only these types, integer bounds, and select
+membership when restoring the UI; it does not interpret general JSON Schema
+constraints. LGOS remains the validation authority. If the required LGOS
+model extension is unavailable, Chainlit hides the controls, uses server
+defaults, and shows a transient **Limited functionality** warning after
+selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
@@ -195,6 +198,12 @@ profile. It defaults to enabled and selects `responses.stream` or
 `responses.create`; it is not included in `lgos_settings`. With
 streaming disabled, Chainlit waits for the complete response and sends the
 answer once.
+
+Models advertising `background` also receive an opt-in **Run in
+background** switch. Chainlit uses non-streaming create/retrieve polling,
+renders lifecycle states in its task list, and requests cancellation when the
+turn stops. Interrupt answers follow the same switch. This client-owned switch
+is not included in `lgos_settings`.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
@@ -262,7 +271,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=false
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
     ```
 
     This authenticates users with SSO while sending the static Chainlit key to
@@ -278,7 +287,7 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     To delegate gateway authorization to the signed-in user instead:
 
     ```dotenv
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=true
+    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True
     DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
     OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com
@@ -411,7 +420,7 @@ interrupt updates the same form, while a terminal response marks the ledger
 complete and removes it. The client therefore depends only on the standard
 tool-call batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
-[design rationale](design-choices.md#chainlit-human-review-is-event-driven).
+[design rationale](design-choices.md#chainlit).
 
 The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
 note uploads after an explicit natural-language save request. The payload

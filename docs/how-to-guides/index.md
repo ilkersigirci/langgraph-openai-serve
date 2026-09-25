@@ -39,6 +39,12 @@ application.
 
     [:octicons-arrow-right-24: Configure files](file-inputs.md)
 
+-   :material-progress-clock:{ .lg .middle } __Run background work__
+
+    Run a graph in a separate worker and poll its standard Response resource.
+
+    [:octicons-arrow-right-24: Configure background Responses](background-responses.md)
+
 -   :material-transit-connection-horizontal:{ .lg .middle } __Use a proxy__
 
     Preserve native Responses items, metadata, Files operations, errors, and

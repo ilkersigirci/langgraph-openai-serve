@@ -52,6 +52,8 @@ flowchart LR
   database[("lgos-db PostgreSQL<br/>dedicated mcp_demo schema")]
 
   model["Upstream OpenAI-compatible model"]
+  hatchet["Hatchet workflow service"]
+  worker["Optional background worker"]
 
   user <--> chainlit
   user <--> openwebui
@@ -69,6 +71,11 @@ flowchart LR
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
+  api_a <-->|"trigger, read, cancel run"| hatchet
+  api_b <-->|"trigger, read, cancel run"| hatchet
+  hatchet <-->|"job + Response"| worker
+  worker <-->|"checkpoints, Store, locks"| database
+  worker -->|"when a graph calls a model"| model
   dbhub -->|"lgos_mcp read-only role"| database
   api_a <-->|"when a graph calls a model"| model
   api_b <-->|"when a graph calls a model"| model
@@ -92,18 +99,24 @@ LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
 
-At startup, Compose waits for PostgreSQL and runs the one-shot API and Chainlit
-schema migrations. The idempotent MCP setup then creates the reporting views,
-role, and grants before DBHub starts. Both healthy graph APIs and the Files
-service start before the selected gateway and UI clients. The diagram shows
-request traffic rather than those readiness dependencies. Compose runs one
-Files process for the demo; production deployments may run multiple stateless
-replicas over the same repository.
+Background-capable models use the selected gateway's normal Responses
+lifecycle. Chainlit and Open WebUI discover the capability, create a non-streaming
+background Response, and poll or cancel through the OpenAI SDK. Hatchet runs
+each job and stores its status and Response, which every API replica reads.
+
+At startup, Compose waits for PostgreSQL and runs the one-shot API schema setup
+and Chainlit schema migrations. The idempotent MCP setup then creates the
+reporting views, role, and grants before DBHub starts. Both healthy graph APIs
+and the Files service start before the selected gateway and UI clients. The
+diagram shows request traffic rather than those readiness dependencies.
+Compose runs one Files process for the demo; production deployments may run
+multiple stateless replicas over the same repository.
 
 ## State Ownership
 
-The UIs own their conversations. The API stores only paused interrupt execution
-and explicit graph data; it does not copy either UI transcript into LGOS.
+The UIs own their conversations. The API stores paused interrupt execution
+and explicit graph data, and Hatchet stores background runs; neither copies
+either UI transcript into LGOS.
 
 ```mermaid
 flowchart LR
@@ -148,8 +161,11 @@ keeps its state and native raw-upload copy in its bind-mounted data directory;
 the central Files service owns the separate inference copy. Detailed ownership
 and recovery behavior live in
 [Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
-Human Review](graphs/interruptible-approval.md). When
-`LGOS_ENABLE_LANGFUSE=true`, each API adds the Langfuse callback to graph runs
+Human Review](graphs/interruptible-approval.md). Background execution is
+described in [Background Mock](graphs/background-mock.md);
+`advanced-graph` runs in the same worker when a client requests background
+mode. When
+`LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs
 and exports observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.
 

@@ -18,10 +18,10 @@ from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.graph.support.interrupt import (
     InterruptAnswerState,
     make_interrupt_graph,
+    make_multi_interrupt_graph,
+    make_nested_multi_interrupt_graph,
     make_parallel_interrupt_graph,
     make_parallel_nested_interrupt_graph,
-    make_sequential_interrupt_graph,
-    make_sequential_nested_interrupt_graph,
 )
 
 from .support import (
@@ -29,10 +29,10 @@ from .support import (
     CONCURRENT_MODEL,
     INVALID_PAYLOAD_MODEL,
     MODEL,
+    MULTI_TURN_MODEL,
     NESTED_MODEL,
-    NESTED_SEQUENTIAL_MODEL,
+    NESTED_MULTI_TURN_MODEL,
     PARALLEL_MODEL,
-    SEQUENTIAL_MODEL,
 )
 
 
@@ -88,8 +88,8 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
                 request_to_input=empty_answers,
                 output_to_message=render_sorted_answers,
             ),
-            SEQUENTIAL_MODEL: interrupt_config(
-                make_sequential_interrupt_graph(sqlite_checkpointer),
+            MULTI_TURN_MODEL: interrupt_config(
+                make_multi_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
                 output_to_message=render_answers,
             ),
@@ -111,8 +111,8 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
                 request_to_input=empty_answers,
                 output_to_message=render_sorted_answers,
             ),
-            NESTED_SEQUENTIAL_MODEL: interrupt_config(
-                make_sequential_nested_interrupt_graph(sqlite_checkpointer),
+            NESTED_MULTI_TURN_MODEL: interrupt_config(
+                make_nested_multi_interrupt_graph(sqlite_checkpointer),
                 request_to_input=empty_answers,
                 output_to_message=render_answers,
             ),

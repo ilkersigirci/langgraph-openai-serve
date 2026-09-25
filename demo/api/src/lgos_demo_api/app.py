@@ -9,19 +9,23 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import httpx2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
-from openai import AsyncOpenAI
 
-from lgos_demo_api.checkpointer import postgres_runtime
+from lgos_demo_api.background.components import create_background_backend
+from lgos_demo_api.core.logging import LOGGING_CONFIG
+from lgos_demo_api.core.otel import instrument_fastapi_app
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph import (
-    OpenAICompatibleKnowledgeBase,
-    create_advanced_graph,
     create_advanced_graph_config,
-    create_model,
+    open_advanced_graph,
 )
+from lgos_demo_api.graphs.background_interrupt import (
+    create_background_interrupt_graph,
+    create_background_interrupt_graph_config,
+)
+from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
@@ -48,24 +52,9 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.logging import LOGGING_CONFIG
-from lgos_demo_api.otel import instrument_fastapi_app
-from lgos_demo_api.settings import settings
+from lgos_demo_api.persistence.postgres import postgres_runtime
 
 logger = logging.getLogger(__name__)
-
-
-def _vector_store_connection() -> tuple[str, str]:
-    """Resolve storage credentials without leaking the model provider's key."""
-    if settings.VECTOR_STORE_BASE_URL:
-        return (
-            settings.VECTOR_STORE_BASE_URL,
-            settings.VECTOR_STORE_API_KEY or "DUMMY",
-        )
-    return (
-        settings.OPENAI_BASE_URL,
-        settings.VECTOR_STORE_API_KEY or settings.OPENAI_API_KEY,
-    )
 
 
 @asynccontextmanager
@@ -80,46 +69,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     """
     logger.info("demo.server.starting")
-    vector_store_base_url, vector_store_api_key = _vector_store_connection()
-
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
-        httpx2.AsyncClient(timeout=60) as upstream_http,
-        AsyncOpenAI(
-            base_url=vector_store_base_url,
-            api_key=vector_store_api_key,
-            default_headers=(
-                {"x-bf-api-key": settings.VECTOR_STORE_BIFROST_KEY_NAME}
-                if settings.VECTOR_STORE_BIFROST_KEY_NAME
-                else None
-            ),
-            http_client=upstream_http,
-            max_retries=0,
-        ) as vector_store_client,
-        AsyncOpenAI(
-            base_url=settings.FILES_BASE_URL,
-            api_key="DUMMY",
-            max_retries=0,
-        ) as files_client,
+        open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
+        app.state.background_interrupt_graph = create_background_interrupt_graph(
+            runtime.checkpointer
+        )
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
-        knowledge = (
-            OpenAICompatibleKnowledgeBase(
-                vector_store_client,
-                settings.VECTOR_STORE_ID,
-            )
-            if settings.VECTOR_STORE_ID
-            else None
-        )
-        app.state.advanced_graph = create_advanced_graph(
-            model=create_model(upstream_http),
-            knowledge=knowledge,
-            files=files_client,
-            checkpointer=runtime.checkpointer,
-            store=runtime.store,
-        )
+        app.state.advanced_graph = advanced_graph
         yield
 
     logger.info("demo.server.stopped")
@@ -156,6 +116,11 @@ def create_custom_app() -> FastAPI:
                 lambda: app.state.advanced_graph,
                 lambda key: app.state.run_coordinator(key),
             ),
+            "background-mock": background_mock_graph_config,
+            "background-interrupt": create_background_interrupt_graph_config(
+                lambda: app.state.background_interrupt_graph,
+                lambda key: app.state.run_coordinator(key),
+            ),
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,
@@ -187,6 +152,7 @@ def create_custom_app() -> FastAPI:
     graph_serve = LanggraphOpenaiServe(
         app=app,
         graphs=graph_registry,
+        background=create_background_backend() if settings.BACKGROUND_ENABLED else None,
     )
 
     graph_serve.bind_openai_api()

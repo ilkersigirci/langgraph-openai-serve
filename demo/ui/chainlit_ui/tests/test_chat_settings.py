@@ -125,6 +125,33 @@ async def test_discovered_settings_are_published(
     assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
 
 
+async def test_background_capability_adds_delivery_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
+    session = Session({"chat_profile": "background-mock"})
+    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
+    monkeypatch.setattr(
+        chat_settings,
+        "retrieve_model",
+        AsyncMock(return_value=configured_model(None, features=["background"])),
+    )
+    monkeypatch.setattr(chat_settings.cl, "user_session", session)
+
+    await chat_settings.configure_chat_settings()
+
+    assert [(widget.id, widget.initial) for widget in factory.call_args.args[0]] == [
+        (chat_settings.STREAMING_SETTING_ID, True),
+        (chat_settings.BACKGROUND_SETTING_ID, False),
+    ]
+    assert chat_settings.background_enabled() is False
+    session.values["chat_settings"] = {
+        chat_settings.BACKGROUND_SETTING_ID: True,
+    }
+    assert chat_settings.background_enabled() is True
+    assert chat_settings.chat_settings_metadata() == {}
+
+
 async def test_server_tool_profile_uses_fixed_opt_in_tools(
     monkeypatch: pytest.MonkeyPatch,
     runtime_client_settings: ModelClientSettings,

@@ -76,7 +76,7 @@ def test_package_settings_still_read_process_environment(tmp_path: Path) -> None
         tmp_path,
         extra_env={
             "LGOS_OPENAI_API_PREFIX": "/openai/v1/",
-            "LGOS_OPENAI_API_DOCS_ENABLED": "true",
+            "LGOS_OPENAI_API_DOCS_ENABLED": "True",
         },
     )
 

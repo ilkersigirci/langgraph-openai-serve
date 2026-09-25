@@ -17,6 +17,7 @@ from pydantic import (
 
 from .functions.generic.api import _model_request
 from .functions.generic.contracts import (
+    BACKGROUND_SETTING_NAME,
     LGOS_EXTENSION_KEY,
     LGOS_MODEL_OWNER,
     PACKAGE_VERSION_TOOL_NAME,
@@ -29,6 +30,7 @@ from .tool_servers import MCP_GATEWAY_TOOL_ID, PUBLIC_READ_GRANT
 
 FILE_INPUTS_FEATURE = "file_inputs"
 MCP_TOOLS_FEATURE = "mcp_tools"
+BACKGROUND_FEATURE = "background"
 CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERIC_FUNCTION_ID = "generic"
@@ -50,6 +52,12 @@ WEB_SEARCH_FIELD: dict[str, JsonValue] = {
     "key": WEB_SEARCH_TOOL_NAME,
     "type": "checkbox",
     "label": "Web search",
+    "default": False,
+}
+BACKGROUND_FIELD: dict[str, JsonValue] = {
+    "key": BACKGROUND_SETTING_NAME,
+    "type": "checkbox",
+    "label": "Run in background",
     "default": False,
 }
 
@@ -84,6 +92,7 @@ class WorkspaceModelSpec:
     description: str | None = None
     supports_file_inputs: bool = False
     supports_mcp_tools: bool = False
+    supports_background: bool = False
 
     def __post_init__(self) -> None:
         if len(self.base_model_id) > OPENWEBUI_MODEL_ID_MAX_LENGTH:
@@ -175,6 +184,9 @@ def discover_workspace_model_specs(
                 ),
                 supports_mcp_tools=(
                     extension is not None and MCP_TOOLS_FEATURE in extension.features
+                ),
+                supports_background=(
+                    extension is not None and BACKGROUND_FEATURE in extension.features
                 ),
             )
         )
@@ -281,6 +293,14 @@ def _chat_variable_field(
     schema_type = schema.get("type")
     if schema_type == "boolean" and type(default) is bool:
         return {**field, "type": "checkbox"}
+    if schema_type == "integer" and type(default) is int:
+        # Open WebUI binds number inputs as JSON numbers, so values stay integers.
+        field = {**field, "type": "number", "step": 1}
+        if type(schema.get("minimum")) is int:
+            field["min"] = schema["minimum"]
+        if type(schema.get("maximum")) is int:
+            field["max"] = schema["maximum"]
+        return field
     if schema_type != "string" or not isinstance(default, str):
         return None
 
@@ -326,6 +346,8 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         fields.append(PACKAGE_VERSION_FIELD)
     if supports_web_search(spec.id):
         fields.append(WEB_SEARCH_FIELD)
+    if spec.supports_background:
+        fields.append(BACKGROUND_FIELD)
     metadata = {
         "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
         CHAT_VARIABLES_META_KEY: {"fields": fields},

@@ -89,7 +89,7 @@ def test_oauth_token_forwarding_needs_no_static_gateway_key(
     monkeypatch: pytest.MonkeyPatch, api_key: str | None
 ) -> None:
     monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
-    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "True")
     monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
     monkeypatch.setenv(
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
@@ -110,7 +110,7 @@ def test_oauth_token_forwarding_can_share_the_stack_gateway_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
-    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "True")
     monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
     monkeypatch.setenv(
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
@@ -128,7 +128,7 @@ def test_oauth_token_forwarding_requires_oauth_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "mock")
-    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "True")
     monkeypatch.delenv("OPENAI_GATEWAY_API_KEY")
 
     with pytest.raises(ValidationError, match="requires OAuth login"):
@@ -139,7 +139,7 @@ def test_oauth_token_forwarding_requires_encryption_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DEMO_CHAINLIT_LOGIN_TYPE", "oauth")
-    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "true")
+    monkeypatch.setenv("DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING", "True")
     monkeypatch.setenv("DEMO_CHAINLIT_OAUTH_ISSUER", "https://id.example")
     monkeypatch.delenv("OPENAI_GATEWAY_API_KEY")
     monkeypatch.delenv("DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS", raising=False)

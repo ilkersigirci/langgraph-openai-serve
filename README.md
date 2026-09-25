@@ -25,13 +25,21 @@ cross-worker interrupt coordination, install the optional integration:
 uv add "langgraph-openai-serve[postgres]"
 ```
 
+For polling-only background Responses executed by Hatchet, install its
+integration. `InMemoryBackgroundBackend` needs no extra for local trials; see
+[Run Responses In The Background](docs/how-to-guides/background-responses.md).
+
+```bash
+uv add "langgraph-openai-serve[hatchet]"
+```
+
 For built-in Langfuse tracing, install the tracing integration:
 
 ```bash
 uv add "langgraph-openai-serve[tracing]"
 ```
 
-Set `LGOS_ENABLE_LANGFUSE=true` together with `LANGFUSE_PUBLIC_KEY` and
+Set `LGOS_ENABLE_LANGFUSE=True` together with `LANGFUSE_PUBLIC_KEY` and
 `LANGFUSE_SECRET_KEY`. LGOS creates the callback lazily on the first graph run;
 importing the package never initializes Langfuse.
 
@@ -150,6 +158,7 @@ for a feature-by-feature comparison.
 - OpenAI clients: [docs/tutorials/openai-clients.md](docs/tutorials/openai-clients.md)
 - Custom graphs: [docs/tutorials/custom-graphs.md](docs/tutorials/custom-graphs.md)
 - LangGraph runtime settings: [docs/how-to-guides/langgraph-runtime-settings.md](docs/how-to-guides/langgraph-runtime-settings.md)
+- Background Responses: [docs/how-to-guides/background-responses.md](docs/how-to-guides/background-responses.md)
 - OpenAI-compatible proxies: [docs/how-to-guides/openai-proxies.md](docs/how-to-guides/openai-proxies.md)
 - API and configuration: [docs/reference.md](docs/reference.md)
 - Compatibility contract: [docs/explanation/openai-compatibility.md](docs/explanation/openai-compatibility.md)

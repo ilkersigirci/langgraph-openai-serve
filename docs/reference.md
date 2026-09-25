@@ -10,12 +10,14 @@ deployment's ASGI server or ingress proxy.
 | --- | --- | --- |
 | `GET` | `/v1/models` | List registered graph models with LGOS descriptions and features. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
-| `POST` | `/v1/responses` | Run a graph through the stateless OpenAI Responses subset. |
+| `POST` | `/v1/responses` | Run a graph now or accept an opted-in polling-only background Response. |
+| `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response. |
+| `POST` | `/v1/responses/{response_id}/cancel` | Cancel an active background Response or return a finished one. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 
 FastAPI docs for the mounted OpenAI app are disabled by default. Set
-`LGOS_OPENAI_API_DOCS_ENABLED=true` to expose `{prefix}/docs`, `{prefix}/redoc`,
+`LGOS_OPENAI_API_DOCS_ENABLED=True` to expose `{prefix}/docs`, `{prefix}/redoc`,
 and `{prefix}/openapi.json`.
 
 ### Responses Request
@@ -40,9 +42,15 @@ standard Responses types.
 The public `web_search` shape does not prescribe the graph's search backend;
 the bundled demo chooses an HTTP or upstream provider backend.
 
-LGOS does not persist completed Responses for retrieve or deletion. Omitted,
-null, and false `store` values are accepted, and the returned Response reports
-`store=false`; `store=true`, `conversation`, and background mode are rejected.
+Foreground LGOS Responses are not persisted for retrieval or deletion. Omitted,
+null, and false `store` values are accepted, and the returned foreground
+Response reports `store=false`; foreground `store=true` is rejected.
+For a model declaring `GraphFeature.BACKGROUND`, `background=true` selects the
+polling-only path and permits either `store=false` or `store=true`; the
+background engine keeps the result either way, and Hatchet keeps it for its
+[data retention](https://docs.hatchet.run/self-hosting/data-retention) period
+(30 days by default when self-hosted). Background streaming and
+cursor/event replay are rejected. `conversation` is unsupported in both modes.
 `previous_response_id` is supported for interruptible graphs to resume execution
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
 those resumes. The route also rejects unregistered custom tools, client-supplied
@@ -70,8 +78,8 @@ Package settings:
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `LGOS_OPENAI_API_PREFIX` | `/v1` | Must start with `/`; trailing slash is normalized. |
-| `LGOS_OPENAI_API_DOCS_ENABLED` | `false` | Enables docs only for the mounted OpenAI app. |
-| `LGOS_ENABLE_LANGFUSE` | `false` | Lazily adds the package Langfuse callback to every graph run. |
+| `LGOS_OPENAI_API_DOCS_ENABLED` | `False` | Enables docs only for the mounted OpenAI app. |
+| `LGOS_ENABLE_LANGFUSE` | `False` | Lazily adds the package Langfuse callback to every graph run. |
 
 Settings prefixed with `DEMO_` belong to the independent example applications
 and are documented under [Demo Settings and Commands](demo/reference.md).
@@ -88,9 +96,12 @@ rejects empty model IDs, `.`, `..`, and IDs containing `/`. The public
 `registry.register(model_id, config)` to add or replace a graph. Replacing an
 existing ID preserves its position.
 
-`LanggraphOpenaiServe(..., checkpoint_scope=resolver)` accepts an optional sync
-or async callable from FastAPI `Request` to a non-empty, server-trusted string.
-Interrupt checkpoint keys include this scope before model and run identity. Use
+`LanggraphOpenaiServe(..., background=backend)` accepts an optional
+`BackgroundBackend`. `LanggraphOpenaiServe(..., checkpoint_scope=resolver)`
+accepts an optional sync or async callable from FastAPI `Request` to a
+non-empty, server-trusted string.
+Interrupt checkpoint keys and background Response authorization include this
+scope before model and run identity. Use
 an authenticated tenant or principal identifier when caller-chosen run UUIDs
 must be isolated between security domains; do not derive the scope from
 untrusted OpenAI metadata or the OpenAI `user` field. The
@@ -151,6 +162,9 @@ as a compiled state graph and rechecks its context schema and interrupt
 checkpointer capabilities before execution. Static configuration relationships,
 including the requirement that `run_coordinator` appear exactly when
 `GraphFeature.INTERRUPTS` is enabled, fail during `GraphConfig` construction.
+A graph may declare both interrupts and background; a background run that
+reaches an interrupt completes with `lgos_interrupt` function calls, and an
+answer in either mode continues it.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -197,7 +211,7 @@ default callback through process environment settings:
 
 ```bash
 uv add "langgraph-openai-serve[tracing]"
-export LGOS_ENABLE_LANGFUSE=true
+export LGOS_ENABLE_LANGFUSE=True
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
@@ -236,7 +250,8 @@ from its configured MCP gateway; it does not publish tool definitions or grant
 access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
-advertises the interrupt/resume flow.
+advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
+advertises polling-only background Responses.
 
 ### Runtime Settings
 
@@ -288,7 +303,7 @@ request lifecycle.
 Interrupt-enabled graphs have additional registration requirements:
 
 - compile the graph with an asynchronous checkpointer that supports
-  `aget_tuple()`, `alist()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
+  `aget_tuple()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
 - configure an asynchronous `run_coordinator`; and
 - use a durable checkpointer and cross-process coordinator in production.
 
@@ -334,6 +349,44 @@ checkout still follows the pool's configured timeout. The
 storage adapters and interrupt coordination, plus a separate one-shot schema
 setup process. Busy interrupt leases fail before streaming begins with HTTP 409
 and `code: "run_busy"`.
+
+## Background Execution
+
+`LanggraphOpenaiServe(background=...)` accepts any `BackgroundBackend`: an
+engine that runs `BackgroundJob`s and stores their status and result.
+
+| Method | Contract |
+| --- | --- |
+| `submit(job)` | Start the job, or return the run already holding `job.idempotency_key`. |
+| `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
+| `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
+
+The engine's worker calls `execute_background_job(job, run_id, graphs)`. It
+runs the job through the foreground Responses path and returns the Response
+JSON the engine stores. Run IDs must be UUIDs because the public Response ID
+embeds the run ID, so reading a Response needs no lookup table.
+`InMemoryBackgroundBackend(graphs)` runs jobs as tasks of one process for
+development and tests; enter its `lifespan` in the application's lifespan.
+
+Install `langgraph-openai-serve[hatchet]` for
+`langgraph_openai_serve.integrations.hatchet`. `create_hatchet_task(hatchet)`
+registers the task in the API and worker processes, with a 30-minute
+`schedule_timeout` and a one-hour `execution_timeout` by default.
+`HatchetBackgroundBackend(task, hatchet.runs)` submits, reads, and cancels its
+runs. The worker's Hatchet lifespan yields the `GraphRegistry` the task
+executes. The task has no retries, and its 24-hour Hatchet idempotency key is
+the scoped `Idempotency-Key` digest. The adapter is never imported by the core
+package.
+
+Background create accepts an optional `Idempotency-Key` header of 1 to 255
+characters. A retry returns the original Response without starting a second
+run; reuse with different content returns `422` with
+`code="idempotency_key_reused"`. The `metadata.lgos_run_id` request field
+identifies interrupt-enabled foreground operations and is rejected on
+background requests.
+
+See [Run Responses In The Background](how-to-guides/background-responses.md)
+for the client contract, graph requirements, and deployment wiring.
 
 ## Streaming Status
 

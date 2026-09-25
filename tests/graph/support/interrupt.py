@@ -56,8 +56,8 @@ def make_parallel_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
     )
 
 
-def _sequential_interrupt_graph() -> StateGraph:
-    def ask_twice(state: InterruptAnswerState) -> dict[str, list[str]]:
+def _multiple_interrupts_in_one_node_graph() -> StateGraph:
+    def ask_twice(_state: InterruptAnswerState) -> dict[str, list[str]]:
         first = interrupt({"question": "first"})
         second = interrupt({"question": "second"})
         return {"answers": [str(first), str(second)]}
@@ -70,14 +70,55 @@ def _sequential_interrupt_graph() -> StateGraph:
     )
 
 
-def make_sequential_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
-    return _sequential_interrupt_graph().compile(checkpointer=checkpointer)
-
-
-def make_sequential_nested_interrupt_graph(
+def make_multiple_interrupts_in_one_node_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> Any:
-    nested = _sequential_interrupt_graph().compile()
+    return _multiple_interrupts_in_one_node_graph().compile(checkpointer=checkpointer)
+
+
+def make_nested_multiple_interrupts_in_one_node_graph(
+    checkpointer: BaseCheckpointSaver,
+) -> Any:
+    nested = _multiple_interrupts_in_one_node_graph().compile()
+
+    async def invoke_nested(state: InterruptAnswerState) -> Any:
+        return await nested.ainvoke(state)
+
+    return (
+        StateGraph(InterruptAnswerState)
+        .add_node("nested", invoke_nested)
+        .add_edge(START, "nested")
+        .add_edge("nested", END)
+        .compile(checkpointer=checkpointer)
+    )
+
+
+def _multi_interrupt_graph() -> StateGraph:
+    questions = ("first", "second")
+
+    def ask(state: InterruptAnswerState) -> dict[str, list[str]]:
+        question = questions[len(state.get("answers", []))]
+        return {"answers": [str(interrupt({"question": question}))]}
+
+    def route(state: InterruptAnswerState) -> str:
+        return END if len(state["answers"]) >= len(questions) else "ask"
+
+    return (
+        StateGraph(InterruptAnswerState)
+        .add_node("ask", ask)
+        .add_edge(START, "ask")
+        .add_conditional_edges("ask", route)
+    )
+
+
+def make_multi_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
+    """Invoke one interrupting node twice through a graph loop."""
+    return _multi_interrupt_graph().compile(checkpointer=checkpointer)
+
+
+def make_nested_multi_interrupt_graph(checkpointer: BaseCheckpointSaver) -> Any:
+    """Build the supported multi-interrupt shape inside a subgraph."""
+    nested = _multi_interrupt_graph().compile()
 
     async def invoke_nested(state: InterruptAnswerState) -> Any:
         return await nested.ainvoke(state)

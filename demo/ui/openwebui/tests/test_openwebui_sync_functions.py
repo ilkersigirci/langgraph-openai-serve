@@ -273,7 +273,8 @@ def test_main_reads_demo_openwebui_environment(
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_PASSWORD", "password")
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
-    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://bifrost.example")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://lgos-bifrost:4000")
+    monkeypatch.setenv("DEMO_GATEWAY_HOST_URL", "https://bifrost.example")
     monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
     client = Mock()
     client_context = MagicMock()
@@ -342,9 +343,10 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
+    # Open WebUI connects to MCP from its own network, not the sync host's.
     sync_mcp_mock.assert_called_once_with(
         client,
-        gateway=gateway_config("bifrost", "https://bifrost.example"),
+        gateway=gateway_config("bifrost", "http://lgos-bifrost:4000"),
         api_key="api-key",
     )
     openai_factory.assert_called_once_with(

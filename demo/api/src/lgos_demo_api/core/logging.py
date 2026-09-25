@@ -57,6 +57,11 @@ LOGGING_CONFIG: dict[str, Any] = {
         "level": "WARNING",
     },
     "loggers": {
+        "hatchet": {
+            "handlers": [],
+            "level": "INFO",
+            "propagate": True,
+        },
         "langgraph_openai_serve": {
             "level": "INFO",
             "propagate": True,
@@ -83,6 +88,7 @@ LOGGING_CONFIG: dict[str, Any] = {
 }
 
 
-def configure_logging() -> None:
+def configure_logging(*, root_level: int = logging.WARNING) -> None:
     """Configure demo and server logs as JSON on the stdout stream."""
     logging.config.dictConfig(LOGGING_CONFIG)
+    logging.getLogger().setLevel(root_level)

@@ -64,7 +64,7 @@ esac
     uv = tmp_path / "uv"
     uv.write_text(
         """#!/bin/sh
-printf "uv OPENAI_GATEWAY_BASE_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$*" >> "$DEPLOY_TEST_LOG"
+printf "uv OPENAI_GATEWAY_BASE_URL=%s DEMO_GATEWAY_HOST_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$DEMO_GATEWAY_HOST_URL" "$*" >> "$DEPLOY_TEST_LOG"
 """
     )
     uv.chmod(0o755)
@@ -124,8 +124,11 @@ printf "uv OPENAI_GATEWAY_BASE_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$*" >> 
     expected.extend(
         [
             f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
+            # Open WebUI stores the gateway root it reaches; the sync command
+            # discovers models through the host root.
             (
-                "uv OPENAI_GATEWAY_BASE_URL="
+                "uv OPENAI_GATEWAY_BASE_URL=https://gateway.example "
+                "DEMO_GATEWAY_HOST_URL="
                 f"{'http://localhost:3000' if gateway_service else 'https://gateway.example'} "
                 "run --directory ui/openwebui --locked python -m "
                 "lgos_openwebui.sync_functions"
@@ -298,7 +301,7 @@ def test_bifrost_has_one_files_provider() -> None:
         name
         for name, provider in config["providers"].items()
         if file_requests
-        & provider["custom_provider_config"].get("allowed_requests", {}).keys()
+        & provider.get("custom_provider_config", {}).get("allowed_requests", {}).keys()
     }
 
     assert files_providers == {"lgos-files"}
@@ -307,6 +310,23 @@ def test_bifrost_has_one_files_provider() -> None:
     )
     files_keys = config["providers"]["lgos-files"]["keys"]
     assert any(key.get("use_for_batch_api") is True for key in files_keys)
+
+
+def test_bifrost_background_route_is_pinned_to_one_api() -> None:
+    config = json.loads(
+        (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
+    )
+    provider = config["providers"]["openai"]
+
+    assert provider["network_config"]["base_url"] == "http://lgos-demo-api-a:8000"
+    assert provider["keys"] == [
+        {
+            "name": "lgos-background",
+            "value": "DUMMY",
+            "models": ["background-mock", "background-interrupt"],
+            "weight": 1.0,
+        }
+    ]
 
 
 def test_files_and_chainlit_s3_are_independently_configured() -> None:

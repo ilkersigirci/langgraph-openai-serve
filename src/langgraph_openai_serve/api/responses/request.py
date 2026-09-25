@@ -16,6 +16,8 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseToolChoice,
     ResponseWebSearchTool,
 )
+from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.graph_registry import GraphConfig
 from langgraph_openai_serve.graph.interrupt.models import InterruptResume
 from langgraph_openai_serve.graph.request import (
     ClientFunctionTool,
@@ -77,6 +79,24 @@ def decode_responses_request(
     )
 
 
+def decode_graph_request(
+    request: ResponseCreateRequest,
+    graph_config: GraphConfig,
+) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
+    """Validate and normalize one Responses request for its registered graph."""
+    _validate_tools(request, graph_config.server_tools)
+    if request.previous_response_id is not None and not graph_config.supports(
+        GraphFeature.INTERRUPTS
+    ):
+        message = (
+            "Previous response state is not supported for model "
+            f"'{request.model}'; only interruptible graphs support "
+            "'previous_response_id'."
+        )
+        raise UnsupportedResponsesRequestError(message, param="previous_response_id")
+    return decode_responses_request(request, graph_config.server_tools)
+
+
 def _decode_tool_choice(
     tool_choice: ResponseToolChoice | None,
 ) -> ClientToolChoice | None:
@@ -101,7 +121,7 @@ def selected_server_tools(
     )
 
 
-def validate_tools(
+def _validate_tools(
     request: ResponseCreateRequest,
     server_tools: AbstractSet[str],
 ) -> None:
@@ -147,18 +167,34 @@ def _tool_name(tool: ResponseTool) -> str:
 
 
 def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
-    if request.store:
-        message = "'store' must be false; response storage is not supported."
-        raise UnsupportedResponsesRequestError(message, param="store")
-    if request.background:
-        message = "Background Responses are not supported."
-        raise UnsupportedResponsesRequestError(message, param="background")
+    _validate_storage_mode(request)
+    _validate_tool_replay_mode(request)
     if request.conversation is not None:
         message = (
             "Responses conversations are not supported; resend the required input "
             "items."
         )
         raise UnsupportedResponsesRequestError(message, param="conversation")
+    if request.previous_response_id is not None and request.instructions is not None:
+        message = "'instructions' cannot be changed while resuming an interrupt."
+        raise UnsupportedResponsesRequestError(message, param="instructions")
+
+
+def _validate_storage_mode(request: ResponseCreateRequest) -> None:
+    if not request.background:
+        if request.store:
+            message = "'store' must be false; response storage is not supported."
+            raise UnsupportedResponsesRequestError(message, param="store")
+        return
+    if request.stream:
+        message = (
+            "Background responses do not support streaming. Set stream=false or "
+            "omit it, then retrieve the response by ID."
+        )
+        raise UnsupportedResponsesRequestError(message, param="stream")
+
+
+def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
     for index, tool in enumerate(request.tools or ()):
         if isinstance(tool, (ResponseFunctionTool, ResponseCustomTool)) and (
             tool.async_ is True
@@ -185,14 +221,11 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
                     message,
                     param=f"input.{index}.async",
                 )
-    if request.previous_response_id is not None and request.instructions is not None:
-        message = "'instructions' cannot be changed while resuming an interrupt."
-        raise UnsupportedResponsesRequestError(message, param="instructions")
 
 
 __all__ = [
     "UnsupportedResponsesRequestError",
+    "decode_graph_request",
     "decode_responses_request",
     "selected_server_tools",
-    "validate_tools",
 ]

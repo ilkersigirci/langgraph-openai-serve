@@ -93,6 +93,7 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 | --- | --- |
 | `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
+| `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
@@ -132,7 +133,8 @@ Concrete gateway configurations and native Responses requirements are documented
     endpoint is not preserving the optional LGOS discovery contract. A UI may
     continue plain Responses text, but it must visibly label the model or chat
     as **Limited functionality** and must not assume runtime settings, file
-    inputs, client tools, status commentary, or interrupts are available. A
+    inputs, client tools, status commentary, interrupts, or background execution
+    are available. A
     normalized routing catalog cannot remove this requirement.
 
 ## Runtime Settings
@@ -145,6 +147,7 @@ The request keeps each concern in its standard OpenAI location:
 | Small graph-specific values | One `metadata.lgos_settings` string containing a JSON object |
 | Graph selection | `model` |
 | Caller-selected interrupt operation ID | Optional `metadata.lgos_run_id` UUID |
+| Background create retry identity | Optional `Idempotency-Key` HTTP header |
 | Conversation correlation | Optional `metadata.conversation_id` string |
 
 Only small graph-specific values belong to `ClientSettings`. A graph may expose
@@ -222,9 +225,9 @@ interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
 
 ## Supported Responses Subset
 
-`POST /v1/responses` implements stateless text, files, client functions,
-Responses-compatible server-executed custom tools, OpenAI-shaped web search, and
-streaming over the same graph runner as Chat Completions. It intentionally does
+`POST /v1/responses` implements ordinary stateless text, files, client functions,
+Responses-compatible server-executed custom tools, OpenAI-shaped web search,
+streaming, and an opt-in polling-only background path. It intentionally does
 not claim every field in the upstream OpenAI API.
 
 | Request field or item | LGOS behavior |
@@ -240,11 +243,12 @@ not claim every field in the upstream OpenAI API.
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
-| `stream` | Supported with typed Responses SSE events. |
-| `store` | Omitted, null, and false mean false, and Responses return `store: false`; true is rejected. |
+| `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
+| `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |
-| `previous_response_id` | Supported for interruptible graphs to resume from an interrupted state. Rejected for non-interruptible graphs. |
-| `conversation`, `background: true` | Rejected because LGOS has no Responses conversation store or background lifecycle. |
+| `previous_response_id` | Supported for interruptible graphs to answer pending interrupts, in the foreground or with `background=true`. Rejected for non-interruptible graphs. |
+| `background` | Omitted, null, and false select foreground execution. True is supported only for a model declaring `GraphFeature.BACKGROUND` and a server configured with a `BackgroundBackend`. |
+| `conversation` | Rejected because LGOS has no Responses conversation store. |
 | `include`, reasoning, generation controls, service tier, stream options, reusable prompts, prompt-cache fields, truncation | Rejected rather than accepted without semantics. |
 
 Unknown request fields also fail validation. Exact errors use the standard
@@ -252,10 +256,12 @@ OpenAI envelope and identify the unsupported parameter where it is known.
 
 ### Stateless Item Continuation
 
-LGOS generates an opaque Response ID for correlation but does not persist it.
-There are no response retrieve, delete, cancel, compact, or input-item routes.
-Clients therefore keep an input ledger and resend the items needed by the next
-turn instead of using a server-side Conversation.
+For foreground work, LGOS generates an opaque Response ID for correlation but
+does not persist it. Foreground IDs are not retrievable, and there are no
+delete, compact, or input-item routes. Clients therefore keep an input ledger
+and resend the items needed by the next turn instead of using a server-side
+Conversation. The retrieve and cancel routes described below address only
+background Response IDs.
 
 When continuing a response, append every item from `response.output` unchanged.
 Execute returned client function calls, then append their `function_call_output`
@@ -290,6 +296,38 @@ store or Chat Completions resume codec.
 LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
 only paused workflow execution; a graph Store keeps explicit application data.
 Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
+
+### Polling-Only Background Lifecycle
+
+For an opted-in graph, `background=true` submits the validated request to the
+configured `BackgroundBackend` and returns the queued Response. The caller
+keeps the opaque Response ID and uses:
+
+- `GET /v1/responses/{response_id}` for a current JSON snapshot; and
+- `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.
+
+The public states are `queued`, `in_progress`, `completed`, `incomplete`,
+`failed`, and `cancelled`. LGOS configures no retries, so a run that raises
+fails its Response; create a new Response to try again. Retrieval has no
+streaming or cursor mode, and LGOS does not replay
+background events. Unknown, unauthorized, and wrong-scope IDs share the same
+non-revealing not-found behavior.
+
+Background create also accepts an
+[IETF `Idempotency-Key`](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header)
+header, which OpenAI does not define, so retrying SDKs and gateways cannot
+start a second run; see
+[idempotent creation](../how-to-guides/background-responses.md#idempotent-creation).
+`metadata.lgos_run_id` remains interrupt-operation identity and is rejected on
+background requests.
+
+The engine's run record is not a Conversation. `previous_response_id` answers
+a run paused at an interrupt in either mode. A background answer is a new
+queued Response that the worker validates once it holds the run's checkpoint
+lease, so a stale or racing answer fails its own Response.
+
+See [Run Responses In The Background](../how-to-guides/background-responses.md)
+for graph constraints and backend configuration.
 
 ### Responses Output
 
@@ -606,7 +644,7 @@ persists the file through its native UI; and the client appends a small matching
 in the transcript. There is no LGOS artifact field or custom chart event. See
 [Accept And Display Files](../how-to-guides/file-inputs.md#display-a-graph-generated-file).
 
-### Operation Identity
+### Interrupt Operation Identity
 
 An initial interrupt request does not require metadata. LGOS generates a UUID
 operation ID and embeds it in the paused Response ID. A caller may
@@ -651,11 +689,10 @@ Every pending LangGraph interrupt becomes an OpenAI function tool call named
 ```
 
 Response and call IDs are opaque. The Response ID locates the paused operation;
-each call ID binds an interrupt to that Response and exact checkpoint generation.
-Clients must persist and return both values unchanged. Mixing a Response ID with
-another Response's calls returns HTTP 400 with `param: "previous_response_id"`.
-Retrying an initial request returns new Response and call IDs for the same pending
-work; either complete exchange can resume it while that checkpoint remains current.
+each call ID carries one native LangGraph interrupt ID. Clients must persist and
+return both values unchanged. Retrying an initial request returns a new Response ID
+and the same call IDs for unchanged pending work; either Response can resume it
+while that checkpoint remains current.
 
 ### Resuming an Interrupt
 
@@ -665,6 +702,8 @@ Each pause finishes the current Response with `status: "completed"` and
 The workflow waits in its LangGraph checkpoint. Submitting the function outputs
 creates a new Response with its own ID and a `previous_response_id` link to the
 paused Response. The client needs no checkpoint fields or payload envelope.
+Add `background=true` to continue the paused run in the background worker; see
+[Run Responses In The Background](../how-to-guides/background-responses.md).
 
 Clients can resume using standard OpenAI `previous_response_id`:
 
@@ -675,7 +714,7 @@ Clients can resume using standard OpenAI `previous_response_id`:
   "input": [
     {
       "type": "function_call_output",
-      "call_id": "call_lg_47ecb7c6f7b901230fc4d3119976daae11888d39c973953060b8a849c3d8a5f2_0123456789abcdef0123456789abcdef_6f719db6-1be2-4b8e-875c-c775f0f6c86a",
+      "call_id": "call_lg_5f2b3c9d8e7a41f0b6c2d4e8a9f01b3c",
       "output": "Verify the delivery address first."
     }
   ],
@@ -694,6 +733,12 @@ request, duplicate a result, or synthesize a call ID. Streaming clients persist
 the terminal Response ID and completed function-call items instead of reconstructing
 them from argument deltas.
 
+Each node invocation may call `interrupt()` once. To collect another answer,
+finish the node and route to another node invocation, including by looping through
+an edge. Parallel nodes may each interrupt once. LGOS rejects a node that reaches
+a second `interrupt()` after it resumes, matching LangGraph's recommended
+[human-input validation pattern](https://docs.langchain.com/oss/python/langgraph/interrupts#validating-human-input).
+
 Metadata is not required on a resume, but `metadata.lgos_run_id`, when
 present, must match the operation encoded by `previous_response_id`.
 
@@ -709,9 +754,9 @@ executes the graph. Same-key contention is rejected instead of queued. Exit
 durability stores state when the invocation pauses or finishes without
 retaining every intermediate superstep.
 LGOS drains the invocation before it exposes interrupt tool calls. It compares
-the submitted pending IDs and opaque state token with the durable checkpoint
-before passing answers to LangGraph. The displayed interrupt payload is not part
-of the resume input.
+the submitted native interrupt IDs with the complete pending set in the durable
+checkpoint before passing answers to LangGraph. The displayed interrupt payload
+is not part of the resume input.
 Concurrent work for another operation remains independent; a second request
 for the same operation receives HTTP 409.
 
@@ -748,9 +793,12 @@ for the underlying checkpoint model.
 ## Known Differences From OpenAI
 
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
-- Responses implements the explicit subset above; response storage,
-  Conversations, general previous-response chaining, background work,
-  arbitrary client-defined custom tools and formats, built-in tools beyond the
+- Responses implements the explicit subset above. It has no general foreground
+  response storage, Conversations, or general previous-response chaining.
+  Background Responses exist only for opted-in polling-only runs, and the
+  background engine keeps them; there are no event replay, delete, input-item,
+  or compact routes.
+  Arbitrary client-defined custom tools and formats, built-in tools beyond the
   documented `web_search` subset, structured output, and unconsumed generation
   controls are rejected.
   `previous_response_id` is reserved for interrupt continuation.

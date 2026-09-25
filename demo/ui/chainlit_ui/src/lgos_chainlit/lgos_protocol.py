@@ -45,6 +45,7 @@ INTERRUPT_TOOL_NAME = "lgos_interrupt"
 class GraphFeature(StrEnum):
     """Features advertised for an LGOS model."""
 
+    BACKGROUND = "background"
     FILE_INPUTS = "file_inputs"
     MCP_TOOLS = "mcp_tools"
 

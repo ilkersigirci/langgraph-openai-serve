@@ -37,7 +37,6 @@ ContextFactory = Callable[
 OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
 _INTERRUPT_CHECKPOINTER_METHODS = (
     "aget_tuple",
-    "alist",
     "aput",
     "aput_writes",
     "adelete_thread",

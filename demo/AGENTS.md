@@ -19,8 +19,16 @@ failures for both demo UIs.
 For LiteLLM or Bifrost upgrades and workaround reviews, use
 [Gateway upgrade](.agents/skills/gateway-upgrade/SKILL.md). Keep the upgrade
 procedure in agent guidance; published docs describe the bundled gateway
-behavior. Configurable environment defaults belong in `.env.example`, not
-Compose fallbacks. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
+behavior. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
+
+Compose files only pass environment variables through. Put defaults in
+`demo/.env.example`; it is the source of truth.
+
+Keep [Demo design choices](../docs/demo/design-choices.md) limited to important
+decisions that materially affect demo architecture, public contracts, ownership,
+or operational cost. Routine implementation choices, renames, and refactors do
+not belong there. Ask the user before independently adding or changing an entry;
+a direct user request to update the file is approval.
 
 ## Modular OpenWebUI Function
 

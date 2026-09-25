@@ -33,7 +33,9 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         else:
             assert request.url.path == "/openai_passthrough/v1/models"
             assert request.headers["x-model-provider"] in {"team", "other"}
-            data = [graph]
+            # Provider detail bypasses native catalog filtering. It must not
+            # turn a restricted provider into extra selectable chat profiles.
+            data = [graph, {**graph, "id": "not-allowed"}]
         return httpx2.Response(200, json={"object": "list", "data": data})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:

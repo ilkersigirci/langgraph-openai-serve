@@ -55,10 +55,10 @@ not control retained telemetry.
 ## Application formatting
 
 Configure logging in the host application. The runnable demo's
-`demo/api/src/lgos_demo_api/logging.py` shows how to format LGOS and Uvicorn
-server records together without changing the LGOS package. The demo disables
-Uvicorn access logs; enable access logging at the ASGI server or ingress layer
-that owns request timing and retention.
+`demo/api/src/lgos_demo_api/core/logging.py` shows how to format LGOS and
+Uvicorn server records together without changing the LGOS package. The demo
+disables Uvicorn access logs; enable access logging at the ASGI server or
+ingress layer that owns request timing and retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
 `stream`, and `operation_id`. If OpenTelemetry's Python logging
@@ -72,7 +72,7 @@ level.
 
 ## Langfuse correlation
 
-When `LGOS_ENABLE_LANGFUSE=true`, LGOS passes the following correlation
+When `LGOS_ENABLE_LANGFUSE=True`, LGOS passes the following correlation
 metadata through LangChain's `RunnableConfig`:
 
 - `lgos.request_id`, when an HTTP request context exists;
