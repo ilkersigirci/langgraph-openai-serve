@@ -511,7 +511,7 @@ async def test_background_response_is_polled_and_rendered(
     monkeypatch.setattr(
         chat,
         "model_request",
-        lambda _: {"model": "lgos-a/background-report-agent"},
+        lambda _: {"model": "lgos-a/background-mock"},
     )
     monkeypatch.setattr(
         chat,
@@ -526,7 +526,7 @@ async def test_background_response_is_polled_and_rendered(
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
     monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
 
-    await chat._response_message(Mock(), "openai/background-report-agent")
+    await chat._response_message(Mock(), "openai/background-mock")
 
     request = create.await_args.kwargs
     assert request["background"] is True
@@ -569,7 +569,7 @@ async def test_background_response_forwards_idempotency_through_bifrost(
 
     response = await chat._background_response(
         [],
-        model="background-report-agent",
+        model="background-mock",
         extra_headers={"x-model-provider": "openai"},
         provider_routing=True,
         user="demo-user",
@@ -618,7 +618,7 @@ async def test_background_response_is_cancelled_when_turn_stops(
     with pytest.raises(asyncio.CancelledError):
         await chat._background_response(
             [],
-            model="background-report-agent",
+            model="background-mock",
             extra_headers=None,
             provider_routing=False,
             user="demo-user",

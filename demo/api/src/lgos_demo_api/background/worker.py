@@ -14,7 +14,7 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
-from lgos_demo_api.graphs.background_report import background_report_graph_config
+from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.persistence.postgres import postgres_runtime
 
 
@@ -31,7 +31,7 @@ async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
                     lambda: advanced_graph,
                     runtime.run_coordinator,
                 ),
-                "background-report-agent": background_report_graph_config,
+                "background-mock": background_mock_graph_config,
             }
         )
 

@@ -129,7 +129,7 @@ async def test_background_capability_adds_delivery_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session({"chat_profile": "background-report-agent"})
+    session = Session({"chat_profile": "background-mock"})
     factory, _ = chat_settings_spy(monkeypatch, chat_settings)
     monkeypatch.setattr(
         chat_settings,

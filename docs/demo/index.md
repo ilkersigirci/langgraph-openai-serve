@@ -164,7 +164,7 @@ See [Persistent Plot Agent](graphs/persistent-plot-agent.md#ownership-boundaries
 for Store and UI ownership,
 [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
 for the server lifecycle,
-[Background Report Agent](graphs/background-report-agent.md) for the
+[Background Mock](graphs/background-mock.md) for the
 separately deployed worker, and
 [OpenAI Compatibility](../explanation/openai-compatibility.md#tool-calls-and-interrupts)
 for the normative continuation and retention contract.

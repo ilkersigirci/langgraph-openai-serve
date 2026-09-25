@@ -24,8 +24,11 @@ behavior. LiteLLM's image pin belongs in `DEMO_LITELLM_IMAGE` there.
 Compose files only pass environment variables through. Put defaults in
 `demo/.env.example`; it is the source of truth.
 
-Record each significant demo decision as a row in its component's section of
-[Demo design choices](../docs/demo/design-choices.md).
+Keep [Demo design choices](../docs/demo/design-choices.md) limited to important
+decisions that materially affect demo architecture, public contracts, ownership,
+or operational cost. Routine implementation choices, renames, and refactors do
+not belong there. Ask the user before independently adding or changing an entry;
+a direct user request to update the file is approval.
 
 ## Modular OpenWebUI Function
 

@@ -26,7 +26,7 @@ async def main() -> None:
         api_key="gateway-key",
     ) as client:
         accepted = await client.responses.create(
-            model="background-report-agent",
+            model="background-mock",
             input="Summarize the migration risks and next actions.",
             background=True,
             store=True,
@@ -256,4 +256,4 @@ not lose Responses. Treat Response IDs as opaque:
   instances.
 
 See the [OpenAI-compatible proxy guide](openai-proxies.md) and the
-[background report demo](../demo/graphs/background-report-agent.md).
+[background mock demo](../demo/graphs/background-mock.md).

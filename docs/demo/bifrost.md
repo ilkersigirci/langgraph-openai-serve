@@ -86,7 +86,7 @@ must instead receive a URL reachable from the host.
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, and MCP requests. Bifrost loads it as one native virtual key whose
 provider policies allow `lgos-a`, `lgos-b`, and `lgos-files`, plus only
-`background-report-agent` on the fixed standard `openai` provider. The key is
+`background-mock` on the fixed standard `openai` provider. The key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
@@ -113,7 +113,7 @@ that pool.
 ## Configuration Boundary
 
 The dedicated `openai` provider is a standard Bifrost provider pinned to API A
-and allowlists only `background-report-agent`. All Bifrost custom providers use
+and allowlists only `background-mock`. All Bifrost custom providers use
 `openai` as their base provider. `lgos-a` and
 `lgos-b` enable model listing, native Responses and streaming, and pass-through
 for catalog detail and protocol-reference tests. `lgos-files` enables only Files
@@ -138,7 +138,7 @@ guide](opentelemetry.md#signal-ownership).
 The standard `openai` provider keeps ID-only retrieval and cancellation pinned
 to API A, while UI requests may retain their `lgos-a` or `lgos-b` provider
 header. All targets read background Responses from the same Hatchet service. See
-[Background Report Agent](graphs/background-report-agent.md) for startup and
+[Background Mock](graphs/background-mock.md) for startup and
 [Run Responses In The Background](../how-to-guides/background-responses.md) for
 the lifecycle contract.
 

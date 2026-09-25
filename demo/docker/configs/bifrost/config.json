@@ -71,7 +71,7 @@
         "provider_configs": [
           {
             "provider": "openai",
-            "allowed_models": ["background-report-agent"],
+            "allowed_models": ["background-mock"],
             "key_ids": ["*"],
             "weight": 1.0
           },
@@ -103,7 +103,7 @@
         {
           "name": "lgos-background",
           "value": "DUMMY",
-          "models": ["background-report-agent"],
+          "models": ["background-mock"],
           "weight": 1.0
         }
       ],

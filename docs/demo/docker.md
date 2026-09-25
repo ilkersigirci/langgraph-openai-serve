@@ -177,8 +177,7 @@ settings](reference.md#opentelemetry-settings).
     The `lgos-background-worker` process uses explicit Hatchet slots and the
     same PostgreSQL checkpointer, coordinator, and graph code as the APIs. It
     exposes no HTTP port. The API triggers the Hatchet task and reads its
-    status and Response from Hatchet. See [Background Report
-    Agent](graphs/background-report-agent.md).
+    status and Response from Hatchet. See [Background Mock](graphs/background-mock.md).
 
 === "Files API"
 

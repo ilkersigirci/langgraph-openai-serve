@@ -12,7 +12,7 @@ GATEWAY_TYPE = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_TYPE")
 GATEWAY_API_KEY = os.getenv("OPENAI_GATEWAY_API_KEY", "DUMMY")
 MODEL = os.getenv(
     "DEMO_TEST_BACKGROUND_GATEWAY_MODEL",
-    "background-report-agent",
+    "background-mock",
 )
 
 pytestmark = [

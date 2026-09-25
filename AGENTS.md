@@ -29,8 +29,11 @@ entry point.
   `.agents/CODE_STYLE.md` for test-design guidance.
 - For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
   `openai.types.shared.ErrorObject`.
-- Record each significant design decision, with its cost and when to revisit
-  it, as a row in `docs/explanation/design-choices.md`.
+- Keep `docs/explanation/design-choices.md` limited to important decisions that
+  materially affect architecture, public contracts, ownership, or operational
+  cost. Routine implementation choices, renames, and refactors do not belong
+  there. Ask the user before independently adding or changing an entry; a
+  direct user request to update the file is approval.
 
 
 ## Documentation Style

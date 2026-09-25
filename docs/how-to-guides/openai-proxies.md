@@ -80,7 +80,7 @@ must route that ID to any LGOS API replica using the same background engine.
 | --- | --- | --- |
 | Direct LGOS | Pass | Replicas must use the same background engine. |
 | LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for 1.100.1 parser compatibility. |
-| Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-report-agent`; no provider header is required after creation. |
+| Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-mock`; no provider header is required after creation. |
 
 These are results for the pinned demo images and configurations, not promises
 about other gateway releases. Run

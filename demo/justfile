@@ -157,11 +157,11 @@ test-background-gateway base_url='' model='' editable='false' *args:
     case "$OPENAI_GATEWAY_TYPE" in
         litellm)
             default_url="$DEMO_GATEWAY_HOST_URL/v1"
-            default_model="lgos-a/background-report-agent"
+            default_model="lgos-a/background-mock"
             ;;
         bifrost)
             default_url="$DEMO_GATEWAY_HOST_URL/openai/v1"
-            default_model="background-report-agent"
+            default_model="background-mock"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE must be litellm or bifrost" >&2

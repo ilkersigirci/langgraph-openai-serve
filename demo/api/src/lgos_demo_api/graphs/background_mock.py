@@ -17,14 +17,14 @@ from langgraph_openai_serve import ClientSettings, GraphConfig, GraphFeature
 from pydantic import BaseModel, Field
 
 
-class BackgroundReportState(BaseModel):
+class BackgroundMockState(BaseModel):
     """Transcript that receives the report."""
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
-class BackgroundReportSettings(ClientSettings):
-    """Per-request settings of the report."""
+class BackgroundMockSettings(ClientSettings):
+    """Per-request settings for the mock response."""
 
     delay_seconds: int = Field(
         default=5,
@@ -36,35 +36,35 @@ class BackgroundReportSettings(ClientSettings):
 
 
 async def write_report(
-    state: BackgroundReportState,
-    runtime: Runtime[BackgroundReportSettings],
+    state: BackgroundMockState,
+    runtime: Runtime[BackgroundMockSettings],
 ) -> dict[str, list[AIMessage]]:
     """Reply with a fixed report after the configured delay."""
-    report_settings = runtime.context or BackgroundReportSettings()
+    report_settings = runtime.context or BackgroundMockSettings()
     await sleep(report_settings.delay_seconds)
     request = state.messages[-1].text
     return {"messages": [AIMessage(content=f"Background report for: {request}")]}
 
 
-workflow = StateGraph(BackgroundReportState, context_schema=BackgroundReportSettings)
+workflow = StateGraph(BackgroundMockState, context_schema=BackgroundMockSettings)
 workflow.add_node("write_report", write_report)
 workflow.add_edge(START, "write_report")
 workflow.add_edge("write_report", END)
 
-background_report_graph = workflow.compile()
+background_mock_graph = workflow.compile()
 
-background_report_graph_config = GraphConfig(
-    graph=background_report_graph,
+background_mock_graph_config = GraphConfig(
+    graph=background_mock_graph,
     description=(
         "Demonstrates background execution with a deterministic, delayed "
-        "report that calls no model."
+        "mock report that calls no model."
     ),
     features={GraphFeature.BACKGROUND},
-    client_settings=BackgroundReportSettings,
+    client_settings=BackgroundMockSettings,
 )
 
 __all__ = [
-    "BackgroundReportSettings",
-    "background_report_graph",
-    "background_report_graph_config",
+    "BackgroundMockSettings",
+    "background_mock_graph",
+    "background_mock_graph_config",
 ]

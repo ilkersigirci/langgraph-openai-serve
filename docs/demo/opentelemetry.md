@@ -180,7 +180,7 @@ HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES='["payload","additional_metadat
 The SDK excludes task inputs and caller metadata from span attributes while
 preserving trace propagation. Hatchet still stores task inputs and results as
 part of normal execution. To verify tracing without an LLM provider, submit a
-background Response to `background-report-agent` and find its producer and
+background Response to `background-mock` and find its producer and
 worker spans under the same trace ID.
 
 ### Query Foreground And Background Runs

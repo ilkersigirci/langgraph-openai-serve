@@ -249,7 +249,7 @@ PostgreSQL checkpointer and Store as the API. In background mode:
   `lgos_interrupt` call as a foreground turn; both UIs show the approval, and
   the answer runs in the worker while **Run in background** stays enabled.
 
-See [Background Report Agent](background-report-agent.md) for the worker
+See [Background Mock](background-mock.md) for the worker
 lifecycle and a model-free way to watch it.
 
 ## Output And Failure Behavior

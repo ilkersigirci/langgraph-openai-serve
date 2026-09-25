@@ -200,9 +200,9 @@ must handle.
 For background Responses, enable `DEMO_API_BACKGROUND_ENABLED`, start the
 independent `just demo/background-worker` process, or run the complete UI path
 with the `background` Compose profile and `just demo/compose`. Both
-`advanced-graph` and `background-report-agent` support it, and Chainlit and
+`advanced-graph` and `background-mock` support it, and Chainlit and
 Open WebUI expose polling through either bundled gateway. See
-[Background Report Agent](graphs/background-report-agent.md).
+[Background Mock](graphs/background-mock.md).
 
 ## Try A Demo Client
 

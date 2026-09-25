@@ -162,7 +162,7 @@ the central Files service owns the separate inference copy. Detailed ownership
 and recovery behavior live in
 [Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
 Human Review](graphs/interruptible-approval.md). Background execution is
-described in [Background Report Agent](graphs/background-report-agent.md);
+described in [Background Mock](graphs/background-mock.md);
 `advanced-graph` runs in the same worker when a client requests background
 mode. When
 `LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs

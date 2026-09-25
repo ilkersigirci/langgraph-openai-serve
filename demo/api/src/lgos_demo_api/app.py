@@ -21,7 +21,7 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
-from lgos_demo_api.graphs.background_report import background_report_graph_config
+from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
@@ -109,7 +109,7 @@ def create_custom_app() -> FastAPI:
                 lambda: app.state.advanced_graph,
                 lambda key: app.state.run_coordinator(key),
             ),
-            "background-report-agent": background_report_graph_config,
+            "background-mock": background_mock_graph_config,
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,

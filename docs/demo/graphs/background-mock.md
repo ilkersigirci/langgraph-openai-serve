@@ -1,6 +1,6 @@
-# Background Report Agent
+# Background Mock
 
-`background-report-agent` is a deterministic, polling-only background graph that
+`background-mock` is a deterministic, polling-only background graph that
 shows background execution working. It calls no model, so it needs no provider.
 Its one node waits for a configurable delay, which leaves time to watch the
 Response move from queued to in progress and to cancel it. For a real agent
@@ -66,7 +66,7 @@ The live test selects LiteLLM's `/v1` route and synced model, or Bifrost's
 `/openai/v1` route and unqualified model, from `OPENAI_GATEWAY_TYPE`.
 
 Open Chainlit on port 3002 or Open WebUI on port 3003, select a
-`background-report-agent` model, and enable **Run in background**. The UI shows
+`background-mock` model, and enable **Run in background**. The UI shows
 queued and in-progress states, polls the Response ID, and renders the normal
 final answer. Stopping the active turn requests Responses cancellation.
 
@@ -94,7 +94,7 @@ and resume polling through either tested gateway route documented in the
 [proxy guide](../../how-to-guides/openai-proxies.md).
 
 The implementation lives in
-`demo/api/src/lgos_demo_api/graphs/background_report.py`. The API-side backend
+`demo/api/src/lgos_demo_api/graphs/background_mock.py`. The API-side backend
 is in `demo/api/src/lgos_demo_api/background/components.py`;
 `demo/api/src/lgos_demo_api/background/worker.py` provides the separately
 deployed worker.

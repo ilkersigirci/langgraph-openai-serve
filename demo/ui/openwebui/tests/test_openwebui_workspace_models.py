@@ -497,7 +497,7 @@ def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
 def test_background_workspace_model_has_delivery_control() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="openai/background-report-agent",
+        id="openai/background-mock",
         description="Background report",
         fields=(),
         supports_background=True,
