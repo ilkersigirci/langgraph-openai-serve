@@ -22,6 +22,7 @@ from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
     "advanced-graph",
+    "background-interrupt",
     "background-mock",
     "mcp-postgres",
     "citation-events",
@@ -111,13 +112,17 @@ async def test_app_lists_exactly_the_documented_models(
         "features": ["interrupts"],
     }
 
-    background_model = await openai_client.models.retrieve("background-mock")
-    background_extension = (background_model.model_extra or {})["lgos"]
-    assert background_extension["features"] == ["background"]
-    background_settings = background_extension["client_settings"]
-    assert background_settings["defaults"] == {"delay_seconds": 5}
-    delay_schema = background_settings["json_schema"]["properties"]["delay_seconds"]
-    assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
+    for model_id, expected_features in (
+        ("background-mock", ["background"]),
+        ("background-interrupt", ["background", "interrupts"]),
+    ):
+        model = await openai_client.models.retrieve(model_id)
+        extension = (model.model_extra or {})["lgos"]
+        assert extension["features"] == expected_features
+        settings = extension["client_settings"]
+        assert settings["defaults"] == {"delay_seconds": 5}
+        delay_schema = settings["json_schema"]["properties"]["delay_seconds"]
+        assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
 
     for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
         model = await openai_client.models.retrieve(model_id)
@@ -331,6 +336,10 @@ async def test_lifespan_installs_shared_postgres_runtime(
     async with app_module.lifespan(demo_app):
         assert not upstream_clients[0].is_closed
         assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
+        assert (
+            demo_app.state.background_interrupt_graph.checkpointer
+            is sqlite_checkpointer
+        )
         assert demo_app.state.run_coordinator is coordinator
         assert demo_app.state.persistent_plot_agent.store is runtime.store
 

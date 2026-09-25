@@ -71,7 +71,7 @@
         "provider_configs": [
           {
             "provider": "openai",
-            "allowed_models": ["background-mock"],
+            "allowed_models": ["background-mock", "background-interrupt"],
             "key_ids": ["*"],
             "weight": 1.0
           },
@@ -103,7 +103,7 @@
         {
           "name": "lgos-background",
           "value": "DUMMY",
-          "models": ["background-mock"],
+          "models": ["background-mock", "background-interrupt"],
           "weight": 1.0
         }
       ],

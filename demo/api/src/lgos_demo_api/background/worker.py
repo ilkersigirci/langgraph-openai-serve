@@ -14,6 +14,10 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
+from lgos_demo_api.graphs.background_interrupt import (
+    create_background_interrupt_graph,
+    create_background_interrupt_graph_config,
+)
 from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.persistence.postgres import postgres_runtime
 
@@ -24,6 +28,9 @@ async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
         postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
+        background_interrupt_graph = create_background_interrupt_graph(
+            runtime.checkpointer
+        )
         # Register every background-capable model under its API model ID.
         yield GraphRegistry(
             registry={
@@ -32,6 +39,10 @@ async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
                     runtime.run_coordinator,
                 ),
                 "background-mock": background_mock_graph_config,
+                "background-interrupt": create_background_interrupt_graph_config(
+                    lambda: background_interrupt_graph,
+                    runtime.run_coordinator,
+                ),
             }
         )
 

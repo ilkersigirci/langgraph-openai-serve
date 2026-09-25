@@ -21,6 +21,10 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
     open_advanced_graph,
 )
+from lgos_demo_api.graphs.background_interrupt import (
+    create_background_interrupt_graph,
+    create_background_interrupt_graph_config,
+)
 from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
@@ -70,6 +74,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
+        app.state.background_interrupt_graph = create_background_interrupt_graph(
+            runtime.checkpointer
+        )
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         app.state.advanced_graph = advanced_graph
@@ -110,6 +117,10 @@ def create_custom_app() -> FastAPI:
                 lambda key: app.state.run_coordinator(key),
             ),
             "background-mock": background_mock_graph_config,
+            "background-interrupt": create_background_interrupt_graph_config(
+                lambda: app.state.background_interrupt_graph,
+                lambda key: app.state.run_coordinator(key),
+            ),
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
             "simple-graph": simple_graph_config,

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from openai import APIStatusError, AsyncOpenAI, BadRequestError
+from openai.types.responses import Response
 
 GATEWAY_BASE_URL = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL")
 GATEWAY_TYPE = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_TYPE")
@@ -13,6 +14,12 @@ GATEWAY_API_KEY = os.getenv("OPENAI_GATEWAY_API_KEY", "DUMMY")
 MODEL = os.getenv(
     "DEMO_TEST_BACKGROUND_GATEWAY_MODEL",
     "background-mock",
+)
+INTERRUPT_MODEL = os.getenv(
+    "DEMO_TEST_BACKGROUND_GATEWAY_INTERRUPT_MODEL",
+    f"{MODEL.rpartition('/')[0]}/background-interrupt"
+    if "/" in MODEL
+    else "background-interrupt",
 )
 
 pytestmark = [
@@ -40,6 +47,53 @@ def _idempotency_options(key: str) -> dict[str, Any]:
     return {"extra_body": {"extra_headers": {"Idempotency-Key": key}}}
 
 
+async def _finished(client: AsyncOpenAI, response: Response) -> Response:
+    deadline = time.monotonic() + 60
+    while response.status in {"queued", "in_progress"}:
+        assert time.monotonic() < deadline, f"Still running: {response.id}"
+        await asyncio.sleep(1)
+        response = await client.responses.retrieve(response.id)
+    return response
+
+
+async def test_gateway_resumes_background_review() -> None:
+    metadata = {"lgos_settings": '{"delay_seconds": 1}'}
+    async with _client() as client:
+        created = await client.responses.create(
+            model=INTERRUPT_MODEL,
+            input="Quarterly risks",
+            background=True,
+            metadata=metadata,
+            **_idempotency_options(str(uuid.uuid4())),
+        )
+        pending = await _finished(client, created)
+        assert pending.status == "completed"
+        (review,) = pending.output
+        assert review.type == "function_call"
+        assert review.name == "lgos_interrupt"
+
+    async with _client() as restarted_client:
+        resumed = await restarted_client.responses.create(
+            model=INTERRUPT_MODEL,
+            previous_response_id=pending.id,
+            input=[
+                {
+                    "type": "function_call_output",
+                    "call_id": review.call_id,
+                    "output": "approve",
+                }
+            ],
+            background=True,
+            metadata=metadata,
+            **_idempotency_options(str(uuid.uuid4())),
+        )
+        completed = await _finished(restarted_client, resumed)
+
+    assert resumed.id != pending.id
+    assert completed.status == "completed"
+    assert completed.output_text == "Background report for: Quarterly risks"
+
+
 async def test_gateway_polls_saved_response_id_with_a_new_client() -> None:
     async with _client() as client:
         created = await client.responses.create(
@@ -52,13 +106,8 @@ async def test_gateway_polls_saved_response_id_with_a_new_client() -> None:
         )
 
     assert created.status in {"queued", "in_progress"}
-    deadline = time.monotonic() + 60
-    response = created
     async with _client() as restarted_client:
-        while response.status in {"queued", "in_progress"}:
-            assert time.monotonic() < deadline
-            await asyncio.sleep(1)
-            response = await restarted_client.responses.retrieve(created.id)
+        response = await _finished(restarted_client, created)
 
     assert response.id == created.id
     assert response.status == "completed"

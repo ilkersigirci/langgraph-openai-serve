@@ -323,7 +323,7 @@ def test_bifrost_background_route_is_pinned_to_one_api() -> None:
         {
             "name": "lgos-background",
             "value": "DUMMY",
-            "models": ["background-mock"],
+            "models": ["background-mock", "background-interrupt"],
             "weight": 1.0,
         }
     ]

@@ -32,6 +32,9 @@ def _():
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.store.memory import InMemoryStore
 
+    from lgos_demo_api.graphs.background_interrupt import (
+        create_background_interrupt_graph,
+    )
     from lgos_demo_api.graphs.citations import citation_graph
     from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph
     from lgos_demo_api.graphs.custom_io import custom_io_graph
@@ -56,6 +59,7 @@ def _():
         InMemorySaver,
         InMemoryStore,
         citation_graph,
+        create_background_interrupt_graph,
         create_interruptible_graph,
         create_persistent_plot_agent,
         create_specialist_team_graph,
@@ -78,6 +82,7 @@ async def _(
     InMemorySaver,
     InMemoryStore,
     citation_graph,
+    create_background_interrupt_graph,
     create_interruptible_graph,
     create_persistent_plot_agent,
     create_specialist_team_graph,
@@ -105,6 +110,7 @@ async def _(
         "response-outcomes": response_outcome_graph,
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),
+        "background-interrupt": create_background_interrupt_graph(InMemorySaver()),
         "server-tool": server_tool_graph,
         "simple-graph": simple_graph,
         "simple-graph-external-tools": simple_external_tools_graph,

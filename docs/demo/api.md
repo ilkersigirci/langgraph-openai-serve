@@ -199,10 +199,46 @@ must handle.
 
 For background Responses, enable `DEMO_API_BACKGROUND_ENABLED`, start the
 independent `just demo/background-worker` process, or run the complete UI path
-with the `background` Compose profile and `just demo/compose`. Both
-`advanced-graph` and `background-mock` support it, and Chainlit and
-Open WebUI expose polling through either bundled gateway. See
-[Background Mock](graphs/background-mock.md).
+with the `background` Compose profile and `just demo/compose`.
+`advanced-graph`, `background-mock`, and `background-interrupt` support it.
+Chainlit and Open WebUI expose polling through either bundled gateway. See
+[Background Mock](graphs/background-mock.md) for basic execution and
+[Background Interrupt](graphs/background-interrupt.md) for approval and resumption.
+
+### Background Python Client
+
+The background graph examples share this direct API client and polling helper.
+Run this setup first with the API and background worker running, then choose a
+[create/poll/cancel example](graphs/background-mock.md#python-sdk) or the
+[review/resume example](graphs/background-interrupt.md#python-sdk).
+
+```python
+import time
+
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:3004/v1", api_key="DUMMY")
+
+
+def poll(response):
+    deadline = time.monotonic() + 120
+    while response.status in {"queued", "in_progress"}:
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Still running: {response.id}")
+        time.sleep(1)
+        response = client.responses.retrieve(response.id)
+    if response.status != "completed":
+        raise RuntimeError(f"{response.status}: {response.error}")
+    return response
+```
+
+`poll` returns a completed Response or raises with its terminal status and error.
+The timeout stops local polling; it does not cancel the background work. The
+examples close the client with `with client:`. Rerun the setup before running
+another example.
+
+For gateway URLs, model naming, and credentials, use the
+[OpenAI proxy guide](../how-to-guides/openai-proxies.md).
 
 ## Try A Demo Client
 

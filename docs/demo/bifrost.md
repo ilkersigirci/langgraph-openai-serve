@@ -86,7 +86,7 @@ must instead receive a URL reachable from the host.
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, and MCP requests. Bifrost loads it as one native virtual key whose
 provider policies allow `lgos-a`, `lgos-b`, and `lgos-files`, plus only
-`background-mock` on the fixed standard `openai` provider. The key is
+`background-mock` and `background-interrupt` on the fixed standard `openai` provider. The key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
@@ -113,7 +113,7 @@ that pool.
 ## Configuration Boundary
 
 The dedicated `openai` provider is a standard Bifrost provider pinned to API A
-and allowlists only `background-mock`. All Bifrost custom providers use
+and allowlists `background-mock` and `background-interrupt`. All Bifrost custom providers use
 `openai` as their base provider. `lgos-a` and
 `lgos-b` enable model listing, native Responses and streaming, and pass-through
 for catalog detail and protocol-reference tests. `lgos-files` enables only Files

@@ -38,6 +38,7 @@ nav = [
       { "Persistent Plot Agent" = "demo/graphs/persistent-plot-agent.md" },
       { "Interruptible Human Review" = "demo/graphs/interruptible-approval.md" },
       { "Background Mock" = "demo/graphs/background-mock.md" },
+      { "Background Interrupt" = "demo/graphs/background-interrupt.md" },
     ]},
     { "Docker Compose" = "demo/docker.md" },
     { "Chainlit Client" = "demo/chainlit.md" },

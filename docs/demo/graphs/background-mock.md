@@ -3,7 +3,9 @@
 `background-mock` is a deterministic, polling-only background graph that
 shows background execution working. It calls no model, so it needs no provider.
 Its one node waits for a configurable delay, which leaves time to watch the
-Response move from queued to in progress and to cancel it. For a real agent
+Response move from queued to in progress and to cancel it. For deterministic
+human review and background resumption, use
+[`background-interrupt`](background-interrupt.md). For a real agent
 running in the background, use
 [`advanced-graph`](advanced-graph.md#background-execution).
 
@@ -30,28 +32,64 @@ clients send it in `metadata.lgos_settings`:
 metadata={"lgos_settings": '{"delay_seconds": 30}'}
 ```
 
-## Lifecycle
+## Request Flow
+
+Selecting a background-capable model makes **Run in background** available.
+Enable it before sending the prompt. The UI then creates a background Response
+and polls its ID; selecting the model alone does not enable background execution.
+The UI's API calls below pass through the selected LiteLLM or Bifrost gateway.
+**Hatchet / worker** combines the job service and its independent worker.
 
 ```mermaid
 sequenceDiagram
-  participant Client
-  participant API
-  participant Hatchet
-  participant Worker
+  participant UI as Chainlit / Open WebUI
+  participant API as LGOS API
+  participant Jobs as Hatchet / worker
 
-  Client->>API: responses.create(background=true)
-  API->>Hatchet: trigger task(job)
-  API-->>Client: queued Response
-  Hatchet->>Worker: deliver task
-  Worker->>Worker: run write_report
-  Worker-->>Hatchet: completed Response
-  Client->>API: responses.retrieve(response_id)
-  API->>Hatchet: read run
-  API-->>Client: completed Response
+  Note over UI: User selects background-mock,<br/>enables Run in background,<br/>and sends a prompt
+  UI->>API: responses.create<br/>background=true
+  API->>Jobs: Queue report work
+  API-->>UI: queued Response with ID
+  Jobs->>Jobs: Run write_report<br/>with the configured delay
+  loop While the turn is active and work is pending
+    UI->>API: responses.retrieve(ID)
+    API->>Jobs: Read run status
+    API-->>UI: queued or in_progress
+    UI->>UI: Show background status
+  end
+  alt Report finishes
+    Jobs->>Jobs: Store completed Response and report
+    UI->>API: responses.retrieve(ID)
+    API->>Jobs: Read result
+    API-->>UI: completed Response with report
+    UI->>UI: Show the final answer
+  else User stops while work is pending
+    Note over UI: User stops the active turn
+    UI->>API: responses.cancel(ID)
+    API->>Jobs: Request cancellation
+    Note over Jobs: Cancel queued work<br/>or stop active execution
+    API-->>UI: cancelled, unless<br/>the run already finished
+    Note over UI: Stop polling
+  end
 ```
 
 A run that raises fails its Response; create a new one to try again. Hatchet
 reassigns a run whose worker dies, and that run starts over.
+
+### Cancellation
+
+The UI makes a best-effort cancellation request when a polling turn is stopped.
+SDK clients can call `responses.cancel(response_id)` directly and retrieve the
+same ID to check its status. If work finishes before cancellation takes effect,
+its terminal result is kept. Cancelling an already finished Response returns it
+unchanged. Cancellation does not undo completed side effects; this mock performs
+none. See the shared [background client contract](../../how-to-guides/background-responses.md#client-contract).
+
+This graph never pauses for review. The
+[Background Interrupt request flow](background-interrupt.md#request-flow) shows
+how a completed review Response leads to a new background continuation, and
+[its cancellation diagram](background-interrupt.md#cancellation) distinguishes
+stopping active work from leaving a review unanswered.
 
 ## Run It
 
@@ -84,6 +122,47 @@ backend is configured.
 See [Run Responses In The Background](../../how-to-guides/background-responses.md)
 for a polling client, deployment wiring, cancellation, and gateway
 requirements.
+
+### Python SDK
+
+Run the shared [background Python client setup](../api.md#background-python-client)
+first, then choose an example. Both call this graph through the direct API.
+
+=== "Create and poll"
+
+    ```python
+    with client:
+        created = client.responses.create(
+            model="background-mock",
+            input="Quarterly risks",
+            background=True,
+            metadata={"lgos_settings": '{"delay_seconds": 5}'},
+        )
+        print(created.id, created.status)
+        completed = poll(created)
+        print(completed.output_text)
+    ```
+
+    The final text is `Background report for: Quarterly risks`.
+
+=== "Cancel"
+
+    ```python
+    with client:
+        created = client.responses.create(
+            model="background-mock",
+            input="Cancel this report",
+            background=True,
+            metadata={"lgos_settings": '{"delay_seconds": 30}'},
+        )
+        cancelled = client.responses.cancel(created.id)
+        print(cancelled.status)
+        final = client.responses.retrieve(created.id)
+        print(final.id, final.status)
+    ```
+
+    The delay leaves time to cancel. The same ID normally becomes `cancelled`;
+    a run that already finished retains its terminal result.
 
 ## Boundaries
 

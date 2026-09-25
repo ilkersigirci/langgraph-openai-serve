@@ -101,11 +101,15 @@ guidance is relevant.
 
 Keep one canonical owner for each explanation:
 
-- graph pages own graph behavior, request flow, state, and dependencies;
-- the API guide owns invocation examples;
+- graph pages own graph behavior, request flow, state, dependencies, and
+  graph-specific invocation examples under `### Python SDK`;
+- the API guide owns shared client setup and cross-graph invocation guidance;
 - UI guides own adapter-specific rendering, persistence, and recovery;
 - the graph index owns only short catalog summaries and links.
 
+Link to shared client setup and polling helpers instead of copying them into
+each graph page. Reuse a focused workflow example by linking to it from broader
+showcase pages, explaining any model, input, or side-effect differences.
 Link across those boundaries instead of repeating their details. Group small,
 related graphs on one page when separate pages would repeat the same concepts.
 
