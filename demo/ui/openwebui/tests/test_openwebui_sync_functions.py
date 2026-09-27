@@ -15,6 +15,7 @@ from lgos_openwebui.sync_functions import (
     FunctionSpec,
     function_specs,
     sign_in,
+    sync_function_valves,
     sync_functions,
 )
 from lgos_openwebui.workspace_models import WorkspaceModelSpec
@@ -175,6 +176,30 @@ def test_sync_functions_preserves_unrelated_functions() -> None:
     client.delete.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ({}, {"OPENAI_GATEWAY_API_KEY": "new-key"}),
+        (
+            {"OPENAI_GATEWAY_API_KEY": "old-key", "OPENAI_API_TIMEOUT": 60},
+            {"OPENAI_GATEWAY_API_KEY": "new-key", "OPENAI_API_TIMEOUT": 60},
+        ),
+    ],
+    ids=["unset", "admin-edited"],
+)
+def test_sync_function_valves_keeps_other_stored_valves(
+    stored: dict[str, object], expected: dict[str, object]
+) -> None:
+    client = _client(stored)
+
+    sync_function_valves(client, "generic", {"OPENAI_GATEWAY_API_KEY": "new-key"})
+
+    client.get.assert_called_once_with("/api/v1/functions/id/generic/valves")
+    client.post.assert_called_once_with(
+        "/api/v1/functions/id/generic/valves/update", json=expected
+    )
+
+
 def test_openwebui_client_signs_in_with_admin_credentials() -> None:
     client = Mock()
     client.headers = {}
@@ -267,6 +292,7 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
+    sync_function_valves_mock = Mock()
     if server_error is not None:
         response = httpx2.Response(
             400,
@@ -288,6 +314,9 @@ def test_main_reads_demo_openwebui_environment(
         sync_functions_module,
         "sync_functions",
         sync_functions_mock,
+    )
+    monkeypatch.setattr(
+        sync_functions_module, "sync_function_valves", sync_function_valves_mock
     )
     monkeypatch.setattr(
         sync_functions_module,
@@ -313,6 +342,16 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
+    # The Pipe runs inside Open WebUI, so it gets the root Open WebUI reaches.
+    sync_function_valves_mock.assert_called_once_with(
+        client,
+        "generic",
+        {
+            "OPENAI_GATEWAY_TYPE": "bifrost",
+            "OPENAI_GATEWAY_BASE_URL": "http://lgos-bifrost:4000",
+            "OPENAI_GATEWAY_API_KEY": "api-key",
+        },
+    )
     # Discovery uses the host-reachable root, not the one Open WebUI reaches.
     openai_factory.assert_called_once_with(
         base_url="https://bifrost.example/v1",

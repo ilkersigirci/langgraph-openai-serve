@@ -1,6 +1,5 @@
 """Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
-import os
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -8,7 +7,8 @@ from typing import Any, cast
 
 from openai import OpenAIError
 from openai.types.responses import Response, ResponseFunctionToolCall
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from .api import (
     _client,
@@ -57,14 +57,6 @@ from .responses import (
 )
 
 
-def _required_environment(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None or not value.strip():
-        msg = f"{name} must be configured."
-        raise RuntimeError(msg)
-    return value
-
-
 @dataclass(frozen=True, slots=True)
 class PreparedResponsesRequest:
     """Validated upstream request state retained across client-tool turns."""
@@ -73,6 +65,7 @@ class PreparedResponsesRequest:
     background: bool
     streaming: bool
     gateway: GatewayConfig
+    api_key: str
     openwebui_mcp_names: dict[str, str]
     replay_input: list[dict[str, Any]]
     request: dict[str, Any]
@@ -80,20 +73,18 @@ class PreparedResponsesRequest:
 
 class Pipe:
     class Valves(BaseModel):
-        model_config = ConfigDict(validate_default=True)
-
-        OPENAI_GATEWAY_TYPE: GatewayType = Field(
-            default_factory=lambda: cast(
-                "GatewayType", _required_environment("OPENAI_GATEWAY_TYPE")
-            ),
+        # Open WebUI builds Valves() before any are stored; the demo sync stores
+        # the gateway values. SkipJsonSchema keeps the admin form's input types.
+        OPENAI_GATEWAY_TYPE: GatewayType | SkipJsonSchema[None] = Field(
+            default=None,
             description="Gateway used for all OpenAI requests.",
         )
-        OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
-            default_factory=lambda: _required_environment("OPENAI_GATEWAY_BASE_URL"),
+        OPENAI_GATEWAY_BASE_URL: GatewayRoot | SkipJsonSchema[None] = Field(
+            default=None,
             description="Gateway root without the OpenAI API path.",
         )
-        OPENAI_GATEWAY_API_KEY: str = Field(
-            default_factory=lambda: _required_environment("OPENAI_GATEWAY_API_KEY"),
+        OPENAI_GATEWAY_API_KEY: str | SkipJsonSchema[None] = Field(
+            default=None,
             min_length=1,
             description="API key used for Responses and Files.",
             json_schema_extra={"input": {"type": "password"}},
@@ -109,10 +100,10 @@ class Pipe:
 
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model to Open WebUI."""
-        gateway = self._gateway()
+        gateway, api_key = self._gateway()
         async with _client(
             base_url=f"{gateway.root_url}/v1",
-            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+            api_key=api_key,
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
             if gateway.provider_routing:
@@ -184,7 +175,7 @@ class Pipe:
             )
             async with _client(
                 base_url=prepared.gateway.responses_base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                api_key=prepared.api_key,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
@@ -293,7 +284,7 @@ class Pipe:
                             event_emitter,
                             host_request,
                             files_base_url=prepared.gateway.files_base_url,
-                            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                            api_key=prepared.api_key,
                             timeout=self.valves.OPENAI_API_TIMEOUT,
                             provider=prepared.gateway.files_provider,
                         )
@@ -328,7 +319,7 @@ class Pipe:
         streaming: bool,
         host_request: OpenWebUIRequest | None,
     ) -> PreparedResponsesRequest:
-        gateway = self._gateway()
+        gateway, api_key = self._gateway()
         model_id = body.model_id
         mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(tools)
         # Open WebUI enters its native tool loop only for streams.
@@ -350,7 +341,7 @@ class Pipe:
                 metadata,
                 host_request,
                 base_url=gateway.files_base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                api_key=api_key,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
                 provider=gateway.files_provider,
             )
@@ -366,6 +357,7 @@ class Pipe:
             background=background,
             streaming=streaming,
             gateway=gateway,
+            api_key=api_key,
             openwebui_mcp_names=openwebui_mcp_names,
             replay_input=replay_input,
             request=_responses_request(
@@ -382,11 +374,20 @@ class Pipe:
             ),
         )
 
-    def _gateway(self) -> GatewayConfig:
-        return gateway_config(
-            self.valves.OPENAI_GATEWAY_TYPE,
-            self.valves.OPENAI_GATEWAY_BASE_URL,
+    def _gateway(self) -> tuple[GatewayConfig, str]:
+        valves = self.valves
+        if (
+            valves.OPENAI_GATEWAY_TYPE is None
+            or valves.OPENAI_GATEWAY_BASE_URL is None
+            or valves.OPENAI_GATEWAY_API_KEY is None
+        ):
+            raise RuntimeError(
+                "Run lgos-openwebui-sync to set the Generic Function's gateway valves."
+            )
+        gateway = gateway_config(
+            valves.OPENAI_GATEWAY_TYPE, valves.OPENAI_GATEWAY_BASE_URL
         )
+        return gateway, valves.OPENAI_GATEWAY_API_KEY
 
 
 def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:

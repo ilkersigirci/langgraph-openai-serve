@@ -7,13 +7,6 @@ from lgos_openwebui.settings import Settings
 
 
 @pytest.mark.parametrize(
-    ("settings_model", "error_type"),
-    [
-        pytest.param(Settings, ValidationError, id="sync"),
-        pytest.param(Pipe.Valves, RuntimeError, id="valves"),
-    ],
-)
-@pytest.mark.parametrize(
     "setting",
     [
         "OPENAI_GATEWAY_TYPE",
@@ -22,11 +15,9 @@ from lgos_openwebui.settings import Settings
     ],
 )
 @pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
-def test_gateway_settings_require_nonempty_environment(
+def test_sync_settings_require_nonempty_environment(
     gateway_environment: None,
     monkeypatch: pytest.MonkeyPatch,
-    settings_model: type[Settings] | type[Pipe.Valves],
-    error_type: type[Exception],
     setting: str,
     value: str | None,
 ) -> None:
@@ -35,13 +26,10 @@ def test_gateway_settings_require_nonempty_environment(
     else:
         monkeypatch.setenv(setting, value)
 
-    with pytest.raises(error_type, match=setting):
-        settings_model()
+    with pytest.raises(ValidationError, match=setting):
+        Settings()
 
 
-@pytest.mark.parametrize(
-    "settings_model", [Settings, Pipe.Valves], ids=["sync", "valves"]
-)
 @pytest.mark.parametrize(
     ("setting", "value"),
     [
@@ -49,42 +37,61 @@ def test_gateway_settings_require_nonempty_environment(
         ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example"),
     ],
 )
-def test_gateway_settings_reject_invalid_values(
+def test_sync_settings_reject_invalid_values(
     gateway_environment: None,
     monkeypatch: pytest.MonkeyPatch,
-    settings_model: type[Settings] | type[Pipe.Valves],
     setting: str,
     value: str,
 ) -> None:
     monkeypatch.setenv(setting, value)
 
     with pytest.raises(ValidationError) as error:
-        settings_model()
+        Settings()
     assert error.value.errors()[0]["loc"] == (setting,)
 
 
-@pytest.mark.parametrize(
-    "settings_model", [Settings, Pipe.Valves], ids=["sync", "valves"]
-)
-def test_gateway_settings_read_environment_and_normalize_root(
+def test_sync_settings_read_environment_and_normalize_root(
     monkeypatch: pytest.MonkeyPatch,
-    settings_model: type[Settings] | type[Pipe.Valves],
 ) -> None:
     monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "bifrost")
     monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example/root/")
     monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "api-key")
 
-    settings = settings_model()
+    settings = Settings()
 
     assert settings.OPENAI_GATEWAY_TYPE == "bifrost"
     assert settings.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
     assert settings.OPENAI_GATEWAY_API_KEY == "api-key"
 
 
-def test_gateway_url_has_a_string_schema_for_the_valves_form() -> None:
-    schema = Pipe.Valves.model_json_schema()
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        ("OPENAI_GATEWAY_TYPE", "unsupported"),
+        ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example"),
+        ("OPENAI_GATEWAY_API_KEY", ""),
+    ],
+)
+def test_gateway_valves_reject_invalid_values(setting: str, value: str) -> None:
+    with pytest.raises(ValidationError) as error:
+        Pipe.Valves(**{setting: value})
+    assert error.value.errors()[0]["loc"][0] == setting
 
-    assert schema["properties"]["OPENAI_GATEWAY_BASE_URL"]["type"] == "string"
+
+def test_gateway_valves_normalize_root() -> None:
+    valves = Pipe.Valves(OPENAI_GATEWAY_BASE_URL="https://gateway.example/root/")
+
+    assert valves.OPENAI_GATEWAY_BASE_URL == "https://gateway.example/root"
+
+
+def test_gateway_valves_keep_typed_admin_form_inputs() -> None:
+    # Open WebUI's valves form reads only these top-level schema keys.
+    properties = Pipe.Valves.model_json_schema()["properties"]
+
+    assert properties["OPENAI_GATEWAY_TYPE"]["enum"] == ["litellm", "bifrost"]
+    assert properties["OPENAI_GATEWAY_BASE_URL"]["type"] == "string"
+    assert properties["OPENAI_GATEWAY_API_KEY"]["type"] == "string"
+    assert properties["OPENAI_GATEWAY_API_KEY"]["input"] == {"type": "password"}
 
 
 def test_bifrost_uses_native_responses_and_files() -> None:

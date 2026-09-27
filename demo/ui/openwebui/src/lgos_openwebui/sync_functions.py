@@ -10,6 +10,7 @@ from .bundle import bundle_function
 from .functions.generic.gateway import gateway_config
 from .settings import Settings
 from .workspace_models import (
+    GENERIC_FUNCTION_ID,
     discover_workspace_model_specs,
     sync_workspace_models,
 )
@@ -31,7 +32,7 @@ def function_specs() -> tuple[FunctionSpec, ...]:
     """Return the demo's Open WebUI Functions."""
     return (
         FunctionSpec(
-            id="generic",
+            id=GENERIC_FUNCTION_ID,
             name="Generic",
             content=bundle_function(FUNCTIONS_DIR / "generic"),
         ),
@@ -93,8 +94,20 @@ def sync_functions(
     return results
 
 
+def sync_function_valves(
+    client: httpx2.Client,
+    function_id: str,
+    valves: dict[str, str],
+) -> None:
+    """Set the given valves while preserving the others."""
+    path = f"/api/v1/functions/id/{function_id}/valves"
+    # Updates replace the stored valves, so merge them first.
+    stored = client.get(path).raise_for_status().json()
+    client.post(f"{path}/update", json={**stored, **valves}).raise_for_status()
+
+
 def main() -> None:
-    """Synchronize the bundled Functions and generated Workspace Models."""
+    """Synchronize the bundled Functions, gateway valves, and Workspace Models."""
     try:
         settings = Settings()
         gateway = gateway_config(
@@ -115,6 +128,16 @@ def main() -> None:
                 gateway=gateway,
             )
             function_results = sync_functions(client)
+            # The Pipe calls the gateway from Open WebUI's network.
+            sync_function_valves(
+                client,
+                GENERIC_FUNCTION_ID,
+                {
+                    "OPENAI_GATEWAY_TYPE": settings.OPENAI_GATEWAY_TYPE,
+                    "OPENAI_GATEWAY_BASE_URL": settings.OPENAI_GATEWAY_BASE_URL,
+                    "OPENAI_GATEWAY_API_KEY": settings.OPENAI_GATEWAY_API_KEY,
+                },
+            )
             sync_workspace_models(client, model_specs)
     except httpx2.HTTPStatusError as exc:
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
@@ -125,6 +148,7 @@ def main() -> None:
 
     for function_id, action in function_results.items():
         print(f"{action.capitalize()} Function: {function_id}")
+    print(f"Configured Function valves: {GENERIC_FUNCTION_ID}")
     print(f"Synchronized Workspace Models: {len(model_specs)}")
 
 

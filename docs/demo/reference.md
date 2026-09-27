@@ -206,6 +206,7 @@ These settings belong only to the independent `demo/files_api` project.
 
 These settings configure the host-side Open WebUI synchronization command
 alongside the shared gateway values under [Stack Settings](#stack-settings).
+The command stores those gateway values in the Generic Function's valves.
 
 | Setting | Purpose |
 | --- | --- |

@@ -42,7 +42,8 @@ uv run --locked --env-file .env lgos-openwebui-sync
 ```
 
 The command reads the gateway catalog before changing Open WebUI, then updates
-the bundled Functions and generates one Workspace Model per public model name.
+the bundled Functions, sets the Generic Function's gateway valves, and generates
+one Workspace Model per public model name.
 LiteLLM's `model_info.lgos` supplies the full metadata and
 `model_name` is sent unchanged for inference. Each generated model
 exposes the current LGOS runtime settings as native per-chat Chat Variables.

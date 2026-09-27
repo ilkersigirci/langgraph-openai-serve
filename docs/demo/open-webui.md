@@ -148,8 +148,9 @@ synchronization automatically after their dependencies are healthy.
 The sync command signs in through `/api/v1/auths/signin` and reads LGOS metadata
 from the selected gateway before changing Functions or Workspace Models.
 An unavailable or malformed catalog stops the command without modifying them.
-It then updates the bundled Functions and bulk-imports each generated Workspace
-Model with an active, public, hidden override for its manifold base. Run it again
+It then updates the bundled Functions, sets the Generic Function's gateway
+valves, and bulk-imports each generated Workspace Model with an active, public,
+hidden override for its manifold base. Run it again
 after changing a Function, the configured model catalog, or a graph's client
 settings schema.
 
@@ -192,10 +193,12 @@ remains active and public but is hidden from the chat selector, following Open
 WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
 
-Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
-`OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
-Function's admin valves. Compose initializes the required values from
-`demo/.env`; use a key issued by the selected gateway. LiteLLM
+The sync writes `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
+`OPENAI_GATEWAY_API_KEY` from `demo/.env` into the Generic Function's valves
+through Open WebUI's Functions API; the Function reads no environment
+variables. `OPENAI_GATEWAY_BASE_URL` must be the root Open WebUI reaches, and
+the key must be issued by the selected gateway. Each sync replaces those three
+valves and keeps the others, such as an admin-set `OPENAI_API_TIMEOUT`. LiteLLM
 sends the catalog's `model_name` unchanged for managed routing. Bifrost also
 receives the provider-qualified catalog ID unchanged on native Responses and
 selects the provider from its prefix.
