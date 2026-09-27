@@ -30,11 +30,11 @@ Before using independently started LiteLLM components, [sync the LGOS metadata](
 The full-stack `just demo/compose [--dev] [--otel]` variants do this
 and run the Open WebUI sync automatically.
 
-The sync also creates one native `lgos-gateway` MCP connection and attaches it
-to generated Workspace Models that advertise the `mcp_tools` feature. It
-derives the MCP endpoint from `OPENAI_GATEWAY_BASE_URL` and uses
-`OPENAI_GATEWAY_API_KEY`; the gateway decides which tools that credential may
-discover.
+Compose declares one native `lgos-gateway` MCP connection through Open WebUI's
+`TOOL_SERVER_CONNECTIONS`, and the sync attaches it to generated Workspace
+Models that advertise the `mcp_tools` feature. The connection uses
+`OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`; the gateway decides
+which tools that credential may discover.
 
 ```bash
 cp .env.example .env

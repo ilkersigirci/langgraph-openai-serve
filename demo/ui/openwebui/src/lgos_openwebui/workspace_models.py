@@ -25,12 +25,21 @@ from .functions.generic.contracts import (
     LGOS_MODEL_OWNER,
     PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
-    is_server_tool_model,
-    supports_web_search,
 )
-from .functions.generic.gateway import GatewayConfig, litellm_models
-from .tool_servers import MCP_GATEWAY_TOOL_ID, PUBLIC_READ_GRANT
+from .functions.generic.gateway import (
+    MCP_GATEWAY_ID,
+    GatewayConfig,
+    litellm_models,
+)
 
+PUBLIC_READ_GRANT = {
+    "principal_type": "user",
+    "principal_id": "*",
+    "permission": "read",
+}
+MCP_GATEWAY_TOOL_ID = f"server:mcp:{MCP_GATEWAY_ID}"
+SERVER_TOOL_MODEL_NAME = "server-tool"
+ADVANCED_GRAPH_MODEL_NAME = "advanced-graph"
 FILE_INPUTS_FEATURE = "file_inputs"
 MCP_TOOLS_FEATURE = "mcp_tools"
 BACKGROUND_FEATURE = "background"
@@ -203,36 +212,21 @@ def sync_workspace_models(
     specs: tuple[WorkspaceModelSpec, ...],
 ) -> None:
     """Replace generated Workspace Models and their hidden manifold bases."""
+    # The export lists only wrapper models; /base lists only base overrides.
     workspace_models = client.get("/api/v1/models/export").raise_for_status().json()
-    if not isinstance(workspace_models, list):
-        msg = "Open WebUI models export returned invalid data."
-        raise TypeError(msg)
     base_models = client.get("/api/v1/models/base").raise_for_status().json()
-    if not isinstance(base_models, list):
-        msg = "Open WebUI base models response returned invalid data."
-        raise TypeError(msg)
-    existing_model_ids = {
-        model["id"]
-        for model in workspace_models
-        if isinstance(model, dict) and isinstance(model.get("id"), str)
-    }
+    existing_model_ids = {model["id"] for model in workspace_models}
     desired_base_model_ids = {spec.base_model_id for spec in specs}
     generated_workspace_model_ids = {
         model["id"]
         for model in workspace_models
-        if isinstance(model, dict)
-        and isinstance(model.get("id"), str)
-        and model["id"].startswith(WORKSPACE_MODEL_PREFIX)
-        and isinstance(model.get("base_model_id"), str)
+        if model["id"].startswith(WORKSPACE_MODEL_PREFIX)
         and model["base_model_id"].startswith(f"{GENERIC_FUNCTION_ID}.")
     }
     generated_base_model_ids = {
         model["id"]
         for model in base_models
-        if isinstance(model, dict)
-        and isinstance(model.get("id"), str)
-        and model["id"].startswith(f"{GENERIC_FUNCTION_ID}.")
-        and model.get("base_model_id") is None
+        if model["id"].startswith(f"{GENERIC_FUNCTION_ID}.")
     }
 
     payloads = []
@@ -380,9 +374,12 @@ def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
 
 def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
     fields = list(spec.fields)
-    if is_server_tool_model(spec.id):
+    # These fixed controls select server tools; the Pipe maps them to Responses
+    # tools and never forwards them as graph settings.
+    model_name = spec.id.rsplit("/", 1)[-1]
+    if model_name == SERVER_TOOL_MODEL_NAME:
         fields.append(PACKAGE_VERSION_FIELD)
-    if supports_web_search(spec.id):
+    if model_name in {ADVANCED_GRAPH_MODEL_NAME, SERVER_TOOL_MODEL_NAME}:
         fields.append(WEB_SEARCH_FIELD)
     if spec.supports_background:
         fields.append(BACKGROUND_FIELD)

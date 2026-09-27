@@ -8,11 +8,6 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Union
 
 import openai.types.responses as response_types
-from openai.types.chat.chat_completion_chunk import (
-    ChatCompletionChunk,
-    Choice,
-    ChoiceDelta,
-)
 from openai.types.responses import (
     CustomToolParam,
     FunctionToolParam,
@@ -22,7 +17,7 @@ from openai.types.responses import (
     ToolParam,
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
@@ -30,12 +25,9 @@ from .contracts import (
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
-    OpenWebUIMCPTool,
     OpenWebUIMessage,
-    OpenWebUIMetadata,
-    is_server_tool_model,
+    OpenWebUIToolSpec,
     supports_display_file,
-    supports_web_search,
 )
 from .gateway import MCP_GATEWAY_ID
 
@@ -86,67 +78,64 @@ logger = logging.getLogger(__name__)
 
 def _responses_tools(
     model_id: str,
-    metadata: OpenWebUIMetadata,
+    chat_variables: Mapping[str, JsonValue],
 ) -> list[ToolParam]:
     """Build the tools owned by the selected demo client and graph."""
     tools: list[ToolParam] = (
         [DISPLAY_FILE_TOOL] if supports_display_file(model_id) else []
     )
-    if (
-        is_server_tool_model(model_id)
-        and metadata.chat_variables.get(PACKAGE_VERSION_TOOL_NAME) is True
-    ):
+    # Only the generated server-tool and advanced-graph models declare these.
+    if chat_variables.get(PACKAGE_VERSION_TOOL_NAME) is True:
         tools.append(PACKAGE_VERSION_TOOL)
-    if (
-        supports_web_search(model_id)
-        and metadata.chat_variables.get(WEB_SEARCH_TOOL_NAME) is True
-    ):
+    if chat_variables.get(WEB_SEARCH_TOOL_NAME) is True:
         tools.append({"type": "web_search"})
     return tools
 
 
 def _openwebui_mcp_tools(
-    tools: Mapping[str, OpenWebUIMCPTool],
+    tools: Mapping[str, Mapping[str, Any]],
 ) -> tuple[list[FunctionToolParam], dict[str, str]]:
-    """Translate managed Open WebUI tools to their gateway names."""
+    """Translate gateway MCP tools from Open WebUI's ``__tools__`` map."""
     translated = []
     openwebui_names = {}
-    name_prefix = f"{MCP_GATEWAY_ID}_"
     for name, tool in tools.items():
-        if not name.startswith(name_prefix):
+        # Open WebUI prefixes each MCP tool with its connection ID.
+        gateway_name = name.removeprefix(f"{MCP_GATEWAY_ID}_")
+        if gateway_name == name or not gateway_name:
             continue
-        gateway_name = name.removeprefix(name_prefix)
-        if not gateway_name:
-            continue
+        spec = OpenWebUIToolSpec.model_validate(tool["spec"])
         parameters: dict[str, object] = (
-            dict(tool.spec.parameters)
-            if tool.spec.parameters is not None
+            dict(spec.parameters)
+            if spec.parameters is not None
             else {"type": "object", "properties": {}}
         )
         translated_tool: FunctionToolParam = {
             "type": "function",
             "name": gateway_name,
             "parameters": parameters,
-            "strict": tool.spec.strict,
+            "strict": spec.strict,
         }
-        if tool.spec.description is not None:
-            translated_tool["description"] = tool.spec.description
+        if spec.description is not None:
+            translated_tool["description"] = spec.description
         translated.append(translated_tool)
         openwebui_names[gateway_name] = name
     return translated, openwebui_names
 
 
-def _openwebui_text_chunk(model_id: str, content: str) -> dict[str, Any]:
-    """Keep text inside JSON: the Pipe host treats raw data: strings as SSE."""
-    return ChatCompletionChunk(
-        id="chatcmpl-lgos-responses",
-        object="chat.completion.chunk",
-        created=0,
-        model=model_id,
-        choices=[
-            Choice(index=0, delta=ChoiceDelta(content=content), finish_reason=None)
-        ],
-    ).model_dump(exclude_none=True)
+def _openwebui_chunk(
+    model_id: str,
+    delta: dict[str, Any],
+    *,
+    finish_reason: str | None = None,
+) -> dict[str, Any]:
+    """Return a stream chunk; the Pipe host treats raw ``data:`` strings as SSE."""
+    return {
+        "id": "chatcmpl-lgos-responses",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": model_id,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+    }
 
 
 def _responses_input(
@@ -230,44 +219,21 @@ def _openwebui_tool_chunk(
     openwebui_names: Mapping[str, str],
 ) -> dict[str, Any]:
     """Return graph calls for execution by Open WebUI's native tool loop."""
-    return {
-        "id": "chatcmpl-lgos-responses",
-        "object": "chat.completion.chunk",
-        "created": 0,
-        "model": model_id,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {
-                    "tool_calls": [
-                        _openwebui_tool_call(
-                            call,
-                            name=openwebui_names[call.name],
-                            index=index,
-                        )
-                        for index, call in enumerate(calls)
-                    ]
-                },
-                "finish_reason": "tool_calls",
-            }
-        ],
-    }
-
-
-def _openwebui_tool_call(
-    call: ResponseFunctionToolCall,
-    *,
-    name: str,
-    index: int | None = None,
-) -> dict[str, Any]:
-    result = {
-        "id": call.call_id,
-        "type": "function",
-        "function": {"name": name, "arguments": call.arguments},
-    }
-    if index is not None:
-        result["index"] = index
-    return result
+    tool_calls = [
+        {
+            "index": index,
+            "id": call.call_id,
+            "type": "function",
+            "function": {
+                "name": openwebui_names[call.name],
+                "arguments": call.arguments,
+            },
+        }
+        for index, call in enumerate(calls)
+    ]
+    return _openwebui_chunk(
+        model_id, {"tool_calls": tool_calls}, finish_reason="tool_calls"
+    )
 
 
 def _responses_request(

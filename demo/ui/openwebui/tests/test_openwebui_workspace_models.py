@@ -7,8 +7,8 @@ from openai import OpenAI
 from openai.types import Model
 
 from lgos_openwebui.functions.generic.gateway import gateway_config
-from lgos_openwebui.tool_servers import PUBLIC_READ_GRANT
 from lgos_openwebui.workspace_models import (
+    PUBLIC_READ_GRANT,
     WorkspaceModelSpec,
     chat_variable_fields,
     discover_workspace_model_specs,
@@ -361,7 +361,7 @@ def test_sync_workspace_models_removes_generated_models_for_an_empty_catalog() -
             },
             {
                 "id": "user-model",
-                "base_model_id": None,
+                "base_model_id": "openai.gpt-5",
             },
         ],
         [
@@ -607,7 +607,16 @@ def test_limited_workspace_model_has_a_warning_and_description_fallback() -> Non
 def test_simple_uservalves_model_reuses_pipe_without_chat_variable_controls(
     existing: bool,
 ) -> None:
-    client = _client([{"id": "lgos.uservalves_simple"}] if existing else [])
+    client = _client(
+        [
+            {
+                "id": "lgos.uservalves_simple",
+                "base_model_id": "generic.lgos-a/simple-graph",
+            }
+        ]
+        if existing
+        else []
+    )
     spec = WorkspaceModelSpec(
         id="lgos-a/simple-graph",
         description="Simple graph",
@@ -634,7 +643,7 @@ def test_simple_uservalves_model_reuses_pipe_without_chat_variable_controls(
 def test_sync_workspace_models_leaves_existing_wrapper_state_to_openwebui() -> None:
     client = _client(
         [
-            {"id": "lgos.plain"},
+            {"id": "lgos.plain", "base_model_id": "generic.plain"},
         ],
         [
             {

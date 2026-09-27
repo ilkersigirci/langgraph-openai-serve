@@ -61,8 +61,8 @@ After setup below, select **UserValves Simple / simple-graph**. Open
 `use_history` and `audience`. These preferences belong to the user and apply across chats
 using this example. The field definitions are static; their values are editable.
 
-The Filter supplies those values through Open WebUI's request metadata
-`chat_variables` slot. The shared Pipe serializes them into
+The Filter adds those values to Open WebUI's request metadata as
+`lgos_settings`. The shared Pipe sends them unchanged as
 `metadata.lgos_settings`; LGOS validates and applies them.
 The example has no Chat Variables form, so there is only one settings control.
 
@@ -81,19 +81,24 @@ It depends on the Generic Pipe for Responses transport. The generated
 
 ## Gateway MCP
 
-The sync command reconciles one managed Streamable HTTP connection. It attaches
-`lgos-gateway` to each generated Workspace Model whose gateway metadata
+Compose declares one Streamable HTTP connection, `lgos-gateway`, in Open
+WebUI's `TOOL_SERVER_CONNECTIONS` environment variable. The sync command
+attaches it to each generated Workspace Model whose gateway metadata
 advertises `mcp_tools`. The Generic Pipe forwards the gateway tools from
 Open WebUI's native `__tools__` map through Responses and returns matching calls
 to the native tool loop. `mcp-postgres` adds its fixed report allowlist at the
 API boundary, while general-purpose graphs can use the gateway-authorized tool
 catalog without knowing which MCP servers provide it.
 
-The connection derives `/mcp` from `OPENAI_GATEWAY_BASE_URL` and stores
-`OPENAI_GATEWAY_API_KEY` as native bearer authentication. The same values drive
-model discovery, Responses, and Files. The gateway credential determines which
-MCP tools can be discovered, while the downstream DBHub token remains private
-to the gateway.
+The connection URL is `OPENAI_GATEWAY_BASE_URL` followed by `/mcp`, the
+aggregate endpoint both bundled gateways serve. `OPENAI_GATEWAY_API_KEY` is the
+connection's native bearer key. The same values drive model discovery, Responses, and Files. The gateway
+credential determines which MCP tools can be discovered, while the downstream
+DBHub token remains private to the gateway.
+
+Open WebUI reads `TOOL_SERVER_CONNECTIONS` on every start. Compose disables
+Open WebUI's persistent configuration, so changes made to the connection in
+the admin settings last only until the container restarts.
 
 Keep streaming enabled because Open WebUI's native tool middleware consumes the
 streamed tool-call shape. The current database example is
@@ -130,13 +135,12 @@ synchronization project on the host:
 just demo/sync-openwebui
 ```
 
-The command discovers models through `DEMO_GATEWAY_HOST_URL` and stores
-`OPENAI_GATEWAY_BASE_URL`, the root that Open WebUI itself reaches, as the
-native MCP server. It reuses the same credential as the Open WebUI runtime. For
-a standalone Open WebUI deployment, run
-`uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
+The command discovers models through `DEMO_GATEWAY_HOST_URL` with the same
+credential as the Open WebUI runtime. For a standalone Open WebUI deployment,
+run `uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync` from an
 environment where `DEMO_OPENWEBUI_URL` and the gateway are reachable; without
-`DEMO_GATEWAY_HOST_URL`, discovery uses `OPENAI_GATEWAY_BASE_URL`.
+`DEMO_GATEWAY_HOST_URL`, discovery uses `OPENAI_GATEWAY_BASE_URL`. Configure
+that deployment's `lgos-gateway` MCP connection as the Compose service does.
 
 The full-stack `just demo/compose [--dev] [--otel]` variants handle
 synchronization automatically after their dependencies are healthy.
@@ -171,15 +175,11 @@ Workspace Models are public; later syncs preserve their access grants and
 active state. The sync owns the generated bases' hidden, public, and active
 state.
 
-The command discovers every top-level `.py` file and directory-backed Function
-under `demo/ui/openwebui/src/lgos_openwebui/functions/`, except entries whose
-names start with `_`. A modular
-Function directory contains `function.py` for its frontmatter and entrypoint;
-the Generic Function's modules are flattened into one executable source string
-at sync time because Open WebUI stores each Function directly in its database.
-The filename stem or directory name is the Function ID, and the required Open
-WebUI frontmatter `title` is its display name. Function IDs must be lowercase
-Python identifiers.
+The command installs the two Functions under
+`demo/ui/openwebui/src/lgos_openwebui/functions/`: `generic` and
+`uservalves_simple`. The Generic Function's `function.py` holds its
+frontmatter, and its modules are flattened into one executable source string at
+sync time because Open WebUI stores each Function directly in its database.
 
 The shared `demo/.env` supplies the sync credentials and gateway selection. See
 [sync settings](reference.md#open-webui-sync-settings) for their purposes. Set
@@ -206,19 +206,15 @@ file does not update it.
 
 Generated models enable Open WebUI's native file-upload control only when the
 graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
-demo to process an attachment. The Generic
-Function receives non-image attachments through Open WebUI's documented
-[`__files__`](https://docs.openwebui.com/features/extensibility/plugin/development/reserved-args/#__files__)
-argument and image bytes from their base64 `image_url` content. Raw uploads can
-omit the documented hydrated `file.path`; the Function then reads the original
-bytes through Open WebUI's authenticated file-content endpoint. In the pinned
-release, `__metadata__["user_message"]` identifies the message that started this
-turn. Because `__files__` also includes files from earlier turns, the Function
-intersects it with that current message, uploads each current attachment's
-original bytes with `purpose="user_data"`, and appends the returned OpenAI
-`file_id` to the message. It never reuploads historical chat attachments or
-moves them to the latest message. Images use `input_file.file_id` too; the
-current LGOS Responses subset does not accept `input_image` items.
+demo to process an attachment. In the pinned release,
+`__metadata__["user_message"]` lists the files attached to the message that
+started this turn, images included. The Generic Function reads each file's
+original bytes through Open WebUI's authenticated
+`/api/v1/files/{id}/content` endpoint with the caller's credentials, uploads
+them with `purpose="user_data"`, and appends the returned OpenAI `file_id` to
+the message. It never reuploads historical chat attachments or moves them to
+the latest message. Images use `input_file.file_id` too; the current LGOS
+Responses subset does not accept `input_image` items.
 
 This local file bridge uses the HTTPX shipped by the pinned Open WebUI runtime;
 it will move to HTTPX2 when Open WebUI adopts OpenAI v3.
@@ -330,7 +326,9 @@ native Open WebUI Chat Variables.*
 
 When a chat has values, the Pipe serializes Open WebUI's generated Chat
 Variables and sends them as
-`metadata.lgos_settings`. Open WebUI keeps an untouched declared default as
+`metadata.lgos_settings`. A chat keeps the values of every model selected in
+it, so the Pipe sends only the variables the selected Workspace Model declares.
+Open WebUI keeps an untouched declared default as
 text, so the Pipe restores checkbox and number values to JSON booleans and
 integers. It omits empty values so LGOS applies its defaults, and LGOS performs
 the authoritative runtime validation.
@@ -435,28 +433,30 @@ Shared prompts and graph behavior are documented under
 The Pipe translates each LGOS `lgos_interrupt` batch into one built-in
 Open WebUI `ask_user` call. Open WebUI persists that pending call on the saved
 assistant message, so its native question card survives a page reload. The
-Pipe keeps the original LGOS calls in the opaque `ask_user` call ID; answering
-the card needs no adapter database or live socket callback.
+`ask_user` call ID carries the paused Response ID, and each question ID is an
+LGOS interrupt call ID; answering the card needs no adapter database or live
+socket callback.
 
 The deliberately small UI profile is an object containing a non-empty
 `question`, two or three unique string `choices`, and optional boolean
 `allow_other`. When `allow_other` is true, Open WebUI adds its free-form
 **Other** input. This is a demo-client presentation convention, not an LGOS
-payload restriction. Responses carries each resume value as a string, and this
-adapter maps Open WebUI choices and free-form answers directly to those strings.
+payload restriction. Responses carries each resume value as a string: the
+chosen option's label or the free-form text. Open WebUI trims option labels and
+truncates them to 80 characters, so the Pipe rejects choices it would change.
 
 The [advanced graph](graphs/advanced-graph.md) includes exact note bytes in its
-review payload after the user explicitly asks to save something. When details
-exceed the native question's 500-character limit, the Pipe renders the complete
-payload above the question card; nothing is truncated from the saved interrupt
-cursor. Knowledge citations remain ordinary answer text with filenames and
+review payload after the user explicitly asks to save something. Open WebUI
+truncates question text to 500 characters, so when the question and its details
+exceed that limit, the Pipe renders them in full above the question card.
+Knowledge citations remain ordinary answer text with filenames and
 provider file IDs. The Pipe does not add a knowledge-base selector or bridge the
 demo S3 Files namespace.
 
-After the user answers, the Pipe decodes the paused Response ID and original
-calls from the opaque cursor. It sends the Response ID as `previous_response_id`
-with one `function_call_output` item per interrupt containing the user's answer.
-One native `ask_user`
+After the user answers, the Pipe sends the Response ID from the card as
+`previous_response_id` with one `function_call_output` item per answered
+question. LGOS rejects the resume unless the answers cover its complete pending
+interrupt set. One native `ask_user`
 call can contain one to three questions, matching Open WebUI's built-in limit.
 LGOS itself remains generic and can expose larger atomic batches to clients that
 support them.

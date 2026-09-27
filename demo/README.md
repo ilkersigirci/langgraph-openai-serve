@@ -151,9 +151,9 @@ just demo/sync-openwebui
 ```
 
 The recipe runs the locked `ui/openwebui` project on the host. It discovers
-models through `DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`
-and registers `OPENAI_GATEWAY_BASE_URL` as Open WebUI's MCP server, so the
-official Open WebUI image remains unchanged.
+models through `DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`,
+so the official Open WebUI image remains unchanged. Compose configures Open
+WebUI's gateway MCP connection from the same root and key.
 
 Compose starts each selected service's dependencies. One API setup job
 initializes the LangGraph checkpointer and Store schemas, and a separate

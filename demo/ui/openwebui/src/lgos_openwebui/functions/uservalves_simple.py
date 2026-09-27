@@ -1,7 +1,7 @@
 """
 title: UserValves Simple
 author: langgraph-openai-serve
-version: 0.7
+version: 0.8
 description: Static per-user runtime settings for the simple-graph example.
 """
 
@@ -28,6 +28,6 @@ class Filter:
         __metadata__: dict[str, Any],
     ) -> dict[str, Any]:
         settings = cast("Filter.UserValves", __user__["valves"])
-        # The shared Pipe encodes these values as OpenAI runtime metadata.
-        __metadata__["chat_variables"] = settings.model_dump()
+        # The shared Pipe sends these values unchanged as LGOS runtime settings.
+        __metadata__["lgos_settings"] = settings.model_dump()
         return body
