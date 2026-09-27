@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.5"
+version = "0.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,12 +365,15 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/f2/2d6577667c652d330b6b5cea66f675739249b2caec44945387576c2bb91c/chainlit_utils-0.2.5.tar.gz", hash = "sha256:f84c6ec00379307eb5c7c6e5b0ad25d7272f76a5cdd828785c016a8ded7c7404", size = 26555, upload-time = "2026-09-23T20:43:58.384Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/e2/0959c48f8d5dcf279b1dfcc23681be52e913ed839393cba604d817712707/chainlit_utils-0.2.7.tar.gz", hash = "sha256:521b03fec35cf786c15a58bc5144107f44e018601c5767c23aa150356bcba6ec", size = 36309, upload-time = "2026-09-26T21:51:38.878Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/d7/6972a4c117b8fc00fd3e7c1f5e13b8b02e54907af079d940face4e2be474/chainlit_utils-0.2.5-py3-none-any.whl", hash = "sha256:41342e9d597a1057f71165d2a609dc35a35e37323294f7223ffdbea12b6829fb", size = 35880, upload-time = "2026-09-23T20:43:57.386Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/77/c73cf17a75190d84175c6d78fb69aa86ec3a8fc7c7af001e3a9e85c429fb/chainlit_utils-0.2.7-py3-none-any.whl", hash = "sha256:4f58caea4e45672e373d2b9df4172b7cffee3f559dd72fe3ded1c786a60d74c1", size = 48245, upload-time = "2026-09-26T21:51:37.796Z" },
 ]
 
 [package.optional-dependencies]
+audio = [
+    { name = "emoji" },
+]
 sso = [
     { name = "authlib" },
     { name = "itsdangerous" },
@@ -557,6 +560,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
+]
+
+[[package]]
+name = "emoji"
+version = "2.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/01/a25a9c13e2f8945d06b219e08e88a5dd8a504ad1a79f872f25d6814f498c/emoji-2.16.0.tar.gz", hash = "sha256:ff9e9b1c48389ef78ed1787e7693c555e84e6bb9bac16be1fd65e1616dbf80c8", size = 617905, upload-time = "2026-09-16T19:47:57.051Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/8a/75e3177f374877b19dd3112820b071836ad1100f9f58424630b4783519bc/emoji-2.16.0-py3-none-any.whl", hash = "sha256:c4230d80640def9071599ff56b1b5950fe13a2a94c0da98c5deab12431b24330", size = 610912, upload-time = "2026-09-16T19:47:55.507Z" },
 ]
 
 [[package]]
@@ -1125,8 +1137,9 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "chainlit" },
-    { name = "chainlit-utils", extra = ["sso"] },
+    { name = "chainlit-utils", extra = ["audio", "sso"] },
     { name = "cryptography" },
+    { name = "emoji" },
     { name = "fastapi", extra = ["standard"] },
     { name = "openai" },
     { name = "opentelemetry-distro" },
@@ -1155,8 +1168,9 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["sso"], specifier = ">=0.2.5,<0.3" },
+    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.7,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
+    { name = "emoji", specifier = ">=2,<3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
     { name = "openai", specifier = ">=3.14.1,<4" },
     { name = "opentelemetry-distro", specifier = ">=0.65b0,<0.66" },

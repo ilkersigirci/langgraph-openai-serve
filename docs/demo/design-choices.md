@@ -16,7 +16,7 @@ its row. Package decisions live in
 
 | Choice | Why | Cost | Revisit when |
 | --- | --- | --- | --- |
-| Both UIs reach LGOS only through the gateway selected by `OPENAI_GATEWAY_TYPE`; neither connects to an API container or imports LGOS. | The demo exercises a real OpenAI-compatible edge, and UI inference cannot bypass the gateway's data plane. | Gateways normalize some metadata: error `type`, `param`, and `code`, and Bifrost's model detail. | A gateway preserves LGOS metadata and errors unchanged. |
+| Both UIs reach LGOS only through the gateway selected by `OPENAI_GATEWAY_TYPE`; neither connects to an API container or imports LGOS. | The demo exercises a real OpenAI-compatible edge, and UI inference cannot bypass the gateway's data plane. | LiteLLM rewrites error `type`, `param`, and `code`; Bifrost's normalized model detail omits LGOS extensions. | A gateway preserves LGOS metadata and errors unchanged. |
 
 ### LiteLLM
 
@@ -28,14 +28,15 @@ its row. Package decisions live in
 
 | Choice | Why | Cost | Revisit when |
 | --- | --- | --- | --- |
-| One custom provider per API, a dedicated `lgos-files` provider, and a standard `openai` provider pinned to API A. | Separate identities show independent APIs behind one endpoint; normalized Files need their own provider; ID-only background retrieve and cancel need a standard provider. | More provider configuration, and model detail still needs pass-through. | Bifrost routes ID-only Responses calls to custom providers. |
+| One custom provider per API and a dedicated `lgos-files` provider. | Separate identities show independent APIs behind one endpoint; normalized Files need their own provider. | Model detail still needs pass-through; clients keep the provider prefix in Responses model IDs because Bifrost ignores `x-model-provider` there, and send it as the `provider` query parameter on background retrieve and cancel. | Bifrost honors `x-model-provider` on Responses. |
 
 ## Chainlit
 
 | Choice | Why | Cost | Revisit when |
 | --- | --- | --- | --- |
-| Human review is a persisted message whose custom form element submits through `callAction`. | Reload and navigation restore reviews from history, with no waiter, resume task, or session cache. `Ask*Message` blocks on its WebSocket, and Chainlit 2.12 does not persist plain `cl.Action` controls. | Custom JSX; a process-local submission lock; continuation and persistence are not transactional; a running response is not rebound to a new WebSocket, so returning early may need a refresh. | Chainlit persists actions or resumable asks, or the demo runs several Chainlit workers. |
+| Human review is a persisted message whose `chainlit-utils` form element submits through `callAction`. | Reload and navigation restore reviews from history, with no waiter, resume task, or session cache. `Ask*Message` blocks on its WebSocket, and Chainlit 2.12 does not persist plain `cl.Action` controls. | Custom JSX that `chainlit-utils` serves ahead of Chainlit's public-file route; a process-local submission lock; continuation and persistence are not transactional; a running response is not rebound to a new WebSocket, so returning early may need a refresh. | Chainlit persists actions or resumable asks, or the demo runs several Chainlit workers. |
 | `HitlWorkflow` normalizes `createdAt` before updating a restored ledger. | Chainlit 2.12's PostgreSQL layer rejects the timestamp format it hydrates; without this, a ghost `pending` ledger blocks the next turn. | A workaround coupled to Chainlit internals. | After every Chainlit upgrade. |
+| Startup calls `keep_restored_sessions()`, so a reconnected session keeps its state. | Chainlit 2.12 resumes a restored session again on every reconnect, including the one a resumed thread's chat profile triggers: the model receives the history twice, `user_session` resets, and `on_chat_resume` reruns. | Replaces Chainlit's `connection_successful` handler; a browser that was offline while a response finished is not redrawn until reload. | Chainlit stops resuming restored sessions, and after every Chainlit upgrade. |
 
 ## Open WebUI
 

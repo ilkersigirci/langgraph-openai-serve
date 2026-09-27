@@ -47,12 +47,20 @@ def _idempotency_options(key: str) -> dict[str, Any]:
     return {"extra_body": {"extra_headers": {"Idempotency-Key": key}}}
 
 
+# Bifrost needs the create provider to route model-less retrieve and cancel.
+LIFECYCLE_OPTIONS: dict[str, Any] = (
+    {"extra_query": {"provider": MODEL.partition("/")[0]}}
+    if GATEWAY_TYPE == "bifrost"
+    else {}
+)
+
+
 async def _finished(client: AsyncOpenAI, response: Response) -> Response:
     deadline = time.monotonic() + 60
     while response.status in {"queued", "in_progress"}:
         assert time.monotonic() < deadline, f"Still running: {response.id}"
         await asyncio.sleep(1)
-        response = await client.responses.retrieve(response.id)
+        response = await client.responses.retrieve(response.id, **LIFECYCLE_OPTIONS)
     return response
 
 
@@ -126,8 +134,12 @@ async def test_gateway_cancels_with_only_the_saved_response_id() -> None:
         )
 
     async with _client() as restarted_client:
-        cancelled = await restarted_client.responses.cancel(created.id)
-        retrieved = await restarted_client.responses.retrieve(created.id)
+        cancelled = await restarted_client.responses.cancel(
+            created.id, **LIFECYCLE_OPTIONS
+        )
+        retrieved = await restarted_client.responses.retrieve(
+            created.id, **LIFECYCLE_OPTIONS
+        )
 
     assert cancelled.id == retrieved.id == created.id
     assert cancelled.status == retrieved.status == "cancelled"

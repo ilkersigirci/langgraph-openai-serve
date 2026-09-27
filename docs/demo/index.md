@@ -102,8 +102,8 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Background worker | Runs Hatchet background tasks outside the API process with a fixed slot count | Optional `background` Compose profile using the demo API image and Hatchet |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
-| Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, and HITL UI | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Responses manifold, native MCP tools, and dynamic generated Workspace Models | Host-run locked sync project plus the unchanged pinned official image |
+| Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, HITL UI, dictation, and read-aloud | Independent uv project and `lgos-chainlit` image |
+| Open WebUI | Responses manifold, native MCP tools, dynamic generated Workspace Models, and native voice | Host-run locked sync project plus the unchanged pinned official image |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
 | LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
 | DBHub | Six fixed read-only reports over curated live-data PostgreSQL views | Pinned official image and demo-owned TOML configuration |
@@ -121,8 +121,8 @@ Bifrost uses catalog-detail pass-through.
 !!! warning "Pinned managed-routing limitations"
 
     The bundled Bifrost native Responses route preserves `phase`, commentary,
-    file-input, continuation, and `store: false` contracts; normalized
-    model-detail and error metadata remain strict expected failures.
+    file-input, continuation, `store: false`, and upstream error metadata;
+    normalized model detail remains a strict expected failure.
     Its raw pass-through route preserves successful-request contracts, while
     virtual-key governance rejects the unknown-model error case before
     pass-through. The bundled `homeserver-litellm` image preserves native

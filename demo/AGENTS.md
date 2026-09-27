@@ -62,7 +62,7 @@ a direct user request to update the file is approval.
   local path source.
 - Agents may change the sibling `../chainlit-utils` repository when reusable
   Chainlit behavior needs development. Test those unpublished changes in the
-  demo with `uv run --with-editable "../../../../chainlit-utils[sso]" <command>` from
+  demo with `uv run --with-editable "../../../../chainlit-utils[audio,sso]" <command>` from
   `demo/ui/chainlit_ui/`.
 - Keep using the editable overlay during joint development, then publish
   `chainlit-utils` and refresh the demo's PyPI constraint and lockfile when the

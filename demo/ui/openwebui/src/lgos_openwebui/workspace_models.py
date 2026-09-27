@@ -15,7 +15,6 @@ from pydantic import (
     ValidationError,
 )
 
-from .functions.generic.api import _model_request
 from .functions.generic.contracts import (
     BACKGROUND_SETTING_NAME,
     LGOS_EXTENSION_KEY,
@@ -165,8 +164,10 @@ def discover_workspace_model_specs(
             if catalog_model.owned_by != LGOS_MODEL_OWNER:
                 continue
             try:
+                # Bifrost reads x-model-provider only on pass-through routes.
+                provider, _, upstream_model = catalog_model.id.partition("/")
                 models[catalog_model.id] = detail_client.models.retrieve(
-                    **_model_request(catalog_model.id, provider_routing=True)
+                    upstream_model, extra_headers={"x-model-provider": provider}
                 )
             except OpenAIError:
                 models[catalog_model.id] = None

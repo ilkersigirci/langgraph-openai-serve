@@ -101,7 +101,7 @@ just demo/test-background-gateway --editable
 ```
 
 The live test selects LiteLLM's `/v1` route and synced model, or Bifrost's
-`/openai/v1` route and unqualified model, from `OPENAI_GATEWAY_TYPE`.
+`/openai/v1` route and `lgos-a/background-mock`, from `OPENAI_GATEWAY_TYPE`.
 
 Open Chainlit on port 3002 or Open WebUI on port 3003, select a
 `background-mock` model, and enable **Run in background**. The UI shows

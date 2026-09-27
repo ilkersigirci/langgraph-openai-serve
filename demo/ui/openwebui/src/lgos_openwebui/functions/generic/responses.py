@@ -24,7 +24,6 @@ from openai.types.responses import (
 from openai.types.responses.response_output_text import AnnotationURLCitation
 from pydantic import TypeAdapter
 
-from .api import _model_request
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     PACKAGE_VERSION_TOOL_NAME,
@@ -278,15 +277,11 @@ def _responses_request(
     user_id: str | None,
     *,
     background: bool,
-    provider_routing: bool,
     tools: list[ToolParam],
     previous_response_id: str | None = None,
 ) -> dict[str, Any]:
     request = {
-        **_model_request(
-            model_id,
-            provider_routing=provider_routing,
-        ),
+        "model": model_id,
         "input": input_items,
         "store": background,
         "tools": tools,
@@ -311,14 +306,15 @@ async def _background_response(
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
     client = client.with_options(max_retries=2)
-    extra_headers = request.get("extra_headers")
     background_request = dict(request)
     idempotency_key = str(uuid.uuid4())
+    lifecycle_options: dict[str, Any] = {}
     if provider_routing:
-        background_request["extra_headers"] = {
-            **(extra_headers if isinstance(extra_headers, Mapping) else {}),
-            "Idempotency-Key": idempotency_key,
-        }
+        background_request["extra_headers"] = {"Idempotency-Key": idempotency_key}
+        # Retrieve and cancel carry no model; without this query parameter
+        # Bifrost routes them to its built-in openai provider.
+        provider = request["model"].partition("/")[0]
+        lifecycle_options["extra_query"] = {"provider": provider}
     else:
         background_request["extra_body"] = {
             "extra_headers": {"Idempotency-Key": idempotency_key}
@@ -331,17 +327,11 @@ async def _background_response(
                 await on_status(response.status)
                 previous_status = response.status
             await asyncio.sleep(1)
-            response = await client.responses.retrieve(
-                response.id,
-                extra_headers=extra_headers,
-            )
+            response = await client.responses.retrieve(response.id, **lifecycle_options)
     except asyncio.CancelledError:
         try:
             await asyncio.shield(
-                client.responses.cancel(
-                    response.id,
-                    extra_headers=extra_headers,
-                )
+                client.responses.cancel(response.id, **lifecycle_options)
             )
         except Exception:
             logger.warning(

@@ -78,9 +78,9 @@ for networking, Files routing, and SSO ownership.
 
 Current verification exposes narrower upstream normalization limitations.
 The bundled Bifrost's normalized `/openai/v1` route preserves the tested native
-Responses fields, file input, commentary `phase`, and continuation, but not
-LGOS model-detail extensions, upstream error metadata, or the requested
-`store: false` value in the returned Response. Bifrost's raw pass-through
+Responses fields, file input, commentary `phase`, continuation, `store: false`,
+and upstream error `type` and `param`, but not LGOS model-detail extensions.
+Bifrost's raw pass-through
 preserves successful-request contracts, while virtual-key governance rejects
 the unknown-model error case before pass-through. The bundled LiteLLM preserves
 native streaming and commentary, and records successful managed Responses

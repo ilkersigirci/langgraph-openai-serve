@@ -100,7 +100,6 @@ async def test_response_stream_routes_commentary_to_the_task_list(
         [],
         assistant_message,
         model="status-events",
-        extra_headers=None,
         user="demo-user",
         metadata={},
         commentary_tasks=commentary_tasks,
@@ -151,7 +150,6 @@ async def test_streamed_refusal_is_visible_even_without_deltas(
         [],
         assistant,
         model="test",
-        extra_headers=None,
         user="user",
         metadata={},
         commentary_tasks=Mock(),
@@ -209,7 +207,6 @@ async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completio
                 [],
                 Mock(),
                 model="test",
-                extra_headers=None,
                 user="user",
                 metadata={},
                 commentary_tasks=Mock(),
@@ -409,15 +406,13 @@ async def test_tool_continuation_keeps_history_files_and_final_text(
     monkeypatch.setattr(
         chat, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
     )
-    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "plot"})
     monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
     monkeypatch.setattr(chat, "_stream_response", stream)
     display = AsyncMock(return_value=output)
     monkeypatch.setattr(chat, "display_file", display)
 
-    await chat._response_message(Mock(), "plot")
-
+    assert await chat._response_message(Mock(), "plot") is assistant
     assert assistant.content == "Here is the chart. Chart ready [source]"
     assert [
         (element.name, element.content, element.display)
@@ -450,7 +445,6 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
     monkeypatch.setattr(chat, "chat_settings_metadata", dict)
     monkeypatch.setattr(chat, "conversation_metadata", dict)
-    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "plot"})
     monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
         chat.openai_client.responses, "create", AsyncMock(return_value=failed)
@@ -458,8 +452,7 @@ async def test_non_streaming_failure_does_not_display_files_or_send_success(
     monkeypatch.setattr(chat, "display_file", display)
     monkeypatch.setattr(chat, "send_ui_message", error)
 
-    await chat._response_message(Mock(), "plot")
-
+    assert await chat._response_message(Mock(), "plot") is None
     error.assert_awaited_once_with("Response failed: Graph failed")
     assistant.send.assert_not_awaited()
     display.assert_not_awaited()
@@ -510,11 +503,6 @@ async def test_background_response_is_polled_and_rendered(
     )
     monkeypatch.setattr(
         chat,
-        "model_request",
-        lambda _: {"model": "lgos-a/background-mock"},
-    )
-    monkeypatch.setattr(
-        chat,
         "gateway",
         SimpleNamespace(provider_routing=False),
     )
@@ -526,18 +514,16 @@ async def test_background_response_is_polled_and_rendered(
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
     monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
 
-    await chat._response_message(Mock(), "openai/background-mock")
+    await chat._response_message(Mock(), "lgos-a/background-mock")
 
     request = create.await_args.kwargs
     assert request["background"] is True
     assert request["store"] is True
     assert request["metadata"]["conversation_id"] == "thread-123"
-    assert request["extra_headers"] is None
+    assert request["model"] == "lgos-a/background-mock"
+    assert "extra_headers" not in request
     UUID(request["extra_body"]["extra_headers"]["Idempotency-Key"])
-    assert retrieve.await_args_list == [
-        call(response_id, extra_headers=None),
-        call(response_id, extra_headers=None),
-    ]
+    assert retrieve.await_args_list == [call(response_id), call(response_id)]
     assert tasks.add.await_args_list == [
         call("Background response queued"),
         call("Background response in progress"),
@@ -548,29 +534,38 @@ async def test_background_response_is_polled_and_rendered(
     with_options.assert_called_once_with(max_retries=2)
 
 
-async def test_background_response_forwards_idempotency_through_bifrost(
+async def test_background_response_stays_on_its_bifrost_provider(
     monkeypatch: pytest.MonkeyPatch,
     chainlit_context,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
+    response_id = "resp_background"
     completed = Response.model_construct(
-        id="resp_background",
+        id=response_id,
         status="completed",
         output=[],
     )
-    create = AsyncMock(return_value=completed)
+    create = AsyncMock(
+        return_value=Response.model_construct(
+            id=response_id,
+            status="queued",
+            output=[],
+        )
+    )
+    retrieve = AsyncMock(return_value=completed)
     monkeypatch.setattr(chat, "response_tools", list)
+    monkeypatch.setattr(chat.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr(
         chat.openai_client,
         "with_options",
         Mock(return_value=chat.openai_client),
     )
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
+    monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
 
     response = await chat._background_response(
         [],
-        model="background-mock",
-        extra_headers={"x-model-provider": "openai"},
+        model="lgos-b/background-mock",
         provider_routing=True,
         user="demo-user",
         metadata={},
@@ -579,14 +574,27 @@ async def test_background_response_forwards_idempotency_through_bifrost(
 
     request = create.await_args.kwargs
     assert response is completed
-    assert request["extra_headers"]["x-model-provider"] == "openai"
+    assert request["model"] == "lgos-b/background-mock"
+    assert request["extra_headers"].keys() == {"Idempotency-Key"}
     UUID(request["extra_headers"]["Idempotency-Key"])
     assert "extra_body" not in request
+    retrieve.assert_awaited_once_with(response_id, extra_query={"provider": "lgos-b"})
 
 
+@pytest.mark.parametrize(
+    ("model", "provider_routing", "lifecycle_options"),
+    [
+        ("lgos-a/background-mock", False, {}),
+        ("lgos-b/background-mock", True, {"extra_query": {"provider": "lgos-b"}}),
+    ],
+    ids=["litellm", "bifrost"],
+)
 async def test_background_response_is_cancelled_when_turn_stops(
     monkeypatch: pytest.MonkeyPatch,
     chainlit_context,
+    model: str,
+    provider_routing: bool,
+    lifecycle_options: dict[str, object],
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
     response_id = "resp_background"
@@ -618,15 +626,14 @@ async def test_background_response_is_cancelled_when_turn_stops(
     with pytest.raises(asyncio.CancelledError):
         await chat._background_response(
             [],
-            model="background-mock",
-            extra_headers=None,
-            provider_routing=False,
+            model=model,
+            provider_routing=provider_routing,
             user="demo-user",
             metadata={},
             commentary_tasks=Mock(add=AsyncMock()),
         )
 
-    cancel.assert_awaited_once_with(response_id, extra_headers=None)
+    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
 
 
 async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
@@ -654,9 +661,6 @@ async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
     monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
     monkeypatch.setattr(chat, "chat_settings_metadata", dict)
     monkeypatch.setattr(chat, "conversation_metadata", dict)
-    monkeypatch.setattr(
-        chat, "model_request", lambda _: {"model": "interruptible-approval"}
-    )
     monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
     monkeypatch.setattr(
         chat.openai_client.responses, "create", AsyncMock(return_value=interrupt_resp)
@@ -687,85 +691,6 @@ async def test_pending_interrupt_blocks_a_new_model_turn(monkeypatch) -> None:
     respond.assert_not_awaited()
 
 
-async def test_interrupt_action_submits_only_the_ui_reference(
-    monkeypatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    workflow = SimpleNamespace(submit=AsyncMock(return_value=None))
-    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
-    action = chat.cl.Action(
-        name=chat.INTERRUPT_ACTION_NAME,
-        payload={
-            "step_id": "step-review",
-            "element_id": "element-review",
-            "revision": "resp-review",
-            "outputs": ["approve"],
-        },
-    )
-
-    result = await chat.on_interrupt_submit(action)
-
-    assert result == {"ok": True}
-    workflow.submit.assert_awaited_once_with(
-        step_id="step-review",
-        element_id="element-review",
-        revision="resp-review",
-        outputs=["approve"],
-    )
-
-
-async def test_interrupt_action_rejects_an_invalid_browser_payload(
-    monkeypatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    workflow = SimpleNamespace(submit=AsyncMock())
-    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
-    action = chat.cl.Action(
-        name=chat.INTERRUPT_ACTION_NAME,
-        payload={
-            "step_id": "step-review",
-            "element_id": "element-review",
-            "revision": "resp-review",
-            "outputs": "approve",
-        },
-    )
-
-    result = await chat.on_interrupt_submit(action)
-
-    assert result == {"ok": False, "error": "Invalid human-review submission."}
-    workflow.submit.assert_not_awaited()
-
-
-async def test_interrupt_action_returns_a_stale_submission_error(
-    monkeypatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    workflow = SimpleNamespace(
-        submit=AsyncMock(
-            side_effect=chat.InvalidHitlSubmissionError(
-                "This human-review revision is stale."
-            )
-        )
-    )
-    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
-    action = chat.cl.Action(
-        name=chat.INTERRUPT_ACTION_NAME,
-        payload={
-            "step_id": "step-review",
-            "element_id": "element-review",
-            "revision": "resp-review",
-            "outputs": ["approve"],
-        },
-    )
-
-    result = await chat.on_interrupt_submit(action)
-
-    assert result == {
-        "ok": False,
-        "error": "This human-review revision is stale.",
-    }
-
-
 async def test_interrupt_answer_follows_the_background_setting(
     monkeypatch: pytest.MonkeyPatch,
     chainlit_context,
@@ -774,7 +699,6 @@ async def test_interrupt_answer_follows_the_background_setting(
     completed = _response()
     create = AsyncMock(return_value=completed)
     monkeypatch.setattr(chat, "background_enabled", lambda: True)
-    monkeypatch.setattr(chat, "model_request", lambda _: {"model": "approval"})
     monkeypatch.setattr(chat, "response_tools", list)
     monkeypatch.setattr(chat, "_response_metadata", dict)
     monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
@@ -807,14 +731,6 @@ async def test_interrupt_continuation_keeps_response_cursor_and_request_context(
     monkeypatch.setattr(chat.openai_client.responses, "create", create)
     monkeypatch.setattr(
         chat,
-        "model_request",
-        lambda _: {
-            "model": "interruptible-approval",
-            "extra_headers": {"x-model-provider": "lgos-a"},
-        },
-    )
-    monkeypatch.setattr(
-        chat,
         "chat_settings_metadata",
         lambda: {"lgos_settings": '{"audience":"expert"}'},
     )
@@ -841,8 +757,7 @@ async def test_interrupt_continuation_keeps_response_cursor_and_request_context(
 
     assert response is completed
     assert create.await_args.kwargs == {
-        "model": "interruptible-approval",
-        "extra_headers": {"x-model-provider": "lgos-a"},
+        "model": "lgos-a/interruptible-approval",
         "input": input_items,
         "previous_response_id": "resp-review",
         "store": False,

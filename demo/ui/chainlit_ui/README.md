@@ -33,19 +33,19 @@ uv run --locked --env-file .env lgos-chainlit
 ```
 
 Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
-gateway type, base URL, and API key. Reusable helper settings use `CHAINLIT_UTILS_`;
-Chainlit's native `DATABASE_URL` and `CHAINLIT_AUTH_SECRET` variables remain
+gateway type, base URL, API key, and `DEMO_AUDIO_*` speech models. Reusable
+helper settings use `CHAINLIT_UTILS_`; Chainlit's native `DATABASE_URL` and `CHAINLIT_AUTH_SECRET` variables remain
 unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEV_AWS_ENDPOINT` S3 settings so generated files survive thread resume.
 
 `DEMO_CHAINLIT_LOGIN_TYPE=oauth` enables OIDC browser login independently of
 gateway authorization. By default, mock and OAuth login both use
-`OPENAI_GATEWAY_API_KEY` for Responses, Files, and MCP. Set
+`OPENAI_GATEWAY_API_KEY` for Responses, Files, speech, and MCP. Set
 `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True` to send the signed-in user's
 access token instead. Delegated mode disables the static MCP connection and needs the gateway's
 API permission and `offline_access`; point `OPENAI_GATEWAY_BASE_URL` at the
-LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses
-and Files for the user's credential. See the
+LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses,
+Files, and the speech models for the user's credential. See the
 [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
 for both modes, key rotation, and logout behavior.
 
@@ -95,17 +95,17 @@ When compatible utility changes have not been published yet, use the sibling
 `chainlit-utils` checkout as a temporary editable overlay:
 
 ```bash
-uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" \
   --env-file .env lgos-chainlit-setup
-uv run --locked --with-editable "../../../../chainlit-utils[sso]" pytest
-uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" pytest
+uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" \
   ty check src --extra-search-path ../../../../chainlit-utils/src
-uv run --locked --with-editable "../../../../chainlit-utils[sso]" \
+uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" \
   --env-file .env lgos-chainlit
 ```
 
 The overlay keeps local paths out of the project manifest and lockfile. After
-publishing, raise the demo's `chainlit-utils[sso]` minimum version to the release
+publishing, raise the demo's `chainlit-utils` minimum version to the release
 that supplies the imported API and refresh `uv.lock`.
 
 ## Module ownership
@@ -115,11 +115,13 @@ gateway credentials; `clients.py` and
 `gateway.py` own gateway access. `conversation.py`, `chat_settings.py`,
 `files.py`, `display_files.py`, and `mcp.py` contain their respective
 LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
-`interrupts.py` owns the LGOS interrupt payload and `InterruptReview` UI.
+`interrupts.py` reads the LGOS interrupt payload into the package's review form.
+`audio.py` binds the speech settings and gateway client.
 
-Import reusable history, settings, Responses, and durable HITL helpers
+Import reusable history, settings, Responses, audio, and durable HITL helpers
 from their concrete modules under `chainlit_utils.chat` and
-`chainlit_utils.openai`.
+`chainlit_utils.openai`. `main.py` serves the package's `HumanReview` and
+`SpeechButton` elements and dictation script with `chainlit_utils.public_files`.
 
 ## Attachments
 

@@ -22,12 +22,7 @@ pytestmark = [
 BIFROST_MODEL_METADATA_XFAIL = pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="Bifrost v2.1.1 normalized model detail omits LGOS extensions",
-)
-BIFROST_ERROR_METADATA_XFAIL = pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Bifrost v2.1.1 rewrites the upstream OpenAI error metadata",
+    reason="Bifrost normalized model detail omits LGOS extensions",
 )
 
 
@@ -106,7 +101,7 @@ async def test_bifrost_native_responses_preserve_file_input(provider: str) -> No
         )
         try:
             response = await api_client.responses.create(
-                model="custom-input-output-context",
+                model=f"{provider}/custom-input-output-context",
                 input=[
                     {
                         "role": "user",
@@ -118,7 +113,6 @@ async def test_bifrost_native_responses_preserve_file_input(provider: str) -> No
                 ],
                 store=False,
                 user="gateway-user",
-                extra_headers={"x-model-provider": provider},
             )
             assert response.output_text.startswith("gateway-user asked:")
             assert uploaded.id in response.output_text
@@ -141,10 +135,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
         max_retries=0,
         timeout=10.0,
     ) as client:
-        model = await client.models.retrieve(
-            "simple-graph",
-            extra_headers={"x-model-provider": provider},
-        )
+        model = await client.models.retrieve(f"{provider}/simple-graph")
 
     model_extra = getattr(model, "model_extra", None)
     assert isinstance(model_extra, dict)
@@ -165,11 +156,10 @@ async def test_bifrost_native_responses_preserve_standard_fields(
         timeout=10.0,
     ) as client:
         response = await client.responses.create(
-            model="custom-input-output-context",
+            model=f"{provider}/custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
             user="gateway-user",
-            extra_headers={"x-model-provider": provider},
         )
 
     assert response.output_text == (
@@ -190,11 +180,10 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
         timeout=10.0,
     ) as client:
         stream = await client.responses.create(
-            model="status-events",
+            model=f"{provider}/status-events",
             input="Build the report.",
             store=False,
             stream=True,
-            extra_headers={"x-model-provider": provider},
         )
         events = [event async for event in stream]
 
@@ -227,7 +216,7 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 async def test_bifrost_native_function_output_continuation(provider: str) -> None:
     assert BIFROST_BASE_URL is not None
-    extra_headers = {"x-model-provider": provider}
+    model = f"{provider}/interruptible-approval"
     public_request = f"Refund order ORDER-{provider.upper()}"
 
     async with AsyncOpenAI(
@@ -237,11 +226,10 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
         timeout=10.0,
     ) as client:
         paused = await client.responses.create(
-            model="interruptible-approval",
+            model=model,
             input=public_request,
             metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
-            extra_headers=extra_headers,
         )
         assert len(paused.output) == 1
         call = paused.output[0]
@@ -250,7 +238,7 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
         assert arguments["action"] == "refund"
 
         completed = await client.responses.create(
-            model="interruptible-approval",
+            model=model,
             previous_response_id=paused.id,
             input=[
                 {
@@ -260,7 +248,6 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
                 },
             ],
             store=False,
-            extra_headers=extra_headers,
         )
 
     assert completed.output_text == (
@@ -272,7 +259,6 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-@BIFROST_ERROR_METADATA_XFAIL
 async def test_bifrost_preserves_openai_errors(provider: str) -> None:
     assert BIFROST_BASE_URL is not None
 
@@ -283,16 +269,18 @@ async def test_bifrost_preserves_openai_errors(provider: str) -> None:
         timeout=10.0,
     ) as client:
         with pytest.raises(BadRequestError) as exc_info:
+            # Governance rejects unknown provider-qualified models itself, so
+            # request an LGOS validation error from a registered graph.
             await client.responses.create(
-                model="missing-gateway-model",
+                model=f"{provider}/simple-graph",
                 input="Hi",
-                extra_headers={"x-model-provider": provider},
+                tools=[{"type": "custom", "name": "unknown_server_tool"}],
             )
 
     assert exc_info.value.response.status_code == 400
     error = exc_info.value.response.json()["error"]
     assert (error.get("type"), error.get("param"), error.get("code")) == (
         "invalid_request_error",
-        "model",
+        "tools.0.name",
         None,
     )

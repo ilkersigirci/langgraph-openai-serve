@@ -1,7 +1,5 @@
 """OpenAI-compatible client and model-catalog helpers."""
 
-from typing import Any
-
 from openai import AsyncOpenAI
 
 from .contracts import LGOS_MODEL_OWNER
@@ -25,25 +23,3 @@ def _client(
 async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
     models = await client.models.list()
     return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]
-
-
-def _model_request(
-    model_id: str,
-    *,
-    provider_routing: bool,
-) -> dict[str, Any]:
-    if not model_id:
-        msg = "OpenAI model ID is missing."
-        raise ValueError(msg)
-    if not provider_routing:
-        return {"model": model_id}
-
-    provider, separator, upstream_model = model_id.partition("/")
-    if not provider or not separator or not upstream_model:
-        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        raise ValueError(msg)
-
-    return {
-        "model": upstream_model,
-        "extra_headers": {"x-model-provider": provider},
-    }

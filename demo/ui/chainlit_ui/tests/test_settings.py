@@ -171,6 +171,28 @@ def test_gateway_settings_require_nonempty_environment(
         Settings(_env_file=None)
 
 
+@pytest.mark.parametrize("value", [None, ""], ids=["missing", "empty"])
+def test_audio_settings_are_optional(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str | None,
+) -> None:
+    for setting in (
+        "DEMO_AUDIO_STT_MODEL",
+        "DEMO_AUDIO_TTS_MODEL",
+        "DEMO_AUDIO_TTS_VOICE",
+    ):
+        if value is None:
+            monkeypatch.delenv(setting)
+        else:
+            monkeypatch.setenv(setting, value)
+
+    configured = Settings(_env_file=None)
+
+    assert configured.AUDIO_STT_MODEL is None
+    assert configured.AUDIO_TTS_MODEL is None
+    assert configured.AUDIO_TTS_VOICE == "alloy"
+
+
 def test_native_chainlit_settings_read_s3_element_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

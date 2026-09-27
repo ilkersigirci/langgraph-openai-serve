@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from .api import (
     _client,
     _list_model_ids,
-    _model_request,
 )
 from .contracts import (
     BACKGROUND_SETTING_NAME,
@@ -325,10 +324,6 @@ class Pipe:
     ) -> PreparedResponsesRequest:
         gateway = self._gateway()
         model_id = invocation.body.model_id
-        _model_request(
-            model_id,
-            provider_routing=gateway.provider_routing,
-        )
         mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(invocation.mcp_tools)
         # Open WebUI v0.11.3 enters its native tool loop only for streams.
         if mcp_tools and not invocation.body.stream:
@@ -387,7 +382,6 @@ class Pipe:
                 ),
                 invocation.user.id or None,
                 background=background,
-                provider_routing=gateway.provider_routing,
                 tools=tools,
                 previous_response_id=previous_response_id,
             ),

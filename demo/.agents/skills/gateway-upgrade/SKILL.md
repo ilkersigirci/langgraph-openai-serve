@@ -47,9 +47,9 @@ route or provider used here. In particular:
   LGOS requests use `store: false`; LGOS owns interrupt checkpoints and leaves
   ordinary history to clients. Bridge history fixes do not replace that
   contract.
-- Background Responses need ID-only retrieve and cancel routing and a
-  forwarded `Idempotency-Key`; verify them with
-  `just demo/test-background-gateway --editable`.
+- Background Responses need ID-only retrieve and cancel routing (Bifrost's
+  `provider` query parameter) and a forwarded `Idempotency-Key`; verify them
+  with `just demo/test-background-gateway --editable`.
 - For LiteLLM streaming, inspect concrete-model capability lookup as well as
   wildcard deployment metadata. A wildcard capability flag alone does not
   prove upstream commentary events survive.
@@ -57,6 +57,12 @@ route or provider used here. In particular:
   Files provider. Preserve one file namespace across both graph APIs.
 - Verify model list and detail separately from inference. Catalog extensions
   can still require pass-through even when native Responses works.
+- Bifrost selects a Responses provider only from the model prefix and
+  reads `x-model-provider` only on pass-through, Files, batch, and video
+  routes. Recheck this before changing how the UIs address models.
+- Bifrost resolves `env.` references in key values but not in
+  `base_url`, so the `aigateway` provider's URL is literal. Move it to the
+  environment when a release supports that.
 - Check response-ID handling and continuation after streaming as well as
   non-streaming creates. Clients must return opaque IDs unchanged.
 - Check the selected image's startup, authentication, migrations, and route
@@ -97,11 +103,13 @@ inspection as a passing test.
 
 ## Keep Documentation Stable
 
-Keep exact release pins at the locations above and version-specific failure evidence near
-the integration tests or configuration that needs it. Published docs describe
+Write gateway release numbers only in the image pins above, so an upgrade
+changes one line per gateway. Comments, `xfail` reasons, this skill, and docs
+name the gateway without a version; keep failure evidence near the integration
+tests or configuration that needs it. Published docs describe
 the bundled setup, user-facing behavior, and current operational limitations;
-update them when those facts change. Do not scatter version numbers through
-prose and diagrams or add upgrade assessments, PR-by-PR analyses, test-run
-counts, or release histories under `docs/`. Keep reusable upgrade guidance in
+update them when those facts change. Do not add upgrade assessments,
+PR-by-PR analyses, test-run counts, or release histories under `docs/`.
+Keep reusable upgrade guidance in
 this skill and report release-specific findings, upstream links, validation,
 and any retained workarounds in the task handoff.

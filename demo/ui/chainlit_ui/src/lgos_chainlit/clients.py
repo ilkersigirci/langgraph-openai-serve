@@ -1,7 +1,5 @@
 """OpenAI client shared by the Chainlit demo applications."""
 
-from typing import Any
-
 from openai import AsyncOpenAI, DefaultAsyncHttpx2Client, OpenAIError
 from openai.types import Model
 
@@ -29,6 +27,9 @@ files_client = AsyncOpenAI(
     http_client=gateway_http_client,
     max_retries=0,
 )
+# Both gateways serve OpenAI speech routes under the root's /v1 path, the same
+# route Open WebUI's native audio settings use.
+audio_client = openai_client.with_options(base_url=f"{gateway.root_url}/v1")
 
 
 def files_request() -> tuple[AsyncOpenAI, str]:
@@ -45,8 +46,11 @@ async def retrieve_model(model_id: str) -> Model:
         msg = f"Model {model_id!r} is not available in LiteLLM model info."
         raise OpenAIError(msg)
 
+    # Bifrost reads x-model-provider only on pass-through routes. Responses
+    # select the provider from the catalog ID's prefix instead.
+    provider, upstream_model = bifrost_model(model_id)
     model = await _bifrost_detail_client().models.retrieve(
-        **_provider_model_request(model_id)
+        upstream_model, extra_headers={"x-model-provider": provider}
     )
     if not isinstance(model, Model):
         msg = "The endpoint returned an invalid model response."
@@ -68,7 +72,7 @@ async def list_models() -> list[Model]:
     allowed_models = {model.id for model in catalog.data}
     providers = sorted(
         {
-            _bifrost_model(model.id)[0]
+            bifrost_model(model.id)[0]
             for model in catalog.data
             if model.owned_by == LGOS_MODEL_OWNER
         }
@@ -86,19 +90,8 @@ async def list_models() -> list[Model]:
     return models
 
 
-def model_request(model_id: str) -> dict[str, Any]:
-    """Build a Responses request for the selected gateway's native route."""
-    if not isinstance(model_id, str) or not model_id:
-        msg = "OpenAI model ID is missing."
-        raise ValueError(msg)
-
-    if not gateway.provider_routing:
-        return {"model": model_id}
-
-    return _provider_model_request(model_id)
-
-
-def _bifrost_model(model_id: str) -> tuple[str, str]:
+def bifrost_model(model_id: str) -> tuple[str, str]:
+    """Split a Bifrost catalog ID into its provider and upstream model."""
     provider, separator, upstream_model = model_id.partition("/")
     if not provider or not separator or not upstream_model:
         msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
@@ -110,11 +103,3 @@ def _bifrost_detail_client() -> AsyncOpenAI:
     return openai_client.with_options(
         base_url=f"{gateway.root_url}/openai_passthrough/v1"
     )
-
-
-def _provider_model_request(model_id: str) -> dict[str, Any]:
-    provider, upstream_model = _bifrost_model(model_id)
-    return {
-        "model": upstream_model,
-        "extra_headers": {"x-model-provider": provider},
-    }
