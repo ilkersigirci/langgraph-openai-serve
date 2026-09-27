@@ -176,7 +176,7 @@ def body(*, stream: bool) -> dict[str, object]:
 
 
 def background_metadata(*, supported: bool = True) -> dict[str, object]:
-    fields = [{"key": "lgos_background"}] if supported else []
+    fields = [{"key": "lgos_background", "type": "checkbox"}] if supported else []
     return {
         "chat_id": "thread-123",
         "chat_variables": {"lgos_background": True},
@@ -809,6 +809,108 @@ async def test_uservalves_reach_responses_through_shared_pipe(
         "audience": settings.audience,
     }
     assert request["input"] == [{"role": "user", "content": "Hello"}]
+
+
+RENDERED_DECLARATIONS = "<lgos-chat-variables>\nTrue\nexpert\n</lgos-chat-variables>"
+
+
+@pytest.mark.parametrize(
+    ("system", "expected_input"),
+    [
+        (RENDERED_DECLARATIONS, []),
+        (
+            f"{RENDERED_DECLARATIONS}\nBe brief.",
+            [{"role": "system", "content": "Be brief."}],
+        ),
+        (
+            f"{RENDERED_DECLARATIONS}\n{RENDERED_DECLARATIONS}\nBe brief.",
+            [{"role": "system", "content": "Be brief."}],
+        ),
+        (
+            "Be brief.\n<lgos-chat-variables>\nkept\n</lgos-chat-variables>",
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Be brief.\n<lgos-chat-variables>\nkept\n</lgos-chat-variables>"
+                    ),
+                }
+            ],
+        ),
+    ],
+    ids=["declarations-only", "chat-system-prompt", "tool-loop-repeat", "not-leading"],
+)
+async def test_rendered_chat_variable_declarations_never_reach_the_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    system: str,
+    expected_input: list[dict[str, str]],
+) -> None:
+    create = AsyncMock(return_value=final_response("Hello."))
+    install_client(monkeypatch, create=create)
+    request_body = body(stream=False)
+    request_body["messages"].insert(0, {"role": "system", "content": system})
+
+    await generic_pipe.Pipe().pipe(request_body)
+
+    assert create.await_args.kwargs["input"] == [
+        *expected_input,
+        {"role": "user", "content": "Refund ORDER-123"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "chat_variables",
+    [
+        {
+            "use_history": "true",
+            "delay_seconds": "42",
+            "audience": "expert",
+            "note": "",
+            "web_search": "true",
+            "lgos_background": "false",
+        },
+        {
+            "use_history": True,
+            "delay_seconds": 42,
+            "audience": "expert",
+            "note": None,
+            "web_search": True,
+            "lgos_background": False,
+        },
+    ],
+    ids=["declared-default-strings", "edited-form-values"],
+)
+async def test_chat_variables_reach_responses_with_their_declared_types(
+    monkeypatch: pytest.MonkeyPatch, chat_variables: dict[str, object]
+) -> None:
+    create = AsyncMock(return_value=final_response("Done."))
+    install_client(monkeypatch, create=create)
+    fields = [
+        {"key": "use_history", "type": "checkbox"},
+        {"key": "delay_seconds", "type": "number"},
+        {"key": "audience", "type": "select"},
+        {"key": "note", "type": "text"},
+        {"key": "web_search", "type": "checkbox"},
+        {"key": "lgos_background", "type": "checkbox"},
+    ]
+
+    await generic_pipe.Pipe().pipe(
+        {**body(stream=False), "model": "generic.lgos-a/advanced-graph"},
+        __metadata__={
+            "chat_id": "thread-123",
+            "chat_variables": chat_variables,
+            "model": {"info": {"meta": {"chat_variables_schema": {"fields": fields}}}},
+        },
+    )
+
+    request = create.await_args.kwargs
+    assert json.loads(request["metadata"]["lgos_settings"]) == {
+        "use_history": True,
+        "delay_seconds": 42,
+        "audience": "expert",
+    }
+    assert request["tools"] == [{"type": "web_search"}]
+    assert "background" not in request
 
 
 @pytest.mark.parametrize("stream", [False, True])

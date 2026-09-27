@@ -40,7 +40,7 @@ async def _close_chainlit_data_layer() -> None:
     if not isinstance(data_layer, ChainlitDataLayer):
         return
     if isinstance(data_layer.storage_client, S3StorageClient):
-        # Chainlit 2.12.0 incorrectly awaits boto3's synchronous close method.
+        # Chainlit incorrectly awaits boto3's synchronous close method.
         data_layer.storage_client.client.close()
         data_layer.storage_client = None
     await data_layer.close()
