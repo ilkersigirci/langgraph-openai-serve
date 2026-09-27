@@ -139,7 +139,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
     model_extra = getattr(model, "model_extra", None)
     assert isinstance(model_extra, dict)
     extension = model_extra["lgos"]
-    assert extension["client_settings"]["schema_version"] == 1
+    assert set(extension["client_settings"]) == {"defaults", "json_schema"}
 
 
 @pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])

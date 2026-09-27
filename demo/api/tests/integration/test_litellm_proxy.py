@@ -129,7 +129,6 @@ async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> Non
             if item["model_name"] == f"{provider}/custom-input-output-context"
         )
         extension = model["model_info"]["lgos"]
-        assert extension["schema_version"] == 1
         assert extension["description"]
         response = await client.responses.create(
             model=model["model_name"],

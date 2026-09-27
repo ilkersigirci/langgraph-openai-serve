@@ -90,7 +90,6 @@ async def test_direct_model_catalog_preserves_lgos_metadata(
 
     assert any(item.id == "simple-graph" for item in models.data)
     extension = (model.model_extra or {})["lgos"]
-    assert extension["schema_version"] == 1
     assert isinstance(extension["description"], str)
 
 
