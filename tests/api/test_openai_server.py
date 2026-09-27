@@ -19,7 +19,7 @@ def _bind_test_app(
 ) -> FastAPI:
     return (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
         )
         .bind_openai_api(prefix=prefix)
         .app
@@ -77,7 +77,7 @@ async def test_bind_openai_api_normalizes_explicit_prefix(
 def test_bind_openai_api_rejects_invalid_explicit_prefix(
     graph_registry: GraphRegistry,
 ) -> None:
-    server = LanggraphOpenaiServe(graphs=graph_registry)
+    server = LanggraphOpenaiServe(registry=graph_registry)
 
     with pytest.raises(ValueError, match="OPENAI_API_PREFIX must start with '/'"):
         server.bind_openai_api(prefix="openai/v1")
@@ -86,7 +86,7 @@ def test_bind_openai_api_rejects_invalid_explicit_prefix(
 def test_openai_app_is_available_after_binding(
     graph_registry: GraphRegistry,
 ) -> None:
-    server = LanggraphOpenaiServe(graphs=graph_registry)
+    server = LanggraphOpenaiServe(registry=graph_registry)
 
     with pytest.raises(RuntimeError, match="OpenAI API is not bound"):
         _ = server.openai_app

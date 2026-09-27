@@ -3,28 +3,22 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, JsonValue, StringConstraints
 
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.protocol import (
-    CLIENT_SETTINGS_SCHEMA_VERSION,
-    MODEL_EXTENSION_SCHEMA_VERSION,
-)
 
 
 class ModelClientSettings(BaseModel):
-    """Versioned public runtime settings for one registered graph."""
+    """Public runtime settings for one registered graph."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    schema_version: Literal[1] = CLIENT_SETTINGS_SCHEMA_VERSION
     json_schema: dict[str, JsonValue]
     defaults: dict[str, JsonValue]
 
 
 class LangGraphModelSummaryExtension(BaseModel):
-    """Versioned LGOS fields safe to include in a model list."""
+    """LGOS fields safe to include in a model list."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    schema_version: Literal[1] = MODEL_EXTENSION_SCHEMA_VERSION
     description: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
@@ -33,7 +27,7 @@ class LangGraphModelSummaryExtension(BaseModel):
 
 
 class LangGraphModelExtension(LangGraphModelSummaryExtension):
-    """Versioned LangGraph OpenAI Serve model-detail extension."""
+    """LangGraph OpenAI Serve model-detail extension."""
 
     client_settings: ModelClientSettings | None = None
 

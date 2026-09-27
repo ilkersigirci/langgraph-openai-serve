@@ -28,11 +28,7 @@ def prepare_keyword_context(state: KeywordState) -> dict[str, list[str]]:
     """Prepare extracted keywords for the docs specialist."""
     selected_keywords = state.keywords or ["general"]
     get_stream_writer()(
-        status_event(
-            f"Selected keywords: {', '.join(selected_keywords)}",
-            done=True,
-            namespace=("docs", "keywords"),
-        )
+        status_event(f"Selected keywords: {', '.join(selected_keywords)}")
     )
     return {
         "checks": [

@@ -58,7 +58,7 @@ class ToolCallingChatModel(FakeMessagesListChatModel):
 def _registry(model: BaseChatModel) -> GraphRegistry:
     graph = create_persistent_plot_agent(InMemoryStore(), model)
     return GraphRegistry(
-        registry={
+        graphs={
             "persistent-plot-agent": create_persistent_plot_agent_config(lambda: graph),
         }
     )
@@ -254,7 +254,7 @@ async def test_streaming_response_completes_with_display_file_call(
             disable_streaming=True,
         )
     )
-    app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
     transport = ASGITransport(app=app)
     async with (
         AsyncClient(

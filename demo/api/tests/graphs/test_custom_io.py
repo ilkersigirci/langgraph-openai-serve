@@ -23,7 +23,7 @@ async def test_adapts_request_input_context_and_output(
         user=user,
     )
     registry = GraphRegistry(
-        registry={"custom-input-output-context": custom_io_graph_config}
+        graphs={"custom-input-output-context": custom_io_graph_config}
     )
 
     result = await run_langgraph(graph_request, messages, registry)

@@ -592,13 +592,10 @@ def tool_openai_client(
             },
         ],
     )
-    graph_registry.register(
-        "tools",
-        GraphConfig(
-            graph=make_message_graph(disable_streaming=True),
-            description="DUMMY",
-            output_to_message=lambda _output: tool_message,
-        ),
+    graph_registry.graphs["tools"] = GraphConfig(
+        graph=make_message_graph(disable_streaming=True),
+        description="DUMMY",
+        output_to_message=lambda _output: tool_message,
     )
     return openai_client
 

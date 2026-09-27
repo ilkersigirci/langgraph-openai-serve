@@ -63,7 +63,7 @@ async def test_typed_dict_schemas_and_native_context(
         }
 
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "typed": GraphConfig(
                 graph=graph,
                 description="DUMMY",
@@ -114,7 +114,7 @@ async def test_async_graph_factory_and_async_adapters(
         return None
 
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "pydantic": GraphConfig(
                 graph=resolve_graph,
                 description="DUMMY",
@@ -156,7 +156,7 @@ async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> N
         return AIMessage(content=output["answer"])
 
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "typed": GraphConfig(
                 graph=graph,
                 description="DUMMY",

@@ -1,6 +1,5 @@
 import json
 import os
-import uuid
 
 import httpx2
 import pytest
@@ -381,7 +380,6 @@ async def test_litellm_native_function_output_continuation(
         paused = await client.responses.create(
             model=model,
             input=public_request,
-            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
             stream=stream,
         )

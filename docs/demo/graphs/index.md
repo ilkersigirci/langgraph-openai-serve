@@ -7,7 +7,7 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
-| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `client_events`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
+| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
 | [`background-interrupt`](background-interrupt.md) | Deterministic background report preparation, human approval, and background resumption | `background`, `interrupts` | Hatchet and PostgreSQL checkpointer and run coordinator |
 | [`background-mock`](background-mock.md) | Deterministic background execution in an independently deployed worker, with no model call | `background` | Hatchet |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
@@ -15,17 +15,16 @@ demo model catalogs.
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`mcp-mock`](core-patterns.md#mcp-mock) | Async MCP-style tool discovery and an agent tool loop | None | None |
 | [`mcp-postgres`](mcp-postgres.md) | Read-only database questions with MCP discovery and execution owned by the native UI client | `mcp_tools` | Upstream model, selected gateway, DBHub, and PostgreSQL |
-| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | `client_events` | None |
-| [`custom-event-showcase`](events-and-citations.md) | Filtering internal progress and artifact events at the API boundary | `client_events` | None |
+| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | None | None |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`response-outcomes`](core-patterns.md#response-outcomes) | Native refusal content and incomplete terminal responses | None | None |
-| [`status-events`](events-and-citations.md) | Portable status updates for native client UI | `client_events` | None |
+| [`status-events`](events-and-citations.md) | Portable status updates for native client UI | None | None |
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | None | Upstream model, Files API, and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`server-tool`](server-tool.md) | Installed package versions and OpenAI-compatible web search selected by the client | None | Upstream model plus SearXNG, Degoog, or upstream OpenAI search |
-| [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | `client_events` | Upstream chat and embedding models |
+| [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | None | Upstream chat and embedding models |
 
 The demo API opens its PostgreSQL runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it

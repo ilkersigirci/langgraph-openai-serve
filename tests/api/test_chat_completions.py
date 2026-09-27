@@ -285,12 +285,9 @@ async def test_streaming_completion_ignores_custom_stream_events(
         .set_finish_point("generate")
         .compile()
     )
-    fastapi_app.state.graph_registry.register(
-        "custom-stream-test",
-        GraphConfig(
-            graph=graph,
-            description="Test custom stream",
-        ),
+    fastapi_app.state.graph_registry.graphs["custom-stream-test"] = GraphConfig(
+        graph=graph,
+        description="Test custom stream",
     )
 
     stream = await openai_client.chat.completions.create(

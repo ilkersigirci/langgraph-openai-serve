@@ -23,7 +23,6 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.types import interrupt
-from pydantic import ValidationError
 
 from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph.features import GraphFeature
@@ -36,7 +35,6 @@ from langgraph_openai_serve.graph.interrupt import (
 )
 from langgraph_openai_serve.graph.run import prepare_run
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
-from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
     make_interrupt_graph,
@@ -50,7 +48,6 @@ from tests.graph.support.message import make_message_graph
 from tests.graph.support.schemas import MessageState
 
 EXPECTED_PARALLEL_INTERRUPTS = 2
-RUN_ID = "11111111-1111-4111-8111-111111111111"
 
 
 class AsyncReadOnlyCheckpointer(BaseCheckpointSaver):
@@ -98,21 +95,16 @@ class MinimalAsyncCheckpointer(AsyncCheckpointerWithoutPendingWrites):
 
 async def test_cancelled_preparation_finishes_lease_release(
     make_request,
-    monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    state_read_started = Event()
+    input_started = Event()
     release_started = Event()
     released = Event()
     cancellation_propagated = Event()
 
-    graph = make_interrupt_graph(checkpointer=sqlite_checkpointer)
-
-    async def blocked_state_read(*_args, **_kwargs):
-        state_read_started.set()
+    async def blocked_input(_request, _messages):
+        input_started.set()
         await sleep_forever()
-
-    monkeypatch.setattr(graph, "aget_state", blocked_state_read)
 
     @asynccontextmanager
     async def coordinator(_key: str):
@@ -124,14 +116,15 @@ async def test_cancelled_preparation_finishes_lease_release(
             released.set()
 
     registry = GraphRegistry(
-        registry={
+        graphs={
             "interruptible": GraphConfig(
-                graph=graph,
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 description="DUMMY",
                 features={GraphFeature.INTERRUPTS},
-                run_coordinator=coordinator,
+                request_to_input=blocked_input,
             )
-        }
+        },
+        run_coordinator=coordinator,
     )
     request = make_request("interruptible")
 
@@ -148,7 +141,7 @@ async def test_cancelled_preparation_finishes_lease_release(
     with fail_after(1):
         async with create_task_group() as task_group:
             task_group.start_soon(run_preparation)
-            await state_read_started.wait()
+            await input_started.wait()
             task_group.cancel_scope.cancel()
 
     assert release_started.is_set()
@@ -165,25 +158,21 @@ async def test_interrupt_result_is_returned_before_output_rendering(
         raise AssertionError(msg)
 
     registry = GraphRegistry(
-        registry={
+        graphs={
             "interruptible": GraphConfig(
                 graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
                 description="DUMMY",
                 output_to_message=output_to_message,
                 features={GraphFeature.INTERRUPTS},
-                run_coordinator=InMemoryRunCoordinator(),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request(
-        "interruptible",
-        metadata={RUN_METADATA_KEY: RUN_ID},
-    )
+    request = make_request("interruptible")
 
     batch = await run_langgraph(request, [HumanMessage(content="question")], registry)
 
     assert isinstance(batch, LangGraphInterruptBatch)
-    assert batch.run_id == RUN_ID
     assert len(batch.interrupts) == 1
     assert batch.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
 
@@ -204,7 +193,7 @@ async def test_undeclared_interrupt_cannot_be_rendered_as_success(
         .compile()
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "undeclared-interrupt": GraphConfig(
                 graph=graph,
                 description="An interrupt without the required feature declaration.",
@@ -242,7 +231,7 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
 ) -> None:
     graph = make_parallel_interrupt_graph(sqlite_checkpointer)
     registry = GraphRegistry(
-        registry={
+        graphs={
             "parallel": GraphConfig(
                 graph=graph,
                 description="DUMMY",
@@ -251,14 +240,11 @@ async def test_parallel_interrupts_are_returned_as_one_durable_batch(
                 output_to_message=lambda output: AIMessage(
                     content=str(output["answers"])
                 ),
-                run_coordinator=InMemoryRunCoordinator(),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request(
-        "parallel",
-        metadata={RUN_METADATA_KEY: RUN_ID},
-    )
+    request = make_request("parallel")
 
     if stream:
         outputs = [
@@ -306,7 +292,7 @@ async def test_stream_returns_nested_interrupts_from_root_values(
 ) -> None:
     graph = graph_factory(sqlite_checkpointer)
     registry = GraphRegistry(
-        registry={
+        graphs={
             "nested": GraphConfig(
                 graph=graph,
                 description="DUMMY",
@@ -315,14 +301,11 @@ async def test_stream_returns_nested_interrupts_from_root_values(
                 output_to_message=lambda output: AIMessage(
                     content=str(output["answers"])
                 ),
-                run_coordinator=InMemoryRunCoordinator(),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request(
-        "nested",
-        metadata={RUN_METADATA_KEY: RUN_ID},
-    )
+    request = make_request("nested")
 
     outputs = [
         event
@@ -363,7 +346,7 @@ async def test_multiple_interrupts_in_one_node_are_rejected(
 ) -> None:
     model = "multiple-interrupts-in-one-node"
     registry = GraphRegistry(
-        registry={
+        graphs={
             model: GraphConfig(
                 graph=graph_factory(sqlite_checkpointer),
                 description="DUMMY",
@@ -372,11 +355,11 @@ async def test_multiple_interrupts_in_one_node_are_rejected(
                 output_to_message=lambda output: AIMessage(
                     content=str(output["answers"])
                 ),
-                run_coordinator=InMemoryRunCoordinator(),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request(model, metadata={RUN_METADATA_KEY: RUN_ID})
+    request = make_request(model)
     paused = await run_langgraph(
         request,
         [HumanMessage(content="question")],
@@ -413,7 +396,7 @@ async def test_multiple_interrupts_in_one_node_are_rejected(
     checkpoint_tuple = await sqlite_checkpointer.aget_tuple(
         {
             "configurable": {
-                "thread_id": checkpoint_key(model, RUN_ID),
+                "thread_id": checkpoint_key(model, paused.run_id),
             }
         }
     )
@@ -428,20 +411,17 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
 
     def registry(checkpointer: AsyncSqliteSaver) -> GraphRegistry:
         return GraphRegistry(
-            registry={
+            graphs={
                 "interruptible": GraphConfig(
                     graph=make_interrupt_graph(checkpointer=checkpointer),
                     description="DUMMY",
                     features={GraphFeature.INTERRUPTS},
-                    run_coordinator=InMemoryRunCoordinator(),
                 )
-            }
+            },
+            run_coordinator=InMemoryRunCoordinator(),
         )
 
-    initial_request = make_request(
-        "interruptible",
-        metadata={RUN_METADATA_KEY: RUN_ID},
-    )
+    initial_request = make_request("interruptible")
     async with AsyncSqliteSaver.from_conn_string(str(database_path)) as saver:
         paused = await run_langgraph(
             initial_request, [HumanMessage(content="question")], registry(saver)
@@ -470,7 +450,6 @@ async def test_interrupt_enabled_graph_requires_checkpointer() -> None:
         graph=make_message_graph("ok"),
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
-        run_coordinator=InMemoryRunCoordinator(),
     )
 
     with pytest.raises(GraphError, match="checkpointer"):
@@ -478,12 +457,14 @@ async def test_interrupt_enabled_graph_requires_checkpointer() -> None:
 
 
 def test_interrupt_enabled_graph_requires_run_coordinator() -> None:
-    with pytest.raises(ValidationError, match="run_coordinator"):
-        GraphConfig(
-            graph=make_message_graph("ok"),
-            description="DUMMY",
-            features={GraphFeature.INTERRUPTS},
-        )
+    config = GraphConfig(
+        graph=make_message_graph("ok"),
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
+    )
+
+    with pytest.raises(ValueError, match="run_coordinator"):
+        GraphRegistry(graphs={"interruptible": config})
 
 
 @pytest.mark.parametrize(
@@ -506,7 +487,6 @@ async def test_interrupt_checkpointer_must_override_required_async_methods(
         graph=make_interrupt_graph(checkpointer=checkpointer),
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
-        run_coordinator=InMemoryRunCoordinator(),
     )
 
     with pytest.raises(GraphError, match="fully asynchronous"):
@@ -519,7 +499,6 @@ async def test_interrupt_checkpointer_accepts_minimal_async_interface() -> None:
         graph=make_interrupt_graph(checkpointer=checkpointer),
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
-        run_coordinator=InMemoryRunCoordinator(),
     )
 
     assert (await config.resolve_graph()).checkpointer is checkpointer

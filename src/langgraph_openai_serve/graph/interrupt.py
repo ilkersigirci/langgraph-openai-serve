@@ -2,14 +2,12 @@
 
 import hashlib
 import json
-import uuid
 from collections.abc import AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import get_checkpoint_id
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 
@@ -17,7 +15,6 @@ from langgraph_openai_serve.core.errors import (
     GraphError,
     InvalidRequestError,
 )
-from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 
 class RunBusyError(InvalidRequestError):
@@ -31,7 +28,6 @@ class RunBusyError(InvalidRequestError):
         )
 
 
-@runtime_checkable
 class RunCoordinator(Protocol):
     """
     Acquire a lease that rejects, rather than queues, an occupied run.
@@ -79,44 +75,21 @@ class LangGraphInterruptBatch:
     interrupts: tuple[Interrupt, ...]
 
 
-async def prepare_interrupt_state(
+async def resume_command(
     graph: CompiledStateGraph,
     config: RunnableConfig,
-    run_id: str,
-    resume: InterruptResume | None,
-) -> Command | LangGraphInterruptBatch | None:
-    """Return a validated resume, a pending retry batch, or None for a new run."""
+    resume: InterruptResume,
+) -> Command:
+    """Validate answers against the run's durable pending interrupts."""
     snapshot = await graph.aget_state(config, subgraphs=True)
-    if get_checkpoint_id(snapshot.config) is None:
-        if resume is None:
-            return None
-        msg = "No durable interrupt state exists for this run."
-        raise _state_conflict(msg)
-
     if not snapshot.interrupts:
-        msg = "This run no longer has pending interrupts."
+        msg = "This run has no pending interrupts."
         raise _state_conflict(msg)
-    batch = interrupt_batch(snapshot.interrupts, run_id)
-    if resume is None:
-        return batch
-    if set(resume.values) != {item.id for item in batch.interrupts}:
+    if set(resume.values) != {item.id for item in snapshot.interrupts}:
         msg = "Interrupt results do not match the complete pending interrupt set."
         raise _state_conflict(msg)
-
     # Native ID/value resumes answer parallel interrupts without replaying input.
     return Command(resume=resume.values)
-
-
-def resolve_run_id(requested_run_id: str | None, resume: InterruptResume | None) -> str:
-    """Resolve and validate the durable run identity for a request."""
-    if resume is None:
-        return (
-            str(uuid.uuid4()) if requested_run_id is None else _run_id(requested_run_id)
-        )
-    if requested_run_id is not None and _run_id(requested_run_id) != resume.run_id:
-        msg = f"metadata.{RUN_METADATA_KEY} does not match the interrupt Response."
-        raise InvalidRequestError(msg, param=f"metadata.{RUN_METADATA_KEY}")
-    return resume.run_id
 
 
 def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
@@ -145,19 +118,6 @@ def interrupt_batch(
             msg = "LangGraph interrupt payloads must be valid JSON values."
             raise GraphError(msg) from exc
     return LangGraphInterruptBatch(run_id=run_id, interrupts=pending)
-
-
-def _run_id(value: str) -> str:
-    """Return the canonical form of a caller-selected, non-nil UUID."""
-    try:
-        parsed = uuid.UUID(value)
-    except ValueError as exc:
-        msg = f"metadata.{RUN_METADATA_KEY} must be a UUID when provided."
-        raise InvalidRequestError(msg, param=f"metadata.{RUN_METADATA_KEY}") from exc
-    if parsed.int == 0:
-        msg = f"metadata.{RUN_METADATA_KEY} must not be the nil UUID."
-        raise InvalidRequestError(msg, param=f"metadata.{RUN_METADATA_KEY}")
-    return str(parsed)
 
 
 def _state_conflict(message: str) -> InvalidRequestError:

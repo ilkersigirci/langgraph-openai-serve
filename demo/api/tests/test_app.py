@@ -27,7 +27,6 @@ DOCUMENTED_MODEL_IDS = {
     "mcp-postgres",
     "citation-events",
     "complex-subgraphs",
-    "custom-event-showcase",
     "custom-input-output-context",
     "file-input",
     "interruptible-approval",
@@ -41,7 +40,6 @@ DOCUMENTED_MODEL_IDS = {
     "simple-graph-external-tools",
     "status-events",
 }
-CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 def _rebuild_server_tool_graph(demo_app: FastAPI) -> None:
@@ -50,7 +48,7 @@ def _rebuild_server_tool_graph(demo_app: FastAPI) -> None:
         {name: getattr(current, name) for name in GraphConfig.model_fields}
         | {"graph": server_tool.create_server_tool_graph()}
     )
-    demo_app.state.graph_registry.register("server-tool", config)
+    demo_app.state.graph_registry.graphs["server-tool"] = config
 
 
 @pytest.fixture
@@ -97,7 +95,6 @@ async def test_app_lists_exactly_the_documented_models(
     advanced_extension = (advanced_model.model_extra or {})["lgos"]
     assert advanced_extension["features"] == [
         "background",
-        "client_events",
         "file_inputs",
         "interrupts",
         "mcp_tools",
@@ -107,7 +104,6 @@ async def test_app_lists_exactly_the_documented_models(
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["lgos"]
     assert extension == {
-        "schema_version": 1,
         "description": descriptions["interruptible-approval"],
         "features": ["interrupts"],
     }
@@ -123,15 +119,6 @@ async def test_app_lists_exactly_the_documented_models(
         assert settings["defaults"] == {"delay_seconds": 5}
         delay_schema = settings["json_schema"]["properties"]["delay_seconds"]
         assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
-
-    for model_id in ("complex-subgraphs", "custom-event-showcase", "status-events"):
-        model = await openai_client.models.retrieve(model_id)
-        extension = (model.model_extra or {})["lgos"]
-        assert extension == {
-            "schema_version": 1,
-            "description": descriptions[model_id],
-            "features": ["client_events"],
-        }
 
     plot_model = await openai_client.models.retrieve("persistent-plot-agent")
     plot_extension = (plot_model.model_extra or {})["lgos"]
@@ -165,7 +152,6 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
 
     extension = (model.model_extra or {})["lgos"]
     client_settings = extension["client_settings"]
-    assert client_settings["schema_version"] == CLIENT_SETTINGS_SCHEMA_VERSION
     assert client_settings["defaults"] == {
         "use_history": False,
         "audience": "general",
@@ -343,9 +329,7 @@ async def test_lifespan_installs_shared_postgres_runtime(
         assert demo_app.state.run_coordinator is coordinator
         assert demo_app.state.persistent_plot_agent.store is runtime.store
 
-        config = demo_app.state.graph_registry.get_graph("interruptible-approval")
-        assert config.run_coordinator is not None
-        async with config.run_coordinator("thread-1"):
+        async with demo_app.state.graph_registry.run_coordinator("thread-1"):
             pass
 
     assert upstream_clients[0].is_closed
@@ -380,10 +364,10 @@ async def test_worker_registers_every_background_model_the_api_serves(
     # A job's model ID must resolve in the worker, or its run fails.
     api_background_models = {
         name
-        for name, config in demo_app.state.graph_registry.registry.items()
+        for name, config in demo_app.state.graph_registry.graphs.items()
         if config.supports(GraphFeature.BACKGROUND)
     }
-    assert set(worker_graphs.registry) == api_background_models
+    assert set(worker_graphs.graphs) == api_background_models
 
 
 @pytest.mark.parametrize(

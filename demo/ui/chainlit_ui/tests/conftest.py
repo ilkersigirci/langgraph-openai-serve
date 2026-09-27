@@ -35,7 +35,6 @@ async def chainlit_context():
 def runtime_client_settings() -> ModelClientSettings:
     return ModelClientSettings.model_validate(
         {
-            "schema_version": 1,
             "json_schema": {
                 "type": "object",
                 "additionalProperties": False,

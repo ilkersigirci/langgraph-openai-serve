@@ -75,8 +75,8 @@ async def main() -> None:
     )
     app = (
         LanggraphOpenaiServe(
-            graphs=GraphRegistry(
-                registry={
+            registry=GraphRegistry(
+                graphs={
                     "minimal": GraphConfig(
                         graph=graph,
                         description="Minimal graph",

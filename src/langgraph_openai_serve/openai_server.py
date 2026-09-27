@@ -11,8 +11,8 @@ Examples:
     >>> from your_graphs import simple_graph_1, simple_graph_2
     >>>
     >>> app = FastAPI(title="LangGraph OpenAI API")
-    >>> graphs = GraphRegistry(
-    ...     registry={
+    >>> registry = GraphRegistry(
+    ...     graphs={
     ...         "simple_graph_1": GraphConfig(
     ...             graph=simple_graph_1,
     ...             description="First simple graph.",
@@ -23,10 +23,7 @@ Examples:
     ...         ),
     ...     }
     ... )
-    >>> graph_serve = LanggraphOpenaiServe(
-    ...     app=app,
-    ...     graphs=graphs,
-    ... )
+    >>> graph_serve = LanggraphOpenaiServe(registry=registry, app=app)
     >>> graph_serve.bind_openai_api()
 
 """
@@ -62,14 +59,14 @@ class LanggraphOpenaiServe:
 
     Attributes:
         app: The host FastAPI application to mount the OpenAI API on.
-        graph_registry: The populated GraphRegistry containing the graphs to serve.
+        graph_registry: The graphs to serve and their interrupt run coordinator.
         openai_app: The mounted OpenAI-compatible FastAPI application.
 
     """
 
     def __init__(
         self,
-        graphs: GraphRegistry,
+        registry: GraphRegistry,
         app: FastAPI | None = None,
         checkpoint_scope: Callable[[Request], str | Awaitable[str]] | None = None,
         background: BackgroundBackend | None = None,
@@ -78,21 +75,14 @@ class LanggraphOpenaiServe:
         Initialize the server with a FastAPI app and a populated graph registry.
 
         Args:
+            registry: The graphs to serve and their interrupt run coordinator.
             app: The host FastAPI application to mount the OpenAI API on. If None,
                 a new FastAPI app will be created.
-            graphs: A GraphRegistry instance containing the graphs to serve.
             checkpoint_scope: Optional server-trusted resolver used to isolate
                 interrupt checkpoints by deployment or authenticated principal.
             background: Optional polling-only background backend.
 
-        Raises:
-            TypeError: If graphs is not a GraphRegistry instance.
-
         """
-        if not isinstance(graphs, GraphRegistry):
-            msg = "Invalid type for graphs parameter. Expected GraphRegistry."
-            raise TypeError(msg)
-
         if app is None:
             app = FastAPI(
                 title="LangGraph OpenAI Compatible API",
@@ -103,19 +93,13 @@ class LanggraphOpenaiServe:
         self._openai_app: FastAPI | None = None
         self.checkpoint_scope = checkpoint_scope or (lambda _request: "default")
         self.background = background
-
-        self.graph_registry = graphs
+        self.graph_registry = registry
 
         # Host integrations can inspect registered graphs without traversing the
         # mounted OpenAI sub-application.
-        self.app.state.graph_registry = self.graph_registry
-        self.app.state.checkpoint_scope = self.checkpoint_scope
-        self.app.state.background_backend = self.background
+        self.app.state.graph_registry = registry
 
-        logger.info(
-            "server.initialized",
-            extra={"graph_count": len(self.graph_registry.registry)},
-        )
+        logger.info("server.initialized", extra={"graph_count": len(registry.graphs)})
 
     @property
     def openai_app(self) -> FastAPI:

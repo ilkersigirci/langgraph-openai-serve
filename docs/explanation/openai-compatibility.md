@@ -27,7 +27,7 @@ The implemented endpoints are listed in [Reference](../reference.md).
 
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
-feature discovery in a namespaced, versioned extension on model-list and
+feature discovery in a namespaced extension on model-list and
 model-retrieval responses. Runtime settings remain detail-only. Server-tool
 declarations are deliberately absent; clients select known tools per request:
 
@@ -38,11 +38,9 @@ declarations are deliberately absent; clients select known tools per request:
   "created": 1720000000,
   "owned_by": "langgraph-openai-serve",
   "lgos": {
-    "schema_version": 1,
     "description": "Streams responses with configurable history and audience.",
     "features": [],
     "client_settings": {
-      "schema_version": 1,
       "json_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -78,20 +76,11 @@ and client capabilities. Model listing and retrieval serialize it for
 discovery.
 `GraphConfig.client_settings` is an explicit, allowlisted public Pydantic model;
 LGOS never publishes a graph's internal LangGraph context schema automatically.
-Additive features do not require an outer schema-version change. The nested
-runtime settings descriptor has its own version, and clients must ignore
-versions they do not understand.
-
-The two schema versions evolve independently. Adding an optional extension
-field or a new feature value does not change version 1. Removing a field,
-renaming it, or changing its type or semantics requires incrementing only the
-affected schema version. Clients ignore unknown fields and feature values. An
-unsupported outer version disables LGOS capability discovery; an unsupported
-`client_settings` version disables only the settings UI.
+New extension fields and feature values are additive; clients ignore unknown
+fields and feature values.
 
 | Feature | Enabled behavior |
 | --- | --- |
-| `client_events` | Streaming Responses may emit status commentary. Chat Completions ignores client events. |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
 | `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
@@ -99,8 +88,8 @@ unsupported outer version disables LGOS capability discovery; an unsupported
 
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
-`lgos` object with `schema_version`, `description`, and
-`features`. Client-settings schemas remain detail-only.
+`lgos` object with `description` and `features`. Client-settings schemas
+remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
 `lgos` extension, even when its feature list is empty and it
 has no client settings. A client of this API reads descriptions from the list
@@ -133,8 +122,7 @@ Concrete gateway configurations and native Responses requirements are documented
     endpoint is not preserving the optional LGOS discovery contract. A UI may
     continue plain Responses text, but it must visibly label the model or chat
     as **Limited functionality** and must not assume runtime settings, file
-    inputs, client tools, status commentary, interrupts, or background execution
-    are available. A
+    inputs, client tools, interrupts, or background execution are available. A
     normalized routing catalog cannot remove this requirement.
 
 ## Runtime Settings
@@ -146,7 +134,6 @@ The request keeps each concern in its standard OpenAI location:
 | System instructions | Responses `instructions` or an input `system`/`developer` message; a `system` message in Chat |
 | Small graph-specific values | One `metadata.lgos_settings` string containing a JSON object |
 | Graph selection | `model` |
-| Caller-selected interrupt operation ID | Optional `metadata.lgos_run_id` UUID |
 | Background create retry identity | Optional `Idempotency-Key` HTTP header |
 | Conversation correlation | Optional `metadata.conversation_id` string |
 
@@ -157,9 +144,9 @@ messages.
 
 OpenAI metadata permits at most 16 string pairs, with keys up to 64 characters
 and values up to 512 characters. Public settings consume one pair; a
-caller-selected interrupt run or conversation correlation value consumes
-another. Clients use `json.dumps()` or `JSON.stringify()` to encode the complete
-settings string and omit values equal to the advertised defaults. The
+conversation correlation value consumes another. Clients use `json.dumps()` or
+`JSON.stringify()` to encode the complete settings string and omit values equal
+to the advertised defaults. The
 advertised JSON Schema describes the available settings; LGOS remains the
 validation authority. The descriptor's separate `defaults` object is the
 authoritative validated baseline; JSON Schema `default` keywords are annotations
@@ -186,8 +173,8 @@ still supply the input needed by each ordinary request. Omit the field when no
 conversation exists; LGOS does not generate a fallback ID. Application graphs
 may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value shorter than 200
-characters. The value is distinct from the OpenAI `user` field,
-`metadata.lgos_run_id`, and per-request trace or request identifiers.
+characters. The value is distinct from the OpenAI `user` field, the interrupt
+run ID, and per-request trace or request identifiers.
 
 ### Per-Request Resolution
 
@@ -318,8 +305,6 @@ Background create also accepts an
 header, which OpenAI does not define, so retrying SDKs and gateways cannot
 start a second run; see
 [idempotent creation](../how-to-guides/background-responses.md#idempotent-creation).
-`metadata.lgos_run_id` remains interrupt-operation identity and is rejected on
-background requests.
 
 The engine's run record is not a Conversation. `previous_response_id` answers
 a run paused at an interrupt in either mode. A background answer is a new
@@ -397,19 +382,16 @@ When multiple streamed model calls contribute text, the graph's
 
 ## Streaming Status
 
-The graph must declare `GraphFeature.CLIENT_EVENTS` before any public client
-event can cross an HTTP route. Ordinary LangGraph custom data, malformed events,
-debug values, and non-JSON Python objects stay private. Responses exposes only
-validated `status_event()` values. Chat Completions ignores custom events.
+Graph nodes publish status with `status_event()`. Any other LangGraph custom
+stream data stays private. Streaming Responses exposes statuses; Chat
+Completions ignores all custom stream data.
 
 ### Responses Commentary
 
-A streaming Responses request needs no metadata opt-in. LGOS maps every visible
-status description to its own completed assistant message with
+A streaming Responses request needs no metadata opt-in. LGOS maps every
+non-empty status description to its own completed assistant message with
 `phase="commentary"` and maps the durable answer to a message with
-`phase="final_answer"`. A status whose graph-owned `hidden` flag is true is
-suppressed. The custom namespace and `done` flag do not leak into the Response;
-item completion is a wire lifecycle concept, not graph progress state.
+`phase="final_answer"`.
 
 Commentary is transient and streaming-only. Non-streaming execution calls the
 graph once for its durable result and does not collect status history. The
@@ -442,8 +424,8 @@ fail request validation.
 | Interrupt requiring input | `function_call` item | Unsupported (HTTP 400) |
 | LGOS server tool | Native call and result items | Not selectable |
 | Citation | `output_text.annotations` | message/final-delta annotations |
-| Passive status | `commentary` message | Ignored |
-| Diagnostic progress or artifact | Ignored | Ignored |
+| Passive status | `commentary` message when streaming | Ignored |
+| Other custom stream data | Ignored | Ignored |
 | Midstream failure | `error` then `response.failed` | OpenAI error object |
 
 Status is deliberately not a tool call. In OpenAI
@@ -512,9 +494,9 @@ Invalid runtime settings return HTTP 400 with
 extension does not make plain text generation invalid, but clients surface it
 as limited functionality rather than silently presenting a fully capable
 model.
-Malformed interrupt inputs, duplicate tool results, and invalid caller-supplied
-run UUIDs return HTTP 400. A validly shaped exchange that is missing results from
-the durable pending set, does not match it, or is stale or already completed,
+Malformed interrupt inputs and duplicate tool results return HTTP 400. A
+validly shaped exchange that is missing results from the durable pending set,
+does not match it, or is stale or already completed,
 returns HTTP 409 with `code: "interrupt_state_conflict"`. A request that cannot
 acquire its interrupt-run lease returns HTTP 409 with `code: "run_busy"`.
 
@@ -651,33 +633,22 @@ in the transcript. There is no LGOS artifact field or custom chart event. See
 ### Interrupt Operation Identity
 
 An initial interrupt request does not require metadata. LGOS generates a UUID
-operation ID and embeds it in the paused Response ID. A caller may
-instead supply a non-nil UUID in `metadata.lgos_run_id`; doing so lets it
-retry an initial request deterministically if the response is lost. Reusing
-that UUID while the run is pending re-emits the durable pending batch without
-executing the interrupted nodes again. If the caller lets LGOS generate the UUID
-and loses the first response, it has not learned an address for that pending
-run; choose the UUID before sending whenever initial-response recovery matters.
+run ID for every new interrupt-enabled run and embeds it in the paused Response
+ID. Clients cannot choose the run ID, so retrying a lost initial request starts
+a new run. Background runs choose their run ID at submission.
 
-Treat a caller-chosen UUID as single-use. LGOS deliberately deletes terminal
-checkpoint state and keeps no tombstone, so a later ordinary initial request
-with that UUID is indistinguishable from a new operation and can start again.
-Only resubmitting the old paused Response ID and call outputs is fail-closed
-after terminal deletion.
-
-The public run UUID is not a UI chat ID. LGOS derives a fixed-length internal
+The run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
-operation, so two models or authenticated tenant scopes do not share state even
-when callers use the same UUID. Configure the server scope from trusted request
-or authentication state, never caller-controlled metadata or the OpenAI `user`
-field. The default shared scope is appropriate only for a
-single-tenant or shared-trust deployment. Conversation history remains
-client-owned; the checkpoint contains only the isolated workflow state needed
-while this operation is paused.
+run ID, so two models or authenticated tenant scopes do not share state.
+Configure the server scope from trusted request or authentication state, never
+caller-controlled metadata or the OpenAI `user` field. The default shared scope
+is appropriate only for a single-tenant or shared-trust deployment.
+Conversation history remains client-owned; the checkpoint contains only the
+isolated workflow state needed while this operation is paused.
 
 The authenticated scope must remain stable between the initial request and all
 resumes. A request resolved into another scope cannot address the pending
-checkpoint, even if it presents the same public run UUID and continuation IDs.
+checkpoint, even if it presents the same Response and call IDs.
 
 ### Interrupt Tool Envelope
 
@@ -694,9 +665,7 @@ Every pending LangGraph interrupt becomes an OpenAI function tool call named
 
 Response and call IDs are opaque. The Response ID locates the paused operation;
 each call ID carries one native LangGraph interrupt ID. Clients must persist and
-return both values unchanged. Retrying an initial request returns a new Response ID
-and the same call IDs for unchanged pending work; either Response can resume it
-while that checkpoint remains current.
+return both values unchanged.
 
 ### Resuming an Interrupt
 
@@ -742,9 +711,6 @@ finish the node and route to another node invocation, including by looping throu
 an edge. Parallel nodes may each interrupt once. LGOS rejects a node that reaches
 a second `interrupt()` after it resumes, matching LangGraph's recommended
 [human-input validation pattern](https://docs.langchain.com/oss/python/langgraph/interrupts#validating-human-input).
-
-Metadata is not required on a resume, but `metadata.lgos_run_id`, when
-present, must match the operation encoded by `previous_response_id`.
 
 The UI owns persistence of the paused Response ID and exact calls. It must store
 them before soliciting input so a reconnect can reproduce the same resume request.

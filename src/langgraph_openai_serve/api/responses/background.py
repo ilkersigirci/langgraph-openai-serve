@@ -18,7 +18,6 @@ from langgraph_openai_serve.background import (
 from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
-from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 # Stripe and the IETF Idempotency-Key draft both bound keys; 255 matches Stripe.
 _MAX_IDEMPOTENCY_KEY_LENGTH = 255
@@ -105,12 +104,6 @@ def _job(
     graph_request, _messages, resume = decode_graph_request(request, graph_config)
     if graph_config.client_settings is not None:
         graph_config.client_settings.validate_request(graph_request)
-    if RUN_METADATA_KEY in graph_request.metadata:
-        message = (
-            f"metadata.{RUN_METADATA_KEY} is only supported for interrupt-enabled "
-            "foreground Responses."
-        )
-        raise InvalidRequestError(message, param=f"metadata.{RUN_METADATA_KEY}")
     return BackgroundJob(
         request=request.model_dump(mode="json", by_alias=True),
         owner_scope=owner_scope,

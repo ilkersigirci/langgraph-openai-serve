@@ -187,14 +187,14 @@ async def test_closing_openai_stream_cancels_graph_and_provider(
     async with _serve_over_tcp(_build_fake_provider(provider)) as provider_url:
         graph = _build_downstream_graph(provider_url, node)
         registry = GraphRegistry(
-            registry={
+            graphs={
                 "cancellable": GraphConfig(
                     graph=graph,
                     description="DUMMY",
                 )
             }
         )
-        app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+        app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
         stream: AsyncStream[ChatCompletionChunk | ResponseStreamEvent] | None = None
 
         async with _serve_over_tcp(app) as base_url:

@@ -38,7 +38,7 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
                 ),
             ),
         )
-        for name, graph_config in graph_registry.registry.items()
+        for name, graph_config in graph_registry.graphs.items()
     ]
 
     return ModelList(data=models)

@@ -230,9 +230,8 @@ async def test_empty_final_text_remains_a_completed_message(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    graph_registry.register(
-        "empty",
-        GraphConfig(graph=make_message_graph(""), description="DUMMY"),
+    graph_registry.graphs["empty"] = GraphConfig(
+        graph=make_message_graph(""), description="DUMMY"
     )
 
     response = await openai_client.responses.create(model="empty", input="Hi")
@@ -577,10 +576,7 @@ async def test_provider_usage_maps_to_responses_details(
         .set_finish_point("generate")
         .compile()
     )
-    graph_registry.register(
-        "usage",
-        GraphConfig(graph=graph, description="DUMMY"),
-    )
+    graph_registry.graphs["usage"] = GraphConfig(graph=graph, description="DUMMY")
 
     response = await openai_client.responses.create(
         model="usage", input="Hi", stream=stream
@@ -848,13 +844,10 @@ async def test_graph_configuration_error_uses_server_error_envelope(
         message = "Graph output is not configured."
         raise GraphError(message)
 
-    graph_registry.register(
-        "broken",
-        GraphConfig(
-            graph=make_message_graph(),
-            description="DUMMY",
-            output_to_message=reject_output,
-        ),
+    graph_registry.graphs["broken"] = GraphConfig(
+        graph=make_message_graph(),
+        description="DUMMY",
+        output_to_message=reject_output,
     )
 
     with pytest.raises(InternalServerError) as exc_info:

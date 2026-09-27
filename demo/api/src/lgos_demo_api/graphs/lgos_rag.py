@@ -25,7 +25,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
+from langgraph_openai_serve import GraphConfig, status_event
 from pydantic import BaseModel, Field, SecretStr
 
 from lgos_demo_api.core.settings import settings
@@ -40,7 +40,6 @@ CHUNK_SIZE = 1_200
 CHUNK_OVERLAP = 200
 RETRIEVAL_LIMIT = 4
 MAX_REWRITES = 1
-RAG_STATUS_NAMESPACE = ("rag",)
 
 DECISION_PROMPT = """You are the LGOS documentation assistant.
 For every factual question about langgraph-openai-serve (LGOS), call the
@@ -301,15 +300,9 @@ def _retrieved_documents(state: LgosRagState) -> list[Document]:
     return artifact
 
 
-def _emit_status(description: str, *, done: bool = False) -> None:
+def _emit_status(description: str) -> None:
     """Publish one user-facing phase of the RAG workflow."""
-    get_stream_writer()(
-        status_event(
-            description,
-            done=done,
-            namespace=RAG_STATUS_NAMESPACE,
-        )
-    )
+    get_stream_writer()(status_event(description))
 
 
 async def generate_query_or_respond(
@@ -330,7 +323,7 @@ async def generate_query_or_respond(
         response = await _chat_model().ainvoke(
             [SystemMessage(content=DIRECT_RESPONSE_PROMPT), *state.messages],
         )
-        _emit_status("Answer ready", done=True)
+        _emit_status("Answer ready")
     return {"messages": [response], "question": question}
 
 
@@ -394,7 +387,7 @@ async def generate_answer(
             "context": _format_context(documents),
         },
     )
-    _emit_status("Answer ready", done=True)
+    _emit_status("Answer ready")
     return {"messages": [_answer_message(answer, documents)]}
 
 
@@ -412,7 +405,7 @@ async def answer_no_results(
     answer = await (prompt | _chat_model()).ainvoke(
         {"question": _original_question(state)},
     )
-    _emit_status("Answer ready", done=True)
+    _emit_status("Answer ready")
     return {"messages": [answer]}
 
 
@@ -448,7 +441,6 @@ lgos_rag_graph_config = GraphConfig(
     description=(
         "Answers questions with cited agentic retrieval over the packaged demo corpus."
     ),
-    features={GraphFeature.CLIENT_EVENTS},
 )
 
 __all__ = ["lgos_rag", "lgos_rag_graph_config"]

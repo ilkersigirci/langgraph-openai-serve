@@ -100,8 +100,8 @@ Streaming combines native LangGraph `updates` for completed tool calls/results,
 The answer model streams normally. Private selection calls use
 `ChatOpenAI(disable_streaming=True)`, so intermediate model text never enters the
 public answer.
-The graph declares `GraphFeature.CLIENT_EVENTS`; progress appears as Responses
-commentary. Non-streaming responses omit this transient commentary.
+Streaming Responses show progress as commentary. Non-streaming responses omit
+this transient commentary.
 
 The selection stage only gathers information; the answer stage has no bound
 tools. Citations are attached after generation without changing or buffering

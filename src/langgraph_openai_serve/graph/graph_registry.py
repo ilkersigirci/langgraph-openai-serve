@@ -1,21 +1,13 @@
 import inspect
 from collections.abc import Awaitable, Callable, Mapping
-from types import MappingProxyType
-from typing import Annotated, Any, Self
+from dataclasses import dataclass
+from typing import Annotated, Any
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    ConfigDict,
-    StringConstraints,
-    TypeAdapter,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 from langgraph_openai_serve.core.errors import (
     GraphError,
@@ -44,20 +36,6 @@ _INTERRUPT_CHECKPOINTER_METHODS = (
 )
 
 
-def _addressable_model_id(value: str) -> str:
-    if value in {".", ".."}:
-        msg = "model id must be addressable"
-        raise ValueError(msg)
-    return value
-
-
-ModelId = Annotated[
-    str,
-    StringConstraints(min_length=1, pattern=r"^[^/]+$"),
-    AfterValidator(_addressable_model_id),
-]
-
-
 class GraphConfig(BaseModel):
     """Graph configuration."""
 
@@ -75,7 +53,6 @@ class GraphConfig(BaseModel):
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_message: OutputToMessage | None = None
-    run_coordinator: RunCoordinator | None = None
 
     @field_validator("client_settings")
     @classmethod
@@ -88,18 +65,6 @@ class GraphConfig(BaseModel):
             value.json_schema()
             value.default_values()
         return value
-
-    @model_validator(mode="after")
-    def validate_interrupt_configuration(self) -> Self:
-        """Validate feature relationships that do not depend on a resolved graph."""
-        interrupt_enabled = self.supports(GraphFeature.INTERRUPTS)
-        if self.run_coordinator is not None and not interrupt_enabled:
-            msg = "run_coordinator is only supported by interrupt-enabled graphs."
-            raise ValueError(msg)
-        if interrupt_enabled and self.run_coordinator is None:
-            msg = "Interrupt-enabled graphs must configure a run_coordinator."
-            raise ValueError(msg)
-        return self
 
     def supports(self, feature: GraphFeature) -> bool:
         """Return whether this graph supports a feature."""
@@ -225,70 +190,40 @@ def _overrides_checkpointer_method(
     return callable(implementation) and implementation is not base_implementation
 
 
-_MODEL_ID_ADAPTER = TypeAdapter(ModelId)
-
-
-def _validate_model_id(value: object) -> str:
-    return _MODEL_ID_ADAPTER.validate_python(value, strict=True)
-
-
-def _validate_graph_config(value: object) -> GraphConfig:
-    if not isinstance(value, GraphConfig):
-        msg = "Registry values must be GraphConfig instances."
-        raise TypeError(msg)
-    return value
-
-
+@dataclass
 class GraphRegistry:
-    """Registry of graphs."""
+    """
+    The graphs served as OpenAI models, keyed by model ID.
 
-    __slots__ = ("_entries", "_registry")
+    ``run_coordinator`` leases the interrupt runs of every interrupt-enabled
+    graph; use a shared coordinator when several processes serve these graphs.
+    """
 
-    def __init__(self, *, registry: Mapping[str, GraphConfig]) -> None:
-        if not registry:
+    graphs: dict[str, GraphConfig]
+    run_coordinator: RunCoordinator | None = None
+
+    def __post_init__(self) -> None:
+        """Fail at startup for a registry the OpenAI routes cannot serve."""
+        if not self.graphs:
             msg = "GraphRegistry must contain at least one graph."
             raise ValueError(msg)
+        for model_id in self.graphs:
+            # Each model must be addressable as GET /models/{model}.
+            if not model_id or "/" in model_id or model_id in {".", ".."}:
+                msg = f"Model ID {model_id!r} is not addressable."
+                raise ValueError(msg)
+        if self.run_coordinator is None and any(
+            config.supports(GraphFeature.INTERRUPTS) for config in self.graphs.values()
+        ):
+            msg = "Interrupt-enabled graphs need a GraphRegistry run_coordinator."
+            raise ValueError(msg)
 
-        entries = {
-            _validate_model_id(model_id): _validate_graph_config(config)
-            for model_id, config in registry.items()
-        }
-        self._entries = entries
-        self._registry = MappingProxyType(entries)
-
-    @property
-    def registry(self) -> Mapping[str, GraphConfig]:
-        """The read-only, insertion-ordered registry view."""
-        return self._registry
-
-    def register(self, model_id: str, config: GraphConfig) -> None:
-        """Add or replace one graph through the validated registry boundary."""
-        validated_model_id = _validate_model_id(model_id)
-        validated_config = _validate_graph_config(config)
-        self._entries[validated_model_id] = validated_config
-
-    def get_graph_names(self) -> list[str]:
-        """Get the names of all registered graphs."""
-        return list(self.registry.keys())
-
-    def get_graph(self, name: str) -> GraphConfig:
-        """
-        Get a graph by its name.
-
-        Args:
-            name: The name of the graph to retrieve.
-
-        Returns:
-            The graph configuration associated with the given name.
-
-        Raises:
-            InvalidRequestError: If the graph name is not found in the registry.
-
-        """
+    def get_graph(self, model: str) -> GraphConfig:
+        """Return the graph served as ``model``."""
         try:
-            return self.registry[name]
+            return self.graphs[model]
         except KeyError as exc:
-            msg = f"The model '{name}' does not exist."
+            msg = f"The model '{model}' does not exist."
             raise InvalidRequestError(
                 msg,
                 param="model",

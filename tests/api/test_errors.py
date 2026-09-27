@@ -293,7 +293,7 @@ async def test_openai_error_handlers_do_not_replace_host_app_handlers(
 
     LanggraphOpenaiServe(
         app=app,
-        graphs=graph_registry,
+        registry=graph_registry,
     ).bind_openai_api(prefix="/v1")
 
     transport = ASGITransport(app=app)

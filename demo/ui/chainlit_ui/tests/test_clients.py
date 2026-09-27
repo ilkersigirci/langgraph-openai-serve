@@ -20,7 +20,7 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         "object": "model",
         "created": 1,
         "owned_by": "langgraph-openai-serve",
-        "lgos": {"schema_version": 1, "description": "Graph", "features": []},
+        "lgos": {"description": "Graph", "features": []},
     }
 
     def handle(request: httpx2.Request) -> httpx2.Response:
@@ -91,7 +91,7 @@ async def test_litellm_model_info_owns_catalog_and_preserves_public_names(
     monkeypatch.setattr(
         clients, "gateway", gateway_config("litellm", "https://gateway.example")
     )
-    metadata = {"schema_version": 1, "description": "Graph", "features": []}
+    metadata = {"description": "Graph", "features": []}
     names = ["graph", "research/namespace/graph"]
     deployments = [
         {"model_name": name, "model_info": {"lgos": metadata}} for name in names

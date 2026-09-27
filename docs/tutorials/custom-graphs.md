@@ -19,10 +19,10 @@ features are published in LGOS model list and detail extensions for catalog UIs.
 
 Return an `AIMessage` only from the node or subgraph that owns the final
 assistant turn. Internal workers should return structured state; public status
-should use `status_event()`. Lower-level `progress` and `artifact` events remain
-available to direct runner consumers but are ignored by the HTTP APIs; keep
-other application events private. `add_messages` preserves message history but
-does not enable streaming or combine multiple assistant messages.
+should use `status_event()`. The HTTP APIs ignore any other custom stream data,
+which remains available to direct runner consumers. `add_messages` preserves
+message history but does not enable streaming or combine multiple assistant
+messages.
 
 ## Custom Schemas
 
@@ -204,8 +204,8 @@ current resources.
 ```python title="Application registration"
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 
-graphs = GraphRegistry(
-    registry={
+registry = GraphRegistry(
+    graphs={
         "my-graph": GraphConfig(
             graph=my_graph,
             description="Answer questions with my graph.",
@@ -217,13 +217,11 @@ graphs = GraphRegistry(
     }
 )
 
-LanggraphOpenaiServe(graphs=graphs).bind_openai_api()
+LanggraphOpenaiServe(registry=registry).bind_openai_api()
 ```
 
-`GraphConfig` declarations are immutable. Their feature and server-tool frozen
-sets cannot be changed after registration. Construct a new config and call
-`graphs.register(model_id, config)` when a model declaration must be added or
-replaced; `graphs.registry` is a read-only mapping view.
+`registry.graphs` is a plain dict. `GraphConfig` declarations are immutable;
+their feature and server-tool frozen sets cannot be changed after registration.
 
 ## Streaming
 
@@ -248,7 +246,7 @@ Publish meaningful status from long-running graph code:
 
 ```python
 from langgraph.config import get_stream_writer
-from langgraph_openai_serve import GraphConfig, GraphFeature, status_event
+from langgraph_openai_serve import status_event
 
 
 async def generate_audio(state):
@@ -257,22 +255,14 @@ async def generate_audio(state):
 
     audio = await audio_service.generate(state["text"])
 
-    writer(status_event("Audio ready", done=True))
+    writer(status_event("Audio ready"))
     return {"audio": audio}
-
-
-status_graph_config = GraphConfig(
-    graph=status_graph,
-    description="Generate audio with visible status updates.",
-    features={GraphFeature.CLIENT_EVENTS},
-)
 ```
 
-Declare `GraphFeature.CLIENT_EVENTS` on every graph that emits these events.
-Streaming Responses clients receive visible descriptions as standard
-`phase="commentary"` messages without a metadata opt-in. Responses suppresses
-hidden updates and does not invent custom progress fields. The Chat Completions
-API ignores custom stream events and does not emit commentary.
+Graphs need no feature declaration to emit statuses. Streaming Responses clients
+receive each non-empty description as a standard `phase="commentary"` message
+without a metadata opt-in. Non-streaming Responses and Chat Completions ignore
+statuses.
 
 These passive updates are not OpenAI tool calls, which would ask the client to
 execute work. The graph remains responsible for its own work; the client only
@@ -283,25 +273,31 @@ renders status.
 Enable the interrupt feature for checkpointed human-in-the-loop graphs:
 
 ```python
-from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 
-GraphConfig(
-    graph=interruptible_graph,
-    description="Collect human input before performing an action.",
-    features={GraphFeature.INTERRUPTS},
+registry = GraphRegistry(
+    graphs={
+        "interruptible": GraphConfig(
+            graph=interruptible_graph,
+            description="Collect human input before performing an action.",
+            features={GraphFeature.INTERRUPTS},
+        ),
+    },
     run_coordinator=InMemoryRunCoordinator(),
 )
 ```
 
+One registry `run_coordinator` serves every interrupt-enabled graph; it is
+required only when a graph declares `GraphFeature.INTERRUPTS`.
+
 The graph must be compiled with an asynchronous checkpointer that implements
 `aget_tuple()`, `aput()`, `aput_writes()`, and `adelete_thread()`.
-LGOS generates a UUID for an initial interrupt run; callers only need to send
-`metadata.lgos_run_id` when they want to choose that UUID for deterministic
-retries and isolation. The opaque OpenAI tool-call ID carries the native
-LangGraph interrupt ID needed for a resume; the paused Response ID locates the
-operation. Call `interrupt()` at most once per node invocation; route to another
-node invocation when the graph needs another human turn.
+LGOS generates a UUID for every new interrupt run. The opaque OpenAI tool-call
+ID carries the native LangGraph interrupt ID needed for a resume; the paused
+Response ID locates the operation. Call `interrupt()` at most once per node
+invocation; route to another node invocation when the graph needs another
+human turn.
 
 !!! warning "Choose coordination and storage together"
 

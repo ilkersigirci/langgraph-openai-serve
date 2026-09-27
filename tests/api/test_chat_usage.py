@@ -52,14 +52,14 @@ def usage_graph() -> object:
 
 def usage_app() -> FastAPI:
     registry = GraphRegistry(
-        registry={
+        graphs={
             "usage": GraphConfig(
                 graph=usage_graph,
                 description="DUMMY",
             )
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @pytest.fixture

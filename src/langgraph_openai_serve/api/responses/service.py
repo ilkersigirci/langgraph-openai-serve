@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import aclosing
-from dataclasses import replace
 
 from langchain_core.messages import AIMessage
 from langgraph.types import CustomStreamPart, UpdatesStreamPart
@@ -24,13 +23,11 @@ from langgraph_openai_serve.api.responses.request import (
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.events import parse_status_event
-from langgraph_openai_serve.graph.features import GraphFeature
+from langgraph_openai_serve.graph.events import status_description
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.graph.run import GraphRun, prepare_run
 from langgraph_openai_serve.graph.runner import stream_run
-from langgraph_openai_serve.protocol import RUN_METADATA_KEY
 
 logger = get_logger(__name__)
 
@@ -45,23 +42,18 @@ async def prepare_response_run(
     """
     Validate a Responses request and prepare its graph run.
 
-    A background run passes its server-chosen interrupt ``run_id``, which the
-    run uses like a caller's ``metadata.lgos_run_id``.
+    A background run passes the interrupt ``run_id`` it chose at submission.
     """
     graph_request, messages, resume = decode_graph_request(
         request,
         graph_registry.get_graph(request.model),
     )
-    if run_id is not None:
-        graph_request = replace(
-            graph_request,
-            metadata={**graph_request.metadata, RUN_METADATA_KEY: run_id},
-        )
     return await prepare_run(
         graph_request,
         messages,
         graph_registry,
         resume=resume,
+        run_id=run_id,
         checkpoint_scope=checkpoint_scope,
     )
 
@@ -148,7 +140,6 @@ async def _response_events(
         yield builder.created()
         yield builder.in_progress()
 
-        expose_status = streaming and run.config.supports(GraphFeature.CLIENT_EVENTS)
         run_events = stream_run(
             run,
             streaming=streaming,
@@ -159,11 +150,7 @@ async def _response_events(
                 if isinstance(graph_event, (AIMessage, LangGraphInterruptBatch)):
                     final_output = graph_event
                     continue
-                for event in _graph_response_events(
-                    builder,
-                    graph_event,
-                    expose_status=expose_status,
-                ):
+                for event in _graph_response_events(builder, graph_event):
                     yield event
 
     if isinstance(final_output, LangGraphInterruptBatch):
@@ -183,8 +170,6 @@ async def _response_events(
 def _graph_response_events(
     builder: ResponsesEventBuilder,
     event: str | CustomStreamPart | UpdatesStreamPart,
-    *,
-    expose_status: bool,
 ) -> Iterator[ResponseStreamEvent]:
     """
     Translate one non-final graph event.
@@ -195,17 +180,10 @@ def _graph_response_events(
     """
     if isinstance(event, str):
         yield from builder.final_delta(event)
-        return
-    if event["type"] == "updates":
+    elif event["type"] == "updates":
         yield from builder.server_tools(event)
-        return
-    if not expose_status:
-        return
-
-    status_data = parse_status_event(event["data"])
-    if status_data is None or status_data.hidden:
-        return
-    yield from builder.commentary(status_data.description)
+    elif (description := status_description(event["data"])) is not None:
+        yield from builder.commentary(description)
 
 
 __all__ = ["collect_response", "prepare_response_run", "stream_response"]

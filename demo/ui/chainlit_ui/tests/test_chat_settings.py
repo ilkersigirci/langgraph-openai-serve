@@ -54,7 +54,6 @@ def configured_model(
     features: list[str] | None = None,
 ) -> Model:
     extension: dict[str, object] = {
-        "schema_version": 1,
         "description": "DUMMY",
         "features": features or [],
     }
@@ -265,7 +264,6 @@ async def test_chat_profiles_use_list_capabilities_for_file_uploads(
                     created=1,
                     owned_by="test",
                     lgos={
-                        "schema_version": 1,
                         "description": "DUMMY",
                         "features": ["file_inputs"],
                     },

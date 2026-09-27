@@ -18,11 +18,9 @@ def model() -> ModelDetails:
             "created": 0,
             "owned_by": "langgraph-openai-serve",
             "lgos": {
-                "schema_version": 1,
                 "description": "An LGOS graph",
                 "features": ["interrupts"],
                 "client_settings": {
-                    "schema_version": 1,
                     "json_schema": {"type": "object"},
                     "defaults": {"style": "brief"},
                 },

@@ -10,7 +10,6 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature
-from langgraph_openai_serve.graph.interrupt import RunCoordinator
 
 from lgos_demo_api.graphs.background_report import (
     BackgroundReportSettings,
@@ -91,7 +90,6 @@ def create_background_interrupt_graph(
 
 def create_background_interrupt_graph_config(
     graph_factory: Callable[[], BackgroundInterruptGraph],
-    run_coordinator: RunCoordinator,
 ) -> GraphConfig:
     return GraphConfig(
         graph=graph_factory,
@@ -101,7 +99,6 @@ def create_background_interrupt_graph_config(
         ),
         features={GraphFeature.BACKGROUND, GraphFeature.INTERRUPTS},
         client_settings=BackgroundReportSettings,
-        run_coordinator=run_coordinator,
     )
 
 

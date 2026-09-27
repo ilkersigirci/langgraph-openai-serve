@@ -119,10 +119,10 @@ run's request, status, and Response.
 The Responses adapter owns interrupt function-call encoding and decodes
 `previous_response_id` plus `function_call_output` items into a resume request.
 Under the coordinator lease, preparation either validates that request into a
-native LangGraph `Command(resume=...)`, reads the pending batch for an initial
-request retry, or builds fresh graph input. Streaming and non-streaming requests
-share this prepared state, one runner, and the same interrupt validation. LangGraph
-checkpoints remain the source of truth for paused execution.
+native LangGraph `Command(resume=...)` or builds fresh graph input. Streaming
+and non-streaming requests share this prepared state, one runner, and the same
+interrupt validation. LangGraph checkpoints remain the source of truth for
+paused execution.
 
 Chat Completions rejects interrupt-enabled models before preparing a graph run.
 A graph that calls `interrupt()` without declaring `GraphFeature.INTERRUPTS`

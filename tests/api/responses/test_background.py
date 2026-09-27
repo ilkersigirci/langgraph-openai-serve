@@ -94,7 +94,7 @@ async def _client(
 
     LanggraphOpenaiServe(
         app=app,
-        graphs=registry,
+        registry=registry,
         checkpoint_scope=checkpoint_scope,
         background=backend if configured else None,
     ).bind_openai_api()
@@ -128,7 +128,7 @@ async def _finished(
 
 async def test_background_response_runs_after_create_returns() -> None:
     graph = _Graph(release=Event())
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -148,7 +148,7 @@ async def test_background_response_runs_after_create_returns() -> None:
 
 async def test_background_create_requires_a_backend_and_an_opted_in_model() -> None:
     registry = GraphRegistry(
-        registry={
+        graphs={
             MODEL: _Graph().config(),
             "foreground-only": _Graph().config(features=set()),
         }
@@ -176,11 +176,6 @@ async def test_background_create_requires_a_backend_and_an_opted_in_model() -> N
             "metadata.lgos_settings",
             id="client-settings",
         ),
-        pytest.param(
-            {"metadata": {"lgos_run_id": "7d2c6f3e-4b1a-4e8f-9c0d-2a5b3e6f7a81"}},
-            "metadata.lgos_run_id",
-            id="run-id",
-        ),
     ],
 )
 async def test_invalid_background_requests_are_rejected_before_execution(
@@ -190,7 +185,7 @@ async def test_invalid_background_requests_are_rejected_before_execution(
         count: int = 1
 
     graph = _Graph()
-    registry = GraphRegistry(registry={MODEL: graph.config(client_settings=Settings)})
+    registry = GraphRegistry(graphs={MODEL: graph.config(client_settings=Settings)})
     async with _client(registry) as client:
         with pytest.raises(BadRequestError) as error:
             await client.responses.create(
@@ -202,7 +197,7 @@ async def test_invalid_background_requests_are_rejected_before_execution(
 
 
 async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
-    async with _client(GraphRegistry(registry={MODEL: _Graph().config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: _Graph().config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -225,7 +220,7 @@ async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
 
 async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> None:
     graph = _Graph(release=Event())
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         active = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -248,7 +243,7 @@ async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> No
 
 async def test_unexpected_graph_failure_fails_the_response() -> None:
     graph = _Graph(error=OSError("disk full"))
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -265,7 +260,7 @@ async def test_idempotency_key_returns_the_first_response() -> None:
     headers = {"Idempotency-Key": "create-report-1"}
     graph = _Graph()
     registry = GraphRegistry(
-        registry={MODEL: graph.config(), "other-model": graph.config()}
+        graphs={MODEL: graph.config(), "other-model": graph.config()}
     )
     async with _client(registry) as client:
         first = await client.responses.create(
@@ -311,18 +306,18 @@ async def test_one_of_two_answers_to_a_pause_continues_the_run(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     registry = GraphRegistry(
-        registry={
+        graphs={
             "approval": GraphConfig(
                 graph=make_multi_interrupt_graph(sqlite_checkpointer),
                 description="Two questions",
                 features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
-                run_coordinator=InMemoryRunCoordinator(),
                 request_to_input=lambda _request, _messages: {"answers": []},
                 output_to_message=lambda output: AIMessage(
                     content=",".join(output["answers"])
                 ),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
     async with _client(registry) as client:
         created = await client.responses.create(

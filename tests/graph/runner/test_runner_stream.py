@@ -76,7 +76,7 @@ async def test_nested_subgraph_streaming(
         .compile()
     )
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "nested": GraphConfig(
                 graph=graph,
                 description="DUMMY",
@@ -121,7 +121,7 @@ async def test_stream_excludes_disabled_model_streams_and_non_ai_messages(
     builder.set_finish_point("generate")
 
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "filtered": GraphConfig(
                 graph=builder.compile(),
                 description="DUMMY",

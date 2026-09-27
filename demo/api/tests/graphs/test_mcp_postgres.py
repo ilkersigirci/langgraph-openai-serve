@@ -65,7 +65,7 @@ def _request(*tools: ClientFunctionTool) -> GraphRequest:
 
 def _registry() -> GraphRegistry:
     return GraphRegistry(
-        registry={
+        graphs={
             "mcp-postgres": GraphConfig(
                 graph=graph_module.mcp_postgres_graph,
                 description="DUMMY",

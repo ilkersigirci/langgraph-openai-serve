@@ -29,9 +29,9 @@ def _graph_app() -> FastAPI:
         .compile()
     )
     registry = GraphRegistry(
-        registry={"files": GraphConfig(graph=graph, description="Inspect inputs.")}
+        graphs={"files": GraphConfig(graph=graph, description="Inspect inputs.")}
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 async def test_chat_file_id_reaches_graph_without_files_routes() -> None:

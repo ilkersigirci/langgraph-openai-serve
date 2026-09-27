@@ -10,7 +10,6 @@ from langgraph.types import StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.graph import run as run_module
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.run import GraphRun, InterruptRun
 from langgraph_openai_serve.graph.runner import collect_run, stream_run
 
@@ -66,7 +65,6 @@ def cleanup_run(
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
             output_to_message=output_to_message,
-            run_coordinator=InMemoryRunCoordinator(),
         ),
         graph=cast("Any", graph),
         inputs={},

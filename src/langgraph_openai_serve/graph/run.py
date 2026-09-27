@@ -1,5 +1,6 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
+import uuid
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass, field
 from types import TracebackType
@@ -13,6 +14,7 @@ from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
+from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.core.logging import (
     bind_log_context,
     get_log_context,
@@ -23,18 +25,13 @@ from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import (
     InterruptResume,
-    LangGraphInterruptBatch,
     RunCoordinator,
     checkpoint_key,
-    prepare_interrupt_state,
-    resolve_run_id,
+    resume_command,
 )
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
-from langgraph_openai_serve.protocol import (
-    CONVERSATION_METADATA_KEY,
-    RUN_METADATA_KEY,
-)
+from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -72,7 +69,6 @@ class GraphRun:
     runnable_config: RunnableConfig
     usage_callback: UsageMetadataCallbackHandler
     interrupt: InterruptRun | None = None
-    pending_batch: LangGraphInterruptBatch | None = None
     _resources: AsyncExitStack = field(default_factory=AsyncExitStack, repr=False)
     _delete_checkpoint: bool = field(default=False, init=False, repr=False)
 
@@ -135,20 +131,28 @@ class GraphRun:
         return total
 
 
-async def prepare_run(
+async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs choose their run_id before execution.
     request: GraphRequest,
     messages: list[BaseMessage],
     graph_registry: GraphRegistry,
     *,
     resume: InterruptResume | None = None,
+    run_id: str | None = None,
     checkpoint_scope: str = "default",
 ) -> GraphRun:
-    """Resolve, lease, and build the inputs of one graph run."""
+    """
+    Resolve, lease, and build the inputs of one graph run.
+
+    An interrupt-enabled run continues ``resume.run_id``, uses a server-chosen
+    ``run_id``, or starts a new run.
+    """
     config = graph_registry.get_graph(request.model)
     graph = await config.resolve_graph()
     interrupt_run = None
     if config.supports(GraphFeature.INTERRUPTS):
-        run_id = resolve_run_id(request.metadata.get(RUN_METADATA_KEY), resume)
+        if resume is not None:
+            run_id = resume.run_id
+        run_id = run_id or str(uuid.uuid4())
         bind_log_context(operation_id=run_id)
         interrupt_run = InterruptRun(
             run_id=run_id,
@@ -172,7 +176,9 @@ async def prepare_run(
         interrupt=interrupt_run,
     )
     try:
-        await _prepare_inputs(run, request, messages, resume)
+        await _prepare_inputs(
+            run, request, messages, resume, graph_registry.run_coordinator
+        )
     except BaseException as exc:
         await run.aclose(error=exc)
         raise
@@ -184,19 +190,17 @@ async def _prepare_inputs(
     request: GraphRequest,
     messages: list[BaseMessage],
     resume: InterruptResume | None,
+    coordinator: RunCoordinator | None,
 ) -> None:
     """Lease an interrupt run, then build its native input and context."""
     if run.interrupt is not None:
-        coordinator = cast("RunCoordinator", run.config.run_coordinator)
+        if coordinator is None:
+            msg = "Interrupt-enabled graphs need a GraphRegistry run_coordinator."
+            raise GraphError(msg)
         await run.hold(coordinator(run.interrupt.thread_id))
-        state = await prepare_interrupt_state(
-            run.graph, run.runnable_config, run.interrupt.run_id, resume
-        )
-        if isinstance(state, LangGraphInterruptBatch):
-            run.pending_batch = state
-            return
-        run.inputs = state
-    if run.inputs is None:
+    if resume is not None and run.interrupt is not None:
+        run.inputs = await resume_command(run.graph, run.runnable_config, resume)
+    else:
         run.inputs = await run.config.build_input(request, messages)
     run.context = await run.config.build_context(request, run.graph)
 

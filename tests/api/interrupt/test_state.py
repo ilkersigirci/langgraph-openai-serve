@@ -1,24 +1,18 @@
-import uuid
 from http import HTTPStatus
 
 import pytest
 from fastapi import FastAPI
-from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.graph import StateGraph
-from langgraph.types import interrupt
-from openai import AsyncOpenAI, BadRequestError, ConflictError
+from openai import AsyncOpenAI, ConflictError
 
 from langgraph_openai_serve.api.responses.interrupts import interrupt_tool_call_id
-from tests.graph.support.registration import replace_graph_config
-from tests.graph.support.schemas import MessageState
 
 from .support import (
     MODEL,
     MULTI_TURN_MODEL,
     NESTED_MULTI_TURN_MODEL,
-    assert_checkpoint_deleted,
     assert_interrupt_arguments,
+    assert_no_checkpoints,
     create_response,
     interrupt_calls,
     resume_outputs,
@@ -26,133 +20,26 @@ from .support import (
 )
 
 
-@pytest.mark.parametrize("stream", [False, True])
-async def test_retry_with_same_run_id_reemits_pending_batch_without_execution(
-    openai_client: AsyncOpenAI,
-    fastapi_app: FastAPI,
-    sqlite_checkpointer: AsyncSqliteSaver,
-    stream: bool,
-) -> None:
-    executions = []
-
-    def ask(_state: MessageState):
-        executions.append("ask")
-        answer = interrupt({"question": "Approve?"})
-        return {"messages": [AIMessage(content=f"resumed:{answer}")]}
-
-    graph = (
-        StateGraph(MessageState)
-        .add_node("ask", ask)
-        .set_entry_point("ask")
-        .set_finish_point("ask")
-        .compile(checkpointer=sqlite_checkpointer)
-    )
-    replace_graph_config(fastapi_app.state.graph_registry, MODEL, graph=graph)
-    run_id = str(uuid.uuid4()).upper()
-    first_response = await create_response(openai_client, run_id=run_id)
-    recovered_response = await create_response(
-        openai_client, run_id=run_id, stream=stream
-    )
-    if stream:
-        events = [event async for event in recovered_response]
-        assert events[-1].type == "response.completed"
-        recovered_response = events[-1].response
-
-    assert executions == ["ask"]
-    first_calls = interrupt_calls(first_response)
-    recovered_calls = interrupt_calls(recovered_response)
-    clean_id = run_id.lower().replace("-", "")
-    assert first_response.id.startswith(f"resp_lg_{clean_id}_")
-    assert recovered_response.id.startswith(f"resp_lg_{clean_id}_")
-    assert recovered_response.id != first_response.id
-    assert [call.call_id for call in recovered_calls] == [
-        call.call_id for call in first_calls
-    ]
-    assert [call.arguments for call in recovered_calls] == [
-        call.arguments for call in first_calls
-    ]
-
-    final_response = await resume_response(
-        openai_client,
-        recovered_response,
-        "approve",
-    )
-    assert final_response.output_text == "resumed:approve"
-
-
-async def test_same_run_id_is_isolated_by_server_checkpoint_scope(
+async def test_paused_run_is_isolated_by_server_checkpoint_scope(
     openai_client: AsyncOpenAI,
 ) -> None:
-    run_id = str(uuid.uuid4())
-    tenant_a = await create_response(
-        openai_client,
-        run_id=run_id,
-        checkpoint_scope="tenant-a",
-    )
-    tenant_b = await create_response(
-        openai_client,
-        run_id=run_id,
-        checkpoint_scope="tenant-b",
-    )
+    paused = await create_response(openai_client, checkpoint_scope="tenant-a")
 
     with pytest.raises(ConflictError):
         await resume_response(
             openai_client,
-            tenant_a,
+            paused,
             "approve",
             checkpoint_scope="tenant-b",
         )
 
-    response_a = await resume_response(
+    resumed = await resume_response(
         openai_client,
-        tenant_a,
+        paused,
         "approve",
         checkpoint_scope="tenant-a",
     )
-    response_b = await resume_response(
-        openai_client,
-        tenant_b,
-        "reject",
-        checkpoint_scope="tenant-b",
-    )
-    assert response_a.output_text == "resumed:approve"
-    assert response_b.output_text == "resumed:reject"
-
-
-@pytest.mark.parametrize(
-    "run_id",
-    [
-        pytest.param("shared-chat", id="not-a-uuid"),
-        pytest.param("00000000-0000-0000-0000-000000000000", id="nil-uuid"),
-    ],
-)
-async def test_invalid_caller_run_id_returns_400(
-    openai_client: AsyncOpenAI,
-    run_id: str,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await create_response(openai_client, run_id=run_id)
-
-    assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
-    assert exc_info.value.body["param"] == "metadata.lgos_run_id"
-
-
-async def test_resume_rejects_mismatched_caller_run_id(
-    openai_client: AsyncOpenAI,
-) -> None:
-    first_response = await create_response(openai_client)
-    input_items = resume_outputs(first_response, ["approve"])
-
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(
-            model=MODEL,
-            previous_response_id=first_response.id,
-            input=input_items,
-            metadata={"lgos_run_id": str(uuid.uuid4())},
-        )
-
-    assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
-    assert exc_info.value.body["param"] == "metadata.lgos_run_id"
+    assert resumed.output_text == "resumed:approve"
 
 
 async def test_fabricated_interrupt_id_cannot_resume_pending_state(
@@ -257,14 +144,9 @@ async def test_terminal_run_deletes_its_checkpoint_lineage(
     openai_client: AsyncOpenAI,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    run_id = str(uuid.uuid4())
-    first_response = await create_response(openai_client, run_id=run_id)
+    first_response = await create_response(openai_client)
     first_call = interrupt_calls(first_response)[0]
     assert_interrupt_arguments(first_call)
     await resume_response(openai_client, first_response, "approve")
 
-    await assert_checkpoint_deleted(
-        sqlite_checkpointer,
-        model=MODEL,
-        run_id=run_id,
-    )
+    await assert_no_checkpoints(sqlite_checkpointer)

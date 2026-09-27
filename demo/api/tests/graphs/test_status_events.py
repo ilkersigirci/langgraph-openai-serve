@@ -1,16 +1,7 @@
-from typing import Any, cast
-
-from langgraph.types import CustomStreamPart
-from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve import GraphRegistry, status_event
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import status_events
-
-
-def _public_event(value: object) -> dict[str, Any]:
-    part = cast(CustomStreamPart, value)
-    envelope = cast(dict[str, Any], part["data"])
-    return cast(dict[str, Any], envelope["event"])
 
 
 async def test_graph_streams_portable_status_updates(
@@ -23,42 +14,17 @@ async def test_graph_streams_portable_status_updates(
         content="Prepare the media workflow.",
     )
     registry = GraphRegistry(
-        registry={"status-events": status_events.status_event_graph_config}
+        graphs={"status-events": status_events.status_event_graph_config}
     )
 
     stream = [
         item async for item in run_langgraph_stream(graph_request, messages, registry)
     ]
-    events = [_public_event(item) for item in stream if isinstance(item, dict)]
 
-    assert events == [
-        {
-            "type": "status",
-            "namespace": ["media"],
-            "data": {
-                "description": "Generating audio",
-                "done": False,
-                "hidden": False,
-            },
-        },
-        {
-            "type": "status",
-            "namespace": ["media"],
-            "data": {
-                "description": "Calculating embeddings",
-                "done": False,
-                "hidden": False,
-            },
-        },
-        {
-            "type": "status",
-            "namespace": ["media"],
-            "data": {
-                "description": "Media ready",
-                "done": True,
-                "hidden": False,
-            },
-        },
+    assert [item["data"] for item in stream if isinstance(item, dict)] == [
+        status_event("Generating audio"),
+        status_event("Calculating embeddings"),
+        status_event("Media ready"),
     ]
     assert "".join(item for item in stream if isinstance(item, str)) == (
         status_events.ANSWER

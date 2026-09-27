@@ -15,7 +15,6 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.runtime import Runtime
 from langgraph_openai_serve import (
     GraphConfig,
-    GraphFeature,
     GraphRequest,
     InvalidRequestError,
     NamedCustomToolChoice,
@@ -237,7 +236,6 @@ server_tool_graph_config = GraphConfig(
         "Demonstrates LGOS-owned package version lookup and OpenAI-compatible "
         "web search."
     ),
-    features={GraphFeature.CLIENT_EVENTS},
     server_tools={lgos_package_version.name, web_search.name},
     context_factory=context_factory,
 )

@@ -55,11 +55,11 @@ flowchart TD
 
 LGOS exposes the answer-producing nested nodes `summarize_contract` and
 `summarize_docs` as assistant text. The keyword node's selected terms are
-available as graph state and as a status update because the graph declares
-`GraphFeature.CLIENT_EVENTS`. The final assistant message is identical for
-streaming and non-streaming requests. A streaming Responses request receives the
-status as commentary without a metadata opt-in. Chat Completions ignores custom
-stream events and returns only the final assistant text.
+available as graph state and as a status update. The final assistant message is
+identical for streaming and non-streaming requests. A streaming Responses
+request receives the status as commentary without a metadata opt-in. Chat
+Completions ignores custom stream events and returns only the final assistant
+text.
 
 The graph is deterministic and has no checkpointer or Store. Its routing,
 keywords, checks, and messages exist only for the current request. Any

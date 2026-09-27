@@ -10,12 +10,9 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
-
-CLIENT_SETTINGS_SCHEMA_VERSION = 1
 
 
 class PublicSettings(ClientSettings):
@@ -29,7 +26,7 @@ def bind_public_settings(graph_registry: GraphRegistry) -> GraphConfig:
         description="DUMMY",
         client_settings=PublicSettings,
     )
-    graph_registry.register("test", graph_config)
+    graph_registry.graphs["test"] = graph_config
     return graph_config
 
 
@@ -54,7 +51,6 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
 
     extension = (response.model_extra or {})["lgos"]
     client_settings = extension["client_settings"]
-    assert client_settings["schema_version"] == CLIENT_SETTINGS_SCHEMA_VERSION
     assert client_settings["json_schema"]["$schema"] == JSON_SCHEMA_DIALECT
     assert client_settings["json_schema"]["additionalProperties"] is False
     assert client_settings["json_schema"]["properties"]["enabled"] == {
@@ -73,19 +69,14 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     graph_registry: GraphRegistry,
     sqlite_checkpointer,
 ) -> None:
-    graph_registry.register(
-        "test",
-        GraphConfig(
-            graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-            description="DUMMY",
-            features={
-                GraphFeature.INTERRUPTS,
-                GraphFeature.CLIENT_EVENTS,
-                GraphFeature.FILE_INPUTS,
-                GraphFeature.MCP_TOOLS,
-            },
-            run_coordinator=InMemoryRunCoordinator(),
-        ),
+    graph_registry.graphs["test"] = GraphConfig(
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        description="DUMMY",
+        features={
+            GraphFeature.INTERRUPTS,
+            GraphFeature.FILE_INPUTS,
+            GraphFeature.MCP_TOOLS,
+        },
     )
 
     response = await openai_client.models.retrieve("test")
@@ -93,9 +84,8 @@ async def test_retrieved_model_exposes_sorted_graph_features(
 
     extension = (response.model_extra or {})["lgos"]
     expected_extension = {
-        "schema_version": 1,
         "description": "DUMMY",
-        "features": ["client_events", "file_inputs", "interrupts", "mcp_tools"],
+        "features": ["file_inputs", "interrupts", "mcp_tools"],
     }
     assert extension == expected_extension
     assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)

@@ -14,7 +14,6 @@ from openai.types.responses import Response, ResponseStreamEvent
 
 from langgraph_openai_serve import (
     GraphConfig,
-    GraphFeature,
     GraphRegistry,
     GraphRequest,
 )
@@ -78,13 +77,10 @@ def _register_single_node(
         .set_finish_point("answer")
         .compile()
     )
-    registry.register(
-        name,
-        GraphConfig(
-            graph=graph,
-            description=name,
-            server_tools=server_tools,
-        ),
+    registry.graphs[name] = GraphConfig(
+        graph=graph,
+        description=name,
+        server_tools=server_tools,
     )
 
 
@@ -309,11 +305,6 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
         answer,
         server_tools={"package_version"},
     )
-    replace_graph_config(
-        graph_registry,
-        "package",
-        features={GraphFeature.CLIENT_EVENTS},
-    )
 
     response, _ = await _create(
         openai_client,
@@ -376,13 +367,10 @@ async def test_server_custom_tool_exchange_events_and_replay(
         .set_finish_point("answer")
         .compile()
     )
-    graph_registry.register(
-        "package",
-        GraphConfig(
-            graph=graph,
-            description="Package",
-            server_tools={"package_version"},
-        ),
+    graph_registry.graphs["package"] = GraphConfig(
+        graph=graph,
+        description="Package",
+        server_tools={"package_version"},
     )
 
     response, events = await _create(
@@ -646,14 +634,10 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
         .set_finish_point("answer")
         .compile()
     )
-    graph_registry.register(
-        "live-search",
-        GraphConfig(
-            graph=graph,
-            description="Live search",
-            server_tools={"web_search"},
-            features={GraphFeature.CLIENT_EVENTS},
-        ),
+    graph_registry.graphs["live-search"] = GraphConfig(
+        graph=graph,
+        description="Live search",
+        server_tools={"web_search"},
     )
     request = ResponseCreateRequest(
         model="live-search", input="Find docs", tools=SEARCH_TOOLS

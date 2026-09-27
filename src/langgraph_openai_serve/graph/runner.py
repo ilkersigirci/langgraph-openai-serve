@@ -120,10 +120,6 @@ async def stream_run(
         ``LangGraphInterruptBatch``.
 
     """
-    if run.pending_batch is not None:
-        yield run.pending_batch
-        return
-
     run.begin_execution()
     # Without streaming, request only root values, exactly like ainvoke().
     # LangGraph stops node tasks on one asyncio cancellation in every mode, but

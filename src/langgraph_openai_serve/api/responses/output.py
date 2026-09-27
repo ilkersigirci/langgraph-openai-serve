@@ -102,9 +102,6 @@ class ResponseContext:
                     else True
                 ),
                 "previous_response_id": request.previous_response_id,
-                # OpenAI v3 added this nullable response field. Supplying it to
-                # v2 is safe because SDK response models allow extra fields.
-                "prompt_cache_diagnostics": None,
                 "service_tier": "default",
                 "store": bool(request.store),
                 "text": {"format": {"type": "text"}},
@@ -192,18 +189,13 @@ def _function_call_item(
     name: str,
     arguments: str,
 ) -> ResponseFunctionToolCall:
-    return ResponseFunctionToolCall.model_validate(
-        {
-            "id": f"fc_{uuid.uuid4().hex}",
-            "call_id": call_id,
-            "name": name,
-            "arguments": arguments,
-            "status": "completed",
-            "type": "function_call",
-            # OpenAI v3 added the nullable async marker. Preserve the same wire
-            # contract under v2, whose generated models accept extra fields.
-            "async": None,
-        }
+    return ResponseFunctionToolCall(
+        id=f"fc_{uuid.uuid4().hex}",
+        call_id=call_id,
+        name=name,
+        arguments=arguments,
+        status="completed",
+        type="function_call",
     )
 
 

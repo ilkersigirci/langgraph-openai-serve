@@ -1,6 +1,5 @@
 import json
 import os
-import uuid
 
 import pytest
 from openai import AsyncOpenAI, NotFoundError
@@ -216,7 +215,6 @@ async def test_direct_function_output_continuation(base_url: str | None) -> None
         paused = await client.responses.create(
             model="interruptible-approval",
             input=public_request,
-            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
         )
         assert len(paused.output) == 1

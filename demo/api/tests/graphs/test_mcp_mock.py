@@ -12,7 +12,7 @@ async def test_async_factory_loads_and_calls_the_mock_mcp_tool(
         content="What is the weather in Istanbul?",
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "mcp-mock": GraphConfig(
                 graph=mcp_mock_graph,
                 description="DUMMY",

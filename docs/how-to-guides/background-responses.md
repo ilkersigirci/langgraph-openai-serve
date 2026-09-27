@@ -57,9 +57,7 @@ run starts over, so graph side effects must tolerate a second execution.
 
 Creation and retrieval are polling-only. LGOS rejects background streaming and
 retrieval cursors. The server-trusted `checkpoint_scope` is also the
-authorization scope for retrieve and cancel. `metadata.lgos_run_id` is reserved
-for interrupt-enabled foreground operations and is rejected on background
-requests.
+authorization scope for retrieve and cancel.
 
 ### Idempotent Creation
 
@@ -151,9 +149,9 @@ Run jobs as tasks of the application process:
 from fastapi import FastAPI
 from langgraph_openai_serve import InMemoryBackgroundBackend, LanggraphOpenaiServe
 
-background = InMemoryBackgroundBackend(graphs)
+background = InMemoryBackgroundBackend(registry)
 app = FastAPI(lifespan=background.lifespan)
-server = LanggraphOpenaiServe(app=app, graphs=graphs, background=background)
+server = LanggraphOpenaiServe(registry=registry, app=app, background=background)
 server.bind_openai_api()
 ```
 
@@ -176,8 +174,8 @@ from langgraph_openai_serve.integrations.hatchet import (
 hatchet = Hatchet()
 backend = HatchetBackgroundBackend(create_hatchet_task(hatchet), hatchet.runs)
 server = LanggraphOpenaiServe(
+    registry=registry,
     app=app,
-    graphs=graphs,
     checkpoint_scope=authenticated_scope,
     background=backend,
 )
@@ -185,13 +183,14 @@ server.bind_openai_api()
 ```
 
 The worker process runs the task. Its Hatchet
-[lifespan](https://docs.hatchet.run/reference/python/lifespans) yields the
-`GraphRegistry` of background models, so database pools open inside it:
+[lifespan](https://docs.hatchet.run/reference/python/lifespans) yields a
+`GraphRegistry` holding the background models and, when any of them declares
+interrupts, the shared run coordinator, so database pools open inside it:
 
 ```python
 async def lifespan():
     async with open_resources() as resources:
-        yield resources.background_graphs
+        yield resources.background_registry
 
 
 hatchet = Hatchet()

@@ -16,7 +16,7 @@ async def test_multiple_nodes_produce_the_same_streamed_and_complete_output(
         content="Build one answer from two nodes.",
     )
     registry = GraphRegistry(
-        registry={"multi-node-streaming": multi_node_streaming_graph_config}
+        graphs={"multi-node-streaming": multi_node_streaming_graph_config}
     )
 
     events = [

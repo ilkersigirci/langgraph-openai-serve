@@ -25,8 +25,7 @@ The API resolves `langgraph-openai-serve` from PyPI and packages the default
 override builds a local API image and installs both the API and parent LGOS
 checkout as editable packages without changing the locked production dependency
 source. Every demo-owned Python environment targets OpenAI v3; the upstream
-Open WebUI runtime owns its dependencies. The reusable LGOS package retains its
-OpenAI v2 compatibility range.
+Open WebUI runtime owns its dependencies.
 
 | Project | Purpose | Deployment |
 | --- | --- | --- |

@@ -7,7 +7,6 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
-from langgraph_openai_serve.graph.interrupt import RunCoordinator
 
 ReviewOutcome = Literal["approve", "reject", "feedback"]
 
@@ -100,7 +99,6 @@ def output_to_message(output: ReviewState) -> AIMessage:
 
 def create_interruptible_graph_config(
     graph_factory: Callable[[], CompiledStateGraph],
-    run_coordinator: RunCoordinator,
 ) -> GraphConfig:
     """Create the interrupt demo config around its lifespan-managed graph."""
     return GraphConfig(
@@ -112,7 +110,6 @@ def create_interruptible_graph_config(
         request_to_input=request_to_input,
         output_to_message=output_to_message,
         features={GraphFeature.INTERRUPTS},
-        run_coordinator=run_coordinator,
     )
 
 

@@ -2,7 +2,6 @@
 
 import json
 import os
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve.api.responses.interrupts import interrupt_run_id
 from langgraph_openai_serve.graph.interrupt import checkpoint_key
 from openai import AsyncOpenAI, ConflictError
 from openai.types.responses import ResponseFunctionToolCall
@@ -39,14 +39,10 @@ pytestmark = [
 def _api_app(runtime: PostgresRuntime) -> FastAPI:
     graph = create_interruptible_graph(runtime.checkpointer)
     registry = GraphRegistry(
-        registry={
-            MODEL: create_interruptible_graph_config(
-                lambda: graph,
-                runtime.run_coordinator,
-            )
-        }
+        graphs={MODEL: create_interruptible_graph_config(lambda: graph)},
+        run_coordinator=runtime.run_coordinator,
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @asynccontextmanager
@@ -67,25 +63,24 @@ async def _openai_client(runtime: PostgresRuntime) -> AsyncIterator[AsyncOpenAI]
 
 
 @pytest.fixture
-async def postgres_run_identity() -> AsyncIterator[tuple[str, str]]:
+async def postgres_threads() -> AsyncIterator[list[str]]:
+    """Delete the checkpoint threads a test records, whatever its outcome."""
     assert POSTGRES_URI is not None
     await setup_postgres_schema(POSTGRES_URI)
-    run_id = str(uuid.uuid4())
-    checkpoint_thread_id = checkpoint_key(MODEL, run_id)
-
+    threads: list[str] = []
     try:
-        yield run_id, checkpoint_thread_id
+        yield threads
     finally:
         async with postgres_runtime(POSTGRES_URI) as runtime:
-            await runtime.checkpointer.adelete_thread(checkpoint_thread_id)
+            for thread_id in threads:
+                await runtime.checkpointer.adelete_thread(thread_id)
 
 
 async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
-    postgres_run_identity: tuple[str, str],
+    postgres_threads: list[str],
 ) -> None:
     """Resume after restart, reject overlap, and delete terminal state."""
     assert POSTGRES_URI is not None
-    run_id, checkpoint_thread_id = postgres_run_identity
     public_request = "Refund order ORDER-PG"
 
     async with (
@@ -96,8 +91,9 @@ async def test_openai_interrupt_survives_restart_and_excludes_another_worker(
             store=False,
             model=MODEL,
             input=[{"role": "user", "content": public_request}],
-            metadata={"lgos_run_id": run_id},
         )
+    checkpoint_thread_id = checkpoint_key(MODEL, interrupt_run_id(paused.id))
+    postgres_threads.append(checkpoint_thread_id)
 
     tool_calls = [
         item for item in paused.output if isinstance(item, ResponseFunctionToolCall)

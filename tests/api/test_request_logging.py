@@ -138,16 +138,16 @@ async def test_handled_server_error_is_logged(
 ) -> None:
     caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
     registry = GraphRegistry(
-        registry={
+        graphs={
             "broken": GraphConfig(
                 graph=message_graph,
                 description="Broken graph",
                 features={GraphFeature.INTERRUPTS},
-                run_coordinator=InMemoryRunCoordinator(),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    app = LanggraphOpenaiServe(graphs=registry).bind_openai_api(prefix="/v1").app
+    app = LanggraphOpenaiServe(registry=registry).bind_openai_api(prefix="/v1").app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -184,7 +184,7 @@ async def test_unhandled_error_response_has_request_id(
 
     app = (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
             checkpoint_scope=failing_checkpoint_scope,
         )
         .bind_openai_api(prefix="/v1")
@@ -227,14 +227,14 @@ async def test_stream_failure_keeps_request_context_in_producer_task(
         .compile()
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "broken-stream": GraphConfig(
                 graph=graph,
                 description="Broken stream",
             )
         }
     )
-    app = LanggraphOpenaiServe(graphs=registry).bind_openai_api(prefix="/v1").app
+    app = LanggraphOpenaiServe(registry=registry).bind_openai_api(prefix="/v1").app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -265,7 +265,7 @@ async def test_host_routes_are_not_wrapped_by_lgos_middleware(
     async def host_route() -> dict[str, bool]:
         return {"ok": True}
 
-    LanggraphOpenaiServe(app=app, graphs=graph_registry).bind_openai_api(prefix="/v1")
+    LanggraphOpenaiServe(app=app, registry=graph_registry).bind_openai_api(prefix="/v1")
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

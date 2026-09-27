@@ -285,13 +285,7 @@ class ResponsesEventBuilder:
             sequence_number=self._sequence(),
             response=self._response(
                 status="failed",
-                error=ResponseError.model_validate(
-                    {
-                        "code": "server_error",
-                        "message": message,
-                        "misalignment": None,
-                    }
-                ),
+                error=ResponseError(code="server_error", message=message),
             ),
         )
 
@@ -389,9 +383,8 @@ class ResponsesEventBuilder:
                 item_id=item.id,
                 content_index=0,
                 annotation_index=annotation_index,
-                # v3 generates a distinct annotation class for this event,
-                # while v2 accepts an untyped object. A wire mapping validates
-                # correctly under both SDK generations.
+                # The event declares its own annotation classes; validate one
+                # from the output text annotation's wire mapping.
                 annotation=annotation.model_dump(mode="json"),
             )
         yield ResponseTextDoneEvent(

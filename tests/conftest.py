@@ -37,7 +37,7 @@ async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
 @pytest.fixture
 def graph_registry(message_graph) -> GraphRegistry:
     return GraphRegistry(
-        registry={
+        graphs={
             "test": GraphConfig(
                 graph=message_graph,
                 description="DUMMY",
@@ -50,7 +50,7 @@ def graph_registry(message_graph) -> GraphRegistry:
 def fastapi_app(graph_registry: GraphRegistry) -> FastAPI:
     return (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
         )
         .bind_openai_api()
         .app

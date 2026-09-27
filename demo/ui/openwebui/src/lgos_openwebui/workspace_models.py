@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 import httpx2
 from openai import OpenAI, OpenAIError
@@ -72,7 +72,6 @@ class _ModelExtension(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    schema_version: Literal[1]
     description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     features: list[str]
     client_settings: JsonValue = None
@@ -83,7 +82,6 @@ class _ClientSettings(BaseModel):
 
     model_config = ConfigDict(strict=True)
 
-    schema_version: Literal[1]
     json_schema: dict[str, JsonValue]
     defaults: dict[str, JsonValue]
 

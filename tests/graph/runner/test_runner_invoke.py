@@ -1,7 +1,6 @@
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import HumanMessage
-from pydantic import ValidationError
 
 from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import (
@@ -72,7 +71,7 @@ async def test_enabled_langfuse_is_added_to_graph_run(
         runtime_callbacks=runtime_callbacks,
     )
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "messages": graph_config,
         },
     )
@@ -102,9 +101,11 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
         runtime_callbacks=[recording_callback],
+    )
+    graph_registry = GraphRegistry(
+        graphs={"interruptible": graph_config},
         run_coordinator=InMemoryRunCoordinator(),
     )
-    graph_registry = GraphRegistry(registry={"interruptible": graph_config})
     request = make_request(
         "interruptible",
         metadata={"conversation_id": "conversation-123"},
@@ -132,7 +133,7 @@ async def test_callbacks_observe_request_correlation_metadata(
         description="DUMMY",
         runtime_callbacks=[recording_callback],
     )
-    graph_registry = GraphRegistry(registry={"messages": graph_config})
+    graph_registry = GraphRegistry(graphs={"messages": graph_config})
     request = make_request(
         "messages",
         metadata={
@@ -172,9 +173,11 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
         context_factory=fail_context,
+    )
+    graph_registry = GraphRegistry(
+        graphs={"interruptible": graph_config},
         run_coordinator=InMemoryRunCoordinator(),
     )
-    graph_registry = GraphRegistry(registry={"interruptible": graph_config})
     request = make_request("interruptible")
     token = begin_log_context("request-123")
 
@@ -191,19 +194,10 @@ async def test_operation_id_is_bound_before_interrupt_preparation_fails(
         reset_log_context(token)
 
 
-def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
-    with pytest.raises(ValidationError, match="interrupt-enabled"):
-        GraphConfig(
-            graph=make_message_graph("hello"),
-            description="DUMMY",
-            run_coordinator=InMemoryRunCoordinator(),
-        )
-
-
 async def test_unknown_model_raises_model_not_found(make_request) -> None:
     request = make_request("missing")
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "known": GraphConfig(
                 graph=make_message_graph("hello"),
                 description="DUMMY",

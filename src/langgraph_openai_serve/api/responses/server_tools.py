@@ -101,16 +101,13 @@ class ServerToolTracker:
                 if not isinstance(tool_input, str):
                     msg = "Server custom tool calls must include string input."
                     raise GraphError(msg)
-                call = ResponseCustomToolCall.model_validate(
-                    {
-                        "id": f"ctc_{call_id}",
-                        "type": "custom_tool_call",
-                        "status": "completed",
-                        "call_id": call_id,
-                        "name": name,
-                        "input": tool_input,
-                        "async": None,
-                    }
+                call = ResponseCustomToolCall(
+                    id=f"ctc_{call_id}",
+                    type="custom_tool_call",
+                    status="completed",
+                    call_id=call_id,
+                    name=name,
+                    input=tool_input,
                 )
             self._pending[call_id] = call
             if isinstance(call, ResponseCustomToolCall):

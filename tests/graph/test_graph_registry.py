@@ -1,5 +1,3 @@
-from typing import cast
-
 import pytest
 from pydantic import ValidationError
 
@@ -14,7 +12,7 @@ EXPECTED_FACTORY_RESOLUTIONS = 2
 
 
 def test_graph_config_is_immutable_and_copies_owned_collections(message_graph) -> None:
-    features = {GraphFeature.CLIENT_EVENTS}
+    features = {GraphFeature.FILE_INPUTS}
     server_tools = {"package_version"}
     config = GraphConfig(
         graph=message_graph,
@@ -26,7 +24,7 @@ def test_graph_config_is_immutable_and_copies_owned_collections(message_graph) -
     features.clear()
     server_tools.clear()
 
-    assert config.features == frozenset({GraphFeature.CLIENT_EVENTS})
+    assert config.features == frozenset({GraphFeature.FILE_INPUTS})
     assert config.server_tools == frozenset({"package_version"})
     with pytest.raises(ValidationError, match="frozen"):
         config.description = "Changed"
@@ -54,7 +52,7 @@ def test_graph_config_rejects_unknown_fields(message_graph) -> None:
 
 def test_graph_registry_requires_at_least_one_graph() -> None:
     with pytest.raises(ValueError, match="at least one graph"):
-        GraphRegistry(registry={})
+        GraphRegistry(graphs={})
 
 
 @pytest.mark.parametrize(
@@ -72,47 +70,8 @@ def test_graph_registry_rejects_unaddressable_model_ids(
 ) -> None:
     config = GraphConfig(graph=message_graph, description="DUMMY")
 
-    with pytest.raises(ValidationError):
-        GraphRegistry(registry={model_id: config})
-
-
-def test_registry_copies_input_and_exposes_a_read_only_live_view(message_graph) -> None:
-    config = GraphConfig(graph=message_graph, description="DUMMY")
-    source = {"first": config}
-    registry = GraphRegistry(registry=source)
-    public_view = registry.registry
-
-    source["outside"] = config
-    registry.register("second", config)
-
-    assert list(public_view) == ["first", "second"]
-    assert "outside" not in public_view
-    mutable_view = cast("dict[str, GraphConfig]", public_view)
-    with pytest.raises(TypeError):
-        mutable_view["third"] = config
-
-
-def test_register_validates_before_mutation_and_preserves_order(message_graph) -> None:
-    first = GraphConfig(graph=message_graph, description="First")
-    second = GraphConfig(graph=message_graph, description="Second")
-    registry = GraphRegistry(registry={"first": first, "second": second})
-    replacement = GraphConfig(graph=message_graph, description="Replacement")
-
-    with pytest.raises(ValidationError):
-        registry.register("invalid/model", replacement)
-    assert registry.get_graph_names() == ["first", "second"]
-    assert registry.get_graph("first") is first
-
-    with pytest.raises(TypeError, match="GraphConfig"):
-        registry.register("third", cast("GraphConfig", object()))
-    assert registry.get_graph_names() == ["first", "second"]
-    assert registry.get_graph("first") is first
-
-    registry.register("first", replacement)
-    registry.register("third", second)
-
-    assert registry.get_graph_names() == ["first", "second", "third"]
-    assert registry.get_graph("first") is replacement
+    with pytest.raises(ValueError, match="not addressable"):
+        GraphRegistry(graphs={model_id: config})
 
 
 async def test_graph_resolvers_preserve_their_lifetimes(message_graph) -> None:

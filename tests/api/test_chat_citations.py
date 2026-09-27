@@ -69,14 +69,14 @@ def citation_app() -> FastAPI:
         .compile()
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "citations": GraphConfig(
                 graph=graph,
                 description="DUMMY",
             )
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @pytest.fixture

@@ -57,11 +57,9 @@ def test_chat_variable_fields_maps_the_supported_scalar_settings() -> None:
     model = SimpleNamespace(
         model_extra={
             "lgos": {
-                "schema_version": 1,
                 "description": "DUMMY",
                 "features": [],
                 "client_settings": {
-                    "schema_version": 1,
                     "json_schema": {
                         "type": "object",
                         "properties": {
@@ -170,11 +168,9 @@ def test_chat_variable_fields_omits_invalid_fields_without_losing_valid_ones(
             "created": 1,
             "owned_by": "langgraph-openai-serve",
             "lgos": {
-                "schema_version": 1,
                 "description": "Test graph",
                 "features": [],
                 "client_settings": {
-                    "schema_version": 1,
                     "json_schema": {
                         "properties": {"enabled": {"type": "boolean"}, name: schema}
                     },
@@ -193,11 +189,9 @@ def test_chat_variable_label_falls_back_when_the_title_cannot_be_declared() -> N
     model = SimpleNamespace(
         model_extra={
             "lgos": {
-                "schema_version": 1,
                 "description": "DUMMY",
                 "features": [],
                 "client_settings": {
-                    "schema_version": 1,
                     "json_schema": {
                         "properties": {
                             "use_history": {
@@ -232,11 +226,9 @@ def test_discovery_projects_settings_from_gateway_model_details(
         created=1,
         owned_by="langgraph-openai-serve",
         lgos={
-            "schema_version": 1,
             "description": "  Simple graph  ",
             "features": ["background", "file_inputs", "mcp_tools"],
             "client_settings": {
-                "schema_version": 1,
                 "json_schema": {"properties": {"enabled": {"type": "boolean"}}},
                 "defaults": {"enabled": False},
             },
@@ -250,7 +242,6 @@ def test_discovery_projects_settings_from_gateway_model_details(
         detail = graph.model_dump()
         if provider == "lgos-future":
             detail["lgos"]["client_settings"] = {
-                "schema_version": 1,
                 "json_schema": {
                     "properties": {
                         "audience": {"type": "string", "enum": ["general", "expert"]}
@@ -339,9 +330,7 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
                         "data": [
                             {
                                 "model_name": "lgos-a/proxy-model",
-                                "model_info": {
-                                    "lgos": {"schema_version": 1, "features": []}
-                                },
+                                "model_info": {"lgos": {"features": []}},
                             }
                         ]
                     },
@@ -473,11 +462,9 @@ def test_workspace_model_declares_lgos_settings_as_openwebui_chat_variables() ->
     model = SimpleNamespace(
         model_extra={
             "lgos": {
-                "schema_version": 1,
                 "description": "DUMMY",
                 "features": [],
                 "client_settings": {
-                    "schema_version": 1,
                     "json_schema": {
                         "properties": {
                             "mode": {

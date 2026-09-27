@@ -21,7 +21,7 @@ Authoritative LGOS sources:
 
 import logging
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated
 
 from openai.types import Model
 from pydantic import (
@@ -51,11 +51,10 @@ class GraphFeature(StrEnum):
 
 
 class ModelClientSettings(BaseModel):
-    """Versioned runtime-settings descriptor advertised for one model."""
+    """Runtime-settings descriptor advertised for one model."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
-    schema_version: Literal[1]
     json_schema: dict[str, JsonValue]
     defaults: dict[str, JsonValue]
 
@@ -65,46 +64,30 @@ class LangGraphModelExtension(BaseModel):
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
-    schema_version: Literal[1]
     description: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
     features: list[str]
-    client_settings: JsonValue = None
-
-
-def _raw_model_extension(model: Model) -> dict[str, Any] | None:
-    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
-    return extension if isinstance(extension, dict) else None
-
-
-def model_description(model: Model) -> str | None:
-    """Read a required LGOS description, returning None for degraded metadata."""
-    extension = _raw_model_extension(model)
-    if extension is None or extension.get("schema_version") != 1:
-        return None
-    description = extension.get("description")
-    if not isinstance(description, str):
-        return None
-    description = description.strip()
-    return description or None
+    client_settings: ModelClientSettings | None = None
 
 
 def model_extension(model: Model) -> LangGraphModelExtension | None:
-    """Parse the versioned LGOS extension preserved by the OpenAI SDK."""
-    extension = _raw_model_extension(model)
+    """Parse the LGOS extension preserved by the OpenAI SDK."""
+    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
     if extension is None:
         return None
-
     try:
         return LangGraphModelExtension.model_validate(extension)
     except ValidationError:
-        logger.warning(
-            "Ignoring invalid LGOS metadata for model %s",
-            model.id,
-        )
+        logger.warning("Ignoring invalid LGOS metadata for model %s", model.id)
         return None
+
+
+def model_description(model: Model) -> str | None:
+    """Read the LGOS description, returning None for degraded metadata."""
+    extension = model_extension(model)
+    return extension.description if extension is not None else None
 
 
 def model_supports(model: Model, feature: GraphFeature) -> bool:
@@ -114,16 +97,6 @@ def model_supports(model: Model, feature: GraphFeature) -> bool:
 
 
 def model_client_settings(model: Model) -> ModelClientSettings | None:
-    """Return a supported runtime settings descriptor, when available."""
+    """Return the runtime settings descriptor, when available."""
     extension = model_extension(model)
-    if extension is None or extension.client_settings is None:
-        return None
-
-    try:
-        return ModelClientSettings.model_validate(extension.client_settings)
-    except ValidationError:
-        logger.warning(
-            "Ignoring unsupported LGOS runtime settings for model %s",
-            model.id,
-        )
-        return None
+    return extension.client_settings if extension is not None else None

@@ -15,5 +15,5 @@ def replace_graph_config(
         for field_name in GraphConfig.model_fields
     }
     replacement = GraphConfig.model_validate({**values, **changes})
-    registry.register(model_id, replacement)
+    registry.graphs[model_id] = replacement
     return replacement

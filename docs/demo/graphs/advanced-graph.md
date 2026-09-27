@@ -13,10 +13,9 @@ There is no graph-specific request envelope, and the graph is not available
 through Chat Completions because its interrupt workflow requires Responses.
 Its upstream model calls also use the Responses API with `store=false`.
 
-The model advertises five LGOS capabilities:
+The model advertises four LGOS capabilities:
 
 - `background` for running the same agent as a polled background Response;
-- `client_events` for streaming status commentary;
 - `file_inputs` for Files API attachments;
 - `interrupts` for review and resume;
 - `mcp_tools` so maintained UIs attach tools authorized by their selected

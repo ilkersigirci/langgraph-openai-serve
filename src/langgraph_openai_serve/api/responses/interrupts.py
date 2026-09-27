@@ -60,7 +60,7 @@ def parse_responses_resume(
         )
         raise InvalidRequestError(msg, param="input")
 
-    run_id = _parse_interrupt_response_id(previous_response_id)
+    run_id = interrupt_run_id(previous_response_id)
     values: dict[str, str] = {}
     for item in input_value:
         if not isinstance(item, ResponseFunctionCallOutputInput):
@@ -104,7 +104,8 @@ def _reject_interrupt_items_without_response_id(
         raise InvalidRequestError(msg, param="input")
 
 
-def _parse_interrupt_response_id(response_id: str) -> str:
+def interrupt_run_id(response_id: str) -> str:
+    """Return the run UUID carried by an interrupt-style Response ID."""
     match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
     if match is None or uuid.UUID(hex=match.group("run")).int == 0:
         msg = "previous_response_id is not an LGOS interrupt Response ID."
@@ -123,6 +124,7 @@ def _parse_interrupt_tool_call_id(call_id: str) -> str:
 __all__ = [
     "interrupt_response_id",
     "interrupt_response_nonce",
+    "interrupt_run_id",
     "interrupt_tool_call_id",
     "parse_responses_resume",
 ]

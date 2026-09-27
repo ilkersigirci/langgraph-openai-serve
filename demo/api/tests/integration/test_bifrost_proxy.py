@@ -1,6 +1,5 @@
 import json
 import os
-import uuid
 
 import pytest
 from openai import AsyncOpenAI, BadRequestError
@@ -228,7 +227,6 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
         paused = await client.responses.create(
             model=model,
             input=public_request,
-            metadata={"lgos_run_id": str(uuid.uuid4())},
             store=False,
         )
         assert len(paused.output) == 1

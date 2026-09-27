@@ -60,11 +60,9 @@ contains:
 
 - `json_schema` for field names, types, choices, and UI labels.
 - `defaults` used when the client sends no changes.
-- `schema_version` for the descriptor format.
 
 The generated schema declares the JSON Schema 2020-12 dialect with its
-`$schema` keyword. This dialect identifier is independent of the descriptor's
-LGOS `schema_version`.
+`$schema` keyword.
 
 The descriptor's `defaults` object is the authoritative validated baseline.
 Pydantic-generated `default` keywords inside `json_schema` are

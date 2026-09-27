@@ -58,7 +58,7 @@ graph = (
 )
 
 registry = GraphRegistry(
-    registry={
+    graphs={
         "echo": GraphConfig(
             graph=graph,
             description="Echo the latest user message.",
@@ -67,7 +67,7 @@ registry = GraphRegistry(
 )
 
 app = FastAPI()
-LanggraphOpenaiServe(app=app, graphs=registry).bind_openai_api()
+LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api()
 ```
 
 The registry key `echo` is the OpenAI model name. Its required description is
@@ -75,10 +75,8 @@ advertised by the LGOS model extension for clients that render model catalogs.
 This deterministic graph is deliberately provider-free, so the first request
 needs no upstream API key.
 
-The registry copies the supplied mapping, and each `GraphConfig` is immutable
-after construction. Add or replace a model explicitly with
-`registry.register(model_id, config)`; callers cannot mutate entries through the
-public `registry.registry` view.
+`registry.graphs` is a plain dict of model IDs to `GraphConfig` values, and
+each `GraphConfig` is immutable after construction.
 
 ## Run The Server
 
@@ -141,7 +139,7 @@ supports that API and the graph needs the simpler compatibility surface.
 | --- | --- | --- |
 | New LGOS integration | **Recommended** | Compatibility for existing Chat-only clients |
 | Final assistant text | Message with `phase="final_answer"`; typed SSE events when streaming | Assistant message; `delta.content` when streaming |
-| Graph status from `status_event()` | Streaming message with `phase="commentary"` when the graph declares `client_events` | Ignored |
+| Graph status from `status_event()` | Streaming message with `phase="commentary"` | Ignored |
 | Human review with LangGraph `interrupt()` | `lgos_interrupt` function calls resumed with `previous_response_id` and matching outputs | Unsupported; interrupt-enabled models return HTTP 400 |
 | Client-executed function tools | `function_call` and `function_call_output` items | `tool_calls` and tool messages |
 | Server-executed custom or web-search tools | Native tool call/output items | Not selectable; the graph may still return ordinary text |
@@ -149,9 +147,8 @@ supports that API and the graph needs the simpler compatibility surface.
 | Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
 | Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
 
-The `lgos.features` model extension advertises `background`, `client_events`,
-`file_inputs`, `interrupts`, and `mcp_tools` so a capability-aware UI can enable
-only
+The `lgos.features` model extension advertises `background`, `file_inputs`,
+`interrupts`, and `mcp_tools` so a capability-aware UI can enable only
 supported controls. See the
 [complete compatibility contract](explanation/openai-compatibility.md) for the
 accepted fields, item shapes, streaming events, errors, and retention rules.

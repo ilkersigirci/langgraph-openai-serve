@@ -5,7 +5,6 @@ class GraphFeature(StrEnum):
     """Features supported by a registered graph."""
 
     BACKGROUND = "background"
-    CLIENT_EVENTS = "client_events"
     FILE_INPUTS = "file_inputs"
     INTERRUPTS = "interrupts"
     MCP_TOOLS = "mcp_tools"

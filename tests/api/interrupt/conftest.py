@@ -38,7 +38,6 @@ from .support import (
 
 @pytest.fixture
 def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
-    coordinator = InMemoryRunCoordinator()
     resume_entered = Event()
     resume_release = Event()
     side_effects = {"count": 0}
@@ -74,12 +73,11 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
             graph=graph,
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
-            run_coordinator=coordinator,
             **kwargs,
         )
 
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             MODEL: interrupt_config(
                 make_interrupt_graph(checkpointer=sqlite_checkpointer),
             ),
@@ -116,11 +114,12 @@ def fastapi_app(sqlite_checkpointer: AsyncSqliteSaver) -> FastAPI:
                 request_to_input=empty_answers,
                 output_to_message=render_answers,
             ),
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
     app = (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
             checkpoint_scope=lambda request: request.headers.get(
                 CHECKPOINT_SCOPE_HEADER,
                 "default",

@@ -18,7 +18,6 @@ from langgraph_openai_serve import (
     GraphFeature,
     GraphRegistry,
     LanggraphOpenaiServe,
-    client_event,
     status_event,
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
@@ -27,7 +26,6 @@ from tests.api.responses.support import (
     normalize_stream_payloads,
 )
 from tests.graph.support.message import make_message_graph
-from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState
 
 FINAL_TEXT = "Fixture answer."
@@ -55,14 +53,11 @@ def _status_graph(*, multiple: bool = False, stream_final: bool = True) -> Any:
         writer = get_stream_writer()
         writer(status_event("Checking inputs."))
         if multiple:
-            writer(status_event("Not for clients", hidden=True))
-            writer(client_event("status", {"description": ""}))
-            writer(client_event("progress", {"completed": 1, "total": 2}))
-            writer(client_event("artifact", {"id": "private-to-responses"}))
+            writer(status_event(""))
             writer({"type": "progress", "data": {"private": True}})
         answer = await model.ainvoke(state["messages"])
         if multiple:
-            writer(status_event("Answer ready", done=True))
+            writer(status_event("Answer ready"))
         return {"messages": [answer]}
 
     return (
@@ -126,16 +121,14 @@ def fastapi_app() -> FastAPI:
         ],
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "text": GraphConfig(
                 graph=lambda: _status_graph(stream_final=False),
                 description="DUMMY",
-                features={GraphFeature.CLIENT_EVENTS},
             ),
             "commentary": GraphConfig(
                 graph=lambda: _status_graph(multiple=True),
                 description="DUMMY",
-                features={GraphFeature.CLIENT_EVENTS},
             ),
             "fallback": GraphConfig(
                 graph=lambda: make_message_graph("fallback", disable_streaming=True),
@@ -165,7 +158,7 @@ def fastapi_app() -> FastAPI:
             ),
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 async def _events(
@@ -306,24 +299,14 @@ async def test_responses_exposes_only_visible_statuses_as_commentary(
     ] == ["commentary", "final_answer", "commentary"]
 
 
-async def test_status_commentary_requires_feature_and_streaming(
+async def test_status_commentary_requires_streaming(
     openai_client: AsyncOpenAI,
-    fastapi_app: FastAPI,
 ) -> None:
     response = await openai_client.responses.create(
         model="text",
         input="Hello",
     )
     assert [item.phase for item in response.output] == ["final_answer"]
-
-    replace_graph_config(
-        fastapi_app.state.graph_registry,
-        "text",
-        features=frozenset(),
-    )
-    events = await _events(openai_client, "text")
-    completed = events[-1].response
-    assert [item.phase for item in completed.output] == ["final_answer"]
 
 
 async def test_streamed_final_text_mismatch_ends_in_failed_response(
@@ -408,14 +391,12 @@ async def test_text_before_interrupt_is_completed_and_retained(
         .set_finish_point("review")
         .compile(checkpointer=sqlite_checkpointer)
     )
-    fastapi_app.state.graph_registry.register(
-        "review",
-        GraphConfig(
-            graph=graph,
-            description="DUMMY",
-            features={GraphFeature.INTERRUPTS},
-            run_coordinator=InMemoryRunCoordinator(),
-        ),
+    registry = fastapi_app.state.graph_registry
+    registry.run_coordinator = InMemoryRunCoordinator()
+    registry.graphs["review"] = GraphConfig(
+        graph=graph,
+        description="DUMMY",
+        features={GraphFeature.INTERRUPTS},
     )
 
     async with openai_client.responses.stream(model="review", input="Hello") as stream:
