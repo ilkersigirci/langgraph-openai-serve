@@ -21,6 +21,7 @@ from chainlit_utils.openai.audio import (
     add_dictation_chunk,
     start_dictation,
 )
+from chainlit_utils.openai.files import file_upload_overrides, with_response_file_parts
 from chainlit_utils.openai.responses import (
     CommentaryTaskList,
     citation_elements,
@@ -29,28 +30,37 @@ from chainlit_utils.openai.responses import (
     response_input,
 )
 from chainlit_utils.openai.tools import continuation_input, function_calls
-from openai.types.responses import Response, ResponseInputParam
+from openai import Omit, omit
+from openai.types.responses import Response
 
 from lgos_chainlit.audio import end_dictation, read_aloud, send_speech_button
 from lgos_chainlit.chat_settings import (
+    LIMITED_FUNCTIONALITY_MESSAGE,
     background_enabled,
     chat_settings_metadata,
     configure_chat_settings,
     response_tools,
     streaming_enabled,
 )
-from lgos_chainlit.clients import bifrost_model, gateway, list_models, openai_client
-from lgos_chainlit.conversation import (
-    LIMITED_FUNCTIONALITY_MESSAGE,
-    conversation_metadata,
+from lgos_chainlit.clients import (
+    bifrost_model,
+    gateway,
+    list_models,
+    responses_client,
+    v1_client,
 )
 from lgos_chainlit.display_files import DISPLAY_FILE_TOOL_NAME, display_file
-from lgos_chainlit.files import file_upload_overrides, with_response_file_parts
 from lgos_chainlit.interrupts import INTERRUPT_ACTION_NAME, interrupt_review
-from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME, model_description
+from lgos_chainlit.lgos_protocol import (
+    CONVERSATION_METADATA_KEY,
+    FILE_INPUTS_FEATURE,
+    INTERRUPT_TOOL_NAME,
+    model_extension,
+)
 from lgos_chainlit.mcp import mcp_tools
 
 logger = logging.getLogger(__name__)
+BACKGROUND_POLL_SECONDS = 1
 
 
 async def _continue_interrupt_response(
@@ -59,24 +69,11 @@ async def _continue_interrupt_response(
     model_id: str,
     previous_response_id: str,
 ) -> Response:
-    if not background_enabled():
-        return await openai_client.responses.create(
-            model=model_id,
-            input=cast("ResponseInputParam", input_items),
-            previous_response_id=previous_response_id,
-            store=False,
-            tools=response_tools(),
-            user=authenticated_user_identifier(),
-            metadata=_response_metadata(),
-        )
     commentary_tasks = CommentaryTaskList()
     try:
-        response = await _background_response(
+        response = await _request_response(
             input_items,
             model=model_id,
-            provider_routing=gateway.provider_routing,
-            user=authenticated_user_identifier(),
-            metadata=_response_metadata(),
             commentary_tasks=commentary_tasks,
             previous_response_id=previous_response_id,
         )
@@ -112,16 +109,23 @@ interrupt_workflow = HitlWorkflow(
 async def set_chat_profiles(
     _current_user: cl.User | None = None,
 ) -> list[cl.ChatProfile]:
-    return [
-        cl.ChatProfile(
-            name=model.id,
-            markdown_description=(
-                model_description(model) or LIMITED_FUNCTIONALITY_MESSAGE
-            ),
-            config_overrides=file_upload_overrides(model),
+    profiles = []
+    for model in await list_models():
+        extension = model_extension(model)
+        profiles.append(
+            cl.ChatProfile(
+                name=model.id,
+                markdown_description=(
+                    extension.description
+                    if extension is not None
+                    else LIMITED_FUNCTIONALITY_MESSAGE
+                ),
+                config_overrides=file_upload_overrides(
+                    extension is not None and FILE_INPUTS_FEATURE in extension.features
+                ),
+            )
         )
-        for model in await list_models()
-    ]
+    return profiles
 
 
 @cl.set_starters
@@ -209,42 +213,21 @@ async def _response_message(message: cl.Message, model: str) -> cl.Message | Non
     assistant_message = cl.Message(content="")
     commentary_tasks = CommentaryTaskList()
     try:
-        input_items = response_input(text_only_chat_messages())
-        input_items = await with_response_file_parts(input_items, message)
-        background = background_enabled()
-        streaming = not background and streaming_enabled()
-        metadata = _response_metadata()
-        user = authenticated_user_identifier()
+        input_items = await with_response_file_parts(
+            response_input(text_only_chat_messages()),
+            message,
+            client=v1_client,
+            extra_query={"provider": gateway.files_provider},
+        )
+        streaming = not background_enabled() and streaming_enabled()
 
         while True:
-            if streaming:
-                response = await _stream_response(
-                    input_items,
-                    assistant_message,
-                    model=model,
-                    user=user,
-                    metadata=metadata,
-                    commentary_tasks=commentary_tasks,
-                )
-            elif background:
-                response = await _background_response(
-                    input_items,
-                    model=model,
-                    provider_routing=gateway.provider_routing,
-                    user=user,
-                    metadata=metadata,
-                    commentary_tasks=commentary_tasks,
-                )
-            else:
-                response = await openai_client.responses.create(
-                    model=model,
-                    input=cast("ResponseInputParam", input_items),
-                    store=False,
-                    tools=response_tools(),
-                    user=user,
-                    metadata=metadata,
-                )
-
+            response = await _request_response(
+                input_items,
+                model=model,
+                commentary_tasks=commentary_tasks,
+                stream_to=assistant_message if streaming else None,
+            )
             calls = function_calls(response)
             if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
                 await interrupt_workflow.publish(response, model_id=model)
@@ -292,47 +275,56 @@ async def _response_message(message: cl.Message, model: str) -> cl.Message | Non
         return None
 
 
-def _response_metadata() -> dict[str, str]:
-    metadata = chat_settings_metadata()
-    metadata.update(conversation_metadata())
-    return metadata
-
-
-async def _background_response(
+async def _request_response(
     input_items: list[dict[str, Any]],
     *,
     model: str,
-    provider_routing: bool,
-    user: str,
-    metadata: dict[str, str],
     commentary_tasks: CommentaryTaskList,
-    previous_response_id: str | None = None,
+    stream_to: cl.Message | None = None,
+    previous_response_id: str | Omit = omit,
+) -> Response:
+    """Send one Responses request for the current turn in its delivery mode."""
+    request: dict[str, Any] = {
+        "model": model,
+        "input": input_items,
+        "previous_response_id": previous_response_id,
+        "tools": response_tools(),
+        "user": authenticated_user_identifier(),
+        "metadata": {
+            **chat_settings_metadata(),
+            CONVERSATION_METADATA_KEY: cl.context.session.thread_id,
+        },
+    }
+    if stream_to is not None:
+        return await _stream_response(request, stream_to, commentary_tasks)
+    if background_enabled():
+        return await _background_response(request, commentary_tasks)
+    return await responses_client.responses.create(**request, store=False)
+
+
+async def _background_response(
+    request: dict[str, Any],
+    commentary_tasks: CommentaryTaskList,
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
-    client = openai_client.with_options(max_retries=2)
-    idempotency_key = str(uuid.uuid4())
+    client = responses_client.with_options(max_retries=2)
+    idempotency_headers = {"Idempotency-Key": str(uuid.uuid4())}
     create_options: dict[str, Any] = {}
     lifecycle_options: dict[str, Any] = {}
-    if provider_routing:
-        create_options["extra_headers"] = {"Idempotency-Key": idempotency_key}
+    if gateway.type == "bifrost":
+        create_options["extra_headers"] = idempotency_headers
         # Retrieve and cancel carry no model; without this query parameter
         # Bifrost routes them to its built-in openai provider.
-        lifecycle_options["extra_query"] = {"provider": bifrost_model(model)[0]}
-    else:
-        create_options["extra_body"] = {
-            "extra_headers": {"Idempotency-Key": idempotency_key}
+        lifecycle_options["extra_query"] = {
+            "provider": bifrost_model(request["model"])[0]
         }
-    if previous_response_id is not None:
-        create_options["previous_response_id"] = previous_response_id
+    else:
+        create_options["extra_body"] = {"extra_headers": idempotency_headers}
     response = await client.responses.create(
-        model=model,
-        input=cast("ResponseInputParam", input_items),
+        **request,
+        **create_options,
         background=True,
         store=True,
-        tools=response_tools(),
-        user=user,
-        metadata=metadata,
-        **create_options,
     )
     previous_status = None
     try:
@@ -342,7 +334,7 @@ async def _background_response(
                     f"Background response {response.status.replace('_', ' ')}"
                 )
                 previous_status = response.status
-            await asyncio.sleep(1)
+            await asyncio.sleep(BACKGROUND_POLL_SECONDS)
             response = await client.responses.retrieve(response.id, **lifecycle_options)
     except asyncio.CancelledError:
         try:
@@ -360,25 +352,14 @@ async def _background_response(
 
 
 async def _stream_response(
-    input_items: list[dict[str, Any]],
+    request: dict[str, Any],
     assistant_message: cl.Message,
-    *,
-    model: str,
-    user: str,
-    metadata: dict[str, str],
     commentary_tasks: CommentaryTaskList,
 ) -> Response:
     """Render final text and commentary while retaining the terminal Response."""
     phases: dict[int, str | None] = {}
     final_text_streamed = False
-    async with openai_client.responses.stream(
-        model=model,
-        input=cast("ResponseInputParam", input_items),
-        store=False,
-        tools=response_tools(),
-        user=user,
-        metadata=metadata,
-    ) as stream:
+    async with responses_client.responses.stream(**request, store=False) as stream:
         async for event in stream:
             if event.type == "response.output_item.added":
                 item = event.item
@@ -408,4 +389,4 @@ async def _stream_response(
         and (text := final_answer(completed))
     ):
         await assistant_message.stream_token(text)
-    return cast("Response", completed)
+    return completed

@@ -100,7 +100,7 @@ resets the session. Native Plotly elements render in the main page.
 - On failure, inspect the visible error first, then the relevant console entry,
   numbered request, and affected service logs. Avoid broad dumps.
 - Chainlit `provider query parameter is required` means generated-file
-  downloads must use `files_request()` and its provider, as uploads already do.
+  downloads must send `gateway.files_provider` as `provider`, as uploads already do.
 - After an Open WebUI image change, its first page load shows a What's New
   dialog that intercepts clicks, so actions time out. Dismiss it with
   `Okay, Let's Go!` before interacting.

@@ -75,6 +75,14 @@ def test_chainlit_accepts_model_detail_extension() -> None:
     assert parsed.model_dump(mode="json") == extension
 
 
+def test_chainlit_mirrors_lgos_feature_names() -> None:
+    assert (
+        CHAINLIT_PROTOCOL["BACKGROUND_FEATURE"],
+        CHAINLIT_PROTOCOL["FILE_INPUTS_FEATURE"],
+        CHAINLIT_PROTOCOL["MCP_TOOLS_FEATURE"],
+    ) == (GraphFeature.BACKGROUND, GraphFeature.FILE_INPUTS, GraphFeature.MCP_TOOLS)
+
+
 @pytest.mark.parametrize(
     "protocol",
     [CHAINLIT_PROTOCOL, OPENWEBUI_PROTOCOL],

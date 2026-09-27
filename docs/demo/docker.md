@@ -291,7 +291,7 @@ settings](reference.md#opentelemetry-settings).
     - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
     - managed routing: `http://localhost:3000/v1`
-    - native MCP: `http://localhost:3000/mcp/`
+    - native MCP: `http://localhost:3000/mcp`
     - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
     The bundled configuration uses API-key authentication. Chainlit can still
@@ -315,7 +315,7 @@ settings](reference.md#opentelemetry-settings).
     The MCP configuration reaches DBHub with the separate internal
     `LGOS_MCP_AUTH_TOKEN`, allowlists the six fixed PostgreSQL reports, and
     permits authenticated gateway keys to use them. Native clients still opt
-    in by connecting to `/mcp/`; the graph API receives only ordinary OpenAI
+    in by connecting to `/mcp`; the graph API receives only ordinary OpenAI
     function definitions and results.
 
     The managed-routing surface uses concrete database-backed models

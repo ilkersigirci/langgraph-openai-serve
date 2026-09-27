@@ -2,7 +2,6 @@
 
 import importlib
 import json
-from contextlib import asynccontextmanager
 from email.parser import BytesParser
 from email.policy import HTTP
 from unittest.mock import AsyncMock
@@ -13,15 +12,6 @@ import pytest
 from chainlit_utils.openai.audio import SPEECH_ACTION_NAME
 
 from lgos_chainlit import audio
-
-
-@asynccontextmanager
-async def _gateway(monkeypatch: pytest.MonkeyPatch, handle):
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
-        monkeypatch.setattr(
-            audio, "audio_client", audio.audio_client.with_options(http_client=http)
-        )
-        yield
 
 
 def _form(request: httpx2.Request) -> dict[str, bytes]:
@@ -38,28 +28,22 @@ def _form(request: httpx2.Request) -> dict[str, bytes]:
 async def test_recording_is_transcribed_by_the_configured_gateway_model(
     monkeypatch: pytest.MonkeyPatch,
     chainlit_context,
+    fake_gateway,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
-    requests: list[httpx2.Request] = []
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        request.read()
-        requests.append(request)
-        return httpx2.Response(200, json={"text": "What time is it?"})
-
+    fake_gateway.replies.append(httpx2.Response(200, json={"text": "What time is it?"}))
     window_message = AsyncMock()
     monkeypatch.setattr(chainlit_context.emitter, "send_window_message", window_message)
 
-    async with _gateway(monkeypatch, handle):
-        await chat.on_audio_start()
-        await chat.on_audio_chunk(
-            cl.InputAudioChunk(
-                isStart=True, mimeType="pcm16", elapsedTime=0, data=b"\x01\x00"
-            )
+    await chat.on_audio_start()
+    await chat.on_audio_chunk(
+        cl.InputAudioChunk(
+            isStart=True, mimeType="pcm16", elapsedTime=0, data=b"\x01\x00"
         )
-        await chat.on_audio_end()
+    )
+    await chat.on_audio_end()
 
-    [transcription] = requests
+    [transcription] = fake_gateway.requests
     assert transcription.url.path == "/v1/audio/transcriptions"
     assert _form(transcription)["model"] == b"aigateway/openai/gpt-4o-mini-transcribe"
     assert window_message.await_args.args[0]["text"] == "What time is it?"
@@ -95,34 +79,31 @@ async def test_read_aloud_uses_the_configured_gateway_model_and_voice(
     monkeypatch: pytest.MonkeyPatch,
     speech: bool,
     chainlit_context,
+    fake_gateway,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
     answer = cl.chat_context.add(cl.Message(content="It is noon in Paris."))
     if not speech:
         monkeypatch.setattr(audio.settings, "AUDIO_TTS_MODEL", None)
-    requests: list[httpx2.Request] = []
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        request.read()
-        requests.append(request)
-        return httpx2.Response(
+    fake_gateway.replies.append(
+        httpx2.Response(
             200, content=b"mp3-bytes", headers={"content-type": "audio/mpeg"}
         )
+    )
 
-    async with _gateway(monkeypatch, handle):
-        result = await chat.on_speech_request(
-            cl.Action(
-                name=SPEECH_ACTION_NAME,
-                payload={"message_id": answer.id, "part": 0},
-            )
+    result = await chat.on_speech_request(
+        cl.Action(
+            name=SPEECH_ACTION_NAME,
+            payload={"message_id": answer.id, "part": 0},
         )
+    )
 
     if not speech:
         assert result == {"ok": False, "error": "This answer cannot be read aloud."}
-        assert requests == []
+        assert fake_gateway.requests == []
         return
     assert result["ok"] is True
-    [request] = requests
+    [request] = fake_gateway.requests
     assert request.url.path == "/v1/audio/speech"
     assert json.loads(request.content) == {
         "model": "aigateway/openai/gpt-4o-mini-tts",

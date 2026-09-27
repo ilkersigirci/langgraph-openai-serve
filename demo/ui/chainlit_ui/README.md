@@ -110,11 +110,11 @@ that supplies the imported API and refresh `uv.lock`.
 
 ## Module ownership
 
-`chat.py` registers the Chainlit callbacks. `auth.py` configures login and
-gateway credentials; `clients.py` and
-`gateway.py` own gateway access. `conversation.py`, `chat_settings.py`,
-`files.py`, `display_files.py`, and `mcp.py` contain their respective
-LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
+`chat.py` registers the Chainlit callbacks and runs each Responses turn.
+`auth.py` configures login and gateway credentials; `clients.py` and
+`gateway.py` own gateway access. `chat_settings.py`, `display_files.py`, and
+`mcp.py` contain their respective LGOS-specific integrations.
+`lgos_protocol.py` owns the LGOS wire declarations;
 `interrupts.py` reads the LGOS interrupt payload into the package's review form.
 `audio.py` binds the speech settings and gateway client.
 

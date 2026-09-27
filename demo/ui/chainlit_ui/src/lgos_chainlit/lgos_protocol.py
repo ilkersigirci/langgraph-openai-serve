@@ -20,7 +20,6 @@ Authoritative LGOS sources:
 """
 
 import logging
-from enum import StrEnum
 from typing import Annotated
 
 from openai.types import Model
@@ -42,14 +41,9 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
-
-
-class GraphFeature(StrEnum):
-    """Features advertised for an LGOS model."""
-
-    BACKGROUND = "background"
-    FILE_INPUTS = "file_inputs"
-    MCP_TOOLS = "mcp_tools"
+BACKGROUND_FEATURE = "background"
+FILE_INPUTS_FEATURE = "file_inputs"
+MCP_TOOLS_FEATURE = "mcp_tools"
 
 
 class ModelClientSettings(BaseModel):
@@ -97,21 +91,3 @@ def model_extension(model: Model) -> LangGraphModelExtension | None:
     except ValidationError:
         logger.warning("Ignoring invalid LGOS metadata for model %s", model.id)
         return None
-
-
-def model_description(model: Model) -> str | None:
-    """Read the LGOS description, returning None for degraded metadata."""
-    extension = model_extension(model)
-    return extension.description if extension is not None else None
-
-
-def model_supports(model: Model, feature: GraphFeature) -> bool:
-    """Return whether retrieved model metadata declares an LGOS feature."""
-    extension = model_extension(model)
-    return extension is not None and feature.value in extension.features
-
-
-def model_client_settings(model: Model) -> ModelClientSettings | None:
-    """Return the runtime settings descriptor, when available."""
-    extension = model_extension(model)
-    return extension.client_settings if extension is not None else None

@@ -153,8 +153,8 @@ async def test_missing_delegated_user_preserves_login_error_through_sdk(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
         monkeypatch.setattr(
             clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http),
+            "v1_client",
+            clients.v1_client.with_options(http_client=http),
         )
         with pytest.raises(OAuthLoginRequired, match="sign in again"):
             await clients.list_models()
@@ -188,7 +188,7 @@ async def test_delegated_chat_uses_new_credentials_and_stops_after_logout(
         httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http,
         chat_session(user, create_jwt(user)),
     ):
-        client = clients.openai_client.with_options(http_client=http)
+        client = clients.responses_client.with_options(http_client=http)
         await client.responses.create(model="graph", input="first message")
         current_token = "access-after-refresh"
         await client.responses.create(model="graph", input="next message")
@@ -214,7 +214,7 @@ async def test_gateway_uses_its_static_key_without_a_user_session(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(gateway)) as http:
         monkeypatch.setattr(
             clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http),
+            "v1_client",
+            clients.v1_client.with_options(http_client=http),
         )
         assert await clients.list_models() == []

@@ -1,4 +1,4 @@
-"""OpenAI client shared by the Chainlit demo applications."""
+"""OpenAI clients for the configured gateway."""
 
 from openai import AsyncOpenAI, DefaultAsyncHttpx2Client, OpenAIError
 from openai.types import Model
@@ -14,32 +14,22 @@ gateway = gateway_config(
 )
 gateway_http_client = DefaultAsyncHttpx2Client()
 
-openai_client = AsyncOpenAI(
-    base_url=gateway.responses_base_url,
+# Both gateways serve Files, speech, and their OpenAI model catalog under the
+# root's /v1 path, the same route Open WebUI's native audio settings use. Only
+# the Responses route differs.
+v1_client = AsyncOpenAI(
+    base_url=f"{gateway.root_url}/v1",
     api_key=gateway_credential,
     http_client=gateway_http_client,
     max_retries=0,
     default_headers={"User-Agent": "lgos-chainlit"},
 )
-files_client = AsyncOpenAI(
-    base_url=gateway.files_base_url,
-    api_key=gateway_credential,
-    http_client=gateway_http_client,
-    max_retries=0,
-)
-# Both gateways serve OpenAI speech routes under the root's /v1 path, the same
-# route Open WebUI's native audio settings use.
-audio_client = openai_client.with_options(base_url=f"{gateway.root_url}/v1")
-
-
-def files_request() -> tuple[AsyncOpenAI, str]:
-    """Return the configured Files client and gateway provider."""
-    return files_client, gateway.files_provider
+responses_client = v1_client.with_options(base_url=gateway.responses_base_url)
 
 
 async def retrieve_model(model_id: str) -> Model:
     """Retrieve LGOS model metadata through the configured endpoint."""
-    if not gateway.provider_routing:
+    if gateway.type == "litellm":
         for model in await list_models():
             if model.id == model_id:
                 return model
@@ -60,15 +50,11 @@ async def retrieve_model(model_id: str) -> Model:
 
 async def list_models() -> list[Model]:
     """List models through the configured OpenAI endpoint."""
-    if not gateway.provider_routing:
-        payload = await openai_client.get(
-            f"{gateway.root_url}/model/info", cast_to=object
-        )
+    if gateway.type == "litellm":
+        payload = await v1_client.get(f"{gateway.root_url}/model/info", cast_to=object)
         return litellm_models(payload)
 
-    catalog = await openai_client.with_options(
-        base_url=f"{gateway.root_url}/v1"
-    ).models.list()
+    catalog = await v1_client.models.list()
     allowed_models = {model.id for model in catalog.data}
     providers = sorted(
         {
@@ -100,6 +86,4 @@ def bifrost_model(model_id: str) -> tuple[str, str]:
 
 
 def _bifrost_detail_client() -> AsyncOpenAI:
-    return openai_client.with_options(
-        base_url=f"{gateway.root_url}/openai_passthrough/v1"
-    )
+    return v1_client.with_options(base_url=f"{gateway.root_url}/openai_passthrough/v1")
