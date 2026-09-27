@@ -8,7 +8,10 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
 
+from lgos_demo_api.utils.fake_llm import stream_fake_chat_response
+
 ReviewOutcome = Literal["approve", "reject", "feedback"]
+REVIEW_NOTICE = "This refund needs human review before anything runs: {request}"
 
 
 class ReviewState(TypedDict, total=False):
@@ -17,6 +20,14 @@ class ReviewState(TypedDict, total=False):
     reviewer_feedback: str
     refund_executed: bool
     customer_notified: bool
+
+
+async def announce_review(state: ReviewState) -> None:
+    """Stream answer text before the pause, as an agent explaining itself would."""
+    # A separate node: LangGraph reruns the interrupted node on resume.
+    await stream_fake_chat_response(
+        REVIEW_NOTICE.format(request=state["request"]), state["request"]
+    )
 
 
 def review_refund(state: ReviewState) -> dict[str, str]:
@@ -61,10 +72,12 @@ def create_interruptible_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> CompiledStateGraph:
     graph = StateGraph(ReviewState)  # ty: ignore[invalid-argument-type]
+    graph.add_node("announce_review", announce_review)
     graph.add_node("review_refund", review_refund)
     graph.add_node("execute_refund", execute_refund)
     graph.add_node("notify_customer", notify_customer)
-    graph.add_edge(START, "review_refund")
+    graph.add_edge(START, "announce_review")
+    graph.add_edge("announce_review", "review_refund")
     graph.add_conditional_edges("review_refund", route_after_refund)
     graph.add_edge("execute_refund", "notify_customer")
     graph.add_edge("notify_customer", END)
@@ -114,6 +127,7 @@ def create_interruptible_graph_config(
 
 
 __all__ = [
+    "REVIEW_NOTICE",
     "ReviewState",
     "create_interruptible_graph",
     "create_interruptible_graph_config",

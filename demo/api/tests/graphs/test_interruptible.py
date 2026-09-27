@@ -1,9 +1,19 @@
 import pytest
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
+from langgraph_openai_serve import GraphRegistry
+from langgraph_openai_serve.graph.interrupt import (
+    InMemoryRunCoordinator,
+    InterruptResume,
+    LangGraphInterruptBatch,
+)
+from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs.interruptible import (
+    REVIEW_NOTICE,
     create_interruptible_graph,
+    create_interruptible_graph_config,
     output_to_message,
 )
 
@@ -104,3 +114,42 @@ async def test_rejects_an_empty_review_response(
 
     with pytest.raises(ValueError, match="non-empty string"):
         await graph.ainvoke(Command(resume=responses), config=config)
+
+
+async def test_review_notice_streams_before_the_pause_only(
+    make_graph_input,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    request = "Refund order ORDER-123"
+    graph = create_interruptible_graph(sqlite_checkpointer)
+    registry = GraphRegistry(
+        graphs={
+            "interruptible-approval": create_interruptible_graph_config(lambda: graph)
+        },
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    graph_request, messages = make_graph_input(
+        "interruptible-approval", content=request
+    )
+
+    paused = [
+        event async for event in run_langgraph_stream(graph_request, messages, registry)
+    ]
+    batch = paused[-1]
+    assert isinstance(batch, LangGraphInterruptBatch)
+    streamed = "".join(event for event in paused if isinstance(event, str))
+    assert streamed == REVIEW_NOTICE.format(request=request)
+
+    resume = InterruptResume(
+        run_id=batch.run_id, values={batch.interrupts[0].id: "approve"}
+    )
+    resumed = [
+        event
+        async for event in run_langgraph_stream(
+            graph_request, messages, registry, resume=resume
+        )
+    ]
+    # Only the interrupted node reruns, so the notice is not repeated.
+    assert not any(isinstance(event, str) for event in resumed)
+    assert isinstance(resumed[-1], AIMessage)
+    assert "- Refund: approve" in resumed[-1].text

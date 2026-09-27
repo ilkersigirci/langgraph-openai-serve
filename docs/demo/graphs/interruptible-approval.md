@@ -8,6 +8,12 @@ without executing either action. The interrupt crosses `/v1/responses` as a
 standard tool call, so clients can collect the human response without
 understanding the graph topology.
 
+Before pausing, `announce_review` streams a short notice through a deterministic
+fake chat model, as an agent explaining its next step would. Streaming clients
+show that text above the review; non-streaming Responses carry only the review
+call. The notice has its own node because LangGraph reruns the interrupted node
+from the start on resume, which would stream it again.
+
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
 [`persistent-plot-agent`](persistent-plot-agent.md). Operation identity,
@@ -21,7 +27,8 @@ external effect.
 
 ```mermaid
 graph TD;
-  start["__start__"] --> review_refund;
+  start["__start__"] --> announce_review;
+  announce_review --> review_refund;
   execute_refund --> notify_customer;
   review_refund -.-> finish["__end__"];
   review_refund -.-> execute_refund;
@@ -43,6 +50,8 @@ sequenceDiagram
   User->>UI: Request protected action
   UI->>API: Initial Responses request
   API->>Graph: Invoke under run coordinator
+  Graph-->>API: Review notice tokens
+  API-->>UI: Streamed answer text
   Graph->>DB: Save refund pause
   Graph-->>API: Refund review function call
   API-->>UI: Standard Response function_call item

@@ -7,6 +7,8 @@ from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
 from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 
+from lgos_demo_api.graphs.interruptible import REVIEW_NOTICE
+
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
 DIRECT_BASE_URLS = os.getenv("DEMO_TEST_DIRECT_BASE_URLS", "").split(",")
 LITELLM_API_KEY = os.getenv("DEMO_TEST_LITELLM_API_KEY") or os.getenv(
@@ -391,9 +393,13 @@ async def test_litellm_native_function_output_continuation(
                 ]
             assert len(completed_events) == 1
             paused = completed_events[0].response
-        assert len(paused.output) == 1
-        call = paused.output[0]
-        assert isinstance(call, ResponseFunctionToolCall)
+        # Only a stream carries the text the graph produced before pausing.
+        assert paused.output_text == (
+            REVIEW_NOTICE.format(request=public_request) if stream else ""
+        )
+        [call] = [
+            item for item in paused.output if isinstance(item, ResponseFunctionToolCall)
+        ]
         arguments = json.loads(call.arguments)
         assert arguments["action"] == "refund"
 
