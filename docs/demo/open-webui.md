@@ -185,8 +185,9 @@ Configure the required `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
 `OPENAI_GATEWAY_API_KEY` values, plus `OPENAI_API_TIMEOUT`, in the generic
 Function's admin valves. Compose initializes the required values from
 `demo/.env`; use a key issued by the selected gateway. LiteLLM
-sends the catalog's `model_name` unchanged for managed routing. Bifrost removes
-that provider prefix and sends it as `x-model-provider` to native Responses.
+sends the catalog's `model_name` unchanged for managed routing. Bifrost also
+receives the provider-qualified catalog ID unchanged on native Responses and
+selects the provider from its prefix.
 Open WebUI stores Function code in its database, so a bind mount of the Python
 file does not update it.
 
@@ -246,6 +247,41 @@ not only to generated LGOS models.
     [upstream issue](https://github.com/open-webui/open-webui/issues/12228) and
     the
     [unmerged File Processing capability PR](https://github.com/open-webui/open-webui/pull/27627).
+
+## Voice
+
+Compose configures Open WebUI's native
+[speech-to-text and text-to-speech](https://docs.openwebui.com/features/chat-conversations/audio/)
+with its `openai` engines. Both engines call the selected gateway's `/v1` audio
+routes with `OPENAI_GATEWAY_API_KEY`, `DEMO_AUDIO_STT_MODEL`,
+`DEMO_AUDIO_TTS_MODEL`, and `DEMO_AUDIO_TTS_VOICE`. The Pipe and LGOS stay
+text-only.
+
+- **Voice mode**, the headphones button in an empty chat input, is the
+  hands-free loop. Open WebUI ends a turn after two seconds of silence,
+  transcribes it, and submits the text to the selected model as a normal chat
+  message. It then speaks the answer sentence by sentence.
+- The **microphone** button dictates into the input box for editing before
+  sending.
+- **Read aloud** under an answer speaks it on demand.
+
+Open WebUI v0.11.3 always shows these controls to admins, including the demo
+account. `USER_PERMISSIONS_CHAT_STT`, `USER_PERMISSIONS_CHAT_TTS`, and
+`USER_PERMISSIONS_CHAT_CALL` hide them only from regular users. Without working
+speech models, the controls fail with Open WebUI's own error toasts.
+
+In voice mode, Open WebUI adds its own concise-voice-assistant system prompt,
+which the Pipe forwards to LGOS like any other system message. Set
+`ENABLE_VOICE_MODE_PROMPT=false` on the Open WebUI service to send only the
+transcript.
+
+!!! note "Set the audio URLs explicitly"
+
+    Open WebUI v0.11.3 does not derive its audio base URLs from any other
+    connection setting; without `AUDIO_*_OPENAI_API_BASE_URL`, speech goes to
+    `api.openai.com`. Its default local Whisper engine also cannot load in this
+    demo: `OFFLINE_MODE` blocks the download, and the data volume hides the
+    model baked into the image.
 
 ## Limited Functionality
 

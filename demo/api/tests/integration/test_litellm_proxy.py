@@ -425,7 +425,7 @@ async def test_litellm_native_function_output_continuation(
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="LiteLLM v1.100.0 rewrites upstream OpenAI error metadata",
+    reason="LiteLLM rewrites upstream OpenAI error metadata",
 )
 async def test_litellm_preserves_openai_errors(provider: str) -> None:
     assert LITELLM_BASE_URL is not None

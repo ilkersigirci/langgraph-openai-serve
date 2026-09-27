@@ -96,8 +96,8 @@ sent unchanged to managed `/v1/responses`. There are no provider allowlists,
 implicit prefixes, or per-provider catalog URLs.
 With Bifrost selected, aggregate discovery finds each
 provider, catalog detail uses `/openai_passthrough/v1` with
-`x-model-provider`, and inference uses native `/openai/v1/responses` with the
-same provider header. The demo API owns the descriptions and capabilities.
+`x-model-provider`, and inference sends the provider-qualified ID unchanged to
+native `/openai/v1/responses`. The demo API owns the descriptions and capabilities.
 Chainlit keeps the Responses model usable for plain text but marks it as
 **Limited functionality** when an endpoint omits or strips them.
 
@@ -163,6 +163,53 @@ Chainlit's native S3 persistence remains responsible for restoring UI elements.
 The OpenAI Files upload is the separate inference contract; the adapter does
 not wait for a Chainlit persistence URL or put one in `file_data`. See
 [Accept And Display Files](../how-to-guides/file-inputs.md).
+
+## Voice
+
+Chainlit's native microphone button streams raw audio to the app; Chainlit has
+no speech-to-text or text-to-speech of its own. The app shows the microphone
+only when `DEMO_AUDIO_STT_MODEL` is set and adds a **Read aloud** button under
+each completed answer only when `DEMO_AUDIO_TTS_MODEL` is set. Both features
+come from `chainlit-utils`; the app supplies the gateway client, models, and
+voice.
+
+The microphone dictates like Open WebUI's:
+
+1. Click the microphone or press `P`, speak, then stop the recording. Chainlit
+   does not stop on silence.
+2. The app wraps the recording in a WAV file and sends it to the selected
+   gateway's `/v1/audio/transcriptions` route.
+3. The transcript appears in the chat input. Edit it and press Enter to send it
+   like a typed message.
+
+Chainlit 2.12 has no API for its chat input. The app therefore sends the
+transcript with `cl.send_window_message`, and `chainlit-utils`'
+[`dictation.js`](https://github.com/ilkersigirci/chainlit-utils/blob/main/src/chainlit_utils/public/dictation.js),
+loaded through the native `custom_js` setting, writes it into the
+`#chat-input` textarea. Recheck that script after Chainlit upgrades.
+
+**Read aloud** also works like Open WebUI's:
+
+- The button is the `chainlit-utils` `SpeechButton`
+  [custom element](https://docs.chainlit.io/api-reference/elements/custom),
+  built from Chainlit's own button and tooltip components. It sends only the
+  answer's message ID and a sentence number through `callAction`, so the
+  browser cannot request arbitrary speech.
+- The backend removes emojis and Markdown formatting, splits the answer into
+  sentences with Open WebUI's rules, and sends one sentence to
+  `/v1/audio/speech`. The browser plays the sentences in order, so playback
+  starts after the first one and long answers stay under the speech input
+  limit. Neither gateway streams speech as a normal audio response: LiteLLM
+  returns the finished clip, and Bifrost streams only `stream_format: "sse"`
+  events.
+- Speech is synthesized only when the button is clicked. Replays reuse the
+  sentences already fetched on that page.
+
+Speech uses the same gateway credential as Responses, including a delegated
+OAuth token, and LGOS receives and returns only text. See
+[Stack Settings](reference.md#stack-settings) for the speech settings. Chainlit
+names a thread that starts with a recording `audio`, even when the dictated
+text is discarded.
 
 ## Runtime Settings
 
@@ -406,9 +453,10 @@ Initial requests need no interrupt metadata. The client implements the
 it stores the paused Response ID, asks for every call in the batch, submits only
 matching `function_call_output` items, and repeats when the graph pauses again.
 The `chainlit-utils` `HitlWorkflow` owns ledger validation, Chainlit persistence,
-pending-request protection, and batch continuation. The
-demo keeps only the LGOS `lgos_interrupt` name, the Responses request callback,
-the payload presentation, and the `InterruptReview` element.
+pending-request protection, and batch continuation, and its `HumanReview`
+element renders the form. The demo keeps only the LGOS `lgos_interrupt` name,
+the Responses request callback, and the conversion of each interrupt payload
+into a review prompt with its choices.
 The workflow publishes a normal Chainlit message with one persisted custom
 element and immediately returns. The element collects one answer for every
 interrupt call in the current batch, then invokes a native Chainlit action

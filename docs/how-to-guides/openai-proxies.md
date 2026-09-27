@@ -58,7 +58,7 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
 | LiteLLM managed routing | Native streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
 | Bifrost raw pass-through | Successful-request contracts pass; virtual-key governance rejects the unknown-model error case before pass-through | UI catalog detail and protocol reference |
-| Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, continuation, and `store: false` pass; model-detail extensions and error metadata are unavailable | Bifrost-selected UI inference and Files |
+| Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, continuation, `store: false`, and upstream error `type` and `param` pass; model-detail extensions are unavailable | Bifrost-selected UI inference and Files |
 
 These results describe the bundled configuration. Exact image tags and digests
 are provided by `DEMO_LITELLM_IMAGE` in `demo/.env.example` for LiteLLM and
@@ -79,8 +79,8 @@ must route that ID to any LGOS API replica using the same background engine.
 | Pinned path | Background create, poll, cancel | Constraint |
 | --- | --- | --- |
 | Direct LGOS | Pass | Replicas must use the same background engine. |
-| LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for 1.100.1 parser compatibility. |
-| Bifrost 2.1.1 `/openai/v1` | Pass | Use the demo's dedicated standard `openai` provider for `background-mock` and `background-interrupt`; no provider header is required after creation. |
+| LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for LiteLLM parser compatibility. |
+| Bifrost `/openai/v1` | Pass | Send the create model's provider prefix, such as `lgos-a`, as the `provider` query parameter on retrieve and cancel; without it, Bifrost uses its built-in `openai` provider. |
 
 These are results for the pinned demo images and configurations, not promises
 about other gateway releases. Run
@@ -119,18 +119,18 @@ The error-normalization limitation still applies when LiteLLM is selected.
 
 Bifrost custom providers expose both normalized and raw OpenAI routes. The
 bundled native Responses route preserves `phase`, multiple commentary
-items, file input, and function continuation. It still omits LGOS extensions
-from normalized model detail and rewrites upstream error metadata.
+items, file input, function continuation, and upstream error `type` and
+`param`. It still omits LGOS extensions from normalized model detail.
 `/openai_passthrough/v1` passes the complete direct suite when the client
 supplies the catalog-discovered provider in `x-model-provider`. The UIs use
-that route only for provider-specific catalog detail. Responses use native
-`/openai/v1/responses`, and Files use normalized `/v1` with the dedicated
-`lgos-files` provider. No plugin or response adapter is required.
+that route only for provider-specific catalog detail. Responses send the
+provider-qualified catalog ID to native `/openai/v1/responses`, which ignores
+that header, and Files use normalized `/v1` with the dedicated `lgos-files`
+provider. No plugin or response adapter is required.
 
 LiteLLM recovers managed deployment routing from its opaque Response ID.
-Bifrost's ID-only SDK path uses a standard `openai` provider pinned to an API
-deployment using the same background engine; its UI clients can instead retain the
-selected custom-provider header while polling.
+Bifrost routes model-less retrieve and cancel by the `provider` query
+parameter, which OpenAI SDKs send with `extra_query`.
 
 ## Direct Chat Compatibility
 

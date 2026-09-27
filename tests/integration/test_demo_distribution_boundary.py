@@ -312,21 +312,36 @@ def test_bifrost_has_one_files_provider() -> None:
     assert any(key.get("use_for_batch_api") is True for key in files_keys)
 
 
-def test_bifrost_background_route_is_pinned_to_one_api() -> None:
-    config = json.loads(
+def test_bundled_gateways_serve_the_ui_speech_models() -> None:
+    env = dict(
+        line.split("=", 1)
+        for line in (DEMO_ROOT / ".env.example")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.startswith("DEMO_AUDIO_")
+    )
+    litellm = (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(
+        encoding="utf-8"
+    )
+    bifrost = json.loads(
         (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
     )
-    provider = config["providers"]["openai"]
+    [virtual_key] = bifrost["governance"]["virtual_keys"]
+    grants = {
+        grant["provider"]: grant["allowed_models"]
+        for grant in virtual_key["provider_configs"]
+    }
 
-    assert provider["network_config"]["base_url"] == "http://lgos-demo-api-a:8000"
-    assert provider["keys"] == [
-        {
-            "name": "lgos-background",
-            "value": "DUMMY",
-            "models": ["background-mock", "background-interrupt"],
-            "weight": 1.0,
-        }
-    ]
+    for setting, request in (
+        ("DEMO_AUDIO_STT_MODEL", "transcription"),
+        ("DEMO_AUDIO_TTS_MODEL", "speech"),
+    ):
+        model_id = env[setting]
+        provider, _, model = model_id.partition("/")
+        assert f"model_name: {model_id}\n" in litellm
+        provider_config = bifrost["providers"][provider]["custom_provider_config"]
+        assert provider_config["allowed_requests"][request] is True
+        assert model in grants[provider]
 
 
 def test_files_and_chainlit_s3_are_independently_configured() -> None:

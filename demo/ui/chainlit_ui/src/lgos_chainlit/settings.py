@@ -64,9 +64,27 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_GATEWAY_API_KEY",
         repr=False,
         description=(
-            "Shared gateway credential used for Responses, Files, and MCP when "
+            "Shared gateway credential used for Responses, Files, speech, and MCP when "
             "OAuth token forwarding is disabled."
         ),
+    )
+    AUDIO_STT_MODEL: str | None = Field(
+        default=None,
+        min_length=1,
+        validation_alias="DEMO_AUDIO_STT_MODEL",
+        description="Gateway model that transcribes the microphone; unset hides it.",
+    )
+    AUDIO_TTS_MODEL: str | None = Field(
+        default=None,
+        min_length=1,
+        validation_alias="DEMO_AUDIO_TTS_MODEL",
+        description="Gateway model that reads answers aloud; unset hides the button.",
+    )
+    AUDIO_TTS_VOICE: str = Field(
+        default="alloy",
+        min_length=1,
+        validation_alias="DEMO_AUDIO_TTS_VOICE",
+        description="Built-in OpenAI voice used for spoken answers.",
     )
     ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
     LOGIN_TYPE: ChainlitLoginType = "mock"

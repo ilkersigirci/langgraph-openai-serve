@@ -51,6 +51,8 @@ description = "OpenAI-compatible LangGraph demo"
 confirm_new_chat = true
 cot = "hidden"
 alert_style = "classic"
+# chainlit-utils fills the chat input with dictated speech; see on_audio_end in chat.py.
+custom_js = "/public/chainlit-utils/dictation.js"
 
 [meta]
 generated_by = "2.12.0"

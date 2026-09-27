@@ -14,8 +14,8 @@ each API process.
 !!! warning "Managed gateway normalization boundaries"
 
     The bundled Bifrost native Responses route preserves standard fields, file
-    input, commentary, `phase`, and `store: false`; normalized model detail and
-    error metadata remain lossy. Its raw pass-through route
+    input, commentary, `phase`, `store: false`, and upstream error `type` and
+    `param`; normalized model detail remains lossy. Its raw pass-through route
     preserves successful-request contracts, while virtual-key governance
     rejects an unknown model before its upstream error can pass through. The
     bundled `homeserver-litellm` image preserves native streaming and
@@ -48,6 +48,7 @@ flowchart LR
   end
 
   files["Files service<br/>OpenAI Files API + S3 repository"]
+  speech["aigateway<br/>OpenAI speech models"]
   dbhub["DBHub<br/>read-only MCP server"]
   database[("lgos-db PostgreSQL<br/>dedicated mcp_demo schema")]
 
@@ -69,6 +70,8 @@ flowchart LR
   litellm <-->|"managed inference"| api_a
   litellm <-->|"managed inference"| api_b
   litellm <-->|"provider: litellm_proxy"| files
+  bifrost <-->|"provider: aigateway"| speech
+  litellm <-->|"aigateway/* models"| speech
   bifrost <-->|"allowlisted MCP tools"| dbhub
   litellm <-->|"allowlisted MCP tools"| dbhub
   api_a <-->|"trigger, read, cancel run"| hatchet
@@ -85,13 +88,21 @@ With LiteLLM selected, the UIs read native `/model/info`, use `model_info.lgos`
 for capabilities and settings, and send `model_name` unchanged through managed
 Responses routing. With Bifrost selected, they discover provider-qualified IDs through
 its aggregate catalog, use raw pass-through only for model detail, and send
-Responses through native routing with `x-model-provider`. Both choices upload
+the catalog ID unchanged through native Responses routing, where its prefix
+selects the provider. Both choices upload
 attachments through normal gateway Files routing before sending the returned
 `file_id` to a graph. This preserves descriptions and runtime capabilities
 without allowing UI inference to bypass the gateway's normal data plane.
 For `mcp-postgres`, the clients also discover and execute the gateway's native
 MCP tools; DBHub and the database credential remain behind that gateway. See
 [PostgreSQL Through Native MCP](graphs/mcp-postgres.md).
+
+Speech stays in the clients. Chainlit and Open WebUI transcribe microphone
+recordings through the gateway's `/v1/audio/transcriptions` route, send the
+transcript as a normal text turn, and read answers aloud through
+`/v1/audio/speech`. The bundled gateways forward those calls to aigateway's
+OpenAI models; LGOS never receives audio. See the
+[Chainlit](chainlit.md#voice) and [Open WebUI](open-webui.md#voice) voice guides.
 
 The [LGOS-owned sync command](litellm-sync.md) registers concrete models and full
 metadata in LiteLLM's database. Run it after graph changes; the gateway needs no

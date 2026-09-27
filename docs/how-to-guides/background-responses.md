@@ -250,10 +250,11 @@ not lose Responses. Treat Response IDs as opaque:
 - LiteLLM encodes the creating deployment in the Response ID it returns and
   routes retrieve and cancel back to it. A replayed create may get a different
   proxy alias for the same LGOS Response.
-- Bifrost sends retrieve and cancel to its default provider unless the
-  request carries an `x-model-provider` header. Provider-prefixed models make
-  create placement predictable and avoid automatic fallbacks to other
-  instances.
+- Bifrost sends retrieve and cancel to its default `openai` provider unless
+  the request carries a `provider` query parameter. Send the create model's
+  provider prefix there. Provider-prefixed models make create placement
+  predictable and avoid automatic fallbacks to other instances; Bifrost does
+  not read `x-model-provider` on Responses routes.
 
 See the [OpenAI-compatible proxy guide](openai-proxies.md) and the
 [background mock demo](../demo/graphs/background-mock.md).

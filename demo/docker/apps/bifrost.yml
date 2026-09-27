@@ -2,7 +2,7 @@ services:
   lgos-bifrost:
     container_name: lgos-bifrost
     profiles: [bifrost]
-    image: maximhq/bifrost:v2.1.1@sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+    image: maximhq/bifrost:v2.2.3@sha256:975487b95c6399de26e3a108164f21ae52687b316580a13ff0c239b865649ed2
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
@@ -51,7 +51,8 @@ services:
       LOG_STYLE: json
       BIFROST_DEMO_VIRTUAL_KEY: $OPENAI_GATEWAY_API_KEY
       LGOS_MCP_AUTH_HEADER: Bearer $LGOS_MCP_AUTH_TOKEN
-    # Bifrost 2.1.1 reconciles file-defined Virtual MCPs before file-defined
+      AIGATEWAY_API_KEY: $AIGATEWAY_API_KEY
+    # Bifrost reconciles file-defined Virtual MCPs before file-defined
     # virtual keys on first boot. Repeat the idempotent assignment once its API
     # is ready, then keep the service unhealthy until the assignment is visible.
     post_start:

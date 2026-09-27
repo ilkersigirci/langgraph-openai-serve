@@ -622,13 +622,10 @@ async def test_background_response_uses_polling_and_native_statuses(
     assert request["background"] is True
     assert request["store"] is True
     assert request["metadata"]["conversation_id"] == "thread-123"
-    assert request.get("extra_headers") is None
+    assert "extra_headers" not in request
     UUID(request["extra_body"]["extra_headers"]["Idempotency-Key"])
     assert "lgos_settings" not in request["metadata"]
-    assert retrieve.await_args_list == [
-        call(response_id, extra_headers=None),
-        call(response_id, extra_headers=None),
-    ]
+    assert retrieve.await_args_list == [call(response_id), call(response_id)]
     assert events == [
         {
             "type": "status",
@@ -654,21 +651,34 @@ async def test_background_response_uses_polling_and_native_statuses(
     assert client.max_retries == 2
 
 
-async def test_background_response_forwards_idempotency_through_bifrost() -> None:
-    create = AsyncMock(return_value=final_response("Report ready."))
-    client = FakeClient(create=create)
+async def test_background_response_stays_on_its_bifrost_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    create = AsyncMock(
+        return_value=Response.model_construct(
+            id=response_id,
+            status="queued",
+            output=[],
+        )
+    )
+    retrieve = AsyncMock(return_value=final_response("Report ready."))
+    client = FakeClient(create=create, retrieve=retrieve)
+    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
 
     await generic_responses._background_response(
         client,
-        {"extra_headers": {"x-model-provider": "openai"}},
+        {"model": "lgos-b/background-mock"},
         AsyncMock(),
         provider_routing=True,
     )
 
     request = create.await_args.kwargs
-    assert request["extra_headers"]["x-model-provider"] == "openai"
+    assert request["model"] == "lgos-b/background-mock"
+    assert request["extra_headers"].keys() == {"Idempotency-Key"}
     UUID(request["extra_headers"]["Idempotency-Key"])
     assert "extra_body" not in request
+    retrieve.assert_awaited_once_with(response_id, extra_query={"provider": "lgos-b"})
 
 
 async def test_interrupt_answers_follow_the_background_setting(
@@ -721,8 +731,19 @@ async def test_stale_background_setting_is_ignored_after_model_switch(
     assert "lgos_settings" not in request["metadata"]
 
 
+@pytest.mark.parametrize(
+    ("model", "provider_routing", "lifecycle_options"),
+    [
+        ("lgos-a/background-mock", False, {}),
+        ("lgos-b/background-mock", True, {"extra_query": {"provider": "lgos-b"}}),
+    ],
+    ids=["litellm", "bifrost"],
+)
 async def test_background_response_is_cancelled_when_request_stops(
     monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    provider_routing: bool,
+    lifecycle_options: dict[str, object],
 ) -> None:
     response_id = "resp_background"
     cancel = AsyncMock()
@@ -745,12 +766,12 @@ async def test_background_response_is_cancelled_when_request_stops(
     with pytest.raises(asyncio.CancelledError):
         await generic_responses._background_response(
             client,
-            {},
+            {"model": model},
             AsyncMock(),
-            provider_routing=False,
+            provider_routing=provider_routing,
         )
 
-    cancel.assert_awaited_once_with(response_id, extra_headers=None)
+    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
 
 
 @pytest.mark.parametrize(
@@ -792,23 +813,13 @@ async def test_uservalves_reach_responses_through_shared_pipe(
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize(
-    ("gateway_type", "base_path", "expected_model", "extra_headers"),
-    [
-        (
-            "bifrost",
-            "/openai/v1",
-            "interruptible-approval",
-            {"x-model-provider": "lgos-a"},
-        ),
-        ("litellm", "/v1", "lgos-a/interruptible-approval", None),
-    ],
+    ("gateway_type", "base_path"),
+    [("bifrost", "/openai/v1"), ("litellm", "/v1")],
 )
 async def test_request_uses_a_native_responses_route(
     monkeypatch: pytest.MonkeyPatch,
     gateway_type: str,
     base_path: str,
-    expected_model: str,
-    extra_headers: dict[str, str] | None,
     stream: bool,
 ) -> None:
     base_urls = []
@@ -850,8 +861,9 @@ async def test_request_uses_a_native_responses_route(
         assert result == ["Approved."]
         request = create.await_args.kwargs
     assert base_urls == [f"https://gateway.example{base_path}"]
-    assert request["model"] == expected_model
-    assert request.get("extra_headers") == extra_headers
+    # Bifrost ignores x-model-provider on Responses; the catalog ID selects it.
+    assert request["model"] == "lgos-a/interruptible-approval"
+    assert "extra_headers" not in request
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])

@@ -102,7 +102,11 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, and MCP; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `DEMO_AUDIO_STT_MODEL` | Gateway model ID both UIs use to transcribe microphone input through `/v1/audio/transcriptions`; Chainlit hides its microphone when empty |
+| `DEMO_AUDIO_TTS_MODEL` | Gateway model ID both UIs use to speak answers through `/v1/audio/speech`; Chainlit hides its read-aloud button when empty |
+| `DEMO_AUDIO_TTS_VOICE` | OpenAI voice for spoken answers; Chainlit defaults to `alloy` |
+| `AIGATEWAY_API_KEY` | aigateway.home.ilkerflix.com key the bundled gateways use only for their `aigateway/*` speech models |
 | `LGOS_MCP_DB_PASSWORD` | Password for the dedicated read-only `lgos_mcp` PostgreSQL login; DBHub receives it through an interpolated individual connection field, so URL encoding is not required |
 | `LGOS_MCP_AUTH_TOKEN` | Internal bearer token used by LiteLLM or Bifrost when it connects to DBHub |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |

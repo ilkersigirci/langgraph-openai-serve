@@ -1,5 +1,22 @@
-# Register database-backed models with the demo's sync-litellm command.
-model_list: []
+# Register database-backed LGOS models with the demo's sync-litellm command.
+# The speech models below forward to aigateway under the IDs Bifrost uses. Each
+# sets api_base and api_key because this container's OPENAI_* defaults target
+# the Files API; the leading `openai/` selects LiteLLM's OpenAI client.
+model_list:
+  - model_name: aigateway/openai/gpt-4o-mini-transcribe
+    litellm_params:
+      model: openai/openai/gpt-4o-mini-transcribe
+      api_base: https://aigateway.home.ilkerflix.com/v1
+      api_key: os.environ/AIGATEWAY_API_KEY
+    model_info:
+      mode: audio_transcription
+  - model_name: aigateway/openai/gpt-4o-mini-tts
+    litellm_params:
+      model: openai/openai/gpt-4o-mini-tts
+      api_base: https://aigateway.home.ilkerflix.com/v1
+      api_key: os.environ/AIGATEWAY_API_KEY
+    model_info:
+      mode: audio_speech
 
 mcp_servers:
   lgos_postgres:
