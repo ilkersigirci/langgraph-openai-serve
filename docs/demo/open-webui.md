@@ -150,9 +150,9 @@ from the selected gateway before changing Functions or Workspace Models.
 An unavailable or malformed catalog stops the command without modifying them.
 It then updates the bundled Functions, sets the Generic Function's gateway
 valves, and bulk-imports each generated Workspace Model with an active, public,
-hidden override for its manifold base. Run it again
-after changing a Function, the configured model catalog, or a graph's client
-settings schema.
+hidden override for its manifold base. Run it again after changing a Function,
+a gateway setting, the configured model catalog, or a graph's client settings
+schema.
 
 Generated Workspace Model descriptions come from the selected graph's required
 `GraphConfig.description`. The sync marks a model as **Limited functionality**
@@ -198,8 +198,15 @@ The sync writes `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
 through Open WebUI's Functions API; the Function reads no environment
 variables. `OPENAI_GATEWAY_BASE_URL` must be the root Open WebUI reaches, and
 the key must be issued by the selected gateway. Each sync replaces those three
-valves and keeps the others, such as an admin-set `OPENAI_API_TIMEOUT`. LiteLLM
-sends the catalog's `model_name` unchanged for managed routing. Bifrost also
+valves and keeps the others, such as an admin-set `OPENAI_API_TIMEOUT`.
+Restarting Open WebUI alone refreshes only its MCP and speech settings, so
+re-run the sync after changing the gateway key or URL. Compose enables Open
+WebUI's
+[valve encryption](https://docs.openwebui.com/reference/env-configuration#enable_valve_encryption)
+with `DEMO_OPENWEBUI_SECRET_KEY`; re-run the sync after changing that secret
+too.
+
+LiteLLM sends the catalog's `model_name` unchanged for managed routing. Bifrost also
 receives the provider-qualified catalog ID unchanged on native Responses and
 selects the provider from its prefix.
 Open WebUI stores Function code in its database, so a bind mount of the Python

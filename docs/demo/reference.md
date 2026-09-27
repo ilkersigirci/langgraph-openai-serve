@@ -114,7 +114,7 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
-| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
+| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret that also encrypts stored valves; replace it outside local demos and re-run the Open WebUI sync after changing it |
 
 ## Integration Test Settings
 

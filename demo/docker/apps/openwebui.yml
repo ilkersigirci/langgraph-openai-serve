@@ -53,6 +53,8 @@ services:
       ENABLE_PERSISTENT_CONFIG: false
       WEBUI_NAME: LGOS-OpenWebUI
       WEBUI_SECRET_KEY: $DEMO_OPENWEBUI_SECRET_KEY
+      # The sync stores the gateway key in valves; WEBUI_SECRET_KEY encrypts them.
+      ENABLE_VALVE_ENCRYPTION: true
       ENABLE_OLLAMA_API: false
       ENABLE_TITLE_GENERATION: false
       ENABLE_FOLLOW_UP_GENERATION: false
