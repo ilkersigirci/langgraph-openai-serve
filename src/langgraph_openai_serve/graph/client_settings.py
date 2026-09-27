@@ -53,4 +53,5 @@ class ClientSettings(BaseModel):
     @classmethod
     def default_values(cls) -> dict[str, JsonValue]:
         """Return the JSON defaults advertised by model discovery."""
-        return cls().model_dump(mode="json")
+        # Aliases are the public names in the schema and request validation.
+        return cls().model_dump(mode="json", by_alias=True)

@@ -41,6 +41,7 @@ dependencies = [
     "openai>=2.54.0,<4.0.0",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
+    "uvicorn>=0.51.0",
 ]
 
 [project.optional-dependencies]
@@ -81,7 +82,6 @@ test = [
     "psycopg[binary,pool]>=3.3.4,<4",
     "pytest-env>=1.6.0",
     "hatchet-sdk>=1.40.3,<2",
-    "uvicorn>=0.51.0",
 ]
 [tool.uv]
 default-groups = ["dev", "doc", "test"]

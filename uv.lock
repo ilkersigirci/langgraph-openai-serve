@@ -1316,6 +1316,7 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -1354,7 +1355,6 @@ test = [
     { name = "pytest-cov" },
     { name = "pytest-env" },
     { name = "pytest-xdist" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -1371,6 +1371,7 @@ requires-dist = [
     { name = "psycopg-pool", marker = "extra == 'postgres'", specifier = ">=3.3.0,<4" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
+    { name = "uvicorn", specifier = ">=0.51.0" },
 ]
 provides-extras = ["hatchet", "postgres", "tracing"]
 
@@ -1396,7 +1397,6 @@ test = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "pytest-env", specifier = ">=1.6.0" },
     { name = "pytest-xdist", specifier = ">=3.6.1" },
-    { name = "uvicorn", specifier = ">=0.51.0" },
 ]
 
 [[package]]

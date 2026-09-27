@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 from langgraph.graph import StateGraph
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
 from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
@@ -68,6 +68,16 @@ def test_client_settings_own_the_public_contract_and_defaults() -> None:
     schema = PublicSettings.json_schema()
     assert schema["$schema"] == JSON_SCHEMA_DIALECT
     assert schema["additionalProperties"] is False
+
+
+def test_aliased_settings_are_advertised_and_accepted_by_alias() -> None:
+    class AliasedSettings(ClientSettings):
+        top_k: int = Field(default=3, alias="topK")
+
+    assert list(AliasedSettings.json_schema()["properties"]) == ["topK"]
+    assert AliasedSettings.default_values() == {"topK": 3}
+    settings = AliasedSettings.validate_request(make_request(settings='{"topK":5}'))
+    assert settings == AliasedSettings(topK=5)
 
 
 def test_client_settings_require_a_complete_default(message_graph) -> None:

@@ -25,7 +25,7 @@ Create or enter a Python 3.11 or newer project, then add LGOS:
     pip install langgraph-openai-serve
     ```
 
-LGOS installs its FastAPI, LangGraph, OpenAI SDK, and server dependencies. Add
+LGOS installs FastAPI, Uvicorn, LangGraph, and the OpenAI SDK. Add
 the model providers, tools, and persistence packages required by your graphs.
 
 ## Create A Graph And Application
