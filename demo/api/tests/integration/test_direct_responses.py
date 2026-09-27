@@ -3,7 +3,7 @@ import os
 import uuid
 
 import pytest
-from openai import AsyncOpenAI, BadRequestError
+from openai import AsyncOpenAI, NotFoundError
 from openai.types.responses import ResponseFunctionToolCall
 
 DIRECT_BASE_URLS = tuple(
@@ -256,13 +256,12 @@ async def test_direct_responses_preserve_openai_errors(base_url: str | None) -> 
     assert base_url is not None
 
     async with _graph_client(base_url) as client:
-        with pytest.raises(BadRequestError) as exc_info:
+        with pytest.raises(NotFoundError) as exc_info:
             await client.responses.create(model="missing-gateway-model", input="Hi")
 
-    assert exc_info.value.response.status_code == 400
     error = exc_info.value.response.json()["error"]
     assert (error["type"], error["param"], error["code"]) == (
         "invalid_request_error",
         "model",
-        None,
+        "model_not_found",
     )
