@@ -325,7 +325,7 @@ class Pipe:
         gateway = self._gateway()
         model_id = invocation.body.model_id
         mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(invocation.mcp_tools)
-        # Open WebUI v0.11.3 enters its native tool loop only for streams.
+        # Open WebUI enters its native tool loop only for streams.
         if mcp_tools and not invocation.body.stream:
             raise ValueError("Open WebUI MCP tool execution requires streaming.")
         transcript_mcp_names = {

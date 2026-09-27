@@ -148,10 +148,10 @@ If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
 resolve its central ID.
 
-!!! note "Chainlit 2.12.0 upload validation"
+!!! note "Chainlit upload validation"
 
     Chainlit applies profile overrides to the browser and WebSocket session,
-    but its pinned [`/project/file` validator](https://github.com/Chainlit/chainlit/blob/2.12.0/backend/chainlit/server.py#L1997-L2011)
+    but its [`/project/file` validator](https://github.com/Chainlit/chainlit/blob/main/backend/chainlit/server.py)
     reads the global setting. The demo therefore leaves that route globally
     enabled, hides the attachment control through native
     [`ChatProfile.config_overrides`](https://docs.chainlit.io/api-reference/chat-profiles),
@@ -182,7 +182,7 @@ The microphone dictates like Open WebUI's:
 3. The transcript appears in the chat input. Edit it and press Enter to send it
    like a typed message.
 
-Chainlit 2.12 has no API for its chat input. The app therefore sends the
+Chainlit has no API for its chat input. The app therefore sends the
 transcript with `cl.send_window_message`, and `chainlit-utils`'
 [`dictation.js`](https://github.com/ilkersigirci/chainlit-utils/blob/main/src/chainlit_utils/public/dictation.js),
 loaded through the native `custom_js` setting, writes it into the
@@ -598,9 +598,8 @@ Chainlit origin. CORS only permits the cross-origin response; the object still
 requires Chainlit's time-limited presigned URL. See
 [Amazon S3's CORS guide](https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html).
 
-The demo requires Chainlit 2.12.0 or newer. Review Chainlit's current MCP and
-PostgreSQL guidance when updating because those native contracts are
-release-specific.
+Review Chainlit's current MCP and PostgreSQL guidance when updating Chainlit
+because those native contracts are release-specific.
 
 ## Production Notes
 

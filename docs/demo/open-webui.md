@@ -21,8 +21,8 @@ The demo includes two Open WebUI Functions:
 
 The sync command also generates one Open WebUI Workspace Model per discovered
 LGOS model. Each Workspace Model wraps the corresponding manifold model and
-projects its LGOS settings schema into the pinned release's native Chat
-Variables form.
+declares its LGOS settings as native Chat Variables, which Open WebUI renders
+as a per-chat form.
 The generated `server-tool` models add fixed **Package version** and **Web
 search** Chat Variable checkboxes. Generated `advanced-graph` models add only
 the **Web search** checkbox; their gateway MCP tools are attached separately
@@ -44,7 +44,7 @@ chat input, and enable **Package version**, **Web search**, or both. The
 checkboxes default to off and their values belong to the chat. LGOS executes
 the selected tools server-side without a client-tool continuation.
 
-The pinned Open WebUI runtime's OpenAI 2.29 SDK omits
+The OpenAI SDK in the pinned Open WebUI image omits
 `custom_tool_call_output` from one generated response union. The Function adds
 that existing SDK model to the affected response annotations at load time. The
 shim is feature-detected, changes no installed package files, and becomes a
@@ -104,12 +104,23 @@ for its native server administration and access controls.
 
 ## Setup
 
-Start the pinned official Open WebUI image unchanged:
+Start the pinned official Open WebUI slim image unchanged:
 
 ```bash
 cp demo/.env.example demo/.env
 just demo/up lgos-openwebui --wait
 ```
+
+!!! info "Slim image"
+
+    The demo pins the official Open WebUI slim image. It omits local
+    embedding, reranking, speech, and document-extraction models, the headless
+    browser, and keyless DDGS search. The demo uses none of them: speech runs
+    through the gateway, uploads stay raw for the central Files API, and graphs
+    own retrieval and web search. Open WebUI's own Knowledge and Memory
+    features need PostgreSQL with pgvector on this image and are not
+    configured. Deleting a stored Open WebUI file therefore removes it but
+    reports an error while cleaning up the absent vector index.
 
 For independently started components, first [sync LGOS model
 metadata](litellm-sync.md) when using LiteLLM. Then run the locked
@@ -236,10 +247,10 @@ not only to generated LGOS models.
 
 !!! note "Temporary upstream workaround"
 
-    Open WebUI v0.11.3 always requests processing for non-image chat uploads,
-    before a Pipe or Filter can run. The wrapper exists only to change that
-    upload request to `process=false`; a Filter can control later retrieval but
-    cannot prevent the earlier extraction.
+    The pinned Open WebUI release always requests processing for non-image
+    chat uploads before a Pipe or Filter can run. The wrapper exists only to
+    change that upload request to `process=false`; a Filter can control later
+    retrieval but cannot prevent the earlier extraction.
 
     Remove `upload_policy.py`, its Compose mount, and the custom Uvicorn command
     when the pinned Open WebUI release provides native per-model control for raw
@@ -265,7 +276,7 @@ text-only.
   sending.
 - **Read aloud** under an answer speaks it on demand.
 
-Open WebUI v0.11.3 always shows these controls to admins, including the demo
+Open WebUI always shows these controls to admins, including the demo
 account. `USER_PERMISSIONS_CHAT_STT`, `USER_PERMISSIONS_CHAT_TTS`, and
 `USER_PERMISSIONS_CHAT_CALL` hide them only from regular users. Without working
 speech models, the controls fail with Open WebUI's own error toasts.
@@ -277,11 +288,10 @@ transcript.
 
 !!! note "Set the audio URLs explicitly"
 
-    Open WebUI v0.11.3 does not derive its audio base URLs from any other
+    Open WebUI does not derive its audio base URLs from any other
     connection setting; without `AUDIO_*_OPENAI_API_BASE_URL`, speech goes to
-    `api.openai.com`. Its default local Whisper engine also cannot load in this
-    demo: `OFFLINE_MODE` blocks the download, and the data volume hides the
-    model baked into the image.
+    `api.openai.com`. The slim image carries no local Whisper engine or voices,
+    so both engines must use an external service.
 
 ## Limited Functionality
 
@@ -303,6 +313,11 @@ uses the same deliberately small JSON Schema subset as the Chainlit demo:
 - nested objects, arrays, non-integer numbers, and unsupported schemas are
   omitted.
 
+Open WebUI's declaration syntax cannot represent text containing `"`, `\`, or
+`}`, and a line break would hide the end of the rendered declarations from the
+Pipe. A string default or option with one of these characters omits its
+setting; such a title falls back to a label derived from the setting name.
+
 Open WebUI stores Chat Variable values on the conversation. Select a generated
 LGOS model, then use the Chat Variables control beside the message input. Since
 LGOS supplies defaults for every setting, the form does not block the first
@@ -315,8 +330,10 @@ native Open WebUI Chat Variables.*
 
 When a chat has values, the Pipe serializes Open WebUI's generated Chat
 Variables and sends them as
-`metadata.lgos_settings`. LGOS performs the authoritative runtime
-validation.
+`metadata.lgos_settings`. Open WebUI keeps an untouched declared default as
+text, so the Pipe restores checkbox and number values to JSON booleans and
+integers. It omits empty values so LGOS applies its defaults, and LGOS performs
+the authoritative runtime validation.
 
 Models advertising `background` also receive an opt-in **Run in
 background** checkbox. The Pipe keeps this client-owned value out of
@@ -335,7 +352,7 @@ conversation value. See the
 [persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)
 for the API Store and Open WebUI persistence boundaries.
 
-The Workspace Model schema is a generated projection, not a second
+The Workspace Model declarations are a generated projection, not a second
 configuration source. Open WebUI does not fetch a remote schema when the model
 selector changes, so rerun `just demo/sync-openwebui` after an LGOS
 schema change. Model selection then switches among the already-synchronized
@@ -343,12 +360,16 @@ native forms.
 
 !!! note "Pinned Open WebUI contract"
 
-    The demo pins Open WebUI v0.11.3. The sync imports its native
-    `meta.chat_variables_schema` model metadata directly instead of putting
-    form declarations in a system prompt. This preserves JSON booleans and
-    ensures UI configuration never becomes graph prompt content. This behavior
-    is version-specific; rerun the Open WebUI sync and model tests before
-    changing the image pin.
+    The pinned Open WebUI release derives the Chat Variables form only from
+    `{{chat.variables.*}}` declarations in a Workspace Model's system prompt.
+    The sync writes a declaration-only system prompt between
+    `<lgos-chat-variables>` delimiter lines. Before a Pipe runs, Open WebUI
+    renders it with the chat's values and prepends the result to the first
+    system message. The Generic Pipe removes that leading block, including the
+    copy each native tool-loop continuation adds, and keeps any chat-level
+    system prompt that follows. Settings therefore reach LGOS only as metadata,
+    never as graph prompt content. This behavior is version-specific; rerun the
+    Open WebUI sync and model tests before changing the image pin.
 
 ## Streaming, Status, And Citations
 
@@ -374,7 +395,7 @@ responses never trigger client functions.
 
 !!! note "Keep streaming enabled"
 
-    In Open WebUI v0.11.3, native citation sources, tool calls, and `ask_user`
+    In Open WebUI, native citation sources, tool calls, and `ask_user`
     use its streaming middleware. The UI does not render equivalent native
     controls from non-streaming adapter output.
 
@@ -404,7 +425,7 @@ Open WebUI owns stream termination. The native `ask_user` bridge also uses the
 host's tool-call dictionaries to persist question cards and submit answers.
 These shapes belong to the UI boundary; inference uses Responses exclusively.
 See the pinned
-[Pipe host](https://github.com/open-webui/open-webui/blob/v0.11.3/backend/open_webui/functions.py).
+[Pipe host](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/functions.py).
 Shared prompts and graph behavior are documented under
 [Events And Citations](graphs/events-and-citations.md#try-it) and
 [Persistent Plot Agent](graphs/persistent-plot-agent.md#try-it).

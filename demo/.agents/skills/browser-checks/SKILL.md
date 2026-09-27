@@ -101,6 +101,9 @@ resets the session. Native Plotly elements render in the main page.
   numbered request, and affected service logs. Avoid broad dumps.
 - Chainlit `provider query parameter is required` means generated-file
   downloads must use `files_request()` and its provider, as uploads already do.
+- After an Open WebUI image change, its first page load shows a What's New
+  dialog that intercepts clicks, so actions time out. Dismiss it with
+  `Okay, Let's Go!` before interacting.
 - Open WebUI `Model not found` requires checking that the `generic` Function is
   active and its Workspace Model's base model exists. A failed Function import
   can disable it; a successful sync preserves that state, so re-enable it after

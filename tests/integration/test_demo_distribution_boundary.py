@@ -22,7 +22,11 @@ REPOSITORY_BLOB_LINK = re.compile(
 def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> None:
     service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
 
-    assert "image: ghcr.io/open-webui/open-webui:v0.11.3@sha256:" in service
+    assert re.search(
+        r"^\s+image: ghcr\.io/open-webui/open-webui:\S+@sha256:[0-9a-f]{64}$",
+        service,
+        re.MULTILINE,
+    )
     assert "build:" not in service
     assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
 

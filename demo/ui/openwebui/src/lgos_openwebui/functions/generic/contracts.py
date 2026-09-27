@@ -1,5 +1,6 @@
 """Wire-contract values and small models used by the Generic Function."""
 
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any, Literal, Self
 
@@ -10,6 +11,7 @@ from pydantic import (
     Field,
     JsonValue,
     ValidationError,
+    ValidationInfo,
     field_validator,
 )
 
@@ -42,6 +44,11 @@ PERSISTENT_PLOT_MODEL_NAME = "persistent-plot-agent"
 PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
 WEB_SEARCH_TOOL_NAME = "web_search"
 BACKGROUND_SETTING_NAME = "lgos_background"
+INTEGER_TEXT = re.compile(r"-?\d+")
+# Open WebUI prepends the rendered declarations to the first system message.
+# Form values are single-line, so these newline-anchored lines bound them.
+CHAT_VARIABLES_DECLARATION_START = "<lgos-chat-variables>\n"
+CHAT_VARIABLES_DECLARATION_END = "\n</lgos-chat-variables>"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 OpenWebUIEventEmitter = Callable[[dict[str, Any]], Awaitable[object]]
@@ -103,6 +110,29 @@ class OpenWebUIBody(OpenWebUIHostModel):
             raise ValueError(msg)
         return value
 
+    @field_validator("messages")
+    @classmethod
+    def remove_chat_variable_declarations(
+        cls, messages: list[OpenWebUIMessage]
+    ) -> list[OpenWebUIMessage]:
+        """Keep UI settings out of the graph prompt; they travel as metadata."""
+        if not messages or messages[0].role != "system":
+            return messages
+        system = messages[0]
+        if not isinstance(system.content, str):
+            return messages
+        content = system.content
+        # Each native tool-loop continuation prepends another copy.
+        while content.startswith(CHAT_VARIABLES_DECLARATION_START):
+            end = content.find(CHAT_VARIABLES_DECLARATION_END)
+            if end == -1:
+                break
+            end += len(CHAT_VARIABLES_DECLARATION_END)
+            content = content[end:].removeprefix("\n")
+        if content == system.content:
+            return messages
+        return [system.model_copy(update={"content": content}), *messages[1:]]
+
     @property
     def model_id(self) -> str:
         return self.model.partition(".")[2]
@@ -114,18 +144,48 @@ class OpenWebUIUserMessage(OpenWebUIHostModel):
 
 class OpenWebUIChatVariableField(OpenWebUIHostModel):
     key: str | None = None
+    type: str | None = None
 
 
 class OpenWebUIMetadata(OpenWebUIHostModel):
     chat_id: str | None = None
-    chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
+    # Validated before chat_variables so their values can follow these types.
     model_chat_variables: list[OpenWebUIChatVariableField] = Field(
         default_factory=list,
         validation_alias=AliasPath(
             "model", "info", "meta", "chat_variables_schema", "fields"
         ),
     )
+    chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
     user_message: OpenWebUIUserMessage | None = None
+
+    @field_validator("chat_variables")
+    @classmethod
+    def type_declared_chat_variables(
+        cls, values: dict[str, JsonValue], info: ValidationInfo
+    ) -> dict[str, JsonValue]:
+        """Restore declared types; the form keeps untouched defaults as text."""
+        field_types = {
+            field.key: field.type for field in info.data.get("model_chat_variables", [])
+        }
+        typed: dict[str, JsonValue] = {}
+        for key, value in values.items():
+            # Open WebUI treats empty values as unset, so LGOS applies defaults.
+            if value is None or value == "":
+                continue
+            field_type = field_types.get(key)
+            if field_type == "checkbox":
+                # The form checks the box only for these two values.
+                typed[key] = value is True or value == "true"
+            elif (
+                field_type == "number"
+                and isinstance(value, str)
+                and INTEGER_TEXT.fullmatch(value)
+            ):
+                typed[key] = int(value)
+            else:
+                typed[key] = value
+        return typed
 
     def supports_chat_variable(self, key: str) -> bool:
         return any(field.key == key for field in self.model_chat_variables)

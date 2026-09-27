@@ -150,6 +150,10 @@ def test_chat_variable_fields_maps_the_supported_scalar_settings() -> None:
         ("invalid", {"type": "string", "enum": ["a", "a"]}, "a"),
         ("invalid", {"type": "string", "enum": ["a", {}]}, "a"),
         ("invalid", {"type": "string", "enum": ["a"]}, "b"),
+        ("invalid", {"type": "string"}, 'say "hi"'),
+        ("invalid", {"type": "string"}, "a}b"),
+        ("invalid", {"type": "string"}, "two\nlines"),
+        ("invalid", {"type": "string", "enum": ["a", "b\\c"]}, "a"),
         ("invalid", {"type": "object"}, {}),
         ("invalid", {"type": "integer"}, "3"),
         ("invalid", {"type": "integer"}, True),
@@ -182,6 +186,39 @@ def test_chat_variable_fields_omits_invalid_fields_without_losing_valid_ones(
 
     assert chat_variable_fields(model) == (
         {"key": "enabled", "label": "Enabled", "default": False, "type": "checkbox"},
+    )
+
+
+def test_chat_variable_label_falls_back_when_the_title_cannot_be_declared() -> None:
+    model = SimpleNamespace(
+        model_extra={
+            "lgos": {
+                "schema_version": 1,
+                "description": "DUMMY",
+                "features": [],
+                "client_settings": {
+                    "schema_version": 1,
+                    "json_schema": {
+                        "properties": {
+                            "use_history": {
+                                "type": "boolean",
+                                "title": 'Use "history"',
+                            }
+                        }
+                    },
+                    "defaults": {"use_history": False},
+                },
+            }
+        }
+    )
+
+    assert chat_variable_fields(model) == (
+        {
+            "key": "use_history",
+            "label": "Use History",
+            "default": False,
+            "type": "checkbox",
+        },
     )
 
 
@@ -417,12 +454,74 @@ def test_sync_workspace_models_imports_hidden_base_and_new_wrapper() -> None:
     assert wrapper["base_model_id"] == base["id"]
     assert wrapper["access_grants"] == [PUBLIC_READ_GRANT]
     assert wrapper["meta"]["description"] == "DUMMY"
-    assert wrapper["meta"]["chat_variables_schema"] == {"fields": list(spec.fields)}
+    assert wrapper["params"] == {
+        "system": (
+            "<lgos-chat-variables>\n"
+            '{{chat.variables.use_history | checkbox:label="Use history":default=false}}'
+            "\n</lgos-chat-variables>"
+        )
+    }
     assert wrapper["meta"]["capabilities"] == {
         "file_upload": True,
         "file_context": False,
     }
     assert wrapper["meta"]["builtinTools"] == {"files": False}
+
+
+def test_workspace_model_declares_lgos_settings_as_openwebui_chat_variables() -> None:
+    client = _client([])
+    model = SimpleNamespace(
+        model_extra={
+            "lgos": {
+                "schema_version": 1,
+                "description": "DUMMY",
+                "features": [],
+                "client_settings": {
+                    "schema_version": 1,
+                    "json_schema": {
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "title": "Mode: brief | detailed",
+                                "enum": ["brief", "detailed"],
+                            },
+                            "assistant_name": {"type": "string"},
+                            "delay": {
+                                "type": "integer",
+                                "title": "Delay (seconds)",
+                                "minimum": 0,
+                                "maximum": 300,
+                            },
+                        }
+                    },
+                    "defaults": {
+                        "mode": "brief",
+                        "assistant_name": "Helper, v2",
+                        "delay": 5,
+                    },
+                },
+            }
+        }
+    )
+    fields = chat_variable_fields(model)
+    assert fields is not None
+
+    sync_workspace_models(
+        client, (WorkspaceModelSpec(id="settings", description="DUMMY", fields=fields),)
+    )
+
+    _, wrapper = client.post.call_args.kwargs["json"]["models"]
+    assert wrapper["params"]["system"].splitlines() == [
+        "<lgos-chat-variables>",
+        "{{chat.variables.mode | select"
+        ':label="Mode: brief | detailed":default="brief"'
+        ':options=["brief","detailed"]}}',
+        "{{chat.variables.assistant_name | text"
+        ':label="Assistant Name":default="Helper, v2"}}',
+        "{{chat.variables.delay | number"
+        ':label="Delay (seconds)":default=5:step=1:min=0:max=300}}',
+        "</lgos-chat-variables>",
+    ]
 
 
 def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
@@ -436,20 +535,13 @@ def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
     sync_workspace_models(client, (spec,))
 
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
-    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
-        {
-            "key": "lgos_package_version",
-            "type": "checkbox",
-            "label": "Package version",
-            "default": False,
-        },
-        {
-            "key": "web_search",
-            "type": "checkbox",
-            "label": "Web search",
-            "default": False,
-        },
-    ]
+    assert wrapper["params"]["system"] == (
+        "<lgos-chat-variables>\n"
+        "{{chat.variables.lgos_package_version"
+        ' | checkbox:label="Package version":default=false}}\n'
+        '{{chat.variables.web_search | checkbox:label="Web search":default=false}}'
+        "\n</lgos-chat-variables>"
+    )
 
 
 def test_client_tool_model_selects_the_gateway_connection() -> None:
@@ -483,14 +575,11 @@ def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
     sync_workspace_models(client, (spec,))
 
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
-    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
-        {
-            "key": "web_search",
-            "type": "checkbox",
-            "label": "Web search",
-            "default": False,
-        },
-    ]
+    assert wrapper["params"]["system"] == (
+        "<lgos-chat-variables>\n"
+        '{{chat.variables.web_search | checkbox:label="Web search":default=false}}'
+        "\n</lgos-chat-variables>"
+    )
     assert wrapper["meta"]["toolIds"] == ["server:mcp:lgos-gateway"]
 
 
@@ -506,14 +595,12 @@ def test_background_workspace_model_has_delivery_control() -> None:
     sync_workspace_models(client, (spec,))
 
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
-    assert wrapper["meta"]["chat_variables_schema"]["fields"] == [
-        {
-            "key": "lgos_background",
-            "type": "checkbox",
-            "label": "Run in background",
-            "default": False,
-        }
-    ]
+    assert wrapper["params"]["system"] == (
+        "<lgos-chat-variables>\n"
+        "{{chat.variables.lgos_background"
+        ' | checkbox:label="Run in background":default=false}}'
+        "\n</lgos-chat-variables>"
+    )
 
 
 def test_limited_workspace_model_has_a_warning_and_description_fallback() -> None:
@@ -526,6 +613,7 @@ def test_limited_workspace_model_has_a_warning_and_description_fallback() -> Non
     assert "Limited functionality" in wrapper["name"]
     assert "Limited functionality" in wrapper["meta"]["description"]
     assert wrapper["meta"]["capabilities"]["file_upload"] is False
+    assert wrapper["params"] == {}
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -545,9 +633,13 @@ def test_simple_uservalves_model_reuses_pipe_without_chat_variable_controls(
     assert static["id"] == "lgos.uservalves_simple"
     assert static["base_model_id"] == dynamic["base_model_id"] == base["id"]
     assert static["meta"]["filterIds"] == ["uservalves_simple"]
-    assert static["meta"]["chat_variables_schema"] == {"fields": []}
+    assert static["params"] == {}
     assert "filterIds" not in dynamic["meta"]
-    assert dynamic["meta"]["chat_variables_schema"]["fields"] == list(spec.fields)
+    assert dynamic["params"]["system"] == (
+        "<lgos-chat-variables>\n"
+        "{{chat.variables.use_history | checkbox:default=false}}"
+        "\n</lgos-chat-variables>"
+    )
     assert ("access_grants" in static) is not existing
     assert "is_active" not in static
 

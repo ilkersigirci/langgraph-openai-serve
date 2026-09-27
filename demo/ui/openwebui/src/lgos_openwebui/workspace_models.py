@@ -1,6 +1,8 @@
 """Generate Open WebUI Workspace Models from LGOS model metadata."""
 
+import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -17,6 +19,8 @@ from pydantic import (
 
 from .functions.generic.contracts import (
     BACKGROUND_SETTING_NAME,
+    CHAT_VARIABLES_DECLARATION_END,
+    CHAT_VARIABLES_DECLARATION_START,
     LGOS_EXTENSION_KEY,
     LGOS_MODEL_OWNER,
     PACKAGE_VERSION_TOOL_NAME,
@@ -30,8 +34,10 @@ from .tool_servers import MCP_GATEWAY_TOOL_ID, PUBLIC_READ_GRANT
 FILE_INPUTS_FEATURE = "file_inputs"
 MCP_TOOLS_FEATURE = "mcp_tools"
 BACKGROUND_FEATURE = "background"
-CHAT_VARIABLES_META_KEY = "chat_variables_schema"
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
+# Open WebUI cannot declare quotes, backslashes, or braces, and the Pipe needs
+# single-line values to find the end of the rendered declarations.
+UNDECLARABLE_TEXT = re.compile(r'["\\}\n]')
 GENERIC_FUNCTION_ID = "generic"
 WORKSPACE_MODEL_PREFIX = "lgos."
 USERVALVES_MODEL_ID = "lgos.uservalves_simple"
@@ -237,13 +243,14 @@ def sync_workspace_models(
         payloads.append(_workspace_model_payload(spec))
         if spec.id == "lgos-a/simple-graph" and not spec.limited:
             simple_model = _workspace_model_payload(spec)
+            # Its Filter supplies settings instead of Chat Variables.
             simple_model.update(
                 id=USERVALVES_MODEL_ID,
                 name="UserValves Simple / simple-graph",
+                params={},
             )
             simple_model["meta"].update(
                 description="Static per-user history and audience settings.",
-                chat_variables_schema={"fields": []},
                 filterIds=["uservalves_simple"],
             )
             payloads.append(simple_model)
@@ -286,23 +293,31 @@ def _chat_variable_field(
     if CHAT_VARIABLE_KEY.fullmatch(name) is None or not isinstance(schema, dict):
         return None
 
+    title = schema.get("title")
     field: dict[str, JsonValue] = {
         "key": name,
-        "label": str(schema.get("title") or name.replace("_", " ").title()),
+        "label": (
+            title
+            if isinstance(title, str) and title and _declarable(title)
+            else name.replace("_", " ").title()
+        ),
         "default": default,
     }
     schema_type = schema.get("type")
     if schema_type == "boolean" and type(default) is bool:
         return {**field, "type": "checkbox"}
     if schema_type == "integer" and type(default) is int:
-        # Open WebUI binds number inputs as JSON numbers, so values stay integers.
         field = {**field, "type": "number", "step": 1}
         if type(schema.get("minimum")) is int:
             field["min"] = schema["minimum"]
         if type(schema.get("maximum")) is int:
             field["max"] = schema["maximum"]
         return field
-    if schema_type != "string" or not isinstance(default, str):
+    if (
+        schema_type != "string"
+        or not isinstance(default, str)
+        or not _declarable(default)
+    ):
         return None
 
     enum = schema.get("enum")
@@ -310,12 +325,39 @@ def _chat_variable_field(
         return {**field, "type": "text"}
     if (
         not isinstance(enum, list)
-        or any(not isinstance(value, str) for value in enum)
+        or any(not isinstance(value, str) or not _declarable(value) for value in enum)
         or len(set(enum)) != len(enum)
         or default not in enum
     ):
         return None
     return {**field, "type": "select", "options": enum}
+
+
+def _declarable(text: str) -> bool:
+    return UNDECLARABLE_TEXT.search(text) is None
+
+
+def _chat_variables_declaration(fields: Sequence[dict[str, JsonValue]]) -> str:
+    declarations = []
+    for field in fields:
+        properties = [
+            f"{name}={_declaration_value(value)}"
+            for name, value in field.items()
+            if name not in {"key", "type"}
+        ]
+        definition = ":".join([str(field["type"]), *properties])
+        declarations.append(f"{{{{chat.variables.{field['key']} | {definition}}}}}")
+    return (
+        CHAT_VARIABLES_DECLARATION_START
+        + "\n".join(declarations)
+        + CHAT_VARIABLES_DECLARATION_END
+    )
+
+
+def _declaration_value(value: JsonValue) -> str:
+    if isinstance(value, str):
+        return f'"{value}"'
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _model_extension(model: Model | None) -> _ModelExtension | None:
@@ -339,9 +381,6 @@ def _hidden_base_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
 
 
 def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
-    # Open WebUI reads this native schema from Workspace Model metadata.
-    # Keeping it out of params.system prevents settings UI data from becoming
-    # an LGOS system prompt.
     fields = list(spec.fields)
     if is_server_tool_model(spec.id):
         fields.append(PACKAGE_VERSION_FIELD)
@@ -351,7 +390,6 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         fields.append(BACKGROUND_FIELD)
     metadata = {
         "description": spec.description or LIMITED_FUNCTIONALITY_DESCRIPTION,
-        CHAT_VARIABLES_META_KEY: {"fields": fields},
         "capabilities": {
             "file_upload": spec.supports_file_inputs,
             "file_context": False,
@@ -365,5 +403,7 @@ def _workspace_model_payload(spec: WorkspaceModelSpec) -> dict[str, Any]:
         "base_model_id": spec.base_model_id,
         "name": spec.name,
         "meta": metadata,
-        "params": {},
+        # Open WebUI builds Chat Variable forms only from system-prompt
+        # declarations; the Pipe strips them, so settings reach LGOS as metadata.
+        "params": {"system": _chat_variables_declaration(fields)} if fields else {},
     }

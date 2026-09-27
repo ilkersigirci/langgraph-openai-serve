@@ -41,7 +41,7 @@ from .gateway import MCP_GATEWAY_ID
 
 
 def _patch_legacy_custom_tool_output() -> None:
-    """Fill the response-output omission in OpenAI 2.29 used by Open WebUI."""
+    """Fill the response-output omission in the OpenAI SDK shipped by Open WebUI."""
     if hasattr(response_types, "ResponseCustomToolCallOutputItem"):
         return
 
