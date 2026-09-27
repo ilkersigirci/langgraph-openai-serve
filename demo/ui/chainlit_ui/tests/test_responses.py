@@ -436,6 +436,34 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
     assert transcript()[-1] == "Refund approved."
 
 
+@pytest.mark.parametrize("streaming", [False, True], ids=["create", "stream"])
+async def test_text_before_a_pause_stays_in_the_conversation(
+    chainlit_context,
+    fake_gateway,
+    streaming: bool,
+) -> None:
+    await select_profile(fake_gateway, "lgos-a/interruptible-approval")
+    chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = streaming
+    paused = response(
+        message("I checked ORDER-123."),
+        function_call(
+            "lgos_interrupt",
+            json.dumps({"question": "Approve refund?", "choices": ["approve"]}),
+            call_id="call_lg_review",
+        ),
+        id="resp_lg_review",
+    )
+    fake_gateway.replies.append(streamed(paused) if streaming else reply(paused))
+
+    await chat.on_message(user_message("Refund order ORDER-123."))
+
+    assert transcript() == [
+        "Refund order ORDER-123.",
+        "I checked ORDER-123.",
+        "Approve refund?",
+    ]
+
+
 async def test_client_tool_after_review_finishes_the_resumed_turn(
     chainlit_context,
     fake_gateway,

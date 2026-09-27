@@ -94,7 +94,15 @@ class _Turn:
                 )
                 raise_for_response(response)
                 calls = function_calls(response)
-                if not calls or any(call.name == INTERRUPT_TOOL_NAME for call in calls):
+                if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
+                    # Keep what the graph said before pausing; the review follows.
+                    self._collect(response)
+                    if self.answer.content and self.streaming:
+                        await self.answer.update()
+                    elif self.answer.content:
+                        await self.answer.send()
+                    break
+                if not calls:
                     break
                 self._collect(response)
                 outputs = [
