@@ -62,3 +62,24 @@ jobs:
 
       - name: Test the project
         run: just test -n auto
+
+  dependency_floors:
+    name: Test the minimum supported dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      # Resolve each direct dependency, extras included, to its declared floor.
+      - name: Test against the dependency floors
+        run: |
+          uv run --resolution lowest-direct --all-extras \
+            --no-default-groups --group test --module pytest -n auto
