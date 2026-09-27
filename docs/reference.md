@@ -270,9 +270,7 @@ class PublicSettings(ClientSettings):
 
 Pass this model as `GraphConfig.client_settings` and use it as the graph's context
 schema when it is the complete runtime context. Every public field must have a
-default. Registration rejects subclasses that change the inherited strict,
-frozen, extra-forbid, or default-validation behavior, as well as fields excluded
-from Pydantic serialization.
+default; registration fails when the model cannot build its defaults or schema.
 
 All public fields travel together as compact JSON text in the
 `metadata.lgos_settings` string. Clients omit values equal to the advertised
@@ -280,8 +278,8 @@ defaults. System instructions remain ordinary OpenAI messages and are
 independent of `ClientSettings`; native OpenAI fields keep their standard
 request semantics.
 
-LGOS validates defaults and generates the discovery JSON Schema when the graph
-is registered, then validates settings on every request. Without
+LGOS validates the settings with the model's strict JSON validation on every
+request. Without
 `context_factory`, the settings become `Runtime.context`. A factory can instead
 combine them with server-derived identity, authorization, database clients, and
 other dependencies.

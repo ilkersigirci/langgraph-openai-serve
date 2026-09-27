@@ -15,14 +15,6 @@ from langgraph_openai_serve.graph.request import (
 )
 
 
-class UnsupportedChatRequestError(ValueError):
-    """Raised when a valid Chat field has unsupported LGOS semantics."""
-
-    def __init__(self, message: str, *, param: str) -> None:
-        super().__init__(message)
-        self.param = param
-
-
 def decode_chat_request(
     request: ChatCompletionRequest,
 ) -> tuple[GraphRequest, list[BaseMessage]]:
@@ -61,4 +53,4 @@ def _decode_tool_choice(
     return NamedFunctionToolChoice(name=tool_choice.function.name)
 
 
-__all__ = ["UnsupportedChatRequestError", "decode_chat_request"]
+__all__ = ["decode_chat_request"]

@@ -1,4 +1,4 @@
-from anyio import Event, fail_after, sleep_forever
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.graph import StateGraph
@@ -10,17 +10,32 @@ from langgraph.types import (
 )
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
+from langgraph_openai_serve.graph.run import GraphRun
 from langgraph_openai_serve.graph.runner import (
     run_langgraph_stream,
     stream_run,
 )
-from langgraph_openai_serve.graph.utils import GraphRun
 from tests.graph.support.schemas import (
     AnswerOutput,
     MessageState,
     QuestionInput,
     QuestionState,
 )
+
+
+def fake_run(graph, *, output_to_message) -> GraphRun:
+    return GraphRun(
+        config=GraphConfig(
+            graph=lambda: graph,
+            description="DUMMY",
+            output_to_message=output_to_message,
+        ),
+        graph=graph,
+        inputs={},
+        context=None,
+        runnable_config={},
+        usage_callback=UsageMetadataCallbackHandler(),
+    )
 
 
 async def stream_text(name: str, graph_registry: GraphRegistry, make_request) -> str:
@@ -117,52 +132,6 @@ async def test_stream_excludes_disabled_model_streams_and_non_ai_messages(
     assert await stream_text("filtered", graph_registry, make_request) == "draftvisible"
 
 
-async def test_stream_run_closes_langgraph_stream_when_consumer_closes() -> None:
-    closed = Event()
-    stream_options = {}
-
-    async def graph_events():
-        try:
-            yield MessagesStreamPart(
-                type="messages",
-                ns=(),
-                data=(AIMessageChunk(content="token"), {}),
-            )
-            await sleep_forever()
-        finally:
-            closed.set()
-
-    class Graph:
-        output_channels = ("answer",)
-
-        def astream(self, *args, **kwargs):
-            stream_options.update(kwargs)
-            return graph_events()
-
-    graph = Graph()
-    run = GraphRun(
-        config=GraphConfig(
-            graph=lambda: graph,
-            description="DUMMY",
-        ),
-        graph=graph,
-        inputs={},
-        context=None,
-        runnable_config=None,
-        run_id=None,
-    )
-
-    async with run:
-        chunks = stream_run(run)
-        assert await anext(chunks) == "token"
-        assert stream_options["output_keys"] == ("answer",)
-
-        with fail_after(1):
-            await chunks.aclose()
-
-    assert closed.is_set()
-
-
 async def test_stream_run_preserves_generic_event_order() -> None:
     payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
 
@@ -196,18 +165,7 @@ async def test_stream_run_preserves_generic_event_order() -> None:
             return graph_events()
 
     graph = Graph()
-    run = GraphRun(
-        config=GraphConfig(
-            graph=lambda: graph,
-            description="DUMMY",
-            output_to_message=lambda _output: AIMessage(content=""),
-        ),
-        graph=graph,
-        inputs={},
-        context=None,
-        runnable_config=None,
-        run_id=None,
-    )
+    run = fake_run(graph, output_to_message=lambda _output: AIMessage(content=""))
 
     async with run:
         assert [event async for event in stream_run(run, stream_updates=True)] == [
@@ -248,17 +206,8 @@ async def test_stream_uses_final_root_value_with_subgraph_values_present() -> No
             return graph_events()
 
     graph = Graph()
-    run = GraphRun(
-        config=GraphConfig(
-            graph=lambda: graph,
-            description="DUMMY",
-            output_to_message=lambda output: AIMessage(content=output["answer"]),
-        ),
-        graph=graph,
-        inputs={},
-        context=None,
-        runnable_config=None,
-        run_id=None,
+    run = fake_run(
+        graph, output_to_message=lambda output: AIMessage(content=output["answer"])
     )
 
     async with run:

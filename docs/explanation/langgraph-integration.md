@@ -199,14 +199,13 @@ request types.
 
 `run_langgraph()` returns the final `AIMessage` or `LangGraphInterruptBatch`
 directly. The streaming helper yields text and custom events followed by that
-same output type. These public helpers own the prepared-run context for their
-complete lifetime. Lower-level `invoke_run()` and `stream_run()` calls operate
-only inside the active context supplied by an HTTP service or direct wrapper.
+same output type. Both helpers prepare the run and close it when they finish.
 
 When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
 Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation
-and every resume. The helpers delegate to the same `prepare_run()`, `invoke_run()`,
-and `stream_run()` used by both HTTP routes.
+and every resume. The helpers delegate to the same `prepare_run()` and
+`stream_run()` used by both HTTP routes. A run without streaming requests only
+root graph values, exactly like LangGraph's `ainvoke()`.
 
 The demo's `api/notebooks/graph_runner.py` compares direct execution with
 Responses SDK calls. Open it with
@@ -217,10 +216,11 @@ Responses SDK calls. Open it with
 For streaming Responses and Chat Completions (`stream=true`), LGOS ties graph
 iteration to the HTTP response lifetime. A request-scoped FastAPI dependency
 owns the producer task and memory channel behind `StreamingResponse`. When the
-client disconnects, dependency cleanup cancels and awaits that producer, then
-closes the graph iterator. The service's prepared-run context owns graph cleanup
-after streaming starts; the request owner releases the run itself when a stream
-is closed before its source starts. This uses the normal OpenAI streaming
+client disconnects, dependency cleanup cancels that producer once and awaits it,
+which closes the graph stream, then releases the prepared run. The producer is a
+separate asyncio task because Starlette's AnyIO cancellation repeats at every
+await, which leaves LangGraph node tasks running once a stream uses several
+modes or subgraphs. This uses the normal OpenAI streaming
 connection; LGOS adds no custom cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"

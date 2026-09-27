@@ -7,8 +7,9 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import GraphConfig
-from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 from pydantic import BaseModel, Field
+
+from lgos_demo_api.utils.fake_llm import stream_fake_chat_response
 
 FIRST_CONTRIBUTION = "The first node contributed this sentence. "
 SECOND_CONTRIBUTION = "The second node contributed this sentence."

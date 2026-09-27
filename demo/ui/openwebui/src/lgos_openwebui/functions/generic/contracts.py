@@ -23,7 +23,6 @@ from pydantic import (
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/metadata.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
-# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
 DISPLAY_FILE_TOOL_NAME = "display_file"
 PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"

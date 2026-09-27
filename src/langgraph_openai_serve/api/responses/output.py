@@ -30,13 +30,10 @@ from langgraph_openai_serve.api.responses.interrupts import (
     interrupt_tool_call_id,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
+from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph.citations import citations_from_message
-from langgraph_openai_serve.graph.interrupt.models import LangGraphInterruptBatch
+from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
-
-
-class UnsupportedResponsesOutputError(RuntimeError):
-    """Raised when graph output cannot be serialized as supported Responses items."""
 
 
 @dataclass(frozen=True)
@@ -133,7 +130,7 @@ def response_function_calls(message: AIMessage) -> list[ResponseFunctionToolCall
     """Serialize and validate all client tool calls from an assistant message."""
     if message.invalid_tool_calls and response_incomplete_details(message) is None:
         msg = "The final assistant message contains invalid tool calls."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
 
     calls = [response_function_call(call) for call in message.tool_calls]
     calls.extend(_incomplete_function_call(call) for call in message.invalid_tool_calls)
@@ -141,7 +138,7 @@ def response_function_calls(message: AIMessage) -> list[ResponseFunctionToolCall
     for output in calls:
         if output.call_id in seen_call_ids:
             msg = f"The final assistant message repeats call id '{output.call_id}'."
-            raise UnsupportedResponsesOutputError(msg)
+            raise GraphError(msg)
         seen_call_ids.add(output.call_id)
     return calls
 
@@ -150,7 +147,7 @@ def _incomplete_function_call(call: InvalidToolCall) -> ResponseFunctionToolCall
     call_id, name, arguments = call.get("id"), call.get("name"), call.get("args")
     if not call_id or not name or arguments is None:
         msg = "The incomplete tool call must include an id, name, and arguments."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
     return _function_call_item(call_id=call_id, name=name, arguments=arguments)
 
 
@@ -161,13 +158,13 @@ def response_function_call(call: ToolCall) -> ResponseFunctionToolCall:
     arguments = call.get("args")
     if not isinstance(call_id, str) or not call_id:
         msg = "The final assistant tool call must include a non-empty id."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
     if not isinstance(name, str) or not name:
         msg = "The final assistant tool call must include a non-empty name."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
     if not isinstance(arguments, dict):
         msg = "The final assistant tool call arguments must be a JSON object."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
     return _function_call_item(
         call_id=call_id,
         name=name,
@@ -215,7 +212,7 @@ def _dump_arguments(arguments: dict[str, Any]) -> str:
         return json.dumps(arguments, allow_nan=False, separators=(",", ":"))
     except (TypeError, ValueError) as exc:
         msg = "The final assistant tool call arguments must be valid JSON values."
-        raise UnsupportedResponsesOutputError(msg) from exc
+        raise GraphError(msg) from exc
 
 
 def response_output_text(message: AIMessage) -> ResponseOutputText:
@@ -290,7 +287,6 @@ def response_usage(usage: UsageMetadata | None) -> ResponseUsage | None:
 
 __all__ = [
     "ResponseContext",
-    "UnsupportedResponsesOutputError",
     "interrupt_output_items",
     "response_function_call",
     "response_function_calls",

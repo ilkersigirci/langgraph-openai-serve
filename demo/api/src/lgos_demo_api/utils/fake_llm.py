@@ -1,4 +1,4 @@
-"""Shared fake streaming model helpers for demos and tests."""
+"""Deterministic fake model streaming for demo graphs."""
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import HumanMessage

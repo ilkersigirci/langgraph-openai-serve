@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated, Any, Literal
 
-from fastapi import status
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_core.language_models import BaseChatModel
@@ -18,12 +17,11 @@ from langgraph_openai_serve import (
     ClientSettings,
     GraphConfig,
     GraphRequest,
+    InvalidRequestError,
     NamedFunctionToolChoice,
 )
-from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 from openai import AsyncOpenAI
-from openai.types.shared import ErrorObject
 from plotly import graph_objects as go
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -340,28 +338,16 @@ def output_to_message(output: Any) -> AIMessage:
 
 def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
     if not request.user:
-        raise OpenAIHTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error=ErrorObject(
-                message="user is required for persistent plot agent storage.",
-                type="invalid_request_error",
-                param="user",
-                code="missing_persistence_scope",
-            ),
-        )
+        msg = "user is required for persistent plot agent storage."
+        raise InvalidRequestError(msg, param="user", code="missing_persistence_scope")
     conversation_parameter = f"metadata.{CONVERSATION_METADATA_KEY}"
     conversation_id = request.metadata.get(CONVERSATION_METADATA_KEY)
     if not conversation_id:
-        raise OpenAIHTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            error=ErrorObject(
-                message=(
-                    f"{conversation_parameter} is required for persistent plot agent storage."
-                ),
-                type="invalid_request_error",
-                param=conversation_parameter,
-                code="missing_persistence_scope",
-            ),
+        msg = f"{conversation_parameter} is required for persistent plot agent storage."
+        raise InvalidRequestError(
+            msg,
+            param=conversation_parameter,
+            code="missing_persistence_scope",
         )
     return request.user, conversation_id
 

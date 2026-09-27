@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
-from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from langgraph_openai_serve.graph.graph_registry import GraphError
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
 
@@ -142,5 +142,5 @@ async def test_graph_resolvers_preserve_their_lifetimes(message_graph) -> None:
 async def test_factory_result_must_be_a_compiled_state_graph() -> None:
     config = GraphConfig(graph=object, description="DUMMY")
 
-    with pytest.raises(GraphConfigurationError, match="compiled LangGraph"):
+    with pytest.raises(GraphError, match="compiled LangGraph"):
         await config.resolve_graph()

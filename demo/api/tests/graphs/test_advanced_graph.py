@@ -16,7 +16,7 @@ from langgraph_openai_serve.api.responses.request import decode_responses_reques
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import stream_response
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.utils import prepare_run
+from langgraph_openai_serve.graph.run import prepare_run
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError
 
 from lgos_demo_api.graphs.advanced_graph import (

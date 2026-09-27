@@ -191,7 +191,7 @@ async def test_invalid_interrupt_payload_returns_openai_server_error(
 
     assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
     assert exc_info.value.body == {
-        "message": "LangGraph interrupt payloads must be valid JSON values.",
+        "message": "Internal server error",
         "type": "server_error",
         "param": None,
         "code": None,

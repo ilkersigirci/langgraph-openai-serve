@@ -12,7 +12,7 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseFunctionCallOutputInput,
     ResponseInputItem,
 )
-from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
@@ -82,7 +82,7 @@ def test_parse_responses_resume_preserves_complete_string_output_batch() -> None
 def test_previous_response_id_requires_only_function_outputs(
     input_value: str | list[ResponseInputItem],
 ) -> None:
-    with pytest.raises(InvalidResumeRequestError, match="only function_call_output"):
+    with pytest.raises(InvalidRequestError, match="only function_call_output"):
         parse_responses_resume(
             input_value,
             previous_response_id=RESPONSE_ID,
@@ -100,7 +100,7 @@ def test_interrupt_items_require_previous_response_id() -> None:
         ResponseFunctionCallOutputInput(call_id=call_id, output="yes"),
     ]
 
-    with pytest.raises(InvalidResumeRequestError, match="previous_response_id"):
+    with pytest.raises(InvalidRequestError, match="previous_response_id"):
         parse_responses_resume(items)
 
 
@@ -111,7 +111,7 @@ def test_interrupt_items_require_previous_response_id() -> None:
 def test_parse_responses_resume_rejects_invalid_previous_response_id(
     previous_response_id: str,
 ) -> None:
-    with pytest.raises(InvalidResumeRequestError, match="interrupt Response ID"):
+    with pytest.raises(InvalidRequestError, match="interrupt Response ID"):
         parse_responses_resume(
             [_output("interrupt-1", "yes")],
             previous_response_id=previous_response_id,
@@ -128,7 +128,7 @@ def test_parse_responses_resume_rejects_invalid_previous_response_id(
 def test_parse_responses_resume_rejects_invalid_call_id(call_id: str) -> None:
     output = ResponseFunctionCallOutputInput(call_id=call_id, output="yes")
 
-    with pytest.raises(InvalidResumeRequestError, match="call_id is invalid"):
+    with pytest.raises(InvalidRequestError, match="call_id is invalid"):
         parse_responses_resume(
             [output],
             previous_response_id=RESPONSE_ID,
@@ -136,7 +136,7 @@ def test_parse_responses_resume_rejects_invalid_call_id(call_id: str) -> None:
 
 
 def test_parse_responses_resume_rejects_duplicate_outputs() -> None:
-    with pytest.raises(InvalidResumeRequestError, match="must be unique"):
+    with pytest.raises(InvalidRequestError, match="must be unique"):
         parse_responses_resume(
             [
                 _output("interrupt-1", "yes"),

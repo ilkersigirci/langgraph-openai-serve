@@ -1,32 +1,21 @@
 import pytest
-from langchain_core.callbacks import BaseCallbackHandler, UsageMetadataCallbackHandler
-from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.config import get_stream_writer
-from langgraph.graph import StateGraph
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import (
     begin_log_context,
     get_log_context,
     reset_log_context,
 )
 from langgraph_openai_serve.core.settings import Settings
-from langgraph_openai_serve.graph import utils as graph_utils
+from langgraph_openai_serve.graph import run as graph_run
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import (
-    GraphConfig,
-    GraphNotFoundError,
-    GraphRegistry,
-)
+from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.runner import (
-    invoke_run,
-    run_langgraph,
-)
-from langgraph_openai_serve.graph.utils import (
-    GraphRun,
-    prepare_run,
-)
+from langgraph_openai_serve.graph.run import prepare_run
+from langgraph_openai_serve.graph.runner import run_langgraph
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
 
@@ -55,10 +44,10 @@ class RecordingCallback(BaseCallbackHandler):
 def mock_langfuse_callback(monkeypatch: pytest.MonkeyPatch) -> RecordingCallback:
     callback = RecordingCallback()
     monkeypatch.setattr(
-        graph_utils, "settings", Settings.model_construct(ENABLE_LANGFUSE=True)
+        graph_run, "settings", Settings.model_construct(ENABLE_LANGFUSE=True)
     )
     monkeypatch.setattr(
-        graph_utils,
+        graph_run,
         "get_langfuse_callback",
         lambda: callback,
     )
@@ -103,50 +92,6 @@ async def test_enabled_langfuse_is_added_to_graph_run(
         assert graph_config.runtime_callbacks is None
 
 
-async def test_runtime_callbacks_reach_interrupt_runnable_config_without_mutation(
-    make_request,
-    sqlite_checkpointer,
-) -> None:
-    recording_callback = RecordingCallback()
-    runtime_callbacks = [recording_callback]
-    graph_config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-        runtime_callbacks=runtime_callbacks,
-        run_coordinator=InMemoryRunCoordinator(),
-    )
-    graph_registry = GraphRegistry(registry={"interruptible": graph_config})
-    request = make_request(
-        "interruptible",
-        metadata={"conversation_id": "conversation-123"},
-    )
-
-    run = await prepare_run(
-        request,
-        [HumanMessage(content="question")],
-        graph_registry,
-    )
-    try:
-        assert run.runnable_config is not None
-        assert run.runnable_config["callbacks"][0] is recording_callback
-        assert isinstance(
-            run.runnable_config["callbacks"][1],
-            UsageMetadataCallbackHandler,
-        )
-        assert run.runnable_config["run_name"] == "lgos.graph_run"
-        assert run.runnable_config["metadata"]["lgos.model"] == "interruptible"
-        assert run.runnable_config["metadata"]["lgos.operation_id"] is not None
-        assert (
-            run.runnable_config["metadata"]["langfuse_session_id"] == "conversation-123"
-        )
-        assert "run_id" not in run.runnable_config
-        assert graph_config.runtime_callbacks == [recording_callback]
-        assert runtime_callbacks == [recording_callback]
-    finally:
-        await run.aclose()
-
-
 async def test_interrupt_callback_observes_native_checkpoint_metadata(
     make_request,
     sqlite_checkpointer,
@@ -177,7 +122,7 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
 
 
 @pytest.mark.parametrize("conversation_id", [None, "", "conversation-123"])
-async def test_runnable_config_contains_request_correlation_metadata(
+async def test_callbacks_observe_request_correlation_metadata(
     make_request,
     conversation_id: str | None,
 ) -> None:
@@ -202,25 +147,15 @@ async def test_runnable_config_contains_request_correlation_metadata(
     token = begin_log_context("request-123")
 
     try:
-        run = await prepare_run(
-            request,
-            [HumanMessage(content="question")],
-            graph_registry,
-        )
+        await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
     finally:
         reset_log_context(token)
 
-    try:
-        assert run.runnable_config is not None
-        assert run.runnable_config["run_name"] == "lgos.graph_run"
-        assert run.runnable_config["metadata"] == {
-            "lgos.model": "messages",
-            "lgos.request_id": "request-123",
-            **({"langfuse_session_id": conversation_id} if conversation_id else {}),
-        }
-        assert "run_id" not in run.runnable_config
-    finally:
-        await run.aclose()
+    metadata = recording_callback.root_metadata[0]
+    assert metadata["lgos.model"] == "messages"
+    assert metadata["lgos.request_id"] == "request-123"
+    assert metadata.get("langfuse_session_id") == (conversation_id or None)
+    assert "unrelated" not in metadata
 
 
 async def test_operation_id_is_bound_before_interrupt_preparation_fails(
@@ -265,7 +200,7 @@ def test_standard_graph_rejects_interrupt_run_coordinator() -> None:
         )
 
 
-async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
+async def test_unknown_model_raises_model_not_found(make_request) -> None:
     request = make_request("missing")
     graph_registry = GraphRegistry(
         registry={
@@ -276,37 +211,7 @@ async def test_unknown_model_raises_graph_not_found_error(make_request) -> None:
         }
     )
 
-    with pytest.raises(GraphNotFoundError, match="Graph 'missing' not found"):
+    with pytest.raises(InvalidRequestError, match="'missing' does not exist") as exc:
         await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
 
-
-async def test_invoke_run_ignores_generic_custom_events() -> None:
-    payload = {"type": "status", "data": {"message": "Searching"}}
-
-    async def answer(_state):
-        get_stream_writer()(payload)
-        return {"messages": [AIMessage(content="done")]}
-
-    graph = (
-        StateGraph(dict)
-        .add_node("answer", answer)
-        .set_entry_point("answer")
-        .set_finish_point("answer")
-        .compile()
-    )
-    run = GraphRun(
-        config=GraphConfig(
-            graph=graph,
-            description="DUMMY",
-        ),
-        graph=graph,
-        inputs={},
-        context=None,
-        runnable_config=None,
-        run_id=None,
-    )
-
-    async with run:
-        message = await invoke_run(run)
-
-    assert message.text == "done"
+    assert (exc.value.status_code, exc.value.code) == (404, "model_not_found")

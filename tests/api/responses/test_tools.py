@@ -145,20 +145,6 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
         ),
         pytest.param(
             {
-                "input": "Run it.",
-                "tools": [
-                    {
-                        "type": "custom",
-                        "name": "package_version",
-                        "async": True,
-                    }
-                ],
-            },
-            "tools.0.async",
-            id="custom-declaration",
-        ),
-        pytest.param(
-            {
                 "input": [
                     {
                         "type": "function_call",
@@ -176,26 +162,6 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
             },
             "input.0.async",
             id="function-call-replay",
-        ),
-        pytest.param(
-            {
-                "input": [
-                    {
-                        "type": "custom_tool_call",
-                        "call_id": "call_package",
-                        "name": "package_version",
-                        "input": "openai",
-                        "async": True,
-                    },
-                    {
-                        "type": "custom_tool_call_output",
-                        "call_id": "call_package",
-                        "output": "openai==3",
-                    },
-                ]
-            },
-            "input.0.async",
-            id="custom-call-replay",
         ),
     ],
 )

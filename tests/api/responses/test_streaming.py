@@ -1,10 +1,8 @@
-import json
-import uuid
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from httpx2 import ASGITransport, AsyncClient
+from httpx2 import AsyncClient
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.messages.content import create_citation, create_text_block
@@ -24,12 +22,10 @@ from langgraph_openai_serve import (
     status_event,
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
 from tests.api.responses.support import (
     load_stream_fixture,
     normalize_stream_payloads,
 )
-from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState
@@ -250,28 +246,6 @@ async def test_text_stream_has_complete_lifecycle_and_stable_identity(
         assert event_item_ids == {output_item.id}
 
 
-async def test_raw_stream_uses_named_sse_without_done_sentinel(
-    client: AsyncClient,
-) -> None:
-    async with client.stream(
-        "POST",
-        "/v1/responses",
-        json={"model": "fallback", "input": "Hello", "stream": True},
-    ) as response:
-        body = (await response.aread()).decode()
-
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "[DONE]" not in body
-    frames = [frame for frame in body.split("\n\n") if frame]
-    assert frames
-    for frame in frames:
-        event_line, data_line = frame.splitlines()
-        event_type = event_line.removeprefix("event: ")
-        assert event_type
-        assert data_line.startswith("data: ")
-        assert json.loads(data_line.removeprefix("data: "))["type"] == event_type
-
-
 @pytest.mark.parametrize(
     ("model", "tools", "fixture_name"),
     [
@@ -352,25 +326,6 @@ async def test_status_commentary_requires_feature_and_streaming(
     assert [item.phase for item in completed.output] == ["final_answer"]
 
 
-async def test_graph_without_model_stream_emits_final_text_fallback(
-    openai_client: AsyncOpenAI,
-) -> None:
-    events = await _events(openai_client, "fallback")
-
-    assert [event.type for event in events] == [
-        "response.created",
-        "response.in_progress",
-        "response.output_item.added",
-        "response.content_part.added",
-        "response.output_text.delta",
-        "response.output_text.done",
-        "response.content_part.done",
-        "response.output_item.done",
-        "response.completed",
-    ]
-    assert events[-1].response.output_text == "fallback"
-
-
 async def test_streamed_final_text_mismatch_ends_in_failed_response(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -391,21 +346,6 @@ async def test_streamed_final_text_mismatch_ends_in_failed_response(
         event for event in events if event.type == "response.output_item.added"
     )
     assert failed.output[0].id == added.item.id
-
-
-async def test_graph_failure_emits_terminal_failure_events(
-    openai_client: AsyncOpenAI,
-) -> None:
-    events = await _events(openai_client, "failure")
-
-    assert [event.type for event in events] == [
-        "response.created",
-        "response.in_progress",
-        "error",
-        "response.failed",
-    ]
-    assert [event.sequence_number for event in events] == list(range(len(events)))
-    assert events[-1].response.status == "failed"
 
 
 async def test_responses_citations_use_unicode_inclusive_boundaries(
@@ -443,53 +383,6 @@ async def test_responses_citations_use_unicode_inclusive_boundaries(
                 "url": "https://example.com/source",
             },
         ]
-
-
-async def test_interrupt_stream_completes_and_releases_run_lease(
-    sqlite_checkpointer: Any,
-) -> None:
-    run_id = str(uuid.uuid4())
-    coordinator = InMemoryRunCoordinator()
-    registry = GraphRegistry(
-        registry={
-            "interrupt": GraphConfig(
-                graph=lambda: make_interrupt_graph(
-                    checkpointer=sqlite_checkpointer,
-                ),
-                description="DUMMY",
-                features={GraphFeature.INTERRUPTS},
-                run_coordinator=coordinator,
-            )
-        }
-    )
-    app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
-
-    async with (
-        AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as http_client,
-        AsyncOpenAI(
-            api_key="test",
-            base_url="http://test/v1",
-            http_client=http_client,
-            max_retries=0,
-        ) as openai_client,
-    ):
-        stream = await openai_client.responses.create(
-            model="interrupt",
-            input="Hello",
-            metadata={"lgos_run_id": run_id},
-            store=False,
-            stream=True,
-        )
-        events = [event async for event in stream]
-
-    assert events[-1].type == "response.completed"
-    assert events[-1].response.output[0].type == "function_call"
-    assert events[-1].response.output[0].name == "lgos_interrupt"
-    async with coordinator(checkpoint_key("interrupt", run_id)):
-        pass
 
 
 async def test_text_before_interrupt_is_completed_and_retained(

@@ -17,11 +17,10 @@ from langgraph_openai_serve import (
     GraphConfig,
     GraphFeature,
     GraphRequest,
+    InvalidRequestError,
     NamedCustomToolChoice,
     status_event,
 )
-from langgraph_openai_serve.core.errors import OpenAIHTTPException
-from openai.types.shared import ErrorObject
 from pydantic import BaseModel
 
 from lgos_demo_api.core.settings import settings
@@ -124,14 +123,8 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
 def context_factory(request: GraphRequest, _settings: None) -> GraphRequest:
     """Reject client functions that this graph cannot execute."""
     if request.tools:
-        raise OpenAIHTTPException(
-            status_code=400,
-            error=ErrorObject(
-                type="invalid_request_error",
-                param="tools",
-                message="This graph supports only its configured tools.",
-            ),
-        )
+        msg = "This graph supports only its configured tools."
+        raise InvalidRequestError(msg, param="tools")
     return request
 
 

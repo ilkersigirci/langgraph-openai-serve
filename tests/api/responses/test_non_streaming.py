@@ -23,7 +23,7 @@ from openai.types.responses.response_output_text import AnnotationURLCitation
 from starlette import status
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry, GraphRequest
-from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from langgraph_openai_serve.graph.graph_registry import GraphError
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState
@@ -836,30 +836,13 @@ async def test_duplicate_replayed_message_ids_are_rejected(
     assert "duplicate item id 'msg_duplicate'" in error["message"]
 
 
-async def test_unknown_model_uses_openai_error_envelope(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(model="missing", input="Hi")
-
-    assert exc_info.value.response.json() == {
-        "error": {
-            "message": "Graph 'missing' not found in registry.",
-            "type": "invalid_request_error",
-            "param": "model",
-            "code": None,
-            "misalignment": None,
-        }
-    }
-
-
 async def test_graph_configuration_error_uses_server_error_envelope(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
     def reject_output(_output: object) -> AIMessage:
         message = "Graph output is not configured."
-        raise GraphConfigurationError(message)
+        raise GraphError(message)
 
     graph_registry.register(
         "broken",
@@ -875,7 +858,7 @@ async def test_graph_configuration_error_uses_server_error_envelope(
 
     assert exc_info.value.response.json() == {
         "error": {
-            "message": "Graph output is not configured.",
+            "message": "Internal server error",
             "type": "server_error",
             "param": None,
             "code": None,

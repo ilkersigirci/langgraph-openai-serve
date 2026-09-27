@@ -491,17 +491,21 @@ OpenAI-compatible routes return errors in the OpenAI envelope:
 ```json
 {
   "error": {
-    "message": "Graph 'missing' not found in registry.",
+    "message": "The model 'missing' does not exist.",
     "type": "invalid_request_error",
     "param": "model",
-    "code": null
+    "code": "model_not_found"
   }
 }
 ```
 
-Route code that knows the OpenAI error metadata should raise
-`OpenAIHTTPException` with `openai.types.shared.ErrorObject`. Shared handlers
-translate generic FastAPI validation and HTTP errors into the same envelope.
+An unknown model returns HTTP 404 on every route, as OpenAI does. Code that
+rejects a request raises `InvalidRequestError` with its `param`, `code`, and
+status; graph adapters such as `context_factory` may raise it too. Shared
+handlers translate FastAPI validation and HTTP errors into the same envelope.
+A `GraphError` or any other unexpected failure returns HTTP 500 with
+`type: "server_error"` and the message `Internal server error`; the details are
+logged, not returned.
 
 Invalid runtime settings return HTTP 400 with
 `param: "metadata.lgos_settings"`. A proxy-stripped model

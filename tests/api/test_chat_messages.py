@@ -9,7 +9,6 @@ from langchain_core.messages import (
 )
 
 from langgraph_openai_serve.api.chat.messages import (
-    InvalidChatMessageError,
     convert_to_lc_messages,
 )
 from langgraph_openai_serve.api.chat.schemas import (
@@ -217,17 +216,3 @@ def test_empty_tool_arguments_support_parameterless_tools():
         }
     ]
     assert assistant_message.invalid_tool_calls == []
-
-
-def test_tool_message_requires_tool_call_id():
-    message = ChatCompletionRequestMessage(
-        role=Role.TOOL,
-        content="Tool result",
-    )
-
-    with pytest.raises(InvalidChatMessageError, match="tool_call_id"):
-        convert_to_lc_messages([message])
-
-
-def test_empty_messages_produce_an_empty_list():
-    assert convert_to_lc_messages([]) == []

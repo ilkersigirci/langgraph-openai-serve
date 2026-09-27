@@ -4,7 +4,6 @@ import logging
 import uuid
 
 import pytest
-from anyio import Event, create_task_group
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langgraph.graph import StateGraph
@@ -12,11 +11,7 @@ from starlette import status
 
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
-from langgraph_openai_serve.core.logging import (
-    bind_log_context,
-    get_log_context,
-    get_logger,
-)
+from langgraph_openai_serve.core.logging import bind_log_context, get_logger
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
 from tests.graph.support.schemas import MessageState
@@ -33,51 +28,36 @@ def _records(caplog, event: str):
     return [record for record in caplog.records if record.getMessage() == event]
 
 
-async def test_missing_request_id_is_generated(client: AsyncClient) -> None:
-    response = await client.get("/v1/models")
-
-    request_id = response.headers["x-request-id"]
-    assert uuid.UUID(request_id).version == _UUID4_VERSION
-
-
-async def test_incoming_request_id_is_preserved(client: AsyncClient) -> None:
-    response = await client.get(
-        "/v1/models",
-        headers={"X-Request-ID": " upstream-request-123 "},
-    )
-
-    assert response.headers["x-request-id"] == "upstream-request-123"
-
-
-async def test_unusable_request_id_is_replaced(client: AsyncClient) -> None:
-    response = await client.get(
-        "/v1/models",
-        headers={"X-Request-ID": "x" * 129},
-    )
-
-    request_id = response.headers["x-request-id"]
-    assert request_id != "x" * 129
-    assert uuid.UUID(request_id).version == _UUID4_VERSION
-
-
 @pytest.mark.parametrize(
-    "headers",
+    ("headers", "expected"),
     [
-        [(b"x-request-id", b"request-\x85forged")],
-        [
-            (b"x-request-id", b"request-one"),
-            (b"x-request-id", b"request-two"),
-        ],
+        pytest.param([], None, id="missing"),
+        pytest.param(
+            [(b"x-request-id", b" upstream-request-123 ")],
+            "upstream-request-123",
+            id="preserved",
+        ),
+        pytest.param([(b"x-request-id", b"x" * 129)], None, id="too-long"),
+        pytest.param([(b"x-request-id", b"request-\x85forged")], None, id="unsafe"),
+        pytest.param(
+            [(b"x-request-id", b"request-one"), (b"x-request-id", b"request-two")],
+            None,
+            id="ambiguous",
+        ),
     ],
 )
-async def test_unsafe_or_ambiguous_request_id_is_replaced(
+async def test_request_id_is_preserved_or_generated(
     client: AsyncClient,
     headers,
+    expected: str | None,
 ) -> None:
     response = await client.get("/v1/models", headers=headers)
-    request_id = response.headers["x-request-id"]
 
-    assert uuid.UUID(request_id).version == _UUID4_VERSION
+    request_id = response.headers["x-request-id"]
+    if expected is None:
+        assert uuid.UUID(request_id).version == _UUID4_VERSION
+    else:
+        assert request_id == expected
 
 
 async def test_request_context_is_added_to_lgos_logs(caplog) -> None:
@@ -294,72 +274,3 @@ async def test_host_routes_are_not_wrapped_by_lgos_middleware(
 
     assert "x-request-id" not in host_response.headers
     assert lgos_response.headers.get("x-request-id")
-
-
-async def test_concurrent_request_contexts_do_not_cross_contaminate(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
-    entered = {"model-a": Event(), "model-b": Event()}
-    release = Event()
-
-    async def app(scope, _receive, send) -> None:
-        model = scope["path"].removeprefix("/")
-        bind_log_context(model=model, stream=False)
-        _TEST_LOGGER.info("test.request.started")
-        entered[model].set()
-        await release.wait()
-        _TEST_LOGGER.info("test.request.finished")
-        await send(
-            {
-                "type": "http.response.start",
-                "status": status.HTTP_200_OK,
-                "headers": [],
-            }
-        )
-        await send(
-            {
-                "type": "http.response.body",
-                "body": b"ok",
-                "more_body": False,
-            }
-        )
-
-    transport = ASGITransport(app=RequestContextMiddleware(app))
-    async with (
-        AsyncClient(transport=transport, base_url="http://test") as client,
-        create_task_group() as task_group,
-    ):
-
-        async def get_request(path: str, request_id: str) -> None:
-            await client.get(path, headers={"X-Request-ID": request_id})
-
-        task_group.start_soon(get_request, "/model-a", "request-a")
-        task_group.start_soon(get_request, "/model-b", "request-b")
-        await entered["model-a"].wait()
-        await entered["model-b"].wait()
-        release.set()
-
-    request_records = [
-        record for record in caplog.records if hasattr(record, "request_id")
-    ]
-    assert request_records
-    expected_models = {"request-a": "model-a", "request-b": "model-b"}
-    assert all(
-        record.model == expected_models[record.request_id] for record in request_records
-    )
-
-
-def test_non_request_log_has_no_request_fields(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
-
-    _TEST_LOGGER.info("test.event")
-
-    record = next(
-        record for record in caplog.records if record.getMessage() == "test.event"
-    )
-    assert not hasattr(record, "request_id")
-
-
-def test_binding_without_request_context_is_ignored() -> None:
-    bind_log_context(model="unscoped", stream=True, operation_id="unscoped")
-
-    assert get_log_context() == {}

@@ -9,6 +9,7 @@ from langgraph_openai_serve.background import (
     InMemoryBackgroundBackend,
     execute_background_job,
 )
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.graph.citations import citation_slice
 from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.events import (
@@ -43,6 +44,7 @@ __all__ = [
     "GraphRegistry",
     "GraphRequest",
     "InMemoryBackgroundBackend",
+    "InvalidRequestError",
     "LanggraphOpenaiServe",
     "NamedCustomToolChoice",
     "NamedFunctionToolChoice",

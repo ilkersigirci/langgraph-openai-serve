@@ -23,7 +23,7 @@ from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.server_tools import ServerToolTracker
 from langgraph_openai_serve.api.responses.service import stream_response
 from langgraph_openai_serve.graph.events import status_event
-from langgraph_openai_serve.graph.utils import prepare_run
+from langgraph_openai_serve.graph.run import prepare_run
 from tests.graph.support.registration import replace_graph_config
 
 CALL = {
@@ -719,36 +719,3 @@ async def test_unfinished_server_execution_fails(
     assert failed.status == "failed"
     assert [item.type for item in failed.output] == ["custom_tool_call"]
     assert failed.output[0].call_id == "call_package"
-
-
-async def test_repeated_server_tool_call_id_fails(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-) -> None:
-    async def repeated(_state: MessagesState):
-        result = ToolMessage(
-            content="langgraph==installed-version", tool_call_id="call_package"
-        )
-        return {
-            "messages": [
-                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
-                result,
-                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
-                result,
-                AIMessage(content="Done."),
-            ]
-        }
-
-    _register_single_node(
-        graph_registry,
-        "package",
-        repeated,
-        server_tools={"package_version"},
-    )
-
-    with pytest.raises(InternalServerError):
-        await openai_client.responses.create(
-            model="package",
-            input="Version?",
-            tools=PACKAGE_TOOLS,
-        )

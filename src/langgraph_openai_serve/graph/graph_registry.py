@@ -17,12 +17,13 @@ from pydantic import (
     model_validator,
 )
 
-from langgraph_openai_serve.graph.client_settings import (
-    ClientSettings,
-    validate_client_settings_model,
+from langgraph_openai_serve.core.errors import (
+    GraphError,
+    InvalidRequestError,
 )
+from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.interrupt.coordination import RunCoordinator
+from langgraph_openai_serve.graph.interrupt import RunCoordinator
 from langgraph_openai_serve.graph.request import GraphRequest
 
 GraphResolver = (
@@ -57,14 +58,6 @@ ModelId = Annotated[
 ]
 
 
-class GraphConfigurationError(RuntimeError):
-    """Raised when a registered graph cannot satisfy its declared config."""
-
-
-class GraphNotFoundError(ValueError):
-    """Raised when a requested graph is not registered."""
-
-
 class GraphConfig(BaseModel):
     """Graph configuration."""
 
@@ -90,8 +83,11 @@ class GraphConfig(BaseModel):
         cls,
         value: type[ClientSettings] | None,
     ) -> type[ClientSettings] | None:
-        """Validate a public settings model when its graph is registered."""
-        return validate_client_settings_model(value) if value is not None else None
+        """Fail at registration when a settings model cannot be advertised."""
+        if value is not None:
+            value.json_schema()
+            value.default_values()
+        return value
 
     @model_validator(mode="after")
     def validate_interrupt_configuration(self) -> Self:
@@ -147,7 +143,7 @@ class GraphConfig(BaseModel):
             return None
         if graph.context_schema is None:
             msg = "A graph that produces runtime context must declare context_schema."
-            raise GraphConfigurationError(msg)
+            raise GraphError(msg)
 
         # Preserve server-owned context objects; LangGraph applies context_schema
         # coercion when it invokes the graph.
@@ -165,13 +161,13 @@ class GraphConfig(BaseModel):
         )
         if messages is None:
             msg = "Graph output must expose a messages field."
-            raise GraphConfigurationError(msg)
+            raise GraphError(msg)
         if not messages:
             return AIMessage(content="")
         message = messages[-1]
         if not isinstance(message, AIMessage):
             msg = "The final graph message must be an AIMessage."
-            raise GraphConfigurationError(msg)
+            raise GraphError(msg)
         return message
 
     model_config = ConfigDict(
@@ -191,7 +187,7 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
     """Validate requirements that can change with each factory result."""
     if not isinstance(graph, CompiledStateGraph):
         msg = "Graph factories must return a compiled LangGraph StateGraph."
-        raise GraphConfigurationError(msg)
+        raise GraphError(msg)
 
     if (
         config.client_settings is not None
@@ -202,7 +198,7 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
             "Graphs using client_settings directly must use that settings model "
             "as context_schema."
         )
-        raise GraphConfigurationError(msg)
+        raise GraphError(msg)
 
     if config.supports(GraphFeature.INTERRUPTS):
         checkpointer = graph.checkpointer
@@ -214,7 +210,7 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
                 "Interrupt-enabled graphs must use a fully asynchronous "
                 "checkpointer with thread deletion."
             )
-            raise GraphConfigurationError(msg)
+            raise GraphError(msg)
 
     return graph
 
@@ -286,11 +282,16 @@ class GraphRegistry:
             The graph configuration associated with the given name.
 
         Raises:
-            GraphNotFoundError: If the graph name is not found in the registry.
+            InvalidRequestError: If the graph name is not found in the registry.
 
         """
         try:
             return self.registry[name]
         except KeyError as exc:
-            msg = f"Graph '{name}' not found in registry."
-            raise GraphNotFoundError(msg) from exc
+            msg = f"The model '{name}' does not exist."
+            raise InvalidRequestError(
+                msg,
+                param="model",
+                code="model_not_found",
+                status_code=404,
+            ) from exc

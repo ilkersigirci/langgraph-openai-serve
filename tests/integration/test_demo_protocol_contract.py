@@ -14,11 +14,7 @@ from langgraph_openai_serve.api.models.schemas import (
     ModelClientSettings,
     ModelDetails,
 )
-from langgraph_openai_serve.graph.client_settings import (
-    ClientSettings,
-    client_settings_default_values,
-    client_settings_json_schema,
-)
+from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.protocol import (
     CONVERSATION_METADATA_KEY,
@@ -57,8 +53,8 @@ def _model_payload() -> dict[str, Any]:
                 GraphFeature.MCP_TOOLS,
             ],
             client_settings=ModelClientSettings(
-                json_schema=client_settings_json_schema(ExampleSettings),
-                defaults=client_settings_default_values(ExampleSettings),
+                json_schema=ExampleSettings.json_schema(),
+                defaults=ExampleSettings.default_values(),
             ),
         ),
     ).model_dump(mode="json")

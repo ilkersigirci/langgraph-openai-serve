@@ -16,9 +16,9 @@ from langgraph_openai_serve import (
     ClientFunctionTool,
     GraphRegistry,
     GraphRequest,
+    InvalidRequestError,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.core.errors import OpenAIHTTPException
 from langgraph_openai_serve.graph.runner import run_langgraph
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseCompletedEvent
@@ -93,12 +93,11 @@ def test_plot_requires_a_complete_persistence_scope(
         parallel_tool_calls=None,
     )
 
-    with pytest.raises(OpenAIHTTPException) as exc_info:
+    with pytest.raises(InvalidRequestError) as exc_info:
         context_factory(request, None)
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.error.param == param
-    assert exc_info.value.error.code == "missing_persistence_scope"
+    assert exc_info.value.param == param
+    assert exc_info.value.code == "missing_persistence_scope"
 
 
 async def test_agent_reuses_plot_data_only_in_the_same_thread(

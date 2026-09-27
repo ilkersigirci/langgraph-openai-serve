@@ -1,6 +1,6 @@
 """Run LangGraph workflows from protocol-neutral requests and messages."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Collection
 from contextlib import aclosing
 from typing import Any, cast
 
@@ -8,36 +8,20 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.types import (
     Command,
     CustomStreamPart,
-    Durability,
     Interrupt,
     StreamMode,
     StreamPart,
     UpdatesStreamPart,
 )
 
-from langgraph_openai_serve.graph.features import GraphFeature
-from langgraph_openai_serve.graph.graph_registry import (
-    GraphConfigurationError,
-    GraphRegistry,
-)
-from langgraph_openai_serve.graph.interrupt import (
-    models as interrupt_models,
-    state as interrupt_state,
-)
+from langgraph_openai_serve.core.errors import GraphError
+from langgraph_openai_serve.graph import interrupt
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.request import GraphRequest
-from langgraph_openai_serve.graph.utils import (
-    GraphRun,
-    prepare_run,
-)
+from langgraph_openai_serve.graph.run import GraphRun, prepare_run
 
-LangGraphOutput = AIMessage | interrupt_models.LangGraphInterruptBatch
-LangGraphStreamEvent = (
-    str
-    | AIMessage
-    | interrupt_models.LangGraphInterruptBatch
-    | CustomStreamPart
-    | UpdatesStreamPart
-)
+LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
+LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
 
 _MISSING = object()
 
@@ -47,20 +31,11 @@ async def run_langgraph(
     messages: list[BaseMessage],
     graph_registry: GraphRegistry,
     *,
-    resume: interrupt_models.InterruptResume | None = None,
+    resume: interrupt.InterruptResume | None = None,
     checkpoint_scope: str = "default",
 ) -> LangGraphOutput:
     """
-    Prepare and invoke a graph for direct runner callers.
-
-    This convenience wrapper combines :func:`prepare_run` and :func:`invoke_run`.
-    The HTTP route prepares its run before creating a response so preparation
-    errors can be returned as OpenAI-compatible HTTP errors; its service therefore
-    calls ``invoke_run`` directly with that prepared run.
-
-    Examples:
-        >>> output = await run_langgraph(request, messages, registry)
-        >>> print(output)
+    Prepare, execute, and close one graph run for direct Python callers.
 
     Args:
         request: Normalized graph selection, metadata, user, and client tools.
@@ -70,7 +45,7 @@ async def run_langgraph(
         checkpoint_scope: Server-trusted scope used to isolate checkpoint state.
 
     Returns:
-        The durable graph output.
+        The final assistant message or the pending interrupt batch.
 
     """
     run = await prepare_run(
@@ -80,35 +55,8 @@ async def run_langgraph(
         resume=resume,
         checkpoint_scope=checkpoint_scope,
     )
-
     async with run:
-        return await invoke_run(run)
-
-
-async def invoke_run(run: GraphRun) -> LangGraphOutput:
-    """Invoke a graph already owned by an active ``GraphRun`` context."""
-    run.require_owner()
-    if run.pending_batch is not None:
-        return run.pending_batch
-
-    run.begin_execution()
-    result = await run.graph.ainvoke(
-        run.inputs,
-        config=run.runnable_config,
-        context=run.context,
-        output_keys=run.graph.output_channels,
-        durability=_durability(run),
-        version="v2",
-    )
-
-    interrupt_batch = _commit_interrupts(run, result.interrupts)
-    if interrupt_batch is not None:
-        return interrupt_batch
-
-    return _with_usage(
-        await run.config.render_output(result.value),
-        run,
-    )
+        return await collect_run(run)
 
 
 async def run_langgraph_stream(
@@ -116,26 +64,14 @@ async def run_langgraph_stream(
     messages: list[BaseMessage],
     graph_registry: GraphRegistry,
     *,
-    resume: interrupt_models.InterruptResume | None = None,
+    resume: interrupt.InterruptResume | None = None,
     checkpoint_scope: str = "default",
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
-    Prepare and stream a graph for direct runner callers.
-
-    This convenience wrapper combines :func:`prepare_run` and :func:`stream_run`.
-    The HTTP route prepares its run before starting the streaming response so
-    preparation errors remain normal OpenAI-compatible HTTP errors; its service
-    therefore calls ``stream_run`` directly with that prepared run.
-
-    Args:
-        request: Normalized graph selection, metadata, user, and client tools.
-        messages: Decoded LangChain messages to process through the graph.
-        graph_registry: The registry containing the graph configurations.
-        resume: A decoded, complete interrupt answer batch, when resuming.
-        checkpoint_scope: Server-trusted scope used to isolate checkpoint state.
+    Prepare, stream, and close one graph run for direct Python callers.
 
     Yields:
-        Assistant text chunks, custom events, or LangGraph interrupts.
+        Assistant text chunks, custom events, then the final output.
 
     """
     run = await prepare_run(
@@ -146,35 +82,61 @@ async def run_langgraph_stream(
         checkpoint_scope=checkpoint_scope,
     )
     async with run:
-        run_stream = stream_run(run)
-        async with aclosing(run_stream):
-            async for event in run_stream:
+        events = stream_run(run)
+        async with aclosing(events):
+            async for event in events:
                 yield event
+
+
+async def collect_run(run: GraphRun) -> LangGraphOutput:
+    """Execute a prepared run and return only its final output."""
+    events = stream_run(run, streaming=False)
+    async with aclosing(events):
+        async for event in events:
+            if isinstance(event, (AIMessage, interrupt.LangGraphInterruptBatch)):
+                return event
+    msg = "LangGraph run completed without a final output."
+    raise RuntimeError(msg)
 
 
 async def stream_run(
     run: GraphRun,
     *,
-    stream_messages: bool = True,
+    streaming: bool = True,
     stream_updates: bool = False,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
-    Stream a graph already owned by an active ``GraphRun`` context.
+    Execute a prepared run, ending with its final output.
+
+    Args:
+        run: The prepared run.
+        streaming: Yield assistant text and custom events, including those of
+            nested subgraphs.
+        stream_updates: Yield root-graph node updates.
 
     Yields:
-        LangGraph stream events.
+        The requested intermediate events, then the final ``AIMessage`` or
+        ``LangGraphInterruptBatch``.
 
     """
-    run.require_owner()
     if run.pending_batch is not None:
         yield run.pending_batch
         return
 
     run.begin_execution()
-    final_output: Any = _MISSING
-    interrupts: list[Interrupt] = []
+    # Without streaming, request only root values, exactly like ainvoke().
+    # LangGraph stops node tasks on one asyncio cancellation in every mode, but
+    # AnyIO's repeated cancellation leaves them running once a stream uses
+    # several modes or subgraphs; only token streams need those.
+    stream_mode: list[StreamMode] = ["values"]
+    if streaming:
+        stream_mode += ["messages", "custom"]
+    if stream_updates:
+        stream_mode.append("updates")
 
-    # LangGraph implements this as an async generator, while its overload
+    final_output: Any = _MISSING
+    interrupts: dict[str, Interrupt] = {}
+    # LangGraph implements astream as an async generator, while its overload
     # returns AsyncIterator. Keep the concrete type so cancellation closes it.
     graph_stream = cast(
         "AsyncGenerator[StreamPart[Any, Any], None]",
@@ -182,13 +144,11 @@ async def stream_run(
             run.inputs,
             config=run.runnable_config,
             context=run.context,
-            stream_mode=_stream_modes(
-                stream_messages=stream_messages,
-                stream_updates=stream_updates,
-            ),
-            subgraphs=True,
+            stream_mode=stream_mode,
+            subgraphs=streaming,
             output_keys=run.graph.output_channels,
-            durability=_durability(run),
+            # Persist interrupt runs only when they pause or exit.
+            durability="exit" if run.interrupt is not None else None,
             version="v2",
         ),
     )
@@ -197,78 +157,39 @@ async def stream_run(
             if part["type"] == "values":
                 if not part["ns"]:
                     final_output = part["data"]
-                    interrupts.extend(
-                        item for item in part["interrupts"] if item not in interrupts
-                    )
-                continue
-            visible_part = _visible_stream_part(part, stream_updates=stream_updates)
-            if visible_part is not None:
-                yield visible_part
+                    interrupts.update((item.id, item) for item in part["interrupts"])
+            elif (event := _visible_event(part)) is not None:
+                yield event
 
-    interrupt_batch = _commit_interrupts(run, tuple(interrupts))
-    if interrupt_batch is not None:
-        yield interrupt_batch
+    if interrupts:
+        yield _interrupt_batch(run, interrupts.values())
         return
+    if final_output is _MISSING:
+        msg = "LangGraph stream completed without a final value."
+        raise RuntimeError(msg)
+    message = await run.config.render_output(final_output)
+    usage = run.usage_metadata()
+    yield message.model_copy(update={"usage_metadata": usage}) if usage else message
 
-    yield await _render_stream_output(final_output, run)
 
-
-def _visible_stream_part(
-    part: StreamPart[Any, Any],
-    *,
-    stream_updates: bool,
-) -> LangGraphStreamEvent | None:
-    if part["type"] == "custom":
-        return part
-    if part["type"] == "updates" and stream_updates:
-        return part
+def _visible_event(part: StreamPart[Any, Any]) -> LangGraphStreamEvent | None:
     if part["type"] == "messages":
         message = part["data"][0]
-        if isinstance(message, AIMessageChunk):
-            return str(message.text) or None
+        if isinstance(message, AIMessageChunk) and message.text:
+            return str(message.text)
+        return None
+    if part["type"] in {"custom", "updates"}:
+        return cast("CustomStreamPart | UpdatesStreamPart", part)
     return None
 
 
-def _stream_modes(
-    *,
-    stream_messages: bool,
-    stream_updates: bool,
-) -> list[StreamMode]:
-    """Build the requested LangGraph stream modes."""
-    stream_mode: list[StreamMode] = ["custom", "values"]
-    if stream_messages:
-        stream_mode.insert(0, "messages")
-    if stream_updates:
-        stream_mode.append("updates")
-    return stream_mode
-
-
-def _durability(run: GraphRun) -> Durability | None:
-    """Persist interrupt runs when they pause or exit."""
-    return "exit" if run.config.supports(GraphFeature.INTERRUPTS) else None
-
-
-def _with_usage(message: AIMessage, run: GraphRun) -> AIMessage:
-    usage = run.usage_metadata()
-    return message.model_copy(update={"usage_metadata": usage}) if usage else message
-
-
-async def _render_stream_output(output: Any, run: GraphRun) -> AIMessage:
-    if output is _MISSING:
-        msg = "LangGraph stream completed without a final value."
-        raise RuntimeError(msg)
-    return _with_usage(await run.config.render_output(output), run)
-
-
-def _commit_interrupts(
+def _interrupt_batch(
     run: GraphRun,
-    interrupts: tuple[Interrupt, ...],
-) -> interrupt_models.LangGraphInterruptBatch | None:
-    if not interrupts:
-        return None
-    if not run.config.supports(GraphFeature.INTERRUPTS):
+    interrupts: Collection[Interrupt],
+) -> interrupt.LangGraphInterruptBatch:
+    if run.interrupt is None:
         msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
-        raise GraphConfigurationError(msg)
+        raise GraphError(msg)
     # LangGraph gives every interrupt() of one node invocation the same ID, so
     # a second call would reuse the answered call ID and accept stale answers.
     if (
@@ -277,8 +198,7 @@ def _commit_interrupts(
         and set(run.inputs.resume).intersection(item.id for item in interrupts)
     ):
         msg = "A graph node may call interrupt() only once per invocation."
-        raise GraphConfigurationError(msg)
-    batch = interrupt_state.interrupt_batch(interrupts, run.run_id)
-    if batch is not None:
-        run.commit_interrupts()
+        raise GraphError(msg)
+    batch = interrupt.interrupt_batch(interrupts, run.interrupt.run_id)
+    run.keep_checkpoint()
     return batch

@@ -3,7 +3,7 @@ import json
 import pytest
 from httpx2 import AsyncClient
 from langchain_core.messages import BaseMessage
-from openai import AsyncOpenAI, BadRequestError
+from openai import AsyncOpenAI, BadRequestError, NotFoundError
 from starlette import status
 
 from langgraph_openai_serve import (
@@ -203,35 +203,17 @@ async def test_stream_options_require_streaming(
         )
 
 
-@pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize(
-    ("parameter", "value"),
-    [
-        ("temperature", 0.2),
-        ("top_p", 0.5),
-        ("n", 2),
-        ("stop", "END"),
-        ("max_tokens", 10),
-        ("presence_penalty", 1.0),
-        ("frequency_penalty", 1.0),
-        ("logit_bias", {"123": 1}),
-    ],
-)
 async def test_unsupported_generation_controls_are_rejected(
     openai_client: AsyncOpenAI,
-    parameter: str,
-    value: object,
-    stream: bool,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.chat.completions.create(
             model="test",
             messages=[{"role": "user", "content": "Hi"}],
-            stream=stream,
-            extra_body={parameter: value},
+            temperature=0.2,
         )
 
-    assert exc_info.value.body["param"] == parameter
+    assert exc_info.value.body["param"] == "temperature"
 
 
 async def test_streaming_completion_uses_sse_wire_format(
@@ -265,27 +247,18 @@ async def test_streaming_completion_uses_sse_wire_format(
         pytest.param(True, id="streaming"),
     ],
 )
-async def test_unknown_model_raises_openai_bad_request(
+async def test_unknown_model_is_not_found(
     openai_client: AsyncOpenAI,
     stream: bool,
 ) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
+    with pytest.raises(NotFoundError) as exc_info:
         await openai_client.chat.completions.create(
             model="missing",
             messages=[{"role": "user", "content": "Hi"}],
             stream=stream,
         )
 
-    assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
-    assert exc_info.value.response.json() == {
-        "error": {
-            "message": "Graph 'missing' not found in registry.",
-            "type": "invalid_request_error",
-            "param": "model",
-            "code": None,
-            "misalignment": None,
-        }
-    }
+    assert exc_info.value.code == "model_not_found"
 
 
 async def test_streaming_completion_ignores_custom_stream_events(

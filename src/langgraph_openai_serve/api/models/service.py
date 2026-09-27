@@ -8,10 +8,6 @@ from langgraph_openai_serve.api.models.schemas import (
     ModelDetails,
     ModelList,
 )
-from langgraph_openai_serve.graph.client_settings import (
-    client_settings_default_values,
-    client_settings_json_schema,
-)
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 MODEL_CREATED = 1743771509
@@ -55,8 +51,8 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
     client_settings_details = None
     if client_settings is not None:
         client_settings_details = ModelClientSettings(
-            json_schema=client_settings_json_schema(client_settings),
-            defaults=client_settings_default_values(client_settings),
+            json_schema=client_settings.json_schema(),
+            defaults=client_settings.default_values(),
         )
 
     return ModelDetails(

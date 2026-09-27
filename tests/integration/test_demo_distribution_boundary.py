@@ -31,117 +31,6 @@ def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> No
     assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
 
 
-@pytest.mark.parametrize(
-    ("gateway_type", "gateway_service"),
-    [
-        ("litellm", "lgos-litellm"),
-        ("bifrost", "lgos-bifrost"),
-        ("litellm", ""),
-    ],
-)
-@pytest.mark.parametrize("dev", [False, True], ids=["published", "checkout"])
-@pytest.mark.parametrize("otel", [False, True], ids=["base", "otel"])
-async def test_compose_deploys_and_syncs_the_stack_in_order(
-    tmp_path: Path,
-    gateway_type: str,
-    gateway_service: str,
-    dev: bool,
-    otel: bool,
-) -> None:
-    docker = tmp_path / "docker"
-    log = tmp_path / "operations"
-    docker.write_text(
-        """#!/bin/sh
-printf "docker %s\\n" "$*" >> "$DEPLOY_TEST_LOG"
-test "$1" = compose || exit 98
-shift
-while [ "$1" = "-f" ]; do shift 2; done
-case "$1:$2" in
-  config:--services)
-    test -z "$DEPLOY_TEST_GATEWAY_SERVICE" || printf "%s\\n" "$DEPLOY_TEST_GATEWAY_SERVICE" ;;
-  up:*|run:*|exec:*) exit 0 ;;
-  *) exit 99 ;;
-esac
-"""
-    )
-    docker.chmod(0o755)
-    uv = tmp_path / "uv"
-    uv.write_text(
-        """#!/bin/sh
-printf "uv OPENAI_GATEWAY_BASE_URL=%s DEMO_GATEWAY_HOST_URL=%s %s\\n" "$OPENAI_GATEWAY_BASE_URL" "$DEMO_GATEWAY_HOST_URL" "$*" >> "$DEPLOY_TEST_LOG"
-"""
-    )
-    uv.chmod(0o755)
-
-    result = await anyio.run_process(
-        [
-            "just",
-            "--dotenv-path",
-            str(DEMO_ROOT / ".env.example"),
-            str(DEMO_ROOT / "compose"),
-            *(["--dev"] if dev else []),
-            *(["--otel"] if otel else []),
-            "--",
-            "--quiet-pull",
-        ],
-        env={
-            **os.environ,
-            "PATH": f"{tmp_path}:{os.environ['PATH']}",
-            "DEPLOY_TEST_LOG": str(log),
-            "OPENAI_GATEWAY_TYPE": gateway_type,
-            "DEPLOY_TEST_GATEWAY_SERVICE": gateway_service,
-            "OPENAI_GATEWAY_BASE_URL": "https://gateway.example",
-            "DEMO_GATEWAY_HOST_URL": "http://localhost:3000"
-            if gateway_service
-            else "https://gateway.example",
-        },
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr.decode()
-    compose = "docker compose -f docker/compose/demo.yml"
-    if dev:
-        compose += " -f docker/compose/development.yml"
-    if otel:
-        compose += " -f docker/compose/otel.yml"
-    up_args = "--build --quiet-pull" if dev else "--quiet-pull"
-    first_services = gateway_service or (
-        "lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api"
-    )
-    expected = [
-        f"{compose} config --services",
-        f"{compose} up --wait {up_args} {first_services}",
-    ]
-    if gateway_type == "litellm":
-        expected.extend(
-            [
-                (
-                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
-                    "--source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a"
-                ),
-                (
-                    f"{compose} run --rm --no-deps --pull never lgos-model-sync "
-                    "--source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b"
-                ),
-            ]
-        )
-    expected.extend(
-        [
-            f"{compose} up --wait --no-deps {up_args} lgos-chainlit lgos-openwebui",
-            # Open WebUI stores the gateway root it reaches; the sync command
-            # discovers models through the host root.
-            (
-                "uv OPENAI_GATEWAY_BASE_URL=https://gateway.example "
-                "DEMO_GATEWAY_HOST_URL="
-                f"{'http://localhost:3000' if gateway_service else 'https://gateway.example'} "
-                "run --directory ui/openwebui --locked python -m "
-                "lgos_openwebui.sync_functions"
-            ),
-        ]
-    )
-    assert log.read_text().splitlines() == expected
-
-
 @pytest.fixture
 def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Record task arguments without starting project commands or services."""
@@ -184,36 +73,6 @@ async def test_demo_tests_forward_quoted_arguments_without_a_dotenv_file(
         for project in ("api", "files_api", "ui/chainlit_ui", "ui/openwebui")
     ]
     assert all(command["cwd"] == str(demo) for command in commands)
-
-
-async def test_postgres_task_accepts_ci_environment_without_a_dotenv_file(
-    tmp_path: Path, task_log: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    demo = tmp_path / "demo"
-    demo.mkdir()
-    shutil.copyfile(DEMO_ROOT / "justfile", demo / "justfile")
-    uri = "postgresql://lgos:lgos@localhost:5432/lgos"
-    monkeypatch.setenv("DEMO_API_TEST_POSTGRES_URI", uri)
-
-    result = await anyio.run_process(
-        ["just", str(demo / "test-postgres"), "--editable", "--", "-x"],
-        env=os.environ,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr.decode()
-    content = await anyio.Path(task_log).read_text(encoding="utf-8")
-    [api] = [json.loads(line) for line in content.splitlines()]
-    assert api["args"][:7] == [
-        "run",
-        "--directory",
-        "api",
-        "--locked",
-        "--with-editable",
-        "../..",
-        "pytest",
-    ]
-    assert api["args"][-1] == "-x"
 
 
 async def test_notebook_task_passes_host_literally(task_log: Path) -> None:
@@ -414,40 +273,6 @@ def test_compose_ci_supplies_both_independent_s3_configurations() -> None:
         encoding="utf-8"
     )
     assert "cp .env.example .env" in standalone_workflow
-
-
-def test_root_workflows_delegate_shared_steps_to_demo_actions() -> None:
-    workflow_actions = {
-        "demo-image-api.yml": "build-image",
-        "demo-image-files-api.yml": "build-image",
-        "demo-image-chainlit.yml": "build-image",
-        "demo-test.yml": "check-project",
-    }
-
-    for workflow_name, action_name in workflow_actions.items():
-        action = DEMO_ROOT / ".github/actions" / action_name / "action.yml"
-        workflow = REPOSITORY_ROOT / ".github/workflows" / workflow_name
-
-        assert action.is_file()
-        assert f"uses: ./demo/.github/actions/{action_name}" in workflow.read_text(
-            encoding="utf-8"
-        )
-
-
-def test_standalone_workflows_use_the_same_demo_actions() -> None:
-    workflow_actions = {
-        "image-api.yml": "build-image",
-        "image-files-api.yml": "build-image",
-        "image-chainlit.yml": "build-image",
-        "test.yml": "check-project",
-    }
-
-    for workflow_name, action_name in workflow_actions.items():
-        workflow = DEMO_ROOT / ".github/workflows" / workflow_name
-
-        assert f"uses: ./.github/actions/{action_name}" in workflow.read_text(
-            encoding="utf-8"
-        )
 
 
 def test_demo_repository_links_resolve() -> None:

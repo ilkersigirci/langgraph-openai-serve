@@ -1,3 +1,5 @@
+from http import HTTPStatus
+
 import pytest
 from anyio import fail_after
 
@@ -15,7 +17,7 @@ async def test_in_memory_coordinator_rejects_an_occupied_key_without_waiting() -
             async with coordinator("thread-1"):
                 pass
 
-    assert exc_info.value.key == "thread-1"
+    assert exc_info.value.status_code == HTTPStatus.CONFLICT
 
 
 async def test_in_memory_coordinator_allows_distinct_keys() -> None:

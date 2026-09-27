@@ -13,10 +13,8 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_function_web_search import ActionSearch
 
-from langgraph_openai_serve.api.responses.output import (
-    UnsupportedResponsesOutputError,
-    response_function_calls,
-)
+from langgraph_openai_serve.api.responses.output import response_function_calls
+from langgraph_openai_serve.core.errors import GraphError
 
 ServerToolItem: TypeAlias = (
     ResponseCustomToolCall
@@ -32,7 +30,6 @@ class ServerToolTracker:
     def __init__(self, selected: Collection[str]) -> None:
         self._selected = frozenset(selected)
         self._pending: dict[str, _ServerCall] = {}
-        self._completed: set[str] = set()
 
     def items(self, event: UpdatesStreamPart) -> Iterator[ServerToolItem]:
         """
@@ -57,7 +54,7 @@ class ServerToolTracker:
         """Reject a response whose selected call has no graph-produced result."""
         if self._pending:
             msg = "Server tool output contains a call without its executed result."
-            raise UnsupportedResponsesOutputError(msg)
+            raise GraphError(msg)
 
     def client_function_calls(
         self, message: AIMessage
@@ -67,7 +64,7 @@ class ServerToolTracker:
         calls = response_function_calls(message)
         if any(call.name in self._selected for call in calls):
             msg = "Server tool output contains a call without its executed result."
-            raise UnsupportedResponsesOutputError(msg)
+            raise GraphError(msg)
         return calls
 
     def _tool_calls(self, message: AIMessage) -> Iterator[ResponseCustomToolCall]:
@@ -79,12 +76,12 @@ class ServerToolTracker:
             arguments = tool_call.get("args")
             if not isinstance(call_id, str) or not call_id:
                 msg = "Server tool calls must include a non-empty id."
-                raise UnsupportedResponsesOutputError(msg)
+                raise GraphError(msg)
             if name == "web_search":
                 query = arguments.get("query") if isinstance(arguments, dict) else None
                 if not isinstance(query, str) or not query.strip():
                     msg = "Server web_search calls must include a non-empty query."
-                    raise UnsupportedResponsesOutputError(msg)
+                    raise GraphError(msg)
                 call = ResponseFunctionWebSearch(
                     id=f"ws_{call_id}",
                     type="web_search_call",
@@ -97,7 +94,7 @@ class ServerToolTracker:
                 )
                 if not isinstance(tool_input, str):
                     msg = "Server custom tool calls must include string input."
-                    raise UnsupportedResponsesOutputError(msg)
+                    raise GraphError(msg)
                 call = ResponseCustomToolCall.model_validate(
                     {
                         "id": f"ctc_{call_id}",
@@ -109,9 +106,6 @@ class ServerToolTracker:
                         "async": None,
                     }
                 )
-            if call_id in self._pending or call_id in self._completed:
-                msg = "Server tool call IDs must be unique within a graph run."
-                raise UnsupportedResponsesOutputError(msg)
             self._pending[call_id] = call
             if isinstance(call, ResponseCustomToolCall):
                 yield call
@@ -120,11 +114,7 @@ class ServerToolTracker:
         call_id = message.tool_call_id
         call = self._pending.pop(call_id, None)
         if call is None:
-            if call_id in self._completed:
-                msg = "Server tool call IDs must be unique within a graph run."
-                raise UnsupportedResponsesOutputError(msg)
             return None
-        self._completed.add(call_id)
         if isinstance(call, ResponseCustomToolCall):
             return ResponseCustomToolCallOutputItem(
                 id=f"ctco_{call_id}",
@@ -159,7 +149,7 @@ def _custom_output(message: ToolMessage) -> str:
             output = block.get("output")
     if not isinstance(output, str):
         msg = "Server custom tool output must be a string."
-        raise UnsupportedResponsesOutputError(msg)
+        raise GraphError(msg)
     return output
 
 
