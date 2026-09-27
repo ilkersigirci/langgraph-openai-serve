@@ -12,6 +12,7 @@ import pytest
 from chainlit_utils.openai.audio import SPEECH_ACTION_NAME
 
 from lgos_chainlit import audio
+from tests.support import message, response, streamed, user_message
 
 
 def _form(request: httpx2.Request) -> dict[str, bytes]:
@@ -54,21 +55,24 @@ async def test_answer_gets_a_speech_button_when_a_speech_model_is_set(
     monkeypatch: pytest.MonkeyPatch,
     speech: bool,
     chainlit_context,
+    fake_gateway,
 ) -> None:
     chat = importlib.import_module("lgos_chainlit.chat")
-    answer = cl.Message(content="Paris.")
     send_element = AsyncMock()
     monkeypatch.setattr(
         chainlit_context.session, "persist_file", AsyncMock(return_value={"id": "f"})
     )
     monkeypatch.setattr(chainlit_context.emitter, "send_element", send_element)
-    monkeypatch.setattr(chat, "_reply", AsyncMock(return_value=answer))
     if not speech:
         monkeypatch.setattr(audio.settings, "AUDIO_TTS_MODEL", None)
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    fake_gateway.replies.append(streamed(response(message("Paris."))))
 
-    await chat.on_message(cl.Message(content="Capital of France?"))
+    await chat.on_message(user_message("Capital of France?"))
 
+    answer = cl.chat_context.get()[-1]
     elements = [call.args[0] for call in send_element.await_args_list]
+    assert answer.content == "Paris."
     assert [(element["name"], element["forId"]) for element in elements] == (
         [("SpeechButton", answer.id)] if speech else []
     )

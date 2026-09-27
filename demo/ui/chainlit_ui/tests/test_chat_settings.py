@@ -195,22 +195,18 @@ async def test_selected_settings_reach_the_responses_request(
 
 
 @pytest.mark.parametrize(
-    ("model_reply", "kept_settings"),
+    "model_reply",
     [
-        (httpx2.Response(503, json={"error": "unavailable"}), {"mode": "detailed"}),
-        (
-            model_info({"lgos-a/simple-graph": {"features": []}}),
-            {STREAMING_SETTING_ID: True},
-        ),
+        httpx2.Response(503, json={"error": "unavailable"}),
+        model_info({"lgos-a/simple-graph": {"features": []}}),
     ],
     ids=["retrieval-failed", "invalid-metadata"],
 )
-async def test_limited_metadata_disables_runtime_settings_with_a_warning(
+async def test_limited_metadata_keeps_saved_settings_with_a_warning(
     chainlit_context,
     fake_gateway,
     monkeypatch: pytest.MonkeyPatch,
     model_reply: httpx2.Response,
-    kept_settings: dict[str, object],
 ) -> None:
     send_toast = AsyncMock()
     monkeypatch.setattr(chainlit_context.emitter, "send_toast", send_toast)
@@ -221,7 +217,7 @@ async def test_limited_metadata_disables_runtime_settings_with_a_warning(
     await configure_chat_settings()
 
     send_toast.assert_awaited_once_with(LIMITED_FUNCTIONALITY_MESSAGE, type="warning")
-    assert cl.user_session.get("chat_settings") == kept_settings
+    assert cl.user_session.get("chat_settings") == {"mode": "detailed"}
     assert chat_settings_metadata() == {}
 
 
@@ -247,7 +243,7 @@ async def test_malformed_runtime_settings_keep_the_model_features(
     }
 
 
-async def test_missing_profile_offers_streaming_only_and_rejects_messages(
+async def test_missing_profile_rejects_messages(
     chainlit_context,
     fake_gateway,
 ) -> None:
@@ -255,5 +251,4 @@ async def test_missing_profile_offers_streaming_only_and_rejects_messages(
     await chat.on_message(user_message("Hello"))
 
     assert fake_gateway.requests == []
-    assert cl.user_session.get("chat_settings") == {STREAMING_SETTING_ID: True}
     assert transcript() == ["Hello", "Response failed: no model profile is selected."]

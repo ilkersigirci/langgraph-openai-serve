@@ -231,8 +231,8 @@ integers. The adapter checks only these types, integer bounds, and select
 membership when restoring the UI; it does not interpret general JSON Schema
 constraints. LGOS remains the validation authority. If the required LGOS
 model extension is unavailable, Chainlit hides the controls, uses server
-defaults, and shows a transient **Limited functionality** warning after
-selection. Profile discovery itself stays
+defaults, keeps the thread's saved selections for when the metadata returns,
+and shows a transient **Limited functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
@@ -244,7 +244,8 @@ The same panel includes a Chainlit-owned **Stream response** switch for every
 profile. It defaults to enabled and selects `responses.stream` or
 `responses.create`; it is not included in `lgos_settings`. With
 streaming disabled, Chainlit waits for the complete response and sends the
-answer once.
+answer once. The switch also applies to the answer that follows a human
+review.
 
 Models advertising `background` also receive an opt-in **Run in
 background** switch. Chainlit uses non-streaming create/retrieve polling,
@@ -464,9 +465,11 @@ callback through `callAction`. The callback reads the trusted model ID,
 Response ID, exact function calls, and expected element ID from message
 metadata; the browser sends only opaque step, element, and revision references
 plus the answers. One accepted action advances one Responses transition. A later
-interrupt updates the same form, while a terminal response marks the ledger
-complete and removes it. The client therefore depends only on the standard
-tool-call batch, not the graph topology. See the shared
+interrupt updates the same form, while any other response marks the ledger
+complete and removes it. The demo then finishes the turn like any other: it
+runs client function calls such as MCP tools or `display_file` and requests
+the answer with their results. The client therefore depends only on the
+standard tool-call batch, not the graph topology. See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
 [design rationale](design-choices.md#chainlit).
 

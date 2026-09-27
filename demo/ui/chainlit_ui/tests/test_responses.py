@@ -115,10 +115,11 @@ async def test_incomplete_stream_reports_its_reason(
 
     await chat.on_message(user_message("Write a long essay."))
 
-    assert transcript()[-1] == (
-        "Partial\n\nResponse failed: Response incomplete: max_output_tokens."
-    )
-    assert cl.chat_context.get()[-1].metadata == {EXCLUDED_KEY: True}
+    assert transcript()[-2:] == [
+        "Partial",
+        "Response failed: Response incomplete: max_output_tokens.",
+    ]
+    assert cl.chat_context.get()[-2].metadata == {EXCLUDED_KEY: True}
 
 
 @pytest.mark.parametrize("streaming", [False, True], ids=["create", "stream"])
@@ -393,7 +394,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
     fake_gateway.replies += (
         [reply(response(id=approved.id, status="queued")), reply(approved)]
         if background
-        else [reply(approved)]
+        else [streamed(approved)]
     )
     result = await chat.on_interrupt_submit(
         cl.Action(
@@ -430,6 +431,56 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
         background,
         background,
     )
-    assert "stream" not in resume
+    assert resume.get("stream", False) is not background
     assert review.elements == []
     assert transcript()[-1] == "Refund approved."
+
+
+async def test_client_tool_after_review_finishes_the_resumed_turn(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    review_call = function_call(
+        "lgos_interrupt",
+        json.dumps({"question": "Save the chart?", "choices": ["approve"]}),
+        call_id="call_lg_review",
+    )
+    fake_gateway.replies.append(streamed(response(review_call, id="resp_lg_review")))
+    await chat.on_message(user_message("Plot revenue."))
+    review = cl.chat_context.get()[-1]
+    control = review.elements[0].props[HITL_CONTROL_PROP]
+    fake_gateway.replies += [
+        streamed(response(DISPLAY_CHART, id="resp_lg_done")),
+        httpx2.Response(200, content=b"png-bytes"),
+        streamed(response(message("Saved and plotted."))),
+    ]
+
+    result = await chat.on_interrupt_submit(
+        cl.Action(
+            name=INTERRUPT_ACTION_NAME,
+            payload={
+                "step_id": control["step_id"],
+                "element_id": control["element_id"],
+                "revision": control["revision"],
+                "outputs": ["approve"],
+            },
+        )
+    )
+
+    assert result == {"ok": True}
+    *_, resume, continuation = fake_gateway.bodies("/v1/responses")
+    assert resume["previous_response_id"] == "resp_lg_review"
+    # The resumed run has finished; the tool result starts a new stateless run.
+    assert "previous_response_id" not in continuation
+    assert continuation["input"] == [
+        {"role": "user", "content": "Plot revenue."},
+        DISPLAY_CHART.model_dump(mode="json", exclude_none=True),
+        {
+            "type": "function_call_output",
+            "call_id": "call_chart",
+            "output": '{"displayed":true}',
+        },
+    ]
+    assert review.elements == []
+    assert transcript()[-1] == "Saved and plotted."

@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import uuid
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import chainlit as cl
@@ -63,33 +65,94 @@ logger = logging.getLogger(__name__)
 BACKGROUND_POLL_SECONDS = 1
 
 
+@dataclass
+class _Turn:
+    """One assistant turn: its requests, client tool calls, and answer message."""
+
+    model: str
+    streaming: bool = field(
+        default_factory=lambda: not background_enabled() and streaming_enabled()
+    )
+    answer: cl.Message = field(default_factory=lambda: cl.Message(content=""))
+    commentary_tasks: CommentaryTaskList = field(default_factory=CommentaryTaskList)
+
+    async def run(
+        self,
+        input_items: list[dict[str, Any]],
+        *,
+        previous_response_id: str | Omit = omit,
+    ) -> Response:
+        """Request until the graph answers or pauses, running client tools."""
+        try:
+            while True:
+                response = await _request_response(
+                    input_items,
+                    model=self.model,
+                    commentary_tasks=self.commentary_tasks,
+                    stream_to=self.answer if self.streaming else None,
+                    previous_response_id=previous_response_id,
+                )
+                raise_for_response(response)
+                calls = function_calls(response)
+                if not calls or any(call.name == INTERRUPT_TOOL_NAME for call in calls):
+                    break
+                self._collect(response)
+                outputs = [
+                    (
+                        await display_file(call)
+                        if call.name == DISPLAY_FILE_TOOL_NAME
+                        else await mcp_tools.execute(call)
+                    )
+                    for call in calls
+                ]
+                if previous_response_id is not omit:
+                    # The resumed run has finished; LGOS runs the tool results
+                    # as a new request over the whole transcript.
+                    input_items = response_input(text_only_chat_messages())
+                    previous_response_id = omit
+                input_items = [*input_items, *continuation_input(response, outputs)]
+        except BaseException:
+            await self.commentary_tasks.stop()
+            if self.answer.content:
+                mark_model_context_excluded(self.answer)
+                await self.answer.update()
+            raise
+        await self.commentary_tasks.complete()
+        return response
+
+    async def finish(self, response: Response) -> None:
+        """Publish the turn's final answer."""
+        self._collect(response)
+        if not self.streaming:
+            await self.answer.send()
+        elif self.answer.content:
+            await self.answer.update()
+        await send_speech_button(self.answer)
+
+    def _collect(self, response: Response) -> None:
+        self.answer.elements.extend(cast("list[Any]", citation_elements(response)))
+        if not self.streaming:
+            self.answer.content += final_answer(response)
+
+
+# The HITL workflow calls continue_response, then publish_final, in the task
+# that runs one message or review submission.
+_current_turn: ContextVar[_Turn] = ContextVar("_current_turn")
+
+
 async def _continue_interrupt_response(
     input_items: list[dict[str, Any]],
     *,
     model_id: str,
     previous_response_id: str,
 ) -> Response:
-    commentary_tasks = CommentaryTaskList()
-    try:
-        response = await _request_response(
-            input_items,
-            model=model_id,
-            commentary_tasks=commentary_tasks,
-            previous_response_id=previous_response_id,
-        )
-    except BaseException:
-        await commentary_tasks.stop()
-        raise
-    await commentary_tasks.complete()
-    return response
+    turn = _Turn(model_id)
+    _current_turn.set(turn)
+    return await turn.run(input_items, previous_response_id=previous_response_id)
 
 
-async def _publish_interrupt_final(response: Response) -> None:
-    answer = await cl.Message(
-        content=final_answer(response),
-        elements=cast("list[Any]", citation_elements(response)),
-    ).send()
-    await send_speech_button(answer)
+async def _publish_final(response: Response) -> None:
+    await _current_turn.get().finish(response)
 
 
 interrupt_form = HumanReviewForm(interrupt_review)
@@ -99,7 +162,7 @@ interrupt_workflow = HitlWorkflow(
     continue_response=_continue_interrupt_response,
     element_name=HUMAN_REVIEW_ELEMENT_NAME,
     prompt=interrupt_form.prompt,
-    publish_final=_publish_interrupt_final,
+    publish_final=_publish_final,
     review=interrupt_form.props,
     validate_outputs=interrupt_form.validate_outputs,
 )
@@ -169,9 +232,7 @@ async def on_speech_request(action: cl.Action) -> dict[str, object]:
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    answer = await _reply(message)
-    if answer is not None:
-        await send_speech_button(answer)
+    await _reply(message)
 
 
 @cl.on_audio_start
@@ -191,27 +252,22 @@ async def on_audio_end() -> None:
     await end_dictation()
 
 
-async def _reply(message: cl.Message) -> cl.Message | None:
+async def _reply(message: cl.Message) -> None:
     """Reply through Responses unless the thread awaits human review."""
     try:
         if await interrupt_workflow.block_new_message(message):
-            return None
+            return
     except Exception as exc:
         logger.exception("Chainlit HITL state check failed")
         await send_ui_message(f"Response failed: {exc}")
-        return None
+        return
 
     model = cl.user_session.get("chat_profile")
     if not isinstance(model, str) or not model:
         await send_ui_message("Response failed: no model profile is selected.")
-        return None
-    return await _response_message(message, model)
-
-
-async def _response_message(message: cl.Message, model: str) -> cl.Message | None:
-    """Render one Responses turn and return its answer once it completes."""
-    assistant_message = cl.Message(content="")
-    commentary_tasks = CommentaryTaskList()
+        return
+    turn = _Turn(model)
+    _current_turn.set(turn)
     try:
         input_items = await with_response_file_parts(
             response_input(text_only_chat_messages()),
@@ -219,60 +275,10 @@ async def _response_message(message: cl.Message, model: str) -> cl.Message | Non
             client=v1_client,
             extra_query={"provider": gateway.files_provider},
         )
-        streaming = not background_enabled() and streaming_enabled()
-
-        while True:
-            response = await _request_response(
-                input_items,
-                model=model,
-                commentary_tasks=commentary_tasks,
-                stream_to=assistant_message if streaming else None,
-            )
-            calls = function_calls(response)
-            if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
-                await interrupt_workflow.publish(response, model_id=model)
-                await commentary_tasks.complete()
-                return None
-
-            raise_for_response(response)
-            assistant_message.elements.extend(
-                cast("list[Any]", citation_elements(response))
-            )
-            if not streaming:
-                assistant_message.content += final_answer(response)
-            if not calls:
-                if not streaming:
-                    await assistant_message.send()
-                elif assistant_message.content:
-                    await assistant_message.update()
-                await commentary_tasks.complete()
-                return assistant_message
-
-            outputs = [
-                (
-                    await display_file(call)
-                    if call.name == DISPLAY_FILE_TOOL_NAME
-                    else await mcp_tools.execute(call)
-                )
-                for call in calls
-            ]
-            input_items.extend(continuation_input(response, outputs))
-    except asyncio.CancelledError:
-        await commentary_tasks.stop()
-        if assistant_message.content:
-            mark_model_context_excluded(assistant_message)
-            await assistant_message.update()
-        raise
+        # A pause persists its review form; an answer reaches _publish_final.
+        await interrupt_workflow.publish(await turn.run(input_items), model_id=model)
     except Exception as exc:
-        await commentary_tasks.stop()
-        error = f"Response failed: {exc}"
-        if assistant_message.content:
-            assistant_message.content = f"{assistant_message.content}\n\n{error}"
-            mark_model_context_excluded(assistant_message)
-            await assistant_message.update()
-        else:
-            await send_ui_message(error)
-        return None
+        await send_ui_message(f"Response failed: {exc}")
 
 
 async def _request_response(

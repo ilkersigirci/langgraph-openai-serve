@@ -47,7 +47,6 @@ async def configure_chat_settings() -> None:
     saved = cl.user_session.get("chat_settings")
     graph = _graph_name()
     extension = None
-    retrieval_failed = False
     if model_id:
         try:
             extension = model_extension(await retrieve_model(model_id))
@@ -57,7 +56,6 @@ async def configure_chat_settings() -> None:
                 model_id,
                 exc_info=True,
             )
-            retrieval_failed = True
     cl.user_session.set(MODEL_EXTENSION_SESSION_KEY, extension)
 
     widgets: list[InputWidget] = [
@@ -105,12 +103,14 @@ async def configure_chat_settings() -> None:
         )
 
     chat_settings = cl.ChatSettings(widgets)
-    if retrieval_failed:
-        # Unlike send(), refresh() keeps the saved selections in the session.
-        await chat_settings.refresh()
-    else:
+    if extension is not None:
+        # send() makes the session match the form, dropping stale settings.
         await chat_settings.send()
-    if model_id and extension is None:
+        return
+    # Without trusted metadata, refresh() shows the form but keeps every saved
+    # selection, so they return intact once the metadata does.
+    await chat_settings.refresh()
+    if model_id:
         await cl.context.emitter.send_toast(
             LIMITED_FUNCTIONALITY_MESSAGE,
             type="warning",
