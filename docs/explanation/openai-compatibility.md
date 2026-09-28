@@ -741,8 +741,10 @@ does not finish within 10 seconds, can leave an unreachable thread for operators
 to reap; it never replaces the original execution error. If the terminal HTTP response is lost,
 replaying the old resume returns a safe HTTP 409 and does not re-execute the
 completed operation. This is conflict detection, not durable storage of the
-terminal response; applications that need result replay must add a
-result/idempotency store at their own boundary.
+terminal response. For result replay, resume in the background with an
+[`Idempotency-Key`](../how-to-guides/background-responses.md#idempotent-creation),
+so a retry returns the original Response; otherwise add a result store at the
+application boundary.
 
 An interrupted node restarts from its beginning when resumed. Any side effect
 before `interrupt()` can therefore run again; make it idempotent or move it
