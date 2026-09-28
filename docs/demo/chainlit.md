@@ -458,8 +458,10 @@ pending-request protection, and batch continuation, and its `HumanReview`
 element renders the form. The demo keeps only the LGOS `lgos_interrupt` name,
 the Responses request callback, and the conversion of each interrupt payload
 into a review prompt with its choices.
-Answer text the graph produced before pausing stays in the conversation above
-the form. The workflow publishes a normal Chainlit message with one persisted
+Answer text the graph produced before a pause stays in the conversation above
+the form. The exception is a resumed run that pauses again directly: that pause
+updates the existing form, so its text follows it. The workflow publishes a
+normal Chainlit message with one persisted
 custom element and immediately returns. The element collects one answer for every
 interrupt call in the current batch, then invokes a native Chainlit action
 callback through `callAction`. The callback reads the trusted model ID,

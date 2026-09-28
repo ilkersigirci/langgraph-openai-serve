@@ -100,7 +100,7 @@ class _Turn:
         if not self.streaming:
             self.answer.content += final_answer(response)
         if any(call.name == INTERRUPT_TOOL_NAME for call in function_calls(response)):
-            # The review follows this text.
+            # Send the text before the workflow publishes the review.
             if self.answer.content:
                 await self.answer.send()
             await self.commentary_tasks.complete()

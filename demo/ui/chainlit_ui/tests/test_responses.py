@@ -526,18 +526,61 @@ async def test_client_tool_after_review_finishes_the_resumed_turn(
     assert transcript()[-1] == "Saved and plotted."
 
 
+async def test_client_tools_after_review_can_pause_for_a_new_review(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+) -> None:
+    _, approval = await _pause_plot_for_review(fake_gateway)
+    share_call = function_call(
+        "lgos_interrupt",
+        json.dumps({"question": "Share the chart?", "choices": ["approve"]}),
+        call_id="call_lg_share",
+    )
+    fake_gateway.replies += [
+        streamed(
+            response(
+                message("Saving chart", id="msg_status", phase="commentary"),
+                DISPLAY_CHART,
+                id="resp_lg_done",
+            )
+        ),
+        httpx2.Response(200, content=b"png-bytes"),
+        streamed(response(message("Chart saved."), share_call, id="resp_lg_share")),
+    ]
+
+    result = await chat.on_interrupt_submit(approval)
+
+    assert result == {"ok": True}
+    *_, answer, share = cl.chat_context.get()
+    assert (answer.content, share.content) == ("Chart saved.", "Share the chart?")
+    assert share.elements[0].props[HITL_CONTROL_PROP]["revision"] == "resp_lg_share"
+    assert task_lists[-1]["status"] == "Done"
+
+
 async def test_failed_client_tool_after_review_leaves_the_thread_usable(
     chainlit_context,
     fake_gateway,
+    task_lists,
 ) -> None:
     _, approval = await _pause_plot_for_review(fake_gateway)
     fake_gateway.replies += [
-        streamed(response(DISPLAY_CHART, id="resp_lg_done")),
+        streamed(
+            response(
+                message("Saving chart", id="msg_status", phase="commentary"),
+                message("Plotting."),
+                DISPLAY_CHART,
+                id="resp_lg_done",
+            )
+        ),
         httpx2.Response(404, json={"error": {"message": "No such file"}}),
     ]
     await chat.on_interrupt_submit(approval)
+    partial = next(m for m in cl.chat_context.get() if m.content == "Plotting.")
     fake_gateway.replies.append(streamed(response(message("Plotted again."))))
 
     await chat.on_message(user_message("Try again."))
 
+    assert partial.metadata == {EXCLUDED_KEY: True}
+    assert task_lists[-1]["status"] == "Stopped"
     assert transcript()[-1] == "Plotted again."
