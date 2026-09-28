@@ -20,6 +20,7 @@ from chainlit_utils.chat.history import (
 )
 from chainlit_utils.chat.hitl import HitlWorkflow
 from chainlit_utils.chat.human_review import HUMAN_REVIEW_ELEMENT_NAME, HumanReviewForm
+from chainlit_utils.chat.streaming import MessageStream
 from chainlit_utils.openai.audio import (
     SPEECH_ACTION_NAME,
     add_dictation_chunk,
@@ -382,6 +383,7 @@ async def _stream_response(
     """Render final text and commentary while retaining the terminal Response."""
     phases: dict[int, str | None] = {}
     final_text_streamed = False
+    message_stream = MessageStream(assistant_message)
     async with responses_client.responses.stream(**request, store=False) as stream:
         async for event in stream:
             if event.type == "response.output_item.added":
@@ -396,16 +398,22 @@ async def _stream_response(
                 phase = phases.get(event.output_index)
                 if phase != "commentary":
                     final_text_streamed = True
-                    await assistant_message.stream_token(event.delta)
+                    await message_stream.stream_token(event.delta)
                 continue
             if event.type == "response.incomplete" or event.type == "response.failed":
                 raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":
                     await commentary_tasks.add(event.text)
+                else:
+                    await message_stream.flush()
+                continue
+            if event.type == "response.refusal.done":
+                await message_stream.flush()
                 continue
         completed = await stream.get_final_response()
 
+    await message_stream.flush()
     if (
         completed.status == "completed"
         and not final_text_streamed

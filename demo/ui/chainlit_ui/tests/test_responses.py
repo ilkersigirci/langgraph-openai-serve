@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from datetime import datetime
 from uuid import UUID
 
@@ -346,6 +347,54 @@ async def test_stopped_turn_cancels_its_background_response(
         f"{responses_path}/resp_bg/cancel",
         lifecycle_query,
     )
+
+
+async def test_stopped_stream_closes_upstream_and_keeps_partial_text_out_of_context(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    waiting = asyncio.Event()
+    closed = asyncio.Event()
+
+    class PausedStream(httpx2.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            payload = streamed(response(message("Partial answer"))).content
+            yield payload.split(b"event: response.output_text.done")[0]
+            waiting.set()
+            await anyio.sleep_forever()
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    fake_gateway.replies.append(
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=PausedStream(),
+        )
+    )
+    async with asyncio.TaskGroup() as tasks:
+        turn = tasks.create_task(chat.on_message(user_message("Give a long answer.")))
+        with anyio.fail_after(5):
+            await waiting.wait()
+            turn.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await turn
+
+    assert closed.is_set()
+    partial = cl.chat_context.get()[-1]
+    assert partial.content == "Partial answer"
+    assert partial.metadata[EXCLUDED_KEY] is True
+
+    fake_gateway.replies.append(streamed(response(message("Ready."))))
+    await chat.on_message(user_message("Try again."))
+
+    assert fake_gateway.bodies("/v1/responses")[-1]["input"] == [
+        {"role": "user", "content": "Give a long answer."},
+        {"role": "user", "content": "Try again."},
+    ]
+    assert transcript()[-1] == "Ready."
 
 
 @pytest.mark.parametrize("background", [False, True], ids=["foreground", "background"])
