@@ -135,7 +135,8 @@ belong to an external OpenAI Files API, not the LGOS package. See
   collection or manager.
 - `run_coordinator`: asynchronous single-flight coordination for interrupt
   runs. It rejects an occupied LGOS checkpoint key instead of queueing it and
-  returns an async context manager.
+  returns an async context manager, whose exit must release the lease even when
+  cancelled.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
@@ -192,7 +193,7 @@ Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
-| Graph input | `graph.ainvoke(input, ...)` or `graph.astream(input, ...)` | Messages and mutable workflow state. |
+| Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
 | Interrupt run | server scope + model + optional `metadata.lgos_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
@@ -230,7 +231,7 @@ For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
 application-created vendor handler through `runtime_callbacks`.
 
-When a callback is present, LGOS gives the graph run the stable name
+LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
 request ID, registered graph model, (for interrupt runs) operation ID, and (when
 the request supplies `metadata.conversation_id`) the Langfuse-recognized

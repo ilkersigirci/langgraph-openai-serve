@@ -33,7 +33,12 @@ class RunBusyError(InvalidRequestError):
 
 @runtime_checkable
 class RunCoordinator(Protocol):
-    """Acquire a lease that rejects, rather than queues, an occupied run."""
+    """
+    Acquire a lease that rejects, rather than queues, an occupied run.
+
+    Exiting the lease must release it even when the exit is cancelled, because
+    run cleanup is abandoned after a deadline; shield an asynchronous release.
+    """
 
     def __call__(self, key: str, /) -> AbstractAsyncContextManager[None]:
         """Hold the lease for ``key`` or raise ``RunBusyError``."""

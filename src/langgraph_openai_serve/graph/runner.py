@@ -127,8 +127,8 @@ async def stream_run(
     run.begin_execution()
     # Without streaming, request only root values, exactly like ainvoke().
     # LangGraph stops node tasks on one asyncio cancellation in every mode, but
-    # AnyIO's repeated cancellation leaves them running once a stream uses
-    # several modes or subgraphs; only token streams need those.
+    # AnyIO's repeated cancellation leaves them running once a stream reads
+    # message or custom events or subgraphs; only token streams need those.
     stream_mode: list[StreamMode] = ["values"]
     if streaming:
         stream_mode += ["messages", "custom"]

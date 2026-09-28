@@ -118,7 +118,7 @@ class GraphRun:
     async def _cleanup(self) -> None:
         # Shielded because cleanup may run inside a cancelled request scope, and
         # bounded so a hung store cannot hold the request forever. Abandoning is
-        # safe: coordinators release a cancelled lease, and an undeleted
+        # safe: a coordinator must release a cancelled lease, and an undeleted
         # checkpoint is only orphaned.
         with fail_after(_CLEANUP_TIMEOUT, shield=True):
             async with self._resources:
