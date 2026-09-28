@@ -8,10 +8,13 @@ graphs through the OpenAI-compatible API.
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
+import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve.graph.interrupt import delete_expired_interrupt_runs
 
 from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
@@ -51,9 +54,25 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.persistence.postgres import postgres_runtime
+from lgos_demo_api.persistence.postgres import PostgresRuntime, postgres_runtime
 
 logger = logging.getLogger(__name__)
+
+
+async def _expire_interrupt_runs(runtime: PostgresRuntime) -> None:
+    """Delete stale paused interrupt runs on an interval, like Agent Server's TTL."""
+    ttl = timedelta(minutes=settings.INTERRUPT_TTL_MINUTES)
+    while True:
+        try:
+            deleted = await delete_expired_interrupt_runs(
+                runtime.checkpointer, runtime.run_coordinator, older_than=ttl
+            )
+        except Exception:
+            logger.exception("demo.interrupt_expiry.failed")
+        else:
+            if deleted:
+                logger.info("demo.interrupt_expiry.deleted", extra={"runs": deleted})
+        await anyio.sleep(settings.INTERRUPT_SWEEP_INTERVAL_MINUTES * 60)
 
 
 @asynccontextmanager
@@ -71,6 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
+        anyio.create_task_group() as background_tasks,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.background_interrupt_graph = create_background_interrupt_graph(
@@ -79,7 +99,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         app.state.advanced_graph = advanced_graph
+        background_tasks.start_soon(_expire_interrupt_runs, runtime)
         yield
+        background_tasks.cancel_scope.cancel()
 
     logger.info("demo.server.stopped")
 

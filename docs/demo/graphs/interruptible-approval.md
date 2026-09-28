@@ -86,8 +86,9 @@ can still replay them.
 The demo uses LGOS's default shared checkpoint scope, so multi-tenant
 applications must derive that scope from authenticated server state.
 
-The demo has no expiry worker. Production deployments must reap abandoned
-pending runs and follow LangGraph's
+The demo API deletes runs left paused longer than
+`DEMO_API_INTERRUPT_TTL_MINUTES`. Production deployments must also follow
+LangGraph's
 [interrupt idempotency rules](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
 
 The application must also authorize and audit the reviewing identity. Interrupt

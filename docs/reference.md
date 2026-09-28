@@ -311,9 +311,15 @@ serialize requests across workers or hosts.
 
 Pending checkpoints exist only to resume an interrupt batch returned to the
 client. LGOS deletes isolated checkpoint state after terminal completion or
-when execution fails or is cancelled before producing that batch. Operators
-must separately define an expiry policy for runs abandoned after a batch is
-returned.
+when execution fails or is cancelled before producing that batch. A run
+abandoned after its batch is returned stays until deleted: call
+`delete_expired_interrupt_runs(checkpointer, run_coordinator, older_than=...)`
+from `langgraph_openai_serve.graph.interrupt` on a schedule, as LangGraph Agent
+Server's [checkpointer TTL](https://docs.langchain.com/langsmith/configure-ttl)
+does. It deletes the runs whose latest pause is older than `older_than` and
+returns their count. It reads every checkpoint through `alist()`, leaves threads
+LGOS did not create alone, and skips runs whose lease is held. Choose a TTL
+longer than the longest time a user may take to answer.
 
 ### PostgreSQL Coordination
 

@@ -5,9 +5,11 @@ import json
 from collections.abc import AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 
@@ -15,6 +17,9 @@ from langgraph_openai_serve.core.errors import (
     GraphError,
     InvalidRequestError,
 )
+
+# LangGraph copies run metadata into each checkpoint, which marks LGOS runs.
+OPERATION_ID_METADATA_KEY = "lgos.operation_id"
 
 
 class RunBusyError(InvalidRequestError):
@@ -120,6 +125,51 @@ def interrupt_batch(
     return LangGraphInterruptBatch(run_id=run_id, interrupts=pending)
 
 
+async def delete_expired_interrupt_runs(
+    checkpointer: BaseCheckpointSaver,
+    run_coordinator: RunCoordinator,
+    *,
+    older_than: timedelta,
+) -> int:
+    """
+    Delete paused interrupt runs whose latest pause is older than ``older_than``.
+
+    Other threads in ``checkpointer`` are left alone, and a run whose lease is
+    held, such as one being resumed, is skipped until the next call.
+
+    Returns:
+        The number of deleted runs.
+
+    """
+    cutoff = datetime.now(UTC) - older_than
+    paused_at: dict[str, datetime] = {}
+    async for item in checkpointer.alist(None):
+        if OPERATION_ID_METADATA_KEY in item.metadata:
+            thread_id = item.config["configurable"]["thread_id"]
+            timestamp = datetime.fromisoformat(item.checkpoint["ts"])
+            paused_at[thread_id] = max(timestamp, paused_at.get(thread_id, timestamp))
+
+    deleted = 0
+    for thread_id, timestamp in paused_at.items():
+        if timestamp >= cutoff:
+            continue
+        try:
+            async with run_coordinator(thread_id):
+                # The run may have been resumed, or deleted, since it was listed.
+                latest = await checkpointer.aget_tuple(
+                    {"configurable": {"thread_id": thread_id}}
+                )
+                if latest is None or (
+                    datetime.fromisoformat(latest.checkpoint["ts"]) >= cutoff
+                ):
+                    continue
+                await checkpointer.adelete_thread(thread_id)
+        except RunBusyError:
+            continue
+        deleted += 1
+    return deleted
+
+
 def _state_conflict(message: str) -> InvalidRequestError:
     return InvalidRequestError(
         message,
@@ -130,9 +180,11 @@ def _state_conflict(message: str) -> InvalidRequestError:
 
 
 __all__ = [
+    "OPERATION_ID_METADATA_KEY",
     "InMemoryRunCoordinator",
     "InterruptResume",
     "LangGraphInterruptBatch",
     "RunBusyError",
     "RunCoordinator",
+    "delete_expired_interrupt_runs",
 ]

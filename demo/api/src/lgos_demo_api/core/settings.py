@@ -1,6 +1,13 @@
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, AnyHttpUrl, Field, PlainValidator, TypeAdapter
+from pydantic import (
+    AfterValidator,
+    AnyHttpUrl,
+    Field,
+    PlainValidator,
+    PositiveInt,
+    TypeAdapter,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AnyHttpUrlAdapter = TypeAdapter(AnyHttpUrl)
@@ -38,6 +45,8 @@ class Settings(BaseSettings):
     )
 
     POSTGRES_URI: str = "postgresql://lgos:lgos@localhost:3001/lgos"
+    INTERRUPT_TTL_MINUTES: PositiveInt = 43200
+    INTERRUPT_SWEEP_INTERVAL_MINUTES: PositiveInt = 5
     PORT: int = 8000
     OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"

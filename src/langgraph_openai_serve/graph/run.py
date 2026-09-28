@@ -24,6 +24,7 @@ from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import (
+    OPERATION_ID_METADATA_KEY,
     InterruptResume,
     RunCoordinator,
     checkpoint_key,
@@ -242,7 +243,7 @@ def _runnable_config(
             callbacks=run_callbacks, run_name=_RUN_NAME, metadata=metadata
         )
 
-    metadata["lgos.operation_id"] = interrupt_run.run_id
+    metadata[OPERATION_ID_METADATA_KEY] = interrupt_run.run_id
     return RunnableConfig(
         callbacks=run_callbacks,
         run_name=_RUN_NAME,

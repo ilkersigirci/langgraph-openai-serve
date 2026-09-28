@@ -473,8 +473,8 @@ support them.
     Open WebUI's built-in `ask_user` persistence requires a saved chat. Refreshing
     the page restores the unanswered card; the LangGraph checkpoint remains
     pending until the answer reaches LGOS. **Cancel** ends the Open WebUI turn
-    without resuming the graph, so its checkpoint remains pending. The demo has
-    no expiry worker; production deployments must reap abandoned runs.
+    without resuming the graph, so its checkpoint remains pending until the demo
+    API's [expiry](graphs/interruptible-approval.md#postgresql-runtime) deletes it.
 
 The refund demo offers **approve**, **reject**, and a custom response. Approval
 executes the simulated refund and notification, rejection stops the workflow,

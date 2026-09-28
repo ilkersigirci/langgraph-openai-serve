@@ -759,10 +759,11 @@ idempotency key when duplicates are unacceptable; LangGraph's
 describes that remaining crash window. The coordinator prevents overlapping
 run execution, not crash-time exactly-once delivery.
 
-Pending runs abandoned by users remain checkpoint data. Production operators
-must define an expiry policy that accounts for the maximum response window and
-deletes expired checkpoint threads through the checkpointer; do not treat
-ordinary database backups or retention as an active-run cleanup policy. See
+Pending runs abandoned by users remain checkpoint data until an expiry policy
+deletes them. Schedule
+[`delete_expired_interrupt_runs`](../reference.md#runtime-settings) with a TTL
+longer than the maximum response window; do not treat ordinary database backups
+or retention as an active-run cleanup policy. See
 LangGraph's [persistence documentation](https://docs.langchain.com/oss/python/langgraph/persistence)
 for the underlying checkpoint model.
 
