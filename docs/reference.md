@@ -309,6 +309,8 @@ every new run and embeds it in the paused Response ID. `InMemoryRunCoordinator`
 is suitable only for tests and a single-process development server; it cannot
 serialize requests across workers or hosts.
 
+### Expire Paused Runs
+
 Pending checkpoints exist only to resume an interrupt batch returned to the
 client. LGOS deletes isolated checkpoint state after terminal completion or when
 execution fails or is cancelled before producing that batch. A run abandoned
@@ -324,8 +326,8 @@ queue's scheduler. It deletes the runs whose latest pause is older than
 is held. Choose a TTL longer than the longest time a user may take to answer. To
 write your own cleanup, select threads whose checkpoint metadata contains
 `OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
-confirm its latest pause is still older than your TTL, and delete it through the
-checkpointer.
+confirm that its latest checkpoint in any namespace is still older than your
+TTL, and delete it through the checkpointer.
 
 ### PostgreSQL Coordination
 

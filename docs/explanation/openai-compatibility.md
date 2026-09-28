@@ -737,11 +737,12 @@ for the same operation receives HTTP 409.
 LGOS preserves checkpoint state only after it produces an interrupt batch for
 the client. It deletes the isolated thread after terminal completion and
 best-effort after failure or cancellation before a batch. Cleanup that fails, or
-does not finish within 10 seconds, can leave an unreachable thread for operators
-to reap; it never replaces the original execution error. If the terminal HTTP response is lost,
-replaying the old resume returns a safe HTTP 409 and does not re-execute the
-completed operation. This is conflict detection, not durable storage of the
-terminal response. For result replay, resume in the background with an
+does not finish within 10 seconds, can leave an unreachable thread until its
+expiry deletes it; it never replaces the original execution error. If the
+terminal HTTP response is lost, replaying the old resume returns a safe HTTP 409
+and does not re-execute the completed operation. This is conflict detection,
+not durable storage of the terminal response. For result replay, resume in the
+background with an
 [`Idempotency-Key`](../how-to-guides/background-responses.md#idempotent-creation),
 so a retry returns the original Response; otherwise add a result store at the
 application boundary.
@@ -761,7 +762,7 @@ run execution, not crash-time exactly-once delivery.
 
 Pending runs abandoned by users remain checkpoint data until an expiry policy
 deletes them. Schedule
-[`delete_expired_interrupt_runs`](../reference.md#runtime-settings) with a TTL
+[`delete_expired_interrupt_runs`](../reference.md#expire-paused-runs) with a TTL
 longer than the maximum response window; do not treat ordinary database backups
 or retention as an active-run cleanup policy. See
 LangGraph's [persistence documentation](https://docs.langchain.com/oss/python/langgraph/persistence)

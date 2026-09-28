@@ -1,8 +1,10 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from http import HTTPStatus
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from langgraph_openai_serve import (
@@ -19,7 +21,10 @@ from langgraph_openai_serve.graph.interrupt import (
     delete_expired_interrupt_runs,
 )
 from langgraph_openai_serve.graph.runner import run_langgraph
-from tests.graph.support.interrupt import make_interrupt_graph
+from tests.graph.support.interrupt import (
+    make_interrupt_graph,
+    make_nested_multi_interrupt_graph,
+)
 
 MODEL = "review"
 
@@ -103,3 +108,49 @@ async def test_runs_in_use_and_other_threads_are_kept(
 
     assert (in_use, released) == (0, 1)
     assert await sqlite_checkpointer.aget_tuple(application_thread) is not None
+
+
+async def test_a_run_answered_during_the_sweep_is_kept(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    registry = GraphRegistry(
+        graphs={
+            MODEL: GraphConfig(
+                # Both questions pause inside a subgraph.
+                graph=make_nested_multi_interrupt_graph(sqlite_checkpointer),
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                request_to_input=lambda _request, _messages: {"answers": []},
+                output_to_message=lambda output: AIMessage(
+                    content=",".join(output["answers"])
+                ),
+            )
+        },
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    first = await _pause(registry, make_request)
+    answered: list[object] = []
+
+    @asynccontextmanager
+    async def answer_before_the_lease(_key: str) -> AsyncIterator[None]:
+        # The user answers after the sweep listed the run as expired.
+        resume = InterruptResume(
+            run_id=first.run_id, values={first.interrupts[0].id: "yes"}
+        )
+        answered.append(
+            await run_langgraph(make_request(MODEL), [], registry, resume=resume)
+        )
+        yield
+
+    deleted = await delete_expired_interrupt_runs(
+        sqlite_checkpointer, answer_before_the_lease, older_than=timedelta(0)
+    )
+
+    [second] = answered
+    assert isinstance(second, LangGraphInterruptBatch)
+    resume = InterruptResume(
+        run_id=second.run_id, values={second.interrupts[0].id: "done"}
+    )
+    final = await run_langgraph(make_request(MODEL), [], registry, resume=resume)
+    assert (deleted, final.content) == (0, "yes,done")

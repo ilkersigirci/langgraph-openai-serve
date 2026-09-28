@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver, CheckpointTuple
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 
@@ -142,12 +142,7 @@ async def delete_expired_interrupt_runs(
 
     """
     cutoff = datetime.now(UTC) - older_than
-    paused_at: dict[str, datetime] = {}
-    async for item in checkpointer.alist(None):
-        if OPERATION_ID_METADATA_KEY in item.metadata:
-            thread_id = item.config["configurable"]["thread_id"]
-            timestamp = datetime.fromisoformat(item.checkpoint["ts"])
-            paused_at[thread_id] = max(timestamp, paused_at.get(thread_id, timestamp))
+    paused_at = await _latest_pauses(checkpointer.alist(None))
 
     deleted = 0
     for thread_id, timestamp in paused_at.items():
@@ -156,18 +151,29 @@ async def delete_expired_interrupt_runs(
         try:
             async with run_coordinator(thread_id):
                 # The run may have been resumed, or deleted, since it was listed.
-                latest = await checkpointer.aget_tuple(
-                    {"configurable": {"thread_id": thread_id}}
+                latest = await _latest_pauses(
+                    checkpointer.alist({"configurable": {"thread_id": thread_id}})
                 )
-                if latest is None or (
-                    datetime.fromisoformat(latest.checkpoint["ts"]) >= cutoff
-                ):
+                if latest.get(thread_id, cutoff) >= cutoff:
                     continue
                 await checkpointer.adelete_thread(thread_id)
         except RunBusyError:
             continue
         deleted += 1
     return deleted
+
+
+async def _latest_pauses(items: AsyncIterator[CheckpointTuple]) -> dict[str, datetime]:
+    """Return each LGOS run's latest checkpoint time."""
+    # Read every namespace: a run that pauses again inside a subgraph writes
+    # no new root checkpoint.
+    latest: dict[str, datetime] = {}
+    async for item in items:
+        if OPERATION_ID_METADATA_KEY in item.metadata:
+            thread_id = item.config["configurable"]["thread_id"]
+            timestamp = datetime.fromisoformat(item.checkpoint["ts"])
+            latest[thread_id] = max(timestamp, latest.get(thread_id, timestamp))
+    return latest
 
 
 def _state_conflict(message: str) -> InvalidRequestError:
