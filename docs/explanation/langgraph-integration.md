@@ -97,17 +97,18 @@ documentation for the underlying conventions.
 ## Runner Behavior
 
 LGOS uses LangGraph's stable v2 output wrapper so interrupt handling remains
-durable. Ordinary requests choose invocation or streaming according to the
-OpenAI response mode; server tools additionally need intermediate updates.
+durable. Every request runs through `stream_run()`; the OpenAI response mode
+selects its LangGraph stream modes, and server tools additionally need
+intermediate updates.
 
 === "Complete response"
 
-    When `stream` is omitted or `false`, ordinary requests use
-    `graph.ainvoke(version="v2")`. Requests selecting server tools use
-    `stream_run()` so LGOS can collect native call/result updates. That path
-    does not subscribe to message deltas, encode SSE, or include transient
-    commentary. Both paths use the same Responses item builder and consume
-    interrupts from LangGraph's native v2 execution results.
+    When `stream` is omitted or `false`, `stream_run()` requests only root
+    `values`, exactly like LangGraph's `ainvoke()`, plus root `updates` for
+    requests selecting server tools so LGOS can collect native call/result
+    items. It does not subscribe to message deltas, encode SSE, or include
+    transient commentary. Both response modes use the same Responses item
+    builder and consume interrupts from LangGraph's native v2 execution results.
 
 === "SSE response"
 

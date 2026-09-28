@@ -16,8 +16,9 @@ class ClientSettings(BaseModel):
     """
     Base class for settings that clients may configure for a graph.
 
-    Subclasses define the complete public contract. Every field needs a default
-    so model discovery can advertise a complete settings object.
+    Subclasses define the complete public contract. Every field needs a
+    deterministic default so model discovery can advertise a complete, stable
+    settings object.
     """
 
     model_config = ConfigDict(

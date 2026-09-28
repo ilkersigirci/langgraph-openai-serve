@@ -55,7 +55,6 @@ entry point.
 
 - Do not add project-specific chat envelopes, response shapes, headers, routes,
   or streaming events unless they remain reachable through `/v1`.
-  diagnostics only.
 - Do not raise bare `HTTPException` from OpenAI route code.
 - Do not update dependencies, regenerate `uv.lock`, or touch `.env` unless the
   task requires it.

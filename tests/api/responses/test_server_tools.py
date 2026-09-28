@@ -683,6 +683,39 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
     assert response["output"][-1]["status"] == ("incomplete" if fail else "completed")
 
 
+async def test_repeated_server_tool_call_id_fails(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    async def repeated(_state: MessagesState):
+        result = ToolMessage(
+            content="langgraph==installed-version", tool_call_id="call_package"
+        )
+        return {
+            "messages": [
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content="Done."),
+            ]
+        }
+
+    _register_single_node(
+        graph_registry,
+        "package",
+        repeated,
+        server_tools={"package_version"},
+    )
+
+    with pytest.raises(InternalServerError):
+        await openai_client.responses.create(
+            model="package",
+            input="Version?",
+            tools=PACKAGE_TOOLS,
+        )
+
+
 @pytest.mark.parametrize("stream", [False, True])
 async def test_unfinished_server_execution_fails(
     openai_client: AsyncOpenAI,

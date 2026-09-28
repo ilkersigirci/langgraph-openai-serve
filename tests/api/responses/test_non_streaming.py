@@ -22,8 +22,12 @@ from openai.types.responses.response_function_web_search import ActionSearch
 from openai.types.responses.response_output_text import AnnotationURLCitation
 from starlette import status
 
-from langgraph_openai_serve import GraphConfig, GraphRegistry, GraphRequest
-from langgraph_openai_serve.graph.graph_registry import GraphError
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphError,
+    GraphRegistry,
+    GraphRequest,
+)
 from tests.graph.support.message import make_message_graph
 from tests.graph.support.registration import replace_graph_config
 from tests.graph.support.schemas import MessageState

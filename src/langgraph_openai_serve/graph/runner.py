@@ -112,7 +112,8 @@ async def stream_run(
         run: The prepared run.
         streaming: Yield assistant text and custom events, including those of
             nested subgraphs.
-        stream_updates: Yield root-graph node updates.
+        stream_updates: Yield node updates; with ``streaming``, nested subgraph
+            updates are yielded too.
 
     Yields:
         The requested intermediate events, then the final ``AIMessage`` or

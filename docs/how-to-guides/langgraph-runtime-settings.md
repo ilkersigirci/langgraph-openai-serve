@@ -48,8 +48,9 @@ graph_config = GraphConfig(
 )
 ```
 
-Every public field needs a default. `client_settings` is an explicit allowlist;
-LGOS never exposes the graph's complete context schema automatically.
+Every public field needs a deterministic default. `client_settings` is an
+explicit allowlist; LGOS never exposes the graph's complete context schema
+automatically.
 
 ## Client Discovery
 

@@ -3,8 +3,12 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
-from langgraph_openai_serve.graph.graph_registry import GraphError
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphError,
+    GraphFeature,
+    GraphRegistry,
+)
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
 

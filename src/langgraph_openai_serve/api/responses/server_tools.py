@@ -30,6 +30,7 @@ class ServerToolTracker:
     def __init__(self, selected: Collection[str]) -> None:
         self._selected = frozenset(selected)
         self._pending: dict[str, _ServerCall] = {}
+        self._call_ids: set[str] = set()
 
     def items(self, event: UpdatesStreamPart) -> Iterator[ServerToolItem]:
         """
@@ -77,6 +78,11 @@ class ServerToolTracker:
             if not isinstance(call_id, str) or not call_id:
                 msg = "Server tool calls must include a non-empty id."
                 raise GraphError(msg)
+            # A repeated call would emit duplicate Response item IDs.
+            if call_id in self._call_ids:
+                msg = "Server tool call IDs must be unique within a graph run."
+                raise GraphError(msg)
+            self._call_ids.add(call_id)
             if name == "web_search":
                 query = arguments.get("query") if isinstance(arguments, dict) else None
                 if not isinstance(query, str) or not query.strip():

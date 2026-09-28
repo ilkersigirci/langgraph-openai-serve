@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import pytest
@@ -89,12 +90,19 @@ async def _values_only():
 
 
 @pytest.mark.parametrize(
+    "delete_error",
+    [None, RuntimeError("database unavailable")],
+    ids=["cleanup-succeeds", "cleanup-fails"],
+)
+@pytest.mark.parametrize(
     ("events", "output_to_message"),
     [(_values_only, _fail_rendering), (_values_then_fail, None)],
     ids=["rendering", "execution"],
 )
-async def test_failed_run_deletes_its_checkpoint(events, output_to_message) -> None:
-    graph = CleanupGraph(events)
+async def test_failed_run_deletes_its_checkpoint_and_keeps_its_error(
+    events, output_to_message, delete_error
+) -> None:
+    graph = CleanupGraph(events, delete_error=delete_error)
     run = cleanup_run(graph, output_to_message=output_to_message)
 
     with pytest.raises(ValueError, match="run failed"):
@@ -102,6 +110,28 @@ async def test_failed_run_deletes_its_checkpoint(events, output_to_message) -> N
             await collect_run(run)
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
+
+
+async def test_failed_run_keeps_its_error_when_its_lease_release_fails() -> None:
+    released = Event()
+
+    @asynccontextmanager
+    async def failing_lease() -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            released.set()
+            msg = "lease release failed"
+            raise RuntimeError(msg)
+
+    run = cleanup_run(CleanupGraph(_values_then_fail))
+    await run.hold(failing_lease())
+
+    with pytest.raises(ValueError, match="run failed"):
+        async with run:
+            await collect_run(run)
+
+    assert released.is_set()
 
 
 async def test_closing_stream_deletes_incomplete_state_without_interrupts() -> None:

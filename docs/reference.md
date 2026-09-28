@@ -270,7 +270,9 @@ class PublicSettings(ClientSettings):
 
 Pass this model as `GraphConfig.client_settings` and use it as the graph's context
 schema when it is the complete runtime context. Every public field must have a
-default; registration fails when the model cannot build its defaults or schema.
+deterministic default, because clients omit values equal to the advertised
+defaults; a `default_factory` must return the same value on every call.
+Registration fails when the model cannot build its defaults or schema.
 
 All public fields travel together as compact JSON text in the
 `metadata.lgos_settings` string. Clients omit values equal to the advertised

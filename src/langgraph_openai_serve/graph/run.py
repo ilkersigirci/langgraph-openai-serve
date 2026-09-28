@@ -2,6 +2,7 @@
 
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass, field
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from anyio import CancelScope
@@ -12,7 +13,11 @@ from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
-from langgraph_openai_serve.core.logging import bind_log_context, get_log_context
+from langgraph_openai_serve.core.logging import (
+    bind_log_context,
+    get_log_context,
+    get_logger,
+)
 from langgraph_openai_serve.core.settings import settings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
@@ -33,6 +38,8 @@ from langgraph_openai_serve.protocol import (
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
+
+logger = get_logger(__name__)
 
 _RUN_NAME = "lgos.graph_run"
 
@@ -70,9 +77,14 @@ class GraphRun:
         """Return this run; exiting closes it."""
         return self
 
-    async def __aexit__(self, *_exc_info: object) -> None:
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
         """Close this run."""
-        await self.aclose()
+        await self.aclose(error=exc)
 
     async def hold(self, lease: AbstractAsyncContextManager[None]) -> None:
         """Hold ``lease`` until this run closes."""
@@ -86,8 +98,21 @@ class GraphRun:
         """Preserve the checkpoint of a run that paused on interrupts."""
         self._delete_checkpoint = False
 
-    async def aclose(self) -> None:
-        """Apply checkpoint cleanup and release the lease; later calls do nothing."""
+    async def aclose(self, *, error: BaseException | None = None) -> None:
+        """
+        Apply checkpoint cleanup and release the lease; later calls do nothing.
+
+        When ``error`` ended the run, a cleanup failure is logged instead of
+        replacing it.
+        """
+        try:
+            await self._cleanup()
+        except Exception:
+            if error is None:
+                raise
+            logger.exception("graph_run.cleanup_failed")
+
+    async def _cleanup(self) -> None:
         # Cleanup may run inside a cancelled request scope.
         with CancelScope(shield=True):
             async with self._resources:
@@ -142,8 +167,8 @@ async def prepare_run(
     )
     try:
         await _prepare_inputs(run, request, messages, resume)
-    except BaseException:
-        await run.aclose()
+    except BaseException as exc:
+        await run.aclose(error=exc)
         raise
     return run
 
