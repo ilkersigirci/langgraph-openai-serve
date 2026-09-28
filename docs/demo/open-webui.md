@@ -203,8 +203,10 @@ Restarting Open WebUI alone refreshes only its MCP and speech settings, so
 re-run the sync after changing the gateway key or URL. Compose enables Open
 WebUI's
 [valve encryption](https://docs.openwebui.com/reference/env-configuration#enable_valve_encryption)
-with `DEMO_OPENWEBUI_SECRET_KEY`; re-run the sync after changing that secret
-too.
+with `DEMO_OPENWEBUI_SECRET_KEY`. Changing that secret makes every stored
+valve unreadable, so Open WebUI resets them, including admin-set values and
+users' UserValves; re-run the sync to restore the gateway valves and set the
+others again.
 
 LiteLLM sends the catalog's `model_name` unchanged for managed routing. Bifrost also
 receives the provider-qualified catalog ID unchanged on native Responses and

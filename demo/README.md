@@ -143,8 +143,8 @@ With the gateway running, start Chainlit and PostgreSQL on port 3002:
 just demo/up lgos-chainlit
 ```
 
-With Open WebUI running, synchronize the Functions and generated Workspace
-Models:
+With Open WebUI running, synchronize the Functions, their gateway valves, and
+the generated Workspace Models:
 
 ```bash
 just demo/sync-openwebui

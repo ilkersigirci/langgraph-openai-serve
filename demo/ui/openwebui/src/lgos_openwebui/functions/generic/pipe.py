@@ -382,7 +382,7 @@ class Pipe:
             or valves.OPENAI_GATEWAY_API_KEY is None
         ):
             raise RuntimeError(
-                "Run lgos-openwebui-sync to set the Generic Function's gateway valves."
+                "The gateway valves are unset; run just demo/sync-openwebui."
             )
         gateway = gateway_config(
             valves.OPENAI_GATEWAY_TYPE, valves.OPENAI_GATEWAY_BASE_URL

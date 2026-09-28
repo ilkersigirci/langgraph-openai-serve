@@ -165,7 +165,7 @@ async def test_streamed_text_and_the_full_review_stay_separate(
 
     install_client(monkeypatch, stream=scripted_stream)
 
-    chunks = await collect(generic_pipe.Pipe().pipe(body(stream=True)))
+    chunks = await collect(configured_pipe().pipe(body(stream=True)))
 
     content = "".join(
         chunk["choices"][0]["delta"].get("content", "") for chunk in chunks
@@ -392,9 +392,9 @@ async def test_pipe_without_stored_gateway_valves_points_to_the_sync(
 
     result = await pipe.pipe(body(stream=False))
 
-    assert "lgos-openwebui-sync" in result["error"]["detail"]
+    assert "sync-openwebui" in result["error"]["detail"]
     create.assert_not_awaited()
-    with pytest.raises(RuntimeError, match="lgos-openwebui-sync"):
+    with pytest.raises(RuntimeError, match="sync-openwebui"):
         await pipe.pipes()
 
 
@@ -1570,7 +1570,7 @@ async def test_interrupt_call_ids_that_open_webui_would_truncate_are_rejected(
     call = interrupt_call().model_copy(update={"call_id": "call_" + "x" * 60})
     install_client(monkeypatch, create=AsyncMock(return_value=response(call)))
 
-    result = await generic_pipe.Pipe().pipe(body(stream=False))
+    result = await configured_pipe().pipe(body(stream=False))
 
     assert "call ID" in result["error"]["detail"]
 
@@ -1598,7 +1598,7 @@ async def test_unanswered_interrupt_card_ends_the_turn_without_resuming(
     create = AsyncMock(return_value=final_response("Unexpected resume"))
     install_client(monkeypatch, create=create)
 
-    output = await collect(generic_pipe.Pipe().pipe(request))
+    output = await collect(configured_pipe().pipe(request))
 
     assert output == ["Interrupt cancelled."]
     create.assert_not_awaited()

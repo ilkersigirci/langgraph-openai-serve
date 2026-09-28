@@ -192,7 +192,7 @@ up service dev='false' wait='false' *args:
 reset-litellm-db:
     @{{ compose_command }} exec -T lgos-db psql -U lgos -d lgos -v ON_ERROR_STOP=1 -c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
 
-# Sync Open WebUI Functions and LGOS Workspace Models.
+# Sync Open WebUI Functions, their gateway valves, and LGOS Workspace Models.
 [group('docker dev')]
 [group('docker prod')]
 sync-openwebui:

@@ -107,7 +107,9 @@ resets the session. Native Plotly elements render in the main page.
 - Open WebUI `Model not found` requires checking that the `generic` Function is
   active and its Workspace Model's base model exists. A failed Function import
   can disable it; a successful sync preserves that state, so re-enable it after
-  repairing the import.
+  repairing the import. Missing gateway valves, including valves unreadable
+  after a `DEMO_OPENWEBUI_SECRET_KEY` change, also hide every Generic model;
+  re-run the sync.
 - A clipped Open WebUI chart requires the native `iframe:height` notification
   used by Open WebUI's `FullHeightIframe` component.
 

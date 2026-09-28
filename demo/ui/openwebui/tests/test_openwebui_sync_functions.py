@@ -1,4 +1,5 @@
 import ast
+import json
 from contextlib import closing
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
@@ -190,14 +191,21 @@ def test_sync_functions_preserves_unrelated_functions() -> None:
 def test_sync_function_valves_keeps_other_stored_valves(
     stored: dict[str, object], expected: dict[str, object]
 ) -> None:
-    client = _client(stored)
+    valves = dict(stored)
 
-    sync_function_valves(client, "generic", {"OPENAI_GATEWAY_API_KEY": "new-key"})
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        # Open WebUI replaces a Function's stored valves on every update.
+        if request.url.path == "/api/v1/functions/id/generic/valves/update":
+            valves.clear()
+            valves.update(json.loads(request.content))
+        return httpx2.Response(200, json=valves)
 
-    client.get.assert_called_once_with("/api/v1/functions/id/generic/valves")
-    client.post.assert_called_once_with(
-        "/api/v1/functions/id/generic/valves/update", json=expected
-    )
+    with httpx2.Client(
+        base_url="http://openwebui.test", transport=httpx2.MockTransport(respond)
+    ) as client:
+        sync_function_valves(client, "generic", {"OPENAI_GATEWAY_API_KEY": "new-key"})
+
+    assert valves == expected
 
 
 def test_openwebui_client_signs_in_with_admin_credentials() -> None:

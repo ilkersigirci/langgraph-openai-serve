@@ -37,7 +37,7 @@ integration commands:
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
-| `just demo/sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
+| `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
 | `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
 | `just demo/compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
@@ -114,7 +114,7 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
-| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret that also encrypts stored valves; replace it outside local demos and re-run the Open WebUI sync after changing it |
+| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret that also encrypts stored valves; replace it outside local demos. Changing it resets every stored valve, so re-run the Open WebUI sync and set other valves again |
 
 ## Integration Test Settings
 
