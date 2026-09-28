@@ -471,11 +471,9 @@ async def test_text_before_a_pause_stays_in_the_conversation(
     )
 
 
-async def test_client_tool_after_review_finishes_the_resumed_turn(
-    chainlit_context,
-    fake_gateway,
-) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+async def _pause_plot_for_review(fake_gateway) -> tuple[cl.Message, cl.Action]:
+    """Pause a plot turn on a review; return the review and its approval."""
+    cl.context.session.chat_profile = "lgos-a/persistent-plot-agent"
     review_call = function_call(
         "lgos_interrupt",
         json.dumps({"question": "Save the chart?", "choices": ["approve"]}),
@@ -485,23 +483,30 @@ async def test_client_tool_after_review_finishes_the_resumed_turn(
     await chat.on_message(user_message("Plot revenue."))
     review = cl.chat_context.get()[-1]
     control = review.elements[0].props[HITL_CONTROL_PROP]
+    approval = cl.Action(
+        name=INTERRUPT_ACTION_NAME,
+        payload={
+            "step_id": control["step_id"],
+            "element_id": control["element_id"],
+            "revision": control["revision"],
+            "outputs": ["approve"],
+        },
+    )
+    return review, approval
+
+
+async def test_client_tool_after_review_finishes_the_resumed_turn(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    review, approval = await _pause_plot_for_review(fake_gateway)
     fake_gateway.replies += [
         streamed(response(DISPLAY_CHART, id="resp_lg_done")),
         httpx2.Response(200, content=b"png-bytes"),
         streamed(response(message("Saved and plotted."))),
     ]
 
-    result = await chat.on_interrupt_submit(
-        cl.Action(
-            name=INTERRUPT_ACTION_NAME,
-            payload={
-                "step_id": control["step_id"],
-                "element_id": control["element_id"],
-                "revision": control["revision"],
-                "outputs": ["approve"],
-            },
-        )
-    )
+    result = await chat.on_interrupt_submit(approval)
 
     assert result == {"ok": True}
     *_, resume, continuation = fake_gateway.bodies("/v1/responses")
@@ -519,3 +524,20 @@ async def test_client_tool_after_review_finishes_the_resumed_turn(
     ]
     assert review.elements == []
     assert transcript()[-1] == "Saved and plotted."
+
+
+async def test_failed_client_tool_after_review_leaves_the_thread_usable(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    _, approval = await _pause_plot_for_review(fake_gateway)
+    fake_gateway.replies += [
+        streamed(response(DISPLAY_CHART, id="resp_lg_done")),
+        httpx2.Response(404, json={"error": {"message": "No such file"}}),
+    ]
+    await chat.on_interrupt_submit(approval)
+    fake_gateway.replies.append(streamed(response(message("Plotted again."))))
+
+    await chat.on_message(user_message("Try again."))
+
+    assert transcript()[-1] == "Plotted again."

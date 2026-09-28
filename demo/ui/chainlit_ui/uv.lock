@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.7"
+version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,9 +365,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/e2/0959c48f8d5dcf279b1dfcc23681be52e913ed839393cba604d817712707/chainlit_utils-0.2.7.tar.gz", hash = "sha256:521b03fec35cf786c15a58bc5144107f44e018601c5767c23aa150356bcba6ec", size = 36309, upload-time = "2026-09-26T21:51:38.878Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/15/35177df918b3c69ef15fb3bab93aacf100207192a8bb12889946fc2d9a0c/chainlit_utils-0.2.8.tar.gz", hash = "sha256:4bd08c760a0c6637016c3a84b4b60d232e57577725d10d41dc5f74830e31aa90", size = 36438, upload-time = "2026-09-28T09:52:02.776Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/77/c73cf17a75190d84175c6d78fb69aa86ec3a8fc7c7af001e3a9e85c429fb/chainlit_utils-0.2.7-py3-none-any.whl", hash = "sha256:4f58caea4e45672e373d2b9df4172b7cffee3f559dd72fe3ded1c786a60d74c1", size = 48245, upload-time = "2026-09-26T21:51:37.796Z" },
+    { url = "https://files.pythonhosted.org/packages/25/cd/079aaaa414c9c22170bbd1dd5e5f80dfc534893ed574c7c46460fa2757a1/chainlit_utils-0.2.8-py3-none-any.whl", hash = "sha256:22c9f6d725967f3338c464bad6cb6cf54f80e84b7770f5a4b6e7a2379c530ac1", size = 48359, upload-time = "2026-09-28T09:52:01.695Z" },
 ]
 
 [package.optional-dependencies]
@@ -1168,7 +1168,7 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.7,<0.3" },
+    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.8,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
     { name = "emoji", specifier = ">=2,<3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },

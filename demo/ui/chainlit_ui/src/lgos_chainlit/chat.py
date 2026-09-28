@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -70,75 +72,74 @@ class _Turn:
     """One assistant turn: its requests, client tool calls, and answer message."""
 
     model: str
+    # The stateless transcript that client tool results continue.
+    input_items: list[dict[str, Any]]
     streaming: bool = field(
         default_factory=lambda: not background_enabled() and streaming_enabled()
     )
     answer: cl.Message = field(default_factory=lambda: cl.Message(content=""))
     commentary_tasks: CommentaryTaskList = field(default_factory=CommentaryTaskList)
 
-    async def run(
+    async def request(
         self,
         input_items: list[dict[str, Any]],
         *,
         previous_response_id: str | Omit = omit,
     ) -> Response:
-        """Request until the graph answers or pauses, running client tools."""
-        try:
-            while True:
-                response = await _request_response(
-                    input_items,
-                    model=self.model,
-                    commentary_tasks=self.commentary_tasks,
-                    stream_to=self.answer if self.streaming else None,
-                    previous_response_id=previous_response_id,
-                )
-                raise_for_response(response)
-                calls = function_calls(response)
-                if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
-                    # Keep what the graph said before pausing; the review follows.
-                    self._collect(response)
-                    if self.answer.content:
-                        await self.answer.send()
-                    break
-                if not calls:
-                    break
-                self._collect(response)
-                outputs = [
-                    (
-                        await display_file(call)
-                        if call.name == DISPLAY_FILE_TOOL_NAME
-                        else await mcp_tools.execute(call)
-                    )
-                    for call in calls
-                ]
-                if previous_response_id is not omit:
-                    # The resumed run has finished; LGOS runs the tool results
-                    # as a new request over the whole transcript.
-                    input_items = response_input(text_only_chat_messages())
-                    previous_response_id = omit
-                input_items = [*input_items, *continuation_input(response, outputs)]
-        except BaseException:
-            await self.commentary_tasks.stop()
+        """Send one request; a pause keeps the text the graph showed before it."""
+        async with self._keep_partial_answer():
+            response = await _request_response(
+                input_items,
+                model=self.model,
+                commentary_tasks=self.commentary_tasks,
+                stream_to=self.answer if self.streaming else None,
+                previous_response_id=previous_response_id,
+            )
+            raise_for_response(response)
+        self.answer.elements.extend(cast("list[Any]", citation_elements(response)))
+        if not self.streaming:
+            self.answer.content += final_answer(response)
+        if any(call.name == INTERRUPT_TOOL_NAME for call in function_calls(response)):
+            # The review follows this text.
             if self.answer.content:
-                mark_model_context_excluded(self.answer)
                 await self.answer.send()
-            raise
-        await self.commentary_tasks.complete()
+            await self.commentary_tasks.complete()
         return response
 
-    async def finish(self, response: Response) -> None:
+    async def answer_tool_calls(self, response: Response) -> Response:
+        """Run the response's client function calls and request what follows."""
+        async with self._keep_partial_answer():
+            outputs = [
+                (
+                    await display_file(call)
+                    if call.name == DISPLAY_FILE_TOOL_NAME
+                    else await mcp_tools.execute(call)
+                )
+                for call in function_calls(response)
+            ]
+        self.input_items = [*self.input_items, *continuation_input(response, outputs)]
+        return await self.request(self.input_items)
+
+    async def finish(self) -> None:
         """Publish the turn's final answer."""
-        self._collect(response)
+        await self.commentary_tasks.complete()
         # send() also ends a stream; it stamps the creation time that orders a
         # reloaded thread, which update() leaves to the data layer's later write.
         if not self.streaming or self.answer.content:
             await self.answer.send()
         await send_speech_button(self.answer)
 
-    def _collect(self, response: Response) -> None:
-        self.answer.elements.extend(cast("list[Any]", citation_elements(response)))
-        if not self.streaming:
-            self.answer.content += final_answer(response)
+    @asynccontextmanager
+    async def _keep_partial_answer(self) -> AsyncIterator[None]:
+        """Keep text shown before a failure, excluded from later model context."""
+        try:
+            yield
+        except BaseException:
+            await self.commentary_tasks.stop()
+            if self.answer.content:
+                mark_model_context_excluded(self.answer)
+                await self.answer.send()
+            raise
 
 
 # The HITL workflow calls continue_response, then publish_final, in the task
@@ -152,13 +153,21 @@ async def _continue_interrupt_response(
     model_id: str,
     previous_response_id: str,
 ) -> Response:
-    turn = _Turn(model_id)
+    # The resumed run finishes on LGOS, so client tool results continue the
+    # conversation as a new stateless request.
+    turn = _Turn(model_id, response_input(text_only_chat_messages()))
     _current_turn.set(turn)
-    return await turn.run(input_items, previous_response_id=previous_response_id)
+    return await turn.request(input_items, previous_response_id=previous_response_id)
 
 
 async def _publish_final(response: Response) -> None:
-    await _current_turn.get().finish(response)
+    """Answer client function calls until the graph answers or pauses."""
+    turn = _current_turn.get()
+    if function_calls(response):
+        next_response = await turn.answer_tool_calls(response)
+        await interrupt_workflow.publish(next_response, model_id=turn.model)
+    else:
+        await turn.finish()
 
 
 interrupt_form = HumanReviewForm(interrupt_review)
@@ -272,8 +281,6 @@ async def _reply(message: cl.Message) -> None:
     if not isinstance(model, str) or not model:
         await send_ui_message("Response failed: no model profile is selected.")
         return
-    turn = _Turn(model)
-    _current_turn.set(turn)
     try:
         input_items = await with_response_file_parts(
             response_input(text_only_chat_messages()),
@@ -281,8 +288,12 @@ async def _reply(message: cl.Message) -> None:
             client=v1_client,
             extra_query={"provider": gateway.files_provider},
         )
-        # A pause persists its review form; an answer reaches _publish_final.
-        await interrupt_workflow.publish(await turn.run(input_items), model_id=model)
+        turn = _Turn(model, input_items)
+        _current_turn.set(turn)
+        # A pause persists its review form; any other response reaches
+        # _publish_final.
+        response = await turn.request(input_items)
+        await interrupt_workflow.publish(response, model_id=model)
     except Exception as exc:
         await send_ui_message(f"Response failed: {exc}")
 

@@ -466,13 +466,13 @@ callback through `callAction`. The callback reads the trusted model ID,
 Response ID, exact function calls, and expected element ID from message
 metadata; the browser sends only opaque step, element, and revision references
 plus the answers. One accepted action advances one Responses transition. A later
-interrupt updates the same form. Otherwise the demo finishes the turn like any
-other before the workflow marks the ledger complete and removes it: it runs
-client function calls such as MCP tools or `display_file` and requests the
+interrupt updates the same form, while any other response marks the ledger
+complete and removes it. The demo then finishes the turn like any other: it
+runs client function calls such as MCP tools or `display_file` and requests the
 answer with their results. The resumed run has already finished, so those
-requests start from the conversation text; files attached to the reviewed turn
-are not sent again, and a failure there leaves the review pending. The client
-therefore depends only on the standard tool-call batch, not the graph topology.
+requests start from the conversation text, and files attached to the reviewed
+turn are not sent again. The client therefore depends only on the standard
+tool-call batch, not the graph topology.
 See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
 [design rationale](design-choices.md#chainlit).
