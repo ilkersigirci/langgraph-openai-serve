@@ -88,7 +88,6 @@ default-groups = ["dev", "doc", "test"]
 required-version = "==0.12.1"
 
 [tool.pytest.ini_options]
-minversion = "8.3.3"
 anyio_mode = "auto"
 addopts = [
     "--import-mode=importlib",
