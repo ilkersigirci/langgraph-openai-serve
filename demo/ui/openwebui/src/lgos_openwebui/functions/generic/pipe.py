@@ -259,7 +259,10 @@ class Pipe:
                         finished = True
                         yield (
                             _openwebui_interrupt_chunk(
-                                prepared.model_id, response.id, calls
+                                prepared.model_id,
+                                response.id,
+                                calls,
+                                after_text=any(answer_parts),
                             )
                             if prepared.streaming
                             else _openwebui_interrupt_completion(

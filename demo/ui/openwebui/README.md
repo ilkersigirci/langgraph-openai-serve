@@ -22,8 +22,8 @@ Workspace Model has no Chat Variables form and reuses the Generic Pipe for
 Responses transport. Keep the Filter attached only to this example.
 
 The Function uses Responses exclusively and never connects directly to LGOS.
-`OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for inference, Files,
-and MCP. LiteLLM uses managed Responses routing; Bifrost uses its native
+`OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for inference and
+Files. LiteLLM uses managed Responses routing; Bifrost uses its native
 Responses route. LiteLLM metadata comes from native `/model/info`; Bifrost uses
 its aggregate catalog and model-detail pass-through.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).

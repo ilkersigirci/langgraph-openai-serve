@@ -142,11 +142,13 @@ def _openwebui_interrupt_chunk(
     model_id: str,
     response_id: str,
     calls: list[ResponseFunctionToolCall],
+    *,
+    after_text: bool = False,
 ) -> dict[str, Any]:
     ask_user, review = _ask_user_card(response_id, calls)
     delta: dict[str, Any] = {"tool_calls": [{"index": 0, **ask_user}]}
     if review:
-        delta["content"] = review
+        delta["content"] = f"\n\n{review}" if after_text else review
     return _openwebui_chunk(model_id, delta, finish_reason="tool_calls")
 
 
@@ -250,7 +252,8 @@ def _interrupt_question(call: ResponseFunctionToolCall) -> tuple[dict[str, Any],
     if len(prompt) > ASK_USER_QUESTION_MAX_LENGTH:
         # Open WebUI truncates the card text; keep the complete review visible.
         review = f"{question}\n\n```json\n{encoded}\n```" if details else question
-        prompt = f"{question}\n\nReview the full request above before choosing."
+        # The hint comes first so the card's truncation cannot cut it.
+        prompt = f"Review the full request above before choosing.\n\n{question}"
     return {
         "id": call.call_id,
         "header": "Human input",

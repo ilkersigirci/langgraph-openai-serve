@@ -117,6 +117,64 @@ def test_large_note_is_visible_before_the_native_approval_question(streaming) ->
     )
 
 
+def test_review_hint_survives_open_webui_question_truncation() -> None:
+    call = function_call(
+        "lgos_interrupt",
+        {
+            "question": "Save this note? " * 31,
+            "content": "Exact note contents.",
+            "choices": ["approve", "reject"],
+        },
+    )
+
+    ask_user = ask_user_card(call)
+
+    question = json.loads(ask_user["function"]["arguments"])["questions"][0]["question"]
+    # Open WebUI keeps the first 500 characters of a card question.
+    assert "above" in question[:500]
+
+
+async def test_streamed_text_and_the_full_review_stay_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call = function_call(
+        "lgos_interrupt",
+        {
+            "question": "Save this note?",
+            "content": "Exact note contents. " * 30,
+            "choices": ["approve", "reject"],
+        },
+    )
+    stream = FakeResponseStream(
+        [
+            SimpleNamespace(
+                type="response.output_item.added",
+                output_index=0,
+                item=SimpleNamespace(type="message", phase="final_answer"),
+            ),
+            SimpleNamespace(
+                type="response.output_text.delta",
+                output_index=0,
+                delta="I drafted the note.",
+            ),
+        ],
+        response(final_response("I drafted the note.").output[0], call),
+    )
+
+    @asynccontextmanager
+    async def scripted_stream(**_: object) -> AsyncIterator[FakeResponseStream]:
+        yield stream
+
+    install_client(monkeypatch, stream=scripted_stream)
+
+    chunks = await collect(generic_pipe.Pipe().pipe(body(stream=True)))
+
+    content = "".join(
+        chunk["choices"][0]["delta"].get("content", "") for chunk in chunks
+    )
+    assert content.startswith("I drafted the note.\n\nSave this note?")
+
+
 def function_call(name: str, arguments: dict[str, object]) -> ResponseFunctionToolCall:
     return ResponseFunctionToolCall(
         id=f"fc_{name}",
@@ -1479,6 +1537,46 @@ async def test_interrupt_choices_that_open_webui_would_alter_are_rejected(
     result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     assert "80 characters" in result["error"]["detail"]
+
+
+async def test_interrupt_call_ids_that_open_webui_would_truncate_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call = interrupt_call().model_copy(update={"call_id": "call_" + "x" * 60})
+    install_client(monkeypatch, create=AsyncMock(return_value=response(call)))
+
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
+
+    assert "call ID" in result["error"]["detail"]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "card_result",
+    [
+        "Error: tool call rejected by user.",
+        json.dumps({"status": "cancelled", "answers": {}, "timed_out": True}),
+    ],
+    ids=["rejected", "timed-out"],
+)
+async def test_unanswered_interrupt_card_ends_the_turn_without_resuming(
+    monkeypatch: pytest.MonkeyPatch, stream: bool, card_result: str
+) -> None:
+    ask_user = ask_user_card(interrupt_call())
+    request = body(stream=stream)
+    request["messages"].extend(
+        [
+            {"role": "assistant", "content": None, "tool_calls": [ask_user]},
+            {"role": "tool", "tool_call_id": ask_user["id"], "content": card_result},
+        ]
+    )
+    create = AsyncMock(return_value=final_response("Unexpected resume"))
+    install_client(monkeypatch, create=create)
+
+    output = await collect(generic_pipe.Pipe().pipe(request))
+
+    assert output == ["Interrupt cancelled."]
+    create.assert_not_awaited()
 
 
 async def test_parallel_interrupt_batch_uses_one_prompt_and_resumes_every_call(

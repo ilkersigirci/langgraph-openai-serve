@@ -7,9 +7,14 @@ import shutil
 import sys
 import tomllib
 from pathlib import Path
+from string import Template
 
 import anyio
 import pytest
+import yaml
+from demo.ui.openwebui.src.lgos_openwebui.functions.generic.gateway import (
+    MCP_GATEWAY_ID,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEMO_ROOT = REPOSITORY_ROOT / "demo"
@@ -29,6 +34,25 @@ def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> No
     )
     assert "build:" not in service
     assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
+
+
+def test_openwebui_mcp_connection_is_the_one_the_sync_attaches() -> None:
+    compose = yaml.safe_load(
+        (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+    )
+    environment = compose["services"]["lgos-openwebui"]["environment"]
+    # Compose interpolates $VAR and ${VAR} like string.Template.
+    connections = json.loads(
+        Template(environment["TOOL_SERVER_CONNECTIONS"]).substitute(
+            OPENAI_GATEWAY_BASE_URL="http://gateway:4000",
+            OPENAI_GATEWAY_API_KEY="sk-demo",
+        )
+    )
+
+    assert [
+        (connection["url"], connection["key"], connection["info"]["id"])
+        for connection in connections
+    ] == [("http://gateway:4000/mcp", "sk-demo", MCP_GATEWAY_ID)]
 
 
 @pytest.fixture

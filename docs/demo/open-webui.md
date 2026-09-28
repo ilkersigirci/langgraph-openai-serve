@@ -416,9 +416,10 @@ Server custom call/result items have already been executed by LGOS; the Pipe doe
 not execute them or send another result. The chat displays their final assistant
 answer.
 
-The Pipe returns plain text for non-streaming answers and uses the OpenAI SDK's
-typed chunk schema for streamed text. Open WebUI JSON-encodes these chunks, so
-literal text such as `data: [DONE]` cannot be mistaken for a stream event.
+The Pipe returns plain text for non-streaming answers and yields Chat
+Completions chunk objects for streamed text. Open WebUI JSON-encodes these
+chunks, so literal text such as `data: [DONE]` cannot be mistaken for a stream
+event.
 Open WebUI owns stream termination. The native `ask_user` bridge also uses the
 host's tool-call dictionaries to persist question cards and submit answers.
 These shapes belong to the UI boundary; inference uses Responses exclusively.
