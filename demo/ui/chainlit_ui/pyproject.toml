@@ -52,6 +52,10 @@ addopts = [
     "--strict-markers",
 ]
 env = [
+    # just loads demo/.env; tests must not reach its database or OAuth login.
+    "U:DATABASE_URL",
+    "DEMO_CHAINLIT_LOGIN_TYPE=mock",
+    "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False",
     "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
     "OPENAI_GATEWAY_TYPE=litellm",
     "OPENAI_GATEWAY_BASE_URL=https://gateway.example",
