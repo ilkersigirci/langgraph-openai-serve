@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import datetime
 from uuid import UUID
 
 import anyio
@@ -462,6 +463,12 @@ async def test_text_before_a_pause_stays_in_the_conversation(
         "I checked ORDER-123.",
         "Approve refund?",
     ]
+    notice, review = cl.chat_context.get()[-2:]
+    # A reloaded thread orders messages by their stored creation time.
+    assert notice.created_at is not None
+    assert datetime.fromisoformat(notice.created_at) <= datetime.fromisoformat(
+        review.created_at
+    )
 
 
 async def test_client_tool_after_review_finishes_the_resumed_turn(

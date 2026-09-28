@@ -466,11 +466,14 @@ callback through `callAction`. The callback reads the trusted model ID,
 Response ID, exact function calls, and expected element ID from message
 metadata; the browser sends only opaque step, element, and revision references
 plus the answers. One accepted action advances one Responses transition. A later
-interrupt updates the same form, while any other response marks the ledger
-complete and removes it. The demo then finishes the turn like any other: it
-runs client function calls such as MCP tools or `display_file` and requests
-the answer with their results. The client therefore depends only on the
-standard tool-call batch, not the graph topology. See the shared
+interrupt updates the same form. Otherwise the demo finishes the turn like any
+other before the workflow marks the ledger complete and removes it: it runs
+client function calls such as MCP tools or `display_file` and requests the
+answer with their results. The resumed run has already finished, so those
+requests start from the conversation text; files attached to the reviewed turn
+are not sent again, and a failure there leaves the review pending. The client
+therefore depends only on the standard tool-call batch, not the graph topology.
+See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
 [design rationale](design-choices.md#chainlit).
 
@@ -541,8 +544,9 @@ the figure with `plotly.io.from_json`, and persists a native
 interactive hover, zoom, and legend controls. It returns the matching
 `function_call_output` before requesting the final answer. Image files still
 use the native `Image` element.
-Each continuation retains the original input, including instructions and file
-references, then appends the complete Response output and matching tool results.
+Each continuation of a new turn retains the original input, including
+instructions and file references, then appends the complete Response output and
+matching tool results.
 Streaming and non-streaming modes retain final-answer text from every call in
 that exchange and exclude commentary from the answer.
 The official data layer stores the element in the configured S3-compatible

@@ -97,9 +97,7 @@ class _Turn:
                 if any(call.name == INTERRUPT_TOOL_NAME for call in calls):
                     # Keep what the graph said before pausing; the review follows.
                     self._collect(response)
-                    if self.answer.content and self.streaming:
-                        await self.answer.update()
-                    elif self.answer.content:
+                    if self.answer.content:
                         await self.answer.send()
                     break
                 if not calls:
@@ -123,7 +121,7 @@ class _Turn:
             await self.commentary_tasks.stop()
             if self.answer.content:
                 mark_model_context_excluded(self.answer)
-                await self.answer.update()
+                await self.answer.send()
             raise
         await self.commentary_tasks.complete()
         return response
@@ -131,10 +129,10 @@ class _Turn:
     async def finish(self, response: Response) -> None:
         """Publish the turn's final answer."""
         self._collect(response)
-        if not self.streaming:
+        # send() also ends a stream; it stamps the creation time that orders a
+        # reloaded thread, which update() leaves to the data layer's later write.
+        if not self.streaming or self.answer.content:
             await self.answer.send()
-        elif self.answer.content:
-            await self.answer.update()
         await send_speech_button(self.answer)
 
     def _collect(self, response: Response) -> None:
