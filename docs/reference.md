@@ -356,11 +356,11 @@ engine that runs `BackgroundJob`s and stores their status and result.
 | `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
 | `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
 
-The engine's worker calls `execute_background_job(job, run_id, graphs)`. It
+The engine's worker calls `execute_background_job(job, run_id, registry)`. It
 runs the job through the foreground Responses path and returns the Response
 JSON the engine stores. Run IDs must be UUIDs because the public Response ID
 embeds the run ID, so reading a Response needs no lookup table.
-`InMemoryBackgroundBackend(graphs)` runs jobs as tasks of one process for
+`InMemoryBackgroundBackend(registry)` runs jobs as tasks of one process for
 development and tests; enter its `lifespan` in the application's lifespan.
 
 Install `langgraph-openai-serve[hatchet]` for

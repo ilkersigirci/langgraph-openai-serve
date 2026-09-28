@@ -504,7 +504,6 @@ class ResponsesEventBuilder:
             sequence_number=self._sequence(),
             output_index=output_index,
             item_id=item_id,
-            name=completed.name,
             arguments=completed.arguments,
         )
 

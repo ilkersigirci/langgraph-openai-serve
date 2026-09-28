@@ -170,7 +170,7 @@ for event in stream:
 ```
 
 See [Events And Citations](graphs/events-and-citations.md) for the status and
-custom-event flows and their client behavior.
+citation flows and their client behavior.
 
 Try the deterministic response-outcome showcase:
 

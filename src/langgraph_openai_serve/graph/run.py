@@ -148,6 +148,9 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
     """
     config = graph_registry.get_graph(request.model)
     graph = await config.resolve_graph()
+    # A server-chosen run without a resume is a background job. When its worker
+    # dies, the engine runs the job again, and it starts over.
+    restart = resume is None and run_id is not None
     interrupt_run = None
     if config.supports(GraphFeature.INTERRUPTS):
         if resume is not None:
@@ -179,6 +182,10 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
         await _prepare_inputs(
             run, request, messages, resume, graph_registry.run_coordinator
         )
+        if restart and run.interrupt is not None:
+            checkpointer = cast("BaseCheckpointSaver", run.graph.checkpointer)
+            if await checkpointer.aget_tuple(run.runnable_config) is not None:
+                await checkpointer.adelete_thread(run.interrupt.thread_id)
     except BaseException as exc:
         await run.aclose(error=exc)
         raise

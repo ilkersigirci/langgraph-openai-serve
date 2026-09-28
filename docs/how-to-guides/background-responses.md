@@ -236,7 +236,7 @@ An engine must:
 - give each run a UUID; the public Response ID embeds it;
 - start at most one run per `job.idempotency_key` and return that run again for
   a repeated key;
-- execute a run with `execute_background_job(job, run_id, graphs)` and keep the
+- execute a run with `execute_background_job(job, run_id, registry)` and keep the
   returned Response JSON as the run's result;
 - report `queued`, `in_progress`, `completed`, `failed`, or `cancelled`.
 

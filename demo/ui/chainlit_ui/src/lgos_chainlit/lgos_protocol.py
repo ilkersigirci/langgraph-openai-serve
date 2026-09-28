@@ -30,6 +30,8 @@ from pydantic import (
     JsonValue,
     StringConstraints,
     ValidationError,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,17 @@ class ModelClientSettings(BaseModel):
     defaults: dict[str, JsonValue]
 
 
+def _settings_or_none(
+    value: object, handler: ValidatorFunctionWrapHandler
+) -> ModelClientSettings | None:
+    # Malformed settings disable only the settings form, not the model's features.
+    try:
+        return handler(value)
+    except ValidationError:
+        logger.warning("Ignoring invalid LGOS runtime settings")
+        return None
+
+
 class LangGraphModelExtension(BaseModel):
     """Forward-compatible LGOS extension returned by model retrieval."""
 
@@ -69,7 +82,9 @@ class LangGraphModelExtension(BaseModel):
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
     features: list[str]
-    client_settings: ModelClientSettings | None = None
+    client_settings: Annotated[
+        ModelClientSettings | None, WrapValidator(_settings_or_none)
+    ] = None
 
 
 def model_extension(model: Model) -> LangGraphModelExtension | None:

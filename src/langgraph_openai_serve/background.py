@@ -92,7 +92,7 @@ class BackgroundBackend(Protocol):
 async def execute_background_job(
     job: BackgroundJob,
     engine_run_id: str,
-    graphs: GraphRegistry,
+    registry: GraphRegistry,
 ) -> dict[str, JsonValue]:
     """Execute one job through the foreground Responses path."""
     request = ResponseCreateRequest.model_validate(job.request)
@@ -100,7 +100,7 @@ async def execute_background_job(
     try:
         run = await prepare_response_run(
             request,
-            graphs,
+            registry,
             checkpoint_scope=job.owner_scope,
             run_id=job.run_id,
         )
@@ -126,8 +126,8 @@ class InMemoryBackgroundBackend:
     For development and tests: runs stay in memory until the process exits.
     """
 
-    def __init__(self, graphs: GraphRegistry) -> None:
-        self._graphs = graphs
+    def __init__(self, registry: GraphRegistry) -> None:
+        self._registry = registry
         self._runs: dict[str, BackgroundRun] = {}
         self._keys: dict[str, str] = {}
         self._scopes: dict[str, CancelScope] = {}
@@ -175,7 +175,7 @@ class InMemoryBackgroundBackend:
                 self._transition(run.id, "in_progress")
                 try:
                     response = await execute_background_job(
-                        run.job, run.id, self._graphs
+                        run.job, run.id, self._registry
                     )
                 except Exception:
                     logger.exception(
