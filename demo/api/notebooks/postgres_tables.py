@@ -89,7 +89,7 @@ def _(mo, postgres):
 def _(mo, table_inventory):
     mo.stop(
         table_inventory.is_empty(),
-        mo.md("No user tables found. Run `lgos-demo-api-setup` first."),
+        mo.md("No user tables found. Start `lgos-demo-api` to initialize its schema."),
     )
     _tables = table_inventory.select("table_schema", "table_name").iter_rows()
     table_options = {f"{schema}.{table}": (schema, table) for schema, table in _tables}

@@ -64,8 +64,9 @@ mock or SSO login, or enable [delegated OAuth](https://github.com/ilkersigirci/l
 This mode starts no gateway container.
 
 The `just demo/compose [--dev] [--otel]` variants wait for the
-selected gateway and its dependencies, sync both catalogs when using LiteLLM,
-start the UIs, then sync Open WebUI. For an independently deployed API, run
+selected gateway and its dependencies, including Chainlit, sync both catalogs
+when using LiteLLM, then start and sync Open WebUI. For an independently
+deployed API, run
 `just demo/sync-litellm` after
 its health check. The source URL and public namespace are explicit arguments;
 no per-API sync service is needed. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
@@ -137,7 +138,8 @@ just demo/up lgos-litellm
 
 Both use host port 3000. Stop the running gateway before switching to the other.
 
-With the gateway running, start Chainlit and PostgreSQL on port 3002:
+The bundled gateways start Chainlit on port 3002 as a dependency of the MCP
+reports. To run Chainlit with an external gateway:
 
 ```bash
 just demo/up lgos-chainlit
@@ -155,9 +157,12 @@ models through `DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`,
 so the official Open WebUI image remains unchanged. Compose configures Open
 WebUI's gateway MCP connection from the same root and key.
 
-Compose starts each selected service's dependencies. One API setup job
-initializes the LangGraph checkpointer and Store schemas, and a separate
-Chainlit setup job applies its UI migrations.
+Compose starts each selected service's dependencies. The APIs, background
+worker, and Chainlit apply pending migrations during startup before serving
+work. PostgreSQL locks serialize concurrent migrations. The `lgos-mcp-db-setup`
+job waits for API A and Chainlit to become healthy, then provisions the demo's
+MCP reporting views and permissions using `psql`. DBHub starts after the job
+succeeds and receives only the restricted reporting credentials.
 
 ## Run local processes
 
@@ -178,7 +183,10 @@ just demo/files
 just demo/chainlit
 ```
 
-Run each long-lived process in a separate terminal.
+Run each long-lived process in a separate terminal. When using a bundled
+gateway, its dependencies already occupy their published ports. For a local
+Chainlit alongside that stack, use `just demo/chainlit --port 5000` and open
+`http://localhost:5000`.
 
 Just loads `demo/.env` into the process environment. Exported variables take
 precedence, so `LGOS_A_PORT=3104 just demo/api` overrides the default port.
@@ -193,9 +201,9 @@ just demo/compose
 ```
 
 The command leaves a healthy stack running in the background. It starts the
-selected gateway and its dependencies, syncs LiteLLM when selected, starts the
-UIs, and syncs Open WebUI. The stack publishes the gateway on port 3000,
-PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003, `lgos-a` on 3004,
+selected gateway and its dependencies, including Chainlit, syncs LiteLLM when
+selected, then starts and syncs Open WebUI. The stack publishes the gateway on
+port 3000, PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003, `lgos-a` on 3004,
 `lgos-b` on 3005, and the Files API on 3006. `OPENAI_GATEWAY_TYPE` selects the
 UI gateway.
 

@@ -339,8 +339,9 @@ for checkpoints and
 [`AsyncPostgresStore`](https://reference.langchain.com/python/langgraph.store.postgres/aio/AsyncPostgresStore)
 for application data. The LGOS adapter supplies only the cross-worker
 interrupt-run lease; it does not replace either storage primitive. Run each
-configured storage adapter's `setup()` once before API workers start. A shared
-pool must follow the upstream connection requirements: `autocommit=True`,
+configured storage adapter's `setup()` before serving requests, serializing
+migration attempts when workers can start together. A shared pool must follow
+the upstream connection requirements: `autocommit=True`,
 `prepare_threshold=0`, and mapping rows.
 
 `PostgresRunCoordinator(pool, max_concurrent_leases=...)` accepts an existing
@@ -355,8 +356,9 @@ transaction-mode poolers cannot preserve the lease. Lock contention itself
 fails immediately through PostgreSQL's `pg_try_advisory_lock`; connection
 checkout still follows the pool's configured timeout. The
 [demo deployment](demo/docker.md#demo-services) uses one pool for both
-storage adapters and interrupt coordination, plus a separate one-shot schema
-setup process. Busy interrupt leases fail before streaming begins with HTTP 409
+storage adapters and interrupt coordination. Each process applies pending
+LangGraph migrations during startup under a separate schema advisory lock.
+Busy interrupt leases fail before streaming begins with HTTP 409
 and `code: "run_busy"`.
 
 ## Background Execution

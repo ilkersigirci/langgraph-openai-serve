@@ -54,7 +54,9 @@ value before starting the UI; neither service reads the other's S3 settings.
     just demo/compose
     ```
 
-    With LiteLLM selected, this syncs model metadata before starting Chainlit.
+    Chainlit starts before the gateway to initialize the conversation tables
+    used by MCP reports. With LiteLLM selected, the command syncs model metadata
+    once the gateway is ready. Open `http://localhost:3002` after it completes.
 
     If the gateway and backends are already running,
     `just demo/up lgos-chainlit`
@@ -62,8 +64,7 @@ value before starting the UI; neither service reads the other's S3 settings.
 
 === "Local processes"
 
-    Start the selected gateway and its API and Files dependencies from one
-    terminal:
+    Start the selected gateway and its dependencies from one terminal:
 
     === "LiteLLM"
 
@@ -77,14 +78,20 @@ value before starting the UI; neither service reads the other's S3 settings.
         just demo/up lgos-bifrost
         ```
 
-    Then start Chainlit from a second terminal. Both gateways use host port 3000:
+    Both gateways use port 3000 and start a Chainlit container on port 3002
+    for the MCP reporting schema. Run the local UI on a separate port:
 
     ```bash
-    just demo/chainlit
+    just demo/chainlit --port 5000
     ```
 
-Both modes apply pending Chainlit schema migrations before the UI starts. Open
-`http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
+    Open `http://localhost:5000`. With LiteLLM, sync model metadata as described
+    below before using the local UI.
+
+Chainlit's application lifespan applies pending schema migrations on every
+startup before accepting requests. The `chainlit-utils` migration ledger skips
+applied versions, and its PostgreSQL lock serializes concurrent workers.
+Migration failures stop startup. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
 When starting components independently with LiteLLM, [sync model
@@ -624,7 +631,8 @@ because those native contracts are release-specific.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for
   native file and chart persistence. File-capable profiles enable attachments.
-- Run `lgos-chainlit-setup` before starting or replacing workers.
+- Allow the startup lifecycle to finish migrations before routing traffic to
+  a new worker; the health endpoint becomes available afterward.
 
 See Chainlit's documentation for
 [password callbacks](https://docs.chainlit.io/authentication/password),

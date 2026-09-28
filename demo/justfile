@@ -104,7 +104,6 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 [arg('DEMO_API_PORT', long='port')]
 [group('local')]
 api $DEMO_API_PORT=env("LGOS_A_PORT") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api-setup
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api
 
 # Run the independent Hatchet agent worker for background Responses.
@@ -124,7 +123,6 @@ files $DEMO_API_FILES_PORT=env("LGOS_FILES_PORT"):
 [env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('local')]
 chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
-    {{ chainlit_run }} lgos-chainlit-setup
     {{ chainlit_run }} uvicorn lgos_chainlit.main:app --host 0.0.0.0 --port "$LGOS_CHAINLIT_PORT"
 
 # Run optional live direct Responses integration tests.
@@ -240,7 +238,7 @@ compose dev='false' otel='false' *up_args:
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
     fi
 
-    "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-chainlit lgos-openwebui
+    "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-openwebui
     {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
 # Stop and remove every demo stack variant.
