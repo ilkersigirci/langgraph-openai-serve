@@ -766,9 +766,9 @@ for the same operation receives HTTP 409.
 
 LGOS preserves checkpoint state only after it produces an interrupt batch for
 the client. It deletes the isolated thread after terminal completion and
-best-effort after failure or cancellation before a batch. Cleanup failure can
-leave an unreachable thread for operators to reap; it never replaces the
-original execution error. If the terminal HTTP response is lost,
+best-effort after failure or cancellation before a batch. Cleanup that fails, or
+does not finish within 10 seconds, can leave an unreachable thread for operators
+to reap; it never replaces the original execution error. If the terminal HTTP response is lost,
 replaying the old resume returns a safe HTTP 409 and does not re-execute the
 completed operation. This is conflict detection, not durable storage of the
 terminal response; applications that need result replay must add a

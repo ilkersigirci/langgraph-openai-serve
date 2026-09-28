@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import pytest
-from anyio import Event, fail_after, sleep_forever
+from anyio import Event, fail_after, sleep, sleep_forever
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langgraph.types import StreamPart, ValuesStreamPart
 
 from langgraph_openai_serve import GraphConfig, GraphFeature
+from langgraph_openai_serve.graph import run as run_module
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.run import GraphRun, InterruptRun
 from langgraph_openai_serve.graph.runner import collect_run, stream_run
@@ -25,6 +26,17 @@ class RecordingCheckpointer:
         self.deleted_threads.append(thread_id)
         if self._delete_error is not None:
             raise self._delete_error
+
+
+class SlowCheckpointer(RecordingCheckpointer):
+    """A store whose delete outlasts the cleanup deadline."""
+
+    completed = False
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        self.deleted_threads.append(thread_id)
+        await sleep(1)
+        self.completed = True
 
 
 class CleanupGraph:
@@ -179,3 +191,42 @@ async def test_cleanup_failure_fails_a_successful_run() -> None:
             await collect_run(run)
 
     assert graph.checkpointer.deleted_threads == [THREAD_ID]
+
+
+@pytest.mark.parametrize(
+    ("events", "output_to_message", "expected"),
+    [
+        (
+            _values_only,
+            lambda output: AIMessage(content=output["answer"]),
+            TimeoutError,
+        ),
+        (_values_then_fail, None, ValueError),
+    ],
+    ids=["successful-run", "failed-run"],
+)
+async def test_hung_cleanup_is_abandoned_and_releases_the_lease(
+    monkeypatch: pytest.MonkeyPatch, events, output_to_message, expected
+) -> None:
+    monkeypatch.setattr(run_module, "_CLEANUP_TIMEOUT", 0.01)
+    released = Event()
+
+    @asynccontextmanager
+    async def lease() -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            released.set()
+
+    store = SlowCheckpointer()
+    graph = CleanupGraph(events)
+    graph.checkpointer = store
+    run = cleanup_run(graph, output_to_message=output_to_message)
+    await run.hold(lease())
+
+    with pytest.raises(expected):
+        async with run:
+            await collect_run(run)
+
+    assert not store.completed
+    assert released.is_set()

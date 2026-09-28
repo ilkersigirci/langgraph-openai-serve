@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 
-from anyio import CancelScope
+from anyio import fail_after
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
 from langchain_core.messages import BaseMessage, UsageMetadata
@@ -42,6 +42,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _RUN_NAME = "lgos.graph_run"
+# Seconds. Cleanup is one checkpoint delete and one lease release, so only an
+# unhealthy store takes this long.
+_CLEANUP_TIMEOUT = 10
 
 
 @dataclass(frozen=True)
@@ -113,8 +116,11 @@ class GraphRun:
             logger.exception("graph_run.cleanup_failed")
 
     async def _cleanup(self) -> None:
-        # Cleanup may run inside a cancelled request scope.
-        with CancelScope(shield=True):
+        # Shielded because cleanup may run inside a cancelled request scope, and
+        # bounded so a hung store cannot hold the request forever. Abandoning is
+        # safe: coordinators release a cancelled lease, and an undeleted
+        # checkpoint is only orphaned.
+        with fail_after(_CLEANUP_TIMEOUT, shield=True):
             async with self._resources:
                 if self._delete_checkpoint and self.interrupt is not None:
                     self._delete_checkpoint = False
