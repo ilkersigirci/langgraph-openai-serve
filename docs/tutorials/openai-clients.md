@@ -79,10 +79,10 @@ defaults an omitted value to false.
 
 ## Stream Final Text And Commentary
 
-Responses streams typed lifecycle events rather than Chat chunks. When a graph
-declares `GraphFeature.CLIENT_EVENTS`, every visible `status_event()` becomes a
-completed assistant message with `phase="commentary"`; no request metadata
-opt-in is required. The durable answer uses `phase="final_answer"`.
+Responses streams typed lifecycle events rather than Chat chunks. Every
+non-empty `status_event()` a graph emits becomes a completed assistant message
+with `phase="commentary"`; no request metadata opt-in is required. The durable
+answer uses `phase="final_answer"`.
 
 Track the phase from `response.output_item.added` before handling text deltas:
 
@@ -265,20 +265,17 @@ natively, and returns a small acknowledgment. See
 
 An interrupt-enabled graph returns one or more `function_call` items named
 `lgos_interrupt`. Preserve every returned call and answer the whole batch.
-No metadata is required for an initial request; use a new UUID in
-`metadata.lgos_run_id` when retrying a lost initial response must address
-the same pending operation.
+No metadata is required. LGOS generates the run ID, so retrying a lost initial
+request starts a new run; the example disables SDK retries for that reason.
 
 ```python
 import json
-from uuid import uuid4
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
     api_key="DUMMY",
     max_retries=0,
 )
-metadata = {"lgos_run_id": str(uuid4())}
 
 input_items = [
     {"role": "user", "content": "Perform the protected action."}
@@ -286,7 +283,6 @@ input_items = [
 paused = client.responses.create(
     model="interruptible",
     input=input_items,
-    metadata=metadata,
     store=False,
 )
 calls = [
@@ -308,7 +304,6 @@ completed = client.responses.create(
         }
         for call in calls
     ],
-    metadata=metadata,
     store=False,
 )
 ```
@@ -330,12 +325,10 @@ selected model to discover its settings descriptor:
 model = client.models.retrieve("my-settings-graph")
 extension = (model.model_extra or {}).get("lgos")
 settings = (
-    extension.get("client_settings")
-    if isinstance(extension, dict) and extension.get("schema_version") == 1
-    else None
+    extension.get("client_settings") if isinstance(extension, dict) else None
 )
 
-if isinstance(settings, dict) and settings.get("schema_version") == 1:
+if isinstance(settings, dict):
     print(settings["json_schema"])
     print(settings["defaults"])
 ```

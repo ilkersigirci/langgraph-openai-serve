@@ -12,20 +12,24 @@ from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
+from langgraph.types import interrupt
 from openai import (
     AsyncOpenAI,
     BadRequestError,
     NotFoundError,
     UnprocessableEntityError,
 )
+from openai.types.responses import Response
 
 from langgraph_openai_serve import (
+    BackgroundJob,
     ClientSettings,
     GraphConfig,
     GraphFeature,
     GraphRegistry,
     InMemoryBackgroundBackend,
     LanggraphOpenaiServe,
+    execute_background_job,
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.api.interrupt.support import resume_outputs
@@ -37,7 +41,6 @@ if TYPE_CHECKING:
 
     from fastapi import Request
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-    from openai.types.responses import Response
 
 MODEL = "background"
 
@@ -94,7 +97,7 @@ async def _client(
 
     LanggraphOpenaiServe(
         app=app,
-        graphs=registry,
+        registry=registry,
         checkpoint_scope=checkpoint_scope,
         background=backend if configured else None,
     ).bind_openai_api()
@@ -128,7 +131,7 @@ async def _finished(
 
 async def test_background_response_runs_after_create_returns() -> None:
     graph = _Graph(release=Event())
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -148,7 +151,7 @@ async def test_background_response_runs_after_create_returns() -> None:
 
 async def test_background_create_requires_a_backend_and_an_opted_in_model() -> None:
     registry = GraphRegistry(
-        registry={
+        graphs={
             MODEL: _Graph().config(),
             "foreground-only": _Graph().config(features=set()),
         }
@@ -176,11 +179,6 @@ async def test_background_create_requires_a_backend_and_an_opted_in_model() -> N
             "metadata.lgos_settings",
             id="client-settings",
         ),
-        pytest.param(
-            {"metadata": {"lgos_run_id": "7d2c6f3e-4b1a-4e8f-9c0d-2a5b3e6f7a81"}},
-            "metadata.lgos_run_id",
-            id="run-id",
-        ),
     ],
 )
 async def test_invalid_background_requests_are_rejected_before_execution(
@@ -190,7 +188,7 @@ async def test_invalid_background_requests_are_rejected_before_execution(
         count: int = 1
 
     graph = _Graph()
-    registry = GraphRegistry(registry={MODEL: graph.config(client_settings=Settings)})
+    registry = GraphRegistry(graphs={MODEL: graph.config(client_settings=Settings)})
     async with _client(registry) as client:
         with pytest.raises(BadRequestError) as error:
             await client.responses.create(
@@ -202,7 +200,7 @@ async def test_invalid_background_requests_are_rejected_before_execution(
 
 
 async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
-    async with _client(GraphRegistry(registry={MODEL: _Graph().config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: _Graph().config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -225,7 +223,7 @@ async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
 
 async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> None:
     graph = _Graph(release=Event())
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         active = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -248,7 +246,7 @@ async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> No
 
 async def test_unexpected_graph_failure_fails_the_response() -> None:
     graph = _Graph(error=OSError("disk full"))
-    async with _client(GraphRegistry(registry={MODEL: graph.config()})) as client:
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
         )
@@ -265,7 +263,7 @@ async def test_idempotency_key_returns_the_first_response() -> None:
     headers = {"Idempotency-Key": "create-report-1"}
     graph = _Graph()
     registry = GraphRegistry(
-        registry={MODEL: graph.config(), "other-model": graph.config()}
+        graphs={MODEL: graph.config(), "other-model": graph.config()}
     )
     async with _client(registry) as client:
         first = await client.responses.create(
@@ -311,18 +309,18 @@ async def test_one_of_two_answers_to_a_pause_continues_the_run(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     registry = GraphRegistry(
-        registry={
+        graphs={
             "approval": GraphConfig(
                 graph=make_multi_interrupt_graph(sqlite_checkpointer),
                 description="Two questions",
                 features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
-                run_coordinator=InMemoryRunCoordinator(),
                 request_to_input=lambda _request, _messages: {"answers": []},
                 output_to_message=lambda output: AIMessage(
                     content=",".join(output["answers"])
                 ),
             )
-        }
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
     async with _client(registry) as client:
         created = await client.responses.create(
@@ -359,3 +357,52 @@ async def test_one_of_two_answers_to_a_pause_continues_the_run(
         "failed",
     }
     assert final.output_text == f"{winner},second"
+
+
+async def test_a_job_that_runs_again_starts_over(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    def review(state: MessageState):
+        answer = interrupt({"question": "Approve?"})
+        inputs = ",".join(m.text for m in state["messages"] if m.type == "human")
+        return {"messages": [AIMessage(content=f"{answer}:{inputs}")]}
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("review", review)
+        .set_entry_point("review")
+        .set_finish_point("review")
+        .compile(checkpointer=sqlite_checkpointer)
+    )
+    registry = GraphRegistry(
+        graphs={
+            "review": GraphConfig(
+                graph=graph,
+                description="One question",
+                features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
+            )
+        },
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    job = BackgroundJob(
+        request={"model": "review", "input": "Hi", "background": True},
+        owner_scope="tenant-a",
+        run_id=str(uuid.uuid4()),
+        created_at=0,
+        idempotency_key="job",
+    )
+    engine_run_id = str(uuid.uuid4())
+
+    await execute_background_job(job, engine_run_id, registry)
+    # The worker died before the engine recorded the result, so it runs again.
+    paused = Response.model_validate(
+        await execute_background_job(job, engine_run_id, registry)
+    )
+    async with _client(registry) as client:
+        final = await client.responses.create(
+            model="review",
+            previous_response_id=paused.id,
+            input=resume_outputs(paused, ["approve"]),
+        )
+
+    assert final.output_text == "approve:Hi"

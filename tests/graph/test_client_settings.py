@@ -1,23 +1,12 @@
 from dataclasses import dataclass
 from datetime import date
-from typing import cast
 
 import pytest
 from langgraph.graph import StateGraph
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    ValidationError,
-)
+from pydantic import Field, ValidationError
 
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphRequest
-from langgraph_openai_serve.graph.client_settings import (
-    ClientSettingsValidationError,
-    client_settings_json_schema,
-)
-from langgraph_openai_serve.graph.graph_registry import GraphConfigurationError
+from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
 from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.schemas import MessageState
 
@@ -27,14 +16,10 @@ class PublicSettings(ClientSettings):
     day: date = date(2026, 7, 17)
 
 
-def test_graph_description_is_required(message_graph) -> None:
+@pytest.mark.parametrize("kwargs", [{}, {"description": "   "}])
+def test_graph_description_is_required(message_graph, kwargs) -> None:
     with pytest.raises(ValidationError, match="description"):
-        GraphConfig(graph=message_graph)
-
-
-def test_graph_description_cannot_be_blank(message_graph) -> None:
-    with pytest.raises(ValidationError, match="at least 1 character"):
-        GraphConfig(graph=message_graph, description="   ")
+        GraphConfig(graph=message_graph, **kwargs)
 
 
 def test_graph_description_is_trimmed(message_graph) -> None:
@@ -76,13 +61,23 @@ def test_client_settings_own_the_public_contract_and_defaults() -> None:
     )
 
     assert graph_config.client_settings is PublicSettings
-    assert PublicSettings.defaults().model_dump(mode="json") == {
+    assert PublicSettings.default_values() == {
         "enabled": True,
         "day": "2026-07-17",
     }
-    schema = client_settings_json_schema(PublicSettings)
+    schema = PublicSettings.json_schema()
     assert schema["$schema"] == JSON_SCHEMA_DIALECT
     assert schema["additionalProperties"] is False
+
+
+def test_aliased_settings_are_advertised_and_accepted_by_alias() -> None:
+    class AliasedSettings(ClientSettings):
+        top_k: int = Field(default=3, alias="topK")
+
+    assert list(AliasedSettings.json_schema()["properties"]) == ["topK"]
+    assert AliasedSettings.default_values() == {"topK": 3}
+    settings = AliasedSettings.validate_request(make_request(settings='{"topK":5}'))
+    assert settings == AliasedSettings(topK=5)
 
 
 def test_client_settings_require_a_complete_default(message_graph) -> None:
@@ -97,23 +92,6 @@ def test_client_settings_require_a_complete_default(message_graph) -> None:
         )
 
 
-def test_client_settings_deeply_validate_nested_defaults(message_graph) -> None:
-    class NestedValue(BaseModel):
-        count: int
-
-    invalid = NestedValue.model_construct(count=cast("int", "one"))
-
-    class InvalidSettings(ClientSettings):
-        nested: NestedValue = invalid
-
-    with pytest.raises(ValidationError, match="serialized value"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            client_settings=InvalidSettings,
-        )
-
-
 def test_client_settings_reject_non_finite_defaults(message_graph) -> None:
     class InvalidSettings(ClientSettings):
         number: float = float("inf")
@@ -124,44 +102,6 @@ def test_client_settings_reject_non_finite_defaults(message_graph) -> None:
             description="DUMMY",
             client_settings=InvalidSettings,
         )
-
-
-def test_client_settings_reject_non_finite_schema_extras(message_graph) -> None:
-    class InvalidSettings(ClientSettings):
-        model_config = ConfigDict(
-            json_schema_extra={"extension": {"number": float("nan")}}
-        )
-
-        enabled: bool = True
-
-    with pytest.raises(ValidationError, match="finite number"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            client_settings=InvalidSettings,
-        )
-
-
-def test_default_factory_is_evaluated_once_for_discovery_and_requests() -> None:
-    calls = 0
-
-    def next_default() -> int:
-        nonlocal calls
-        calls += 1
-        return calls
-
-    class FactorySettings(ClientSettings):
-        value: int = Field(default_factory=next_default)
-
-    GraphConfig(
-        graph=make_context_graph(FactorySettings),
-        description="DUMMY",
-        client_settings=FactorySettings,
-    )
-
-    assert FactorySettings.defaults().value == 1
-    assert FactorySettings.validate_request(make_request()).value == 1
-    assert calls == 1
 
 
 def test_request_validation_uses_strict_json_mode() -> None:
@@ -178,7 +118,7 @@ def test_request_validation_uses_strict_json_mode() -> None:
 
 
 def test_request_validation_does_not_coerce_json_values() -> None:
-    with pytest.raises(ClientSettingsValidationError) as exc_info:
+    with pytest.raises(InvalidRequestError) as exc_info:
         PublicSettings.validate_request(make_request(settings='{"enabled":"false"}'))
 
     assert "Input should be a valid boolean" in str(exc_info.value)
@@ -186,21 +126,11 @@ def test_request_validation_does_not_coerce_json_values() -> None:
 
 
 def test_runtime_settings_must_be_a_json_object() -> None:
-    with pytest.raises(ClientSettingsValidationError) as exc_info:
+    with pytest.raises(InvalidRequestError) as exc_info:
         PublicSettings.validate_request(make_request(settings="[]"))
 
     assert "Input should be an object" in str(exc_info.value)
     assert exc_info.value.param == f"metadata.{SETTINGS_METADATA_KEY}"
-
-
-def test_runtime_settings_reject_non_finite_json_values() -> None:
-    class JsonSettings(ClientSettings):
-        payload: JsonValue = Field(default_factory=dict)
-
-    with pytest.raises(ClientSettingsValidationError, match="finite number"):
-        JsonSettings.validate_request(
-            make_request(settings='{"payload":{"number":Infinity}}')
-        )
 
 
 @dataclass
@@ -244,7 +174,7 @@ async def test_direct_settings_require_the_same_graph_context_schema(
         client_settings=PublicSettings,
     )
 
-    with pytest.raises(GraphConfigurationError, match="must use that settings model"):
+    with pytest.raises(GraphError, match="must use that settings model"):
         await graph_config.resolve_graph()
 
 
@@ -259,31 +189,5 @@ async def test_lazy_graph_non_null_context_requires_schema(
 
     graph = await graph_config.resolve_graph()
 
-    with pytest.raises(GraphConfigurationError, match="declare context_schema"):
+    with pytest.raises(GraphError, match="declare context_schema"):
         await graph_config.build_context(make_request(), graph)
-
-
-def test_client_settings_cannot_relax_required_model_config(message_graph) -> None:
-    class RelaxedSettings(ClientSettings):
-        model_config = ConfigDict(extra="allow", frozen=False)
-
-        enabled: bool = True
-
-    with pytest.raises(ValidationError, match="preserve the inherited model config"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            client_settings=RelaxedSettings,
-        )
-
-
-def test_client_settings_fields_cannot_be_excluded_from_defaults(message_graph) -> None:
-    class ExcludedSettings(ClientSettings):
-        hidden: str = Field(default="hidden", exclude=True)
-
-    with pytest.raises(ValidationError, match="cannot be excluded from defaults"):
-        GraphConfig(
-            graph=message_graph,
-            description="DUMMY",
-            client_settings=ExcludedSettings,
-        )

@@ -16,9 +16,10 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseToolChoice,
     ResponseWebSearchTool,
 )
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig
-from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+from langgraph_openai_serve.graph.interrupt import InterruptResume
 from langgraph_openai_serve.graph.request import (
     ClientFunctionTool,
     ClientToolChoice,
@@ -26,14 +27,6 @@ from langgraph_openai_serve.graph.request import (
     NamedCustomToolChoice,
     NamedFunctionToolChoice,
 )
-
-
-class UnsupportedResponsesRequestError(ValueError):
-    """Raised when a valid OpenAI field has unsupported LGOS semantics."""
-
-    def __init__(self, message: str, *, param: str) -> None:
-        super().__init__(message)
-        self.param = param
 
 
 def decode_responses_request(
@@ -93,7 +86,7 @@ def decode_graph_request(
             f"'{request.model}'; only interruptible graphs support "
             "'previous_response_id'."
         )
-        raise UnsupportedResponsesRequestError(message, param="previous_response_id")
+        raise InvalidRequestError(message, param="previous_response_id")
     return decode_responses_request(request, graph_config.server_tools)
 
 
@@ -132,15 +125,15 @@ def _validate_tools(
         if isinstance(tool, ResponseFunctionTool) and name in server_tools:
             expected_type = "web_search" if name == "web_search" else "custom"
             msg = f"Registered server tool '{name}' must use type '{expected_type}'."
-            raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
+            raise InvalidRequestError(msg, param=f"tools.{index}.type")
         if isinstance(tool, ResponseCustomTool) and name == "web_search":
             msg = "The standard web_search tool must use type 'web_search'."
-            raise UnsupportedResponsesRequestError(msg, param=f"tools.{index}.type")
+            raise InvalidRequestError(msg, param=f"tools.{index}.type")
         if isinstance(tool, (ResponseCustomTool, ResponseWebSearchTool)) and (
             name not in server_tools
         ):
             msg = f"Tool '{name}' is not registered by model '{request.model}'."
-            raise UnsupportedResponsesRequestError(
+            raise InvalidRequestError(
                 msg,
                 param=(
                     f"tools.{index}.name"
@@ -150,16 +143,16 @@ def _validate_tools(
             )
         if name in declarations:
             msg = f"Tool '{name}' is declared more than once."
-            raise UnsupportedResponsesRequestError(msg, param="tools")
+            raise InvalidRequestError(msg, param="tools")
         declarations[name] = tool.type
     choice = request.tool_choice
     if choice is not None and not isinstance(choice, str):
         if declarations.get(choice.name) != choice.type:
             msg = "The named tool_choice must be declared in tools."
-            raise UnsupportedResponsesRequestError(msg, param="tool_choice")
+            raise InvalidRequestError(msg, param="tool_choice")
     elif choice == "required" and not declarations:
         msg = "tool_choice='required' needs at least one tool."
-        raise UnsupportedResponsesRequestError(msg, param="tool_choice")
+        raise InvalidRequestError(msg, param="tool_choice")
 
 
 def _tool_name(tool: ResponseTool) -> str:
@@ -174,24 +167,24 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
             "Responses conversations are not supported; resend the required input "
             "items."
         )
-        raise UnsupportedResponsesRequestError(message, param="conversation")
+        raise InvalidRequestError(message, param="conversation")
     if request.previous_response_id is not None and request.instructions is not None:
         message = "'instructions' cannot be changed while resuming an interrupt."
-        raise UnsupportedResponsesRequestError(message, param="instructions")
+        raise InvalidRequestError(message, param="instructions")
 
 
 def _validate_storage_mode(request: ResponseCreateRequest) -> None:
     if not request.background:
         if request.store:
             message = "'store' must be false; response storage is not supported."
-            raise UnsupportedResponsesRequestError(message, param="store")
+            raise InvalidRequestError(message, param="store")
         return
     if request.stream:
         message = (
             "Background responses do not support streaming. Set stream=false or "
             "omit it, then retrieve the response by ID."
         )
-        raise UnsupportedResponsesRequestError(message, param="stream")
+        raise InvalidRequestError(message, param="stream")
 
 
 def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
@@ -203,7 +196,7 @@ def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
                 "Async tool calling ('async': true) is not supported for function "
                 "or custom tools."
             )
-            raise UnsupportedResponsesRequestError(
+            raise InvalidRequestError(
                 message,
                 param=f"tools.{index}.async",
             )
@@ -217,14 +210,13 @@ def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
                 and item.async_ is True
             ):
                 message = "Asynchronous tool-call replay is not supported."
-                raise UnsupportedResponsesRequestError(
+                raise InvalidRequestError(
                     message,
                     param=f"input.{index}.async",
                 )
 
 
 __all__ = [
-    "UnsupportedResponsesRequestError",
     "decode_graph_request",
     "decode_responses_request",
     "selected_server_tools",

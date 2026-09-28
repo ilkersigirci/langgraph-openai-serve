@@ -53,6 +53,8 @@ services:
       ENABLE_PERSISTENT_CONFIG: false
       WEBUI_NAME: LGOS-OpenWebUI
       WEBUI_SECRET_KEY: $DEMO_OPENWEBUI_SECRET_KEY
+      # The sync stores the gateway key in valves; WEBUI_SECRET_KEY encrypts them.
+      ENABLE_VALVE_ENCRYPTION: true
       ENABLE_OLLAMA_API: false
       ENABLE_TITLE_GENERATION: false
       ENABLE_FOLLOW_UP_GENERATION: false
@@ -62,11 +64,15 @@ services:
       WEBUI_ADMIN_EMAIL: $DEMO_OPENWEBUI_ADMIN_EMAIL
       WEBUI_ADMIN_PASSWORD: $DEMO_OPENWEBUI_ADMIN_PASSWORD
       WEBUI_ADMIN_NAME: LGOS
-      DEMO_OPENWEBUI_ADMIN_EMAIL: $DEMO_OPENWEBUI_ADMIN_EMAIL
-      DEMO_OPENWEBUI_ADMIN_PASSWORD: $DEMO_OPENWEBUI_ADMIN_PASSWORD
-      OPENAI_GATEWAY_TYPE: $OPENAI_GATEWAY_TYPE
-      OPENAI_GATEWAY_BASE_URL: $OPENAI_GATEWAY_BASE_URL
-      OPENAI_GATEWAY_API_KEY: $OPENAI_GATEWAY_API_KEY
+      # Read at every start; with persistent config disabled, admin edits last
+      # only until restart. Generated Workspace Models attach this connection ID.
+      TOOL_SERVER_CONNECTIONS: >-
+        [{"type": "mcp", "url": "${OPENAI_GATEWAY_BASE_URL}/mcp", "path": "",
+        "auth_type": "bearer", "key": "$OPENAI_GATEWAY_API_KEY",
+        "config": {"enable": true, "function_name_filter_list": [],
+        "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]},
+        "info": {"id": "lgos-gateway", "name": "LGOS Gateway",
+        "description": "MCP tools authorized by the configured gateway key."}}]
       ENABLE_OPENAI_API: false
       ENABLE_IMAGE_GENERATION: false
       # Both gateways serve OpenAI speech under /v1. Audio base URLs do not

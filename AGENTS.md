@@ -27,8 +27,9 @@ entry point.
 - Add or update focused behavior tests; do not add tests that merely mirror
   implementation details or detect behavior-preserving refactors. See
   `.agents/CODE_STYLE.md` for test-design guidance.
-- For OpenAI route errors with known metadata, raise `OpenAIHTTPException` with
-  `openai.types.shared.ErrorObject`.
+- Reject client requests by raising `InvalidRequestError` with its OpenAI
+  `param`, `code`, and status. Raise `GraphError` when a graph's configuration
+  or output cannot be served.
 - Keep `docs/explanation/design-choices.md` limited to important decisions that
   materially affect architecture, public contracts, ownership, or operational
   cost. Routine implementation choices, renames, and refactors do not belong
@@ -54,9 +55,7 @@ entry point.
 
 - Do not add project-specific chat envelopes, response shapes, headers, routes,
   or streaming events unless they remain reachable through `/v1`.
-  diagnostics only.
-- Do not raise bare `HTTPException` from OpenAI route code when error metadata is
-  known.
+- Do not raise bare `HTTPException` from OpenAI route code.
 - Do not update dependencies, regenerate `uv.lock`, or touch `.env` unless the
   task requires it.
 

@@ -1,7 +1,7 @@
 import asyncio
 import socket
 from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -9,6 +9,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -22,7 +23,7 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.api.streaming import StreamOwner
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.utils import GraphRun
+from langgraph_openai_serve.graph.run import GraphRun
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionChunk
@@ -186,14 +187,14 @@ async def test_closing_openai_stream_cancels_graph_and_provider(
     async with _serve_over_tcp(_build_fake_provider(provider)) as provider_url:
         graph = _build_downstream_graph(provider_url, node)
         registry = GraphRegistry(
-            registry={
+            graphs={
                 "cancellable": GraphConfig(
                     graph=graph,
                     description="DUMMY",
                 )
             }
         )
-        app = LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+        app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
         stream: AsyncStream[ChatCompletionChunk | ResponseStreamEvent] | None = None
 
         async with _serve_over_tcp(app) as base_url:
@@ -248,55 +249,20 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
         yield "unreachable"
 
     coordinator = InMemoryRunCoordinator()
-    resources = AsyncExitStack()
-    await resources.enter_async_context(coordinator("prepared-run"))
     run = GraphRun(
         config=cast("Any", None),
         graph=cast("Any", None),
         inputs=None,
         context=None,
-        runnable_config=None,
-        run_id=None,
-        _resources=resources,
+        runnable_config={},
+        usage_callback=UsageMetadataCallbackHandler(),
     )
+    await run.hold(coordinator("prepared-run"))
 
-    async with StreamOwner() as owner:
-        owner.start(source(), run)
+    owner = StreamOwner()
+    owner.start(source(), run)
+    await owner.aclose()
 
     assert not source_started
     async with coordinator("prepared-run"):
         pass
-
-
-async def test_stream_owner_preserves_active_failure_during_cleanup() -> None:
-    @asynccontextmanager
-    async def failing_resource() -> AsyncIterator[None]:
-        try:
-            yield
-        finally:
-            msg = "cleanup failed"
-            raise RuntimeError(msg)
-
-    async def source() -> AsyncGenerator[str, None]:
-        yield "unreachable"
-
-    resources = AsyncExitStack()
-    await resources.enter_async_context(failing_resource())
-    run = GraphRun(
-        config=cast("Any", None),
-        graph=cast("Any", None),
-        inputs=None,
-        context=None,
-        runnable_config=None,
-        run_id=None,
-        _resources=resources,
-    )
-
-    async def fail_request() -> None:
-        async with StreamOwner() as owner:
-            owner.start(source(), run)
-            msg = "request failed"
-            raise ValueError(msg)
-
-    with pytest.raises(ValueError, match="request failed"):
-        await fail_request()

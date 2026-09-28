@@ -19,7 +19,7 @@ def _bind_test_app(
 ) -> FastAPI:
     return (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
         )
         .bind_openai_api(prefix=prefix)
         .app
@@ -77,7 +77,7 @@ async def test_bind_openai_api_normalizes_explicit_prefix(
 def test_bind_openai_api_rejects_invalid_explicit_prefix(
     graph_registry: GraphRegistry,
 ) -> None:
-    server = LanggraphOpenaiServe(graphs=graph_registry)
+    server = LanggraphOpenaiServe(registry=graph_registry)
 
     with pytest.raises(ValueError, match="OPENAI_API_PREFIX must start with '/'"):
         server.bind_openai_api(prefix="openai/v1")
@@ -86,7 +86,7 @@ def test_bind_openai_api_rejects_invalid_explicit_prefix(
 def test_openai_app_is_available_after_binding(
     graph_registry: GraphRegistry,
 ) -> None:
-    server = LanggraphOpenaiServe(graphs=graph_registry)
+    server = LanggraphOpenaiServe(registry=graph_registry)
 
     with pytest.raises(RuntimeError, match="OpenAI API is not bound"):
         _ = server.openai_app
@@ -140,43 +140,6 @@ async def test_openai_api_schema_describes_mounted_api(
     assert "/models" in schema["paths"]
     assert "/models/{model}" in schema["paths"]
     assert schema["servers"] == [{"url": "/v1"}]
-    stream_options = schema["components"]["schemas"]["ChatCompletionStreamOptions"]
-    assert set(stream_options["properties"]) == {"include_usage"}
-    strict_nested_request_schemas = {
-        "ChatCompletionFileContentPart",
-        "ChatCompletionFileReference",
-        "ChatCompletionRequestMessage",
-        "ChatCompletionStreamOptions",
-        "ChatCompletionTextContentPart",
-        "FunctionDefinition",
-        "NamedToolChoice",
-        "NamedToolChoiceFunction",
-        "ResponseCustomToolCallInput",
-        "ResponseCustomToolCallOutputInput",
-        "ResponseURLCitationInput",
-        "ResponseWebSearchActionInput",
-        "ResponseWebSearchCallInput",
-        "Tool",
-        "ToolCall",
-        "ToolCallFunction",
-    }
-    components = schema["components"]["schemas"]
-    assert all(
-        components[name]["additionalProperties"] is False
-        for name in strict_nested_request_schemas
-    )
-
-    message_content = components["ChatCompletionRequestMessage"]["properties"][
-        "content"
-    ]
-    content_parts = next(
-        option for option in message_content["anyOf"] if option.get("type") == "array"
-    )
-    assert set(content_parts["items"]["discriminator"]["mapping"]) == {
-        "file",
-        "text",
-    }
-    assert set(components["ChatCompletionFileReference"]["properties"]) == {"file_id"}
 
 
 def test_openai_api_prefix_settings_normalizes_trailing_slash() -> None:

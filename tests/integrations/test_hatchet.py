@@ -112,7 +112,7 @@ async def test_task_executes_the_job_with_the_worker_lifespan_graphs() -> None:
     hatchet = _Task()
     create_hatchet_task(hatchet)  # ty: ignore[invalid-argument-type] - Captures the native registration.
     registry = GraphRegistry(
-        registry={
+        graphs={
             "background": GraphConfig(
                 graph=make_message_graph("report"),
                 description="Background test graph",

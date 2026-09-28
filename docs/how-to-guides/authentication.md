@@ -41,7 +41,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI()
 app.add_middleware(APIKeyMiddleware)
-LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
+LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api()
 ```
 
 1.  Leave health endpoints public when the deployment platform needs probes.

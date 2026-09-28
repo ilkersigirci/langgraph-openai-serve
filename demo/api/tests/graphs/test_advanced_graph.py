@@ -16,7 +16,7 @@ from langgraph_openai_serve.api.responses.request import decode_responses_reques
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import stream_response
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.utils import prepare_run
+from langgraph_openai_serve.graph.run import prepare_run
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError
 
 from lgos_demo_api.graphs.advanced_graph import (
@@ -227,13 +227,13 @@ async def graph_client(
             store=store,
             web_search_tool=fixture_web_search,
         )
-        config = create_advanced_graph_config(
-            lambda: graph,
-            InMemoryRunCoordinator(),
-        )
+        config = create_advanced_graph_config(lambda: graph)
         app = (
             LanggraphOpenaiServe(
-                graphs=GraphRegistry(registry={"advanced-graph": config})
+                registry=GraphRegistry(
+                    graphs={"advanced-graph": config},
+                    run_coordinator=InMemoryRunCoordinator(),
+                )
             )
             .bind_openai_api()
             .app
@@ -798,12 +798,8 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
             web_search_tool=fixture_web_search,
         )
         registry = GraphRegistry(
-            registry={
-                "advanced-graph": create_advanced_graph_config(
-                    lambda: graph,
-                    InMemoryRunCoordinator(),
-                )
-            }
+            graphs={"advanced-graph": create_advanced_graph_config(lambda: graph)},
+            run_coordinator=InMemoryRunCoordinator(),
         )
         request = ResponseCreateRequest(
             model="advanced-graph", input="Hello", stream=True

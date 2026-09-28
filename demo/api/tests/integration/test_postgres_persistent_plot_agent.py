@@ -17,7 +17,7 @@ from lgos_demo_api.graphs.persistent_plot_agent import (
     _thread_namespace,
     create_persistent_plot_agent,
 )
-from lgos_demo_api.persistence.postgres import postgres_runtime, setup_postgres_schema
+from lgos_demo_api.persistence.postgres import postgres_runtime
 
 POSTGRES_URI = os.environ.get("DEMO_API_TEST_POSTGRES_URI")
 
@@ -41,7 +41,6 @@ async def test_persistent_plot_agent_survives_runtime_restart(
     make_tool_calling_model: Callable[..., BaseChatModel],
 ) -> None:
     assert POSTGRES_URI is not None
-    await setup_postgres_schema(POSTGRES_URI)
     context = PersistentPlotAgentContext(
         user_id=str(uuid.uuid4()),
         conversation_id=str(uuid.uuid4()),

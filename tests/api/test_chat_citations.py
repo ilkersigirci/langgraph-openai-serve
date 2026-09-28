@@ -14,6 +14,7 @@ from langgraph_openai_serve import (
     citation_slice,
 )
 from langgraph_openai_serve.api.chat.responses import annotations_from_message
+from langgraph_openai_serve.core.errors import GraphError
 from tests.graph.support.schemas import MessageState
 
 ANSWER = "Cited answer with source"
@@ -68,14 +69,14 @@ def citation_app() -> FastAPI:
         .compile()
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "citations": GraphConfig(
                 graph=graph,
                 description="DUMMY",
             )
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @pytest.fixture
@@ -153,7 +154,7 @@ def test_citation_must_refer_to_its_own_text_block(trailing_text: str) -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="final assistant text"):
+    with pytest.raises(GraphError, match="final assistant text"):
         annotations_from_message(message)
 
 
@@ -211,5 +212,5 @@ def test_citation_indices_must_match_cited_text() -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="match cited_text"):
+    with pytest.raises(GraphError, match="match cited_text"):
         annotations_from_message(message)

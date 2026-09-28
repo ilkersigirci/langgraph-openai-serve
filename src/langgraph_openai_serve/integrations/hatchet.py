@@ -66,11 +66,11 @@ def create_hatchet_task(
         job: BackgroundJob,
         context: Context,
     ) -> dict[str, JsonValue]:
-        graphs = context.lifespan
-        if not isinstance(graphs, GraphRegistry):
+        registry = context.lifespan
+        if not isinstance(registry, GraphRegistry):
             msg = "The Hatchet worker lifespan must yield a GraphRegistry."
             raise TypeError(msg)
-        return await execute_background_job(job, context.workflow_run_id, graphs)
+        return await execute_background_job(job, context.workflow_run_id, registry)
 
     return run_background_response
 

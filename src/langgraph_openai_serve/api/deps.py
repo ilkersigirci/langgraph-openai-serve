@@ -15,14 +15,17 @@ def get_graph_registry(request: Request) -> GraphRegistry:
 
 async def get_stream_owner() -> AsyncIterator[StreamOwner]:
     """
-    Manage the streaming producer owned by one request.
+    Provide one request-scoped stream owner.
 
     Yields:
-        The request-scoped stream owner.
+        The stream owner, closed after the response finishes.
 
     """
-    async with StreamOwner() as owner:
+    owner = StreamOwner()
+    try:
         yield owner
+    finally:
+        await owner.aclose()
 
 
 __all__ = ["get_graph_registry", "get_stream_owner"]

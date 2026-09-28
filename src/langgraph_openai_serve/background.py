@@ -11,25 +11,14 @@ from openai.types.responses import Response, ResponseError
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from langgraph_openai_serve.api.responses.interrupts import interrupt_response_id
-from langgraph_openai_serve.api.responses.messages import InvalidResponsesInputError
 from langgraph_openai_serve.api.responses.output import ResponseContext
-from langgraph_openai_serve.api.responses.request import (
-    UnsupportedResponsesRequestError,
-)
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
     collect_response,
     prepare_response_run,
 )
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.client_settings import ClientSettingsValidationError
-from langgraph_openai_serve.graph.graph_registry import GraphNotFoundError
-from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
-from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
-from langgraph_openai_serve.graph.interrupt.state import (
-    InterruptStateConflictError,
-    InvalidRunIDError,
-)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -41,20 +30,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 BackgroundStatus = Literal["queued", "in_progress", "completed", "failed", "cancelled"]
-
-# Failures the foreground path reports as 4xx. A background Response reports
-# them as its own failure. An interrupt answer, for example, is validated only
-# once its run holds the checkpoint lease, so a stale answer fails there.
-_REQUEST_ERRORS = (
-    ClientSettingsValidationError,
-    GraphNotFoundError,
-    InterruptStateConflictError,
-    InvalidResponsesInputError,
-    InvalidResumeRequestError,
-    InvalidRunIDError,
-    RunBusyError,
-    UnsupportedResponsesRequestError,
-)
 
 
 class BackgroundJob(BaseModel):
@@ -117,7 +92,7 @@ class BackgroundBackend(Protocol):
 async def execute_background_job(
     job: BackgroundJob,
     engine_run_id: str,
-    graphs: GraphRegistry,
+    registry: GraphRegistry,
 ) -> dict[str, JsonValue]:
     """Execute one job through the foreground Responses path."""
     request = ResponseCreateRequest.model_validate(job.request)
@@ -125,7 +100,7 @@ async def execute_background_job(
     try:
         run = await prepare_response_run(
             request,
-            graphs,
+            registry,
             checkpoint_scope=job.owner_scope,
             run_id=job.run_id,
         )
@@ -135,7 +110,11 @@ async def execute_background_job(
             response_id=response_id,
             created_at=job.created_at,
         )
-    except _REQUEST_ERRORS as exc:
+    except InvalidRequestError as exc:
+        # The foreground path reports these as 4xx; a background Response
+        # reports them as its own failure. An interrupt answer, for example,
+        # is validated only once its run holds the lease, so a stale answer
+        # fails here.
         response = _failed_response(_queued_response(job, response_id), str(exc))
     return response.model_dump(mode="json", by_alias=True)
 
@@ -147,8 +126,8 @@ class InMemoryBackgroundBackend:
     For development and tests: runs stay in memory until the process exits.
     """
 
-    def __init__(self, graphs: GraphRegistry) -> None:
-        self._graphs = graphs
+    def __init__(self, registry: GraphRegistry) -> None:
+        self._registry = registry
         self._runs: dict[str, BackgroundRun] = {}
         self._keys: dict[str, str] = {}
         self._scopes: dict[str, CancelScope] = {}
@@ -196,7 +175,7 @@ class InMemoryBackgroundBackend:
                 self._transition(run.id, "in_progress")
                 try:
                     response = await execute_background_job(
-                        run.job, run.id, self._graphs
+                        run.job, run.id, self._registry
                     )
                 except Exception:
                     logger.exception(

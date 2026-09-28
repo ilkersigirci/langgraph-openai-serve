@@ -92,13 +92,12 @@ class ResponsesEventBuilder:
         )
         self._sequence_number = 0
         self._output: list[ResponseOutputItem] = []
-        self._server_tool_tracker = ServerToolTracker(server_tools)
+        self.selected_server_tools = frozenset(server_tools)
+        self._server_tool_tracker = ServerToolTracker(self.selected_server_tools)
         self._final_item: _TextItem | None = None
-        self._terminal_emitted = False
 
     def created(self) -> ResponseCreatedEvent:
         """Create the initial response event."""
-        self._ensure_active()
         return ResponseCreatedEvent(
             type="response.created",
             sequence_number=self._sequence(),
@@ -107,7 +106,6 @@ class ResponsesEventBuilder:
 
     def in_progress(self) -> ResponseInProgressEvent:
         """Create the response in-progress event."""
-        self._ensure_active()
         return ResponseInProgressEvent(
             type="response.in_progress",
             sequence_number=self._sequence(),
@@ -122,7 +120,6 @@ class ResponsesEventBuilder:
             Typed events for the message lifecycle.
 
         """
-        self._ensure_active()
         item = self._new_text_item("commentary")
         yield from self._start_text_item(item)
         item.text_parts.append(text)
@@ -143,7 +140,6 @@ class ResponsesEventBuilder:
             Typed events that open or update the final message.
 
         """
-        self._ensure_active()
         item = self._final_item
         if item is None:
             item = self._new_text_item("final_answer")
@@ -160,7 +156,6 @@ class ResponsesEventBuilder:
             Typed terminal events for a successful Response.
 
         """
-        self._ensure_active()
         calls, item_status, incomplete_details = self._completion(message)
         yield from self._finish_answer(message, status=item_status)
         for call in calls:
@@ -171,20 +166,16 @@ class ResponsesEventBuilder:
             incomplete_details=incomplete_details,
         )
         if incomplete_details is not None:
-            yield self._terminal(
-                ResponseIncompleteEvent(
-                    type="response.incomplete",
-                    sequence_number=self._sequence(),
-                    response=response,
-                )
+            yield ResponseIncompleteEvent(
+                type="response.incomplete",
+                sequence_number=self._sequence(),
+                response=response,
             )
         else:
-            yield self._terminal(
-                ResponseCompletedEvent(
-                    type="response.completed",
-                    sequence_number=self._sequence(),
-                    response=response,
-                )
+            yield ResponseCompletedEvent(
+                type="response.completed",
+                sequence_number=self._sequence(),
+                response=response,
             )
 
     def _completion(
@@ -241,7 +232,6 @@ class ResponsesEventBuilder:
             Typed function-call and terminal events.
 
         """
-        self._ensure_active()
         self._server_tool_tracker.ensure_complete()
         if self._final_item is not None:
             yield from self._finish_text_item(
@@ -250,12 +240,10 @@ class ResponsesEventBuilder:
             )
         for call in interrupt_output_items(batch):
             yield from self._tool_item(call)
-        yield self._terminal(
-            ResponseCompletedEvent(
-                type="response.completed",
-                sequence_number=self._sequence(),
-                response=self._response(status="completed", usage=usage),
-            )
+        yield ResponseCompletedEvent(
+            type="response.completed",
+            sequence_number=self._sequence(),
+            response=self._response(status="completed", usage=usage),
         )
 
     def failure(self, message: str) -> Iterator[ResponseStreamEvent]:
@@ -266,7 +254,6 @@ class ResponsesEventBuilder:
             The error and failed Response events.
 
         """
-        self._ensure_active()
         # Keep the items already exposed to the client in the terminal snapshot.
         # The SDK replaces its accumulated Response with response.failed.
         item = self._final_item
@@ -293,21 +280,13 @@ class ResponsesEventBuilder:
             message=message,
             param=None,
         )
-        yield self._terminal(
-            ResponseFailedEvent(
-                type="response.failed",
-                sequence_number=self._sequence(),
-                response=self._response(
-                    status="failed",
-                    error=ResponseError.model_validate(
-                        {
-                            "code": "server_error",
-                            "message": message,
-                            "misalignment": None,
-                        }
-                    ),
-                ),
-            )
+        yield ResponseFailedEvent(
+            type="response.failed",
+            sequence_number=self._sequence(),
+            response=self._response(
+                status="failed",
+                error=ResponseError(code="server_error", message=message),
+            ),
         )
 
     def _new_text_item(self, phase: _MessagePhase) -> _TextItem:
@@ -404,9 +383,8 @@ class ResponsesEventBuilder:
                 item_id=item.id,
                 content_index=0,
                 annotation_index=annotation_index,
-                # v3 generates a distinct annotation class for this event,
-                # while v2 accepts an untyped object. A wire mapping validates
-                # correctly under both SDK generations.
+                # The event declares its own annotation classes; validate one
+                # from the output text annotation's wire mapping.
                 annotation=annotation.model_dump(mode="json"),
             )
         yield ResponseTextDoneEvent(
@@ -526,7 +504,6 @@ class ResponsesEventBuilder:
             sequence_number=self._sequence(),
             output_index=output_index,
             item_id=item_id,
-            name=completed.name,
             arguments=completed.arguments,
         )
 
@@ -573,7 +550,6 @@ class ResponsesEventBuilder:
             Native application-tool item lifecycle events.
 
         """
-        self._ensure_active()
         for item in self._server_tool_tracker.items(event):
             yield from self._tool_item(item)
 
@@ -597,16 +573,6 @@ class ResponsesEventBuilder:
         sequence_number = self._sequence_number
         self._sequence_number += 1
         return sequence_number
-
-    def _ensure_active(self) -> None:
-        if self._terminal_emitted:
-            msg = "Responses event lifecycle already emitted a terminal event."
-            raise RuntimeError(msg)
-
-    def _terminal(self, event: ResponseStreamEvent) -> ResponseStreamEvent:
-        self._ensure_active()
-        self._terminal_emitted = True
-        return event
 
 
 def encode_event(event: ResponseStreamEvent) -> str:

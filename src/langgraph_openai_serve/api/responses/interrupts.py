@@ -8,8 +8,8 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseFunctionCallOutputInput,
     ResponseInputItem,
 )
-from langgraph_openai_serve.graph.interrupt.errors import InvalidResumeRequestError
-from langgraph_openai_serve.graph.interrupt.models import InterruptResume
+from langgraph_openai_serve.core.errors import InvalidRequestError
+from langgraph_openai_serve.graph.interrupt import InterruptResume
 from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME as _INTERRUPT_TOOL_NAME
 
 _INTERRUPT_CALL_PREFIX = "call_lg_"
@@ -58,9 +58,9 @@ def parse_responses_resume(
             "Interrupt resumes require only function_call_output input items for "
             "the previous Response."
         )
-        raise InvalidResumeRequestError(msg)
+        raise InvalidRequestError(msg, param="input")
 
-    run_id = _parse_interrupt_response_id(previous_response_id)
+    run_id = interrupt_run_id(previous_response_id)
     values: dict[str, str] = {}
     for item in input_value:
         if not isinstance(item, ResponseFunctionCallOutputInput):
@@ -68,16 +68,16 @@ def parse_responses_resume(
                 "Interrupt resumes require only function_call_output input items for "
                 "the previous Response."
             )
-            raise InvalidResumeRequestError(msg)
+            raise InvalidRequestError(msg, param="input")
         interrupt_id = _parse_interrupt_tool_call_id(item.call_id)
         if interrupt_id in values:
             msg = "Interrupt function_call_output call_id values must be unique."
-            raise InvalidResumeRequestError(msg)
+            raise InvalidRequestError(msg, param="input")
         values[interrupt_id] = item.output
 
     if not values:  # Response input lists are non-empty by schema.
         msg = "Interrupt resumes require at least one function_call_output item."
-        raise InvalidResumeRequestError(msg)
+        raise InvalidRequestError(msg, param="input")
     return InterruptResume(
         run_id=run_id,
         values=values,
@@ -101,14 +101,15 @@ def _reject_interrupt_items_without_response_id(
         for item in input_value
     ):
         msg = "Interrupt resumes require previous_response_id."
-        raise InvalidResumeRequestError(msg)
+        raise InvalidRequestError(msg, param="input")
 
 
-def _parse_interrupt_response_id(response_id: str) -> str:
+def interrupt_run_id(response_id: str) -> str:
+    """Return the run UUID carried by an interrupt-style Response ID."""
     match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
     if match is None or uuid.UUID(hex=match.group("run")).int == 0:
         msg = "previous_response_id is not an LGOS interrupt Response ID."
-        raise InvalidResumeRequestError(msg, param="previous_response_id")
+        raise InvalidRequestError(msg, param="previous_response_id")
     return str(uuid.UUID(hex=match.group("run")))
 
 
@@ -116,13 +117,14 @@ def _parse_interrupt_tool_call_id(call_id: str) -> str:
     interrupt_id = call_id.removeprefix(_INTERRUPT_CALL_PREFIX)
     if interrupt_id == call_id or not interrupt_id:
         msg = "Interrupt function_call_output call_id is invalid."
-        raise InvalidResumeRequestError(msg)
+        raise InvalidRequestError(msg, param="input")
     return interrupt_id
 
 
 __all__ = [
     "interrupt_response_id",
     "interrupt_response_nonce",
+    "interrupt_run_id",
     "interrupt_tool_call_id",
     "parse_responses_resume",
 ]

@@ -122,8 +122,8 @@ from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiSe
 from your_graphs import my_graph
 
 app = FastAPI()
-graphs = GraphRegistry(
-    registry={
+registry = GraphRegistry(
+    graphs={
         "my-graph": GraphConfig(
             graph=my_graph,
             description="Answer questions with my LangGraph workflow.",
@@ -131,7 +131,7 @@ graphs = GraphRegistry(
     }
 )
 
-LanggraphOpenaiServe(app=app, graphs=graphs).bind_openai_api()
+LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api()
 ```
 
 The default base URL is `{host}/v1`. Registered graph names become OpenAI `model`

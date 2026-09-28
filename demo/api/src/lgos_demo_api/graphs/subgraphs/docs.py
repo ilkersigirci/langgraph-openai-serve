@@ -3,10 +3,10 @@
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 
 from lgos_demo_api.graphs.subgraphs.keyword import create_keyword_graph
 from lgos_demo_api.graphs.subgraphs.schemas import DocsState
+from lgos_demo_api.utils.fake_llm import stream_fake_chat_response
 
 
 async def summarize_docs(state: DocsState) -> dict[str, list[AIMessage]]:

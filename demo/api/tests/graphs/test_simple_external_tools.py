@@ -66,7 +66,7 @@ class RecordingModel:
 
 def _registry() -> GraphRegistry:
     return GraphRegistry(
-        registry={
+        graphs={
             MODEL: GraphConfig(
                 graph=graph_module.simple_external_tools_graph,
                 description="DUMMY",

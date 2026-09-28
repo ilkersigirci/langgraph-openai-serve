@@ -22,7 +22,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 )
 from openai.types.shared import ErrorObject
 
-from langgraph_openai_serve.core.errors import openai_error_payload
+from langgraph_openai_serve.core.errors import GraphError, openai_error_payload
 from langgraph_openai_serve.graph.citations import citations_from_message
 
 
@@ -74,7 +74,7 @@ def tool_calls_from_message(
         tool_call_id = tool_call.get("id")
         if not tool_call_id:
             msg = "Final AIMessage tool calls must have an id."
-            raise ValueError(msg)
+            raise GraphError(msg)
         tool_calls.append(
             ChatCompletionMessageFunctionToolCall(
                 id=tool_call_id,

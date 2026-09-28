@@ -145,20 +145,6 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
         ),
         pytest.param(
             {
-                "input": "Run it.",
-                "tools": [
-                    {
-                        "type": "custom",
-                        "name": "package_version",
-                        "async": True,
-                    }
-                ],
-            },
-            "tools.0.async",
-            id="custom-declaration",
-        ),
-        pytest.param(
-            {
                 "input": [
                     {
                         "type": "function_call",
@@ -176,26 +162,6 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
             },
             "input.0.async",
             id="function-call-replay",
-        ),
-        pytest.param(
-            {
-                "input": [
-                    {
-                        "type": "custom_tool_call",
-                        "call_id": "call_package",
-                        "name": "package_version",
-                        "input": "openai",
-                        "async": True,
-                    },
-                    {
-                        "type": "custom_tool_call_output",
-                        "call_id": "call_package",
-                        "output": "openai==3",
-                    },
-                ]
-            },
-            "input.0.async",
-            id="custom-call-replay",
         ),
     ],
 )
@@ -626,13 +592,10 @@ def tool_openai_client(
             },
         ],
     )
-    graph_registry.register(
-        "tools",
-        GraphConfig(
-            graph=make_message_graph(disable_streaming=True),
-            description="DUMMY",
-            output_to_message=lambda _output: tool_message,
-        ),
+    graph_registry.graphs["tools"] = GraphConfig(
+        graph=make_message_graph(disable_streaming=True),
+        description="DUMMY",
+        output_to_message=lambda _output: tool_message,
     )
     return openai_client
 

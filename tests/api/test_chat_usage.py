@@ -52,14 +52,14 @@ def usage_graph() -> object:
 
 def usage_app() -> FastAPI:
     registry = GraphRegistry(
-        registry={
+        graphs={
             "usage": GraphConfig(
                 graph=usage_graph,
                 description="DUMMY",
             )
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @pytest.fixture
@@ -74,37 +74,27 @@ def _assert_usage(usage: CompletionUsage | None) -> None:
     assert usage.total_tokens == USAGE["total_tokens"]
 
 
-async def test_non_streaming_uses_provider_reported_usage(openai_http_client) -> None:
-    async with AsyncOpenAI(
-        api_key="test",
-        base_url="http://test/v1",
-        http_client=openai_http_client,
-        max_retries=0,
-    ) as openai_client:
-        response = await openai_client.chat.completions.create(
-            model="usage",
-            messages=[{"role": "user", "content": "Hi"}],
-        )
+async def test_non_streaming_uses_provider_reported_usage(
+    openai_client: AsyncOpenAI,
+) -> None:
+    response = await openai_client.chat.completions.create(
+        model="usage",
+        messages=[{"role": "user", "content": "Hi"}],
+    )
 
     _assert_usage(response.usage)
 
 
 async def test_streaming_usage_uses_the_standard_final_chunk(
-    openai_http_client,
+    openai_client: AsyncOpenAI,
 ) -> None:
-    async with AsyncOpenAI(
-        api_key="test",
-        base_url="http://test/v1",
-        http_client=openai_http_client,
-        max_retries=0,
-    ) as openai_client:
-        stream = await openai_client.chat.completions.create(
-            model="usage",
-            messages=[{"role": "user", "content": "Hi"}],
-            stream=True,
-            stream_options={"include_usage": True},
-        )
-        chunks = [chunk async for chunk in stream]
+    stream = await openai_client.chat.completions.create(
+        model="usage",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    chunks = [chunk async for chunk in stream]
 
     usage_chunks = [chunk for chunk in chunks if chunk.usage is not None]
     assert len(usage_chunks) == 1
@@ -137,18 +127,14 @@ async def test_streaming_usage_is_null_on_ordinary_wire_chunks(
     assert all("usage" in payload for payload in ordinary_chunks)
 
 
-async def test_streaming_omits_usage_unless_requested(openai_http_client) -> None:
-    async with AsyncOpenAI(
-        api_key="test",
-        base_url="http://test/v1",
-        http_client=openai_http_client,
-        max_retries=0,
-    ) as openai_client:
-        stream = await openai_client.chat.completions.create(
-            model="usage",
-            messages=[{"role": "user", "content": "Hi"}],
-            stream=True,
-        )
-        chunks = [chunk async for chunk in stream]
+async def test_streaming_omits_usage_unless_requested(
+    openai_client: AsyncOpenAI,
+) -> None:
+    stream = await openai_client.chat.completions.create(
+        model="usage",
+        messages=[{"role": "user", "content": "Hi"}],
+        stream=True,
+    )
+    chunks = [chunk async for chunk in stream]
 
     assert all(chunk.usage is None for chunk in chunks)

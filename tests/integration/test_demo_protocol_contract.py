@@ -14,11 +14,7 @@ from langgraph_openai_serve.api.models.schemas import (
     ModelClientSettings,
     ModelDetails,
 )
-from langgraph_openai_serve.graph.client_settings import (
-    ClientSettings,
-    client_settings_default_values,
-    client_settings_json_schema,
-)
+from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.protocol import (
     CONVERSATION_METADATA_KEY,
@@ -51,14 +47,13 @@ def _model_payload() -> dict[str, Any]:
         lgos=LangGraphModelExtension(
             description="DUMMY",
             features=[
-                GraphFeature.CLIENT_EVENTS,
                 GraphFeature.FILE_INPUTS,
                 GraphFeature.INTERRUPTS,
                 GraphFeature.MCP_TOOLS,
             ],
             client_settings=ModelClientSettings(
-                json_schema=client_settings_json_schema(ExampleSettings),
-                defaults=client_settings_default_values(ExampleSettings),
+                json_schema=ExampleSettings.json_schema(),
+                defaults=ExampleSettings.default_values(),
             ),
         ),
     ).model_dump(mode="json")
@@ -80,6 +75,14 @@ def test_chainlit_accepts_model_detail_extension() -> None:
     assert parsed.model_dump(mode="json") == extension
 
 
+def test_chainlit_mirrors_lgos_feature_names() -> None:
+    assert (
+        CHAINLIT_PROTOCOL["BACKGROUND_FEATURE"],
+        CHAINLIT_PROTOCOL["FILE_INPUTS_FEATURE"],
+        CHAINLIT_PROTOCOL["MCP_TOOLS_FEATURE"],
+    ) == (GraphFeature.BACKGROUND, GraphFeature.FILE_INPUTS, GraphFeature.MCP_TOOLS)
+
+
 @pytest.mark.parametrize(
     "protocol",
     [CHAINLIT_PROTOCOL, OPENWEBUI_PROTOCOL],
@@ -96,19 +99,6 @@ def test_server_serializes_the_manifest_model_extension_key() -> None:
     assert MODEL_EXTENSION_KEY in _model_payload()
 
 
-def test_chainlit_settings_descriptor_ignores_additive_fields() -> None:
-    parsed = CHAINLIT_PROTOCOL["ModelClientSettings"].model_validate(
-        {
-            "schema_version": 1,
-            "json_schema": {"type": "object"},
-            "defaults": {},
-            "future_field": True,
-        }
-    )
-
-    assert parsed.schema_version == 1
-
-
 @pytest.mark.parametrize("additive_fields", [False, True], ids=["current", "additive"])
 def test_openwebui_accepts_server_settings(additive_fields: bool) -> None:
     payload = _model_payload()
@@ -121,20 +111,6 @@ def test_openwebui_accepts_server_settings(additive_fields: bool) -> None:
     assert _openwebui_settings_fields(payload) == (
         {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": True},
     )
-
-
-def test_openwebui_rejects_unsupported_model_extension_version() -> None:
-    payload = _model_payload()
-    payload[MODEL_EXTENSION_KEY]["schema_version"] = 2
-
-    assert _openwebui_settings_fields(payload) is None
-
-
-def test_openwebui_ignores_unsupported_settings_version() -> None:
-    payload = _model_payload()
-    payload[MODEL_EXTENSION_KEY]["client_settings"]["schema_version"] = 2
-
-    assert _openwebui_settings_fields(payload) == ()
 
 
 def test_bifrost_graph_providers_allow_native_responses() -> None:

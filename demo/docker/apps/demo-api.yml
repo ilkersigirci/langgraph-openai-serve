@@ -5,6 +5,8 @@ x-lgos-demo-api-environment: &lgos-demo-api-environment
   <<: *lgos-package-environment
   DEMO_API_PORT: 8000
   DEMO_API_POSTGRES_URI: postgresql://lgos:lgos@lgos-db:5432/lgos
+  DEMO_API_INTERRUPT_TTL_MINUTES: $DEMO_API_INTERRUPT_TTL_MINUTES
+  DEMO_API_INTERRUPT_SWEEP_INTERVAL_MINUTES: $DEMO_API_INTERRUPT_SWEEP_INTERVAL_MINUTES
   DEMO_API_OPENAI_BASE_URL: $DEMO_API_OPENAI_BASE_URL
   DEMO_API_OPENAI_API_KEY: $DEMO_API_OPENAI_API_KEY
   DEMO_API_OPENAI_MODEL: $DEMO_API_OPENAI_MODEL
@@ -53,6 +55,7 @@ x-lgos-demo-api: &lgos-demo-api
     <<: *lgos-demo-api-environment
   healthcheck:
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
+    start_period: 60s
     interval: 5s
     timeout: 5s
     retries: 10
@@ -62,8 +65,8 @@ services:
     <<: *lgos-demo-api
     container_name: lgos-demo-api-a
     depends_on:
-      lgos-demo-api-setup:
-        condition: service_completed_successfully
+      lgos-db:
+        condition: service_healthy
     ports:
       - "$LGOS_A_PORT:8000"
 
@@ -71,20 +74,10 @@ services:
     <<: *lgos-demo-api
     container_name: lgos-demo-api-b
     depends_on:
-      lgos-demo-api-setup:
-        condition: service_completed_successfully
-    ports:
-      - "$LGOS_B_PORT:8000"
-
-  lgos-demo-api-setup:
-    <<: *lgos-demo-api
-    container_name: lgos-demo-api-setup
-    command: ["lgos-demo-api-setup"]
-    depends_on:
       lgos-db:
         condition: service_healthy
-    healthcheck:
-      disable: true
+    ports:
+      - "$LGOS_B_PORT:8000"
 
   lgos-background-worker:
     <<: *lgos-demo-api
@@ -92,8 +85,8 @@ services:
     container_name: lgos-background-worker
     command: ["lgos-demo-background-worker"]
     depends_on:
-      lgos-demo-api-setup:
-        condition: service_completed_successfully
+      lgos-db:
+        condition: service_healthy
     healthcheck:
       disable: true
 

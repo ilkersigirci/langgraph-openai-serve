@@ -1,770 +1,697 @@
-"""Responses and durable display-file behavior for Chainlit."""
+"""Responses turns, client tools, background runs, and interrupt reviews."""
 
 import asyncio
-import importlib
 import json
-from copy import deepcopy
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock, call
+from collections.abc import AsyncIterator
+from datetime import datetime
 from uuid import UUID
 
+import anyio
+import chainlit as cl
 import httpx2
 import pytest
-from chainlit.context import init_http_context
-from openai import AsyncOpenAI
+from chainlit_utils.chat.hitl import HITL_CONTROL_PROP
 from openai.types.responses import (
-    Response,
     ResponseCustomToolCall,
     ResponseCustomToolCallOutputItem,
-    ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
-    ResponseOutputText,
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
 
-from lgos_chainlit import display_files
+from lgos_chainlit import chat
+from lgos_chainlit.chat_settings import BACKGROUND_SETTING_ID, STREAMING_SETTING_ID
+from lgos_chainlit.display_files import DISPLAY_FILE_TOOL
+from lgos_chainlit.gateway import gateway_config
+from lgos_chainlit.interrupts import INTERRUPT_ACTION_NAME
+from tests.support import (
+    function_call,
+    message,
+    reply,
+    response,
+    select_profile,
+    sse,
+    streamed,
+    transcript,
+    user_message,
+)
 
-
-def _response(*output: object) -> Response:
-    return Response.model_construct(status="completed", output=list(output))
-
-
-def _display_call() -> ResponseFunctionToolCall:
-    return ResponseFunctionToolCall(
-        id="fc_chart",
-        call_id="call_chart",
-        name="display_file",
-        arguments=(
-            '{"file_id":"file-chart","filename":"chart.png",'
-            '"media_type":"image/png","title":"Quarterly revenue",'
-            '"alt":"Q4 is highest."}'
-        ),
-        status="completed",
-        type="function_call",
-    )
+EXCLUDED_KEY = "lgos_chainlit.exclude_from_model_context"
+DISPLAY_CHART = function_call(
+    "display_file",
+    json.dumps(
+        {
+            "file_id": "file-chart",
+            "filename": "chart.png",
+            "media_type": "image/png",
+            "title": "Quarterly revenue",
+            "alt": "Q4 is highest.",
+        }
+    ),
+    call_id="call_chart",
+)
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
-async def test_response_stream_routes_commentary_to_the_task_list(
-    monkeypatch: pytest.MonkeyPatch,
-    phase: str | None,
+async def test_streamed_commentary_goes_to_the_task_list(
     chainlit_context,
+    fake_gateway,
+    task_lists,
+    phase: str | None,
 ) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    completed = Response.model_construct(status="completed", output=[])
-    events = [
-        SimpleNamespace(
-            type="response.output_item.added",
-            output_index=0,
-            item=SimpleNamespace(type="message", phase="commentary"),
-        ),
-        SimpleNamespace(
-            type="response.output_text.delta",
-            output_index=0,
-            delta="Generating ",
-        ),
-        SimpleNamespace(
-            type="response.output_text.delta",
-            output_index=0,
-            delta="audio",
-        ),
-        SimpleNamespace(
-            type="response.output_text.done",
-            output_index=0,
-            text="Generating audio",
-        ),
-        SimpleNamespace(
-            type="response.output_item.added",
-            output_index=1,
-            item=SimpleNamespace(type="message", phase=phase),
-        ),
-        SimpleNamespace(
-            type="response.output_text.delta",
-            output_index=1,
-            delta="Media ready.",
-        ),
-    ]
-    stream = MagicMock()
-    stream.__aiter__.return_value = iter(events)
-    stream.get_final_response = AsyncMock(return_value=completed)
-    stream_manager = MagicMock()
-    stream_manager.__aenter__ = AsyncMock(return_value=stream)
-    stream_manager.__aexit__ = AsyncMock(return_value=None)
-    create_stream = Mock(return_value=stream_manager)
-    monkeypatch.setattr(chat.openai_client.responses, "stream", create_stream)
-    assistant_message = Mock(stream_token=AsyncMock())
-    commentary_tasks = Mock(add=AsyncMock())
-
-    response = await chat._stream_response(
-        [],
-        assistant_message,
-        model="status-events",
-        user="demo-user",
-        metadata={},
-        commentary_tasks=commentary_tasks,
+    chainlit_context.session.chat_profile = "lgos-a/status-events"
+    fake_gateway.replies.append(
+        streamed(
+            response(
+                message("Generating audio", id="msg_status", phase="commentary"),
+                message("Media ready.", phase=phase),
+            )
+        )
     )
 
-    assert response is completed
-    assert commentary_tasks.add.await_args_list == [call("Generating audio")]
-    assistant_message.stream_token.assert_awaited_once_with("Media ready.")
+    await chat.on_message(user_message("Make audio."))
+
+    assert fake_gateway.bodies("/v1/responses")[0]["stream"] is True
+    assert transcript() == ["Make audio.", "Media ready."]
+    assert task_lists[-1] == {
+        "status": "Done",
+        "tasks": [{"title": "Generating audio", "status": "done", "forId": None}],
+    }
 
 
-@pytest.mark.parametrize("send_delta", [False, True])
-async def test_streamed_refusal_is_visible_even_without_deltas(
-    monkeypatch, send_delta, chainlit_context
-):
-    chat = importlib.import_module("lgos_chainlit.chat")
-    refusal = ResponseOutputRefusal(
-        type="refusal", refusal="Cannot answer this request."
-    )
-    message = ResponseOutputMessage(
+@pytest.mark.parametrize("deltas", [True, False], ids=["deltas", "final-only"])
+async def test_streamed_refusal_is_visible(
+    chainlit_context,
+    fake_gateway,
+    deltas: bool,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    refusal = ResponseOutputMessage(
         id="msg_refusal",
         type="message",
         role="assistant",
         status="completed",
         phase="final_answer",
-        content=[refusal],
+        content=[ResponseOutputRefusal(type="refusal", refusal="I cannot help.")],
     )
-    completed = _response(message)
-    events = (
-        [
-            SimpleNamespace(
-                type="response.refusal.delta", output_index=0, delta=refusal.refusal
-            )
-        ]
-        if send_delta
-        else []
-    )
-    stream = MagicMock()
-    stream.__aiter__.return_value = iter(events)
-    stream.get_final_response = AsyncMock(return_value=completed)
-    manager = MagicMock()
-    manager.__aenter__ = AsyncMock(return_value=stream)
-    monkeypatch.setattr(
-        chat.openai_client.responses, "stream", Mock(return_value=manager)
-    )
-    assistant = Mock(stream_token=AsyncMock())
+    fake_gateway.replies.append(streamed(response(refusal), deltas=deltas))
 
-    await chat._stream_response(
-        [],
-        assistant,
-        model="test",
-        user="user",
-        metadata={},
-        commentary_tasks=Mock(),
-    )
-    assistant.stream_token.assert_awaited_once_with(refusal.refusal)
+    await chat.on_message(user_message("Help me."))
+
+    assert transcript() == ["Help me.", "I cannot help."]
 
 
-async def test_sdk_incomplete_event_reports_reason_without_waiting_for_completion(
-    monkeypatch,
+async def test_failed_stream_keeps_all_streamed_text(
     chainlit_context,
-):
-    chat = importlib.import_module("lgos_chainlit.chat")
-    incomplete = Response.model_construct(
-        id="resp_partial",
-        object="response",
-        status="incomplete",
-        output=[],
-        incomplete_details={"reason": "max_output_tokens"},
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    failed = response(
+        message("Partial answer"),
+        status="failed",
+        error={"code": "server_error", "message": "Graph failed"},
     )
-    initial = incomplete.model_copy(
-        update={"status": "in_progress", "incomplete_details": None}
+    payload = failed.model_dump(mode="json")
+    item = payload["output"][0]
+    part = {"item_id": item["id"], "output_index": 0, "content_index": 0}
+    # LGOS fails an answer mid-stream without closing its text part.
+    fake_gateway.replies.append(
+        sse(
+            {
+                "type": "response.created",
+                "response": {**payload, "status": "in_progress", "output": []},
+            },
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {**item, "content": []},
+            },
+            {
+                "type": "response.content_part.added",
+                **part,
+                "part": {"type": "output_text", "text": "", "annotations": []},
+            },
+            {
+                "type": "response.output_text.delta",
+                **part,
+                "delta": "Partial ",
+                "logprobs": [],
+            },
+            {
+                "type": "response.output_text.delta",
+                **part,
+                "delta": "answer",
+                "logprobs": [],
+            },
+            {
+                "type": "error",
+                "code": "server_error",
+                "message": "Graph failed",
+                "param": None,
+            },
+            {"type": "response.failed", "response": payload},
+        )
     )
-    payloads = [
-        {
-            "type": "response.created",
-            "sequence_number": 0,
-            "response": initial.model_dump(),
-        },
-        {
-            "type": "response.incomplete",
-            "sequence_number": 1,
-            "response": incomplete.model_dump(),
-        },
+
+    await chat.on_message(user_message("Answer."))
+
+    assert transcript() == [
+        "Answer.",
+        "Partial answer",
+        "Response failed: Graph failed",
     ]
-    wire = "".join(
-        f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in payloads
-    )
-    async with (
-        httpx2.AsyncClient(
-            transport=httpx2.MockTransport(
-                lambda _: httpx2.Response(
-                    200,
-                    headers={"content-type": "text/event-stream"},
-                    text=wire,
-                )
-            )
-        ) as http_client,
-        AsyncOpenAI(api_key="test", http_client=http_client) as client,
-    ):
-        monkeypatch.setattr(chat, "openai_client", client)
-        with pytest.raises(
-            RuntimeError, match="Response incomplete: max_output_tokens"
-        ):
-            await chat._stream_response(
-                [],
-                Mock(),
-                model="test",
-                user="user",
-                metadata={},
-                commentary_tasks=Mock(),
-            )
 
 
-@pytest.mark.parametrize("provider", ["lgos-files", "litellm_proxy"])
-async def test_display_file_uses_a_persisted_native_image_message(
-    monkeypatch: pytest.MonkeyPatch,
-    provider: str,
+async def test_incomplete_stream_reports_its_reason(
+    chainlit_context,
+    fake_gateway,
 ) -> None:
-    download = SimpleNamespace(aread=AsyncMock(return_value=b"png-bytes"))
-    content = AsyncMock(return_value=download)
-    image = Mock()
-    image_factory = Mock(return_value=image)
-    message = Mock(metadata=None, send=AsyncMock())
-    message_factory = Mock(return_value=message)
-    client = SimpleNamespace(files=SimpleNamespace(content=content))
-    monkeypatch.setattr(display_files, "files_request", lambda: (client, provider))
-    monkeypatch.setattr(display_files.cl, "Image", image_factory)
-    monkeypatch.setattr(display_files.cl, "Message", message_factory)
-
-    output = await display_files.display_file(_display_call())
-
-    content.assert_awaited_once_with("file-chart", extra_query={"provider": provider})
-    image_factory.assert_called_once_with(
-        name="chart.png",
-        content=b"png-bytes",
-        mime="image/png",
-        display="inline",
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    fake_gateway.replies.append(
+        streamed(
+            response(
+                message("Partial"),
+                status="incomplete",
+                incomplete_details={"reason": "max_output_tokens"},
+            )
+        )
     )
-    message_factory.assert_called_once_with(
-        content="Quarterly revenue",
-        elements=[image],
-    )
-    assert message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
-    message.send.assert_awaited_once_with()
-    assert output == {
-        "type": "function_call_output",
-        "call_id": "call_chart",
-        "output": '{"displayed":true}',
-    }
+
+    await chat.on_message(user_message("Write a long essay."))
+
+    assert transcript()[-2:] == [
+        "Partial",
+        "Response failed: Response incomplete: max_output_tokens.",
+    ]
+    assert cl.chat_context.get()[-2].metadata == {EXCLUDED_KEY: True}
 
 
-@pytest.mark.parametrize("valid", [True, False], ids=["plotly", "invalid-plotly"])
-async def test_display_plotly_persists_an_interactive_element(
-    monkeypatch: pytest.MonkeyPatch,
-    valid: bool,
-) -> None:
-    init_http_context()
-    call = _display_call()
-    arguments = json.loads(call.arguments)
-    arguments.update(
-        filename="chart.plotly.json", media_type="application/vnd.plotly.v1+json"
-    )
-    call.arguments = json.dumps(arguments)
-    chart = b'{"data":[{"type":"bar","x":["Q1","Q2"],"y":[120,180]}]}'
-    download = SimpleNamespace(
-        aread=AsyncMock(return_value=chart if valid else b"bad-json")
-    )
-    content = AsyncMock(return_value=download)
-    client = SimpleNamespace(files=SimpleNamespace(content=content))
-    monkeypatch.setattr(display_files, "files_request", lambda: (client, "lgos-files"))
-    message = Mock(metadata=None, send=AsyncMock())
-    message_factory = Mock(return_value=message)
-    monkeypatch.setattr(display_files.cl, "Message", message_factory)
-
-    if not valid:
-        with pytest.raises(ValueError):
-            await display_files.display_file(call)
-        message_factory.assert_not_called()
-        return
-
-    output = await display_files.display_file(call)
-
-    content.assert_awaited_once_with(
-        "file-chart", extra_query={"provider": "lgos-files"}
-    )
-    element = message_factory.call_args.kwargs["elements"][0]
-    assert isinstance(element, display_files.cl.Plotly)
-    assert element.display == "inline"
-    assert json.loads(element.content)["data"] == json.loads(chart)["data"]
-    assert message.metadata == {"lgos_chainlit.exclude_from_model_context": True}
-    message.send.assert_awaited_once_with()
-    assert output == {
-        "type": "function_call_output",
-        "call_id": "call_chart",
-        "output": '{"displayed":true}',
-    }
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-async def test_tool_continuation_keeps_history_files_and_final_text(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("streaming", [False, True], ids=["create", "stream"])
+async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
+    chainlit_context,
+    fake_gateway,
     streaming: bool,
-    chainlit_context,
 ) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    call = _display_call()
-    first_text = ResponseOutputMessage(
-        id="msg_intro",
-        role="assistant",
-        type="message",
-        status="completed",
-        phase="final_answer",
-        content=[
-            ResponseOutputText(
-                type="output_text", text="Here is the chart. ", annotations=[]
-            )
-        ],
-    )
-    last_answer = "Chart ready [source]"
-    last_text = first_text.model_copy(
-        update={
-            "id": "msg_final",
-            "content": [
-                ResponseOutputText(
-                    type="output_text",
-                    text=last_answer,
-                    annotations=[
-                        AnnotationURLCitation(
-                            type="url_citation",
-                            url="https://example.com/chart",
-                            title="Chart source",
-                            start_index=last_answer.index("[source]"),
-                            end_index=len(last_answer) - 1,
-                        )
-                    ],
-                )
-            ],
-        }
-    )
-    commentary = first_text.model_copy(
-        update={
-            "id": "msg_commentary",
-            "phase": "commentary",
-            "content": [
-                ResponseOutputText(
-                    type="output_text", text="Rendering chart", annotations=[]
-                )
-            ],
-        }
-    )
-    server_call = ResponseCustomToolCall.model_validate(
-        {
-            "type": "custom_tool_call",
-            "id": "ctc_package",
-            "call_id": "call_package",
-            "name": "lgos_package_version",
-            "input": "openai",
-            "status": "completed",
-        }
-    )
-    server_output = ResponseCustomToolCallOutputItem(
-        type="custom_tool_call_output",
-        id="ctco_package",
-        call_id="call_package",
-        output="openai==installed-version",
-        status="completed",
-    )
-    first = _response(commentary, first_text, server_call, server_output, call)
-    pending = iter([first, _response(last_text)])
-    requests = []
-    history = [{"role": "system", "content": "Use the uploaded data."}]
-    file_input = {
-        "role": "user",
-        "content": [
-            {"type": "input_text", "text": "Plot revenue"},
-            {"type": "input_file", "file_id": "file-data"},
-        ],
-    }
-    output = {
-        "type": "function_call_output",
-        "call_id": call.call_id,
-        "output": '{"displayed":true}',
-    }
-    assistant = Mock(content="", elements=[], send=AsyncMock(), update=AsyncMock())
-
-    async def create(**request):
-        requests.append(deepcopy(request["input"]))
-        return next(pending)
-
-    async def stream(input_items, assistant_message, **_):
-        completed = await create(input=input_items)
-        assistant_message.content += chat.final_answer(completed)
-        return completed
-
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: history)
-    monkeypatch.setattr(
-        chat,
-        "with_response_file_parts",
-        AsyncMock(return_value=[*history, file_input]),
-    )
-    monkeypatch.setattr(chat, "streaming_enabled", lambda: streaming)
-    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
-    monkeypatch.setattr(
-        chat, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
-    )
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-    monkeypatch.setattr(chat, "_stream_response", stream)
-    display = AsyncMock(return_value=output)
-    monkeypatch.setattr(chat, "display_file", display)
-
-    assert await chat._response_message(Mock(), "plot") is assistant
-    assert assistant.content == "Here is the chart. Chart ready [source]"
-    assert [
-        (element.name, element.content, element.display)
-        for element in assistant.elements
-    ] == [("[source]", "[Open source](<https://example.com/chart>)", "side")]
-    assert requests[0] == [*history, file_input]
-    assert requests[1] == [
-        *history,
-        file_input,
-        *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
-        output,
-    ]
-    display.assert_awaited_once_with(call)
-
-
-async def test_non_streaming_failure_does_not_display_files_or_send_success(
-    monkeypatch,
-    chainlit_context,
-):
-    chat = importlib.import_module("lgos_chainlit.chat")
-    failed = _response(_display_call())
-    failed.status = "failed"
-    failed.error = SimpleNamespace(message="Graph failed")
-    assistant = Mock(content="", send=AsyncMock())
-    error = AsyncMock()
-    display = AsyncMock()
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(chat, "text_only_chat_messages", list)
-    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
-    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
-    monkeypatch.setattr(chat, "conversation_metadata", dict)
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(
-        chat.openai_client.responses, "create", AsyncMock(return_value=failed)
-    )
-    monkeypatch.setattr(chat, "display_file", display)
-    monkeypatch.setattr(chat, "send_ui_message", error)
-
-    assert await chat._response_message(Mock(), "plot") is None
-    error.assert_awaited_once_with("Response failed: Graph failed")
-    assistant.send.assert_not_awaited()
-    display.assert_not_awaited()
-
-
-async def test_background_response_is_polled_and_rendered(
-    monkeypatch: pytest.MonkeyPatch,
-    chainlit_context,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    response_id = "resp_background"
-    queued = Response.model_construct(id=response_id, status="queued", output=[])
-    in_progress = Response.model_construct(
-        id=response_id,
-        status="in_progress",
-        output=[],
-    )
-    completed = _response(
-        ResponseOutputMessage(
-            id="msg_final",
-            content=[
-                ResponseOutputText(
-                    annotations=[],
-                    logprobs=[],
-                    text="Report ready.",
-                    type="output_text",
-                )
-            ],
-            role="assistant",
+    session = chainlit_context.session
+    session.chat_profile = "lgos-a/persistent-plot-agent"
+    session.chat_settings[STREAMING_SETTING_ID] = streaming
+    first = response(
+        message("Rendering chart", id="msg_status", phase="commentary"),
+        message("Here is the chart. ", id="msg_intro"),
+        ResponseCustomToolCall(
+            type="custom_tool_call",
+            id="ctc_package",
+            call_id="call_package",
+            name="lgos_package_version",
+            input="openai",
             status="completed",
-            type="message",
-            phase="final_answer",
-        )
-    ).model_copy(update={"id": response_id})
-    create = AsyncMock(return_value=queued)
-    retrieve = AsyncMock(side_effect=[in_progress, completed])
-    tasks = Mock(add=AsyncMock(), complete=AsyncMock(), stop=AsyncMock())
-    assistant = Mock(content="", elements=[], send=AsyncMock(), update=AsyncMock())
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(chat, "CommentaryTaskList", Mock(return_value=tasks))
-    monkeypatch.setattr(chat, "text_only_chat_messages", list)
-    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "background_enabled", lambda: True)
-    monkeypatch.setattr(chat, "streaming_enabled", Mock(side_effect=AssertionError))
-    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
-    monkeypatch.setattr(
-        chat, "conversation_metadata", lambda: {"conversation_id": "thread-123"}
-    )
-    monkeypatch.setattr(
-        chat,
-        "gateway",
-        SimpleNamespace(provider_routing=False),
-    )
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(chat, "response_tools", list)
-    monkeypatch.setattr(chat.asyncio, "sleep", AsyncMock())
-    with_options = Mock(return_value=chat.openai_client)
-    monkeypatch.setattr(chat.openai_client, "with_options", with_options)
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-    monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
-
-    await chat._response_message(Mock(), "lgos-a/background-mock")
-
-    request = create.await_args.kwargs
-    assert request["background"] is True
-    assert request["store"] is True
-    assert request["metadata"]["conversation_id"] == "thread-123"
-    assert request["model"] == "lgos-a/background-mock"
-    assert "extra_headers" not in request
-    UUID(request["extra_body"]["extra_headers"]["Idempotency-Key"])
-    assert retrieve.await_args_list == [call(response_id), call(response_id)]
-    assert tasks.add.await_args_list == [
-        call("Background response queued"),
-        call("Background response in progress"),
-    ]
-    tasks.complete.assert_awaited_once_with()
-    assert assistant.content == "Report ready."
-    assistant.send.assert_awaited_once_with()
-    with_options.assert_called_once_with(max_retries=2)
-
-
-async def test_background_response_stays_on_its_bifrost_provider(
-    monkeypatch: pytest.MonkeyPatch,
-    chainlit_context,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    response_id = "resp_background"
-    completed = Response.model_construct(
-        id=response_id,
-        status="completed",
-        output=[],
-    )
-    create = AsyncMock(
-        return_value=Response.model_construct(
-            id=response_id,
-            status="queued",
-            output=[],
-        )
-    )
-    retrieve = AsyncMock(return_value=completed)
-    monkeypatch.setattr(chat, "response_tools", list)
-    monkeypatch.setattr(chat.asyncio, "sleep", AsyncMock())
-    monkeypatch.setattr(
-        chat.openai_client,
-        "with_options",
-        Mock(return_value=chat.openai_client),
-    )
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-    monkeypatch.setattr(chat.openai_client.responses, "retrieve", retrieve)
-
-    response = await chat._background_response(
-        [],
-        model="lgos-b/background-mock",
-        provider_routing=True,
-        user="demo-user",
-        metadata={},
-        commentary_tasks=Mock(add=AsyncMock()),
-    )
-
-    request = create.await_args.kwargs
-    assert response is completed
-    assert request["model"] == "lgos-b/background-mock"
-    assert request["extra_headers"].keys() == {"Idempotency-Key"}
-    UUID(request["extra_headers"]["Idempotency-Key"])
-    assert "extra_body" not in request
-    retrieve.assert_awaited_once_with(response_id, extra_query={"provider": "lgos-b"})
-
-
-@pytest.mark.parametrize(
-    ("model", "provider_routing", "lifecycle_options"),
-    [
-        ("lgos-a/background-mock", False, {}),
-        ("lgos-b/background-mock", True, {"extra_query": {"provider": "lgos-b"}}),
-    ],
-    ids=["litellm", "bifrost"],
-)
-async def test_background_response_is_cancelled_when_turn_stops(
-    monkeypatch: pytest.MonkeyPatch,
-    chainlit_context,
-    model: str,
-    provider_routing: bool,
-    lifecycle_options: dict[str, object],
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    response_id = "resp_background"
-    cancel = AsyncMock()
-    monkeypatch.setattr(
-        chat.openai_client.responses,
-        "create",
-        AsyncMock(
-            return_value=Response.model_construct(
-                id=response_id,
-                status="queued",
-                output=[],
-            )
         ),
+        ResponseCustomToolCallOutputItem(
+            type="custom_tool_call_output",
+            id="ctco_package",
+            call_id="call_package",
+            output="openai==installed-version",
+            status="completed",
+        ),
+        DISPLAY_CHART,
     )
-    monkeypatch.setattr(chat.openai_client.responses, "cancel", cancel)
-    monkeypatch.setattr(chat, "response_tools", list)
-    monkeypatch.setattr(
-        chat.openai_client,
-        "with_options",
-        Mock(return_value=chat.openai_client),
+    answer = "Chart ready [source]"
+    citation = AnnotationURLCitation(
+        type="url_citation",
+        url="https://example.com/chart",
+        title="Chart source",
+        start_index=answer.index("[source]"),
+        end_index=len(answer) - 1,
     )
-    monkeypatch.setattr(
-        chat.asyncio,
-        "sleep",
-        AsyncMock(side_effect=asyncio.CancelledError),
-    )
+    deliver = streamed if streaming else reply
+    fake_gateway.replies += [
+        deliver(first),
+        httpx2.Response(200, content=b"png-bytes"),
+        deliver(response(message(answer, id="msg_final", annotations=[citation]))),
+    ]
+    user_message("What was revenue?")
+    cl.chat_context.add(cl.Message(content="Revenue grew."))
 
-    with pytest.raises(asyncio.CancelledError):
-        await chat._background_response(
-            [],
-            model=model,
-            provider_routing=provider_routing,
-            user="demo-user",
-            metadata={},
-            commentary_tasks=Mock(add=AsyncMock()),
-        )
+    await chat.on_message(user_message("Plot revenue."))
 
-    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
-
-
-async def test_interrupt_calls_are_delegated_to_the_durable_workflow(
-    monkeypatch,
-    chainlit_context,
-) -> None:
-    from lgos_chainlit.lgos_protocol import INTERRUPT_TOOL_NAME
-
-    chat = importlib.import_module("lgos_chainlit.chat")
-    interrupt_resp = _response(
-        ResponseFunctionToolCall(
-            id="fc_1",
-            call_id="call_interrupt_1",
-            name=INTERRUPT_TOOL_NAME,
-            arguments="{}",
-            type="function_call",
-        )
-    )
-    assistant = Mock(content="", send=AsyncMock())
-    workflow = SimpleNamespace(publish=AsyncMock())
-    display = AsyncMock()
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant))
-    monkeypatch.setattr(chat, "text_only_chat_messages", list)
-    monkeypatch.setattr(chat, "with_response_file_parts", AsyncMock(return_value=[]))
-    monkeypatch.setattr(chat, "streaming_enabled", lambda: False)
-    monkeypatch.setattr(chat, "chat_settings_metadata", dict)
-    monkeypatch.setattr(chat, "conversation_metadata", dict)
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(
-        chat.openai_client.responses, "create", AsyncMock(return_value=interrupt_resp)
-    )
-    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
-    monkeypatch.setattr(chat, "display_file", display)
-
-    await chat._response_message(Mock(), "interruptible-approval")
-
-    workflow.publish.assert_awaited_once_with(
-        interrupt_resp,
-        model_id="interruptible-approval",
-    )
-    display.assert_not_awaited()
-
-
-async def test_pending_interrupt_blocks_a_new_model_turn(monkeypatch) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    workflow = SimpleNamespace(block_new_message=AsyncMock(return_value=True))
-    respond = AsyncMock()
-    monkeypatch.setattr(chat, "interrupt_workflow", workflow)
-    monkeypatch.setattr(chat, "_response_message", respond)
-    message = Mock()
-
-    await chat.on_message(message)
-
-    workflow.block_new_message.assert_awaited_once_with(message)
-    respond.assert_not_awaited()
-
-
-async def test_interrupt_answer_follows_the_background_setting(
-    monkeypatch: pytest.MonkeyPatch,
-    chainlit_context,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    completed = _response()
-    create = AsyncMock(return_value=completed)
-    monkeypatch.setattr(chat, "background_enabled", lambda: True)
-    monkeypatch.setattr(chat, "response_tools", list)
-    monkeypatch.setattr(chat, "_response_metadata", dict)
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(
-        chat.openai_client,
-        "with_options",
-        Mock(return_value=chat.openai_client),
-    )
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-
-    response = await chat._continue_interrupt_response(
-        [{"type": "function_call_output", "call_id": "call-1", "output": "approve"}],
-        model_id="lgos-a/approval",
-        previous_response_id="resp-review",
-    )
-
-    request = create.await_args.kwargs
-    assert response is completed
-    assert request["background"] is True
-    assert request["previous_response_id"] == "resp-review"
-
-
-async def test_interrupt_continuation_keeps_response_cursor_and_request_context(
-    monkeypatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    completed = _response()
-    create = AsyncMock(return_value=completed)
-    monkeypatch.setattr(chat, "background_enabled", lambda: False)
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-    monkeypatch.setattr(
-        chat,
-        "chat_settings_metadata",
-        lambda: {"lgos_settings": '{"audience":"expert"}'},
-    )
-    monkeypatch.setattr(
-        chat,
-        "conversation_metadata",
-        lambda: {"conversation_id": "thread-123"},
-    )
-    monkeypatch.setattr(chat, "response_tools", lambda: [{"type": "web_search"}])
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    input_items = [
+    history = [
+        {"role": "user", "content": "What was revenue?"},
+        {"role": "assistant", "content": "Revenue grew.", "phase": "final_answer"},
+        {"role": "user", "content": "Plot revenue."},
+    ]
+    initial, continuation = fake_gateway.bodies("/v1/responses")
+    assert initial == {
+        "model": "lgos-a/persistent-plot-agent",
+        "input": history,
+        "tools": [DISPLAY_FILE_TOOL],
+        "user": "demo-user",
+        "metadata": {"conversation_id": session.thread_id},
+        "store": False,
+        **({"stream": True} if streaming else {}),
+    }
+    assert continuation["input"] == [
+        *history,
+        *(item.model_dump(mode="json", exclude_none=True) for item in first.output),
         {
             "type": "function_call_output",
-            "call_id": "call-review",
-            "output": "approve",
-        }
+            "call_id": "call_chart",
+            "output": '{"displayed":true}',
+        },
+    ]
+    download = fake_gateway.requests[1]
+    assert (download.url.path, dict(download.url.params)) == (
+        "/v1/files/file-chart/content",
+        {"provider": "litellm_proxy"},
+    )
+    assert {request.headers["User-Agent"] for request in fake_gateway.requests} == {
+        "lgos-chainlit"
+    }
+
+    *_, chart, final = cl.chat_context.get()
+    assert (chart.content, chart.metadata) == (
+        "Quarterly revenue",
+        {EXCLUDED_KEY: True},
+    )
+    assert [(image.type, image.mime) for image in chart.elements] == [
+        ("image", "image/png")
+    ]
+    assert final.content == "Here is the chart. Chart ready [source]"
+    assert [(link.name, link.content) for link in final.elements] == [
+        ("[source]", "[Open source](<https://example.com/chart>)")
     ]
 
-    response = await chat._continue_interrupt_response(
-        input_items,
-        model_id="lgos-a/interruptible-approval",
-        previous_response_id="resp-review",
+
+async def test_failed_response_reports_the_error_without_running_tools(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = False
+    fake_gateway.replies.append(
+        reply(
+            response(
+                DISPLAY_CHART,
+                status="failed",
+                error={"code": "server_error", "message": "Graph failed"},
+            )
+        )
     )
 
-    assert response is completed
-    assert create.await_args.kwargs == {
-        "model": "lgos-a/interruptible-approval",
-        "input": input_items,
-        "previous_response_id": "resp-review",
-        "store": False,
-        "tools": [{"type": "web_search"}],
-        "user": "demo-user",
-        "metadata": {
-            "lgos_settings": '{"audience":"expert"}',
-            "conversation_id": "thread-123",
-        },
+    await chat.on_message(user_message("Plot revenue."))
+
+    assert transcript() == ["Plot revenue.", "Response failed: Graph failed"]
+    assert len(fake_gateway.requests) == 1
+
+
+async def _select_background_profile(fake_gateway, model_id: str) -> None:
+    await select_profile(fake_gateway, model_id, features=["background"])
+    cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = True
+
+
+def _use_gateway(monkeypatch: pytest.MonkeyPatch, gateway_type: str) -> str:
+    """Send Responses through ``gateway_type``'s route and return its path."""
+    config = gateway_config(gateway_type, "https://gateway.example")
+    monkeypatch.setattr(chat, "gateway", config)
+    monkeypatch.setattr(
+        chat,
+        "responses_client",
+        chat.responses_client.with_options(base_url=config.responses_base_url),
+    )
+    return httpx2.URL(config.responses_base_url).path + "/responses"
+
+
+BACKGROUND_GATEWAYS = pytest.mark.parametrize(
+    ("gateway_type", "lifecycle_query"),
+    [("litellm", {}), ("bifrost", {"provider": "lgos-b"})],
+)
+
+
+@BACKGROUND_GATEWAYS
+async def test_background_response_is_polled_until_complete(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    lifecycle_query: dict[str, str],
+) -> None:
+    responses_path = _use_gateway(monkeypatch, gateway_type)
+    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
+    await _select_background_profile(fake_gateway, "lgos-b/background-report")
+    fake_gateway.replies += [
+        reply(response(id="resp_bg", status="queued")),
+        reply(response(id="resp_bg", status="in_progress")),
+        reply(response(message("Report ready."), id="resp_bg")),
+    ]
+
+    await chat.on_message(user_message("Build the report."))
+
+    [create] = fake_gateway.bodies(responses_path)
+    assert (create["background"], create["store"]) == (True, True)
+    assert create["metadata"] == {"conversation_id": chainlit_context.session.thread_id}
+    create_request = fake_gateway.requests[1]
+    idempotency_key = (
+        create_request.headers["Idempotency-Key"]
+        if gateway_type == "bifrost"
+        else create["extra_headers"]["Idempotency-Key"]
+    )
+    UUID(idempotency_key)
+    assert [
+        (request.method, request.url.path, dict(request.url.params))
+        for request in fake_gateway.requests[2:]
+    ] == [("GET", f"{responses_path}/resp_bg", lifecycle_query)] * 2
+    assert task_lists[-1] == {
+        "status": "Done",
+        "tasks": [
+            {"title": "Background response queued", "status": "done", "forId": None},
+            {
+                "title": "Background response in progress",
+                "status": "done",
+                "forId": None,
+            },
+        ],
     }
+    assert transcript()[-1] == "Report ready."
+
+
+@BACKGROUND_GATEWAYS
+async def test_stopped_turn_cancels_its_background_response(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    lifecycle_query: dict[str, str],
+) -> None:
+    responses_path = _use_gateway(monkeypatch, gateway_type)
+    await _select_background_profile(fake_gateway, "lgos-b/background-report")
+    polling = asyncio.Event()
+
+    def in_progress(_request: httpx2.Request) -> httpx2.Response:
+        polling.set()
+        return reply(response(id="resp_bg", status="in_progress"))
+
+    fake_gateway.replies += [
+        reply(response(id="resp_bg", status="queued")),
+        in_progress,
+        reply(response(id="resp_bg", status="cancelled")),
+    ]
+
+    turn = asyncio.create_task(chat.on_message(user_message("Build the report.")))
+    with anyio.fail_after(5):
+        await polling.wait()
+    turn.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+
+    cancel = fake_gateway.requests[-1]
+    assert (cancel.method, cancel.url.path, dict(cancel.url.params)) == (
+        "POST",
+        f"{responses_path}/resp_bg/cancel",
+        lifecycle_query,
+    )
+
+
+async def test_stopped_stream_closes_upstream_and_keeps_partial_text_out_of_context(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    waiting = asyncio.Event()
+    closed = asyncio.Event()
+
+    class PausedStream(httpx2.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            payload = streamed(response(message("Partial answer"))).content
+            yield payload.split(b"event: response.output_text.done")[0]
+            waiting.set()
+            await anyio.sleep_forever()
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    fake_gateway.replies.append(
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=PausedStream(),
+        )
+    )
+    async with asyncio.TaskGroup() as tasks:
+        turn = tasks.create_task(chat.on_message(user_message("Give a long answer.")))
+        with anyio.fail_after(5):
+            await waiting.wait()
+            turn.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await turn
+
+    assert closed.is_set()
+    partial = cl.chat_context.get()[-1]
+    assert partial.content == "Partial answer"
+    assert partial.metadata[EXCLUDED_KEY] is True
+
+    fake_gateway.replies.append(streamed(response(message("Ready."))))
+    await chat.on_message(user_message("Try again."))
+
+    assert fake_gateway.bodies("/v1/responses")[-1]["input"] == [
+        {"role": "user", "content": "Give a long answer."},
+        {"role": "user", "content": "Try again."},
+    ]
+    assert transcript()[-1] == "Ready."
+
+
+@pytest.mark.parametrize("background", [False, True], ids=["foreground", "background"])
+async def test_interrupt_review_resumes_with_the_turn_request_context(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+    background: bool,
+) -> None:
+    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
+    model_id = "lgos-a/interruptible-approval"
+    await select_profile(fake_gateway, model_id, features=["background"])
+    cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = background
+    review_call = function_call(
+        "lgos_interrupt",
+        json.dumps(
+            {
+                "question": "Approve refund?",
+                "request": "ORDER-123",
+                "choices": ["approve", "reject"],
+            }
+        ),
+        call_id="call_lg_review",
+    )
+    interrupted = response(review_call, id="resp_lg_review")
+    approved = response(message("Refund approved."), id="resp_lg_done")
+    fake_gateway.replies += (
+        [reply(response(id=interrupted.id, status="queued")), reply(interrupted)]
+        if background
+        else [streamed(interrupted)]
+    )
+
+    await chat.on_message(user_message("Refund order ORDER-123."))
+
+    review = cl.chat_context.get()[-1]
+    assert review.content == "Approve refund?\n\nRequest: ORDER-123"
+    control = review.elements[0].props[HITL_CONTROL_PROP]
+
+    requests_before_block = len(fake_gateway.requests)
+    await chat.on_message(user_message("Something else."))
+
+    assert len(fake_gateway.requests) == requests_before_block
+    assert transcript()[-1] == (
+        "Resolve the pending interrupt before starting another request."
+    )
+
+    fake_gateway.replies += (
+        [reply(response(id=approved.id, status="queued")), reply(approved)]
+        if background
+        else [streamed(approved)]
+    )
+    result = await chat.on_interrupt_submit(
+        cl.Action(
+            name=INTERRUPT_ACTION_NAME,
+            payload={
+                "step_id": control["step_id"],
+                "element_id": control["element_id"],
+                "revision": control["revision"],
+                "outputs": ["approve"],
+            },
+        )
+    )
+
+    assert result == {"ok": True}
+    resume = fake_gateway.bodies("/v1/responses")[-1]
+    assert {
+        key: resume[key]
+        for key in ("model", "previous_response_id", "input", "tools", "user")
+    } == {
+        "model": model_id,
+        "previous_response_id": "resp_lg_review",
+        "input": [
+            {
+                "type": "function_call_output",
+                "call_id": "call_lg_review",
+                "output": "approve",
+            }
+        ],
+        "tools": [],
+        "user": "demo-user",
+    }
+    assert resume["metadata"] == {"conversation_id": chainlit_context.session.thread_id}
+    assert (resume.get("background", False), resume["store"]) == (
+        background,
+        background,
+    )
+    assert resume.get("stream", False) is not background
+    assert review.elements == []
+    assert transcript()[-1] == "Refund approved."
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=["create", "stream"])
+async def test_text_before_a_pause_stays_in_the_conversation(
+    chainlit_context,
+    fake_gateway,
+    streaming: bool,
+) -> None:
+    await select_profile(fake_gateway, "lgos-a/interruptible-approval")
+    chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = streaming
+    paused = response(
+        message("I checked ORDER-123."),
+        function_call(
+            "lgos_interrupt",
+            json.dumps({"question": "Approve refund?", "choices": ["approve"]}),
+            call_id="call_lg_review",
+        ),
+        id="resp_lg_review",
+    )
+    fake_gateway.replies.append(streamed(paused) if streaming else reply(paused))
+
+    await chat.on_message(user_message("Refund order ORDER-123."))
+
+    assert transcript() == [
+        "Refund order ORDER-123.",
+        "I checked ORDER-123.",
+        "Approve refund?",
+    ]
+    notice, review = cl.chat_context.get()[-2:]
+    # A reloaded thread orders messages by their stored creation time.
+    assert notice.created_at is not None
+    assert datetime.fromisoformat(notice.created_at) <= datetime.fromisoformat(
+        review.created_at
+    )
+
+
+async def _pause_plot_for_review(fake_gateway) -> tuple[cl.Message, cl.Action]:
+    """Pause a plot turn on a review; return the review and its approval."""
+    cl.context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    review_call = function_call(
+        "lgos_interrupt",
+        json.dumps({"question": "Save the chart?", "choices": ["approve"]}),
+        call_id="call_lg_review",
+    )
+    fake_gateway.replies.append(streamed(response(review_call, id="resp_lg_review")))
+    await chat.on_message(user_message("Plot revenue."))
+    review = cl.chat_context.get()[-1]
+    control = review.elements[0].props[HITL_CONTROL_PROP]
+    approval = cl.Action(
+        name=INTERRUPT_ACTION_NAME,
+        payload={
+            "step_id": control["step_id"],
+            "element_id": control["element_id"],
+            "revision": control["revision"],
+            "outputs": ["approve"],
+        },
+    )
+    return review, approval
+
+
+async def test_client_tool_after_review_finishes_the_resumed_turn(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    review, approval = await _pause_plot_for_review(fake_gateway)
+    fake_gateway.replies += [
+        streamed(response(DISPLAY_CHART, id="resp_lg_done")),
+        httpx2.Response(200, content=b"png-bytes"),
+        streamed(response(message("Saved and plotted."))),
+    ]
+
+    result = await chat.on_interrupt_submit(approval)
+
+    assert result == {"ok": True}
+    *_, resume, continuation = fake_gateway.bodies("/v1/responses")
+    assert resume["previous_response_id"] == "resp_lg_review"
+    # The resumed run has finished; the tool result starts a new stateless run.
+    assert "previous_response_id" not in continuation
+    assert continuation["input"] == [
+        {"role": "user", "content": "Plot revenue."},
+        DISPLAY_CHART.model_dump(mode="json", exclude_none=True),
+        {
+            "type": "function_call_output",
+            "call_id": "call_chart",
+            "output": '{"displayed":true}',
+        },
+    ]
+    assert review.elements == []
+    assert transcript()[-1] == "Saved and plotted."
+
+
+async def test_client_tools_after_review_can_pause_for_a_new_review(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+) -> None:
+    _, approval = await _pause_plot_for_review(fake_gateway)
+    share_call = function_call(
+        "lgos_interrupt",
+        json.dumps({"question": "Share the chart?", "choices": ["approve"]}),
+        call_id="call_lg_share",
+    )
+    fake_gateway.replies += [
+        streamed(
+            response(
+                message("Saving chart", id="msg_status", phase="commentary"),
+                DISPLAY_CHART,
+                id="resp_lg_done",
+            )
+        ),
+        httpx2.Response(200, content=b"png-bytes"),
+        streamed(response(message("Chart saved."), share_call, id="resp_lg_share")),
+    ]
+
+    result = await chat.on_interrupt_submit(approval)
+
+    assert result == {"ok": True}
+    *_, answer, share = cl.chat_context.get()
+    assert (answer.content, share.content) == ("Chart saved.", "Share the chart?")
+    assert share.elements[0].props[HITL_CONTROL_PROP]["revision"] == "resp_lg_share"
+    assert task_lists[-1]["status"] == "Done"
+
+
+async def test_failed_client_tool_after_review_leaves_the_thread_usable(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+) -> None:
+    _, approval = await _pause_plot_for_review(fake_gateway)
+    fake_gateway.replies += [
+        streamed(
+            response(
+                message("Saving chart", id="msg_status", phase="commentary"),
+                message("Plotting."),
+                DISPLAY_CHART,
+                id="resp_lg_done",
+            )
+        ),
+        httpx2.Response(404, json={"error": {"message": "No such file"}}),
+    ]
+    await chat.on_interrupt_submit(approval)
+    partial = next(m for m in cl.chat_context.get() if m.content == "Plotting.")
+    fake_gateway.replies.append(streamed(response(message("Plotted again."))))
+
+    await chat.on_message(user_message("Try again."))
+
+    assert partial.metadata == {EXCLUDED_KEY: True}
+    assert task_lists[-1]["status"] == "Stopped"
+    assert transcript()[-1] == "Plotted again."

@@ -114,7 +114,7 @@ timer only masks the environment failure.
 - Graphs with `features={GraphFeature.INTERRUPTS}` must use a fresh
   `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer and a fresh
   `InMemoryRunCoordinator` per test. Register the coordinator on
-  `GraphConfig.run_coordinator`.
+  `GraphRegistry.run_coordinator`.
 - The checkpointer used by an interrupt graph must implement asynchronous state
   reads, checkpoint writes, pending writes, and `adelete_thread`;
   configuration-error tests should make whichever
@@ -122,17 +122,13 @@ timer only masks the environment failure.
 - Persistence tests must use a `tmp_path` SQLite file, close the first
   checkpointer, and recreate the graph with a reopened checkpointer before
   resuming.
-- Initial interrupt requests need no metadata. Tests for caller-owned
-  interrupt identity should pass a non-nil UUID as
-  `metadata.lgos_run_id`; invalid or reused UUID cases should remain
-  separate assertions.
+- Initial interrupt requests need no metadata; the server generates the run ID.
 - Resume helpers should use standard `previous_response_id` and provide one
   `function_call_output` item for every returned interrupt call. Use the matching
   `call_id` and the resume value directly as `output`. Parallel interrupts must
   be answered together; never synthesize only the visible payload or select the
   first call.
-- Cover the durable lifecycle at the API boundary: an initial retry with the
-  same caller run UUID re-emits the pending batch, stale or repeated resumes
+- Cover the durable lifecycle at the API boundary: stale or repeated resumes
   return a conflict without re-executing work, concurrent resumes are
   single-flight, and terminal completion deletes the checkpoint lineage.
 - Tests that intentionally verify missing checkpointer behavior should use an
@@ -144,10 +140,9 @@ Keep them excluded from default runs and invoke them through
 `just demo/test-postgres --editable` so ordinary and parallel unit
 runs never share an external database.
 
-## Client Event Tests
+## Status Event Tests
 
-- Graphs that emit client events must declare
-  `features={GraphFeature.CLIENT_EVENTS}`.
-- Streaming Responses requests expose visible statuses as commentary
-  (`phase="commentary"`) without a metadata opt-in. The Chat Completions API
-  ignores custom stream events and does not emit commentary.
+- Graphs emit statuses with `status_event()`; no feature declaration is needed.
+- Streaming Responses requests expose non-empty statuses as commentary
+  (`phase="commentary"`) without a metadata opt-in. Non-streaming Responses and
+  the Chat Completions API ignore statuses and other custom stream data.

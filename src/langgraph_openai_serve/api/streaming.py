@@ -2,69 +2,38 @@
 Tie OpenAI stream production to a FastAPI request's lifetime.
 
 Starlette owns response consumption, not the nested graph producer, so a client
-disconnect may otherwise leave graph and provider work running. Chat and
-Responses use this shared request owner with separate protocol generators.
-
-AnyIO provides the backpressured channel and cleanup shield. The producer stays
-an ``asyncio.Task`` so cancellation reaches LangGraph's asyncio-native teardown
-once at the stream boundary.
+disconnect may otherwise leave graph and provider work running. The producer is
+a separate ``asyncio.Task`` because Starlette cancels the response through an
+AnyIO scope, which cancels again at every await; LangGraph's asyncio-native
+teardown must instead receive one cancellation at the stream boundary.
 """
 
 import asyncio
 from collections.abc import AsyncGenerator
-from contextlib import aclosing
-from types import TracebackType
-from typing import Self
+from contextlib import aclosing, suppress
 
 from anyio import CancelScope, create_memory_object_stream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
-from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.utils import GraphRun
-
-logger = get_logger(__name__)
+from langgraph_openai_serve.graph.run import GraphRun
 
 
 class StreamOwner:
-    """Own the producer and resources for one streaming graph run."""
+    """Own the producer task and prepared run of one streaming request."""
 
     def __init__(self) -> None:
-        self._started = False
         self._producer: asyncio.Task[None] | None = None
         self._run: GraphRun | None = None
-        self._send_stream: MemoryObjectSendStream[str] | None = None
-        self._receive_stream: MemoryObjectReceiveStream[str] | None = None
-
-    async def __aenter__(self) -> Self:
-        """Enter this stream owner's request-scoped lifetime."""
-        return self
-
-    async def __aexit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
-        """Close the producer and prepared run when the request scope exits."""
-        if exc is not None and self._run is not None:
-            self._run.record_failure(exc)
-        try:
-            await self.aclose()
-        except BaseException:
-            if exc is None:
-                raise
-            logger.exception("openai.stream_cleanup_failed")
+        self._streams: list[
+            MemoryObjectSendStream[str] | MemoryObjectReceiveStream[str]
+        ] = []
 
     def start(
         self,
         source: AsyncGenerator[str, None],
         run: GraphRun,
     ) -> MemoryObjectReceiveStream[str]:
-        """Start the producer and take fallback ownership of its prepared run."""
-        if self._started:
-            msg = "A stream owner can only start one producer."
-            raise RuntimeError(msg)
-
+        """Start producing ``source`` and close ``run`` when the request ends."""
         # An unbuffered handoff propagates response backpressure into graph
         # execution.
         send_stream, receive_stream = create_memory_object_stream[str](
@@ -72,79 +41,28 @@ class StreamOwner:
         )
 
         async def produce() -> None:
-            async with aclosing(source), send_stream:
+            async with send_stream, aclosing(source):
                 async for chunk in source:
                     await send_stream.send(chunk)
 
-        self._started = True
         self._run = run
-        self._send_stream = send_stream
-        self._receive_stream = receive_stream
+        self._streams = [send_stream, receive_stream]
         self._producer = asyncio.create_task(produce(), name="openai-response-stream")
         return receive_stream
 
     async def aclose(self) -> None:
-        """Stop production and close the prepared run exactly once."""
-        producer = self._producer
-        run = self._run
-        if run is None:
-            return
-
-        # Cleanup may run inside the request's cancelled scope, so shield nested
-        # stream finalizers long enough to finish.
+        """Stop the producer, then close the run it may not have reached."""
         with CancelScope(shield=True):
-            primary_error: BaseException | None = None
             try:
-                await self._stop_producer(producer)
-            except BaseException as exc:
-                primary_error = exc
-                raise
+                if self._producer is not None:
+                    self._producer.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await self._producer
             finally:
-                try:
-                    await self._close_run(run, primary_error)
-                finally:
-                    self._reset()
-
-    @staticmethod
-    async def _stop_producer(
-        producer: asyncio.Task[None] | None,
-    ) -> None:
-        if producer is None:
-            return
-
-        cancel_requested = False
-        if not producer.done():
-            cancel_requested = producer.cancel()
-
-        try:
-            await producer
-        except asyncio.CancelledError:
-            if not cancel_requested:
-                raise
-
-    @staticmethod
-    async def _close_run(
-        run: GraphRun,
-        primary_error: BaseException | None,
-    ) -> None:
-        if primary_error is not None:
-            run.record_failure(primary_error)
-        try:
-            await run.aclose()
-        except Exception:
-            if primary_error is None:
-                raise
-            logger.exception("openai.stream_cleanup_failed")
-
-    def _reset(self) -> None:
-        if self._send_stream is not None:
-            self._send_stream.close()
-        if self._receive_stream is not None:
-            self._receive_stream.close()
-        self._producer = None
-        self._run = None
-        self._send_stream = None
-        self._receive_stream = None
+                for stream in self._streams:
+                    stream.close()
+                if self._run is not None:
+                    await self._run.aclose()
 
 
 __all__ = ["StreamOwner"]

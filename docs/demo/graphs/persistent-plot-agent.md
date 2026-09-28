@@ -101,9 +101,9 @@ value     = {"schema_version": 1, "q1": 120, "q2": 180, "q3": 150, "q4": 230}
 
 The hash keeps raw identifiers out of the namespace. API processes sharing the
 demo database select the same document for the same user and session; changing
-either value selects an independent document. The API setup command creates the
-Store schema, and each process uses its lifespan-managed PostgreSQL pool for
-Store operations.
+either value selects an independent document. The API startup lifecycle applies
+pending migrations to the Store schema, and each process uses its
+lifespan-managed PostgreSQL pool for Store operations.
 
 `AsyncPostgresStore` replaces the document with one atomic PostgreSQL
 [`INSERT ... ON CONFLICT DO UPDATE`](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT).

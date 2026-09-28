@@ -35,12 +35,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "anyio>=4,<5",
-    "fastapi[standard]>=0.121.0",
+    "anyio>=4.14,<5",
+    "fastapi>=0.121.0",
     "langgraph>=1.1.10,<2.0.0",
-    "openai>=2.54.0,<4.0.0",
+    "openai>=3.9.0,<4.0.0",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
+    "uvicorn>=0.51.0",
 ]
 
 [project.optional-dependencies]
@@ -53,7 +54,7 @@ postgres = [
     "psycopg-pool>=3.3.0,<4",
 ]
 tracing = [
-    "langchain>=1.2.0",
+    "langchain>=1.2.11",
     "langfuse>=4.0.0,<5.0.0",
 ]
 
@@ -76,7 +77,7 @@ test = [
     "httpx2>=2.13,<3",
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.6.1",
-    "pytest>=8.3.3",
+    "pytest>=9.0.2",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
     "psycopg[binary,pool]>=3.3.4,<4",
     "pytest-env>=1.6.0",
@@ -87,7 +88,6 @@ default-groups = ["dev", "doc", "test"]
 required-version = "==0.12.1"
 
 [tool.pytest.ini_options]
-minversion = "8.3.3"
 anyio_mode = "auto"
 addopts = [
     "--import-mode=importlib",

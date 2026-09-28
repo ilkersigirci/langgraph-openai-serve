@@ -89,21 +89,23 @@ and are documented under [Demo Settings and Commands](demo/reference.md).
 Use `LanggraphOpenaiServe` to bind OpenAI-compatible routes to a FastAPI app.
 After binding, `server.openai_app` exposes the mounted FastAPI application for
 host integrations such as manual middleware or telemetry instrumentation.
-Use `GraphRegistry` to map OpenAI `model` names to `GraphConfig` values.
-The registry copies its initial mapping and must contain at least one graph. It
-rejects empty model IDs, `.`, `..`, and IDs containing `/`. The public
-`registry.registry` mapping is an insertion-ordered, read-only view; use
-`registry.register(model_id, config)` to add or replace a graph. Replacing an
-existing ID preserves its position.
+Use `GraphRegistry(graphs={...}, run_coordinator=...)` to map OpenAI `model`
+names to `GraphConfig` values; `registry.graphs` is a plain dict. The registry
+must contain at least one graph. Model IDs must be non-empty, must not contain
+`/`, and must not be `.` or `..`. `registry.get_graph(model)` returns a
+`GraphConfig` or raises a 404 `model_not_found` error. `run_coordinator` is
+shared by every interrupt-enabled graph and is required only when a graph
+declares `GraphFeature.INTERRUPTS`.
 
+`LanggraphOpenaiServe(registry=registry, app=app)` serves the registry.
 `LanggraphOpenaiServe(..., background=backend)` accepts an optional
 `BackgroundBackend`. `LanggraphOpenaiServe(..., checkpoint_scope=resolver)`
 accepts an optional sync or async callable from FastAPI `Request` to a
 non-empty, server-trusted string.
 Interrupt checkpoint keys and background Response authorization include this
 scope before model and run identity. Use
-an authenticated tenant or principal identifier when caller-chosen run UUIDs
-must be isolated between security domains; do not derive the scope from
+an authenticated tenant or principal identifier when runs must be isolated
+between security domains; do not derive the scope from
 untrusted OpenAI metadata or the OpenAI `user` field. The
 default `"default"` scope is suitable only for a single-tenant or shared-trust
 deployment. The resolver must return the same scope for the initial request and
@@ -133,9 +135,6 @@ belong to an external OpenAI Files API, not the LGOS package. See
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
-- `run_coordinator`: asynchronous single-flight coordination for interrupt
-  runs. It rejects an occupied LGOS checkpoint key instead of queueing it and
-  returns an async context manager.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
@@ -145,8 +144,7 @@ belong to an external OpenAI Files API, not the LGOS package. See
 
 `GraphConfig` is immutable after construction. Pydantic snapshots `features`
 and `server_tools` as frozen sets, so later mutations of the input collections
-cannot change a registered model. To change a declaration, construct a
-replacement and pass it to `registry.register()`. Freezing the declaration does
+cannot change a registered model. Freezing the declaration does
 not make a caller-owned callback handler or callback manager internally
 immutable.
 
@@ -159,12 +157,11 @@ chunks for that call.
 A directly supplied compiled graph is reused. A sync or async graph factory is
 called for every request and is never cached; LGOS validates each resolved value
 as a compiled state graph and rechecks its context schema and interrupt
-checkpointer capabilities before execution. Static configuration relationships,
-including the requirement that `run_coordinator` appear exactly when
-`GraphFeature.INTERRUPTS` is enabled, fail during `GraphConfig` construction.
-A graph may declare both interrupts and background; a background run that
-reaches an interrupt completes with `lgos_interrupt` function calls, and an
-answer in either mode continues it.
+checkpointer capabilities before execution. A registry with an
+interrupt-enabled graph and no `run_coordinator` fails during `GraphRegistry`
+construction. A graph may declare both interrupts and background; a background
+run that reaches an interrupt completes with `lgos_interrupt` function calls,
+and an answer in either mode continues it.
 
 When both are configured, LGOS validates the public settings first and passes
 them to `context_factory`. Without a factory, the validated settings instance is
@@ -192,14 +189,14 @@ Runtime context is separate from `RunnableConfig`:
 
 | Value | LGOS/LangGraph path | Intended use |
 | --- | --- | --- |
-| Graph input | `graph.ainvoke(input, ...)` or `graph.astream(input, ...)` | Messages and mutable workflow state. |
+| Graph input | `graph.astream(input, ...)` | Messages and mutable workflow state. |
 | Runtime context | public settings → optional `context_factory` → `context=` → `Runtime.context` | Immutable per-run application values and dependencies. |
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
-| Interrupt run | server scope + model + optional `metadata.lgos_run_id` UUID → internal checkpoint key | Isolate, retry, interrupt, and resume one operation. |
+| Interrupt run | server scope + model + server-generated run UUID → internal checkpoint key | Isolate, interrupt, and resume one operation. |
 
 LGOS assembles runnable config from `runtime_callbacks` and, for an
 interrupt-enabled run, a fixed-length SHA-256 checkpoint key derived from the
-server-trusted scope, registered model, and operation UUID. This is deliberately
+server-trusted scope, registered model, and run UUID. This is deliberately
 not a UI chat or thread ID. There is intentionally no adapter for placing
 arbitrary OpenAI request fields into `config["configurable"]`; use typed runtime
 context for values consumed by nodes.
@@ -230,7 +227,7 @@ For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
 application-created vendor handler through `runtime_callbacks`.
 
-When a callback is present, LGOS gives the graph run the stable name
+LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
 request ID, registered graph model, (for interrupt runs) operation ID, and (when
 the request supplies `metadata.conversation_id`) the Langfuse-recognized
@@ -240,11 +237,8 @@ during execution, so callbacks on interrupt runs receive the derived checkpoint
 custom Langfuse trace ID. See [Production Logging and Request
 Correlation](how-to-guides/production-logging.md#langfuse-correlation).
 
-The `features` set is returned in the versioned `lgos.features` extension and
-enables server behavior where applicable. `GraphFeature.CLIENT_EVENTS` enables
-and advertises public
-status commentary in streaming Responses. Chat Completions ignores custom
-stream events and does not emit commentary.
+The `features` set is returned in the `lgos.features` extension and
+enables server behavior where applicable.
 `GraphFeature.MCP_TOOLS` advertises that a client may attach and execute tools
 from its configured MCP gateway; it does not publish tool definitions or grant
 access to them.
@@ -270,9 +264,9 @@ class PublicSettings(ClientSettings):
 
 Pass this model as `GraphConfig.client_settings` and use it as the graph's context
 schema when it is the complete runtime context. Every public field must have a
-default. Registration rejects subclasses that change the inherited strict,
-frozen, extra-forbid, or default-validation behavior, as well as fields excluded
-from Pydantic serialization.
+deterministic default, because clients omit values equal to the advertised
+defaults; a `default_factory` must return the same value on every call.
+Registration fails when the model cannot build its defaults or schema.
 
 All public fields travel together as compact JSON text in the
 `metadata.lgos_settings` string. Clients omit values equal to the advertised
@@ -280,20 +274,18 @@ defaults. System instructions remain ordinary OpenAI messages and are
 independent of `ClientSettings`; native OpenAI fields keep their standard
 request semantics.
 
-LGOS validates defaults and generates the discovery JSON Schema when the graph
-is registered, then validates settings on every request. Without
+LGOS validates the settings with the model's strict JSON validation on every
+request. Without
 `context_factory`, the settings become `Runtime.context`. A factory can instead
 combine them with server-derived identity, authorization, database clients, and
 other dependencies.
 
 The serialized descriptor appears only on model retrieval as
-`lgos.client_settings`, with independent `schema_version`,
-`json_schema`, and `defaults` fields. All client settings use the fixed
-`metadata.lgos_settings` key. Clients use the descriptor's
-validated `defaults` object as the baseline; `default` keywords within the
-generated JSON Schema are annotations, not the runtime baseline. The schema's
-`$schema` keyword declares the JSON Schema 2020-12 dialect independently of the
-LGOS descriptor version.
+`lgos.client_settings`, with `json_schema` and `defaults` fields. All client
+settings use the fixed `metadata.lgos_settings` key. Clients use the
+descriptor's validated `defaults` object as the baseline; `default` keywords
+within the generated JSON Schema are annotations, not the runtime baseline. The
+schema's `$schema` keyword declares the JSON Schema 2020-12 dialect.
 
 See [Configure LangGraph Runtime Settings](how-to-guides/langgraph-runtime-settings.md)
 for the runtime settings flow, and
@@ -304,21 +296,38 @@ Interrupt-enabled graphs have additional registration requirements:
 
 - compile the graph with an asynchronous checkpointer that supports
   `aget_tuple()`, `aput()`, `aput_writes()`, and `adelete_thread()`;
-- configure an asynchronous `run_coordinator`; and
+- configure an asynchronous `GraphRegistry.run_coordinator`; and
 - use a durable checkpointer and cross-process coordinator in production.
 
-The initial request does not require metadata. LGOS generates a UUID operation
-ID and embeds it in the paused Response ID. A caller that needs deterministic
-initial-request retries can instead supply a non-nil UUID in
-`metadata.lgos_run_id`. `InMemoryRunCoordinator` is suitable only for
-tests and a single-process development server; it cannot serialize requests
-across workers or hosts.
+The coordinator provides single-flight leases for interrupt runs: it returns an
+async context manager and rejects an occupied checkpoint key instead of
+queueing it. Exiting that context manager must release the lease even when the
+exit is cancelled.
+
+The initial request does not require metadata. LGOS generates a UUID run ID for
+every new run and embeds it in the paused Response ID. `InMemoryRunCoordinator`
+is suitable only for tests and a single-process development server; it cannot
+serialize requests across workers or hosts.
+
+### Expire Paused Runs
 
 Pending checkpoints exist only to resume an interrupt batch returned to the
-client. LGOS deletes isolated checkpoint state after terminal completion or
-when execution fails or is cancelled before producing that batch. Operators
-must separately define an expiry policy for runs abandoned after a batch is
-returned.
+client. LGOS deletes isolated checkpoint state after terminal completion or when
+execution fails or is cancelled before producing that batch. A run abandoned
+after its batch is returned stays until deleted: call
+`delete_expired_interrupt_runs(checkpointer, run_coordinator, older_than=...)`
+from `langgraph_openai_serve.graph.interrupt` on a schedule, as LangGraph Agent
+Server's [checkpointer TTL](https://docs.langchain.com/langsmith/configure-ttl)
+does. In production, prefer one scheduled job over a loop in every replica, for
+example a Kubernetes CronJob with `concurrencyPolicy: Forbid` or your task
+queue's scheduler. It deletes the runs whose latest pause is older than
+`older_than` and returns their count. It reads every checkpoint through
+`alist()`, leaves threads LGOS did not create alone, and skips runs whose lease
+is held. Choose a TTL longer than the longest time a user may take to answer. To
+write your own cleanup, select threads whose checkpoint metadata contains
+`OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
+confirm that its latest checkpoint in any namespace is still older than your
+TTL, and delete it through the checkpointer.
 
 ### PostgreSQL Coordination
 
@@ -330,8 +339,9 @@ for checkpoints and
 [`AsyncPostgresStore`](https://reference.langchain.com/python/langgraph.store.postgres/aio/AsyncPostgresStore)
 for application data. The LGOS adapter supplies only the cross-worker
 interrupt-run lease; it does not replace either storage primitive. Run each
-configured storage adapter's `setup()` once before API workers start. A shared
-pool must follow the upstream connection requirements: `autocommit=True`,
+configured storage adapter's `setup()` before serving requests, serializing
+migration attempts when workers can start together. A shared pool must follow
+the upstream connection requirements: `autocommit=True`,
 `prepare_threshold=0`, and mapping rows.
 
 `PostgresRunCoordinator(pool, max_concurrent_leases=...)` accepts an existing
@@ -346,8 +356,9 @@ transaction-mode poolers cannot preserve the lease. Lock contention itself
 fails immediately through PostgreSQL's `pg_try_advisory_lock`; connection
 checkout still follows the pool's configured timeout. The
 [demo deployment](demo/docker.md#demo-services) uses one pool for both
-storage adapters and interrupt coordination, plus a separate one-shot schema
-setup process. Busy interrupt leases fail before streaming begins with HTTP 409
+storage adapters and interrupt coordination. Each process applies pending
+LangGraph migrations during startup under a separate schema advisory lock.
+Busy interrupt leases fail before streaming begins with HTTP 409
 and `code: "run_busy"`.
 
 ## Background Execution
@@ -361,11 +372,11 @@ engine that runs `BackgroundJob`s and stores their status and result.
 | `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
 | `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
 
-The engine's worker calls `execute_background_job(job, run_id, graphs)`. It
+The engine's worker calls `execute_background_job(job, run_id, registry)`. It
 runs the job through the foreground Responses path and returns the Response
 JSON the engine stores. Run IDs must be UUIDs because the public Response ID
 embeds the run ID, so reading a Response needs no lookup table.
-`InMemoryBackgroundBackend(graphs)` runs jobs as tasks of one process for
+`InMemoryBackgroundBackend(registry)` runs jobs as tasks of one process for
 development and tests; enter its `lifespan` in the application's lifespan.
 
 Install `langgraph-openai-serve[hatchet]` for
@@ -373,34 +384,21 @@ Install `langgraph-openai-serve[hatchet]` for
 registers the task in the API and worker processes, with a 30-minute
 `schedule_timeout` and a one-hour `execution_timeout` by default.
 `HatchetBackgroundBackend(task, hatchet.runs)` submits, reads, and cancels its
-runs. The worker's Hatchet lifespan yields the `GraphRegistry` the task
-executes. The task has no retries, and its 24-hour Hatchet idempotency key is
-the scoped `Idempotency-Key` digest. The adapter is never imported by the core
-package.
+runs. The worker's Hatchet lifespan yields the `GraphRegistry`, including its
+`run_coordinator`, that the task executes. The task has no retries, and its
+24-hour Hatchet idempotency key is the scoped `Idempotency-Key` digest. The
+adapter is never imported by the core package.
 
 Background create accepts an optional `Idempotency-Key` header of 1 to 255
 characters. A retry returns the original Response without starting a second
 run; reuse with different content returns `422` with
-`code="idempotency_key_reused"`. The `metadata.lgos_run_id` request field
-identifies interrupt-enabled foreground operations and is rejected on
-background requests.
+`code="idempotency_key_reused"`. A background interrupt run chooses its run ID
+at submission.
 
 See [Run Responses In The Background](how-to-guides/background-responses.md)
 for the client contract, graph requirements, and deployment wiring.
 
 ## Streaming Status
-
-Declare the feature on every graph that publishes client events:
-
-```python
-from langgraph_openai_serve import GraphConfig, GraphFeature
-
-config = GraphConfig(
-    graph=graph,
-    description="Graph that reports media-generation status.",
-    features={GraphFeature.CLIENT_EVENTS},
-)
-```
 
 Inside a long-running graph node or tool, publish user-facing status with
 `status_event()`:
@@ -410,58 +408,31 @@ from langgraph.config import get_stream_writer
 from langgraph_openai_serve import status_event
 
 writer = get_stream_writer()
-writer(status_event("Generating audio", namespace=("media",)))
+writer(status_event("Generating audio"))
 
 # Perform the long-running work.
 
-writer(
-    status_event(
-        "Audio ready",
-        done=True,
-        namespace=("media",),
-    )
-)
+writer(status_event("Audio ready"))
 ```
 
-The helper writes this versioned graph-to-LGOS envelope:
+The helper returns this custom stream value:
 
 ```json
 {
-  "type": "lgos.client_event",
-  "schema_version": 1,
-  "event": {
-    "type": "status",
-    "namespace": ["media"],
-    "data": {
-      "description": "Generating audio",
-      "done": false,
-      "hidden": false
-    }
-  }
+  "type": "lgos.status",
+  "description": "Generating audio"
 }
 ```
 
 Status text is deliberately authored by the graph; LGOS does not infer it from
-internal node names or state. Responses exposes the description as commentary
-and suppresses hidden updates; the namespace, `done`, and `hidden` fields do not
-become nonstandard Response fields.
+internal node names or state. Graphs need no feature declaration to publish
+status.
 
-The event envelope has its own schema version, independent of model discovery
-and client settings. The v1 event vocabulary is `status`, `progress`, and
-`artifact`.
-`client_event("status", data)` remains the lower-level equivalent when an
-application already has validated status data; prefer `status_event()` for its
-typed fields. Event data must be JSON-safe, and every namespace segment must be a
-string. The namespace is a stable, author-defined path; LGOS does not expose
-LangGraph's dynamic execution namespace.
-
-Status is streaming-only and always requires the graph feature. Responses needs
-no metadata opt-in and emits each visible update as a standard
-`phase="commentary"` message. The Chat Completions API is strictly for simple
-graphs and plain text streaming; it ignores custom stream events and does not emit
-commentary. Responses ignores `progress` and `artifact`. Use standard Responses
-function calls plus the Files API for portable durable rich output. Unknown custom
-events remain available only to direct runner consumers.
+Status is streaming-only. Streaming Responses needs no metadata opt-in and emits
+each non-empty description as a standard `phase="commentary"` message.
+Non-streaming Responses and Chat Completions ignore statuses. Both APIs ignore
+any other custom stream data. Use standard Responses function calls plus the
+Files API for portable durable rich output.
 
 See [Streaming status](explanation/openai-compatibility.md#streaming-status) for
 the wire contract and

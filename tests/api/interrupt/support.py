@@ -6,8 +6,6 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionToolCall
 
-from langgraph_openai_serve.graph.interrupt.state import checkpoint_key
-
 MODEL = "interruptible"
 PARALLEL_MODEL = "parallel-interrupts"
 MULTI_TURN_MODEL = "multi-turn-interrupts"
@@ -23,15 +21,12 @@ async def create_response(
     *,
     model: str = MODEL,
     stream: bool = False,
-    run_id: str | None = None,
     checkpoint_scope: str | None = None,
 ) -> Response:
-    metadata = {"lgos_run_id": run_id} if run_id is not None else None
     return await openai_client.responses.create(
         model=model,
         input="Hi",
         stream=stream,
-        metadata=metadata,
         extra_headers=_checkpoint_scope_headers(checkpoint_scope),
     )
 
@@ -84,18 +79,5 @@ def _checkpoint_scope_headers(scope: str | None) -> dict[str, str] | None:
     return {CHECKPOINT_SCOPE_HEADER: scope} if scope is not None else None
 
 
-async def assert_checkpoint_deleted(
-    checkpointer: AsyncSqliteSaver,
-    *,
-    model: str,
-    run_id: str,
-) -> None:
-    checkpoint = await checkpointer.aget_tuple(
-        {
-            "configurable": {
-                "thread_id": checkpoint_key(model, run_id),
-            }
-        }
-    )
-
-    assert checkpoint is None
+async def assert_no_checkpoints(checkpointer: AsyncSqliteSaver) -> None:
+    assert [checkpoint async for checkpoint in checkpointer.alist(None)] == []

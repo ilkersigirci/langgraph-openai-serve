@@ -45,6 +45,3 @@ def _prompt(payload: dict[str, object]) -> str:
         if details:
             lines.append(json.dumps(details, ensure_ascii=False, indent=2))
     return "\n\n".join(lines)
-
-
-__all__ = ["INTERRUPT_ACTION_NAME", "interrupt_review"]

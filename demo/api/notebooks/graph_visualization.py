@@ -36,7 +36,6 @@ def _():
         create_background_interrupt_graph,
     )
     from lgos_demo_api.graphs.citations import citation_graph
-    from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph
     from lgos_demo_api.graphs.custom_io import custom_io_graph
     from lgos_demo_api.graphs.interruptible import create_interruptible_graph
     from lgos_demo_api.graphs.lgos_rag import lgos_rag
@@ -63,7 +62,6 @@ def _():
         create_interruptible_graph,
         create_persistent_plot_agent,
         create_specialist_team_graph,
-        custom_event_showcase_graph,
         custom_io_graph,
         lgos_rag,
         multi_node_streaming_graph,
@@ -86,7 +84,6 @@ async def _(
     create_interruptible_graph,
     create_persistent_plot_agent,
     create_specialist_team_graph,
-    custom_event_showcase_graph,
     custom_io_graph,
     lgos_rag,
     multi_node_streaming_graph,
@@ -105,7 +102,6 @@ async def _(
         "mcp-postgres": mcp_postgres_graph,
         "complex-subgraphs": create_specialist_team_graph(),
         "status-events": status_event_graph,
-        "custom-event-showcase": custom_event_showcase_graph,
         "multi-node-streaming": multi_node_streaming_graph,
         "response-outcomes": response_outcome_graph,
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),

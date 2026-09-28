@@ -5,13 +5,15 @@ from typing import cast
 from langchain_core.messages import AIMessage
 from langchain_core.messages.content import Citation
 
+from langgraph_openai_serve.core.errors import GraphError
+
 
 def citation_slice(start_index: int, end_index: int, content: str) -> slice:
     """Convert an inclusive citation span to a validated Python slice."""
     stop = end_index + 1
     if not 0 <= start_index < stop <= len(content):
         msg = "citation indices must refer to the final assistant text"
-        raise ValueError(msg)
+        raise GraphError(msg)
     return slice(start_index, stop)
 
 
@@ -35,7 +37,7 @@ def citations_from_message(message: AIMessage) -> list[Citation]:
             )
             if cited_text is not None and block["text"][span] != cited_text:
                 msg = "citation indices must match cited_text"
-                raise ValueError(msg)
+                raise GraphError(msg)
             citation["start_index"] += text_offset
             citation["end_index"] += text_offset
             citations.append(citation)

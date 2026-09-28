@@ -5,9 +5,9 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 
 from lgos_demo_api.graphs.subgraphs.schemas import ApiContractState
+from lgos_demo_api.utils.fake_llm import stream_fake_chat_response
 
 
 async def collect_contract_checks(state: ApiContractState) -> dict[str, Any]:

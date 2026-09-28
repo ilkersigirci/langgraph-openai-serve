@@ -10,12 +10,12 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import (
     GraphConfig,
-    GraphFeature,
     GraphRegistry,
     GraphRequest,
     citation_slice,
 )
 from langgraph_openai_serve.graph.citations import citations_from_message
+from langgraph_openai_serve.graph.events import status_description
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
@@ -75,11 +75,10 @@ def _stub_chat_model(
 
 def _registry() -> GraphRegistry:
     return GraphRegistry(
-        registry={
+        graphs={
             "lgos-rag": GraphConfig(
                 graph=lgos_rag_module.lgos_rag,
                 description="DUMMY",
-                features={GraphFeature.CLIENT_EVENTS},
             )
         }
     )
@@ -108,24 +107,11 @@ async def _stream(
     return events
 
 
-def _public_event(value: object) -> dict[str, Any]:
-    part = cast(CustomStreamPart, value)
-    data = cast(dict[str, Any], part["data"])
-    return cast(dict[str, Any], data["event"])
-
-
-def _status_timeline(
-    stream: list[object],
-) -> list[tuple[list[str], str, bool]]:
+def _status_timeline(stream: list[object]) -> list[str | None]:
     return [
-        (
-            event["namespace"],
-            event["data"]["description"],
-            event["data"]["done"],
-        )
+        status_description(cast(CustomStreamPart, item)["data"])
         for item in stream
         if isinstance(item, dict)
-        for event in [_public_event(item)]
     ]
 
 
@@ -280,11 +266,11 @@ async def test_retrieval_uses_rewritten_query_and_returns_streamed_cited_answer(
     assert "cited_text" not in citation
     assert DECISION_PREAMBLE not in streamed_answer
     assert _status_timeline(stream) == [
-        (["rag"], "Understanding your question", False),
-        (["rag"], "Searching the LGOS documentation", False),
-        (["rag"], "Checking the retrieved sources", False),
-        (["rag"], "Writing the answer", False),
-        (["rag"], "Answer ready", True),
+        "Understanding your question",
+        "Searching the LGOS documentation",
+        "Checking the retrieved sources",
+        "Writing the answer",
+        "Answer ready",
     ]
 
 
@@ -316,9 +302,9 @@ async def test_direct_response_skips_retrieval(
 
     assert "".join(item for item in stream if isinstance(item, str)) == HISTORY_ANSWER
     assert _status_timeline(stream) == [
-        (["rag"], "Understanding your question", False),
-        (["rag"], "Preparing the response", False),
-        (["rag"], "Answer ready", True),
+        "Understanding your question",
+        "Preparing the response",
+        "Answer ready",
     ]
 
 
@@ -409,12 +395,12 @@ async def test_irrelevant_retrieval_rewrites_once_then_stops(
     assert queries == ["weak query", REWRITTEN_QUESTION]
     assert streamed_answer == refusal
     assert _status_timeline(stream) == [
-        (["rag"], "Understanding your question", False),
-        (["rag"], "Searching the LGOS documentation", False),
-        (["rag"], "Checking the retrieved sources", False),
-        (["rag"], "Refining the search query", False),
-        (["rag"], "Searching the LGOS documentation", False),
-        (["rag"], "Checking the retrieved sources", False),
-        (["rag"], "No relevant sources found; preparing a response", False),
-        (["rag"], "Answer ready", True),
+        "Understanding your question",
+        "Searching the LGOS documentation",
+        "Checking the retrieved sources",
+        "Refining the search query",
+        "Searching the LGOS documentation",
+        "Checking the retrieved sources",
+        "No relevant sources found; preparing a response",
+        "Answer ready",
     ]

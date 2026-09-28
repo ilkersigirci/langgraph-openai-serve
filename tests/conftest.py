@@ -37,7 +37,7 @@ async def sqlite_checkpointer() -> AsyncIterator[AsyncSqliteSaver]:
 @pytest.fixture
 def graph_registry(message_graph) -> GraphRegistry:
     return GraphRegistry(
-        registry={
+        graphs={
             "test": GraphConfig(
                 graph=message_graph,
                 description="DUMMY",
@@ -50,7 +50,7 @@ def graph_registry(message_graph) -> GraphRegistry:
 def fastapi_app(graph_registry: GraphRegistry) -> FastAPI:
     return (
         LanggraphOpenaiServe(
-            graphs=graph_registry,
+            registry=graph_registry,
         )
         .bind_openai_api()
         .app
@@ -69,26 +69,11 @@ async def client(fastapi_app: FastAPI) -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture
-async def openai_http_client(
-    fastapi_app: FastAPI,
-) -> AsyncIterator[AsyncClient]:
-    transport = ASGITransport(app=fastapi_app)
-    async with AsyncClient(
-        transport=transport,
-        base_url=_BASE_URL,
-        timeout=_TIMEOUT,
-    ) as async_client:
-        yield async_client
-
-
-@pytest.fixture
-async def openai_client(
-    openai_http_client: AsyncClient,
-) -> AsyncIterator[AsyncOpenAI]:
+async def openai_client(client: AsyncClient) -> AsyncIterator[AsyncOpenAI]:
     async with AsyncOpenAI(
         api_key="test",
         base_url=f"{_BASE_URL}/v1",
-        http_client=openai_http_client,
+        http_client=client,
         max_retries=0,
     ) as openai_client:
         yield openai_client

@@ -54,23 +54,11 @@ x-lgos-files-api-development: &lgos-files-api-development
       - action: rebuild
         path: ../../files_api/uv.lock
 
-x-lgos-chainlit-development: &lgos-chainlit-development
-  image: lgos-chainlit:development
-  pull_policy: build
-  build:
-    context: ../../ui/chainlit_ui
-    args:
-      PUID: $PUID
-      PGID: $PGID
-
 services:
   lgos-demo-api-a:
     <<: *lgos-demo-api-development
 
   lgos-demo-api-b:
-    <<: *lgos-demo-api-development
-
-  lgos-demo-api-setup:
     <<: *lgos-demo-api-development
 
   lgos-background-worker:
@@ -82,11 +70,14 @@ services:
   lgos-files-api:
     <<: *lgos-files-api-development
 
-  lgos-chainlit-setup:
-    <<: *lgos-chainlit-development
-
   lgos-chainlit:
-    <<: *lgos-chainlit-development
+    image: lgos-chainlit:development
+    pull_policy: build
+    build:
+      context: ../../ui/chainlit_ui
+      args:
+        PUID: $PUID
+        PGID: $PGID
     develop:
       watch:
         - action: rebuild

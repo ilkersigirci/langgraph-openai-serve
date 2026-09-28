@@ -100,14 +100,16 @@ resets the session. Native Plotly elements render in the main page.
 - On failure, inspect the visible error first, then the relevant console entry,
   numbered request, and affected service logs. Avoid broad dumps.
 - Chainlit `provider query parameter is required` means generated-file
-  downloads must use `files_request()` and its provider, as uploads already do.
+  downloads must send `gateway.files_provider` as `provider`, as uploads already do.
 - After an Open WebUI image change, its first page load shows a What's New
   dialog that intercepts clicks, so actions time out. Dismiss it with
   `Okay, Let's Go!` before interacting.
 - Open WebUI `Model not found` requires checking that the `generic` Function is
   active and its Workspace Model's base model exists. A failed Function import
   can disable it; a successful sync preserves that state, so re-enable it after
-  repairing the import.
+  repairing the import. Missing gateway valves, including valves unreadable
+  after a `DEMO_OPENWEBUI_SECRET_KEY` change, also hide every Generic model;
+  re-run the sync.
 - A clipped Open WebUI chart requires the native `iframe:height` notification
   used by Open WebUI's `FullHeightIframe` component.
 

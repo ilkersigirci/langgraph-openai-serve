@@ -30,7 +30,7 @@ flowchart LR
 
   client -->|"OpenAI request"| api
   host -.->|"mounts"| api
-  runner <-->|"graph.ainvoke / graph.astream"| app_graph
+  runner <-->|"graph.astream"| app_graph
   render -->|"OpenAI response"| client
 ```
 
@@ -119,10 +119,10 @@ run's request, status, and Response.
 The Responses adapter owns interrupt function-call encoding and decodes
 `previous_response_id` plus `function_call_output` items into a resume request.
 Under the coordinator lease, preparation either validates that request into a
-native LangGraph `Command(resume=...)`, reads the pending batch for an initial
-request retry, or builds fresh graph input. Streaming and non-streaming runners
-share this prepared state and the same interrupt validation. LangGraph
-checkpoints remain the source of truth for paused execution.
+native LangGraph `Command(resume=...)` or builds fresh graph input. Streaming
+and non-streaming requests share this prepared state, one runner, and the same
+interrupt validation. LangGraph checkpoints remain the source of truth for
+paused execution.
 
 Chat Completions rejects interrupt-enabled models before preparing a graph run.
 A graph that calls `interrupt()` without declaring `GraphFeature.INTERRUPTS`
@@ -139,8 +139,8 @@ Endpoint paths and settings live in [Reference](../reference.md).
 3. For an interrupt graph, preparation derives the scoped operation key,
    acquires its coordinator lease, and validates any resume against durable
    state.
-4. The runner calls `graph.ainvoke` for a complete response or consumes
-   `graph.astream` to forward message and custom events to the SSE service.
+4. The runner consumes `graph.astream`. A complete response requests only root
+   values; a stream also forwards message and custom events to the SSE service.
 5. After execution quiesces, pending interrupts become one durable OpenAI
    tool-call batch; terminal or unsurfaced failed runs delete their checkpoint.
 6. LGOS releases any interrupt lease and renders a protocol-specific OpenAI

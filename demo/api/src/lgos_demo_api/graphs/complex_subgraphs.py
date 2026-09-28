@@ -1,7 +1,7 @@
 """Demo graph that exercises nested LangGraph subgraphs."""
 
 from langchain_core.messages import BaseMessage
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
+from langgraph_openai_serve import GraphConfig, GraphRequest
 from pydantic import BaseModel
 
 from lgos_demo_api.graphs.subgraphs.specialist_team import create_specialist_team_graph
@@ -28,5 +28,4 @@ def create_complex_subgraphs_graph_config() -> GraphConfig:
             "Routes questions through specialist subgraphs and streams nested output."
         ),
         request_to_input=request_to_input,
-        features={GraphFeature.CLIENT_EVENTS},
     )

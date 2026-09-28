@@ -37,7 +37,7 @@ integration commands:
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
-| `just demo/sync-openwebui` | Sync the Open WebUI Functions and generated LGOS Workspace Models |
+| `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
 | `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
 | `just demo/compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
@@ -114,7 +114,7 @@ managed/native routes. LiteLLM metadata comes from native `/model/info` after
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
-| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
+| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret that also encrypts stored valves; replace it outside local demos. Changing it resets every stored valve, so re-run the Open WebUI sync and set other valves again |
 
 ## Integration Test Settings
 
@@ -169,6 +169,8 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
+| `DEMO_API_INTERRUPT_TTL_MINUTES` | Age after which the demo API deletes a paused interrupt run; keep it longer than any expected review wait |
+| `DEMO_API_INTERRUPT_SWEEP_INTERVAL_MINUTES` | How often the demo API looks for expired paused runs |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
 | `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
 | `DEMO_API_HATCHET_WORKER_SLOTS` | Worker concurrency, 1 to 4: each interrupt graph run holds one of the worker's four PostgreSQL run leases. |
@@ -206,6 +208,7 @@ These settings belong only to the independent `demo/files_api` project.
 
 These settings configure the host-side Open WebUI synchronization command
 alongside the shared gateway values under [Stack Settings](#stack-settings).
+The command stores those gateway values in the Generic Function's valves.
 
 | Setting | Purpose |
 | --- | --- |

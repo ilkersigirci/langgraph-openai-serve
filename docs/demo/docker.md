@@ -33,11 +33,10 @@ In a standalone copy of `demo/`, use `just <recipe>` in place of
 
 !!! note "Docker Compose 5.3.0 or newer"
 
-    The demo is validated with Compose 5.3.0. Chainlit and the two API services
-    use dedicated one-shot schema jobs and wait for successful completion. This
-    avoids running the same persistence migrations concurrently in application
-    workers and ensures the MCP views are created only after their source
-    tables exist.
+    The demo is validated with Compose 5.3.0. The graph APIs and Chainlit apply
+    pending database migrations before reporting healthy. PostgreSQL locks
+    serialize concurrent migrations; a migration failure stops the affected
+    service. A separate MCP provisioning job completes before DBHub starts.
 
 Prepare the demo environment:
 
@@ -66,8 +65,10 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     The command waits for the gateway and its dependencies, syncs LiteLLM when
-    selected, starts both UIs without recreating the healthy backends, and syncs
-    Open WebUI. Services remain running in the background. Compose owns [dependency order and
+    selected, then starts and syncs Open WebUI. Chainlit starts earlier as a
+    DBHub dependency, applying its migrations before MCP reporting views are
+    created. Services remain running
+    in the background. Compose owns [dependency order and
     readiness](https://docs.docker.com/compose/how-tos/startup-order/); `just` only
     sequences the repeatable sync jobs.
 
@@ -122,12 +123,16 @@ settings](reference.md#opentelemetry-settings).
     just demo/up lgos-postgres-mcp --wait
     ```
 
-    The API and Chainlit migration jobs initialize their persistence schemas.
-    A following one-shot job creates or updates the dedicated `lgos_mcp` login
-    and four curated views over live Chainlit users/conversations and pending
-    LGOS interrupts. The role can read only those views. The pinned DBHub
-    service then exposes six fixed reports only inside the Compose network;
-    it publishes no host port. Starting either bundled gateway starts these
+    API A and Chainlit initialize their persistence schemas during startup.
+    After they report healthy, `lgos-mcp-db-setup` runs `psql` to create or update
+    the dedicated `lgos_mcp` login and four curated views over live Chainlit
+    users/conversations and pending LGOS interrupts in one transaction. This
+    repeatable provisioning job owns the demo's reporting schema. DBHub depends
+    on its [successful completion](https://docs.docker.com/compose/how-tos/startup-order/);
+    a setup failure prevents DBHub from starting. The pinned upstream DBHub image
+    runs with its original entrypoint and only the restricted reporting credentials,
+    exposing six fixed reports inside the Compose network.
+    It publishes no host port. Starting either bundled gateway starts these
     dependencies automatically. Replace `LGOS_MCP_DB_PASSWORD` and
     `LGOS_MCP_AUTH_TOKEN` before startup. See
     [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) for the complete
@@ -141,11 +146,14 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     Run each attached service in a separate terminal. Compose starts the shared
-    PostgreSQL dependency automatically. Before either graph API starts,
-    `lgos-demo-api-setup` waits for PostgreSQL health and initializes the
-    LangGraph checkpoint and Store schemas once. Both APIs use
-    [`service_completed_successfully`](https://docs.docker.com/reference/compose-file/services/#depends_on)
-    as their readiness dependency.
+    PostgreSQL dependency automatically. Each API waits for PostgreSQL health,
+    then runs LangGraph's checkpoint and Store `setup()` methods during its
+    lifespan before opening its runtime pool. A session advisory lock serializes
+    migrations across API replicas and the background worker, including the
+    upstream migrations that require autocommit. Lock acquisition uses
+    nonblocking checks with a 60-second deadline so waiting replicas do not
+    block concurrent index creation. Already-applied versions are skipped.
+    These startup hooks also run when launching the processes locally.
 
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
@@ -167,7 +175,7 @@ settings](reference.md#opentelemetry-settings).
     HATCHET_CLIENT_TOKEN=...
     ```
 
-    Then start the ordered UI stack or only the worker and its persistence setup:
+    Then start the ordered UI stack or only the worker and PostgreSQL:
 
     ```bash
     just demo/compose --dev
@@ -229,8 +237,8 @@ settings](reference.md#opentelemetry-settings).
     expose DBHub only on a private address reachable by that gateway.
 
     `just demo/compose` (or the same command with `--dev`) starts
-    the demo APIs, Files service, DBHub, and its PostgreSQL setup, syncs both
-    catalogs to the external LiteLLM, then starts and syncs the UIs. An empty
+    the demo APIs, Files service, Chainlit, and DBHub, syncs both
+    catalogs to the external LiteLLM, then starts and syncs Open WebUI. An empty
     `COMPOSE_PROFILES` disables both bundled gateways;
     the template normally selects one through
     `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`. The external gateway and its
@@ -291,7 +299,7 @@ settings](reference.md#opentelemetry-settings).
     - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
     - managed routing: `http://localhost:3000/v1`
-    - native MCP: `http://localhost:3000/mcp/`
+    - native MCP: `http://localhost:3000/mcp`
     - LiteLLM Admin UI: `http://localhost:3000/ui/`
 
     The bundled configuration uses API-key authentication. Chainlit can still
@@ -315,7 +323,7 @@ settings](reference.md#opentelemetry-settings).
     The MCP configuration reaches DBHub with the separate internal
     `LGOS_MCP_AUTH_TOKEN`, allowlists the six fixed PostgreSQL reports, and
     permits authenticated gateway keys to use them. Native clients still opt
-    in by connecting to `/mcp/`; the graph API receives only ordinary OpenAI
+    in by connecting to `/mcp`; the graph API receives only ordinary OpenAI
     function definitions and results.
 
     The managed-routing surface uses concrete database-backed models
@@ -407,9 +415,7 @@ state, and Open WebUI state—including its native raw file copies—use host bi
 mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
-required ephemeral writes. The one-shot API and Chainlit setup services
-initialize their respective persistence schemas. A following idempotent setup
-job owns the MCP reporting views, role, and grants before DBHub starts.
+required ephemeral writes.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads generated file elements to the configured `BUCKET_NAME`.

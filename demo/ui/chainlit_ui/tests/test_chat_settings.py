@@ -1,547 +1,254 @@
-"""Chat-settings behavior of the chat Chainlit application."""
+"""Chat profiles, settings, and tools derived from LGOS model metadata."""
 
-import importlib
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
+import chainlit as cl
+import httpx2
 import pytest
-from openai import OpenAIError
-from openai.types import Model
-from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
+from mcp.types import Tool
 
+from lgos_chainlit import chat
+from lgos_chainlit.chat_settings import (
+    BACKGROUND_SETTING_ID,
+    LIMITED_FUNCTIONALITY_MESSAGE,
+    PACKAGE_VERSION_SETTING_ID,
+    PACKAGE_VERSION_TOOL,
+    STREAMING_SETTING_ID,
+    WEB_SEARCH_SETTING_ID,
+    chat_settings_metadata,
+    configure_chat_settings,
+    response_tools,
+)
 from lgos_chainlit.display_files import DISPLAY_FILE_TOOL
-from lgos_chainlit.gateway import gateway_config
-from lgos_chainlit.lgos_protocol import ModelClientSettings
+from lgos_chainlit.mcp import MCP_GATEWAY_NAME, mcp_tools
+from tests.support import (
+    message,
+    model_info,
+    reply,
+    response,
+    select_profile,
+    transcript,
+    user_message,
+)
 
-
-class Session:
-    def __init__(self, values: dict[str, object]) -> None:
-        self.values = values
-
-    def get(self, key, default=None):
-        return self.values.get(key, default)
-
-    def set(self, key, value):
-        self.values[key] = value
-
-
-def completed_response(content: str) -> Response:
-    return Response.model_construct(
-        status="completed",
-        output=[
-            ResponseOutputMessage(
-                id="msg_final",
-                content=[
-                    ResponseOutputText(
-                        annotations=[],
-                        logprobs=[],
-                        text=content,
-                        type="output_text",
-                    )
-                ],
-                role="assistant",
-                status="completed",
-                type="message",
-                phase="final_answer",
-            )
-        ],
-    )
-
-
-def configured_model(
-    settings: ModelClientSettings | None,
-    *,
-    features: list[str] | None = None,
-) -> Model:
-    extension: dict[str, object] = {
-        "schema_version": 1,
-        "description": "DUMMY",
-        "features": features or [],
-    }
-    if settings is not None:
-        extension["client_settings"] = settings.model_dump(mode="json")
-    return Model(
-        id="simple",
-        object="model",
-        created=1,
-        owned_by="test",
-        lgos=extension,
-    )
-
-
-def model_without_extension(model_id: str) -> Model:
-    return Model(
-        id=model_id,
-        object="model",
-        created=1,
-        owned_by="test",
-    )
-
-
-def chat_settings_spy(monkeypatch: pytest.MonkeyPatch, chat_settings):
-    form = Mock(send=AsyncMock(), refresh=AsyncMock())
-    factory = Mock(return_value=form)
-    monkeypatch.setattr(chat_settings.cl, "ChatSettings", factory)
-    return factory, form
-
-
-async def test_discovered_settings_are_published(
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_client_settings: ModelClientSettings,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": {
-                "lgos_chainlit_stream": False,
-                "use_history": False,
-                "mode": "detailed",
-                "assistant_name": "Guide",
+RUNTIME_SETTINGS = {
+    "json_schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "use_history": {
+                "type": "boolean",
+                "title": "Use conversation history",
+                "default": True,
             },
-        }
-    )
-    retrieve = AsyncMock(return_value=configured_model(runtime_client_settings))
-    factory, form = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(chat_settings, "retrieve_model", retrieve)
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-
-    await chat_settings.configure_chat_settings()
-
-    retrieve.assert_awaited_once_with("simple")
-    assert [
-        (type(widget).__name__, widget.id, widget.initial)
-        for widget in factory.call_args.args[0]
-    ] == [
-        ("Switch", "lgos_chainlit_stream", False),
-        ("Switch", "use_history", False),
-        ("Select", "mode", "detailed"),
-        ("TextInput", "assistant_name", "Guide"),
-    ]
-    form.send.assert_awaited_once_with()
-    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] == (
-        runtime_client_settings.defaults
-    )
-    assert session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] == []
-
-
-async def test_background_capability_adds_delivery_switch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session({"chat_profile": "background-mock"})
-    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(
-        chat_settings,
-        "retrieve_model",
-        AsyncMock(return_value=configured_model(None, features=["background"])),
-    )
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-
-    await chat_settings.configure_chat_settings()
-
-    assert [(widget.id, widget.initial) for widget in factory.call_args.args[0]] == [
-        (chat_settings.STREAMING_SETTING_ID, True),
-        (chat_settings.BACKGROUND_SETTING_ID, False),
-    ]
-    assert chat_settings.background_enabled() is False
-    session.values["chat_settings"] = {
-        chat_settings.BACKGROUND_SETTING_ID: True,
-    }
-    assert chat_settings.background_enabled() is True
-    assert chat_settings.chat_settings_metadata() == {}
-
-
-async def test_server_tool_profile_uses_fixed_opt_in_tools(
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_client_settings: ModelClientSettings,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "provider/server-tool",
-            "chat_settings": {
-                chat_settings.PACKAGE_VERSION_SETTING_ID: True,
-                chat_settings.WEB_SEARCH_SETTING_ID: True,
+            "mode": {
+                "type": "string",
+                "title": "Mode",
+                "enum": ["brief", "detailed"],
+                "default": "brief",
             },
-        }
-    )
-    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(
-        chat_settings,
-        "retrieve_model",
-        AsyncMock(return_value=configured_model(runtime_client_settings)),
-    )
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-
-    await chat_settings.configure_chat_settings()
-
-    assert [widget.id for widget in factory.call_args.args[0]][:3] == [
-        chat_settings.STREAMING_SETTING_ID,
-        chat_settings.PACKAGE_VERSION_SETTING_ID,
-        chat_settings.WEB_SEARCH_SETTING_ID,
-    ]
-    assert chat_settings.response_tools() == [
-        {"type": "custom", "name": "lgos_package_version"},
-        {"type": "web_search"},
-    ]
-    session.values["chat_settings"][chat_settings.PACKAGE_VERSION_SETTING_ID] = False
-    assert chat_settings.response_tools() == [{"type": "web_search"}]
-    session.values["chat_profile"] = "simple"
-    assert chat_settings.response_tools() == []
-    session.values["chat_profile"] = "provider/persistent-plot-agent"
-    assert chat_settings.response_tools() == [DISPLAY_FILE_TOOL]
+            "assistant_name": {
+                "type": "string",
+                "title": "Assistant name",
+                "minLength": 1,
+                "default": "Helper",
+            },
+        },
+    },
+    "defaults": {"use_history": True, "mode": "brief", "assistant_name": "Helper"},
+}
+GATEWAY_TOOL = {
+    "type": "function",
+    "name": "database_report",
+    "parameters": {"type": "object"},
+    "strict": False,
+}
 
 
-def test_mcp_tools_feature_uses_the_gateway_tool_catalog(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
+    fake_gateway,
 ) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "provider/database-assistant",
-            chat_settings.MODEL_FEATURES_SESSION_KEY: ["mcp_tools"],
-        }
-    )
-    gateway_tools = [{"type": "function", "name": "database_report"}]
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(
-        chat_settings.mcp_tools, "response_tools", lambda: gateway_tools
-    )
-
-    assert chat_settings.response_tools() == gateway_tools
-
-    session.values[chat_settings.MODEL_FEATURES_SESSION_KEY] = []
-    assert chat_settings.response_tools() == []
-
-
-async def test_advanced_graph_combines_mcp_and_web_search_without_runtime_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "lgos-a/advanced-graph",
-            "chat_settings": {"web_search": True},
-        }
-    )
-    factory, _ = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(
-        chat_settings,
-        "retrieve_model",
-        AsyncMock(return_value=configured_model(None, features=["mcp_tools"])),
-    )
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    gateway_tools = [{"type": "function", "name": "database_report"}]
-    monkeypatch.setattr(
-        chat_settings.mcp_tools, "response_tools", lambda: gateway_tools
-    )
-
-    await chat_settings.configure_chat_settings()
-
-    assert [widget.id for widget in factory.call_args.args[0]] == [
-        chat_settings.STREAMING_SETTING_ID,
-        chat_settings.WEB_SEARCH_SETTING_ID,
-    ]
-    assert chat_settings.response_tools() == [
-        *gateway_tools,
-        {"type": "web_search"},
-    ]
-    assert chat_settings.chat_settings_metadata() == {}
-
-
-async def test_chat_profiles_use_list_capabilities_for_file_uploads(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    monkeypatch.setattr(
-        chat,
-        "list_models",
-        AsyncMock(
-            return_value=[
-                Model(
-                    id="configured",
-                    object="model",
-                    created=1,
-                    owned_by="test",
-                    lgos={
-                        "schema_version": 1,
-                        "description": "DUMMY",
-                        "features": ["file_inputs"],
-                    },
-                ),
-                model_without_extension("proxy-model"),
-            ]
-        ),
+    fake_gateway.replies.append(
+        model_info(
+            {
+                "lgos-a/file-input": {
+                    "description": "Files",
+                    "features": ["file_inputs"],
+                },
+                "lgos-a/stripped": {"features": []},
+            }
+        )
     )
 
     profiles = await chat.set_chat_profiles(None)
 
-    assert [profile.name for profile in profiles] == ["configured", "proxy-model"]
-    assert [profile.markdown_description for profile in profiles] == [
-        "DUMMY",
-        chat.LIMITED_FUNCTIONALITY_MESSAGE,
-    ]
     assert [
-        profile.config_overrides.features.spontaneous_file_upload.enabled
+        (
+            profile.name,
+            profile.markdown_description,
+            profile.config_overrides.features.spontaneous_file_upload.enabled,
+        )
         for profile in profiles
-    ] == [True, False]
-
-
-async def test_model_retrieval_failure_disables_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": {"mode": "detailed"},
-            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: {"stale": True},
-        }
-    )
-    factory, form = chat_settings_spy(monkeypatch, chat_settings)
-    warning = AsyncMock()
-    monkeypatch.setattr(
-        chat_settings,
-        "retrieve_model",
-        AsyncMock(side_effect=OpenAIError("temporarily unavailable")),
-    )
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(
-        chat_settings,
-        "send_limited_functionality_warning",
-        warning,
-    )
-
-    await chat_settings.configure_chat_settings()
-
-    assert [widget.id for widget in factory.call_args.args[0]] == [
-        chat_settings.STREAMING_SETTING_ID
+    ] == [
+        ("lgos-a/file-input", "Files", True),
+        ("lgos-a/stripped", LIMITED_FUNCTIONALITY_MESSAGE, False),
     ]
-    form.refresh.assert_awaited_once_with()
-    warning.assert_awaited_once_with()
-    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
 
 
-async def test_model_without_extension_warns_and_clears_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "simple",
-            "chat_settings": {"mode": "detailed"},
-        }
-    )
-    factory, form = chat_settings_spy(monkeypatch, chat_settings)
-    warning = AsyncMock()
-    monkeypatch.setattr(
-        chat_settings,
-        "retrieve_model",
-        AsyncMock(return_value=model_without_extension("simple")),
-    )
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(
-        chat_settings,
-        "send_limited_functionality_warning",
-        warning,
-    )
-
-    await chat_settings.configure_chat_settings()
-
-    assert [widget.id for widget in factory.call_args.args[0]] == [
-        chat_settings.STREAMING_SETTING_ID
-    ]
-    form.send.assert_awaited_once_with()
-    form.refresh.assert_not_awaited()
-    warning.assert_awaited_once_with()
-    assert session.values[chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY] is None
-
-
-async def test_missing_profile_disables_settings_and_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    monkeypatch.setattr(
-        chat,
-        "interrupt_workflow",
-        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
-    )
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session({})
-    retrieve = AsyncMock()
-    send_ui_message = AsyncMock()
-    factory, form = chat_settings_spy(monkeypatch, chat_settings)
-    monkeypatch.setattr(chat_settings, "retrieve_model", retrieve)
-    monkeypatch.setattr(chat_settings.cl, "user_session", session)
-    monkeypatch.setattr(chat.cl, "user_session", session)
-    monkeypatch.setattr(chat, "send_ui_message", send_ui_message)
-
-    await chat_settings.configure_chat_settings()
-    await chat.on_message(Mock())
-
-    retrieve.assert_not_awaited()
-    assert [widget.id for widget in factory.call_args.args[0]] == [
-        chat_settings.STREAMING_SETTING_ID
-    ]
-    form.send.assert_awaited_once_with()
-    send_ui_message.assert_awaited_once_with(
-        "Response failed: no model profile is selected."
-    )
-
-
-async def test_file_upload_failure_is_visible(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    monkeypatch.setattr(
-        chat,
-        "interrupt_workflow",
-        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
-    )
-    session = Session({"chat_profile": "lgos-a/file-input"})
-    send_ui_message = AsyncMock()
-    create = AsyncMock()
-    monkeypatch.setattr(chat.cl, "user_session", session)
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=Mock(content="")))
-    monkeypatch.setattr(chat, "text_only_chat_messages", list)
-    monkeypatch.setattr(
-        chat,
-        "with_response_file_parts",
-        AsyncMock(side_effect=RuntimeError("upload unavailable")),
-    )
-    monkeypatch.setattr(chat, "send_ui_message", send_ui_message)
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-
-    await chat.on_message(Mock(content="Summarize it."))
-
-    send_ui_message.assert_awaited_once_with("Response failed: upload unavailable")
-    create.assert_not_awaited()
-
-
-async def test_selected_settings_reach_the_openai_request(
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_client_settings: ModelClientSettings,
-) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    monkeypatch.setattr(
-        chat,
-        "interrupt_workflow",
-        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
-    )
-    clients = importlib.import_module("lgos_chainlit.clients")
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
-        {
-            "chat_profile": "lgos-a/simple",
-            "chat_settings": {
-                chat_settings.STREAMING_SETTING_ID: False,
-                "use_history": False,
-                "mode": "detailed",
-                "assistant_name": "Guide",
+@pytest.mark.parametrize(
+    ("profile", "features", "saved", "offered", "tools"),
+    [
+        (
+            "lgos-a/background-report",
+            ["background"],
+            {BACKGROUND_SETTING_ID: True},
+            {STREAMING_SETTING_ID: True, BACKGROUND_SETTING_ID: True},
+            [],
+        ),
+        (
+            "provider/server-tool",
+            [],
+            {PACKAGE_VERSION_SETTING_ID: True, WEB_SEARCH_SETTING_ID: True},
+            {
+                STREAMING_SETTING_ID: True,
+                PACKAGE_VERSION_SETTING_ID: True,
+                WEB_SEARCH_SETTING_ID: True,
             },
-            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
-                runtime_client_settings.defaults
-            ),
-        }
-    )
-    messages = [{"role": "user", "content": "Hello"}]
-    create = AsyncMock(return_value=completed_response("Complete answer"))
-    assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
-    monkeypatch.setattr(chat.cl, "user_session", session)
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant_message))
-    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: messages)
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(chat, "send_speech_button", AsyncMock())
-    monkeypatch.setattr(
-        chat.cl,
-        "context",
-        SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
-    )
-    monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("bifrost", "https://gateway.example"),
-    )
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
-
-    await chat.on_message(Mock(content="Hello"))
-
-    create.assert_awaited_once_with(
-        model="lgos-a/simple",
-        input=messages,
-        store=False,
-        tools=[],
-        user="demo-user",
-        metadata={
-            "lgos_settings": (
-                '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
-            ),
-            "conversation_id": "thread-123",
-        },
-    )
-    assert assistant_message.content == "Complete answer"
-    assistant_message.send.assert_awaited_once_with()
-
-
-async def test_streaming_can_be_disabled_without_forwarding_the_ui_setting(
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_client_settings: ModelClientSettings,
+            [PACKAGE_VERSION_TOOL, {"type": "web_search"}],
+        ),
+        (
+            "lgos-a/advanced-graph",
+            ["mcp_tools"],
+            {WEB_SEARCH_SETTING_ID: True},
+            {STREAMING_SETTING_ID: True, WEB_SEARCH_SETTING_ID: True},
+            [GATEWAY_TOOL, {"type": "web_search"}],
+        ),
+        (
+            "provider/persistent-plot-agent",
+            [],
+            {WEB_SEARCH_SETTING_ID: True},
+            {STREAMING_SETTING_ID: True},
+            [DISPLAY_FILE_TOOL],
+        ),
+    ],
+    ids=["background", "server-tool", "advanced-graph", "plot-agent"],
+)
+async def test_profile_settings_select_the_offered_tools(
+    chainlit_context,
+    fake_gateway,
+    profile: str,
+    features: list[str],
+    saved: dict[str, object],
+    offered: dict[str, object],
+    tools: list[dict[str, object]],
 ) -> None:
-    chat = importlib.import_module("lgos_chainlit.chat")
-    monkeypatch.setattr(
-        chat,
-        "interrupt_workflow",
-        SimpleNamespace(block_new_message=AsyncMock(return_value=False)),
+    # The gateway MCP session is connected, but only mcp_tools graphs get it.
+    discovered = SimpleNamespace(
+        tools=[Tool(name="database_report", inputSchema={"type": "object"})]
     )
-    clients = importlib.import_module("lgos_chainlit.clients")
-    chat_settings = importlib.import_module("lgos_chainlit.chat_settings")
-    session = Session(
+    await mcp_tools.connect(
+        SimpleNamespace(name=MCP_GATEWAY_NAME),
+        SimpleNamespace(list_tools=AsyncMock(return_value=discovered)),
+    )
+    chainlit_context.session.chat_settings = saved
+
+    await select_profile(fake_gateway, profile, features=features)
+
+    assert cl.user_session.get("chat_settings") == offered
+    assert response_tools() == tools
+
+
+async def test_selected_settings_reach_the_responses_request(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_settings = {
+        STREAMING_SETTING_ID: False,
+        "use_history": False,
+        "mode": "detailed",
+        "assistant_name": "Guide",
+    }
+    await select_profile(
+        fake_gateway, "lgos-a/simple-graph", client_settings=RUNTIME_SETTINGS
+    )
+    fake_gateway.replies.append(reply(response(message("Complete answer"))))
+
+    await chat.on_message(user_message("Hello"))
+
+    assert fake_gateway.bodies("/v1/responses") == [
         {
-            "chat_profile": "lgos-a/simple",
-            "chat_settings": {
-                chat_settings.STREAMING_SETTING_ID: False,
-                "mode": "detailed",
+            "model": "lgos-a/simple-graph",
+            "input": [{"role": "user", "content": "Hello"}],
+            "tools": [],
+            "user": "demo-user",
+            "metadata": {
+                "lgos_settings": (
+                    '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'
+                ),
+                "conversation_id": chainlit_context.session.thread_id,
             },
-            chat_settings.RUNTIME_SETTINGS_DEFAULTS_SESSION_KEY: (
-                runtime_client_settings.defaults
-            ),
-            chat_settings.MODEL_FEATURES_SESSION_KEY: [],
+            "store": False,
         }
-    )
-    messages = [{"role": "user", "content": "Hello"}]
-    create = AsyncMock(return_value=completed_response("Complete answer"))
-    assistant_message = Mock(content="", send=AsyncMock(), update=AsyncMock())
-    monkeypatch.setattr(chat.cl, "user_session", session)
-    monkeypatch.setattr(chat.cl, "Message", Mock(return_value=assistant_message))
-    monkeypatch.setattr(chat, "text_only_chat_messages", lambda: messages)
-    monkeypatch.setattr(chat, "authenticated_user_identifier", lambda: "demo-user")
-    monkeypatch.setattr(chat, "send_speech_button", AsyncMock())
-    monkeypatch.setattr(
-        chat.cl,
-        "context",
-        SimpleNamespace(session=SimpleNamespace(thread_id="thread-123")),
-    )
-    monkeypatch.setattr(
-        clients,
-        "gateway",
-        gateway_config("bifrost", "https://gateway.example"),
-    )
-    monkeypatch.setattr(chat.openai_client.responses, "create", create)
+    ]
+    assert transcript() == ["Hello", "Complete answer"]
 
-    await chat.on_message(Mock(content="Hello"))
 
-    create.assert_awaited_once_with(
-        model="lgos-a/simple",
-        input=messages,
-        store=False,
-        tools=[],
-        user="demo-user",
-        metadata={
-            "lgos_settings": '{"mode":"detailed"}',
-            "conversation_id": "thread-123",
-        },
+@pytest.mark.parametrize(
+    "model_reply",
+    [
+        httpx2.Response(503, json={"error": "unavailable"}),
+        model_info({"lgos-a/simple-graph": {"features": []}}),
+    ],
+    ids=["retrieval-failed", "invalid-metadata"],
+)
+async def test_limited_metadata_keeps_saved_settings_with_a_warning(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+    model_reply: httpx2.Response,
+) -> None:
+    send_toast = AsyncMock()
+    monkeypatch.setattr(chainlit_context.emitter, "send_toast", send_toast)
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_settings = {"mode": "detailed"}
+    fake_gateway.replies.append(model_reply)
+
+    await configure_chat_settings()
+
+    send_toast.assert_awaited_once_with(LIMITED_FUNCTIONALITY_MESSAGE, type="warning")
+    assert cl.user_session.get("chat_settings") == {"mode": "detailed"}
+    assert chat_settings_metadata() == {}
+
+
+async def test_malformed_runtime_settings_keep_the_model_features(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_toast = AsyncMock()
+    monkeypatch.setattr(chainlit_context.emitter, "send_toast", send_toast)
+
+    await select_profile(
+        fake_gateway,
+        "lgos-a/simple-graph",
+        features=["background"],
+        client_settings={"json_schema": {}},
     )
-    assert assistant_message.content == "Complete answer"
-    assistant_message.send.assert_awaited_once_with()
-    assistant_message.update.assert_not_awaited()
+
+    send_toast.assert_not_awaited()
+    assert cl.user_session.get("chat_settings") == {
+        STREAMING_SETTING_ID: True,
+        BACKGROUND_SETTING_ID: False,
+    }
+
+
+async def test_missing_profile_rejects_messages(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    await configure_chat_settings()
+    await chat.on_message(user_message("Hello"))
+
+    assert fake_gateway.requests == []
+    assert transcript() == ["Hello", "Response failed: no model profile is selected."]

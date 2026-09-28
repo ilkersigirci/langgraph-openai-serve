@@ -20,7 +20,7 @@ DOCS_ANSWER = (
 
 def _registry() -> GraphRegistry:
     return GraphRegistry(
-        registry={"complex-subgraphs": create_complex_subgraphs_graph_config()}
+        graphs={"complex-subgraphs": create_complex_subgraphs_graph_config()}
     )
 
 
@@ -75,9 +75,7 @@ async def test_streaming_matches_non_streaming_for_nested_output(
     ]
 
     assert [
-        event["data"]["event"]["data"]["description"]
-        for event in events
-        if isinstance(event, dict)
+        event["data"]["description"] for event in events if isinstance(event, dict)
     ] == ["Selected keywords: subgraph, routing"]
 
     streamed = "".join(event for event in events if isinstance(event, str))

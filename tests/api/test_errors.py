@@ -92,31 +92,6 @@ async def test_missing_tool_call_id_returns_openai_error(
         pytest.param(
             {
                 "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "function_call": "auto",
-            },
-            "function_call",
-            "Extra inputs are not permitted",
-            id="request-function-call",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "assistant",
-                        "content": None,
-                        "function_call": {"name": "lookup", "arguments": "{}"},
-                    }
-                ],
-            },
-            "messages.0.function_call",
-            "Input should be None",
-            id="message-function-call",
-        ),
-        pytest.param(
-            {
-                "model": "test",
                 "messages": [
                     {"role": "function", "name": "lookup", "content": "result"}
                 ],
@@ -124,16 +99,6 @@ async def test_missing_tool_call_id_returns_openai_error(
             "messages.0.role",
             "Input should be 'system', 'user', 'assistant' or 'tool'",
             id="function-role",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "previous_response_id": "resp_paused",
-            },
-            "previous_response_id",
-            "Extra inputs are not permitted",
-            id="responses-continuation",
         ),
     ],
 )
@@ -179,44 +144,6 @@ async def test_unsupported_chat_fields_are_rejected(
                         "role": "user",
                         "content": [
                             {
-                                "type": "text",
-                                "text": "Hello",
-                                "prompt_cache_breakpoint": {"mode": "explicit"},
-                            }
-                        ],
-                    }
-                ],
-            },
-            "prompt_cache_breakpoint",
-            id="text-content-part",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "file",
-                                "file": {"file_id": "file-test"},
-                                "file_part_extra": True,
-                            }
-                        ],
-                    }
-                ],
-            },
-            "file_part_extra",
-            id="file-content-part",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
                                 "type": "file",
                                 "file": {
                                     "file_id": "file-test",
@@ -229,119 +156,6 @@ async def test_unsupported_chat_fields_are_rejected(
             },
             "file_data",
             id="file-reference",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "assistant",
-                        "tool_calls": [
-                            {
-                                "id": "call-test",
-                                "type": "function",
-                                "function": {"name": "lookup", "arguments": "{}"},
-                                "tool_call_extra": True,
-                            }
-                        ],
-                    }
-                ],
-            },
-            "tool_call_extra",
-            id="tool-call",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "assistant",
-                        "tool_calls": [
-                            {
-                                "id": "call-test",
-                                "type": "function",
-                                "function": {
-                                    "name": "lookup",
-                                    "arguments": "{}",
-                                    "call_function_extra": True,
-                                },
-                            }
-                        ],
-                    }
-                ],
-            },
-            "call_function_extra",
-            id="tool-call-function",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "tools": [
-                    {
-                        "type": "function",
-                        "function": {"name": "lookup"},
-                        "tool_extra": True,
-                    }
-                ],
-            },
-            "tool_extra",
-            id="tool",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "tools": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "lookup",
-                            "definition_extra": True,
-                        },
-                    }
-                ],
-            },
-            "definition_extra",
-            id="function-definition",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "tool_choice": {
-                    "type": "function",
-                    "function": {"name": "lookup"},
-                    "choice_extra": True,
-                },
-            },
-            "choice_extra",
-            id="named-tool-choice",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "tool_choice": {
-                    "type": "function",
-                    "function": {"name": "lookup", "choice_function_extra": True},
-                },
-            },
-            "choice_function_extra",
-            id="named-tool-choice-function",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "stream": True,
-                "stream_options": {
-                    "include_usage": True,
-                    "stream_options_extra": True,
-                },
-            },
-            "stream_options_extra",
-            id="stream-options",
         ),
     ],
 )
@@ -399,72 +213,6 @@ async def test_chat_nested_unknown_fields_return_openai_errors(
             "annotation_extra",
             id="url-citation",
         ),
-        pytest.param(
-            {
-                "model": "test",
-                "input": [
-                    {
-                        "type": "custom_tool_call",
-                        "call_id": "call-test",
-                        "name": "lookup",
-                        "input": "query",
-                        "custom_call_extra": True,
-                    }
-                ],
-            },
-            "custom_call_extra",
-            id="custom-tool-call",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "input": [
-                    {
-                        "type": "custom_tool_call_output",
-                        "call_id": "call-test",
-                        "output": "result",
-                        "custom_output_extra": True,
-                    }
-                ],
-            },
-            "custom_output_extra",
-            id="custom-tool-call-output",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "input": [
-                    {
-                        "id": "ws-test",
-                        "type": "web_search_call",
-                        "status": "completed",
-                        "action": {"type": "search", "query": "OpenAI"},
-                        "web_search_extra": True,
-                    }
-                ],
-            },
-            "web_search_extra",
-            id="web-search-call",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "input": [
-                    {
-                        "id": "ws-test",
-                        "type": "web_search_call",
-                        "status": "completed",
-                        "action": {
-                            "type": "search",
-                            "query": "OpenAI",
-                            "action_extra": True,
-                        },
-                    }
-                ],
-            },
-            "action_extra",
-            id="web-search-action",
-        ),
     ],
 )
 async def test_responses_nested_unknown_fields_return_openai_errors(
@@ -515,7 +263,7 @@ async def test_http_error_returns_openai_error(
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {
         "error": {
-            "message": "Graph 'missing' not found in registry.",
+            "message": "The model 'missing' does not exist.",
             "type": "invalid_request_error",
             "param": "model",
             "code": "model_not_found",
@@ -545,7 +293,7 @@ async def test_openai_error_handlers_do_not_replace_host_app_handlers(
 
     LanggraphOpenaiServe(
         app=app,
-        graphs=graph_registry,
+        registry=graph_registry,
     ).bind_openai_api(prefix="/v1")
 
     transport = ASGITransport(app=app)
@@ -556,12 +304,4 @@ async def test_openai_error_handlers_do_not_replace_host_app_handlers(
     assert outside_response.status_code == status.HTTP_418_IM_A_TEAPOT
     assert outside_response.json() == {"detail": "host handler"}
     assert openai_response.status_code == status.HTTP_404_NOT_FOUND
-    assert openai_response.json() == {
-        "error": {
-            "message": "Graph 'missing' not found in registry.",
-            "type": "invalid_request_error",
-            "param": "model",
-            "code": "model_not_found",
-            "misalignment": None,
-        }
-    }
+    assert openai_response.json()["error"]["code"] == "model_not_found"

@@ -10,14 +10,12 @@ from anyio import CancelScope
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
-from langgraph_openai_serve.core.logging import get_logger
-from langgraph_openai_serve.graph.interrupt.coordination import RunBusyError
+from langgraph_openai_serve.graph.interrupt import RunBusyError
 
 _TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock(%s) AS acquired"
 _UNLOCK_ADVISORY_LOCK_SQL = "SELECT pg_advisory_unlock(%s) AS released"
 
 _PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
-logger = get_logger(__name__)
 
 
 class PostgresRunCoordinator:
@@ -37,14 +35,12 @@ class PostgresRunCoordinator:
         *,
         max_concurrent_leases: int,
     ) -> None:
-        if getattr(pool, "close_returns", False) is True:
+        # With close_returns, close() hands the session back to the pool, so a
+        # discarded session would keep holding its advisory lock.
+        if getattr(pool, "close_returns", False):
             msg = "PostgresRunCoordinator requires a pool with close_returns=False."
             raise ValueError(msg)
-        if (
-            isinstance(max_concurrent_leases, bool)
-            or not isinstance(max_concurrent_leases, int)
-            or max_concurrent_leases < 1
-        ):
+        if max_concurrent_leases < 1:
             msg = "max_concurrent_leases must be a positive integer"
             raise ValueError(msg)
         self._pool = pool
@@ -52,28 +48,18 @@ class PostgresRunCoordinator:
 
     @asynccontextmanager
     async def __call__(self, key: str, /) -> AsyncIterator[None]:
-        """Acquire a PostgreSQL advisory lease for one interrupt run."""
+        """Hold a PostgreSQL advisory lock for one interrupt run."""
         if not self._capacity.acquire(blocking=False):
-            raise RunBusyError(key)
+            raise RunBusyError
         try:
             lock_key = _advisory_lock_key(key)
             async with self._pool.connection() as connection:
                 if not await _try_acquire_advisory_lock(connection, lock_key):
-                    raise RunBusyError(key)
-
-                body_error: BaseException | None = None
+                    raise RunBusyError
                 try:
                     yield
-                except BaseException as exc:
-                    body_error = exc
-                    raise
                 finally:
-                    try:
-                        await _release_advisory_lock(connection, lock_key)
-                    except Exception:
-                        if body_error is None:
-                            raise
-                        logger.exception("postgres.graph_run_lease_release_failed")
+                    await _release_advisory_lock(connection, lock_key)
         finally:
             self._capacity.release()
 
@@ -89,20 +75,14 @@ async def _try_acquire_advisory_lock(
 ) -> bool:
     """Acquire one session lock or discard a session with unknown state."""
     try:
-        cursor = await connection.execute(
-            _TRY_ADVISORY_LOCK_SQL,
-            (lock_key,),
-        )
+        cursor = await connection.execute(_TRY_ADVISORY_LOCK_SQL, (lock_key,))
         row = await cursor.fetchone()
-        if row is None:
-            msg = "PostgreSQL advisory lease acquisition returned no result."
-            raise RuntimeError(msg)  # ruff: ignore[raise-within-try]
-        return bool(row["acquired"])
     except BaseException:
         # Cancellation may arrive after PostgreSQL acquired the session lock.
         # Closing is the only safe way to resolve an indeterminate result.
         await _discard_connection(connection)
         raise
+    return bool(row and row["acquired"])
 
 
 async def _release_advisory_lock(
@@ -111,19 +91,17 @@ async def _release_advisory_lock(
 ) -> None:
     """Release one session lock or discard the unsafe pooled session."""
     try:
-        cursor = await connection.execute(
-            _UNLOCK_ADVISORY_LOCK_SQL,
-            (lock_key,),
-        )
+        cursor = await connection.execute(_UNLOCK_ADVISORY_LOCK_SQL, (lock_key,))
         row = await cursor.fetchone()
-        if row is None or not row["released"]:
-            msg = "PostgreSQL advisory lease could not be released."
-            raise RuntimeError(msg)  # ruff: ignore[raise-within-try]
     except BaseException:
         # Session locks survive transaction rollback. Closing makes PostgreSQL
         # release the lock and tells psycopg_pool to replace this connection.
         await _discard_connection(connection)
         raise
+    if not (row and row["released"]):
+        await _discard_connection(connection)
+        msg = "PostgreSQL advisory lease could not be released."
+        raise RuntimeError(msg)
 
 
 async def _discard_connection(

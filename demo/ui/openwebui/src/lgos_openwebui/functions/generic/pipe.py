@@ -1,6 +1,5 @@
 """Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
-import os
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -8,7 +7,8 @@ from typing import Any, cast
 
 from openai import OpenAIError
 from openai.types.responses import Response, ResponseFunctionToolCall
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from .api import (
     _client,
@@ -19,14 +19,13 @@ from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
     INTERRUPT_CANCELLED_MESSAGE,
     INTERRUPT_TOOL_NAME,
-    WEB_SEARCH_TOOL_NAME,
     InterruptCancelled,
+    OpenWebUIBody,
     OpenWebUIEventEmitter,
-    OpenWebUIInvocation,
+    OpenWebUIMetadata,
+    OpenWebUIRequest,
     PipeChunk,
     PipeResponse,
-    is_server_tool_model,
-    supports_web_search,
 )
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
@@ -45,8 +44,8 @@ from .metadata import _request_metadata
 from .responses import (
     _background_response,
     _emit_response_sources,
+    _openwebui_chunk,
     _openwebui_mcp_tools,
-    _openwebui_text_chunk,
     _openwebui_tool_chunk,
     _raise_for_response,
     _responses_continuation,
@@ -58,14 +57,6 @@ from .responses import (
 )
 
 
-def _required_environment(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None or not value.strip():
-        msg = f"{name} must be configured."
-        raise RuntimeError(msg)
-    return value
-
-
 @dataclass(frozen=True, slots=True)
 class PreparedResponsesRequest:
     """Validated upstream request state retained across client-tool turns."""
@@ -74,6 +65,7 @@ class PreparedResponsesRequest:
     background: bool
     streaming: bool
     gateway: GatewayConfig
+    api_key: str
     openwebui_mcp_names: dict[str, str]
     replay_input: list[dict[str, Any]]
     request: dict[str, Any]
@@ -81,22 +73,20 @@ class PreparedResponsesRequest:
 
 class Pipe:
     class Valves(BaseModel):
-        model_config = ConfigDict(validate_default=True)
-
-        OPENAI_GATEWAY_TYPE: GatewayType = Field(
-            default_factory=lambda: cast(
-                "GatewayType", _required_environment("OPENAI_GATEWAY_TYPE")
-            ),
+        # Open WebUI builds Valves() before any are stored; the demo sync stores
+        # the gateway values. SkipJsonSchema keeps the admin form's input types.
+        OPENAI_GATEWAY_TYPE: GatewayType | SkipJsonSchema[None] = Field(
+            default=None,
             description="Gateway used for all OpenAI requests.",
         )
-        OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
-            default_factory=lambda: _required_environment("OPENAI_GATEWAY_BASE_URL"),
+        OPENAI_GATEWAY_BASE_URL: GatewayRoot | SkipJsonSchema[None] = Field(
+            default=None,
             description="Gateway root without the OpenAI API path.",
         )
-        OPENAI_GATEWAY_API_KEY: str = Field(
-            default_factory=lambda: _required_environment("OPENAI_GATEWAY_API_KEY"),
+        OPENAI_GATEWAY_API_KEY: str | SkipJsonSchema[None] = Field(
+            default=None,
             min_length=1,
-            description="API key used for Responses, Files, and MCP.",
+            description="API key used for Responses and Files.",
             json_schema_extra={"input": {"type": "password"}},
         )
         OPENAI_API_TIMEOUT: float = Field(
@@ -110,10 +100,10 @@ class Pipe:
 
     async def pipes(self) -> list[dict[str, str]]:
         """Expose every registered LangGraph model to Open WebUI."""
-        gateway = self._gateway()
+        gateway, api_key = self._gateway()
         async with _client(
             base_url=f"{gateway.root_url}/v1",
-            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+            api_key=api_key,
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
             if gateway.provider_routing:
@@ -130,45 +120,39 @@ class Pipe:
     async def pipe(
         self,
         body: dict[str, Any],
-        __event_emitter__: Any = None,
+        __event_emitter__: OpenWebUIEventEmitter | None = None,
         __metadata__: dict[str, Any] | None = None,
         __user__: dict[str, Any] | None = None,
-        __files__: list[dict[str, Any]] | None = None,
-        __request__: Any = None,
-        __tools__: dict[str, Any] | None = None,
+        __request__: OpenWebUIRequest | None = None,
+        __tools__: dict[str, dict[str, Any]] | None = None,
     ) -> PipeResponse:
         """Run the selected graph through OpenAI Responses."""
-        streaming = isinstance(body, Mapping) and body.get("stream") is True
-        try:
-            invocation = OpenWebUIInvocation.from_host(
-                body=body,
-                metadata=__metadata__,
-                user=__user__,
-                files=__files__,
-                tools=__tools__,
-            )
-            if __event_emitter__ is not None and not callable(__event_emitter__):
-                raise ValueError("Open WebUI provided an invalid event emitter.")
-        except ValueError as exc:
-            failure = _error(f"Responses request failed: {exc}")
-            return _single_chunk(failure) if streaming else failure
-
+        # Open WebUI selects its response mode with the same truthiness test.
+        streaming = bool(body.get("stream"))
         results = self._run(
-            invocation,
-            event_emitter=cast("OpenWebUIEventEmitter | None", __event_emitter__),
+            body,
+            __metadata__ or {},
+            user_id=(__user__ or {}).get("id") or None,
+            tools=__tools__ or {},
+            streaming=streaming,
+            event_emitter=__event_emitter__,
             host_request=__request__,
         )
-        if invocation.body.stream:
+        if streaming:
             return results
         async with aclosing(results):
             return await anext(results)
 
     async def _run(
         self,
-        invocation: OpenWebUIInvocation,
+        body: dict[str, Any],
+        metadata: dict[str, Any],
         *,
+        user_id: str | None,
+        tools: Mapping[str, Mapping[str, Any]],
+        streaming: bool,
         event_emitter: OpenWebUIEventEmitter | None,
-        host_request: object | None,
+        host_request: OpenWebUIRequest | None,
     ) -> AsyncGenerator[PipeChunk, None]:
         """Own one Responses/tool loop for both Pipe response modes."""
         answer_parts: list[str] = []
@@ -182,12 +166,16 @@ class Pipe:
 
         try:
             prepared = await self._prepare_request(
-                invocation,
+                OpenWebUIBody.model_validate(body),
+                OpenWebUIMetadata.model_validate(metadata),
+                user_id=user_id,
+                tools=tools,
+                streaming=streaming,
                 host_request=host_request,
             )
             async with _client(
                 base_url=prepared.gateway.responses_base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                api_key=prepared.api_key,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
@@ -219,8 +207,8 @@ class Pipe:
                                     or event.type == "response.refusal.delta"
                                 ) and phases.get(event.output_index) != "commentary":
                                     final_text_streamed = True
-                                    yield _openwebui_text_chunk(
-                                        prepared.model_id, event.delta
+                                    yield _openwebui_chunk(
+                                        prepared.model_id, {"content": event.delta}
                                     )
                                 elif (
                                     event.type == "response.incomplete"
@@ -248,7 +236,9 @@ class Pipe:
                     await _emit_response_sources(response, event_emitter)
                     final_text = _responses_final_text(response)
                     if prepared.streaming and not final_text_streamed and final_text:
-                        yield _openwebui_text_chunk(prepared.model_id, final_text)
+                        yield _openwebui_chunk(
+                            prepared.model_id, {"content": final_text}
+                        )
                     answer_parts.append(final_text)
                     calls = _responses_function_calls(response)
                     if not calls:
@@ -260,7 +250,10 @@ class Pipe:
                         finished = True
                         yield (
                             _openwebui_interrupt_chunk(
-                                prepared.model_id, response.id, calls
+                                prepared.model_id,
+                                response.id,
+                                calls,
+                                after_text=any(answer_parts),
                             )
                             if prepared.streaming
                             else _openwebui_interrupt_completion(
@@ -291,7 +284,7 @@ class Pipe:
                             event_emitter,
                             host_request,
                             files_base_url=prepared.gateway.files_base_url,
-                            api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                            api_key=prepared.api_key,
                             timeout=self.valves.OPENAI_API_TIMEOUT,
                             provider=prepared.gateway.files_provider,
                         )
@@ -318,34 +311,37 @@ class Pipe:
 
     async def _prepare_request(
         self,
-        invocation: OpenWebUIInvocation,
+        body: OpenWebUIBody,
+        metadata: OpenWebUIMetadata,
         *,
-        host_request: object | None,
+        user_id: str | None,
+        tools: Mapping[str, Mapping[str, Any]],
+        streaming: bool,
+        host_request: OpenWebUIRequest | None,
     ) -> PreparedResponsesRequest:
-        gateway = self._gateway()
-        model_id = invocation.body.model_id
-        mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(invocation.mcp_tools)
+        gateway, api_key = self._gateway()
+        model_id = body.model_id
+        mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(tools)
         # Open WebUI enters its native tool loop only for streams.
-        if mcp_tools and not invocation.body.stream:
+        if mcp_tools and not streaming:
             raise ValueError("Open WebUI MCP tool execution requires streaming.")
         transcript_mcp_names = {
             openwebui_name: gateway_name
             for gateway_name, openwebui_name in openwebui_mcp_names.items()
         }
         replay_input = _responses_input(
-            invocation.body.messages,
+            body.messages,
             mcp_tool_names=transcript_mcp_names,
         )
-        if resume := _ask_user_to_resume(invocation.body.messages):
+        if resume := _ask_user_to_resume(body.messages):
             input_items, previous_response_id = resume
         else:
             messages = await _with_response_file_parts(
-                invocation.body.messages,
-                invocation.files,
-                invocation.metadata,
+                body.messages,
+                metadata,
                 host_request,
                 base_url=gateway.files_base_url,
-                api_key=self.valves.OPENAI_GATEWAY_API_KEY,
+                api_key=api_key,
                 timeout=self.valves.OPENAI_API_TIMEOUT,
                 provider=gateway.files_provider,
             )
@@ -355,43 +351,43 @@ class Pipe:
             )
             previous_response_id = None
 
-        tools = _responses_tools(model_id, invocation.metadata)
-        tools.extend(mcp_tools)
-        background = invocation.metadata.chat_variables.get(
-            BACKGROUND_SETTING_NAME
-        ) is True and invocation.metadata.supports_chat_variable(
-            BACKGROUND_SETTING_NAME
-        )
-        excluded_runtime_settings = {BACKGROUND_SETTING_NAME}
-        if supports_web_search(model_id):
-            excluded_runtime_settings.add(WEB_SEARCH_TOOL_NAME)
+        background = metadata.chat_variables.get(BACKGROUND_SETTING_NAME) is True
         return PreparedResponsesRequest(
             model_id=model_id,
             background=background,
-            streaming=invocation.body.stream,
+            streaming=streaming,
             gateway=gateway,
+            api_key=api_key,
             openwebui_mcp_names=openwebui_mcp_names,
             replay_input=replay_input,
             request=_responses_request(
                 model_id,
                 input_items,
-                _request_metadata(
-                    invocation.metadata,
-                    include_runtime_settings=not is_server_tool_model(model_id),
-                    excluded_runtime_settings=excluded_runtime_settings,
-                ),
-                invocation.user.id or None,
+                _request_metadata(metadata),
+                user_id,
                 background=background,
-                tools=tools,
+                tools=[
+                    *_responses_tools(model_id, metadata.chat_variables),
+                    *mcp_tools,
+                ],
                 previous_response_id=previous_response_id,
             ),
         )
 
-    def _gateway(self) -> GatewayConfig:
-        return gateway_config(
-            self.valves.OPENAI_GATEWAY_TYPE,
-            self.valves.OPENAI_GATEWAY_BASE_URL,
+    def _gateway(self) -> tuple[GatewayConfig, str]:
+        valves = self.valves
+        if (
+            valves.OPENAI_GATEWAY_TYPE is None
+            or valves.OPENAI_GATEWAY_BASE_URL is None
+            or valves.OPENAI_GATEWAY_API_KEY is None
+        ):
+            raise RuntimeError(
+                "The gateway valves are unset; run just demo/sync-openwebui."
+            )
+        gateway = gateway_config(
+            valves.OPENAI_GATEWAY_TYPE, valves.OPENAI_GATEWAY_BASE_URL
         )
+        return gateway, valves.OPENAI_GATEWAY_API_KEY
 
 
 def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:
@@ -412,7 +408,3 @@ async def _emit_status(
 
 def _error(detail: str) -> dict[str, Any]:
     return {"error": {"detail": detail}}
-
-
-async def _single_chunk(chunk: PipeChunk) -> AsyncGenerator[PipeChunk, None]:
-    yield chunk

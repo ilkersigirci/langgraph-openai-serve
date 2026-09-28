@@ -22,7 +22,6 @@ from langgraph_openai_serve import (
     GraphRequest,
     NamedFunctionToolChoice,
 )
-from langgraph_openai_serve.graph.interrupt import RunCoordinator
 from openai import AsyncOpenAI
 
 from lgos_demo_api.core.settings import settings
@@ -329,7 +328,6 @@ def create_advanced_graph(
 
 def create_advanced_graph_config(
     graph_factory: Callable[[], AdvancedGraph],
-    run_coordinator: RunCoordinator,
 ) -> GraphConfig:
     def context(request: GraphRequest, _options: None) -> AdvancedContext:
         return AdvancedContext(request=request)
@@ -356,7 +354,6 @@ def create_advanced_graph_config(
         ),
         features={
             GraphFeature.BACKGROUND,
-            GraphFeature.CLIENT_EVENTS,
             GraphFeature.FILE_INPUTS,
             GraphFeature.INTERRUPTS,
             GraphFeature.MCP_TOOLS,
@@ -365,7 +362,6 @@ def create_advanced_graph_config(
         context_factory=context,
         request_to_input=request_to_input,
         output_to_message=output_to_message,
-        run_coordinator=run_coordinator,
     )
 
 

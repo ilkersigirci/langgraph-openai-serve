@@ -1,12 +1,18 @@
 # Interruptible Human Review
 
-`interruptible-approval` is the only demo graph that persists API execution
-state. It is a deterministic production-pattern example: a refund rejection
+`interruptible-approval` persists API execution state while a review is
+pending. It is a deterministic production-pattern example: a refund rejection
 ends the workflow, while approval leads to simulated refund execution and an
 automatic customer notification. A custom response records reviewer feedback
 without executing either action. The interrupt crosses `/v1/responses` as a
 standard tool call, so clients can collect the human response without
 understanding the graph topology.
+
+Before pausing, `announce_review` streams a short notice through a deterministic
+fake chat model, as an agent explaining its next step would. Streaming clients
+show that text above the review; non-streaming Responses carry only the review
+call. The notice has its own node because LangGraph reruns the interrupted node
+from the start on resume, which would stream it again.
 
 The checkpointer stores pending graph state. It does not store ordinary chat
 history or the application document used by
@@ -21,7 +27,8 @@ external effect.
 
 ```mermaid
 graph TD;
-  start["__start__"] --> review_refund;
+  start["__start__"] --> announce_review;
+  announce_review --> review_refund;
   execute_refund --> notify_customer;
   review_refund -.-> finish["__end__"];
   review_refund -.-> execute_refund;
@@ -43,6 +50,8 @@ sequenceDiagram
   User->>UI: Request protected action
   UI->>API: Initial Responses request
   API->>Graph: Invoke under run coordinator
+  Graph-->>API: Review notice tokens
+  API-->>UI: Streamed answer text
   Graph->>DB: Save refund pause
   Graph-->>API: Refund review function call
   API-->>UI: Standard Response function_call item
@@ -77,8 +86,9 @@ can still replay them.
 The demo uses LGOS's default shared checkpoint scope, so multi-tenant
 applications must derive that scope from authenticated server state.
 
-The demo has no expiry worker. Production deployments must reap abandoned
-pending runs and follow LangGraph's
+The demo API deletes runs left paused longer than
+`DEMO_API_INTERRUPT_TTL_MINUTES`. Production deployments must also follow
+LangGraph's
 [interrupt idempotency rules](https://docs.langchain.com/oss/python/langgraph/interrupts#rules-of-interrupts).
 
 The application must also authorize and audit the reviewing identity. Interrupt

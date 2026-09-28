@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from typing import Any, Literal, Self
+from typing import Any, Protocol
 
 from pydantic import (
     AliasPath,
@@ -10,7 +10,6 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
-    ValidationError,
     ValidationInfo,
     field_validator,
 )
@@ -23,14 +22,16 @@ from pydantic import (
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/metadata.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/client_settings.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/features.py
-# https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/graph/utils.py
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
 DISPLAY_FILE_TOOL_NAME = "display_file"
 PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"
 ASK_USER_TOOL_NAME = "ask_user"
 ASK_USER_CALL_ID_PREFIX = "lgos_ask_"
+# Open WebUI's ask_user limits. It truncates longer text instead of rejecting it.
 ASK_USER_MAX_QUESTIONS = 3
+ASK_USER_QUESTION_ID_MAX_LENGTH = 64
 ASK_USER_QUESTION_MAX_LENGTH = 500
+ASK_USER_LABEL_MAX_LENGTH = 80
 ASK_USER_REJECTED_OUTPUT = "Error: tool call rejected by user."
 INTERRUPT_CANCELLED_MESSAGE = "Interrupt cancelled."
 LGOS_EXTENSION_KEY = "lgos"
@@ -38,12 +39,14 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
-SERVER_TOOL_MODEL_NAME = "server-tool"
-ADVANCED_GRAPH_MODEL_NAME = "advanced-graph"
 PERSISTENT_PLOT_MODEL_NAME = "persistent-plot-agent"
 PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
 WEB_SEARCH_TOOL_NAME = "web_search"
 BACKGROUND_SETTING_NAME = "lgos_background"
+# Chat Variables the Pipe consumes itself; they never become graph settings.
+PIPE_SETTING_NAMES = frozenset(
+    {BACKGROUND_SETTING_NAME, PACKAGE_VERSION_TOOL_NAME, WEB_SEARCH_TOOL_NAME}
+)
 INTEGER_TEXT = re.compile(r"-?\d+")
 # Open WebUI prepends the rendered declarations to the first system message.
 # Form values are single-line, so these newline-anchored lines bound them.
@@ -54,41 +57,33 @@ PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 OpenWebUIEventEmitter = Callable[[dict[str, Any]], Awaitable[object]]
 
 
-class OpenWebUIHostModel(BaseModel):
-    """Validated projection of an additive Open WebUI-owned object."""
+class OpenWebUIRequest(Protocol):
+    """The parts of Open WebUI's Starlette request this Function uses."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+    @property
+    def app(self) -> Callable[..., Awaitable[None]]: ...
 
-
-class OpenWebUIStoredFileMetadata(OpenWebUIHostModel):
-    content_type: str | None = None
-
-
-class OpenWebUIStoredFile(OpenWebUIHostModel):
-    path: str | None = None
-    filename: str | None = None
-    meta: OpenWebUIStoredFileMetadata | None = None
+    @property
+    def headers(self) -> Mapping[str, str]: ...
 
 
-class OpenWebUIFile(OpenWebUIHostModel):
-    id: str | None = None
+class OpenWebUIFile(BaseModel):
+    id: str = ""
     type: str | None = None
-    name: str | None = None
-    content_type: str | None = None
-    file: OpenWebUIStoredFile | None = None
+    name: str = ""
 
 
-class OpenWebUIMessageFunction(OpenWebUIHostModel):
+class OpenWebUIMessageFunction(BaseModel):
     name: str | None = None
     arguments: str | None = None
 
 
-class OpenWebUIMessageToolCall(OpenWebUIHostModel):
+class OpenWebUIMessageToolCall(BaseModel):
     id: str | None = None
     function: OpenWebUIMessageFunction | None = None
 
 
-class OpenWebUIMessage(OpenWebUIHostModel):
+class OpenWebUIMessage(BaseModel):
     role: str | None = None
     content: JsonValue = None
     phase: str | None = None
@@ -96,19 +91,9 @@ class OpenWebUIMessage(OpenWebUIHostModel):
     tool_call_id: str | None = None
 
 
-class OpenWebUIBody(OpenWebUIHostModel):
-    model: str = Field(min_length=1)
+class OpenWebUIBody(BaseModel):
+    model: str
     messages: list[OpenWebUIMessage]
-    stream: bool = False
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, value: str) -> str:
-        _, separator, model_id = value.partition(".")
-        if not separator or not model_id:
-            msg = "Open WebUI did not provide a valid model ID."
-            raise ValueError(msg)
-        return value
 
     @field_validator("messages")
     @classmethod
@@ -135,21 +120,22 @@ class OpenWebUIBody(OpenWebUIHostModel):
 
     @property
     def model_id(self) -> str:
+        """Return the graph model from Open WebUI's ``<pipe>.<model>`` ID."""
         return self.model.partition(".")[2]
 
 
-class OpenWebUIUserMessage(OpenWebUIHostModel):
+class OpenWebUIUserMessage(BaseModel):
     files: list[OpenWebUIFile] = Field(default_factory=list)
 
 
-class OpenWebUIChatVariableField(OpenWebUIHostModel):
+class OpenWebUIChatVariableField(BaseModel):
     key: str | None = None
     type: str | None = None
 
 
-class OpenWebUIMetadata(OpenWebUIHostModel):
+class OpenWebUIMetadata(BaseModel):
     chat_id: str | None = None
-    # Validated before chat_variables so their values can follow these types.
+    # Validated before chat_variables, which keep only these declared fields.
     model_chat_variables: list[OpenWebUIChatVariableField] = Field(
         default_factory=list,
         validation_alias=AliasPath(
@@ -157,23 +143,26 @@ class OpenWebUIMetadata(OpenWebUIHostModel):
         ),
     )
     chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
+    # Complete runtime settings added by a settings Filter such as UserValves.
+    lgos_settings: dict[str, JsonValue] | None = None
     user_message: OpenWebUIUserMessage | None = None
 
     @field_validator("chat_variables")
     @classmethod
-    def type_declared_chat_variables(
+    def declared_chat_variables(
         cls, values: dict[str, JsonValue], info: ValidationInfo
     ) -> dict[str, JsonValue]:
-        """Restore declared types; the form keeps untouched defaults as text."""
+        """Keep the selected model's variables and restore their declared types."""
         field_types = {
             field.key: field.type for field in info.data.get("model_chat_variables", [])
         }
         typed: dict[str, JsonValue] = {}
         for key, value in values.items():
-            # Open WebUI treats empty values as unset, so LGOS applies defaults.
-            if value is None or value == "":
+            # A chat keeps the variables of every model it has used. Open WebUI
+            # treats empty values as unset, so LGOS applies its defaults.
+            if key not in field_types or value is None or value == "":
                 continue
-            field_type = field_types.get(key)
+            field_type = field_types[key]
             if field_type == "checkbox":
                 # The form checks the box only for these two values.
                 typed[key] = value is True or value == "true"
@@ -187,87 +176,11 @@ class OpenWebUIMetadata(OpenWebUIHostModel):
                 typed[key] = value
         return typed
 
-    def supports_chat_variable(self, key: str) -> bool:
-        return any(field.key == key for field in self.model_chat_variables)
 
-
-class OpenWebUIUser(OpenWebUIHostModel):
-    id: str | None = None
-
-
-class OpenWebUIToolSpec(OpenWebUIHostModel):
+class OpenWebUIToolSpec(BaseModel):
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
     strict: bool = False
-
-
-class OpenWebUIMCPTool(OpenWebUIHostModel):
-    type: Literal["mcp"]
-    spec: OpenWebUIToolSpec
-
-
-class OpenWebUIInvocation(OpenWebUIHostModel):
-    """The complete validated subset of one Open WebUI Pipe invocation."""
-
-    body: OpenWebUIBody
-    metadata: OpenWebUIMetadata
-    user: OpenWebUIUser
-    files: list[OpenWebUIFile]
-    mcp_tools: dict[str, OpenWebUIMCPTool]
-
-    @classmethod
-    def from_host(
-        cls,
-        *,
-        body: object,
-        metadata: object,
-        user: object,
-        files: object,
-        tools: object,
-    ) -> Self:
-        if tools is None:
-            raw_tools: Mapping[object, object] = {}
-        elif isinstance(tools, Mapping):
-            raw_tools = tools
-        else:
-            msg = "Open WebUI provided invalid Function arguments."
-            raise ValueError(msg)
-
-        # Open WebUI may inject unrelated built-in and client tools. Only MCP
-        # declarations participate in this Function's Responses request.
-        mcp_tools = {
-            name: value
-            for name, value in raw_tools.items()
-            if isinstance(name, str)
-            and isinstance(value, Mapping)
-            and value.get("type") == "mcp"
-        }
-        try:
-            return cls.model_validate(
-                {
-                    "body": body,
-                    "metadata": metadata if metadata is not None else {},
-                    "user": user if user is not None else {},
-                    "files": files if files is not None else [],
-                    "mcp_tools": mcp_tools,
-                }
-            )
-        except ValidationError as exc:
-            msg = "Open WebUI provided invalid Function arguments."
-            raise ValueError(msg) from exc
-
-
-def is_server_tool_model(model_id: str) -> bool:
-    """Return whether a model is the fixed server-tool showcase."""
-    return model_id.rsplit("/", 1)[-1] == SERVER_TOOL_MODEL_NAME
-
-
-def supports_web_search(model_id: str) -> bool:
-    """Return whether the demo UI may request LGOS server-side web search."""
-    return model_id.rsplit("/", 1)[-1] in {
-        ADVANCED_GRAPH_MODEL_NAME,
-        SERVER_TOOL_MODEL_NAME,
-    }
 
 
 def supports_display_file(model_id: str) -> bool:

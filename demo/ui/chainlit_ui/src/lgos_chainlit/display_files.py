@@ -7,7 +7,7 @@ from openai.types.responses import FunctionToolParam, ResponseFunctionToolCall
 from plotly import io as pio
 from pydantic import BaseModel, ConfigDict, Field
 
-from lgos_chainlit.clients import files_request
+from lgos_chainlit.clients import gateway, v1_client
 
 DISPLAY_FILE_TOOL_NAME = "display_file"
 PLOTLY_MEDIA_TYPE = "application/vnd.plotly.v1+json"
@@ -36,16 +36,13 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
 
 async def display_file(call: ResponseFunctionToolCall) -> dict[str, object]:
     """Download and persist a native image or interactive Plotly element."""
-    if call.name != DISPLAY_FILE_TOOL_NAME:
-        raise ValueError(f"Unsupported client function: {call.name}")
     try:
         arguments = DisplayFileArguments.model_validate_json(call.arguments)
     except ValueError as exc:
         raise ValueError("The display_file call contains invalid arguments.") from exc
 
-    client, provider = files_request()
-    download = await client.files.content(
-        arguments.file_id, extra_query={"provider": provider}
+    download = await v1_client.files.content(
+        arguments.file_id, extra_query={"provider": gateway.files_provider}
     )
     content = await download.aread()
     if arguments.media_type == PLOTLY_MEDIA_TYPE:

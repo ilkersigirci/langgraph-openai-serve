@@ -22,19 +22,19 @@ Workspace Model has no Chat Variables form and reuses the Generic Pipe for
 Responses transport. Keep the Filter attached only to this example.
 
 The Function uses Responses exclusively and never connects directly to LGOS.
-`OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for inference, Files,
-and MCP. LiteLLM uses managed Responses routing; Bifrost uses its native
+`OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for inference and
+Files. LiteLLM uses managed Responses routing; Bifrost uses its native
 Responses route. LiteLLM metadata comes from native `/model/info`; Bifrost uses
 its aggregate catalog and model-detail pass-through.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
 The full-stack `just demo/compose [--dev] [--otel]` variants do this
 and run the Open WebUI sync automatically.
 
-The sync also creates one native `lgos-gateway` MCP connection and attaches it
-to generated Workspace Models that advertise the `mcp_tools` feature. It
-derives the MCP endpoint from `OPENAI_GATEWAY_BASE_URL` and uses
-`OPENAI_GATEWAY_API_KEY`; the gateway decides which tools that credential may
-discover.
+Compose declares one native `lgos-gateway` MCP connection through Open WebUI's
+`TOOL_SERVER_CONNECTIONS`, and the sync attaches it to generated Workspace
+Models that advertise the `mcp_tools` feature. The connection uses
+`OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`; the gateway decides
+which tools that credential may discover.
 
 ```bash
 cp .env.example .env
@@ -42,7 +42,8 @@ uv run --locked --env-file .env lgos-openwebui-sync
 ```
 
 The command reads the gateway catalog before changing Open WebUI, then updates
-the bundled Functions and generates one Workspace Model per public model name.
+the bundled Functions, sets the Generic Function's gateway valves, and generates
+one Workspace Model per public model name.
 LiteLLM's `model_info.lgos` supplies the full metadata and
 `model_name` is sent unchanged for inference. Each generated model
 exposes the current LGOS runtime settings as native per-chat Chat Variables.

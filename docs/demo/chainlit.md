@@ -54,7 +54,9 @@ value before starting the UI; neither service reads the other's S3 settings.
     just demo/compose
     ```
 
-    With LiteLLM selected, this syncs model metadata before starting Chainlit.
+    Chainlit starts before the gateway to initialize the conversation tables
+    used by MCP reports. With LiteLLM selected, the command syncs model metadata
+    once the gateway is ready. Open `http://localhost:3002` after it completes.
 
     If the gateway and backends are already running,
     `just demo/up lgos-chainlit`
@@ -62,8 +64,7 @@ value before starting the UI; neither service reads the other's S3 settings.
 
 === "Local processes"
 
-    Start the selected gateway and its API and Files dependencies from one
-    terminal:
+    Start the selected gateway and its dependencies from one terminal:
 
     === "LiteLLM"
 
@@ -77,14 +78,20 @@ value before starting the UI; neither service reads the other's S3 settings.
         just demo/up lgos-bifrost
         ```
 
-    Then start Chainlit from a second terminal. Both gateways use host port 3000:
+    Both gateways use port 3000 and start a Chainlit container on port 3002
+    for the MCP reporting schema. Run the local UI on a separate port:
 
     ```bash
-    just demo/chainlit
+    just demo/chainlit --port 5000
     ```
 
-Both modes apply pending Chainlit schema migrations before the UI starts. Open
-`http://localhost:3002`. See [Docker Compose](docker.md#demo-services)
+    Open `http://localhost:5000`. With LiteLLM, sync model metadata as described
+    below before using the local UI.
+
+Chainlit's application lifespan applies pending schema migrations on every
+startup before accepting requests. The `chainlit-utils` migration ledger skips
+applied versions, and its PostgreSQL lock serializes concurrent workers.
+Migration failures stop startup. See [Docker Compose](docker.md#demo-services)
 for container endpoints.
 
 When starting components independently with LiteLLM, [sync model
@@ -231,8 +238,8 @@ integers. The adapter checks only these types, integer bounds, and select
 membership when restoring the UI; it does not interpret general JSON Schema
 constraints. LGOS remains the validation authority. If the required LGOS
 model extension is unavailable, Chainlit hides the controls, uses server
-defaults, and shows a transient **Limited functionality** warning after
-selection. Profile discovery itself stays
+defaults, keeps the thread's saved selections for when the metadata returns,
+and shows a transient **Limited functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
 ![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
@@ -244,7 +251,8 @@ The same panel includes a Chainlit-owned **Stream response** switch for every
 profile. It defaults to enabled and selects `responses.stream` or
 `responses.create`; it is not included in `lgos_settings`. With
 streaming disabled, Chainlit waits for the complete response and sends the
-answer once.
+answer once. The switch also applies to the answer that follows a human
+review.
 
 Models advertising `background` also receive an opt-in **Run in
 background** switch. Chainlit uses non-streaming create/retrieve polling,
@@ -457,16 +465,24 @@ pending-request protection, and batch continuation, and its `HumanReview`
 element renders the form. The demo keeps only the LGOS `lgos_interrupt` name,
 the Responses request callback, and the conversion of each interrupt payload
 into a review prompt with its choices.
-The workflow publishes a normal Chainlit message with one persisted custom
-element and immediately returns. The element collects one answer for every
+Answer text the graph produced before a pause stays in the conversation above
+the form. The exception is a resumed run that pauses again directly: that pause
+updates the existing form, so its text follows it. The workflow publishes a
+normal Chainlit message with one persisted
+custom element and immediately returns. The element collects one answer for every
 interrupt call in the current batch, then invokes a native Chainlit action
 callback through `callAction`. The callback reads the trusted model ID,
 Response ID, exact function calls, and expected element ID from message
 metadata; the browser sends only opaque step, element, and revision references
 plus the answers. One accepted action advances one Responses transition. A later
-interrupt updates the same form, while a terminal response marks the ledger
-complete and removes it. The client therefore depends only on the standard
-tool-call batch, not the graph topology. See the shared
+interrupt updates the same form, while any other response marks the ledger
+complete and removes it. The demo then finishes the turn like any other: it
+runs client function calls such as MCP tools or `display_file` and requests the
+answer with their results. The resumed run has already finished, so those
+requests start from the conversation text, and files attached to the reviewed
+turn are not sent again. The client therefore depends only on the standard
+tool-call batch, not the graph topology.
+See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
 [design rationale](design-choices.md#chainlit).
 
@@ -537,8 +553,9 @@ the figure with `plotly.io.from_json`, and persists a native
 interactive hover, zoom, and legend controls. It returns the matching
 `function_call_output` before requesting the final answer. Image files still
 use the native `Image` element.
-Each continuation retains the original input, including instructions and file
-references, then appends the complete Response output and matching tool results.
+Each continuation of a new turn retains the original input, including
+instructions and file references, then appends the complete Response output and
+matching tool results.
 Streaming and non-streaming modes retain final-answer text from every call in
 that exchange and exclude commentary from the answer.
 The official data layer stores the element in the configured S3-compatible
@@ -614,7 +631,8 @@ because those native contracts are release-specific.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for
   native file and chart persistence. File-capable profiles enable attachments.
-- Run `lgos-chainlit-setup` before starting or replacing workers.
+- Allow the startup lifecycle to finish migrations before routing traffic to
+  a new worker; the health endpoint becomes available afterward.
 
 See Chainlit's documentation for
 [password callbacks](https://docs.chainlit.io/authentication/password),

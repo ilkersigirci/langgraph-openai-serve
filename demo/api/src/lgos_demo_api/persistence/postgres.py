@@ -1,10 +1,12 @@
 """PostgreSQL persistence wiring for the demo API and background worker."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
+import anyio
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph_openai_serve.integrations.postgres import PostgresRunCoordinator
@@ -15,6 +17,9 @@ from psycopg_pool import AsyncConnectionPool
 _POOL_MIN_SIZE = 1
 _POOL_MAX_SIZE = 5
 _MAX_COORDINATION_LEASES = _POOL_MAX_SIZE - 1
+_SCHEMA_LOCK_ID = 0x4C474F535343484D
+
+logger = logging.getLogger(__name__)
 
 PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 
@@ -35,6 +40,7 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
     Yields:
         Configured PostgreSQL-backed graph dependencies.
     """
+    await setup_postgres_schema(postgres_uri)
     pool_context = cast(
         "PostgresPool",
         AsyncConnectionPool(
@@ -62,13 +68,28 @@ async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
 
 
 async def setup_postgres_schema(postgres_uri: str) -> None:
-    """Initialize LangGraph's PostgreSQL persistence schemas once."""
-    async with (
-        AsyncPostgresSaver.from_conn_string(postgres_uri) as checkpointer,
-        AsyncPostgresStore.from_conn_string(postgres_uri) as store,
-    ):
-        await checkpointer.setup()
-        await store.setup()
+    """Apply pending LangGraph migrations before this process serves work."""
+    logger.info("demo.persistence_schema.initializing")
+    async with await AsyncConnection[dict[str, Any]].connect(
+        postgres_uri, autocommit=True, prepare_threshold=0, row_factory=dict_row
+    ) as connection:
+        # A blocking advisory-lock query holds a snapshot that can deadlock with
+        # LangGraph's CREATE INDEX CONCURRENTLY. Poll in autocommit instead, so
+        # waiting replicas leave no active snapshot. Closing this dedicated
+        # session releases the lock on success or failure.
+        with anyio.fail_after(60):
+            while True:
+                cursor = await connection.execute(
+                    "SELECT pg_try_advisory_lock(%s) AS acquired", (_SCHEMA_LOCK_ID,)
+                )
+                row = await cursor.fetchone()
+                assert row is not None
+                if row["acquired"]:
+                    break
+                await anyio.sleep(0.1)
+        await AsyncPostgresSaver(connection).setup()
+        await AsyncPostgresStore(connection).setup()
+    logger.info("demo.persistence_schema.ready")
 
 
 __all__ = [

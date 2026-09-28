@@ -26,7 +26,7 @@ async def test_streams_portable_markdown_with_anchored_citations(
     make_graph_input,
 ) -> None:
     registry = GraphRegistry(
-        registry={
+        graphs={
             "citation-events": GraphConfig(
                 graph=citation_graph,
                 description="DUMMY",

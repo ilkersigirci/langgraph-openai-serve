@@ -35,7 +35,7 @@ def deterministic_app() -> FastAPI:
         .compile()
     )
     registry = GraphRegistry(
-        registry={
+        graphs={
             "deterministic": GraphConfig(
                 graph=fallback_graph,
                 description="DUMMY",
@@ -46,7 +46,7 @@ def deterministic_app() -> FastAPI:
             ),
         }
     )
-    return LanggraphOpenaiServe(graphs=registry).bind_openai_api().app
+    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
 @pytest.fixture

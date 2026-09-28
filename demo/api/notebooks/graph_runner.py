@@ -48,7 +48,7 @@ def _():
         exclude={"stream"},
     )
     graph_registry = GraphRegistry(
-        registry={MODEL: citation_graph_config},
+        graphs={MODEL: citation_graph_config},
     )
 
     def check_parity(path: str, complete: str, streamed: str):

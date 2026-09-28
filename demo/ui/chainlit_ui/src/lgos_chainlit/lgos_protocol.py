@@ -20,8 +20,7 @@ Authoritative LGOS sources:
 """
 
 import logging
-from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated
 
 from openai.types import Model
 from pydantic import (
@@ -30,6 +29,8 @@ from pydantic import (
     JsonValue,
     StringConstraints,
     ValidationError,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,24 +41,29 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 INTERRUPT_TOOL_NAME = "lgos_interrupt"
-
-
-class GraphFeature(StrEnum):
-    """Features advertised for an LGOS model."""
-
-    BACKGROUND = "background"
-    FILE_INPUTS = "file_inputs"
-    MCP_TOOLS = "mcp_tools"
+BACKGROUND_FEATURE = "background"
+FILE_INPUTS_FEATURE = "file_inputs"
+MCP_TOOLS_FEATURE = "mcp_tools"
 
 
 class ModelClientSettings(BaseModel):
-    """Versioned runtime-settings descriptor advertised for one model."""
+    """Runtime-settings descriptor advertised for one model."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
-    schema_version: Literal[1]
     json_schema: dict[str, JsonValue]
     defaults: dict[str, JsonValue]
+
+
+def _settings_or_none(
+    value: object, handler: ValidatorFunctionWrapHandler
+) -> ModelClientSettings | None:
+    # Malformed settings disable only the settings form, not the model's features.
+    try:
+        return handler(value)
+    except ValidationError:
+        logger.warning("Ignoring invalid LGOS runtime settings")
+        return None
 
 
 class LangGraphModelExtension(BaseModel):
@@ -65,65 +71,23 @@ class LangGraphModelExtension(BaseModel):
 
     model_config = ConfigDict(allow_inf_nan=False, extra="ignore")
 
-    schema_version: Literal[1]
     description: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
     features: list[str]
-    client_settings: JsonValue = None
-
-
-def _raw_model_extension(model: Model) -> dict[str, Any] | None:
-    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
-    return extension if isinstance(extension, dict) else None
-
-
-def model_description(model: Model) -> str | None:
-    """Read a required LGOS description, returning None for degraded metadata."""
-    extension = _raw_model_extension(model)
-    if extension is None or extension.get("schema_version") != 1:
-        return None
-    description = extension.get("description")
-    if not isinstance(description, str):
-        return None
-    description = description.strip()
-    return description or None
+    client_settings: Annotated[
+        ModelClientSettings | None, WrapValidator(_settings_or_none)
+    ] = None
 
 
 def model_extension(model: Model) -> LangGraphModelExtension | None:
-    """Parse the versioned LGOS extension preserved by the OpenAI SDK."""
-    extension = _raw_model_extension(model)
+    """Parse the LGOS extension preserved by the OpenAI SDK."""
+    extension = (model.model_extra or {}).get(LGOS_EXTENSION_KEY)
     if extension is None:
         return None
-
     try:
         return LangGraphModelExtension.model_validate(extension)
     except ValidationError:
-        logger.warning(
-            "Ignoring invalid LGOS metadata for model %s",
-            model.id,
-        )
-        return None
-
-
-def model_supports(model: Model, feature: GraphFeature) -> bool:
-    """Return whether retrieved model metadata declares an LGOS feature."""
-    extension = model_extension(model)
-    return extension is not None and feature.value in extension.features
-
-
-def model_client_settings(model: Model) -> ModelClientSettings | None:
-    """Return a supported runtime settings descriptor, when available."""
-    extension = model_extension(model)
-    if extension is None or extension.client_settings is None:
-        return None
-
-    try:
-        return ModelClientSettings.model_validate(extension.client_settings)
-    except ValidationError:
-        logger.warning(
-            "Ignoring unsupported LGOS runtime settings for model %s",
-            model.id,
-        )
+        logger.warning("Ignoring invalid LGOS metadata for model %s", model.id)
         return None

@@ -28,11 +28,11 @@ class Settings(BaseSettings):
     )
     OPENAI_GATEWAY_TYPE: GatewayType = Field(
         validation_alias="OPENAI_GATEWAY_TYPE",
-        description="OpenAI gateway used for model synchronization.",
+        description="Gateway used for model discovery and stored in the Pipe's valves.",
     )
     OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
         validation_alias="OPENAI_GATEWAY_BASE_URL",
-        description="Gateway root reached by Open WebUI, stored as its MCP server.",
+        description="Gateway root reached by Open WebUI.",
     )
     DEMO_GATEWAY_HOST_URL: GatewayRoot | None = Field(
         default=None,
@@ -45,5 +45,5 @@ class Settings(BaseSettings):
     OPENAI_GATEWAY_API_KEY: str = Field(
         min_length=1,
         validation_alias="OPENAI_GATEWAY_API_KEY",
-        description="API key used for model discovery and MCP synchronization.",
+        description="API key used for model discovery and stored in the Pipe's valves.",
     )

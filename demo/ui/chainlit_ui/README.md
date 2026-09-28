@@ -12,8 +12,9 @@ gateway credential. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
 extension. Bifrost uses its aggregate catalog and model-detail pass-through.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
-The full-stack `just demo/compose [--dev] [--otel]` variants do this
-before starting Chainlit.
+The full-stack `just demo/compose [--dev] [--otel]` variants sync metadata
+after the gateway is ready. Chainlit starts earlier to initialize the tables
+used by MCP reports; open the UI after the command completes.
 
 Before starting, replace the example signing secret and configure the required
 S3-compatible bucket and credentials in `.env`.
@@ -28,9 +29,12 @@ changes from a sibling `chainlit-utils` checkout.
 
 ```bash
 cp .env.example .env
-uv run --locked --env-file .env lgos-chainlit-setup
 uv run --locked --env-file .env lgos-chainlit
 ```
+
+Every startup applies pending schema migrations through `chainlit-utils` before
+accepting requests. Its migration ledger and PostgreSQL lock make restarts and
+concurrent worker startup safe; migration failures stop startup.
 
 Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
 gateway type, base URL, API key, and `DEMO_AUDIO_*` speech models. Reusable
@@ -95,8 +99,6 @@ When compatible utility changes have not been published yet, use the sibling
 `chainlit-utils` checkout as a temporary editable overlay:
 
 ```bash
-uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" \
-  --env-file .env lgos-chainlit-setup
 uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" pytest
 uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" \
   ty check src --extra-search-path ../../../../chainlit-utils/src
@@ -110,11 +112,11 @@ that supplies the imported API and refresh `uv.lock`.
 
 ## Module ownership
 
-`chat.py` registers the Chainlit callbacks. `auth.py` configures login and
-gateway credentials; `clients.py` and
-`gateway.py` own gateway access. `conversation.py`, `chat_settings.py`,
-`files.py`, `display_files.py`, and `mcp.py` contain their respective
-LGOS-specific integrations. `lgos_protocol.py` owns the LGOS wire declarations;
+`chat.py` registers the Chainlit callbacks and runs each Responses turn.
+`auth.py` configures login and gateway credentials; `clients.py` and
+`gateway.py` own gateway access. `chat_settings.py`, `display_files.py`, and
+`mcp.py` contain their respective LGOS-specific integrations.
+`lgos_protocol.py` owns the LGOS wire declarations;
 `interrupts.py` reads the LGOS interrupt payload into the package's review form.
 `audio.py` binds the speech settings and gateway client.
 

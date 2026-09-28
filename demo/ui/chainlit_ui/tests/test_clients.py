@@ -1,4 +1,4 @@
-"""Gateway routing and OpenAI client coverage."""
+"""Gateway routing and model catalog coverage."""
 
 import httpx2
 import pytest
@@ -9,8 +9,29 @@ from lgos_chainlit import clients
 from lgos_chainlit.gateway import gateway_config
 
 
+@pytest.mark.parametrize(
+    ("gateway_type", "responses_base_url", "files_provider"),
+    [
+        ("litellm", "https://gateway.example/v1", "litellm_proxy"),
+        ("bifrost", "https://gateway.example/openai/v1", "lgos-files"),
+    ],
+)
+def test_each_gateway_uses_its_native_responses_and_files_routing(
+    gateway_type: str,
+    responses_base_url: str,
+    files_provider: str,
+) -> None:
+    gateway = gateway_config(gateway_type, "https://gateway.example/")
+
+    assert (gateway.responses_base_url, gateway.files_provider) == (
+        responses_base_url,
+        files_provider,
+    )
+
+
 async def test_bifrost_catalog_preserves_provider_metadata(
     monkeypatch: pytest.MonkeyPatch,
+    fake_gateway,
 ) -> None:
     monkeypatch.setattr(
         clients, "gateway", gateway_config("bifrost", "https://gateway.example")
@@ -20,133 +41,87 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         "object": "model",
         "created": 1,
         "owned_by": "langgraph-openai-serve",
-        "lgos": {"schema_version": 1, "description": "Graph", "features": []},
+        "lgos": {"description": "Graph", "features": []},
     }
+    catalog = [
+        {**graph, "id": "team/graph"},
+        {**graph, "id": "other/graph"},
+        {**graph, "id": "gpt-5", "owned_by": "openai"},
+    ]
+    # Provider detail bypasses native catalog filtering. It must not turn a
+    # restricted provider into extra selectable chat profiles.
+    detail = [graph, {**graph, "id": "not-allowed"}]
+    fake_gateway.replies += [
+        httpx2.Response(200, json={"object": "list", "data": data})
+        for data in (catalog, detail, detail)
+    ]
 
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        if request.url.path == "/v1/models":
-            data = [
-                {**graph, "id": "team/graph"},
-                {**graph, "id": "other/graph"},
-                {**graph, "id": "gpt-5", "owned_by": "openai"},
-            ]
-        else:
-            assert request.url.path == "/openai_passthrough/v1/models"
-            assert request.headers["x-model-provider"] in {"team", "other"}
-            # Provider detail bypasses native catalog filtering. It must not
-            # turn a restricted provider into extra selectable chat profiles.
-            data = [graph, {**graph, "id": "not-allowed"}]
-        return httpx2.Response(200, json={"object": "list", "data": data})
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
-        monkeypatch.setattr(
-            clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http),
-        )
-        models = await clients.list_models()
+    models = await clients.list_models()
 
     assert [model.id for model in models] == ["other/graph", "team/graph"]
     assert (models[0].model_extra or {})["lgos"] == graph["lgos"]
-
-
-def test_bifrost_uses_native_responses_and_files(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    gateway = gateway_config("bifrost", "https://gateway.example")
-    monkeypatch.setattr(clients, "gateway", gateway)
-
-    assert gateway.responses_base_url == "https://gateway.example/openai/v1"
-    assert gateway.files_base_url == "https://gateway.example/v1"
-    assert gateway.files_provider == "lgos-files"
-
-
-def test_chat_client_identifies_chainlit_for_telemetry() -> None:
-    assert clients.openai_client.default_headers["User-Agent"] == "lgos-chainlit"
+    assert [
+        (request.url.path, request.headers.get("x-model-provider"))
+        for request in fake_gateway.requests
+    ] == [
+        ("/v1/models", None),
+        ("/openai_passthrough/v1/models", "other"),
+        ("/openai_passthrough/v1/models", "team"),
+    ]
 
 
 async def test_model_retrieval_rejects_a_non_model_response(
     monkeypatch: pytest.MonkeyPatch,
+    fake_gateway,
 ) -> None:
     monkeypatch.setattr(
         clients, "gateway", gateway_config("bifrost", "https://gateway.example")
     )
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda _: httpx2.Response(200, json="unsupported model detail")
-        )
-    ) as http:
-        monkeypatch.setattr(
-            clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http),
-        )
-        with pytest.raises(OpenAIError, match="invalid model"):
-            await clients.retrieve_model("lgos-a/simple-graph")
+    fake_gateway.replies.append(httpx2.Response(200, json="unsupported model detail"))
+
+    with pytest.raises(OpenAIError, match="invalid model"):
+        await clients.retrieve_model("lgos-a/simple-graph")
 
 
 async def test_litellm_model_info_owns_catalog_and_preserves_public_names(
-    monkeypatch: pytest.MonkeyPatch,
+    fake_gateway,
 ) -> None:
-    monkeypatch.setattr(
-        clients, "gateway", gateway_config("litellm", "https://gateway.example")
-    )
-    metadata = {"schema_version": 1, "description": "Graph", "features": []}
+    metadata = {"description": "Graph", "features": []}
     names = ["graph", "research/namespace/graph"]
     deployments = [
         {"model_name": name, "model_info": {"lgos": metadata}} for name in names
     ]
+    payload = {
+        "data": [
+            *deployments,
+            deployments[0],
+            {"model_name": "gpt-5", "model_info": {}},
+        ]
+    }
+    fake_gateway.replies += [httpx2.Response(200, json=payload) for _ in range(3)]
 
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        assert request.method == "GET"
-        assert request.url.path == "/model/info"
-        assert request.headers["Authorization"] == "Bearer test-key"
-        assert "x-model-provider" not in request.headers
-        return httpx2.Response(
-            200,
-            json={
-                "data": [
-                    *deployments,
-                    deployments[0],
-                    {"model_name": "gpt-5", "model_info": {}},
-                ]
-            },
-        )
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
-        monkeypatch.setattr(
-            clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http, api_key="test-key"),
-        )
-        models = await clients.list_models()
-        retrieved = await clients.retrieve_model(names[1])
-        with pytest.raises(OpenAIError, match="not available"):
-            await clients.retrieve_model("removed")
+    models = await clients.list_models()
+    retrieved = await clients.retrieve_model(names[1])
+    with pytest.raises(OpenAIError, match="not available"):
+        await clients.retrieve_model("removed")
 
     assert [model.id for model in models] == names
     assert retrieved.id == names[1]
     assert (retrieved.model_extra or {})["lgos"] == metadata
+    assert {
+        (request.method, request.url.path, request.headers["Authorization"])
+        for request in fake_gateway.requests
+    } == {("GET", "/model/info", "Bearer test-api-key")}
 
 
 @pytest.mark.parametrize("status", [403, 200], ids=["forbidden", "invalid-payload"])
 async def test_litellm_catalog_errors_do_not_fall_back_to_other_routes(
-    monkeypatch: pytest.MonkeyPatch,
+    fake_gateway,
     status: int,
 ) -> None:
-    monkeypatch.setattr(
-        clients, "gateway", gateway_config("litellm", "https://gateway.example")
-    )
+    fake_gateway.replies.append(httpx2.Response(status, json={"error": "unavailable"}))
 
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        assert request.url.path == "/model/info"
-        return httpx2.Response(status, json={"error": "unavailable"})
+    with pytest.raises(OpenAIError if status == 403 else ValidationError):
+        await clients.list_models()
 
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
-        monkeypatch.setattr(
-            clients,
-            "openai_client",
-            clients.openai_client.with_options(http_client=http),
-        )
-        with pytest.raises(OpenAIError if status == 403 else ValidationError):
-            await clients.list_models()
+    assert [request.url.path for request in fake_gateway.requests] == ["/model/info"]

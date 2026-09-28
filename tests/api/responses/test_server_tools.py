@@ -14,7 +14,6 @@ from openai.types.responses import Response, ResponseStreamEvent
 
 from langgraph_openai_serve import (
     GraphConfig,
-    GraphFeature,
     GraphRegistry,
     GraphRequest,
 )
@@ -23,7 +22,7 @@ from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.server_tools import ServerToolTracker
 from langgraph_openai_serve.api.responses.service import stream_response
 from langgraph_openai_serve.graph.events import status_event
-from langgraph_openai_serve.graph.utils import prepare_run
+from langgraph_openai_serve.graph.run import prepare_run
 from tests.graph.support.registration import replace_graph_config
 
 CALL = {
@@ -78,13 +77,10 @@ def _register_single_node(
         .set_finish_point("answer")
         .compile()
     )
-    registry.register(
-        name,
-        GraphConfig(
-            graph=graph,
-            description=name,
-            server_tools=server_tools,
-        ),
+    registry.graphs[name] = GraphConfig(
+        graph=graph,
+        description=name,
+        server_tools=server_tools,
     )
 
 
@@ -309,11 +305,6 @@ async def test_private_tools_and_nonstream_status_stay_out_of_output(
         answer,
         server_tools={"package_version"},
     )
-    replace_graph_config(
-        graph_registry,
-        "package",
-        features={GraphFeature.CLIENT_EVENTS},
-    )
 
     response, _ = await _create(
         openai_client,
@@ -376,13 +367,10 @@ async def test_server_custom_tool_exchange_events_and_replay(
         .set_finish_point("answer")
         .compile()
     )
-    graph_registry.register(
-        "package",
-        GraphConfig(
-            graph=graph,
-            description="Package",
-            server_tools={"package_version"},
-        ),
+    graph_registry.graphs["package"] = GraphConfig(
+        graph=graph,
+        description="Package",
+        server_tools={"package_version"},
     )
 
     response, events = await _create(
@@ -646,14 +634,10 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
         .set_finish_point("answer")
         .compile()
     )
-    graph_registry.register(
-        "live-search",
-        GraphConfig(
-            graph=graph,
-            description="Live search",
-            server_tools={"web_search"},
-            features={GraphFeature.CLIENT_EVENTS},
-        ),
+    graph_registry.graphs["live-search"] = GraphConfig(
+        graph=graph,
+        description="Live search",
+        server_tools={"web_search"},
     )
     request = ResponseCreateRequest(
         model="live-search", input="Find docs", tools=SEARCH_TOOLS
@@ -681,6 +665,39 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
     assert response["output"][0]["phase"] == "commentary"
     assert response["output"][-1]["content"][0]["text"] == "Docs"
     assert response["output"][-1]["status"] == ("incomplete" if fail else "completed")
+
+
+async def test_repeated_server_tool_call_id_fails(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    async def repeated(_state: MessagesState):
+        result = ToolMessage(
+            content="langgraph==installed-version", tool_call_id="call_package"
+        )
+        return {
+            "messages": [
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
+                result,
+                AIMessage(content="Done."),
+            ]
+        }
+
+    _register_single_node(
+        graph_registry,
+        "package",
+        repeated,
+        server_tools={"package_version"},
+    )
+
+    with pytest.raises(InternalServerError):
+        await openai_client.responses.create(
+            model="package",
+            input="Version?",
+            tools=PACKAGE_TOOLS,
+        )
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -719,36 +736,3 @@ async def test_unfinished_server_execution_fails(
     assert failed.status == "failed"
     assert [item.type for item in failed.output] == ["custom_tool_call"]
     assert failed.output[0].call_id == "call_package"
-
-
-async def test_repeated_server_tool_call_id_fails(
-    openai_client: AsyncOpenAI,
-    graph_registry: GraphRegistry,
-) -> None:
-    async def repeated(_state: MessagesState):
-        result = ToolMessage(
-            content="langgraph==installed-version", tool_call_id="call_package"
-        )
-        return {
-            "messages": [
-                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
-                result,
-                AIMessage(content=[CALL_ITEM], tool_calls=[CALL]),
-                result,
-                AIMessage(content="Done."),
-            ]
-        }
-
-    _register_single_node(
-        graph_registry,
-        "package",
-        repeated,
-        server_tools={"package_version"},
-    )
-
-    with pytest.raises(InternalServerError):
-        await openai_client.responses.create(
-            model="package",
-            input="Version?",
-            tools=PACKAGE_TOOLS,
-        )

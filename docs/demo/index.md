@@ -142,7 +142,7 @@ Bifrost uses catalog-detail pass-through.
 | Demo client | File input | MCP | Runtime settings | Interrupts | Background | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and polling | Native status and persisted image elements | Markdown content |
-| Open WebUI generated models | Uploads attachments to the central Files API | One synchronized gateway connection attached from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Generated Chat Variable and polling | Native status and persisted file events | Native source events and Markdown |
+| Open WebUI generated models | Uploads attachments to the central Files API | One Compose-configured gateway connection attached from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Generated Chat Variable and polling | Native status and persisted file events | Native source events and Markdown |
 
 Both clients still expose limited-functionality models when LGOS metadata is
 missing; see their client-specific guides for that behavior.
@@ -171,8 +171,8 @@ for the normative continuation and retention contract.
 
 Chainlit persists the paused Response ID and exact interrupt calls in a pending
 interrupt record with a documented crash window.
-Open WebUI persists its native `ask_user` card and opaque graph cursor on the
-assistant message. Their exact recovery boundaries are documented on the
+Open WebUI persists its native `ask_user` card, which carries the paused
+Response ID and interrupt call IDs, on the assistant message. Their exact recovery boundaries are documented on the
 [Chainlit](chainlit.md#interrupt-demo) and
 [Open WebUI](open-webui.md#interrupt-input) pages.
 

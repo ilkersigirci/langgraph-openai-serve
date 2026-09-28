@@ -9,8 +9,8 @@ from openai import OpenAI, OpenAIError
 from .bundle import bundle_function
 from .functions.generic.gateway import gateway_config
 from .settings import Settings
-from .tool_servers import MCP_GATEWAY_ID, sync_mcp_gateway
 from .workspace_models import (
+    GENERIC_FUNCTION_ID,
     discover_workspace_model_specs,
     sync_workspace_models,
 )
@@ -28,64 +28,22 @@ class FunctionSpec:
 FUNCTIONS_DIR = Path(__file__).with_name("functions")
 
 
-def _frontmatter_title(content: str) -> str | None:
-    lines = content.splitlines()
-    if not lines or lines[0].strip() != '"""':
-        return None
-
-    title = None
-    for line in lines[1:]:
-        if '"""' in line:
-            break
-        key, separator, value = line.lstrip().partition(":")
-        if separator and key == "title":
-            title = value.strip()
-    return title
-
-
-def discover_function_specs(
-    functions_dir: Path = FUNCTIONS_DIR,
-) -> tuple[FunctionSpec, ...]:
-    """Build Function specs from source files and modular Function directories."""
-    specs: list[FunctionSpec] = []
-    sources = sorted(
-        source
-        for source in functions_dir.iterdir()
-        if not source.name.startswith("_")
-        and (source.is_dir() or (source.is_file() and source.suffix == ".py"))
+def function_specs() -> tuple[FunctionSpec, ...]:
+    """Return the demo's Open WebUI Functions."""
+    return (
+        FunctionSpec(
+            id=GENERIC_FUNCTION_ID,
+            name="Generic",
+            content=bundle_function(FUNCTIONS_DIR / "generic"),
+        ),
+        FunctionSpec(
+            id="uservalves_simple",
+            name="UserValves Simple",
+            content=(FUNCTIONS_DIR / "uservalves_simple.py").read_text(
+                encoding="utf-8"
+            ),
+        ),
     )
-
-    for source in sources:
-        function_id = source.stem if source.is_file() else source.name
-        if not function_id.isidentifier() or function_id != function_id.lower():
-            msg = (
-                f"Open WebUI Function filename must be a lowercase Python identifier: "
-                f"{source.name}"
-            )
-            raise ValueError(msg)
-
-        content = (
-            bundle_function(source)
-            if source.is_dir()
-            else source.read_text(encoding="utf-8")
-        )
-        title = _frontmatter_title(content)
-        if not title:
-            msg = f"Open WebUI Function is missing a frontmatter title: {source}"
-            raise ValueError(msg)
-
-        specs.append(
-            FunctionSpec(
-                id=function_id,
-                name=title,
-                content=content,
-            )
-        )
-
-    if not specs:
-        msg = f"No Open WebUI Functions found in {functions_dir}"
-        raise ValueError(msg)
-    return tuple(specs)
 
 
 def sign_in(client: httpx2.Client, email: str, password: str) -> None:
@@ -94,12 +52,7 @@ def sign_in(client: httpx2.Client, email: str, password: str) -> None:
         "/api/v1/auths/signin",
         json={"email": email, "password": password},
     ).raise_for_status()
-    data = response.json()
-    token = data.get("token") if isinstance(data, dict) else None
-    if not isinstance(token, str) or not token:
-        msg = "Open WebUI sign-in response did not contain a token."
-        raise ValueError(msg)
-    client.headers["Authorization"] = f"Bearer {token}"
+    client.headers["Authorization"] = f"Bearer {response.json()['token']}"
 
 
 def sync_functions(
@@ -107,30 +60,19 @@ def sync_functions(
     specs: tuple[FunctionSpec, ...] | None = None,
 ) -> dict[str, str]:
     """Create/update maintained Functions while preserving unrelated Functions."""
-    specs = discover_function_specs() if specs is None else specs
+    specs = function_specs() if specs is None else specs
     exported = client.get("/api/v1/functions/export").raise_for_status().json()
-    if not isinstance(exported, list):
-        msg = "Open WebUI Functions export returned invalid data."
-        raise TypeError(msg)
-    existing_functions = {
-        function["id"]: function
-        for function in exported
-        if isinstance(function, dict) and isinstance(function.get("id"), str)
-    }
+    existing_functions = {function["id"]: function for function in exported}
     results: dict[str, str] = {}
 
     for spec in specs:
         existing = existing_functions.get(spec.id)
-        meta = (
-            existing.get("meta")
-            if existing is not None and isinstance(existing.get("meta"), dict)
-            else {}
-        )
+        # Open WebUI recomputes meta.manifest from the frontmatter.
         payload = {
             "id": spec.id,
             "name": spec.name,
             "content": spec.content,
-            "meta": meta,
+            "meta": existing["meta"] if existing is not None else {},
         }
 
         if existing is None:
@@ -140,9 +82,7 @@ def sync_functions(
             ).raise_for_status()
             client.post(f"/api/v1/functions/id/{spec.id}/toggle").raise_for_status()
             results[spec.id] = "created"
-        elif (
-            existing.get("content") != spec.content or existing.get("name") != spec.name
-        ):
+        elif existing["content"] != spec.content or existing["name"] != spec.name:
             client.post(
                 f"/api/v1/functions/id/{spec.id}/update",
                 json=payload,
@@ -154,24 +94,30 @@ def sync_functions(
     return results
 
 
+def sync_function_valves(
+    client: httpx2.Client,
+    function_id: str,
+    valves: dict[str, str],
+) -> None:
+    """Set the given valves while preserving the others."""
+    path = f"/api/v1/functions/id/{function_id}/valves"
+    # Updates replace the stored valves, so merge them first.
+    stored = client.get(path).raise_for_status().json()
+    client.post(f"{path}/update", json={**stored, **valves}).raise_for_status()
+
+
 def main() -> None:
-    """Synchronize the bundled Function and generated Workspace Models."""
+    """Synchronize the bundled Functions, gateway valves, and Workspace Models."""
     try:
         settings = Settings()
-        # Open WebUI connects to MCP from its own network; this command may
-        # reach the same gateway through a different root.
         gateway = gateway_config(
-            settings.OPENAI_GATEWAY_TYPE,
-            settings.OPENAI_GATEWAY_BASE_URL,
-        )
-        discovery_gateway = gateway_config(
             settings.OPENAI_GATEWAY_TYPE,
             settings.DEMO_GATEWAY_HOST_URL or settings.OPENAI_GATEWAY_BASE_URL,
         )
         with (
             httpx2.Client(base_url=settings.URL, timeout=10) as client,
             OpenAI(
-                base_url=f"{discovery_gateway.root_url}/v1",
+                base_url=f"{gateway.root_url}/v1",
                 api_key=settings.OPENAI_GATEWAY_API_KEY,
                 timeout=10,
             ) as openai_client,
@@ -179,14 +125,19 @@ def main() -> None:
             sign_in(client, settings.ADMIN_EMAIL, settings.ADMIN_PASSWORD)
             model_specs = discover_workspace_model_specs(
                 openai_client,
-                gateway=discovery_gateway,
-            )
-            mcp_action = sync_mcp_gateway(
-                client,
                 gateway=gateway,
-                api_key=settings.OPENAI_GATEWAY_API_KEY,
             )
             function_results = sync_functions(client)
+            # The Pipe calls the gateway from Open WebUI's network.
+            sync_function_valves(
+                client,
+                GENERIC_FUNCTION_ID,
+                {
+                    "OPENAI_GATEWAY_TYPE": settings.OPENAI_GATEWAY_TYPE,
+                    "OPENAI_GATEWAY_BASE_URL": settings.OPENAI_GATEWAY_BASE_URL,
+                    "OPENAI_GATEWAY_API_KEY": settings.OPENAI_GATEWAY_API_KEY,
+                },
+            )
             sync_workspace_models(client, model_specs)
     except httpx2.HTTPStatusError as exc:
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
@@ -197,7 +148,7 @@ def main() -> None:
 
     for function_id, action in function_results.items():
         print(f"{action.capitalize()} Function: {function_id}")
-    print(f"{mcp_action.capitalize()} MCP server: {MCP_GATEWAY_ID}")
+    print(f"Configured Function valves: {GENERIC_FUNCTION_ID}")
     print(f"Synchronized Workspace Models: {len(model_specs)}")
 
 

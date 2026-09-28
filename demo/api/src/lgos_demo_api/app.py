@@ -8,10 +8,13 @@ graphs through the OpenAI-compatible API.
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
+import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve.graph.interrupt import delete_expired_interrupt_runs
 
 from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
@@ -28,7 +31,6 @@ from lgos_demo_api.graphs.background_interrupt import (
 from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
 from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
-from lgos_demo_api.graphs.custom_events import custom_event_showcase_graph_config
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
 from lgos_demo_api.graphs.file_input import file_input_graph_config
 from lgos_demo_api.graphs.interruptible import (
@@ -52,9 +54,25 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
-from lgos_demo_api.persistence.postgres import postgres_runtime
+from lgos_demo_api.persistence.postgres import PostgresRuntime, postgres_runtime
 
 logger = logging.getLogger(__name__)
+
+
+async def _expire_interrupt_runs(runtime: PostgresRuntime) -> None:
+    """Delete stale paused interrupt runs on an interval, like Agent Server's TTL."""
+    ttl = timedelta(minutes=settings.INTERRUPT_TTL_MINUTES)
+    while True:
+        try:
+            deleted = await delete_expired_interrupt_runs(
+                runtime.checkpointer, runtime.run_coordinator, older_than=ttl
+            )
+        except Exception:
+            logger.exception("demo.interrupt_expiry.failed")
+        else:
+            if deleted:
+                logger.info("demo.interrupt_expiry.deleted", extra={"runs": deleted})
+        await anyio.sleep(settings.INTERRUPT_SWEEP_INTERVAL_MINUTES * 60)
 
 
 @asynccontextmanager
@@ -72,6 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,
+        anyio.create_task_group() as background_tasks,
     ):
         app.state.interruptible_graph = create_interruptible_graph(runtime.checkpointer)
         app.state.background_interrupt_graph = create_background_interrupt_graph(
@@ -80,7 +99,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.run_coordinator = runtime.run_coordinator
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         app.state.advanced_graph = advanced_graph
+        background_tasks.start_soon(_expire_interrupt_runs, runtime)
         yield
+        background_tasks.cancel_scope.cancel()
 
     logger.info("demo.server.stopped")
 
@@ -111,15 +132,13 @@ def create_custom_app() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
     graph_registry = GraphRegistry(
-        registry={
+        graphs={
             "advanced-graph": create_advanced_graph_config(
                 lambda: app.state.advanced_graph,
-                lambda key: app.state.run_coordinator(key),
             ),
             "background-mock": background_mock_graph_config,
             "background-interrupt": create_background_interrupt_graph_config(
                 lambda: app.state.background_interrupt_graph,
-                lambda key: app.state.run_coordinator(key),
             ),
             "citation-events": citation_graph_config,
             "file-input": file_input_graph_config,
@@ -131,7 +150,6 @@ def create_custom_app() -> FastAPI:
             "mcp-postgres": mcp_postgres_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "multi-node-streaming": multi_node_streaming_graph_config,
-            "custom-event-showcase": custom_event_showcase_graph_config,
             "status-events": status_event_graph_config,
             "response-outcomes": response_outcome_graph_config,
             "persistent-plot-agent": create_persistent_plot_agent_config(
@@ -139,19 +157,17 @@ def create_custom_app() -> FastAPI:
             ),
             "simple-graph-external-tools": simple_external_tools_graph_config,
             "interruptible-approval": create_interruptible_graph_config(
-                # We use lambdas here because app.state is populated asynchronously
-                # during the FastAPI lifespan event. Eagerly evaluating app.state
-                # attributes at registry initialization time would raise an
-                # AttributeError since the lifespan has not executed yet.
                 lambda: app.state.interruptible_graph,
-                lambda key: app.state.run_coordinator(key),
             ),
-        }
+        },
+        # The lifespan creates graphs and the coordinator after registration,
+        # so these factories read them from app.state on each request.
+        run_coordinator=lambda key: app.state.run_coordinator(key),
     )
 
     graph_serve = LanggraphOpenaiServe(
         app=app,
-        graphs=graph_registry,
+        registry=graph_registry,
         background=create_background_backend() if settings.BACKGROUND_ENABLED else None,
     )
 

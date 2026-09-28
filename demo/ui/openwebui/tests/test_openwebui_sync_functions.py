@@ -1,6 +1,6 @@
 import ast
+import json
 from contextlib import closing
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
 
@@ -14,8 +14,9 @@ from lgos_openwebui.functions.generic.gateway import gateway_config
 from lgos_openwebui.sync_functions import (
     FUNCTIONS_DIR,
     FunctionSpec,
-    discover_function_specs,
+    function_specs,
     sign_in,
+    sync_function_valves,
     sync_functions,
 )
 from lgos_openwebui.workspace_models import WorkspaceModelSpec
@@ -41,24 +42,6 @@ def _spec() -> FunctionSpec:
         id="demo_pipe",
         name="Demo Pipe",
         content="class Pipe:\n    pass\n",
-    )
-
-
-def test_discover_function_specs_uses_filename_and_frontmatter(tmp_path: Path) -> None:
-    source = tmp_path / "demo_pipe.py"
-    source.write_text(
-        '"""\ntitle: Demo: Pipe\nauthor: demo\n"""\n\nclass Pipe:\n    pass\n'
-    )
-    (tmp_path / "__init__.py").write_text("")
-
-    specs = discover_function_specs(tmp_path)
-
-    assert specs == (
-        FunctionSpec(
-            id="demo_pipe",
-            name="Demo: Pipe",
-            content=source.read_text(),
-        ),
     )
 
 
@@ -110,14 +93,9 @@ def test_generic_bundle_modules_have_unique_top_level_definitions() -> None:
                 definitions[name] = module_name
 
 
-def test_discover_function_specs_includes_directory_backed_functions() -> None:
-    specs = discover_function_specs()
-
-    generic = next(spec for spec in specs if spec.id == "generic")
-
-    assert generic.name == "Generic"
-    assert generic.content.startswith('"""\ntitle: Generic\n')
-    assert "# ===== BEGIN pipe.py =====" in generic.content
+def test_function_names_match_their_frontmatter_titles() -> None:
+    for spec in function_specs():
+        assert spec.content.startswith(f'"""\ntitle: {spec.name}\n')
 
 
 def test_sync_functions_updates_existing_function_and_preserves_state() -> None:
@@ -197,6 +175,37 @@ def test_sync_functions_preserves_unrelated_functions() -> None:
 
     assert results == {"demo_pipe": "created"}
     client.delete.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ({}, {"OPENAI_GATEWAY_API_KEY": "new-key"}),
+        (
+            {"OPENAI_GATEWAY_API_KEY": "old-key", "OPENAI_API_TIMEOUT": 60},
+            {"OPENAI_GATEWAY_API_KEY": "new-key", "OPENAI_API_TIMEOUT": 60},
+        ),
+    ],
+    ids=["unset", "admin-edited"],
+)
+def test_sync_function_valves_keeps_other_stored_valves(
+    stored: dict[str, object], expected: dict[str, object]
+) -> None:
+    valves = dict(stored)
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        # Open WebUI replaces a Function's stored valves on every update.
+        if request.url.path == "/api/v1/functions/id/generic/valves/update":
+            valves.clear()
+            valves.update(json.loads(request.content))
+        return httpx2.Response(200, json=valves)
+
+    with httpx2.Client(
+        base_url="http://openwebui.test", transport=httpx2.MockTransport(respond)
+    ) as client:
+        sync_function_valves(client, "generic", {"OPENAI_GATEWAY_API_KEY": "new-key"})
+
+    assert valves == expected
 
 
 def test_openwebui_client_signs_in_with_admin_credentials() -> None:
@@ -291,7 +300,7 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock = Mock()
     sync_functions_mock = Mock(return_value={})
-    sync_mcp_mock = Mock(return_value="created")
+    sync_function_valves_mock = Mock()
     if server_error is not None:
         response = httpx2.Response(
             400,
@@ -315,6 +324,9 @@ def test_main_reads_demo_openwebui_environment(
         sync_functions_mock,
     )
     monkeypatch.setattr(
+        sync_functions_module, "sync_function_valves", sync_function_valves_mock
+    )
+    monkeypatch.setattr(
         sync_functions_module,
         "discover_workspace_model_specs",
         discover_workspace_models_mock,
@@ -323,11 +335,6 @@ def test_main_reads_demo_openwebui_environment(
         sync_functions_module,
         "sync_workspace_models",
         sync_workspace_models_mock,
-    )
-    monkeypatch.setattr(
-        sync_functions_module,
-        "sync_mcp_gateway",
-        sync_mcp_mock,
     )
 
     if server_error is not None:
@@ -343,12 +350,17 @@ def test_main_reads_demo_openwebui_environment(
     )
     sign_in_mock.assert_called_once_with(client, "admin@example.com", "password")
     sync_functions_mock.assert_called_once_with(client)
-    # Open WebUI connects to MCP from its own network, not the sync host's.
-    sync_mcp_mock.assert_called_once_with(
+    # The Pipe runs inside Open WebUI, so it gets the root Open WebUI reaches.
+    sync_function_valves_mock.assert_called_once_with(
         client,
-        gateway=gateway_config("bifrost", "http://lgos-bifrost:4000"),
-        api_key="api-key",
+        "generic",
+        {
+            "OPENAI_GATEWAY_TYPE": "bifrost",
+            "OPENAI_GATEWAY_BASE_URL": "http://lgos-bifrost:4000",
+            "OPENAI_GATEWAY_API_KEY": "api-key",
+        },
     )
+    # Discovery uses the host-reachable root, not the one Open WebUI reaches.
     openai_factory.assert_called_once_with(
         base_url="https://bifrost.example/v1",
         api_key="api-key",

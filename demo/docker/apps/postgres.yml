@@ -51,13 +51,14 @@ services:
     cap_drop:
       - ALL
     cap_add: []
+    pids_limit: 128
+    cpus: "0.5"
+    mem_limit: 256M
     depends_on:
-      lgos-db:
+      lgos-demo-api-a:
         condition: service_healthy
-      lgos-demo-api-setup:
-        condition: service_completed_successfully
-      lgos-chainlit-setup:
-        condition: service_completed_successfully
+      lgos-chainlit:
+        condition: service_healthy
     command:
       - psql
       - --host=lgos-db

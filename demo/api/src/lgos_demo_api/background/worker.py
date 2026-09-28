@@ -33,17 +33,14 @@ async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
         )
         # Register every background-capable model under its API model ID.
         yield GraphRegistry(
-            registry={
-                "advanced-graph": create_advanced_graph_config(
-                    lambda: advanced_graph,
-                    runtime.run_coordinator,
-                ),
+            graphs={
+                "advanced-graph": create_advanced_graph_config(lambda: advanced_graph),
                 "background-mock": background_mock_graph_config,
                 "background-interrupt": create_background_interrupt_graph_config(
                     lambda: background_interrupt_graph,
-                    runtime.run_coordinator,
                 ),
-            }
+            },
+            run_coordinator=runtime.run_coordinator,
         )
 
 

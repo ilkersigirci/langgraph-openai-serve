@@ -1,6 +1,5 @@
 """Contract tests for interrupt execution and API rejection."""
 
-import uuid
 from http import HTTPStatus
 
 import pytest
@@ -15,8 +14,8 @@ from .support import (
     MODEL,
     NESTED_MODEL,
     PARALLEL_MODEL,
-    assert_checkpoint_deleted,
     assert_interrupt_arguments,
+    assert_no_checkpoints,
     create_response,
     interrupt_calls,
     resume_outputs,
@@ -181,38 +180,27 @@ async def test_invalid_interrupt_payload_returns_openai_server_error(
     openai_client: AsyncOpenAI,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    run_id = str(uuid.uuid4())
     with pytest.raises(InternalServerError) as exc_info:
-        await create_response(
-            openai_client,
-            model=INVALID_PAYLOAD_MODEL,
-            run_id=run_id,
-        )
+        await create_response(openai_client, model=INVALID_PAYLOAD_MODEL)
 
     assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
     assert exc_info.value.body == {
-        "message": "LangGraph interrupt payloads must be valid JSON values.",
+        "message": "Internal server error",
         "type": "server_error",
         "param": None,
         "code": None,
         "misalignment": None,
     }
-    await assert_checkpoint_deleted(
-        sqlite_checkpointer,
-        model=INVALID_PAYLOAD_MODEL,
-        run_id=run_id,
-    )
+    await assert_no_checkpoints(sqlite_checkpointer)
 
 
 async def test_streaming_invalid_interrupt_payload_deletes_checkpoint(
     openai_client: AsyncOpenAI,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    run_id = str(uuid.uuid4())
     stream = await create_response(
         openai_client,
         model=INVALID_PAYLOAD_MODEL,
-        run_id=run_id,
         stream=True,
     )
 
@@ -220,11 +208,7 @@ async def test_streaming_invalid_interrupt_payload_deletes_checkpoint(
     assert [event.type for event in events][-2:] == ["error", "response.failed"]
     assert events[-1].response.status == "failed"
 
-    await assert_checkpoint_deleted(
-        sqlite_checkpointer,
-        model=INVALID_PAYLOAD_MODEL,
-        run_id=run_id,
-    )
+    await assert_no_checkpoints(sqlite_checkpointer)
 
 
 async def test_parallel_interrupts_are_one_tool_call_batch_and_resume_by_id(

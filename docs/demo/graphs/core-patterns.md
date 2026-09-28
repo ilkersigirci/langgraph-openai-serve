@@ -1,7 +1,7 @@
 # Core Graph Patterns
 
 Six small graphs isolate the basic ways an OpenAI request can drive a
-LangGraph. They keep persistence, client events, and interrupts out of the way
+LangGraph. They keep persistence, status events, and interrupts out of the way
 so each adapter or streaming behavior is visible on its own.
 
 | Graph | Demonstrates |
@@ -172,7 +172,7 @@ LGOS can retain its refusal content or incomplete metadata.
 
 None of these graphs uses a checkpointer or LangGraph Store, so graph state ends
 with the request. All six return standard OpenAI assistant messages and emit no
-LGOS client events. `multi-node-streaming`, `simple-graph`, and the
+LGOS status events. `multi-node-streaming`, `simple-graph`, and the
 external-tools graph identify their answer-producing nodes for incremental text
 streaming and standard OpenAI function-call output.
 

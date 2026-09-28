@@ -7,8 +7,9 @@ from langchain_core.messages.content import create_citation, create_text_block
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import GraphConfig
-from langgraph_openai_serve.utils.fake_llm import stream_fake_chat_response
 from pydantic import BaseModel
+
+from lgos_demo_api.utils.fake_llm import stream_fake_chat_response
 
 CITATIONS = (
     (

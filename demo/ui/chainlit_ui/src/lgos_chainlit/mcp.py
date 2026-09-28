@@ -16,9 +16,9 @@ def mcp_gateway_config(
     gateway: GatewayConfig,
     api_key: str,
 ) -> StreamableHttpMcpServer:
-    """Build Chainlit's trusted connection to the selected gateway."""
+    """Build Chainlit's trusted connection to the gateway's aggregate MCP route."""
     return mcp_tools.server(
-        gateway.mcp_url,
+        f"{gateway.root_url}/mcp",
         headers={"Authorization": f"Bearer {api_key}"},
     )
 
