@@ -391,12 +391,6 @@ Both response modes display native refusals. Failed and incomplete streaming
 events are handled directly so their reason remains visible; incomplete
 responses never trigger client functions.
 
-!!! note "Keep streaming enabled"
-
-    In Open WebUI, native citation sources, tool calls, and `ask_user`
-    use its streaming middleware. The UI does not render equivalent native
-    controls from non-streaming adapter output.
-
 The persistent plot graph returns a standard `display_file` function call. The
 Pipe downloads the Plotly JSON through the OpenAI Files API and embeds the
 figure in a small HTML document. The browser renders it with the native
