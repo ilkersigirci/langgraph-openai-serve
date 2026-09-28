@@ -310,17 +310,19 @@ is suitable only for tests and a single-process development server; it cannot
 serialize requests across workers or hosts.
 
 Pending checkpoints exist only to resume an interrupt batch returned to the
-client. LGOS deletes isolated checkpoint state after terminal completion or
-when execution fails or is cancelled before producing that batch. A run
-abandoned after its batch is returned stays until deleted: call
+client. LGOS deletes isolated checkpoint state after terminal completion or when
+execution fails or is cancelled before producing that batch. A run abandoned
+after its batch is returned stays until deleted: call
 `delete_expired_interrupt_runs(checkpointer, run_coordinator, older_than=...)`
 from `langgraph_openai_serve.graph.interrupt` on a schedule, as LangGraph Agent
 Server's [checkpointer TTL](https://docs.langchain.com/langsmith/configure-ttl)
-does. It deletes the runs whose latest pause is older than `older_than` and
-returns their count. It reads every checkpoint through `alist()`, leaves threads
-LGOS did not create alone, and skips runs whose lease is held. Choose a TTL
-longer than the longest time a user may take to answer. To write your own
-cleanup, select threads whose checkpoint metadata contains
+does. In production, prefer one scheduled job over a loop in every replica, for
+example a Kubernetes CronJob with `concurrencyPolicy: Forbid` or your task
+queue's scheduler. It deletes the runs whose latest pause is older than
+`older_than` and returns their count. It reads every checkpoint through
+`alist()`, leaves threads LGOS did not create alone, and skips runs whose lease
+is held. Choose a TTL longer than the longest time a user may take to answer. To
+write your own cleanup, select threads whose checkpoint metadata contains
 `OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
 confirm its latest pause is still older than your TTL, and delete it through the
 checkpointer.
