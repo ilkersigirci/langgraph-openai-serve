@@ -319,7 +319,11 @@ Server's [checkpointer TTL](https://docs.langchain.com/langsmith/configure-ttl)
 does. It deletes the runs whose latest pause is older than `older_than` and
 returns their count. It reads every checkpoint through `alist()`, leaves threads
 LGOS did not create alone, and skips runs whose lease is held. Choose a TTL
-longer than the longest time a user may take to answer.
+longer than the longest time a user may take to answer. To write your own
+cleanup, select threads whose checkpoint metadata contains
+`OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
+confirm its latest pause is still older than your TTL, and delete it through the
+checkpointer.
 
 ### PostgreSQL Coordination
 
