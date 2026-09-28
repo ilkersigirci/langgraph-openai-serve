@@ -1,7 +1,7 @@
 # Interruptible Human Review
 
-`interruptible-approval` is the only demo graph that persists API execution
-state. It is a deterministic production-pattern example: a refund rejection
+`interruptible-approval` persists API execution state while a review is
+pending. It is a deterministic production-pattern example: a refund rejection
 ends the workflow, while approval leads to simulated refund execution and an
 automatic customer notification. A custom response records reviewer feedback
 without executing either action. The interrupt crosses `/v1/responses` as a
