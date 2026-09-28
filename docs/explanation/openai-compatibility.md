@@ -635,7 +635,11 @@ in the transcript. There is no LGOS artifact field or custom chart event. See
 An initial interrupt request does not require metadata. LGOS generates a UUID
 run ID for every new interrupt-enabled run and embeds it in the paused Response
 ID. Clients cannot choose the run ID, so retrying a lost initial request starts
-a new run. Background runs choose their run ID at submission.
+a new run. To retry safely, create the run in the background with an
+[`Idempotency-Key`](../how-to-guides/background-responses.md#idempotent-creation),
+which returns the original run instead of starting another; the graph must also
+declare `GraphFeature.BACKGROUND`. Background runs choose their run ID at
+submission.
 
 The run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
