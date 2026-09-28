@@ -401,6 +401,8 @@ async def _stream_response(
                     await message_stream.stream_token(event.delta)
                 continue
             if event.type == "response.incomplete" or event.type == "response.failed":
+                # A failed stream keeps its text, so send what is still buffered.
+                await message_stream.flush()
                 raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":

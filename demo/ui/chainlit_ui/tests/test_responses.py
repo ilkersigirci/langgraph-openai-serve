@@ -30,6 +30,7 @@ from tests.support import (
     reply,
     response,
     select_profile,
+    sse,
     streamed,
     transcript,
     user_message,
@@ -98,6 +99,67 @@ async def test_streamed_refusal_is_visible(
     await chat.on_message(user_message("Help me."))
 
     assert transcript() == ["Help me.", "I cannot help."]
+
+
+async def test_failed_stream_keeps_all_streamed_text(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    failed = response(
+        message("Partial answer"),
+        status="failed",
+        error={"code": "server_error", "message": "Graph failed"},
+    )
+    payload = failed.model_dump(mode="json")
+    item = payload["output"][0]
+    part = {"item_id": item["id"], "output_index": 0, "content_index": 0}
+    # LGOS fails an answer mid-stream without closing its text part.
+    fake_gateway.replies.append(
+        sse(
+            {
+                "type": "response.created",
+                "response": {**payload, "status": "in_progress", "output": []},
+            },
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {**item, "content": []},
+            },
+            {
+                "type": "response.content_part.added",
+                **part,
+                "part": {"type": "output_text", "text": "", "annotations": []},
+            },
+            {
+                "type": "response.output_text.delta",
+                **part,
+                "delta": "Partial ",
+                "logprobs": [],
+            },
+            {
+                "type": "response.output_text.delta",
+                **part,
+                "delta": "answer",
+                "logprobs": [],
+            },
+            {
+                "type": "error",
+                "code": "server_error",
+                "message": "Graph failed",
+                "param": None,
+            },
+            {"type": "response.failed", "response": payload},
+        )
+    )
+
+    await chat.on_message(user_message("Answer."))
+
+    assert transcript() == [
+        "Answer.",
+        "Partial answer",
+        "Response failed: Graph failed",
+    ]
 
 
 async def test_incomplete_stream_reports_its_reason(

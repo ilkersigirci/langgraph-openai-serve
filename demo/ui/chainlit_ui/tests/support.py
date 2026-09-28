@@ -165,10 +165,11 @@ def streamed(response: Response, *, deltas: bool = True) -> httpx2.Response:
                 },
             ]
     events.append({"type": f"response.{response.status}", "response": payload})
-    return _sse(*events)
+    return sse(*events)
 
 
-def _sse(*events: dict[str, Any]) -> httpx2.Response:
+def sse(*events: dict[str, Any]) -> httpx2.Response:
+    """Reply with these Responses stream events."""
     return httpx2.Response(
         200,
         headers={"content-type": "text/event-stream"},
