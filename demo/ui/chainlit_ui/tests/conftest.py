@@ -22,6 +22,9 @@ def chainlit_app_root(
     monkeypatch.setenv("CHAINLIT_APP_ROOT", str(tmp_path))
     # Chainlit resolves this directory on import; sent elements are written there.
     monkeypatch.setattr(chainlit.config, "FILES_DIRECTORY", tmp_path)
+    # just loads demo/.env; its DATABASE_URL would persist test messages to the
+    # deployment's database.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
 
 @pytest.fixture

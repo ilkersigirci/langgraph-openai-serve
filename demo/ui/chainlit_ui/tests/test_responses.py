@@ -243,10 +243,25 @@ async def _select_background_profile(fake_gateway, model_id: str) -> None:
     cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = True
 
 
-@pytest.mark.parametrize(
+def _use_gateway(monkeypatch: pytest.MonkeyPatch, gateway_type: str) -> str:
+    """Send Responses through ``gateway_type``'s route and return its path."""
+    config = gateway_config(gateway_type, "https://gateway.example")
+    monkeypatch.setattr(chat, "gateway", config)
+    monkeypatch.setattr(
+        chat,
+        "responses_client",
+        chat.responses_client.with_options(base_url=config.responses_base_url),
+    )
+    return httpx2.URL(config.responses_base_url).path + "/responses"
+
+
+BACKGROUND_GATEWAYS = pytest.mark.parametrize(
     ("gateway_type", "lifecycle_query"),
     [("litellm", {}), ("bifrost", {"provider": "lgos-b"})],
 )
+
+
+@BACKGROUND_GATEWAYS
 async def test_background_response_is_polled_until_complete(
     chainlit_context,
     fake_gateway,
@@ -255,9 +270,7 @@ async def test_background_response_is_polled_until_complete(
     gateway_type: str,
     lifecycle_query: dict[str, str],
 ) -> None:
-    monkeypatch.setattr(
-        chat, "gateway", gateway_config(gateway_type, "https://gateway.example")
-    )
+    responses_path = _use_gateway(monkeypatch, gateway_type)
     monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
     await _select_background_profile(fake_gateway, "lgos-b/background-report")
     fake_gateway.replies += [
@@ -268,7 +281,7 @@ async def test_background_response_is_polled_until_complete(
 
     await chat.on_message(user_message("Build the report."))
 
-    [create] = fake_gateway.bodies("/v1/responses")
+    [create] = fake_gateway.bodies(responses_path)
     assert (create["background"], create["store"]) == (True, True)
     assert create["metadata"] == {"conversation_id": chainlit_context.session.thread_id}
     create_request = fake_gateway.requests[1]
@@ -281,7 +294,7 @@ async def test_background_response_is_polled_until_complete(
     assert [
         (request.method, request.url.path, dict(request.url.params))
         for request in fake_gateway.requests[2:]
-    ] == [("GET", "/v1/responses/resp_bg", lifecycle_query)] * 2
+    ] == [("GET", f"{responses_path}/resp_bg", lifecycle_query)] * 2
     assert task_lists[-1] == {
         "status": "Done",
         "tasks": [
@@ -296,10 +309,7 @@ async def test_background_response_is_polled_until_complete(
     assert transcript()[-1] == "Report ready."
 
 
-@pytest.mark.parametrize(
-    ("gateway_type", "lifecycle_query"),
-    [("litellm", {}), ("bifrost", {"provider": "lgos-b"})],
-)
+@BACKGROUND_GATEWAYS
 async def test_stopped_turn_cancels_its_background_response(
     chainlit_context,
     fake_gateway,
@@ -307,9 +317,7 @@ async def test_stopped_turn_cancels_its_background_response(
     gateway_type: str,
     lifecycle_query: dict[str, str],
 ) -> None:
-    monkeypatch.setattr(
-        chat, "gateway", gateway_config(gateway_type, "https://gateway.example")
-    )
+    responses_path = _use_gateway(monkeypatch, gateway_type)
     await _select_background_profile(fake_gateway, "lgos-b/background-report")
     polling = asyncio.Event()
 
@@ -333,7 +341,7 @@ async def test_stopped_turn_cancels_its_background_response(
     cancel = fake_gateway.requests[-1]
     assert (cancel.method, cancel.url.path, dict(cancel.url.params)) == (
         "POST",
-        "/v1/responses/resp_bg/cancel",
+        f"{responses_path}/resp_bg/cancel",
         lifecycle_query,
     )
 

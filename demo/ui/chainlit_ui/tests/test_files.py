@@ -47,24 +47,37 @@ def _attach_notes(chainlit_context, tmp_path: Path) -> cl.Message:
     )
 
 
+def _uploaded_notes() -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        json={
+            "id": "file-notes",
+            "object": "file",
+            "bytes": 15,
+            "created_at": 0,
+            "filename": "notes.txt",
+            "purpose": "user_data",
+            "status": "processed",
+        },
+    )
+
+
+NOTES_TURN = {
+    "role": "user",
+    "content": [
+        {"type": "input_text", "text": "Summarize it."},
+        {"type": "input_file", "file_id": "file-notes"},
+    ],
+}
+
+
 async def test_attachments_upload_through_the_gateway_files_route(
     chainlit_context,
     fake_gateway,
     tmp_path: Path,
 ) -> None:
     fake_gateway.replies += [
-        httpx2.Response(
-            200,
-            json={
-                "id": "file-notes",
-                "object": "file",
-                "bytes": 15,
-                "created_at": 0,
-                "filename": "notes.txt",
-                "purpose": "user_data",
-                "status": "processed",
-            },
-        ),
+        _uploaded_notes(),
         streamed(response(message("Summary."))),
     ]
 
@@ -76,16 +89,41 @@ async def test_attachments_upload_through_the_gateway_files_route(
         "/v1/files",
         {"provider": "litellm_proxy"},
     )
-    assert fake_gateway.bodies("/v1/responses")[0]["input"] == [
-        {
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": "Summarize it."},
-                {"type": "input_file", "file_id": "file-notes"},
-            ],
-        }
-    ]
+    assert fake_gateway.bodies("/v1/responses")[0]["input"] == [NOTES_TURN]
     assert transcript()[-1] == "Summary."
+
+
+async def test_attachments_stay_in_the_client_tool_continuation(
+    chainlit_context,
+    fake_gateway,
+    tmp_path: Path,
+) -> None:
+    turn = _attach_notes(chainlit_context, tmp_path)
+    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    chart = function_call(
+        "display_file",
+        json.dumps(
+            {
+                "file_id": "file-chart",
+                "filename": "chart.png",
+                "media_type": "image/png",
+                "title": "Notes chart",
+                "alt": "A chart of the notes.",
+            }
+        ),
+        call_id="call_chart",
+    )
+    fake_gateway.replies += [
+        _uploaded_notes(),
+        streamed(response(chart)),
+        httpx2.Response(200, content=b"png-bytes"),
+        streamed(response(message("Chart ready."))),
+    ]
+
+    await chat.on_message(turn)
+
+    _, continuation = fake_gateway.bodies("/v1/responses")
+    assert continuation["input"][0] == NOTES_TURN
 
 
 async def test_failed_upload_is_visible_and_sends_no_response_request(

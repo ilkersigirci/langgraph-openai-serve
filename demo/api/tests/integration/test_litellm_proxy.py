@@ -29,7 +29,7 @@ async def test_litellm_native_mcp_is_authenticated_and_exposes_fixed_reports() -
     await assert_postgres_mcp_contract(
         LITELLM_BASE_URL.removesuffix("/v1"),
         LITELLM_API_KEY,
-        endpoint="/mcp/",
+        endpoint="/mcp",
     )
 
 
