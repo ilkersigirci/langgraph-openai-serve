@@ -10,11 +10,11 @@ LiteLLM uses managed Responses routing; Bifrost uses its native Responses
 route. Both use their normal Files and aggregate MCP routes with the same
 gateway credential. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
-extension. Bifrost uses its aggregate catalog and model-detail pass-through.
+extension. Bifrost reads native `/v1/models` and decodes the complete extension
+from the JSON string in `additional_attributes.lgos`.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
-The full-stack `just demo/compose [--dev] [--otel]` variants sync metadata
-after the gateway is ready. Chainlit starts earlier to initialize the tables
-used by MCP reports; open the UI after the command completes.
+The full-stack `just demo/compose [--dev] [--otel]` variants do this; open
+the UI after the command completes.
 
 Before starting, replace the example signing secret and configure the required
 S3-compatible bucket and credentials in `.env`.
@@ -32,9 +32,8 @@ cp .env.example .env
 uv run --locked --env-file .env lgos-chainlit
 ```
 
-Every startup applies pending schema migrations through `chainlit-utils` before
-accepting requests. Its migration ledger and PostgreSQL lock make restarts and
-concurrent worker startup safe; migration failures stop startup.
+Startup applies pending `chainlit-utils` schema migrations before accepting
+requests.
 
 Application settings use the `DEMO_CHAINLIT_` prefix, except for the shared
 gateway type, base URL, API key, and `DEMO_AUDIO_*` speech models. Reusable

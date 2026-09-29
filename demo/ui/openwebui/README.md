@@ -25,7 +25,7 @@ The Function uses Responses exclusively and never connects directly to LGOS.
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the gateway for inference and
 Files. LiteLLM uses managed Responses routing; Bifrost uses its native
 Responses route. LiteLLM metadata comes from native `/model/info`; Bifrost uses
-its aggregate catalog and model-detail pass-through.
+native `/v1/models` with complete metadata encoded in `additional_attributes.lgos`.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
 The full-stack `just demo/compose [--dev] [--otel]` variants do this
 and run the Open WebUI sync automatically.

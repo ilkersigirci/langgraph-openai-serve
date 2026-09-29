@@ -116,18 +116,16 @@ Chainlit and Open WebUI exercise the graph API's OpenAI wire contract without
 importing the package. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects their
 shared edge. Responses and Files use its normal managed/native routes.
 LiteLLM metadata comes from `/model/info` after [model sync](litellm-sync.md);
-Bifrost uses catalog-detail pass-through.
+Bifrost uses native `/v1/models` after [catalog sync](bifrost.md#declarative-model-metadata).
 
 !!! warning "Pinned managed-routing limitations"
 
     The bundled Bifrost native Responses route preserves `phase`, commentary,
     file-input, continuation, `store: false`, and upstream error metadata;
-    normalized model detail remains a strict expected failure.
-    Its raw pass-through route preserves successful-request contracts, while
-    virtual-key governance rejects the unknown-model error case before
-    pass-through. The bundled `homeserver-litellm` image preserves native
-    streaming and commentary. Standard error metadata remains rewritten.
-    Direct LGOS and Bifrost's raw route remain protocol references. The UIs use
+    normalized model detail remains a strict expected failure. The bundled
+    `homeserver-litellm` image preserves native streaming and commentary.
+    Standard error metadata remains rewritten. Direct LGOS remains the
+    protocol reference. The UIs use
     the selected gateway's normal inference route and accept that route's
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
     Gateway](bifrost.md) for the precise boundaries.

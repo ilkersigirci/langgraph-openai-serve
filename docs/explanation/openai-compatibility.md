@@ -102,9 +102,8 @@ Direct JavaScript clients can read the property normally, and the
 [OpenAI Python SDK exposes it through `model_extra`](https://github.com/openai/openai-python#making-customundocumented-requests).
 An intermediary may rebuild a retrieved model from the standard fields and drop
 extensions. For one LGOS deployment, a client can use one OpenAI base URL for
-model listing, model retrieval, Responses, and Chat Completions; that URL may
-be an authenticated proxy pass-through. A
-federating gateway may expose a normalized catalog for provider and model
+model listing, model retrieval, Responses, and Chat Completions. A federating
+gateway may expose a normalized catalog for provider and model
 routing, but that catalog is not necessarily a source of LGOS descriptions or
 capabilities. Standard Responses requests do not depend on the extension. A UI
 that offers graph-specific settings or capability controls must obtain the
@@ -112,6 +111,11 @@ selected graph's full metadata through a route that preserves it. The demo's
 LiteLLM clients read native `/model/info`, using `model_name` for routing and
 `model_info.lgos` for the extension. An [LGOS-owned sync](../demo/litellm-sync.md)
 copies the detail into that native field; the UIs never contact LGOS directly.
+Bifrost clients decode the equivalent JSON string from
+`additional_attributes.lgos` on native `/v1/models`. Its
+[catalog sync](../demo/bifrost.md#declarative-model-metadata) prepares base pricing
+rows and publishes complete LGOS details through Bifrost's native management
+API. The `/openai/v1/models` conversion still drops those attributes.
 Concrete gateway configurations and native Responses requirements are documented under
 [OpenAI-Compatible Proxies](../how-to-guides/openai-proxies.md).
 

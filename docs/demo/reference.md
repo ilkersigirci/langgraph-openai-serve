@@ -39,6 +39,7 @@ integration commands:
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
 | `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
 | `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
+| `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize both LGOS catalogs into Bifrost; then refresh Open WebUI with `sync-openwebui` |
 | `just demo/compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
 | `just demo/compose --otel` | Run the ordered published stack with the OTEL overlay |
@@ -88,7 +89,8 @@ checks.
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects the
 gateway used by both maintained UIs. Responses and Files use its normal
 managed/native routes. LiteLLM metadata comes from native `/model/info` after
-[model sync](litellm-sync.md); only Bifrost uses catalog-detail pass-through.
+[model sync](litellm-sync.md); Bifrost metadata comes from native `/v1/models`
+after [catalog sync](bifrost.md#declarative-model-metadata).
 
 ## Stack Settings
 
@@ -127,8 +129,8 @@ just demo/test-direct --base-urls http://localhost:3104/v1 --files-url http://lo
 just demo/test-litellm --base-url https://litellm.example.com/v1 -- --verbose
 ```
 
-Use `just --usage demo/test-bifrost` for the normalized, catalog, and
-pass-through endpoint options. `--editable` overlays the parent LGOS checkout;
+Use `just --usage demo/test-bifrost` for the normalized and catalog endpoint
+options. `--editable` overlays the parent LGOS checkout;
 arguments after `--` go to pytest. CI can export `DEMO_API_TEST_POSTGRES_URI`
 and run `just demo/test-postgres --editable` without a dotenv file.
 

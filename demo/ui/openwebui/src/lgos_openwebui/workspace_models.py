@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import httpx2
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 from openai.types import Model
 from pydantic import (
     BaseModel,
@@ -22,13 +22,13 @@ from .functions.generic.contracts import (
     CHAT_VARIABLES_DECLARATION_END,
     CHAT_VARIABLES_DECLARATION_START,
     LGOS_EXTENSION_KEY,
-    LGOS_MODEL_OWNER,
     PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
 )
 from .functions.generic.gateway import (
     MCP_GATEWAY_ID,
     GatewayConfig,
+    bifrost_models,
     litellm_models,
 )
 
@@ -164,26 +164,12 @@ def discover_workspace_model_specs(
     gateway: GatewayConfig,
 ) -> tuple[WorkspaceModelSpec, ...]:
     """Build Workspace Models from the configured OpenAI model endpoints."""
-    models: dict[str, Model | None] = {}
     if not gateway.provider_routing:
         payload = client.get(f"{gateway.root_url}/model/info", cast_to=object)
         models = {model.id: model for model in litellm_models(payload)}
     else:
         catalog = client.with_options(base_url=f"{gateway.root_url}/v1").models.list()
-        detail_client = client.with_options(
-            base_url=f"{gateway.root_url}/openai_passthrough/v1"
-        )
-        for catalog_model in catalog.data:
-            if catalog_model.owned_by != LGOS_MODEL_OWNER:
-                continue
-            try:
-                # Bifrost reads x-model-provider only on pass-through routes.
-                provider, _, upstream_model = catalog_model.id.partition("/")
-                models[catalog_model.id] = detail_client.models.retrieve(
-                    upstream_model, extra_headers={"x-model-provider": provider}
-                )
-            except OpenAIError:
-                models[catalog_model.id] = None
+        models = {model.id: model for model in bifrost_models(catalog.data)}
 
     specs = []
     for model_id, model in sorted(models.items()):

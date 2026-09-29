@@ -1,4 +1,53 @@
+x-lgos-bifrost-catalog-job: &lgos-bifrost-catalog-job
+  image: ghcr.io/ilkersigirci/lgos-demo-api:$DEMO_IMAGE_TAG
+  pull_policy: always
+  profiles: [bifrost]
+  restart: "no"
+  user: "$PUID:$PGID"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  pids_limit: 256
+  cpus: "1.0"
+  mem_limit: 512M
+  entrypoint:
+    - python
+    - -m
+    - lgos_demo_api.utils.sync_bifrost
+    - --directory
+    - /catalog/catalog
+  volumes:
+    - type: bind
+      source: ../volumes/bifrost
+      target: /catalog
+      bind:
+        create_host_path: false
+
 services:
+  lgos-bifrost-catalog:
+    <<: *lgos-bifrost-catalog-job
+    command:
+      - prepare
+      - --source
+      - lgos-a=http://lgos-demo-api-a:8000/v1
+      - --source
+      - lgos-b=http://lgos-demo-api-b:8000/v1
+    depends_on:
+      lgos-demo-api-a:
+        condition: service_healthy
+      lgos-demo-api-b:
+        condition: service_healthy
+
+  lgos-bifrost-sync:
+    <<: *lgos-bifrost-catalog-job
+    command: [sync, --gateway-url, "http://lgos-bifrost:4000"]
+    depends_on:
+      lgos-bifrost:
+        condition: service_healthy
+
   lgos-bifrost:
     container_name: lgos-bifrost
     profiles: [bifrost]
@@ -22,6 +71,10 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
+      lgos-bifrost-catalog:
+        condition: service_completed_successfully
+      # Bifrost discovers MCP tools when it connects and resyncs them only
+      # periodically (every 10 minutes by default), so DBHub must be ready first.
       lgos-postgres-mcp:
         condition: service_healthy
       lgos-demo-api-a:

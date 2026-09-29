@@ -138,12 +138,9 @@ The prompt is guidance, not authorization. Mutation is blocked in layers:
 | Network and authentication | DBHub publishes no host port, adds its Compose service name to the host-header allowlist, and requires a bearer token on MCP requests. Its container is read-only, drops Linux capabilities, and has resource limits. See DBHub's [authentication and allowed-host options](https://dbhub.ai/config/command-line). |
 | Gateway and UI | Each gateway allowlists exactly six downstream reports for the shared UI credential. The UIs attach that governed MCP surface only to models that advertise `mcp_tools`; this graph independently discards every function name outside its six reports. |
 
-API A and Chainlit apply pending migrations before reporting healthy.
-The `lgos-mcp-db-setup` job waits for them, then applies the demo's reporting SQL
-using `psql`. The view replacements, restricted grants, and login password update
-share one transaction; failures roll back the changes and prevent DBHub from
-starting. The provisioning SQL can be reapplied safely to existing databases.
-DBHub uses its upstream entrypoint and only the restricted reporting credentials.
+API A and Chainlit create their persistence tables at startup. Once both are
+healthy, the database setup job replaces the reporting views, revokes broad
+access, and grants only those views in one transaction before DBHub starts.
 PostgreSQL privileges remain the final data-access authority.
 
 !!! warning "Demo credentials are not production credentials"

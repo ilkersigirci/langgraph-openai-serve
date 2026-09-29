@@ -6,10 +6,9 @@ gateway's `/model/info` endpoint.
 
 ## Usage
 
-`just demo/compose` syncs both demo catalogs after LiteLLM and the
-APIs are healthy, then starts and syncs Open WebUI. Chainlit starts earlier
-as a dependency of the MCP reporting service; open the UI after the command
-completes. The `--dev` and `--otel` flags keep the same sequence.
+`just demo/compose` syncs both demo catalogs after LiteLLM and its
+dependencies are healthy, then starts and syncs Open WebUI. Open the UIs after
+the command completes. The `--dev` and `--otel` flags keep the same sequence.
 
 To sync any other healthy LGOS API:
 

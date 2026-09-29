@@ -2,8 +2,6 @@
 \getenv mcp_password LGOS_MCP_DB_PASSWORD
 
 BEGIN;
--- Serialize reporting schema changes from concurrent deployments.
-SELECT pg_advisory_xact_lock(5496430398667506512);
 
 SELECT format(
   'CREATE ROLE lgos_mcp LOGIN PASSWORD %L',

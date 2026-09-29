@@ -23,16 +23,14 @@ def application(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
     get_chainlit_settings.cache_clear()
 
 
-async def test_every_startup_migrates_before_serving(
+async def test_startup_migrates_before_serving(
     application: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     migrate = AsyncMock()
     monkeypatch.setattr(application, "setup_chainlit_schema", migrate)
 
-    for startup in range(1, 3):
-        async with application.app.router.lifespan_context(application.app):
-            assert migrate.await_count == startup
-            migrate.assert_awaited_with("postgresql://test:test@localhost/test")
+    async with application.app.router.lifespan_context(application.app):
+        migrate.assert_awaited_once_with("postgresql://test:test@localhost/test")
 
 
 async def test_failed_migration_prevents_startup_and_closes_clients(

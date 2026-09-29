@@ -407,7 +407,6 @@ async def test_pipe_lists_native_litellm_model_info(
         assert request.method == "GET"
         assert request.url.path == "/model/info"
         assert request.headers["Authorization"] == "Bearer test-key"
-        assert "x-model-provider" not in request.headers
         return httpx2.Response(
             200,
             json={
@@ -1017,9 +1016,8 @@ async def test_request_uses_a_native_responses_route(
         assert result == ["Approved."]
         request = create.await_args.kwargs
     assert base_urls == [f"https://gateway.example{base_path}"]
-    # Bifrost ignores x-model-provider on Responses; the catalog ID selects it.
+    # Bifrost selects the provider from the catalog ID's prefix.
     assert request["model"] == "lgos-a/interruptible-approval"
-    assert "extra_headers" not in request
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])

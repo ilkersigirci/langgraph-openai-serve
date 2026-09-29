@@ -8,7 +8,7 @@ Configure an ordinary OpenAI SDK with the LGOS base URL, usually
 Use Responses for new clients and every maintained demo UI. Chat Completions
 remains a direct compatibility surface for clients that cannot use Responses.
 An optional proxy must expose a native `/v1/responses` route and preserve the
-same typed items and events; raw pass-through is not part of the client design.
+same typed items and events.
 
 The basic examples call the provider-free `echo` graph from the getting-started
 application. Names such as `research-graph` and `interruptible` describe
