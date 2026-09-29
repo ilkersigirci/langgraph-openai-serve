@@ -6,17 +6,12 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "fastapi[standard]>=0.121.0",
-    "hatchet-sdk[otel]>=1.40.3,<2",
+    "hatchet-sdk[otel]", # LGOS supplies Hatchet; the demo also needs its telemetry extra.
     "httpx2>=2.13,<3",
-    "langchain>=1.2.0",
     "langchain-openai>=1.6.2",
     "langchain-text-splitters>=1.1.0",
-    "langgraph>=1.1.10,<2.0.0",
-    "langgraph-checkpoint-postgres>=3.1.0,<4",
-    "langgraph-openai-serve[tracing]>=0.22.0rc1",
+    "langgraph-openai-serve[hatchet,postgres,tracing]>=0.27.0",
     "numpy>=2.4.6",
-    "openai>=3.14.1,<4",
     "opentelemetry-distro>=0.65b0,<0.66",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
     "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
@@ -24,9 +19,7 @@ dependencies = [
     "opentelemetry-instrumentation-logging>=0.65b0,<0.66",
     "opentelemetry-instrumentation-psycopg>=0.65b0,<0.66",
     "plotly>=6,<7",
-    "psycopg[binary,pool]>=3.3.4,<4",
-    "pydantic>=2.11,<3",
-    "pydantic-settings>=2.9.0",
+    "psycopg[binary]", # LGOS supplies Psycopg and its pool; the demo image needs bundled libpq.
     "structlog>=26.1.0,<27",
 ]
 
@@ -45,7 +38,6 @@ dev = [
     "pydantic-ai-slim[openai]>=1.107.0,<3.0.0",
 ]
 test = [
-    "anyio>=4.14,<5",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
     "mcp>=2,<3",
     "pytest>=8.3.3",
