@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.10"
+version = "0.2.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,9 +365,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/cf/9f9795f27f1d0282cece2af4fe9da56e417b441ab699215b61d9ffd1191c/chainlit_utils-0.2.10.tar.gz", hash = "sha256:c9ee514c92def1ccc68eb50b16fa9076ea8f041238cb9811f9dd27dc1611844c", size = 37556, upload-time = "2026-09-29T16:46:51.25Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/e3/a6e37ea4a7f8db453126750142f507b96c6f2df9fe69f5dfadbb0bd4db10/chainlit_utils-0.2.11.tar.gz", hash = "sha256:71020e95ebec11e226f2865a8763b86e337e12f6bf1cf3355ef21d9a800bd4fb", size = 37795, upload-time = "2026-09-29T20:21:40.962Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/3a/beecfe11bde0ca1e361f05e0a727387018ba3f301f087aab4b8ad76eecdc/chainlit_utils-0.2.10-py3-none-any.whl", hash = "sha256:4c868e95cd8172bcdcfe6619c7a5449f306c3bde4b24fd2943466d436cb26435", size = 49849, upload-time = "2026-09-29T16:46:50.053Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/82/af867cf646624f23b8ab58f87d030a378bf515e0a23bb8da5b2cf4431d21/chainlit_utils-0.2.11-py3-none-any.whl", hash = "sha256:69e1d2973ccc46648bde1a0b99c38fa2feb3d0536910a57a8393aa2c39818c44", size = 50128, upload-time = "2026-09-29T20:21:39.893Z" },
 ]
 
 [package.optional-dependencies]
@@ -1168,7 +1168,7 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.10,<0.3" },
+    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.11,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
     { name = "emoji", specifier = ">=2,<3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
