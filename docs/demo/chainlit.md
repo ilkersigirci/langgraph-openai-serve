@@ -527,10 +527,11 @@ field are also treated as answers. It maps completed
 [`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist), completing
 each prior task when the next status arrives and completing the list when the
 full response succeeds. Clicking **Stop** marks the active task as failed and
-closes the Responses stream; incomplete assistant text remains visible but is
-excluded from later model context. Both streaming and non-streaming requests
-require a completed Response before displaying files or accepting a successful
-turn. Failed interrupt resumes leave the saved continuation intact.
+closes the Responses stream. The answer text shown so far stays visible and in
+later model context; Chainlit's "Task manually stopped." notice does not. Both
+streaming and non-streaming requests require a completed Response before
+displaying files or accepting a successful turn. Failed interrupt resumes leave
+the saved continuation intact.
 
 Native refusal text is displayed as the assistant's explanation. Incomplete
 responses report their native reason, retain any already streamed text for the

@@ -132,13 +132,18 @@ class _Turn:
 
     @asynccontextmanager
     async def _keep_partial_answer(self) -> AsyncIterator[None]:
-        """Keep text shown before a failure, excluded from later model context."""
+        """Keep text shown before Stop or a failure.
+
+        Stopped text stays in later model context, as the user saw it; text
+        from a failed request does not.
+        """
         try:
             yield
-        except BaseException:
+        except BaseException as exc:
             await self.commentary_tasks.stop()
             if self.answer.content:
-                mark_model_context_excluded(self.answer)
+                if not isinstance(exc, asyncio.CancelledError):
+                    mark_model_context_excluded(self.answer)
                 await self.answer.send()
             raise
 
@@ -383,8 +388,12 @@ async def _stream_response(
     """Render final text and commentary while retaining the terminal Response."""
     phases: dict[int, str | None] = {}
     final_text_streamed = False
-    message_stream = MessageStream(assistant_message)
-    async with responses_client.responses.stream(**request, store=False) as stream:
+    # Leaving MessageStream sends the batch not yet shown, so Stop and failures
+    # keep every received delta.
+    async with (
+        MessageStream(assistant_message) as message_stream,
+        responses_client.responses.stream(**request, store=False) as stream,
+    ):
         async for event in stream:
             if event.type == "response.output_item.added":
                 item = event.item
@@ -401,8 +410,6 @@ async def _stream_response(
                     await message_stream.stream_token(event.delta)
                 continue
             if event.type == "response.incomplete" or event.type == "response.failed":
-                # A failed stream keeps its text, so send what is still buffered.
-                await message_stream.flush()
                 raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":
@@ -415,7 +422,6 @@ async def _stream_response(
                 continue
         completed = await stream.get_final_response()
 
-    await message_stream.flush()
     if (
         completed.status == "completed"
         and not final_text_streamed

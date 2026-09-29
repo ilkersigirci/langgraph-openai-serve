@@ -33,6 +33,7 @@ from tests.support import (
     sse,
     streamed,
     transcript,
+    unfinished_answer,
     user_message,
 )
 
@@ -111,45 +112,17 @@ async def test_failed_stream_keeps_all_streamed_text(
         status="failed",
         error={"code": "server_error", "message": "Graph failed"},
     )
-    payload = failed.model_dump(mode="json")
-    item = payload["output"][0]
-    part = {"item_id": item["id"], "output_index": 0, "content_index": 0}
     # LGOS fails an answer mid-stream without closing its text part.
     fake_gateway.replies.append(
         sse(
-            {
-                "type": "response.created",
-                "response": {**payload, "status": "in_progress", "output": []},
-            },
-            {
-                "type": "response.output_item.added",
-                "output_index": 0,
-                "item": {**item, "content": []},
-            },
-            {
-                "type": "response.content_part.added",
-                **part,
-                "part": {"type": "output_text", "text": "", "annotations": []},
-            },
-            {
-                "type": "response.output_text.delta",
-                **part,
-                "delta": "Partial ",
-                "logprobs": [],
-            },
-            {
-                "type": "response.output_text.delta",
-                **part,
-                "delta": "answer",
-                "logprobs": [],
-            },
+            *unfinished_answer("Partial ", "answer"),
             {
                 "type": "error",
                 "code": "server_error",
                 "message": "Graph failed",
                 "param": None,
             },
-            {"type": "response.failed", "response": payload},
+            {"type": "response.failed", "response": failed.model_dump(mode="json")},
         )
     )
 
@@ -411,7 +384,7 @@ async def test_stopped_turn_cancels_its_background_response(
     )
 
 
-async def test_stopped_stream_closes_upstream_and_keeps_partial_text_out_of_context(
+async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(
     chainlit_context,
     fake_gateway,
 ) -> None:
@@ -421,8 +394,8 @@ async def test_stopped_stream_closes_upstream_and_keeps_partial_text_out_of_cont
 
     class PausedStream(httpx2.AsyncByteStream):
         async def __aiter__(self) -> AsyncIterator[bytes]:
-            payload = streamed(response(message("Partial answer"))).content
-            yield payload.split(b"event: response.output_text.done")[0]
+            # The second delta arrives before the next UI batch is due.
+            yield sse(*unfinished_answer("Partial ", "answer")).content
             waiting.set()
             await anyio.sleep_forever()
 
@@ -445,16 +418,14 @@ async def test_stopped_stream_closes_upstream_and_keeps_partial_text_out_of_cont
                 await turn
 
     assert closed.is_set()
-    partial = cl.chat_context.get()[-1]
-    assert partial.content == "Partial answer"
-    assert partial.metadata[EXCLUDED_KEY] is True
 
     fake_gateway.replies.append(streamed(response(message("Ready."))))
-    await chat.on_message(user_message("Try again."))
+    await chat.on_message(user_message("What was your last sentence?"))
 
     assert fake_gateway.bodies("/v1/responses")[-1]["input"] == [
         {"role": "user", "content": "Give a long answer."},
-        {"role": "user", "content": "Try again."},
+        {"role": "assistant", "content": "Partial answer", "phase": "final_answer"},
+        {"role": "user", "content": "What was your last sentence?"},
     ]
     assert transcript()[-1] == "Ready."
 
