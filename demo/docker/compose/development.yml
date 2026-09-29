@@ -67,6 +67,12 @@ services:
   lgos-model-sync:
     <<: *lgos-demo-api-development
 
+  lgos-bifrost-catalog:
+    <<: *lgos-demo-api-development
+
+  lgos-bifrost-sync:
+    <<: *lgos-demo-api-development
+
   lgos-files-api:
     <<: *lgos-files-api-development
 

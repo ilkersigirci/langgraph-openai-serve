@@ -6,8 +6,9 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx2
-from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
 from pydantic import BaseModel, JsonValue, ValidationError
+
+from lgos_demo_api.utils.model_catalog import read_model_catalog, validate_namespace
 
 
 class ModelInfo(BaseModel):
@@ -46,26 +47,10 @@ def sync_models(
     dry_run: bool = False,
 ) -> dict[str, str]:
     """Reconcile namespaced LGOS models without changing other deployments."""
-    if not prefix or any(char.isspace() or char in "/*" for char in prefix):
-        msg = "Model namespace must be non-empty, without whitespace, / or *"
-        raise ValueError(msg)
-
-    response = source.get("models")
-    response.raise_for_status()
-    catalog = ModelList.model_validate(response.json())
-    desired: dict[str, ModelDetails] = {}
-    for summary in catalog.data:
-        response = source.get(f"models/{quote(summary.id, safe='')}")
-        response.raise_for_status()
-        model = ModelDetails.model_validate(response.json())
-        if model.id != summary.id or model.owned_by != "langgraph-openai-serve":
-            msg = f"Invalid model detail for {summary.id}"
-            raise ValueError(msg)
-        name = f"{prefix}/{model.id}"
-        if name in desired:
-            msg = f"Duplicate upstream model: {model.id}"
-            raise ValueError(msg)
-        desired[name] = model
+    validate_namespace(prefix)
+    desired = {
+        f"{prefix}/{name}": model for name, model in read_model_catalog(source).items()
+    }
 
     response = gateway.get("model/info")
     response.raise_for_status()

@@ -1,5 +1,10 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
+  "framework": {
+    "pricing": {
+      "pricing_url": "file:///app/data/catalog/pricing.json"
+    }
+  },
   "client": {
     "enforce_auth_on_inference": true,
     "header_filter_config": {
@@ -121,9 +126,7 @@
           "responses": true,
           "responses_stream": true,
           "responses_retrieve": true,
-          "responses_cancel": true,
-          "passthrough": true,
-          "passthrough_stream": true
+          "responses_cancel": true
         }
       }
     },
@@ -147,9 +150,7 @@
           "responses": true,
           "responses_stream": true,
           "responses_retrieve": true,
-          "responses_cancel": true,
-          "passthrough": true,
-          "passthrough_stream": true
+          "responses_cancel": true
         }
       }
     },

@@ -76,7 +76,7 @@ It depends on the Generic Pipe for Responses transport. The generated
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
     selected gateway's normal route. Metadata comes from LiteLLM's native
-    `/model/info` or Bifrost's catalog-detail pass-through. Neither
+    `/model/info` or Bifrost's native `/v1/models` attributes. Neither
     the Function nor the sync logic connects directly to LGOS.
 
 ## Gateway MCP
@@ -163,11 +163,13 @@ Pipe and Workspace Model sync read native `GET /model/info` using their
 configured gateway key. Entries with `model_info.lgos` supply descriptions,
 features, and complete settings; `model_name` remains the inference ID.
 No provider allowlist, per-provider catalog URL, or LGOS fallback is used.
-Bifrost uses aggregate `/v1/models`
-for discovery and its pass-through only for provider-specific detail. This
-preserves LGOS descriptions, features, and detailed client-settings schemas
-without a direct connection to LGOS. Inference still uses the selected
-gateway's normal Responses route.
+Bifrost uses native `/v1/models` for discovery. The Workspace Model sync decodes
+`additional_attributes.lgos`, a JSON string containing descriptions, features,
+and detailed client-settings schemas. [Bifrost catalog
+sync](bifrost.md#declarative-model-metadata) publishes these before Open WebUI
+starts. After graph changes, rerun `just demo/sync-bifrost [--dev]` followed by
+`just demo/sync-openwebui`. Inference uses the selected gateway's normal
+Responses route.
 
 After importing the current catalog, sync deletes obsolete generated `lgos.*`
 Workspace Models and `generic.*` base visibility records. It does not delete
@@ -237,8 +239,7 @@ metadata check to every Responses request.
 
 Compose sends file uploads through the selected gateway's normal `/v1` Files
 route. Bifrost assigns the request to `lgos-files`; LiteLLM assigns it to
-`litellm_proxy`. Both providers target the central Files API. Neither UI uses a
-Files pass-through.
+`litellm_proxy`. Both providers target the central Files API.
 
 The Compose service mounts a small ASGI wrapper that forces `process=false` on
 Open WebUI's native file-upload endpoint. Open WebUI therefore stores the

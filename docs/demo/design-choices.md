@@ -28,7 +28,8 @@ its row. Package decisions live in
 
 | Choice | Why | Cost | Revisit when |
 | --- | --- | --- | --- |
-| One custom provider per API and a dedicated `lgos-files` provider. | Separate identities show independent APIs behind one endpoint; normalized Files need their own provider. | Model detail still needs pass-through; clients keep the provider prefix in Responses model IDs because Bifrost ignores `x-model-provider` there, and send it as the `provider` query parameter on background retrieve and cancel. | Bifrost honors `x-model-provider` on Responses. |
+| One custom provider per API and a dedicated `lgos-files` provider. | Separate identities show independent APIs behind one endpoint; normalized Files need their own provider. | Clients keep the provider prefix in Responses model IDs because Bifrost ignores `x-model-provider` there, and send it as the `provider` query parameter on background retrieve and cancel. | Bifrost honors `x-model-provider` on Responses. |
+| Publish LGOS metadata as native `additional_attributes` on zero-priced pricing rows, written by catalog jobs around Bifrost startup. | Both UIs read complete metadata from one native `/v1/models` call, and the graph providers enable only model listing and native Responses. Bifrost stores attributes only on pricing rows, which only its datasheet creates. | A generated datasheet without Bifrost's public prices, two jobs, a sync to rerun after graph changes or gateway restarts, and an undocumented management endpoint. | Bifrost attaches attributes without pricing rows or loads them from `config.json`. |
 
 ## Chainlit
 

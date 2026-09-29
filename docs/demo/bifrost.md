@@ -16,17 +16,19 @@ package.
     `phase` and `store: false` contracts, plus the upstream error `type` and
     `param`. Normalized model detail does not expose LGOS extensions, and
     governance rejects an unknown provider-qualified model with its own
-    `model_blocked` error before LGOS sees the request. The raw
-    `/openai_passthrough/v1` route
-    preserves the successful-request contracts, while governance rejects an
-    unknown model before its upstream OpenAI error can pass through.
+    `model_blocked` error before LGOS sees the request.
 
 ## Run The Gateway
 
 ```bash
 cp demo/.env.example demo/.env
-just demo/up lgos-bifrost
+# Configure the required credentials and storage in demo/.env.
+just demo/compose --dev
 ```
+
+The development command builds this checkout. Use `just demo/compose` with a
+published demo image containing the catalog sync. Both commands prepare and
+synchronize metadata automatically; no dashboard edits are required.
 
 Bifrost exposes each service as a custom provider:
 
@@ -49,9 +51,10 @@ for the same bundle. See Bifrost's
 [Virtual MCP documentation](https://docs.getbifrost.ai/mcp/virtual-mcps) and
 [PostgreSQL Through Native MCP](graphs/mcp-postgres.md).
 
-Use Bifrost's normalized OpenAI endpoint to inspect the shared model catalog:
+Use Bifrost's native `/v1/models` endpoint to inspect the shared model catalog:
 
 ```python title="Inspect the Bifrost catalog"
+import json
 import os
 
 from openai import OpenAI
@@ -60,39 +63,83 @@ catalog = OpenAI(
     base_url="http://localhost:3000/v1",
     api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
 )
-model_ids = [
-    model.id
-    for model in catalog.models.list().data
-    if model.owned_by == "langgraph-openai-serve"
-]
-
-print(model_ids)
+for model in catalog.models.list().data:
+    if model.owned_by == "langgraph-openai-serve":
+        attributes = model.model_extra["additional_attributes"]
+        metadata = json.loads(attributes["lgos"])
+        print(model.id, metadata["description"], metadata["features"])
 ```
 
 Bifrost's catalog owns the provider-qualified IDs. With Bifrost selected, the
 UIs send a catalog ID such as `lgos-b/simple-graph` unchanged to native
 `/openai/v1/responses`. Bifrost selects the provider from that prefix and
-forwards `simple-graph` upstream. Only provider-specific model list and
-retrieval go to `/openai_passthrough/v1` with the prefix in
-`x-model-provider`, so LGOS descriptions and client settings survive unchanged.
+forwards `simple-graph` upstream. The same catalog response supplies complete
+LGOS descriptions, features, and client settings through
+`additional_attributes.lgos`, encoded as a JSON string. Bifrost also displays
+`additional_attributes.description` in its model editor.
 
 !!! warning "Bifrost ignores `x-model-provider` on Responses"
 
-    Only the pass-through, Files, batch, and video routes read the header. A
-    bare `simple-graph` with `x-model-provider: lgos-b` is spread across every
+    A bare `simple-graph` with `x-model-provider: lgos-b` is spread across every
     provider the virtual key allows for that model, so keep the provider in the
     model ID.
-
-The UI adapter discovers providers from the aggregate catalog; it does not
-contain a provider list.
 
 Select the Bifrost values in the shared
 [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
 for both demo UIs.
 
-The clients derive the Responses route, catalog-detail route, Files provider,
-and model-header routing from that explicit configuration. Host-side commands
+The clients derive the Responses route, native catalog route, and Files provider
+from that explicit configuration. Host-side commands
 must instead receive a URL reachable from the host.
+
+## Declarative Model Metadata
+
+The demo API's graph registrations remain the source of truth. Bifrost stores
+model attributes only on pricing rows, and only its pricing datasheet creates
+those rows. Compose therefore runs two jobs from the demo API image:
+
+1. `lgos-bifrost-catalog` runs before Bifrost starts. It reads every graph's
+   complete detail from both APIs and writes a datasheet of zero-priced
+   Responses rows, plus the matching attributes, under
+   `demo/docker/volumes/bifrost/catalog/`. Bifrost loads that datasheet through
+   `framework.pricing.pricing_url`; with an empty config store, it does not
+   start unless the datasheet loads.
+2. `lgos-bifrost-sync` runs after Bifrost is healthy. It reloads the datasheet
+   and provider model lists, then replaces the `description` and `lgos`
+   attributes of every graph row in one `PUT /api/models/catalog` transaction.
+
+`just demo/compose` runs both jobs; open either UI after it finishes. A failed
+job stops the command, and a failed graph API keeps the previous datasheet.
+Dashboard edits to these attributes last until the next sync.
+
+After changing graph descriptions, features, or settings, run:
+
+```bash
+just demo/sync-bifrost --dev
+just demo/sync-openwebui
+```
+
+Omit `--dev` when using published images. Chainlit rereads the catalog when a
+profile is selected. Open WebUI's generated Workspace Models need the second
+command to refresh their descriptions and forms. Add independently deployed
+APIs to the Bifrost provider configuration and to the catalog job's
+`--source PROVIDER=URL` arguments.
+
+The gateway's SQLite config store is ephemeral, so a restarted or recreated
+gateway loses the attributes. `just demo/compose` republishes them; after
+restarting only Bifrost, run `just demo/sync-bifrost`.
+
+!!! note "Graph pricing is zero"
+
+    Graphs call their LLMs outside Bifrost, so Bifrost's cost reports and
+    monetary budgets do not measure that spend. The generated datasheet sets
+    no token limits or model capabilities. It also omits Bifrost's public
+    prices because the bundled gateway routes no priced models.
+
+Use `/v1/models` for metadata. The `/openai/v1/models` conversion and
+normalized model-detail route omit these attributes. The UI adapters decode the
+JSON string and keep **Limited functionality** handling for missing or
+malformed metadata.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, speech, and MCP requests. Bifrost loads it as one native virtual key whose
@@ -102,11 +149,11 @@ attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
 The local dashboard and management API omit administrator authentication so
-Compose can perform its startup reconciliation. Before exposing Bifrost beyond
-a trusted development host, follow Bifrost's
+Compose can perform its startup reconciliation and catalog sync. Before
+exposing Bifrost beyond a trusted development host, follow Bifrost's
 [authentication guidance](https://docs.getbifrost.ai/deployment-guides/config-json/client#authentication),
-configure an encryption key, restrict browser origins, and authenticate that
-management request. A virtual key alone protects the data plane, not the
+configure an encryption key, restrict browser origins, and authenticate those
+management requests. A virtual key alone protects the data plane, not the
 management API.
 
 The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
@@ -124,11 +171,10 @@ that pool.
 ## Configuration Boundary
 
 All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
-`lgos-b` enable model listing, native Responses and streaming, and pass-through
-for catalog detail and protocol-reference tests. `lgos-files` enables only Files
-operations and targets the standalone S3-backed demo Files service. Upstream
-base URLs omit `/v1`, and private-network access is enabled for the Compose
-network.
+`lgos-b` enable only model listing and native Responses. `lgos-files` enables
+only Files operations and targets the standalone S3-backed demo Files service.
+Upstream base URLs omit `/v1`, and private-network access is enabled for the
+Compose network.
 
 Enable `responses`, `responses_stream`, `responses_retrieve`, and
 `responses_cancel` explicitly under each custom graph provider's
@@ -179,15 +225,13 @@ streaming Response. Providers that do not report usage produce no usage object.
 
 Open WebUI and Chainlit use Bifrost native Responses when
 `OPENAI_GATEWAY_TYPE=bifrost`, discover provider-qualified models from its
-aggregate catalog, send those IDs unchanged to native inference, and add
-`x-model-provider` only to catalog-detail requests. Neither client contains a
-provider list or uses raw pass-through for inference.
+native `/v1/models` catalog, decode `additional_attributes.lgos`, and send those
+IDs unchanged to native inference. Neither client contains a provider list.
 
 Run `just demo/test-bifrost --editable` after starting the gateway.
-The command requires the native Responses data-plane contracts to pass, records
-the normalized model-detail gap as a strict expected failure,
-and then requires the raw pass-through OpenAI SDK suite to pass except for its
-strict unknown-model governance expectation.
+The command requires the native Responses, Files, MCP, and catalog-metadata
+contracts to pass and records the normalized model-detail gap as a strict
+expected failure.
 
 See Bifrost's
 [custom-provider documentation](https://docs.getbifrost.ai/providers/custom-providers)

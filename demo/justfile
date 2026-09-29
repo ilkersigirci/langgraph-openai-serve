@@ -133,16 +133,14 @@ chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
 test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:4}"
 
-# Run Bifrost normalized and pass-through integration tests.
+# Run Bifrost native integration tests.
 [arg('DEMO_TEST_BIFROST_BASE_URL', long='base-url')]
 [arg('DEMO_TEST_BIFROST_CATALOG_BASE_URL', long='catalog-url')]
 [arg('editable', long, value='true')]
-[arg('DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL', long='passthrough-url')]
 [group('integration')]
 [timestamp]
-test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") $DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL=env("DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL") editable='false' *args:
-    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:5}"
-    DEMO_TEST_DIRECT_BASE_URLS="$DEMO_TEST_BIFROST_PASSTHROUGH_BASE_URL" DEMO_TEST_FILES_BASE_URL="$DEMO_TEST_BIFROST_CATALOG_BASE_URL" DEMO_TEST_OPENAI_API_KEY="$OPENAI_GATEWAY_API_KEY" DEMO_TEST_OPENAI_MODEL_PROVIDER=lgos-a DEMO_TEST_FILES_PROVIDER=lgos-files DEMO_TEST_GATEWAY_ERROR_XFAIL_REASON="Bifrost governance rejects unknown models before passthrough" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:5}"
+test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") editable='false' *args:
+    {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:4}"
 
 # Exercise polling-only background lifecycle through the selected gateway.
 [arg('base_url', long='base-url')]
@@ -203,6 +201,14 @@ sync-openwebui:
 sync-litellm dev='false' *args:
     {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-model-sync "${@:2}"
 
+# Regenerate and sync the bundled Bifrost catalog after graph changes.
+[arg('dev', long, value='true')]
+[group('docker dev')]
+[group('docker prod')]
+sync-bifrost dev='false':
+    {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-catalog
+    {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-sync
+
 # Start and synchronize the stack; add --dev and/or --otel as needed.
 [arg('dev', long, value='true')]
 [arg('otel', long, value='true')]
@@ -236,6 +242,9 @@ compose dev='false' otel='false' *up_args:
     if [[ "$OPENAI_GATEWAY_TYPE" == "litellm" ]]; then
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
+    fi
+    if [[ "$gateway_service" == "lgos-bifrost" ]]; then
+        "${compose[@]}" run --rm --no-deps --pull never lgos-bifrost-sync
     fi
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-openwebui

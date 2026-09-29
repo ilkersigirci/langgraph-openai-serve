@@ -27,7 +27,7 @@ the replayed answer text.
     Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
     selected gateway's normal route. Metadata comes from LiteLLM's native
-    `/model/info` or Bifrost's catalog-detail pass-through. Chainlit
+    `/model/info` or Bifrost's native `/v1/models` attributes. Chainlit
     never connects directly to the LGOS or Files containers and remains
     Responses-only.
 
@@ -95,9 +95,10 @@ Profile discovery and settings read `GET /model/info` with the current gateway
 credential. Entries with `model_info.lgos` become profiles; `model_name` is
 sent unchanged to managed `/v1/responses`. There are no provider allowlists,
 implicit prefixes, or per-provider catalog URLs.
-With Bifrost selected, aggregate discovery finds each
-provider, catalog detail uses `/openai_passthrough/v1` with
-`x-model-provider`, and inference sends the provider-qualified ID unchanged to
+With Bifrost selected, native `/v1/models` supplies provider-qualified IDs and
+the full extension as a JSON string in `additional_attributes.lgos`.
+[Catalog sync](bifrost.md#declarative-model-metadata) publishes that metadata
+automatically during startup. Inference sends the catalog ID unchanged to
 native `/openai/v1/responses`. The demo API owns the descriptions and capabilities.
 Chainlit keeps the Responses model usable for plain text but marks it as
 **Limited functionality** when an endpoint omits or strips them.
@@ -105,8 +106,8 @@ Chainlit keeps the Responses model usable for plain text but marks it as
 LiteLLM's managed `/v1/models` response contains only the standard model
 fields, so it is not the UI catalog. The full `model_info.lgos` extension
 supplies descriptions, features, and client-settings schemas in one response.
-Selecting a profile rereads this endpoint so settings use current metadata
-and model permissions. Errors do not trigger a fallback to LGOS.
+Selecting a profile rereads the selected gateway's native catalog so settings
+use current metadata and model permissions. Errors do not trigger a fallback to LGOS.
 
 The gateway selector owns routing; users explicitly configure its type and root
 URL. Browser login and gateway authorization are separate settings: mock and

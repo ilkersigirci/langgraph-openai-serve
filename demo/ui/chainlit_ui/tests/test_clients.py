@@ -1,5 +1,7 @@
 """Gateway routing and model catalog coverage."""
 
+import json
+
 import httpx2
 import pytest
 from openai import OpenAIError
@@ -41,45 +43,42 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         "object": "model",
         "created": 1,
         "owned_by": "langgraph-openai-serve",
-        "lgos": {"description": "Graph", "features": []},
+        "additional_attributes": {
+            "description": "Graph",
+            "lgos": json.dumps({"description": "Graph", "features": []}),
+        },
     }
     catalog = [
         {**graph, "id": "team/graph"},
         {**graph, "id": "other/graph"},
         {**graph, "id": "gpt-5", "owned_by": "openai"},
     ]
-    # Provider detail bypasses native catalog filtering. It must not turn a
-    # restricted provider into extra selectable chat profiles.
-    detail = [graph, {**graph, "id": "not-allowed"}]
     fake_gateway.replies += [
-        httpx2.Response(200, json={"object": "list", "data": data})
-        for data in (catalog, detail, detail)
+        httpx2.Response(200, json={"object": "list", "data": catalog})
     ]
 
     models = await clients.list_models()
 
-    assert [model.id for model in models] == ["other/graph", "team/graph"]
-    assert (models[0].model_extra or {})["lgos"] == graph["lgos"]
-    assert [
-        (request.url.path, request.headers.get("x-model-provider"))
-        for request in fake_gateway.requests
-    ] == [
-        ("/v1/models", None),
-        ("/openai_passthrough/v1/models", "other"),
-        ("/openai_passthrough/v1/models", "team"),
-    ]
+    assert [model.id for model in models] == ["team/graph", "other/graph"]
+    assert (models[0].model_extra or {})["lgos"] == {
+        "description": "Graph",
+        "features": [],
+    }
+    assert [request.url.path for request in fake_gateway.requests] == ["/v1/models"]
 
 
-async def test_model_retrieval_rejects_a_non_model_response(
+async def test_model_retrieval_rejects_a_model_missing_from_the_native_catalog(
     monkeypatch: pytest.MonkeyPatch,
     fake_gateway,
 ) -> None:
     monkeypatch.setattr(
         clients, "gateway", gateway_config("bifrost", "https://gateway.example")
     )
-    fake_gateway.replies.append(httpx2.Response(200, json="unsupported model detail"))
+    fake_gateway.replies.append(
+        httpx2.Response(200, json={"object": "list", "data": []})
+    )
 
-    with pytest.raises(OpenAIError, match="invalid model"):
+    with pytest.raises(OpenAIError, match="not available"):
         await clients.retrieve_model("lgos-a/simple-graph")
 
 

@@ -27,8 +27,7 @@ Inspect the affected gateway's:
 - LiteLLM image tag and digest in `demo/.env.example`, and Bifrost's pin in
   `demo/docker/apps/bifrost.yml`;
 - configuration under `demo/docker/configs/{litellm,bifrost}/`;
-- focused suite in `demo/api/tests/integration/test_{litellm,bifrost}_proxy.py`
-  and shared `test_direct_responses.py`;
+- focused suite in `demo/api/tests/integration/test_{litellm,bifrost}_proxy.py`;
 - endpoint selection and callers under `demo/ui/chainlit_ui/src/lgos_chainlit/`
   and `demo/ui/openwebui/src/lgos_openwebui/` when considering UI simplification.
 
@@ -55,11 +54,14 @@ route or provider used here. In particular:
   prove upstream commentary events survive.
 - Distinguish model-bound uploads and encoded file IDs from the demo's shared
   Files provider. Preserve one file namespace across both graph APIs.
-- Verify model list and detail separately from inference. Catalog extensions
-  can still require pass-through even when native Responses works.
+- Verify model list and detail separately from inference. Bifrost clients use
+  native `/v1/models` attributes that the catalog jobs write through the
+  undocumented `PUT /api/models/catalog`; `/openai/v1/models` still drops them.
+  Recheck that attributes still need a pricing row, that boot still requires
+  the pricing file to load, and recovery after the config store is recreated.
 - Bifrost selects a Responses provider only from the model prefix and
-  reads `x-model-provider` only on pass-through, Files, batch, and video
-  routes. Recheck this before changing how the UIs address models.
+  ignores `x-model-provider` there. Recheck this before changing how the UIs
+  address models.
 - Bifrost resolves `env.` references in key values but not in
   `base_url`, so the `aigateway` provider's URL is literal. Move it to the
   environment when a release supports that.
@@ -69,8 +71,8 @@ route or provider used here. In particular:
   availability; preserve the demo's custom LiteLLM image and streaming opt-in.
 
 Prefer upstream configuration over custom adapters. Remove an exact model
-entry, pass-through, or UI helper only when the replacement preserves its
-observable contract. A version bump with no safe simplification is valid.
+entry or UI helper only when the replacement preserves its observable contract.
+A version bump with no safe simplification is valid.
 
 ## Update and Verify
 
@@ -80,15 +82,16 @@ normally need no change. For an authorized local upgrade, preserve the running
 Compose overlays and recreate only the affected gateway with `--no-deps`.
 Wait for health before testing; do not reset its database or restart unrelated
 services to make a test pass.
+After recreating Bifrost, run `just demo/sync-bifrost` (add `--dev` for checkout
+images) to republish metadata into its fresh config store.
 
 From the repository root, use
 `just demo/test-litellm --editable` or
 `just demo/test-bifrost --editable`.
 LiteLLM checks native model info and managed routing against direct LGOS
-streaming; Bifrost also runs the shared pass-through contract. Validate the
-selected Compose profile with
-`OPENAI_GATEWAY_TYPE=litellm just demo/compose-config` (or
-`bifrost`).
+streaming; Bifrost checks native Responses, Files, MCP, and catalog attributes.
+Validate the selected Compose profile with
+`OPENAI_GATEWAY_TYPE=litellm just demo/compose-config` (or `bifrost`).
 
 Cover both graph providers, text, commentary and `phase`, function-output
 continuation, Files lifecycle and input IDs, catalog metadata, and OpenAI

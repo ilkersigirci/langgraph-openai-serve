@@ -1,12 +1,9 @@
 # Use An OpenAI-Compatible Proxy
 
 Direct LGOS is the protocol reference, while the maintained demo UIs enter
-through either LiteLLM or Bifrost. A proxy can either normalize
-managed model routes or forward an authenticated OpenAI-compatible pass-through
-route. In both cases,
-it must carry the native Responses contract without an LGOS-specific response
-adapter or plugin. LiteLLM and Bifrost remain deployment choices and are not
-part of the package.
+through either LiteLLM or Bifrost. A proxy must carry the native Responses
+contract without an LGOS-specific response adapter or plugin. LiteLLM and
+Bifrost remain deployment choices and are not part of the package.
 
 ## Native Responses Requirements
 
@@ -42,6 +39,8 @@ LGOS descriptions, feature discovery, or runtime-settings forms also needs
 `GET /v1/models/{model}` and the namespaced `lgos` property, or a gateway
 catalog containing the equivalent metadata. The demo's LiteLLM integration
 reads that extension from native `/model/info` after [model sync](../demo/litellm-sync.md).
+Bifrost exposes it as a JSON string in `additional_attributes.lgos` on native
+`/v1/models` after [catalog sync](../demo/bifrost.md#declarative-model-metadata).
 Those extensions improve presentation but are not prerequisites for a standard
 Responses request.
 
@@ -57,7 +56,7 @@ incompatible if it synthesizes a new stream or drops `phase` and call IDs.
 | --- | --- | --- |
 | Direct LGOS | Full maintained contract | Protocol reference and diagnostics |
 | LiteLLM managed routing | Native streaming, commentary, Files, file input, continuation, and successful Responses spend logging pass; error metadata is rewritten | LiteLLM-selected UI inference and Files |
-| Bifrost raw pass-through | Successful-request contracts pass; virtual-key governance rejects the unknown-model error case before pass-through | UI catalog detail and protocol reference |
+| Bifrost native `/v1/models` | Complete LGOS metadata in `additional_attributes.lgos` after declarative sync | Bifrost-selected UI discovery and settings |
 | Bifrost normalized route | Native Responses fields, Files, file input, commentary `phase`, continuation, `store: false`, and upstream error `type` and `param` pass; model-detail extensions are unavailable | Bifrost-selected UI inference and Files |
 
 These results describe the bundled configuration. Exact image tags and digests
@@ -117,16 +116,15 @@ catalog routes or implicit model prefixes are needed. This keeps LiteLLM's routi
 accounting, policy, retry, and fallback features available for inference.
 The error-normalization limitation still applies when LiteLLM is selected.
 
-Bifrost custom providers expose both normalized and raw OpenAI routes. The
-bundled native Responses route preserves `phase`, multiple commentary
-items, file input, function continuation, and upstream error `type` and
-`param`. It still omits LGOS extensions from normalized model detail.
-`/openai_passthrough/v1` passes the complete direct suite when the client
-supplies the catalog-discovered provider in `x-model-provider`. The UIs use
-that route only for provider-specific catalog detail. Responses send the
-provider-qualified catalog ID to native `/openai/v1/responses`, which ignores
-that header, and Files use normalized `/v1` with the dedicated `lgos-files`
-provider. No plugin or response adapter is required.
+The bundled Bifrost custom providers enable only normalized OpenAI routes.
+The native Responses route preserves `phase`,
+multiple commentary items, file input, function continuation, and upstream
+error `type` and `param`. It still omits LGOS extensions from normalized model
+detail. The UIs read native `/v1/models`, whose synchronized
+`additional_attributes.lgos` contains the full extension. Responses send the
+provider-qualified catalog ID to native `/openai/v1/responses`, and Files use
+normalized `/v1` with the dedicated `lgos-files` provider. No plugin or
+response adapter is required.
 
 LiteLLM recovers managed deployment routing from its opaque Response ID.
 Bifrost routes model-less retrieve and cancel by the `provider` query

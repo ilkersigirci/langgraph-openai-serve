@@ -46,12 +46,17 @@ async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
         timeout=10.0,
     ) as catalog:
         catalog_models = await catalog.models.list()
-        model_ids = {
-            model.id
+        models = {
+            model.id: model
             for model in catalog_models.data
             if model.owned_by == "langgraph-openai-serve"
         }
-        assert {"lgos-a/simple-graph", "lgos-b/simple-graph"} <= model_ids
+        for model_id in ("lgos-a/simple-graph", "lgos-b/simple-graph"):
+            # The catalog sync publishes the complete detail extension, which
+            # the normalized /openai/v1 model routes omit.
+            attributes = (models[model_id].model_extra or {})["additional_attributes"]
+            extension = json.loads(attributes["lgos"])
+            assert set(extension["client_settings"]) == {"defaults", "json_schema"}
 
         files_query = {"provider": "lgos-files"}
         uploaded = await catalog.files.create(

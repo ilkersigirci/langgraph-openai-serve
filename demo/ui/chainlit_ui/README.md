@@ -10,7 +10,8 @@ LiteLLM uses managed Responses routing; Bifrost uses its native Responses
 route. Both use their normal Files and aggregate MCP routes with the same
 gateway credential. LiteLLM discovery and settings read
 `/model/info`, using `model_name` unchanged and the full `model_info.lgos`
-extension. Bifrost uses its aggregate catalog and model-detail pass-through.
+extension. Bifrost reads native `/v1/models` and decodes the complete extension
+from the JSON string in `additional_attributes.lgos`.
 Before using independently started LiteLLM components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
 The full-stack `just demo/compose [--dev] [--otel]` variants do this; open
 the UI after the command completes.

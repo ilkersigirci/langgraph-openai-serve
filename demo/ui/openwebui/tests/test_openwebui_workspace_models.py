@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -236,8 +237,9 @@ def test_discovery_projects_settings_from_gateway_model_details(
     )
     other_model = Model(id="gpt-5", object="model", created=1, owned_by="openai")
     providers = ("lgos-a", "lgos-future")
-    responses: dict[tuple[str, str | None], object] = {}
+    responses: dict[str, object] = {}
     deployments = []
+    native_models = []
     for provider in providers:
         detail = graph.model_dump()
         if provider == "lgos-future":
@@ -250,7 +252,13 @@ def test_discovery_projects_settings_from_gateway_model_details(
                 "defaults": {"audience": "general"},
             }
         if provider_routing:
-            responses[("/openai_passthrough/v1/models/simple-graph", provider)] = detail
+            native_models.append(
+                {
+                    **graph.model_dump(exclude={"lgos"}),
+                    "id": f"{provider}/simple-graph",
+                    "additional_attributes": {"lgos": json.dumps(detail["lgos"])},
+                }
+            )
         else:
             deployments.append(
                 {
@@ -258,29 +266,24 @@ def test_discovery_projects_settings_from_gateway_model_details(
                     "model_info": {"lgos": detail["lgos"]},
                 }
             )
-    responses[("/model/info", None)] = {
+    responses["/model/info"] = {
         "data": [
             *deployments,
             {"model_name": "gpt-5", "model_info": {}},
         ]
     }
     if provider_routing:
-        responses[("/v1/models", None)] = {
+        responses["/v1/models"] = {
             "object": "list",
             "data": [
-                {
-                    **graph.model_dump(exclude={"lgos"}),
-                    "id": "lgos-future/simple-graph",
-                },
-                {**graph.model_dump(exclude={"lgos"}), "id": "lgos-a/simple-graph"},
+                *reversed(native_models),
                 other_model.model_dump(),
             ],
         }
 
     def handle(request: httpx2.Request) -> httpx2.Response:
         assert request.method == "GET"
-        key = (request.url.path, request.headers.get("x-model-provider"))
-        return httpx2.Response(200, json=responses[key])
+        return httpx2.Response(200, json=responses[request.url.path])
 
     with OpenAI(
         base_url="https://gateway.example/v1",

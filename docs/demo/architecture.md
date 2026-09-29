@@ -5,7 +5,7 @@ logical central Files service. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects a
 first-class OpenAI-compatible edge for both Chainlit and Open WebUI. LiteLLM
 uses managed Responses and Bifrost uses native Responses. Both use normal
 Files routing. LiteLLM serves metadata from native `/model/info`; Bifrost uses
-catalog-detail pass-through. No UI
+native `/v1/models` attributes. No UI
 connects directly to an upstream container, and neither UI imports
 `langgraph-openai-serve`. See
 [Package Architecture](../explanation/architecture.md) for what happens inside
@@ -15,13 +15,11 @@ each API process.
 
     The bundled Bifrost native Responses route preserves standard fields, file
     input, commentary, `phase`, `store: false`, and upstream error `type` and
-    `param`; normalized model detail remains lossy. Its raw pass-through route
-    preserves successful-request contracts, while virtual-key governance
-    rejects an unknown model before its upstream error can pass through. The
+    `param`; normalized model detail remains lossy. The
     bundled `homeserver-litellm` image preserves native streaming and
     commentary; error metadata remains rewritten.
-    The UIs exercise the selected gateway's managed/native inference path;
-    only Bifrost model-detail lookup uses a lossless pass-through. See
+    The UIs use the selected gateway's managed/native inference path and
+    synchronized native catalog metadata. See
     [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
 
 ## Request Path
@@ -86,8 +84,8 @@ flowchart LR
 
 With LiteLLM selected, the UIs read native `/model/info`, use `model_info.lgos`
 for capabilities and settings, and send `model_name` unchanged through managed
-Responses routing. With Bifrost selected, they discover provider-qualified IDs through
-its aggregate catalog, use raw pass-through only for model detail, and send
+Responses routing. With Bifrost selected, they read provider-qualified IDs and
+complete metadata from native `/v1/models` attributes, and send
 the catalog ID unchanged through native Responses routing, where its prefix
 selects the provider. Both choices upload
 attachments through normal gateway Files routing before sending the returned
@@ -106,9 +104,14 @@ OpenAI models; LGOS never receives audio. See the
 
 The [LGOS-owned sync command](litellm-sync.md) registers concrete models and full
 metadata in LiteLLM's database. Run it after graph changes; the gateway needs no
-LGOS-specific code. LiteLLM exposes no demo pass-through routes. Protocol tests
+LGOS-specific code. Protocol tests
 compare its managed stream with the direct LGOS endpoint; UI clients never
 make that direct connection.
+
+[Bifrost catalog sync](bifrost.md#declarative-model-metadata) prepares a pricing
+datasheet with zero-priced graph rows, then publishes full metadata through
+the gateway's native management API. Startup runs both jobs, and the metadata
+is rebuilt after gateway recreation from the graph registrations.
 
 Background-capable models use the selected gateway's normal Responses
 lifecycle. Chainlit and Open WebUI discover the capability, create a non-streaming

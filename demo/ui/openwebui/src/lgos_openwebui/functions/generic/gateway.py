@@ -9,9 +9,11 @@ from pydantic import (
     AnyHttpUrl,
     BaseModel,
     Field,
+    Json,
     JsonValue,
     PlainValidator,
     TypeAdapter,
+    ValidationError,
 )
 
 from .contracts import LGOS_MODEL_OWNER
@@ -34,6 +36,25 @@ class _LiteLLMDeployment(BaseModel):
 
 class _LiteLLMCatalog(BaseModel):
     data: list[_LiteLLMDeployment]
+
+
+class _BifrostAttributes(BaseModel):
+    lgos: Json[dict[str, JsonValue]] | None = None
+
+
+def bifrost_models(models: list[Model]) -> list[Model]:
+    """Decode native catalog attributes; incomplete metadata stays visible."""
+    result = []
+    for model in models:
+        if model.owned_by != LGOS_MODEL_OWNER:
+            continue
+        attributes = (model.model_extra or {}).get("additional_attributes", {})
+        try:
+            extension = _BifrostAttributes.model_validate(attributes).lgos
+        except ValidationError:
+            extension = None
+        result.append(model.model_copy(update={"lgos": extension}))
+    return result
 
 
 def litellm_models(payload: object) -> list[Model]:
@@ -97,6 +118,7 @@ __all__ = [
     "GatewayConfig",
     "GatewayRoot",
     "GatewayType",
+    "bifrost_models",
     "gateway_config",
     "litellm_models",
 ]

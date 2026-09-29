@@ -62,7 +62,8 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     The command waits for the gateway and its dependencies, including Chainlit
-    and DBHub, syncs LiteLLM when selected, then starts and syncs Open WebUI.
+    and DBHub, syncs metadata into the selected gateway, then starts and syncs
+    Open WebUI. Bifrost also runs a catalog preparation job before starting.
     Services remain running in the background. Compose owns [dependency order and
     readiness](https://docs.docker.com/compose/how-tos/startup-order/); `just` only
     sequences the repeatable sync jobs.
@@ -185,12 +186,14 @@ settings](reference.md#opentelemetry-settings).
 === "Bifrost"
 
     ```bash
-    just demo/up lgos-bifrost
+    just demo/compose
     ```
 
     The UIs use native `/openai/v1/responses`, normal `/v1` Files routing, the
-    aggregate `/mcp` endpoint, and raw pass-through only for provider-specific
-    catalog detail. The named PostgreSQL Virtual MCP remains available at
+    aggregate `/mcp` endpoint, and native `/v1/models` metadata. Compose prepares
+    zero-priced graph rows and synchronizes descriptions, features, and client
+    settings automatically. Use `--dev` to build this checkout. The named
+    PostgreSQL Virtual MCP remains available at
     `http://localhost:3000/mcp/lgos-postgres`. See [Bifrost Gateway](bifrost.md)
     for endpoints, routing, and the shared SDK verification command.
 
@@ -231,8 +234,7 @@ settings](reference.md#opentelemetry-settings).
 
     Enable LiteLLM's native database model storage. For Files, adapt the
     `files_settings` in [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml)
-    to the shared Files service. No LGOS catalog pass-through
-    is required. Retain the bundled image's
+    to the shared Files service. Retain the bundled image's
     `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` opt-in when using that image.
 
     On the same Docker host, attach the existing LiteLLM service to the demo's
@@ -356,8 +358,7 @@ settings](reference.md#opentelemetry-settings).
 
     With the service healthy, run the focused OpenAI SDK check from the
     repository root. It tests managed routing, the catalog-to-inference
-    flow, and native streaming fidelity against the direct LGOS test endpoints.
-    LiteLLM exposes no demo pass-through routes:
+    flow, and native streaming fidelity against the direct LGOS test endpoints:
 
     ```bash
     just demo/test-litellm --editable
