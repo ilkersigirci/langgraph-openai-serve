@@ -168,6 +168,38 @@ def streamed(response: Response, *, deltas: bool = True) -> httpx2.Response:
     return sse(*events)
 
 
+def unfinished_answer(*deltas: str) -> list[dict[str, Any]]:
+    """Start one answer and stream these text deltas without finishing it."""
+    payload = response(message("".join(deltas))).model_dump(mode="json")
+    item = payload["output"][0]
+    part = {"item_id": item["id"], "output_index": 0, "content_index": 0}
+    return [
+        {
+            "type": "response.created",
+            "response": {**payload, "status": "in_progress", "output": []},
+        },
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {**item, "content": []},
+        },
+        {
+            "type": "response.content_part.added",
+            **part,
+            "part": {"type": "output_text", "text": "", "annotations": []},
+        },
+        *(
+            {
+                "type": "response.output_text.delta",
+                **part,
+                "delta": delta,
+                "logprobs": [],
+            }
+            for delta in deltas
+        ),
+    ]
+
+
 def sse(*events: dict[str, Any]) -> httpx2.Response:
     """Reply with these Responses stream events."""
     return httpx2.Response(

@@ -19,6 +19,7 @@ demo model catalogs.
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`response-outcomes`](core-patterns.md#response-outcomes) | Native refusal content and incomplete terminal responses | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | None | None |
+| [`streaming-long-mock`](core-patterns.md#streaming-long-mock) | A slow, predictable 100-sentence stream for checking streaming, Stop, and the returned history | None | None |
 | [`persistent-plot-agent`](persistent-plot-agent.md) | A tool-calling agent with an editable thread-scoped chart | None | Upstream model, Files API, and PostgreSQL store |
 | [`interruptible-approval`](interruptible-approval.md) | Durable choice-or-text human review before protected actions | `interrupts` | PostgreSQL checkpointer and run coordinator |
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |

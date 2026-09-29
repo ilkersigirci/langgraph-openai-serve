@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.9"
+version = "0.2.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,9 +365,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/29/3b/fb7cf8d9bdad22c2a357f69653cc4aff6b65ce5c54a89ef53791f4d3b334/chainlit_utils-0.2.9.tar.gz", hash = "sha256:d2cfd7c675da1674ed885f528b1a8849412271958f903b4f1e2dadc55a64a41f", size = 37264, upload-time = "2026-09-28T15:13:53.547Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1b/cf/9f9795f27f1d0282cece2af4fe9da56e417b441ab699215b61d9ffd1191c/chainlit_utils-0.2.10.tar.gz", hash = "sha256:c9ee514c92def1ccc68eb50b16fa9076ea8f041238cb9811f9dd27dc1611844c", size = 37556, upload-time = "2026-09-29T16:46:51.25Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/ad/44c5c1b1a33c3e3a2a795f0a26b408279841757810c0680dc14df13ea5a7/chainlit_utils-0.2.9-py3-none-any.whl", hash = "sha256:6f88b52d8475536f370d15f62fa11ef72f958f4a3ea653f82a71a023215007ff", size = 49521, upload-time = "2026-09-28T15:13:52.562Z" },
+    { url = "https://files.pythonhosted.org/packages/47/3a/beecfe11bde0ca1e361f05e0a727387018ba3f301f087aab4b8ad76eecdc/chainlit_utils-0.2.10-py3-none-any.whl", hash = "sha256:4c868e95cd8172bcdcfe6619c7a5449f306c3bde4b24fd2943466d436cb26435", size = 49849, upload-time = "2026-09-29T16:46:50.053Z" },
 ]
 
 [package.optional-dependencies]
@@ -1168,7 +1168,7 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.9,<0.3" },
+    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.10,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
     { name = "emoji", specifier = ">=2,<3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
