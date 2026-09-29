@@ -54,13 +54,11 @@ value before starting the UI; neither service reads the other's S3 settings.
     just demo/compose
     ```
 
-    Chainlit starts before the gateway to initialize the conversation tables
-    used by MCP reports. With LiteLLM selected, the command syncs model metadata
-    once the gateway is ready. Open `http://localhost:3002` after it completes.
+    With LiteLLM selected, this syncs model metadata after Chainlit starts, so
+    open `http://localhost:3002` once the command completes.
 
-    If the gateway and backends are already running,
-    `just demo/up lgos-chainlit`
-    starts only Chainlit and PostgreSQL.
+    With an external gateway, `just demo/up lgos-chainlit` starts only
+    Chainlit and PostgreSQL.
 
 === "Local processes"
 
@@ -78,21 +76,17 @@ value before starting the UI; neither service reads the other's S3 settings.
         just demo/up lgos-bifrost
         ```
 
-    Both gateways use port 3000 and start a Chainlit container on port 3002
-    for the MCP reporting schema. Run the local UI on a separate port:
+    Both gateways use host port 3000 and also start the Chainlit container on
+    port 3002, which the MCP reports depend on. Run the local UI on another port:
 
     ```bash
     just demo/chainlit --port 5000
     ```
 
-    Open `http://localhost:5000`. With LiteLLM, sync model metadata as described
-    below before using the local UI.
+    Open `http://localhost:5000`.
 
-Chainlit's application lifespan applies pending schema migrations on every
-startup before accepting requests. The `chainlit-utils` migration ledger skips
-applied versions, and its PostgreSQL lock serializes concurrent workers.
-Migration failures stop startup. See [Docker Compose](docker.md#demo-services)
-for container endpoints.
+Both modes apply pending Chainlit schema migrations when the UI starts. See
+[Docker Compose](docker.md#demo-services) for container endpoints.
 
 When starting components independently with LiteLLM, [sync model
 metadata](litellm-sync.md) before using the UI. The full-stack Compose targets
@@ -631,8 +625,8 @@ because those native contracts are release-specific.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for
   native file and chart persistence. File-capable profiles enable attachments.
-- Allow the startup lifecycle to finish migrations before routing traffic to
-  a new worker; the health endpoint becomes available afterward.
+- Route traffic to a new worker only after its health check passes; the
+  endpoint answers once startup migrations finish.
 
 See Chainlit's documentation for
 [password callbacks](https://docs.chainlit.io/authentication/password),

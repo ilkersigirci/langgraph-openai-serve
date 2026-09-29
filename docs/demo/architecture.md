@@ -115,15 +115,11 @@ lifecycle. Chainlit and Open WebUI discover the capability, create a non-streami
 background Response, and poll or cancel through the OpenAI SDK. Hatchet runs
 each job and stores its status and Response, which every API replica reads.
 
-At startup, the graph APIs, background worker, and Chainlit wait for PostgreSQL
-and apply pending migrations in their lifecycles. Database locks serialize
-concurrent migrations. The `lgos-mcp-db-setup` job waits for API A and Chainlit
-to be healthy, then provisions the demo's reporting views, role, and grants.
-DBHub starts after the job succeeds, using only the restricted reporting login.
-The selected gateway waits for DBHub, both graph APIs, and the Files service.
-Chainlit can start before the gateway; model discovery happens when a user
-connects. The diagram shows request traffic rather than those readiness
-dependencies.
+At startup, the graph APIs, background worker, and Chainlit apply their pending
+schema migrations. Once API A and Chainlit are healthy, the idempotent MCP
+setup creates the reporting views, role, and grants before DBHub starts. The
+selected gateway waits for DBHub, both graph APIs, and the Files service. The
+diagram shows request traffic rather than those readiness dependencies.
 Compose runs one Files process for the demo; production deployments may run
 multiple stateless replicas over the same repository.
 

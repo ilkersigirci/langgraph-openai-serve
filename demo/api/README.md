@@ -35,8 +35,7 @@ calls; `graph_runner.py` compares the Responses endpoint with direct graph
 execution.
 
 The API and background worker apply pending LangGraph checkpoint and Store
-migrations during startup. PostgreSQL serializes concurrent migration attempts;
-a migration failure prevents the process from serving work.
+migrations when they start.
 
 ## LiteLLM Model Sync
 

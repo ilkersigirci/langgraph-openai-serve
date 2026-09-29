@@ -22,6 +22,8 @@ services:
         soft: 4096
         hard: 8192
     depends_on:
+      # Bifrost discovers MCP tools when it connects and resyncs them only
+      # periodically (every 10 minutes by default), so DBHub must be ready first.
       lgos-postgres-mcp:
         condition: service_healthy
       lgos-demo-api-a:

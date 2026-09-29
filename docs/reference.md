@@ -340,8 +340,10 @@ for checkpoints and
 for application data. The LGOS adapter supplies only the cross-worker
 interrupt-run lease; it does not replace either storage primitive. Run each
 configured storage adapter's `setup()` before serving requests, serializing
-migration attempts when workers can start together. A shared pool must follow
-the upstream connection requirements: `autocommit=True`,
+migration attempts when workers can start together. Their migrations use
+`CREATE INDEX CONCURRENTLY`, which deadlocks with a worker blocked in
+`pg_advisory_lock`; retry `pg_try_advisory_lock` instead. A shared
+pool must follow the upstream connection requirements: `autocommit=True`,
 `prepare_threshold=0`, and mapping rows.
 
 `PostgresRunCoordinator(pool, max_concurrent_leases=...)` accepts an existing

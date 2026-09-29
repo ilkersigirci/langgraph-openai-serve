@@ -33,10 +33,7 @@ In a standalone copy of `demo/`, use `just <recipe>` in place of
 
 !!! note "Docker Compose 5.3.0 or newer"
 
-    The demo is validated with Compose 5.3.0. The graph APIs and Chainlit apply
-    pending database migrations before reporting healthy. PostgreSQL locks
-    serialize concurrent migrations; a migration failure stops the affected
-    service. A separate MCP provisioning job completes before DBHub starts.
+    The demo is validated with Compose 5.3.0.
 
 Prepare the demo environment:
 
@@ -64,11 +61,9 @@ settings](reference.md#opentelemetry-settings).
     just demo/compose
     ```
 
-    The command waits for the gateway and its dependencies, syncs LiteLLM when
-    selected, then starts and syncs Open WebUI. Chainlit starts earlier as a
-    DBHub dependency, applying its migrations before MCP reporting views are
-    created. Services remain running
-    in the background. Compose owns [dependency order and
+    The command waits for the gateway and its dependencies, including Chainlit
+    and DBHub, syncs LiteLLM when selected, then starts and syncs Open WebUI.
+    Services remain running in the background. Compose owns [dependency order and
     readiness](https://docs.docker.com/compose/how-tos/startup-order/); `just` only
     sequences the repeatable sync jobs.
 
@@ -123,18 +118,14 @@ settings](reference.md#opentelemetry-settings).
     just demo/up lgos-postgres-mcp --wait
     ```
 
-    API A and Chainlit initialize their persistence schemas during startup.
-    After they report healthy, `lgos-mcp-db-setup` runs `psql` to create or update
-    the dedicated `lgos_mcp` login and four curated views over live Chainlit
-    users/conversations and pending LGOS interrupts in one transaction. This
-    repeatable provisioning job owns the demo's reporting schema. DBHub depends
-    on its [successful completion](https://docs.docker.com/compose/how-tos/startup-order/);
-    a setup failure prevents DBHub from starting. The pinned upstream DBHub image
-    runs with its original entrypoint and only the restricted reporting credentials,
-    exposing six fixed reports inside the Compose network.
-    It publishes no host port. Starting either bundled gateway starts these
-    dependencies automatically. Replace `LGOS_MCP_DB_PASSWORD` and
-    `LGOS_MCP_AUTH_TOKEN` before startup. See
+    Once API A and Chainlit are healthy, and so have created their tables, the
+    one-shot `lgos-mcp-db-setup` job creates or updates the dedicated `lgos_mcp`
+    login and four curated views over live Chainlit users/conversations and
+    pending LGOS interrupts. The role can read only those views. The pinned
+    DBHub service then exposes six fixed reports only inside the Compose
+    network; it publishes no host port. Starting either bundled gateway starts
+    these dependencies, including Chainlit, automatically. Replace
+    `LGOS_MCP_DB_PASSWORD` and `LGOS_MCP_AUTH_TOKEN` before startup. See
     [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) for the complete
     client and security flow.
 
@@ -146,14 +137,7 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     Run each attached service in a separate terminal. Compose starts the shared
-    PostgreSQL dependency automatically. Each API waits for PostgreSQL health,
-    then runs LangGraph's checkpoint and Store `setup()` methods during its
-    lifespan before opening its runtime pool. A session advisory lock serializes
-    migrations across API replicas and the background worker, including the
-    upstream migrations that require autocommit. Lock acquisition uses
-    nonblocking checks with a 60-second deadline so waiting replicas do not
-    block concurrent index creation. Already-applied versions are skipped.
-    These startup hooks also run when launching the processes locally.
+    PostgreSQL dependency automatically.
 
     - `lgos-a`: `http://localhost:3004/v1`
     - `lgos-b`: `http://localhost:3005/v1`
@@ -381,7 +365,8 @@ settings](reference.md#opentelemetry-settings).
 
 === "Chainlit"
 
-    With the gateway and its backends running:
+    The bundled gateways already start Chainlit. With an external gateway and
+    its backends running:
 
     ```bash
     just demo/up lgos-chainlit
@@ -415,7 +400,10 @@ state, and Open WebUI state—including its native raw file copies—use host bi
 mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
-required ephemeral writes.
+required ephemeral writes. The graph APIs, background worker, and Chainlit
+apply pending schema migrations when they start and stop if one fails. Each
+takes a PostgreSQL advisory lock first, so processes that start together
+migrate one at a time.
 
 Chainlit stores thread and element metadata in PostgreSQL, while its native S3
 client uploads generated file elements to the configured `BUCKET_NAME`.

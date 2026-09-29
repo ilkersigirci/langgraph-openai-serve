@@ -158,11 +158,7 @@ so the official Open WebUI image remains unchanged. Compose configures Open
 WebUI's gateway MCP connection from the same root and key.
 
 Compose starts each selected service's dependencies. The APIs, background
-worker, and Chainlit apply pending migrations during startup before serving
-work. PostgreSQL locks serialize concurrent migrations. The `lgos-mcp-db-setup`
-job waits for API A and Chainlit to become healthy, then provisions the demo's
-MCP reporting views and permissions using `psql`. DBHub starts after the job
-succeeds and receives only the restricted reporting credentials.
+worker, and Chainlit apply pending database migrations when they start.
 
 ## Run local processes
 

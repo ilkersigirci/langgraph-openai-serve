@@ -1,4 +1,3 @@
-import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -18,8 +17,6 @@ from lgos_chainlit.auth import configure_auth, token_store
 from lgos_chainlit.clients import gateway, gateway_http_client
 from lgos_chainlit.mcp import mcp_gateway_config
 from lgos_chainlit.settings import get_chainlit_settings, settings
-
-logger = logging.getLogger(__name__)
 
 os.environ.setdefault(
     "AWS_CONFIG_FILE",
@@ -53,9 +50,7 @@ async def _close_chainlit_data_layer() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
-        logger.info("Initializing PostgreSQL Chainlit persistence schema")
         await setup_chainlit_schema(str(get_chainlit_settings().DATABASE_URL))
-        logger.info("PostgreSQL Chainlit persistence schema is ready")
         if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
             await token_store().initialize()
         yield
