@@ -20,7 +20,7 @@ user_message_markdown = true
 user_message_autoscroll = true
 assistant_message_autoscroll = true
 auto_tag_thread = true
-edit_message = false
+edit_message = true
 allow_thread_sharing = false
 favorites = false
 
