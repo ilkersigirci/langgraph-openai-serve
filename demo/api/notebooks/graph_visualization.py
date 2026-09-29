@@ -50,6 +50,7 @@ def _():
     from lgos_demo_api.graphs.simple import simple_graph
     from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
     from lgos_demo_api.graphs.status_events import status_event_graph
+    from lgos_demo_api.graphs.streaming_long_mock import streaming_long_mock_graph
     from lgos_demo_api.graphs.subgraphs.specialist_team import (
         create_specialist_team_graph,
     )
@@ -72,6 +73,7 @@ def _():
         simple_graph,
         simple_external_tools_graph,
         status_event_graph,
+        streaming_long_mock_graph,
     )
 
 
@@ -94,6 +96,7 @@ async def _(
     simple_graph,
     simple_external_tools_graph,
     status_event_graph,
+    streaming_long_mock_graph,
 ):
     graphs = {
         "custom-input-output-context": custom_io_graph,
@@ -103,6 +106,7 @@ async def _(
         "complex-subgraphs": create_specialist_team_graph(),
         "status-events": status_event_graph,
         "multi-node-streaming": multi_node_streaming_graph,
+        "streaming-long-mock": streaming_long_mock_graph,
         "response-outcomes": response_outcome_graph,
         "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
         "interruptible-approval": create_interruptible_graph(InMemorySaver()),

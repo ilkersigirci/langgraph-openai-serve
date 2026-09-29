@@ -39,6 +39,7 @@ DOCUMENTED_MODEL_IDS = {
     "server-tool",
     "simple-graph-external-tools",
     "status-events",
+    "streaming-long-mock",
 }
 
 

@@ -1,6 +1,6 @@
 # Core Graph Patterns
 
-Six small graphs isolate the basic ways an OpenAI request can drive a
+Seven small graphs isolate the basic ways an OpenAI request can drive a
 LangGraph. They keep persistence, status events, and interrupts out of the way
 so each adapter or streaming behavior is visible on its own.
 
@@ -12,6 +12,7 @@ so each adapter or streaming behavior is visible on its own.
 | `response-outcomes` | Native refusal content and incomplete terminal responses |
 | `simple-graph` | A real chat model controlled by discoverable runtime settings |
 | `simple-graph-external-tools` | A chat model that receives and returns client-owned function tools |
+| `streaming-long-mock` | A slow, predictable answer for checking streaming, Stop, and the history a UI sends back |
 
 ## LangGraph Topology
 
@@ -67,6 +68,14 @@ so each adapter or streaming behavior is visible on its own.
 		generate --> __end__;
     ```
 
+=== "streaming-long-mock"
+
+    ```mermaid
+    graph TD;
+		__start__ --> stream_sentences;
+		stream_sentences --> __end__;
+    ```
+
 ## Request Flow
 
 Each maintained demo UI sends a standard request through LGOS
@@ -108,6 +117,36 @@ run sequentially and stream one deterministic sentence each. Their
 `answer_parts` updates use an append reducer; `assemble_answer` joins those
 parts into the single final assistant message. Streaming and non-streaming
 requests therefore produce identical complete text.
+
+### streaming-long-mock
+
+This deterministic graph shows streaming end to end and makes a UI's Stop
+button easy to check, without an upstream model. A LangChain
+`FakeListChatModel` writes 100 numbered sentences, and LGOS forwards each
+character as its own `response.output_text.delta` event: 3,184 events about
+5 ms apart, about 17 seconds in total. The fake model delays only streamed
+characters, so a non-streaming request returns the same answer almost at once.
+
+Each run checks three things:
+
+- **Streaming:** the numbered list grows line by line from the first second.
+  If the whole answer appears at once after about 17 seconds, something between
+  LGOS and the UI is buffering the stream. With Chainlit's **Stream response**
+  switch off, the answer arrives in one piece; see
+  [Runtime Settings](../chainlit.md#runtime-settings).
+- **Stop:** the answer ends at the line on screen. Each delay is a cancellation
+  point, so closing the stream also ends the graph run; see
+  [Request Cancellation](../../explanation/langgraph-integration.md#request-cancellation).
+- **Returned history:** when the request contains an earlier assistant message,
+  the answer first quotes the last line of the most recent one. The graph stores
+  no history, so after a stop this line should match the last line the UI
+  displayed:
+
+    ```text
+    Previous answer ended with: "8. This is sentence 8 of 100."
+    ```
+
+The [Python SDK](#python-sdk) example runs the same checks without a UI.
 
 ### simple-graph
 
@@ -171,7 +210,7 @@ LGOS can retain its refusal content or incomplete metadata.
 ## State And Output
 
 None of these graphs uses a checkpointer or LangGraph Store, so graph state ends
-with the request. All six return standard OpenAI assistant messages and emit no
+with the request. All seven return standard OpenAI assistant messages and emit no
 LGOS status events. `multi-node-streaming`, `simple-graph`, and the
 external-tools graph identify their answer-producing nodes for incremental text
 streaming and standard OpenAI function-call output.
@@ -186,3 +225,46 @@ streaming and standard OpenAI function-call output.
 | `response-outcomes` | `refusal` or `incomplete` | None |
 | `simple-graph` | `Explain what this demo does.` | Select an audience in the UI |
 | `simple-graph-external-tools` | `Use the supplied function tool when needed.` | Client supplies `tools` |
+| `streaming-long-mock` | Any prompt; watch the list grow, press Stop, then send another prompt | None |
+
+### Python SDK
+
+Create `client` as in [Call A Graph](../api.md#call-a-graph), then run the
+`streaming-long-mock` checks. The example prints each streamed character as it
+arrives, leaves the stream after ten lines as a UI's Stop does, then sends the
+received text back as history:
+
+```python
+stream = client.responses.create(
+    model="streaming-long-mock",
+    input="Count to 100.",
+    store=False,
+    stream=True,
+)
+
+received = ""
+with stream:
+    for event in stream:
+        if event.type == "response.output_text.delta":
+            received += event.delta
+            print(event.delta, end="", flush=True)
+            if received.count("\n") == 10:
+                break  # Leaving the block closes the stream, like pressing Stop.
+
+followup = client.responses.create(
+    model="streaming-long-mock",
+    input=[
+        {"role": "user", "content": "Count to 100."},
+        {"role": "assistant", "content": received},
+        {"role": "user", "content": "Where did you stop?"},
+    ],
+    store=False,
+)
+print(followup.output_text.splitlines()[0])
+```
+
+The last line prints:
+
+```text
+Previous answer ended with: "10. This is sentence 10 of 100."
+```

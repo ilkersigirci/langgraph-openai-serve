@@ -54,6 +54,9 @@ from lgos_demo_api.graphs.simple_external_tools import (
     simple_external_tools_graph_config,
 )
 from lgos_demo_api.graphs.status_events import status_event_graph_config
+from lgos_demo_api.graphs.streaming_long_mock import (
+    streaming_long_mock_graph_config,
+)
 from lgos_demo_api.persistence.postgres import PostgresRuntime, postgres_runtime
 
 logger = logging.getLogger(__name__)
@@ -150,6 +153,7 @@ def create_custom_app() -> FastAPI:
             "mcp-postgres": mcp_postgres_graph_config,
             "complex-subgraphs": create_complex_subgraphs_graph_config(),
             "multi-node-streaming": multi_node_streaming_graph_config,
+            "streaming-long-mock": streaming_long_mock_graph_config,
             "status-events": status_event_graph_config,
             "response-outcomes": response_outcome_graph_config,
             "persistent-plot-agent": create_persistent_plot_agent_config(
