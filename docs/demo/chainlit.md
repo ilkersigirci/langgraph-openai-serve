@@ -527,11 +527,12 @@ items to the display selected by `DEMO_CHAINLIT_STATUS_DISPLAY`:
 
 | Value | Display |
 | --- | --- |
-| `steps` | Native [Chainlit steps](https://docs.chainlit.io/api-reference/step-class), one per status. This is the default. |
+| `steps` | One native [Chainlit step](https://docs.chainlit.io/api-reference/step-class) per turn. Its label updates with the latest status; click it to expand the history. This is the default. |
 | `tasklist` | A native [TaskList](https://docs.chainlit.io/api-reference/elements/tasklist) containing each status. |
 
-Both displays complete the previous status when the next arrives and finish the
-active status when the turn succeeds or pauses for human review. Clicking
+The step stays collapsed by default and keeps its history in the expanded
+content. The task list completes the previous task when the next status arrives.
+Both displays finish when the turn succeeds or pauses for human review. Clicking
 **Stop**, a failed request, or an incomplete response marks the active status
 as failed. Statuses stay out of the assistant answer and later model context.
 Background response polling uses the same display setting. Restart Chainlit

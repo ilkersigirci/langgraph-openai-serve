@@ -113,8 +113,11 @@ async def test_status_steps_finish_and_stay_out_of_later_model_context(
     await chat.on_message(user_message("Make audio."))
 
     finished = [step for step in status_steps if step["end"] is not None]
-    assert [step["name"] for step in finished] == expected
-    assert all(step["isError"] is False for step in finished)
+    assert len({step["id"] for step in status_steps}) == 1
+    assert [step["name"] for step in finished] == [expected[-1]]
+    assert finished[0]["output"] == "\n".join(f"- {status}" for status in expected)
+    assert finished[0]["defaultOpen"] is False
+    assert finished[0]["isError"] is False
     assert transcript() == ["Make audio.", "Ready."]
 
     chainlit_context.session.chat_settings[BACKGROUND_SETTING_ID] = False
@@ -437,7 +440,7 @@ async def test_stopped_turn_cancels_its_background_response(
     )
     assert status_steps[-1]["end"] is not None
     assert status_steps[-1]["isError"] is True
-    assert status_steps[-1]["output"] == "Stopped"
+    assert status_steps[-1]["output"].endswith("\n- Stopped")
 
 
 async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(
