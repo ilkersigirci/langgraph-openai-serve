@@ -1,0 +1,43 @@
+[project]
+name = "lgos-api-coding-agent"
+version = "0.1.0"
+description = "Coding-agent showcase served through the LGOS OpenAI API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "langgraph-openai-serve>=0.27.0",
+    "openai-codex>=0.159.0",
+    "pydantic-settings>=2.9.0",
+    "uvicorn>=0.34.0",
+]
+
+[project.scripts]
+lgos-api-coding-agent = "lgos_api_coding_agent.app:main"
+
+[dependency-groups]
+dev = ["ruff>=0.16.3", "ty>=0.0.72"]
+test = ["anyio>=4.14,<5", "httpx2>=2.13,<3", "pytest>=8.3.3", "pytest-env>=1.6.0"]
+
+[tool.uv]
+default-groups = ["dev", "test"]
+
+[tool.pytest.ini_options]
+anyio_mode = "auto"
+addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers", "-m", "not integration"]
+env = ["LGOS_ENABLE_LANGFUSE=False"]
+testpaths = ["tests"]
+markers = ["integration: requires the coding-agent demo and a live gateway"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
+ignore = ["E501"]
+
+[build-system]
+build-backend = "uv_build"
+requires = ["uv_build>=0.12.1,<0.13"]

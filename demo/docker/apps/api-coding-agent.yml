@@ -1,0 +1,39 @@
+services:
+  lgos-api-coding-agent:
+    image: lgos-api-coding-agent:local
+    pull_policy: build
+    build:
+      context: ../../api-coding-agent
+      target: production
+      args:
+        PUID: $PUID
+        PGID: $PGID
+    container_name: lgos-api-coding-agent
+    restart: "no"
+    user: "$PUID:$PGID"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 1G
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=512m,uid=$PUID,gid=$PGID,mode=1777
+      - /home/app:rw,nosuid,nodev,size=128m,uid=$PUID,gid=$PGID,mode=700
+    volumes:
+      - type: bind
+        source: ../volumes/lgos-coding-agent
+        target: /workspace
+        bind:
+          create_host_path: false
+    environment:
+      DEMO_CODING_AGENT_BASE_URL: $DEMO_CODING_AGENT_BASE_URL
+      DEMO_CODING_AGENT_API_KEY: $DEMO_CODING_AGENT_API_KEY
+      DEMO_CODING_AGENT_MODEL: $DEMO_CODING_AGENT_MODEL
+      DEMO_CODING_AGENT_TIMEOUT_SECONDS: $DEMO_CODING_AGENT_TIMEOUT_SECONDS
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

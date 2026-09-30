@@ -2,11 +2,12 @@
 
 ## Self-Contained Demo Layout
 
-The demo uses four independent uv projects rather than a uv workspace:
+The demo uses five independent uv projects rather than a uv workspace:
 
 | Project | Lockfile | Deployment |
 | --- | --- | --- |
 | `demo/api` | `demo/api/uv.lock` | `ghcr.io/ilkersigirci/lgos-demo-api` |
+| `demo/api-coding-agent` | `demo/api-coding-agent/uv.lock` | Local image build |
 | `demo/files_api` | `demo/files_api/uv.lock` | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Host-run sync tool; unchanged pinned official Open WebUI image |
@@ -16,8 +17,8 @@ contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
 definitions live in `docker/apps/`, while `docker/compose/development.yml` and
 `docker/compose/otel.yml` provide development and OpenTelemetry overlays.
 Shared runtime assets remain under `demo/docker/`. The development overlay
-additionally supplies the parent LGOS checkout as a named context for the API's
-editable install. Open WebUI runs its pinned official image unchanged. Its
+additionally supplies the parent LGOS checkout as a named context for the demo API and coding-agent API
+editable installs. Open WebUI runs its pinned official image unchanged. Its
 locked OpenAI v3 and HTTPX2 synchronization project runs on the host, while
 Compose mounts only the Function sources and small raw-upload policy into the
 upstream image. The two gateway fragments use pinned public images: upstream
@@ -55,7 +56,8 @@ settings](reference.md#opentelemetry-settings).
 
 === "Published images"
 
-    `demo/docker/compose/demo.yml` contains no local builds:
+    `demo/docker/compose/demo.yml` uses published images for the demo API,
+    Files API, and UIs. The coding-agent service builds locally:
 
     ```bash
     just demo/compose
@@ -69,15 +71,15 @@ settings](reference.md#opentelemetry-settings).
     sequences the repeatable sync jobs.
 
     Set `DEMO_IMAGE_TAG` in `demo/.env` to select one
-    release tag for all project-owned demo images. To add the published OTEL
+    release tag for the published project-owned demo images. To add the published OTEL
     overlay, use `just demo/compose --otel`.
 
 === "Build demo projects"
 
     Apply the explicit development model from the LGOS repository checkout.
-    The API, Files API, and Chainlit services build locally from their
+    The demo API, coding-agent API, Files API, and Chainlit services build locally from their
     Dockerfiles and lockfiles; Open WebUI remains the pinned upstream image.
-    Only the API image installs the parent LGOS
+    Both graph API images install the parent LGOS
     checkout as an editable package:
 
     ```bash
@@ -119,8 +121,8 @@ settings](reference.md#opentelemetry-settings).
     just demo/test --editable
     ```
 
-    This tests all four projects and does not rewrite `api/pyproject.toml` or
-    `api/uv.lock`. Chainlit and Open WebUI remain standalone clients and exercise
+    This tests all five projects without changing their dependency declarations
+    or lockfiles. Chainlit and Open WebUI remain standalone clients and exercise
     whichever API their OpenAI base URL targets.
 
 ## Demo Services
@@ -273,11 +275,13 @@ settings](reference.md#opentelemetry-settings).
 
     Create the network by starting the demo backends first, for example with
     `just demo/up lgos-demo-api-a`,
-    `just demo/up lgos-demo-api-b`, and
+    `just demo/up lgos-demo-api-b`,
+    `just demo/up lgos-api-coding-agent`, and
     `just demo/up lgos-files-api` in separate terminals, then
     `just demo/up lgos-postgres-mcp --wait`.
     The existing gateway can then resolve `lgos-demo-api-a`,
-    `lgos-demo-api-b`, `lgos-files-api`, and `lgos-postgres-mcp` using the
+    `lgos-demo-api-b`, `lgos-api-coding-agent`, `lgos-files-api`, and
+    `lgos-postgres-mcp` using the
     bundled sync, Files, and MCP configuration examples. For another host,
     replace those upstream URLs with addresses reachable from that gateway.
 
@@ -298,7 +302,7 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     LiteLLM is one of the two first-class UI entry points. After startup,
-    [sync both demo catalogs](litellm-sync.md#usage). The UIs use:
+    [sync all graph catalogs](litellm-sync.md#usage). The UIs use:
 
     - model metadata: `http://localhost:3000/model/info`
     - managed Files: `http://localhost:3000/v1`
@@ -415,7 +419,8 @@ settings](reference.md#opentelemetry-settings).
     under [Open WebUI file input](open-webui.md#file-input).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
-state, and Open WebUI state—including its native raw file copies—use host bind
+state, Open WebUI state—including its native raw file copies—and the
+coding-agent workspace use host bind
 mounts under `demo/docker/volumes/`; the Compose model declares no named
 volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
 dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold

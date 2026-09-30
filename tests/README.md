@@ -9,7 +9,7 @@ Keep test setup explicit and assertions focused on observable behavior.
   contract, durable-state, and concurrency coverage together.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `just demo/test`; add `--editable` to overlay the current LGOS
-  checkout into the API test run.
+  checkout into both graph API test runs.
 - Live demo integration tests are excluded from default pytest runs. Start the
   required services and use the dedicated recipe, such as
   `just demo/test-bifrost --editable` or

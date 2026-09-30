@@ -86,6 +86,12 @@
             "weight": 1.0
           },
           {
+            "provider": "lgos-api-coding-agent",
+            "allowed_models": ["*"],
+            "key_ids": ["*"],
+            "weight": 1.0
+          },
+          {
             "provider": "lgos-files",
             "allowed_models": ["*"],
             "key_ids": ["*"],
@@ -150,6 +156,30 @@
           "responses_stream": true,
           "responses_retrieve": true,
           "responses_cancel": true
+        }
+      }
+    },
+    "lgos-api-coding-agent": {
+      "keys": [
+        {
+          "name": "lgos-api-coding-agent",
+          "value": "DUMMY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://lgos-api-coding-agent:8000",
+        "allow_private_network": true,
+        "default_request_timeout_in_seconds": 1800,
+        "stream_idle_timeout_in_seconds": 1800
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": true,
+          "responses": true,
+          "responses_stream": true
         }
       }
     },
