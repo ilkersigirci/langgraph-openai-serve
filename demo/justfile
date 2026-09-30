@@ -209,15 +209,16 @@ sync-bifrost dev='false':
     {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-catalog
     {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-sync
 
-# Start and synchronize the stack; add --dev and/or --otel as needed.
+# Start and synchronize the stack; add --dev, --otel, or --dev --chainlit-utils as needed.
+[arg('chainlit_utils', long='chainlit-utils', value='true')]
 [arg('dev', long, value='true')]
 [arg('otel', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
 [script]
-compose dev='false' otel='false' *up_args:
-    compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
-    up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
+compose dev='false' otel='false' chainlit_utils='false' *up_args:
+    compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }} {{ if chainlit_utils == "true" { "-f docker/compose/chainlit-utils.yml" } else { "" } }})
+    up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:4}")
     services="$("${compose[@]}" config --services)"
     gateway_service="$(sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p' <<< "$services")"
     background_service="$(sed -n '/^lgos-background-worker$/p' <<< "$services")"

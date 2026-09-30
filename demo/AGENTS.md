@@ -67,5 +67,8 @@ a direct user request to update the file is approval.
 - Keep using the editable overlay during joint development, then publish
   `chainlit-utils` and refresh the demo's PyPI constraint and lockfile when the
   changes are released.
+- For Docker, opt in with `just demo/compose --dev --chainlit-utils` and apply
+  utility source edits with `docker restart lgos-chainlit`; see
+  `../docs/demo/docker.md`.
 - Keep generic helper and PostgreSQL token-storage tests in `chainlit-utils`;
   the demo owns LGOS settings, gateway wiring, and application-flow tests.

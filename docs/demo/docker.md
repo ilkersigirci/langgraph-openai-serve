@@ -92,6 +92,24 @@ settings](reference.md#opentelemetry-settings).
     after source edits. Dependency metadata and lockfile changes require an
     image rebuild.
 
+    ??? tip "Develop with the local Chainlit utilities"
+
+        To try a sibling `../chainlit-utils` checkout before publishing, add
+        the optional override:
+
+        ```bash
+        just demo/compose --dev --chainlit-utils
+        ```
+
+        This selects an editable build target and mounts the utility source
+        read-only in the existing `lgos-chainlit` service. Only this mode
+        requires the sibling checkout. Regular development uses the utility
+        release recorded in the lockfile.
+
+        After utility source edits, run `docker restart lgos-chainlit`.
+        `just demo/up lgos-chainlit --dev` recreates the service without the
+        override. Rerun the command above after dependency changes to rebuild.
+
 === "Test this LGOS checkout without containers"
 
     For immediate local feedback without containers, use uv's temporary
