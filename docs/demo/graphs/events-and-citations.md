@@ -6,7 +6,7 @@ without turning UI notifications into tool calls.
 | Graph | Public output | Client behavior |
 | --- | --- | --- |
 | `citation-events` | Markdown links and inline markers plus OpenAI `url_citation` annotations | Chainlit renders the Markdown; Open WebUI resolves markers through native source events |
-| `status-events` | Standard assistant text plus Responses commentary | Chainlit uses a `TaskList`; Open WebUI persists native status history |
+| `status-events` | Standard assistant text plus Responses commentary | Chainlit uses [steps or a task list](../chainlit.md#streaming-events-and-citations); Open WebUI persists native status history |
 
 ## LangGraph Topology
 

@@ -28,6 +28,7 @@ from chainlit_utils.openai.audio import (
 )
 from chainlit_utils.openai.files import file_upload_overrides, with_response_file_parts
 from chainlit_utils.openai.responses import (
+    CommentarySteps,
     CommentaryTaskList,
     citation_elements,
     final_answer,
@@ -63,6 +64,7 @@ from lgos_chainlit.lgos_protocol import (
     model_extension,
 )
 from lgos_chainlit.mcp import mcp_tools
+from lgos_chainlit.settings import settings
 
 logger = logging.getLogger(__name__)
 BACKGROUND_POLL_SECONDS = 1
@@ -79,7 +81,13 @@ class _Turn:
         default_factory=lambda: not background_enabled() and streaming_enabled()
     )
     answer: cl.Message = field(default_factory=lambda: cl.Message(content=""))
-    commentary_tasks: CommentaryTaskList = field(default_factory=CommentaryTaskList)
+    commentary: CommentarySteps | CommentaryTaskList = field(
+        default_factory=lambda: (
+            CommentarySteps()
+            if settings.STATUS_DISPLAY == "steps"
+            else CommentaryTaskList()
+        )
+    )
 
     async def request(
         self,
@@ -92,7 +100,7 @@ class _Turn:
             response = await _request_response(
                 input_items,
                 model=self.model,
-                commentary_tasks=self.commentary_tasks,
+                commentary=self.commentary,
                 stream_to=self.answer if self.streaming else None,
                 previous_response_id=previous_response_id,
             )
@@ -104,7 +112,7 @@ class _Turn:
             # Send the text before the workflow publishes the review.
             if self.answer.content:
                 await self.answer.send()
-            await self.commentary_tasks.complete()
+            await self.commentary.complete()
         return response
 
     async def answer_tool_calls(self, response: Response) -> Response:
@@ -123,7 +131,7 @@ class _Turn:
 
     async def finish(self) -> None:
         """Publish the turn's final answer."""
-        await self.commentary_tasks.complete()
+        await self.commentary.complete()
         # send() also ends a stream; it stamps the creation time that orders a
         # reloaded thread, which update() leaves to the data layer's later write.
         if not self.streaming or self.answer.content:
@@ -140,7 +148,7 @@ class _Turn:
         try:
             yield
         except BaseException as exc:
-            await self.commentary_tasks.stop()
+            await self.commentary.stop()
             if self.answer.content:
                 if not isinstance(exc, asyncio.CancelledError):
                     mark_model_context_excluded(self.answer)
@@ -308,7 +316,7 @@ async def _request_response(
     input_items: list[dict[str, Any]],
     *,
     model: str,
-    commentary_tasks: CommentaryTaskList,
+    commentary: CommentarySteps | CommentaryTaskList,
     stream_to: cl.Message | None = None,
     previous_response_id: str | Omit = omit,
 ) -> Response:
@@ -325,15 +333,15 @@ async def _request_response(
         },
     }
     if stream_to is not None:
-        return await _stream_response(request, stream_to, commentary_tasks)
+        return await _stream_response(request, stream_to, commentary)
     if background_enabled():
-        return await _background_response(request, commentary_tasks)
+        return await _background_response(request, commentary)
     return await responses_client.responses.create(**request, store=False)
 
 
 async def _background_response(
     request: dict[str, Any],
-    commentary_tasks: CommentaryTaskList,
+    commentary: CommentarySteps | CommentaryTaskList,
 ) -> Response:
     """Create and poll one background Response with best-effort cancellation."""
     client = responses_client.with_options(max_retries=2)
@@ -359,7 +367,7 @@ async def _background_response(
     try:
         while response.status in {"queued", "in_progress"}:
             if response.status != previous_status:
-                await commentary_tasks.add(
+                await commentary.add(
                     f"Background response {response.status.replace('_', ' ')}"
                 )
                 previous_status = response.status
@@ -383,7 +391,7 @@ async def _background_response(
 async def _stream_response(
     request: dict[str, Any],
     assistant_message: cl.Message,
-    commentary_tasks: CommentaryTaskList,
+    commentary: CommentarySteps | CommentaryTaskList,
 ) -> Response:
     """Render final text and commentary while retaining the terminal Response."""
     phases: dict[int, str | None] = {}
@@ -413,7 +421,7 @@ async def _stream_response(
                 raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":
-                    await commentary_tasks.add(event.text)
+                    await commentary.add(event.text)
                 else:
                     await message_stream.flush()
                 continue

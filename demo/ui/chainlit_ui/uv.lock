@@ -355,7 +355,7 @@ wheels = [
 
 [[package]]
 name = "chainlit-utils"
-version = "0.2.11"
+version = "0.2.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncpg" },
@@ -365,9 +365,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/e3/a6e37ea4a7f8db453126750142f507b96c6f2df9fe69f5dfadbb0bd4db10/chainlit_utils-0.2.11.tar.gz", hash = "sha256:71020e95ebec11e226f2865a8763b86e337e12f6bf1cf3355ef21d9a800bd4fb", size = 37795, upload-time = "2026-09-29T20:21:40.962Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/74/6377ba0333c07b60301d70623bc6019b47ddee1f624e0e00ea89b1dc2438/chainlit_utils-0.2.12.tar.gz", hash = "sha256:ffd4837dab8d0fac8c6720c9772e81173f3ef8ba4625df68ba109e8ce03c3fb1", size = 38260, upload-time = "2026-09-30T13:10:26.808Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/82/af867cf646624f23b8ab58f87d030a378bf515e0a23bb8da5b2cf4431d21/chainlit_utils-0.2.11-py3-none-any.whl", hash = "sha256:69e1d2973ccc46648bde1a0b99c38fa2feb3d0536910a57a8393aa2c39818c44", size = 50128, upload-time = "2026-09-29T20:21:39.893Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/f6/7ff7a97b7c10c8bacfda13e4af8783251795b1ba606bdcc2047c153f6b79/chainlit_utils-0.2.12-py3-none-any.whl", hash = "sha256:cd206475617b522fec19e03f7ddb7a4fafded2a630afdcbd6ee9a52d4a8af7db", size = 50559, upload-time = "2026-09-30T13:10:25.737Z" },
 ]
 
 [package.optional-dependencies]
@@ -1168,7 +1168,7 @@ test = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.75,<2" },
     { name = "chainlit", specifier = ">=2.12.0,<3" },
-    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.11,<0.3" },
+    { name = "chainlit-utils", extras = ["audio", "sso"], specifier = ">=0.2.12,<0.3" },
     { name = "cryptography", specifier = ">=49,<50" },
     { name = "emoji", specifier = ">=2,<3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },

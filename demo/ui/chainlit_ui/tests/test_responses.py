@@ -80,6 +80,54 @@ async def test_streamed_commentary_goes_to_the_task_list(
     }
 
 
+@pytest.mark.parametrize("background", [False, True], ids=["stream", "background"])
+async def test_status_steps_finish_and_stay_out_of_later_model_context(
+    chainlit_context,
+    fake_gateway,
+    status_steps,
+    monkeypatch: pytest.MonkeyPatch,
+    background: bool,
+) -> None:
+    if background:
+        await _select_background_profile(fake_gateway, "lgos-b/background-report")
+        monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
+        fake_gateway.replies += [
+            reply(response(id="resp_bg", status="queued")),
+            reply(response(id="resp_bg", status="in_progress")),
+            reply(response(message("Ready."), id="resp_bg")),
+        ]
+        expected = ["Background response queued", "Background response in progress"]
+    else:
+        chainlit_context.session.chat_profile = "lgos-a/status-events"
+        fake_gateway.replies.append(
+            streamed(
+                response(
+                    message("Preparing media", id="msg_prepare", phase="commentary"),
+                    message("Generating audio", id="msg_audio", phase="commentary"),
+                    message("Ready."),
+                )
+            )
+        )
+        expected = ["Preparing media", "Generating audio"]
+
+    await chat.on_message(user_message("Make audio."))
+
+    finished = [step for step in status_steps if step["end"] is not None]
+    assert [step["name"] for step in finished] == expected
+    assert all(step["isError"] is False for step in finished)
+    assert transcript() == ["Make audio.", "Ready."]
+
+    chainlit_context.session.chat_settings[BACKGROUND_SETTING_ID] = False
+    fake_gateway.replies.append(streamed(response(message("You asked for audio."))))
+    await chat.on_message(user_message("What did I ask?"))
+
+    assert fake_gateway.bodies("/v1/responses")[-1]["input"] == [
+        {"role": "user", "content": "Make audio."},
+        {"role": "assistant", "content": "Ready.", "phase": "final_answer"},
+        {"role": "user", "content": "What did I ask?"},
+    ]
+
+
 @pytest.mark.parametrize("deltas", [True, False], ids=["deltas", "final-only"])
 async def test_streamed_refusal_is_visible(
     chainlit_context,
@@ -138,11 +186,13 @@ async def test_failed_stream_keeps_all_streamed_text(
 async def test_incomplete_stream_reports_its_reason(
     chainlit_context,
     fake_gateway,
+    status_steps,
 ) -> None:
     chainlit_context.session.chat_profile = "lgos-a/simple-graph"
     fake_gateway.replies.append(
         streamed(
             response(
+                message("Writing answer", id="msg_status", phase="commentary"),
                 message("Partial"),
                 status="incomplete",
                 incomplete_details={"reason": "max_output_tokens"},
@@ -157,6 +207,8 @@ async def test_incomplete_stream_reports_its_reason(
         "Response failed: Response incomplete: max_output_tokens.",
     ]
     assert cl.chat_context.get()[-2].metadata == {EXCLUDED_KEY: True}
+    assert status_steps[-1]["isError"] is True
+    assert status_steps[-1]["end"] is not None
 
 
 @pytest.mark.parametrize("streaming", [False, True], ids=["create", "stream"])
@@ -351,6 +403,7 @@ async def test_background_response_is_polled_until_complete(
 async def test_stopped_turn_cancels_its_background_response(
     chainlit_context,
     fake_gateway,
+    status_steps,
     monkeypatch: pytest.MonkeyPatch,
     gateway_type: str,
     lifecycle_query: dict[str, str],
@@ -382,6 +435,9 @@ async def test_stopped_turn_cancels_its_background_response(
         f"{responses_path}/resp_bg/cancel",
         lifecycle_query,
     )
+    assert status_steps[-1]["end"] is not None
+    assert status_steps[-1]["isError"] is True
+    assert status_steps[-1]["output"] == "Stopped"
 
 
 async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(

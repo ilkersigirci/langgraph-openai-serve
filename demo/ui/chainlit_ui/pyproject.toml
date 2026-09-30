@@ -8,7 +8,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "boto3>=1.43.75,<2",
     "chainlit>=2.12.0,<3",
-    "chainlit-utils[audio,sso]>=0.2.11,<0.3",
+    "chainlit-utils[audio,sso]>=0.2.12,<0.3",
     "cryptography>=49,<50",
     "emoji>=2,<3",
     "fastapi[standard]>=0.121.0",
@@ -55,6 +55,7 @@ env = [
     "U:DATABASE_URL",
     "DEMO_CHAINLIT_LOGIN_TYPE=mock",
     "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False",
+    "DEMO_CHAINLIT_STATUS_DISPLAY=steps",
     "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
     "OPENAI_GATEWAY_TYPE=litellm",
     "OPENAI_GATEWAY_BASE_URL=https://gateway.example",

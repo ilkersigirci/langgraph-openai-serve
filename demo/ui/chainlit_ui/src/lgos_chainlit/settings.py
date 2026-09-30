@@ -87,6 +87,7 @@ class Settings(BaseSettings):
         description="Built-in OpenAI voice used for spoken answers.",
     )
     ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
+    STATUS_DISPLAY: Literal["steps", "tasklist"] = "steps"
     LOGIN_TYPE: ChainlitLoginType = "mock"
     OAUTH_RESOURCE: str | None = Field(default=None, min_length=1)
     OAUTH_ISSUER: str | None = None
