@@ -11,6 +11,7 @@ from lgos_chainlit.settings import ChainlitSettings, Settings
     ("setting", "value", "field"),
     [
         ("OPENAI_GATEWAY_TYPE", "unsupported", "OPENAI_GATEWAY_TYPE"),
+        ("DEMO_CHAINLIT_STATUS_DISPLAY", "unsupported", "STATUS_DISPLAY"),
         ("OPENAI_GATEWAY_BASE_URL", "ftp://gateway.example", "OPENAI_GATEWAY_BASE_URL"),
         ("DEMO_CHAINLIT_OAUTH_RESOURCE", "relative-resource", "OAUTH_RESOURCE"),
         (
@@ -49,6 +50,21 @@ def test_settings_reject_invalid_environment(
         Settings(_env_file=None)
     assert error.value.errors()[0]["loc"] == (field,)
     assert "invalid-secret-key" not in str(error.value)
+
+
+@pytest.mark.parametrize("display", [None, "steps", "tasklist"])
+def test_status_display_reads_environment_and_defaults_to_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    display: str | None,
+) -> None:
+    if display is None:
+        monkeypatch.delenv("DEMO_CHAINLIT_STATUS_DISPLAY", raising=False)
+    else:
+        monkeypatch.setenv("DEMO_CHAINLIT_STATUS_DISPLAY", display)
+
+    configured = Settings(_env_file=None)
+
+    assert (display or "steps") == configured.STATUS_DISPLAY
 
 
 def test_gateway_settings_read_environment_and_normalize_root(

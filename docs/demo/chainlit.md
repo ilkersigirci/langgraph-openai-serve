@@ -522,13 +522,26 @@ The bundled Chainlit client uses OpenAI Responses. In streaming mode, the SDK
 stream manager owns event accumulation and supplies
 the terminal `Response`; the adapter streams
 answer text into the assistant message. Messages without the optional `phase`
-field are also treated as answers. It maps completed
-`phase="commentary"` items to a native
-[`TaskList`](https://docs.chainlit.io/api-reference/elements/tasklist), completing
-each prior task when the next status arrives and completing the list when the
-full response succeeds. Clicking **Stop** marks the active task as failed and
-closes the Responses stream. The answer text shown so far stays visible and in
-later model context; Chainlit's "Task manually stopped." notice does not. Both
+field are also treated as answers. It maps completed `phase="commentary"`
+items to the display selected by `DEMO_CHAINLIT_STATUS_DISPLAY`:
+
+| Value | Display |
+| --- | --- |
+| `steps` | One native [Chainlit step](https://docs.chainlit.io/api-reference/step-class) per turn. Its label updates with the latest status; click it to expand the history. This is the default. |
+| `tasklist` | A native [TaskList](https://docs.chainlit.io/api-reference/elements/tasklist) containing each status. |
+
+The step stays collapsed by default and keeps its history in the expanded
+content. The task list completes the previous task when the next status arrives.
+Both displays finish when the turn succeeds or pauses for human review. Clicking
+**Stop**, a failed request, or an incomplete response marks the active status
+as failed. Statuses stay out of the assistant answer and later model context.
+Background response polling uses the same display setting. Restart Chainlit
+after changing it. The bundled `[UI] cot = "tool_call"` configuration makes
+steps visible; custom configurations must use `"tool_call"` or `"full"`.
+
+Clicking **Stop** also closes the Responses stream. The answer text shown so far
+stays visible and in later model context; Chainlit's "Task manually stopped."
+notice does not. Both
 streaming and non-streaming requests require a completed Response before
 displaying files or accepting a successful turn. Failed interrupt resumes leave
 the saved continuation intact.
@@ -573,6 +586,7 @@ Chainlit-specific settings:
 
 | Setting | Notes |
 | --- | --- |
+| `DEMO_CHAINLIT_STATUS_DISPLAY` | Status presentation: `steps` or `tasklist`; also applies to background polling. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token. |
 | `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 resource identifier passed in OAuth authorization and token requests. |

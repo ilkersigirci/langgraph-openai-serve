@@ -8,6 +8,7 @@ import httpx2
 import pytest
 from chainlit.chat_context import chat_contexts
 from chainlit.context import ChainlitContext, init_http_context
+from chainlit.step import StepDict
 from chainlit.user_session import user_sessions
 
 from lgos_chainlit import audio, chat, clients, display_files
@@ -74,7 +75,8 @@ def task_lists(
     chainlit_context: ChainlitContext,
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict[str, object]]:
-    """Record each task-list state the browser loads from Chainlit's file route."""
+    """Select task lists and record each state loaded from Chainlit's file route."""
+    monkeypatch.setattr(chat.settings, "STATUS_DISPLAY", "tasklist")
     states: list[dict[str, object]] = []
     send_element = chainlit_context.emitter.send_element
 
@@ -85,4 +87,22 @@ def task_lists(
         await send_element(element)
 
     monkeypatch.setattr(chainlit_context.emitter, "send_element", record)
+    return states
+
+
+@pytest.fixture
+def status_steps(
+    chainlit_context: ChainlitContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[StepDict]:
+    """Record native tool steps sent and updated in the browser."""
+    states: list[StepDict] = []
+    monkeypatch.setattr(chainlit.config.config.ui, "cot", "tool_call")
+
+    async def record(step: StepDict) -> None:
+        if step["type"] == "tool":
+            states.append(step.copy())
+
+    monkeypatch.setattr(chainlit_context.emitter, "send_step", record)
+    monkeypatch.setattr(chainlit_context.emitter, "update_step", record)
     return states

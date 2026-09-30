@@ -41,6 +41,13 @@ helper settings use `CHAINLIT_UTILS_`; Chainlit's native `DATABASE_URL` and `CHA
 unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEV_AWS_ENDPOINT` S3 settings so generated files survive thread resume.
 
+`DEMO_CHAINLIT_STATUS_DISPLAY=steps` shows one native Chainlit step per turn.
+Its label updates with the latest status; click it to expand the status history.
+Set it to `tasklist` for the task-list display. Both mark the active status as
+failed on Stop or error. The same setting controls background polling statuses.
+Restart Chainlit after changing it. Native steps are enabled by the bundled
+`[UI] cot = "tool_call"` configuration.
+
 `DEMO_CHAINLIT_LOGIN_TYPE=oauth` enables OIDC browser login independently of
 gateway authorization. By default, mock and OAuth login both use
 `OPENAI_GATEWAY_API_KEY` for Responses, Files, speech, and MCP. Set
@@ -95,7 +102,14 @@ refresh concurrency, key rotation, and logout persistence are tested in the
 ## Local utility development
 
 When compatible utility changes have not been published yet, use the sibling
-`chainlit-utils` checkout as a temporary editable overlay:
+`chainlit-utils` checkout as a temporary editable overlay.
+
+Standard Docker builds use the released utility package from the lockfile. To
+try the sibling checkout in Docker, run `just demo/compose --dev --chainlit-utils`
+from the LGOS repository root; see the
+[Docker guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/docker.md#compose-modes).
+
+For commands run directly from this project directory:
 
 ```bash
 uv run --locked --with-editable "../../../../chainlit-utils[audio,sso]" pytest

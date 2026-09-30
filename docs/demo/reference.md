@@ -44,6 +44,7 @@ integration commands:
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
 | `just demo/compose --otel` | Run the ordered published stack with the OTEL overlay |
 | `just demo/compose --dev --otel` | Build the checkout and run the ordered stack with the OTEL overlay |
+| `just demo/compose --dev --chainlit-utils` | Build the checkout with Chainlit using an editable sibling [`chainlit-utils` checkout](docker.md#compose-modes) |
 | `just demo/down` | Stop and remove every stack variant |
 | `just demo/sync` | Synchronize all four projects from their lockfiles |
 | `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
