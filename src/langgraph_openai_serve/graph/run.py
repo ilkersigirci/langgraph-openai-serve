@@ -63,6 +63,7 @@ class GraphRun:
     without pausing, so durable state exists only for pending interrupts.
     """
 
+    request: GraphRequest
     config: GraphConfig
     graph: CompiledStateGraph
     inputs: Any
@@ -171,6 +172,7 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
         interrupt_run,
     )
     run = GraphRun(
+        request=request,
         config=config,
         graph=graph,
         inputs=None,

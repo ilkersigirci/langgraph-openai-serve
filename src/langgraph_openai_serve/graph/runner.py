@@ -19,6 +19,7 @@ from langgraph_openai_serve.graph import interrupt
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.graph.run import GraphRun, prepare_run
+from langgraph_openai_serve.graph.telemetry import invoke_workflow
 
 LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
 LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
@@ -131,42 +132,45 @@ async def stream_run(
     if stream_updates:
         stream_mode.append("updates")
 
-    final_output: Any = _MISSING
-    interrupts: dict[str, Interrupt] = {}
-    # LangGraph implements astream as an async generator, while its overload
-    # returns AsyncIterator. Keep the concrete type so cancellation closes it.
-    graph_stream = cast(
-        "AsyncGenerator[StreamPart[Any, Any], None]",
-        run.graph.astream(
-            run.inputs,
-            config=run.runnable_config,
-            context=run.context,
-            stream_mode=stream_mode,
-            subgraphs=streaming,
-            output_keys=run.graph.output_channels,
-            # Persist interrupt runs only when they pause or exit.
-            durability="exit" if run.interrupt is not None else None,
-            version="v2",
-        ),
-    )
-    async with aclosing(graph_stream):
-        async for part in graph_stream:
-            if part["type"] == "values":
-                if not part["ns"]:
-                    final_output = part["data"]
-                    interrupts.update((item.id, item) for item in part["interrupts"])
-            elif (event := _visible_event(part)) is not None:
-                yield event
+    with invoke_workflow(run.request):
+        final_output: Any = _MISSING
+        interrupts: dict[str, Interrupt] = {}
+        # LangGraph implements astream as an async generator, while its overload
+        # returns AsyncIterator. Keep the concrete type so cancellation closes it.
+        graph_stream = cast(
+            "AsyncGenerator[StreamPart[Any, Any], None]",
+            run.graph.astream(
+                run.inputs,
+                config=run.runnable_config,
+                context=run.context,
+                stream_mode=stream_mode,
+                subgraphs=streaming,
+                output_keys=run.graph.output_channels,
+                # Persist interrupt runs only when they pause or exit.
+                durability="exit" if run.interrupt is not None else None,
+                version="v2",
+            ),
+        )
+        async with aclosing(graph_stream):
+            async for part in graph_stream:
+                if part["type"] == "values":
+                    if not part["ns"]:
+                        final_output = part["data"]
+                        interrupts.update(
+                            (item.id, item) for item in part["interrupts"]
+                        )
+                elif (event := _visible_event(part)) is not None:
+                    yield event
 
-    if interrupts:
-        yield _interrupt_batch(run, interrupts.values())
-        return
-    if final_output is _MISSING:
-        msg = "LangGraph stream completed without a final value."
-        raise RuntimeError(msg)
-    message = await run.config.render_output(final_output)
-    usage = run.usage_metadata()
-    yield message.model_copy(update={"usage_metadata": usage}) if usage else message
+        if interrupts:
+            yield _interrupt_batch(run, interrupts.values())
+            return
+        if final_output is _MISSING:
+            msg = "LangGraph stream completed without a final value."
+            raise RuntimeError(msg)
+        message = await run.config.render_output(final_output)
+        usage = run.usage_metadata()
+        yield message.model_copy(update={"usage_metadata": usage}) if usage else message
 
 
 def _visible_event(part: StreamPart[Any, Any]) -> LangGraphStreamEvent | None:

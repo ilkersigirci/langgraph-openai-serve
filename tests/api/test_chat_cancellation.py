@@ -250,6 +250,7 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
 
     coordinator = InMemoryRunCoordinator()
     run = GraphRun(
+        request=cast("Any", None),
         config=cast("Any", None),
         graph=cast("Any", None),
         inputs=None,

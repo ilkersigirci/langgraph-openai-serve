@@ -15,6 +15,7 @@ from langgraph_openai_serve.graph.runner import (
     run_langgraph_stream,
     stream_run,
 )
+from tests.graph.support.request import graph_request
 from tests.graph.support.schemas import (
     AnswerOutput,
     MessageState,
@@ -25,6 +26,7 @@ from tests.graph.support.schemas import (
 
 def fake_run(graph, *, output_to_message) -> GraphRun:
     return GraphRun(
+        request=graph_request("DUMMY"),
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",
