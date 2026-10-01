@@ -81,7 +81,7 @@ class ResponsesEventBuilder:
         *,
         run_id: str | None = None,
         response_id: str | None = None,
-        created_at: float | None = None,
+        created_at: int | None = None,
         server_tools: Collection[str] = (),
     ) -> None:
         self._context = ResponseContext.for_run(

@@ -57,7 +57,7 @@ async def test_async_openai_creates_stateless_text_response(
     assert response.model == "test"
     assert response.output_text == "hello"
     assert response.background is False
-    assert response.completed_at > response.created_at
+    assert response.completed_at >= response.created_at
     assert response.usage is None
     assert response.text is not None
     assert response.text.format is not None
