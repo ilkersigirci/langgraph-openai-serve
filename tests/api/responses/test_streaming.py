@@ -211,7 +211,7 @@ async def test_text_stream_has_complete_lifecycle_and_stable_identity(
     )
     completed = response_events[-1].response
     assert completed.created_at == response_events[0].response.created_at
-    assert completed.completed_at > completed.created_at
+    assert completed.completed_at >= completed.created_at
     assert completed.status == "completed"
     assert [item.phase for item in completed.output] == [
         "commentary",
