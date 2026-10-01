@@ -254,8 +254,7 @@ settings](reference.md#opentelemetry-settings).
 
     Enable LiteLLM's native database model storage. For Files, adapt the
     `files_settings` in [`docker/configs/litellm/config.yaml`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/docker/configs/litellm/config.yaml)
-    to the shared Files service. Retain the bundled image's
-    `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` opt-in when using that image.
+    to the shared Files service.
 
     On the same Docker host, attach the existing LiteLLM service to the demo's
     network through its own Compose deployment, alongside its current networks:
@@ -352,10 +351,8 @@ settings](reference.md#opentelemetry-settings).
     [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
     preserves native Responses streaming and polling-only background
     lifecycles. Compose
-    reads its tag and digest from `DEMO_LITELLM_IMAGE` in `demo/.env` and enables
-    `LITELLM_ENABLE_RESPONSES_STREAMING_FIX=true` so it honors the deployment
-    capability. Normal demo commands use this image without a local build or
-    an image override.
+    reads its tag and digest from `DEMO_LITELLM_IMAGE` in `demo/.env`. Normal
+    demo commands use this image without a local build or an image override.
 
     To use another compatible image, set `DEMO_LITELLM_IMAGE` in `demo/.env`
     or supply it on the command line:
