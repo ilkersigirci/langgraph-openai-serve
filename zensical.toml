@@ -34,6 +34,7 @@ nav = [
       { "File Input" = "demo/graphs/file-input.md" },
       { "Events and Citations" = "demo/graphs/events-and-citations.md" },
       { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
+      { "Coding Agent" = "demo/graphs/coding-agent.md" },
       { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
       { "Persistent Plot Agent" = "demo/graphs/persistent-plot-agent.md" },
       { "Interruptible Human Review" = "demo/graphs/interruptible-approval.md" },

@@ -55,6 +55,21 @@ x-lgos-files-api-development: &lgos-files-api-development
         path: ../../files_api/uv.lock
 
 services:
+  lgos-api-coding-agent:
+    build:
+      target: development
+      additional_contexts:
+        lgos: ../../..
+    volumes:
+      - type: bind
+        source: ../../api-coding-agent/src/lgos_api_coding_agent
+        target: /app/src/lgos_api_coding_agent
+        read_only: true
+      - type: bind
+        source: ../../../src/langgraph_openai_serve
+        target: /opt/langgraph-openai-serve/src/langgraph_openai_serve
+        read_only: true
+
   lgos-demo-api-a:
     <<: *lgos-demo-api-development
 

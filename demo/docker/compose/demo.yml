@@ -8,6 +8,7 @@ include:
   - ../apps/postgres.yml
   - ../apps/demo-api.yml
   - ../apps/files-api.yml
+  - ../apps/api-coding-agent.yml
   - ../apps/bifrost.yml
   - ../apps/litellm.yml
   - ../apps/chainlit.yml

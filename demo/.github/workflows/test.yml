@@ -53,6 +53,8 @@ jobs:
             directory: api
           - name: Files API
             directory: files_api
+          - name: Coding agent
+            directory: api-coding-agent
           - name: Chainlit
             directory: ui/chainlit_ui
           - name: Open WebUI

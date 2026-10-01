@@ -123,6 +123,19 @@ services:
       lgos-otel-collector:
         condition: service_started
 
+  lgos-api-coding-agent:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-server-environment
+      OTEL_SERVICE_NAME: lgos-api-coding-agent
+    command: ["opentelemetry-instrument", "lgos-api-coding-agent"]
+    restart: $RESTART_POLICY
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
   lgos-files-api:
     networks:
       - default
