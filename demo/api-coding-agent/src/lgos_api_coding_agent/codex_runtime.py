@@ -110,6 +110,8 @@ def runtime_events(
             'model_providers.demo.env_key="DEMO_CODING_AGENT_API_KEY"',
             'web_search="disabled"',
             'history.persistence="none"',
+            # Codex otherwise reports anonymous usage data to OpenAI.
+            "analytics.enabled=false",
         ),
     )
     # One service owns one shared workspace. Do not interleave file mutations.
