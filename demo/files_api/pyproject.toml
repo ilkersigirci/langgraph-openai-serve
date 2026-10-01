@@ -7,11 +7,10 @@ license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "boto3>=1.43.75,<2",
-    "fastapi>=0.121.0",
-    "opentelemetry-distro>=0.65b0,<0.66",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
-    "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
-    "opentelemetry-instrumentation-logging>=0.65b0,<0.66",
+    "fastapi>=0.142.2",
+    "opentelemetry-distro>=0.66b0,<0.67",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2",
+    "opentelemetry-instrumentation-logging>=0.66b0,<0.67",
     "openai>=3.14.1,<4",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",

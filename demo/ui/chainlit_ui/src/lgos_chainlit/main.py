@@ -1,7 +1,8 @@
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from chainlit.config import config
 from chainlit.data import get_data_layer
@@ -59,7 +60,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await _close_chainlit_data_layer()
 
 
-app = FastAPI(lifespan=lifespan)
+def _untraced(scope: MutableMapping[str, Any]) -> bool:
+    # One Socket.IO connection carries a whole chat session. Leaving it out lets
+    # each outbound gateway request start its own trace.
+    path = scope["path"]
+    return path.endswith("/health") or path.startswith("/ws/socket.io")
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    # FastAPI records requests through the global providers; export belongs to
+    # `opentelemetry-instrument`, so FastAPI must not add its own.
+    telemetry={"auto_configure": False, "exclude": _untraced},
+)
 configure_auth(app)
 
 mount_chainlit(

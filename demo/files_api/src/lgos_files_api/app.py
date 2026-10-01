@@ -30,6 +30,12 @@ def create_files_app(
         title="LGOS Files API",
         version="0.1.0",
         lifespan=lifespan,
+        # FastAPI records requests through the global providers; export belongs
+        # to `opentelemetry-instrument`, so FastAPI must not add its own.
+        telemetry={
+            "auto_configure": False,
+            "exclude": lambda scope: scope["path"].endswith("/health"),
+        },
     )
     app.state.file_repository = repository
     configure_openai_error_handlers(app)

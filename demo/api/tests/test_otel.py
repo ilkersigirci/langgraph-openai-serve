@@ -1,6 +1,8 @@
 """OpenTelemetry boundary tests for the demo deployment."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from logging.config import DictConfigurator
 from unittest.mock import Mock
 
@@ -11,15 +13,16 @@ from hatchet_sdk.opentelemetry import instrumentor as hatchet_otel
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Request, Response
 from openai import AsyncOpenAI
 from opentelemetry import trace
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPX2ClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from lgos_demo_api import app as app_module
 from lgos_demo_api.background import components as background_components
 from lgos_demo_api.background import worker as background_worker
 from lgos_demo_api.core.logging import LOGGING_CONFIG
-from lgos_demo_api.core.otel import instrument_fastapi_app, instrument_hatchet
+from lgos_demo_api.core.otel import instrument_hatchet
 
 
 @pytest.mark.parametrize("exporter_setting", [None, "none", " NONE "])
@@ -118,54 +121,6 @@ def test_hatchet_logs_reach_root_handlers_with_trace_context(
     assert not logger.handlers
 
 
-def test_api_instruments_the_mounted_openai_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    openai_app = FastAPI()
-    graph_serve = Mock(openai_app=openai_app)
-    monkeypatch.setattr(
-        app_module,
-        "LanggraphOpenaiServe",
-        Mock(return_value=graph_serve),
-    )
-    instrumented_apps: list[FastAPI] = []
-    monkeypatch.setattr(app_module, "instrument_fastapi_app", instrumented_apps.append)
-
-    host_app = app_module.create_custom_app()
-
-    assert instrumented_apps == [openai_app]
-    assert openai_app is not host_app
-
-
-def test_fastapi_instrumentation_excludes_transport_spans(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
-    calls: list[tuple[FastAPI, list[str]]] = []
-
-    def instrument_app(app: FastAPI, *, exclude_spans: list[str]) -> None:
-        calls.append((app, exclude_spans))
-
-    monkeypatch.setattr(FastAPIInstrumentor, "instrument_app", instrument_app)
-    app = FastAPI()
-
-    instrument_fastapi_app(app)
-
-    assert calls == [(app, ["send", "receive"])]
-
-
-def test_fastapi_instrumentation_is_optional(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)
-    monkeypatch.delenv("OTEL_METRICS_EXPORTER", raising=False)
-
-    app = FastAPI()
-    instrument_fastapi_app(app)
-
-    assert not getattr(app, "_is_instrumented_by_opentelemetry", False)
-
-
 async def test_httpx2_instrumentation_supports_openai_v3() -> None:
     async def respond(_request: Request) -> Response:
         return Response(
@@ -201,7 +156,10 @@ async def test_httpx2_instrumentation_supports_openai_v3() -> None:
 async def test_unhandled_failure_log_keeps_server_span_context() -> None:
     middleware_module = pytest.importorskip("langgraph_openai_serve.api.middleware")
     errors_module = pytest.importorskip("langgraph_openai_serve.core.errors")
-    app = FastAPI()
+    tracer_provider = TracerProvider()
+    app = FastAPI(
+        telemetry={"tracer_provider": tracer_provider, "auto_configure": False}
+    )
     errors_module.configure_openai_error_handlers(app)
 
     @app.get("/failure")
@@ -209,12 +167,6 @@ async def test_unhandled_failure_log_keeps_server_span_context() -> None:
         msg = "boom"
         raise RuntimeError(msg)
 
-    tracer_provider = TracerProvider()
-    FastAPIInstrumentor.instrument_app(
-        app,
-        tracer_provider=tracer_provider,
-        exclude_spans=["send", "receive"],
-    )
     handler = _TraceContextHandler()
     error_logger = logging.getLogger("langgraph_openai_serve.core.errors")
     error_logger.addHandler(handler)
@@ -231,7 +183,6 @@ async def test_unhandled_failure_log_keeps_server_span_context() -> None:
             )
     finally:
         error_logger.removeHandler(handler)
-        FastAPIInstrumentor.uninstrument_app(app)
         tracer_provider.shutdown()
 
     assert response.status_code == 500
@@ -240,3 +191,54 @@ async def test_unhandled_failure_log_keeps_server_span_context() -> None:
     ]
     assert handler.records[0].request_id == "failure-request"
     assert handler.contexts[0].is_valid
+
+
+async def test_requests_are_traced_once_except_health_checks() -> None:
+    # Global, as `opentelemetry-instrument` configures it in the container.
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+
+    transport = ASGITransport(app=app_module.create_custom_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.get("/v1/models")
+        await client.get("/v1/health")
+
+    servers = [
+        span
+        for span in exporter.get_finished_spans()
+        if span.kind is trace.SpanKind.SERVER
+    ]
+    assert [(span.name, span.attributes["http.route"]) for span in servers] == [
+        ("GET /v1/models", "/v1/models")
+    ]
+
+
+async def test_startup_leaves_export_to_the_process_sdk(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The OTel overlay exports over gRPC through `opentelemetry-instrument`.
+    # FastAPI's own environment export supports only HTTP and would duplicate it.
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+
+    @asynccontextmanager
+    async def no_resources(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+
+    monkeypatch.setattr(app_module, "lifespan", no_resources)
+    messages = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+    sent: list[str] = []
+
+    async def receive() -> dict[str, str]:
+        return next(messages)
+
+    async def send(message: dict[str, str]) -> None:
+        sent.append(message["type"])
+
+    app = app_module.create_custom_app()
+    await app({"type": "lifespan", "asgi": {"version": "3.0"}}, receive, send)
+
+    assert sent == ["lifespan.startup.complete", "lifespan.shutdown.complete"]
+    assert [r.getMessage() for r in caplog.records if r.name == "fastapi"] == []

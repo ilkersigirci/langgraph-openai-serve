@@ -1,6 +1,8 @@
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import AsyncMock, Mock
 
 import chainlit as cl
 import chainlit.config
@@ -12,6 +14,7 @@ from chainlit.step import StepDict
 from chainlit.user_session import user_sessions
 
 from lgos_chainlit import audio, chat, clients, display_files
+from lgos_chainlit.settings import get_chainlit_settings
 from tests.support import FakeGateway
 
 
@@ -106,3 +109,19 @@ def status_steps(
     monkeypatch.setattr(chainlit_context.emitter, "send_step", record)
     monkeypatch.setattr(chainlit_context.emitter, "update_step", record)
     return states
+
+
+@pytest.fixture
+def application(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
+    monkeypatch.setenv("CHAINLIT_AUTH_SECRET", "test-signing-secret")
+    get_chainlit_settings.cache_clear()
+    # Authentication tests already exercise the mounted Chainlit singleton.
+    # This fixture owns only the host app's startup/shutdown lifecycle.
+    monkeypatch.setattr("chainlit.utils.mount_chainlit", Mock())
+    from lgos_chainlit import main
+
+    monkeypatch.setattr(main.gateway_http_client, "aclose", AsyncMock())
+    monkeypatch.setattr(main, "_close_chainlit_data_layer", AsyncMock())
+    yield main
+    get_chainlit_settings.cache_clear()
