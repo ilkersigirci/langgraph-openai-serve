@@ -37,15 +37,17 @@ The application or deployment configures:
 - stdout/stderr routing and collection;
 - trusted request-ID policy, retention, redaction, and access controls;
 - ASGI server or ingress access logs; and
-- OpenTelemetry instrumentation, metrics, traces, and OTLP export. The demo's
-  optional [Demo OpenTelemetry](../demo/opentelemetry.md) overlay shows one
+- the OpenTelemetry SDK, OTLP export, and server or client instrumentation.
+  LGOS reports graph runs through the OpenTelemetry API; see
+  [OpenTelemetry](../reference.md#opentelemetry). The demo's optional
+  [Demo OpenTelemetry](../demo/opentelemetry.md) overlay shows one
   Collector-based deployment pattern.
 
 For latency percentiles and distributed request timing, use the deployment's
 metrics and tracing system rather than adding a per-request application log.
 
 LGOS does not configure the root logger, install output handlers, select a
-formatter, write log files, or create OpenTelemetry trace and span IDs.
+formatter, write log files, or configure an OpenTelemetry SDK.
 
 If browser code needs to read the returned request ID, expose
 `X-Request-ID` in the host application's CORS configuration. Restrict accepted
@@ -103,4 +105,5 @@ It is therefore metadata here, not a custom trace ID.
 
 For end-to-end distributed tracing, configure the host application and proxy
 to propagate W3C/OpenTelemetry context. LGOS does not install a second tracing
-system or create a parent span around the HTTP request.
+system or create a span around the HTTP request; its graph-run span joins the
+active trace.

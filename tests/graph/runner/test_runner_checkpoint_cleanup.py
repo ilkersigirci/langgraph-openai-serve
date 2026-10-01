@@ -12,6 +12,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.graph import run as run_module
 from langgraph_openai_serve.graph.run import GraphRun, InterruptRun
 from langgraph_openai_serve.graph.runner import collect_run, stream_run
+from tests.graph.support.request import graph_request
 
 THREAD_ID = "checkpoint-cleanup-thread"
 
@@ -60,6 +61,7 @@ def cleanup_run(
     output_to_message: Callable[[Any], Any] | None = None,
 ) -> GraphRun:
     return GraphRun(
+        request=graph_request("DUMMY"),
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",

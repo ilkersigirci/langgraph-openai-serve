@@ -214,14 +214,19 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
 `LANGFUSE_BASE_URL` is optional; Langfuse Cloud is the default. Set it only for
-a different cloud region or a self-hosted instance. Langfuse's
-`CallbackHandler` owns its standard SDK configuration and error behavior. LGOS
-constructs it on the first graph run that needs runnable configuration, then
-reuses that process-wide handler. When enabled, the deployment-level toggle is
-authoritative: LGOS adds Langfuse alongside empty, list, or manager callbacks
-without altering the registered `GraphConfig` or caller-owned collection. To
-provide a custom Langfuse handler, leave the toggle off and pass that handler
-through `runtime_callbacks`.
+a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
+owns its standard SDK configuration and error behavior. LGOS constructs it on
+the first graph run that needs runnable configuration, then reuses that
+process-wide handler. Before that, LGOS creates the Langfuse client with
+`should_export_span` from `langgraph_openai_serve.integrations.langfuse`:
+Langfuse's default export filter without LGOS's [OpenTelemetry](#opentelemetry)
+spans, so each trace keeps the callback's root observation with the run's input
+and output. An application that creates its own Langfuse client first keeps its
+filter; pass the same `should_export_span` to keep those trace roots. When
+enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
+alongside empty, list, or manager callbacks without altering the registered
+`GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
+leave the toggle off and pass that handler through `runtime_callbacks`.
 
 For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
@@ -246,6 +251,30 @@ access to them.
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
 advertises polling-only background Responses.
+
+### OpenTelemetry
+
+LGOS reports every graph execution through the OpenTelemetry API, following the
+GenAI [workflow span](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span)
+and [workflow metric](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiinvoke_workflowduration)
+conventions. The API records nothing until the host application configures an
+SDK, for example with `opentelemetry-instrument`.
+
+| Signal | Name | Attributes |
+| --- | --- | --- |
+| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |
+| Histogram, unit `s` | `gen_ai.invoke_workflow.duration` | `gen_ai.workflow.name`, and `error.type` on failure |
+
+`gen_ai.workflow.name` is the registered model. Both signals cover graph
+execution through the final output; they exclude lease waits, background queue
+time, and checkpoint cleanup. A run that raises an exception fails: the span
+status is `ERROR`, and `error.type` is the exception type, qualified by its
+module unless it is built in. A cancelled run, such as a closed stream or a
+cancelled background Response, is not a failure. The exception propagates to
+its handler: LGOS routes and the background engines log it with its traceback,
+and direct Python callers receive it. The span does not repeat it as an event.
+The histogram uses the conventions' bucket boundaries, which start at one
+second; configure an SDK View for finer boundaries.
 
 ### Runtime Settings
 
