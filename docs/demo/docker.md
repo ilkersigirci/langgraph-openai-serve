@@ -420,10 +420,10 @@ settings](reference.md#opentelemetry-settings).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
 state, Open WebUI state—including its native raw file copies—and the
-coding-agent workspace use host bind
-mounts under `demo/docker/volumes/`; the Compose model declares no named
-volumes. Every service runs as `PUID:PGID` with a read-only root filesystem,
-dropped capabilities, and explicit resource limits. Narrow tmpfs mounts hold
+coding-agent workspace and Codex threads use host bind mounts under
+`demo/docker/volumes/`; the Compose model declares no named volumes. Every
+service runs as `PUID:PGID` with a read-only root filesystem, dropped
+capabilities, and explicit resource limits. Narrow tmpfs mounts hold
 required ephemeral writes. The graph APIs, background worker, and Chainlit
 apply pending schema migrations when they start and stop if one fails. Each
 takes a PostgreSQL advisory lock first, so processes that start together

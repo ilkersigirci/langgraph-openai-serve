@@ -37,10 +37,13 @@ flowchart LR
 ```
 
 1. The UI submits its text conversation history with model
-   `lgos-api-coding-agent/coding-agent`. The gateway forwards it directly to the
-   coding-agent service's `/v1` API.
-2. A LangChain chat adapter starts a fresh Codex runtime and ephemeral thread
-   in `/workspace`. The supplied history is a JSON transcript with explicit
+   `lgos-api-coding-agent/coding-agent`, its user identifier as OpenAI `user`,
+   and its thread or chat identifier as `metadata.conversation_id`. The gateway
+   forwards it directly to the coding-agent service's `/v1` API.
+2. A LangChain chat adapter starts a fresh Codex runtime in `/workspace`. It
+   resumes the Codex thread of that conversation and sends only the latest
+   message. A conversation's first request, or one without both values,
+   starts a thread from the supplied history as a JSON transcript with explicit
    roles. Codex's native agent loop chooses commands, edits, and verification.
 3. Codex calls the configured upstream model using its native
    [custom provider settings](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers).
@@ -56,21 +59,46 @@ credential provisioning job.
 
 ## Streaming and State
 
-The UI owns conversation history. The graph has no checkpointer and does not
-resume Codex threads across requests. Files persist in the mounted workspace
-across requests and container restarts. All conversations use the same workspace;
-the single service process serializes requests to prevent overlapping edits.
-Run one worker and one replica for each workspace.
+Codex owns the memory of a conversation. The service names each Codex thread
+with a hash of `user` and `metadata.conversation_id` and
+[resumes](https://github.com/openai/codex/blob/main/sdk/python/docs/getting-started.md)
+it on later requests, so Codex keeps its own record of the commands it ran and
+their output. The history the UI sends is then used only to start a thread.
+Editing or regenerating an earlier message in the UI does not change what Codex
+remembers. A request without both values runs on a thread that is discarded
+when it ends.
+
+Threads are files in Codex's home, the host directory
+`demo/docker/volumes/lgos-codex`. They survive container restarts and are not
+removed when the UI deletes its conversation. The graph has no checkpointer.
+
+When a conversation already has assistant turns but no Codex thread, because
+the thread was removed or the conversation began with another model, the
+service starts a thread from the UI's history instead of failing. Codex then
+has no record of the earlier commands. The service says so in a progress status
+and logs a warning.
+
+!!! note "Conversation IDs are not authorization"
+
+    `user` and `metadata.conversation_id` are request correlation values. Any
+    caller that sends the same pair continues that thread.
+
+Files persist in the mounted workspace across requests and container restarts.
+All conversations use the same workspace; the single service process serializes
+requests to prevent overlapping edits. Run one worker and one replica for each
+workspace.
 
 Codex's [app-server events](https://learn.chatgpt.com/docs/app-server#events)
 identify message phases on item lifecycle events. The adapter streams answer
-deltas and publishes commentary, command activity, and file changes as progress
-statuses. A request first reports that it is waiting for the workspace, then
-that Codex is working once its turn starts. When the upstream model supplies no
-message phase, every assistant message is part of the answer, separated by
-blank lines. Raw command output stays inside Codex's tool loop; its final answer
-reports relevant results. The final cumulative token count becomes LangChain
-`usage_metadata` once per request, including cache and reasoning counts.
+deltas and publishes commentary, each shell command as Codex runs it, and file
+changes as progress statuses. A request first reports that it is waiting for
+the workspace, then that Codex is working once its turn starts. When the
+upstream model supplies no message phase, every assistant message is part of
+the answer, separated by blank lines. Raw command output stays inside Codex's
+tool loop; its final answer reports relevant results. The token counts of the
+request's model calls are summed into LangChain `usage_metadata`, including
+cache and reasoning counts; earlier requests of a resumed thread are not counted
+again.
 
 See the shared [streaming contract](../../explanation/openai-compatibility.md#streaming).
 Streaming Responses can contain both commentary and final-answer messages;
@@ -106,7 +134,8 @@ In either UI select that model and ask:
 > addition and subtraction, run the tests, and report what changed.
 
 Follow up with “Add division and test division by zero.” The second request
-receives the UI's history and operates on the files left by the first.
+continues the same Codex thread and operates on the files left by the first.
+Then ask “Which commands did you run?”
 
 The workspace is the host directory `demo/docker/volumes/lgos-coding-agent`,
 which `PUID:PGID` must be able to write. Edits are visible there directly; copy

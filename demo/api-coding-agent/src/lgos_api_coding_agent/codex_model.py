@@ -11,7 +11,8 @@ from langchain_core.language_models.chat_models import (
     BaseChatModel,
     agenerate_from_stream,
 )
-from langchain_core.messages import AIMessageChunk, BaseMessage
+from langchain_core.messages import AIMessageChunk, BaseMessage, UsageMetadata
+from langchain_core.messages.ai import add_usage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langgraph.config import get_stream_writer
 from langgraph_openai_serve import GraphError, InvalidRequestError, status_event
@@ -25,13 +26,14 @@ from openai_codex.generated.v2_all import (
     MessagePhase,
     ThreadItem,
     ThreadTokenUsageUpdatedNotification,
-    TokenUsageBreakdown,
     TurnCompletedNotification,
     TurnStartedNotification,
     TurnStatus,
 )
 from openai_codex.models import Notification
 from pydantic import Field
+
+from lgos_api_coding_agent.codex_runtime import CodexTurn
 
 
 def conversation_prompt(messages: list[BaseMessage]) -> str:
@@ -56,8 +58,8 @@ def conversation_prompt(messages: list[BaseMessage]) -> str:
 class CodexChatModel(BaseChatModel):
     """An async chat model solely to participate in LangGraph messages streaming."""
 
-    event_source: Callable[[str], AsyncGenerator[Notification, None]] = Field(
-        exclude=True
+    event_source: Callable[[CodexTurn], AsyncGenerator[Notification | str, None]] = (
+        Field(exclude=True)
     )
     model_name: str
 
@@ -81,23 +83,29 @@ class CodexChatModel(BaseChatModel):
         messages: list[BaseMessage],
         stop: list[str] | None = None,
         run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        *,
+        thread_name: str | None = None,
         **kwargs: object,
     ) -> ChatResult:
-        return await agenerate_from_stream(self._astream(messages))
+        return await agenerate_from_stream(
+            self._astream(messages, thread_name=thread_name)
+        )
 
     async def _astream(
         self,
         messages: list[BaseMessage],
         stop: list[str] | None = None,
         run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        *,
+        thread_name: str | None = None,
         **kwargs: object,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        prompt = conversation_prompt(messages)
+        transcript = conversation_prompt(messages)
         writer = get_stream_writer()
         writer(status_event("Waiting for the workspace"))
         # Streamed text of every answer message. Commentary is never an entry.
         answers: dict[str, str] = {}
-        usage: TokenUsageBreakdown | None = None
+        usage: UsageMetadata | None = None
         completed = False
 
         def answer(item_id: str, text: str) -> ChatGenerationChunk:
@@ -107,9 +115,19 @@ class CodexChatModel(BaseChatModel):
             answers[item_id] = streamed + text
             return ChatGenerationChunk(message=AIMessageChunk(content=separator + text))
 
-        stream = self.event_source(prompt)
+        stream = self.event_source(
+            CodexTurn(
+                transcript=transcript,
+                latest=messages[-1].text,
+                thread_name=thread_name,
+                continues=any(message.type == "ai" for message in messages),
+            )
+        )
         try:
             async for event in stream:
+                if isinstance(event, str):
+                    writer(status_event(event))
+                    continue
                 match event.payload:
                     case TurnStartedNotification():
                         writer(status_event("Codex is working in the workspace"))
@@ -140,9 +158,9 @@ class CodexChatModel(BaseChatModel):
                         elif not streamed and item.text:
                             yield answer(item.id, item.text)
                     case ItemStartedNotification(
-                        item=ThreadItem(root=CommandExecutionThreadItem())
+                        item=ThreadItem(root=CommandExecutionThreadItem() as item)
                     ):
-                        writer(status_event("Running a shell command"))
+                        writer(status_event(f"Running: {item.command}"))
                     case ItemCompletedNotification(
                         item=ThreadItem(root=CommandExecutionThreadItem())
                     ):
@@ -156,8 +174,23 @@ class CodexChatModel(BaseChatModel):
                     ):
                         writer(status_event("File edit finished"))
                     case ThreadTokenUsageUpdatedNotification(token_usage=token_usage):
-                        # Totals are cumulative within this fresh ephemeral thread.
-                        usage = token_usage.total
+                        # `last` is one model call. `total` also covers the
+                        # earlier requests of a resumed thread.
+                        last = token_usage.last
+                        usage = add_usage(
+                            usage,
+                            UsageMetadata(
+                                input_tokens=last.input_tokens,
+                                output_tokens=last.output_tokens,
+                                total_tokens=last.total_tokens,
+                                input_token_details={
+                                    "cache_read": last.cached_input_tokens
+                                },
+                                output_token_details={
+                                    "reasoning": last.reasoning_output_tokens
+                                },
+                            ),
+                        )
                     case TurnCompletedNotification(turn=turn):
                         if turn.status is not TurnStatus.completed:
                             reason = (
@@ -174,17 +207,7 @@ class CodexChatModel(BaseChatModel):
                     message=AIMessageChunk(
                         content="",
                         response_metadata={"model_name": self.model_name},
-                        usage_metadata={
-                            "input_tokens": usage.input_tokens,
-                            "output_tokens": usage.output_tokens,
-                            "total_tokens": usage.total_tokens,
-                            "input_token_details": {
-                                "cache_read": usage.cached_input_tokens
-                            },
-                            "output_token_details": {
-                                "reasoning": usage.reasoning_output_tokens
-                            },
-                        },
+                        usage_metadata=usage,
                     )
                 )
         finally:

@@ -1,9 +1,25 @@
 import asyncio
+from contextlib import aclosing
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from openai_codex import AsyncCodex
+from langgraph_openai_serve import GraphError
+from openai_codex import ApprovalMode, AsyncCodex, Sandbox
+from openai_codex.models import Notification, UnknownNotification
 
-from lgos_api_coding_agent.codex_runtime import own_codex
+from lgos_api_coding_agent.codex_runtime import CodexTurn, own_codex, runtime_events
+from lgos_api_coding_agent.settings import RuntimeSettings
+
+
+def runtime_settings(workspace: Path, timeout_seconds: float = 10) -> RuntimeSettings:
+    return RuntimeSettings(
+        model="fixture",
+        base_url="http://model/v1",
+        api_key="test",
+        workspace=workspace,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 class StartingCodex(AsyncCodex):
@@ -55,12 +71,6 @@ async def test_cancellation_owns_startup_until_the_runtime_is_closed(
 
 @pytest.mark.parametrize("shutdown", ["normal", "cancelled"])
 async def test_workspace_requests_wait_for_runtime_cleanup(tmp_path, shutdown) -> None:
-    from openai_codex import ApprovalMode, Sandbox
-    from openai_codex.models import Notification, UnknownNotification
-
-    from lgos_api_coding_agent.codex_runtime import runtime_events
-    from lgos_api_coding_agent.settings import RuntimeSettings
-
     started = asyncio.Queue()
     release_cleanup = asyncio.Event()
     cleanup_started = asyncio.Event()
@@ -91,15 +101,9 @@ async def test_workspace_requests_wait_for_runtime_cleanup(tmp_path, shutdown) -
             cleanup_started.set()
             await release_cleanup.wait()
 
-    settings = RuntimeSettings(
-        model="fixture",
-        base_url="http://model/v1",
-        api_key="test",
-        workspace=tmp_path,
-        timeout_seconds=10,
-    )
-    source = runtime_events(settings, factory=WorkspaceCodex)
-    first, second = source("first"), source("second")
+    source = runtime_events(runtime_settings(tmp_path), factory=WorkspaceCodex)
+    first = source(CodexTurn("first", "first", None, continues=False))
+    second = source(CodexTurn("second", "second", None, continues=False))
     second_waiting = asyncio.Event()
 
     async def start_second():
@@ -130,3 +134,107 @@ async def test_workspace_requests_wait_for_runtime_cleanup(tmp_path, shutdown) -
         await waiting
         assert len(launches) == 2
         await second.aclose()
+
+
+async def test_named_conversation_continues_its_codex_thread(tmp_path) -> None:
+    names: dict[str, str] = {}
+    prompts: list[tuple[str, str]] = []
+
+    class Thread:
+        def __init__(self, identifier: str) -> None:
+            self.id = identifier
+
+        async def set_name(self, name: str) -> None:
+            names[self.id] = name
+
+        async def turn(self, prompt: str):
+            prompts.append((self.id, prompt))
+            return self
+
+        async def stream(self):
+            yield Notification("turn/completed", UnknownNotification({}))
+
+    class ConversationCodex(AsyncCodex):
+        """Each request gets a new runtime; threads outlive it as in CODEX_HOME."""
+
+        def __init__(self, config) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def close(self) -> None:
+            pass
+
+        async def thread_list(self, *, search_term: str):
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(id=identifier, name=name)
+                    for identifier, name in names.items()
+                    if search_term in name
+                ]
+            )
+
+        async def thread_start(self, **options):
+            assert options["ephemeral"] is False
+            return Thread(f"thread-{len(names)}")
+
+        async def thread_resume(self, thread_id: str, **options):
+            return Thread(thread_id)
+
+    source = runtime_events(runtime_settings(tmp_path), factory=ConversationCodex)
+    turns = [
+        CodexTurn("whole history", "first message", "chat", continues=False),
+        CodexTurn("longer history", "second message", "chat", continues=True),
+        CodexTurn("other history", "other message", "other chat", continues=True),
+    ]
+    async with asyncio.timeout(3):
+        streams = [[item async for item in source(turn)] for turn in turns]
+
+    assert prompts == [
+        ("thread-0", "whole history"),
+        ("thread-0", "second message"),
+        ("thread-1", "other history"),
+    ]
+    # Only the conversation whose earlier turns Codex does not hold is told so.
+    assert [isinstance(stream[0], str) for stream in streams] == [False, False, True]
+
+
+async def test_time_limit_fails_the_turn_while_its_consumer_is_busy(tmp_path) -> None:
+    class IdleCodex(AsyncCodex):
+        def __init__(self, config) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def close(self) -> None:
+            pass
+
+        async def thread_start(self, **options):
+            return self
+
+        async def turn(self, prompt):
+            return self
+
+        async def stream(self):
+            yield Notification("ready", UnknownNotification({}))
+            await asyncio.Event().wait()
+
+    source = runtime_events(runtime_settings(tmp_path, 0.05), factory=IdleCodex)
+    events = source(CodexTurn("prompt", "prompt", None, continues=False))
+
+    async def consume() -> None:
+        async with aclosing(events):
+            await anext(events)
+            # LangChain awaits its token callbacks between events.
+            await asyncio.sleep(0.1)
+            await anext(events)
+
+    task = asyncio.create_task(consume())
+    await asyncio.wait({task}, timeout=3)
+
+    assert task.done()
+    assert not task.cancelled()
+    with pytest.raises(GraphError, match="time limit"):
+        task.result()

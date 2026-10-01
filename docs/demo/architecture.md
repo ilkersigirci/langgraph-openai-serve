@@ -193,9 +193,8 @@ and export observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.
 
 The [coding-agent service](graphs/coding-agent.md) owns a shared persistent
-workspace directory. It serializes requests, starts a fresh Codex thread for each
-request, and uses the history supplied by the UI. It uses neither PostgreSQL
-nor the central Files service.
+workspace directory and the Codex threads that its conversations resume. It
+serializes requests. It uses neither PostgreSQL nor the central Files service.
 
 The optional Compose overlay adds a separate telemetry path without changing
 request or state ownership. Its complete signal flow and operational boundary

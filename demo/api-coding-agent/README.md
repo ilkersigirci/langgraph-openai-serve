@@ -25,8 +25,10 @@ Follow up with “Add division and test division by zero.”
 The workspace is the host directory `demo/docker/volumes/lgos-coding-agent`.
 Copy or clone a project into it to edit existing code. All conversations
 share that workspace; requests run one at a time, including runtime cleanup.
-The UI supplies conversation history, and each request starts a fresh ephemeral
-Codex thread.
+Codex remembers each UI conversation: requests carrying `user` and
+`metadata.conversation_id` resume that conversation's Codex thread, stored in
+`demo/docker/volumes/lgos-codex`. Other requests run on a thread that is
+discarded when they end.
 
 `DEMO_CODING_AGENT_BASE_URL`, `DEMO_CODING_AGENT_API_KEY`, and `DEMO_CODING_AGENT_MODEL` select the
 upstream Responses model. Their defaults use the demo API's upstream. They can

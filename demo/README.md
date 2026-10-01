@@ -106,8 +106,9 @@ in the background. Run
 [background guide](../docs/how-to-guides/background-responses.md).
 
 Compose persists PostgreSQL, Bifrost, and Open WebUI state and the coding-agent
-workspace as ignored host bind mounts under `docker/volumes/`. Each service directory is tracked with a
-`.gitkeep`; runtime contents remain ignored. Services run as the configured
+workspace and Codex threads as ignored host bind mounts under `docker/volumes/`.
+Each service directory is tracked with a `.gitkeep`; runtime contents remain
+ignored. Services run as the configured
 `PUID:PGID` with read-only container filesystems, limited writable tmpfs paths,
 dropped Linux capabilities, and explicit CPU, memory, PID, and file-descriptor
 limits.
