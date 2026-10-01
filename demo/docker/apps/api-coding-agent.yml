@@ -27,6 +27,12 @@ services:
         target: /workspace
         bind:
           create_host_path: false
+      # Codex keeps the threads that conversations resume in its home.
+      - type: bind
+        source: ../volumes/lgos-codex
+        target: /home/app/.codex
+        bind:
+          create_host_path: false
     environment:
       DEMO_CODING_AGENT_BASE_URL: $DEMO_CODING_AGENT_BASE_URL
       DEMO_CODING_AGENT_API_KEY: $DEMO_CODING_AGENT_API_KEY

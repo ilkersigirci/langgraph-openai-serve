@@ -47,3 +47,9 @@ its row. Package decisions live in
 | --- | --- | --- | --- |
 | One manifold Pipe serves every graph, and sync generates a Workspace Model per LGOS model whose system prompt contains only delimited native Chat Variable declarations; the Pipe removes their rendered block. | Open WebUI derives its native per-chat settings form only from system-prompt declarations. Removing the block keeps UI settings out of graph prompts; they reach LGOS as metadata. | The form is a generated projection tied to the pinned release: rerun the sync after an LGOS schema change. Declared defaults arrive as text, so the Pipe restores checkbox and number types; settings whose text the declarations cannot carry are omitted. | Open WebUI accepts a stored settings schema or fetches one itself, or the image pin changes. |
 | Open WebUI keeps its own raw upload copy; the central Files API owns the inference copy. | Open WebUI's native attachment UI requires its own file record. | Every upload is stored twice. | Open WebUI can attach an external file ID. |
+
+## Coding Agent
+
+| Choice | Why | Cost | Revisit when |
+| --- | --- | --- | --- |
+| Codex owns a conversation's memory: a request carrying `user` and `metadata.conversation_id` resumes that conversation's Codex thread and sends only the latest message. The UI's history only starts a thread. | Codex keeps the commands it ran and their output, which no UI replays. Without its own thread it cannot answer questions about its earlier work. | Editing or regenerating an earlier UI message does not change what Codex remembers. Threads are files in `demo/docker/volumes/lgos-codex` that nothing deletes, and any caller sending the same pair continues the thread. A conversation whose thread is gone restarts from the UI's history with a status notice, without Codex's record of earlier commands. | Retained graph state gets a suite-wide deletion and expiry contract. |
