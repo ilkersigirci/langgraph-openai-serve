@@ -6,18 +6,18 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
+    "fastapi>=0.142.2",
     "hatchet-sdk[otel]", # LGOS supplies Hatchet; the demo also needs its telemetry extra.
     "httpx2>=2.13,<3",
     "langchain-openai>=1.6.2",
     "langchain-text-splitters>=1.1.0",
     "langgraph-openai-serve[hatchet,postgres,tracing]>=0.27.0",
     "numpy>=2.4.6",
-    "opentelemetry-distro>=0.65b0,<0.66",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
-    "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
-    "opentelemetry-instrumentation-httpx>=0.65b0,<0.66",
-    "opentelemetry-instrumentation-logging>=0.65b0,<0.66",
-    "opentelemetry-instrumentation-psycopg>=0.65b0,<0.66",
+    "opentelemetry-distro>=0.66b0,<0.67",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2",
+    "opentelemetry-instrumentation-httpx>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-logging>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-psycopg>=0.66b0,<0.67",
     "plotly>=6,<7",
     "psycopg[binary]", # LGOS supplies Psycopg and its pool; the demo image needs bundled libpq.
     "structlog>=26.1.0,<27",

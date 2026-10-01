@@ -1,26 +1,7 @@
-from collections.abc import Iterator
 from types import ModuleType
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
-
-from lgos_chainlit.settings import get_chainlit_settings
-
-
-@pytest.fixture
-def application(monkeypatch: pytest.MonkeyPatch) -> Iterator[ModuleType]:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/test")
-    monkeypatch.setenv("CHAINLIT_AUTH_SECRET", "test-signing-secret")
-    get_chainlit_settings.cache_clear()
-    # Authentication tests already exercise the mounted Chainlit singleton.
-    # This fixture owns only the host app's startup/shutdown lifecycle.
-    monkeypatch.setattr("chainlit.utils.mount_chainlit", Mock())
-    from lgos_chainlit import main
-
-    monkeypatch.setattr(main.gateway_http_client, "aclose", AsyncMock())
-    monkeypatch.setattr(main, "_close_chainlit_data_layer", AsyncMock())
-    yield main
-    get_chainlit_settings.cache_clear()
 
 
 async def test_startup_migrates_before_serving(

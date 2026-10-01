@@ -11,8 +11,7 @@
       "allowlist": [
         "idempotency-key",
         "traceparent",
-        "tracestate",
-        "user-agent"
+        "tracestate"
       ]
     }
   },

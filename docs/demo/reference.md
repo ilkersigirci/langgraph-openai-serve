@@ -188,8 +188,9 @@ should inject
 any additional native `HATCHET_CLIENT_*` connection settings into both the API
 and worker processes.
 
-The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
-`LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
+The API serves the OpenAI routes at the package's default `/v1` prefix, which
+the gateway wiring assumes. It also reads the package-owned
+`LGOS_OPENAI_API_DOCS_ENABLED` and `LGOS_ENABLE_LANGFUSE` settings documented
 in the package [Reference](../reference.md#settings). Its settings model supports
 a local `.env` file; the installed LGOS package itself reads only process
 environment values or explicit constructor arguments.

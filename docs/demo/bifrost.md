@@ -185,11 +185,10 @@ in `config.json`. Bifrost loads this configuration at startup, so
 restart the service after changing it. The graph providers do not enable Chat
 Completions or Responses-to-Chat fallback.
 
-The client header allowlist forwards `Idempotency-Key`, `traceparent`,
-`tracestate`, and `user-agent` through managed Responses requests. The first
-supports safe background-create retries; the others preserve distributed trace
-context and the originating UI's identity at LGOS. See the [OpenTelemetry
-guide](opentelemetry.md#signal-ownership).
+The client header allowlist forwards `Idempotency-Key`, `traceparent`, and
+`tracestate` through managed Responses requests. The first supports safe
+background-create retries; the others preserve distributed trace context. See
+the [OpenTelemetry guide](opentelemetry.md#signal-ownership).
 
 ## Background Responses
 

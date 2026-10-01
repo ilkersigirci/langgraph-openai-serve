@@ -18,7 +18,6 @@ from langgraph_openai_serve.graph.interrupt import delete_expired_interrupt_runs
 
 from lgos_demo_api.background.components import create_background_backend
 from lgos_demo_api.core.logging import LOGGING_CONFIG
-from lgos_demo_api.core.otel import instrument_fastapi_app
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph import (
     create_advanced_graph_config,
@@ -121,6 +120,12 @@ def create_custom_app() -> FastAPI:
         title="Demo",
         version="0.0.1",
         lifespan=lifespan,
+        # FastAPI records requests through the global providers; export belongs
+        # to `opentelemetry-instrument`, so FastAPI must not add its own.
+        telemetry={
+            "auto_configure": False,
+            "exclude": lambda scope: scope["path"].endswith("/health"),
+        },
     )
 
     app.add_middleware(
@@ -176,7 +181,6 @@ def create_custom_app() -> FastAPI:
     )
 
     graph_serve.bind_openai_api()
-    instrument_fastapi_app(graph_serve.openai_app)
 
     return app
 
