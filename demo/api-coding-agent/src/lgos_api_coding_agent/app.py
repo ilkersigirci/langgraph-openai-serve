@@ -76,7 +76,15 @@ def create_app(model: BaseChatModel | None = None) -> FastAPI:
             event_source=runtime_events(settings), model_name=settings.model
         )
     registry = GraphRegistry(graphs={GRAPH_ID: graph_config(model)})
-    return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
+    # FastAPI records requests through the global providers; export belongs to
+    # `opentelemetry-instrument`, so FastAPI must not add its own.
+    app = FastAPI(
+        telemetry={
+            "auto_configure": False,
+            "exclude": lambda scope: scope["path"].endswith("/health"),
+        }
+    )
+    return LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api().app
 
 
 def main() -> None:

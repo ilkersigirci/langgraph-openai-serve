@@ -17,7 +17,7 @@ flowchart LR
     direction TB
     clients["Chainlit and Open WebUI"]
     gateways["Bifrost or LiteLLM"]
-    apis["LGOS API A and B"]
+    apis["LGOS API A and B<br/>coding-agent API"]
     worker["Hatchet background worker"]
     collector["Local OpenTelemetry Collector"]
 
@@ -75,6 +75,7 @@ Exact environment settings are listed in
 | Producer | Exported signals | Demo integration |
 | --- | --- | --- |
 | LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, and Hatchet's native producer spans |
+| Coding-agent API | Traces, metrics, and logs | Python auto-instrumentation and FastAPI's native request telemetry |
 | Files API | Traces, metrics, and logs | Python auto-instrumentation and FastAPI's native request telemetry |
 | Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation plus Hatchet's native task spans |
 | Chainlit | Traces | Python auto-instrumentation and FastAPI's native request telemetry; the long-lived Socket.IO connection and prompt-recording OpenAI instrumentors are excluded |
@@ -89,7 +90,8 @@ instrumentation. Each demo FastAPI application records its own requests with
 [FastAPI's native OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/)
 through those providers and sets `auto_configure` to `False`, so FastAPI adds no
 second export. Health checks and Chainlit's Socket.IO connection are not traced.
-Routes include the mount, for example `http.route=/v1/responses`. W3C trace
+Routes include the mount, for example `http.route=/v1/responses`. Commands that
+Codex runs inside its own process are progress statuses, not spans. W3C trace
 context connects requests across the UI, proxy, gateway, and API when every hop
 preserves `traceparent`.
 

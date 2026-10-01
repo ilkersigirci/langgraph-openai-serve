@@ -1,56 +1,16 @@
 import json
-from collections.abc import AsyncGenerator
 from hashlib import sha256
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph_openai_serve import GraphError
 from openai import BadRequestError
-from openai_codex.generated.notification_registry import NOTIFICATION_MODELS
 from openai_codex.models import Notification
 
 from lgos_api_coding_agent.app import Conversation, graph_config
-from lgos_api_coding_agent.codex_model import CodexChatModel, conversation_prompt
+from lgos_api_coding_agent.codex_model import conversation_prompt
 from lgos_api_coding_agent.codex_runtime import CodexTurn
-from tests.support import answer_deltas, openai_client
-
-
-def event(method: str, **payload: object) -> Notification:
-    return Notification(
-        method,
-        NOTIFICATION_MODELS[method].model_validate(
-            {
-                "threadId": "thread",
-                "turnId": "turn",
-                "startedAtMs": 0,
-                "completedAtMs": 1,
-                **payload,
-            }
-        ),
-    )
-
-
-def message(kind: str, identifier: str, text: str, phase: str | None) -> Notification:
-    return event(
-        f"item/{kind}",
-        item={"type": "agentMessage", "id": identifier, "text": text, "phase": phase},
-    )
-
-
-def terminal(status: str = "completed") -> Notification:
-    return event("turn/completed", turn={"id": "turn", "items": [], "status": status})
-
-
-def model(
-    events: list[Notification | str], turns: list[CodexTurn] | None = None
-) -> CodexChatModel:
-    async def source(turn: CodexTurn) -> AsyncGenerator[Notification | str, None]:
-        if turns is not None:
-            turns.append(turn)
-        for notification in events:
-            yield notification
-
-    return CodexChatModel(event_source=source, model_name="fixture")
+from tests.support import answer_deltas, event, message, model, openai_client, terminal
 
 
 def delta(identifier: str, text: str) -> Notification:

@@ -38,6 +38,10 @@ services:
       DEMO_CODING_AGENT_API_KEY: $DEMO_CODING_AGENT_API_KEY
       DEMO_CODING_AGENT_MODEL: $DEMO_CODING_AGENT_MODEL
       DEMO_CODING_AGENT_TIMEOUT_SECONDS: $DEMO_CODING_AGENT_TIMEOUT_SECONDS
+      LANGFUSE_BASE_URL: $LANGFUSE_BASE_URL
+      LANGFUSE_PUBLIC_KEY: $LANGFUSE_PUBLIC_KEY
+      LANGFUSE_SECRET_KEY: $LANGFUSE_SECRET_KEY
+      LGOS_ENABLE_LANGFUSE: $LGOS_ENABLE_LANGFUSE
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
       interval: 5s
