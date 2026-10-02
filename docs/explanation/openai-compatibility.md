@@ -610,8 +610,8 @@ completed searches emit
 
 Streaming requests also subscribe to LangGraph `messages`. Answer tokens are
 emitted immediately, and citations are attached before the message completes.
-Graphs configure private tool-selection `ChatOpenAI` calls with
-`disable_streaming=True` so their text never enters the public answer. User-facing
+Graphs tag private tool-selection model calls with LangGraph's `nostream` tag so
+their text never enters the public answer. User-facing
 progress uses the existing `status_event()` contract.
 Status events remain progress-only; they do not carry tool call IDs or results.
 Completed tool inputs still use one input delta; LGOS does not parse partial

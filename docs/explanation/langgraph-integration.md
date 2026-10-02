@@ -120,9 +120,8 @@ intermediate updates.
     live-streaming signal.
     Root-node updates expose selected tool activity while model tokens stream
     immediately; nested updates remain private. Graphs keep intermediate model
-    text private by configuring those `ChatOpenAI` calls with
-    `disable_streaming=True`; tool selection does not disable streaming for
-    other model calls.
+    text private by tagging those model calls with LangGraph's `nostream` tag;
+    tool selection does not disable streaming for other model calls.
     The protocol adapter maps `status_event()` values to standard Responses
     commentary messages. Chat Completions ignores custom events. Root value
     parts supply the durable final output and complete interrupt set; LGOS
@@ -138,8 +137,9 @@ intermediate updates.
     output rendering behave the same. See [Run Responses In The
     Background](../how-to-guides/background-responses.md).
 
-Internal `ChatOpenAI` calls that must not reach the assistant text stream set
-`disable_streaming=True`. Graph authors must follow the
+Internal model calls that must not reach the assistant text stream carry
+LangGraph's `nostream` tag, for example `model.with_config(tags=["nostream"])`.
+Graph authors must follow the
 [assistant text parity contract](openai-compatibility.md#assistant-text-parity)
 because a graph cannot retract an intermediate draft after it has streamed it.
 
