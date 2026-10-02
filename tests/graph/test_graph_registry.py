@@ -1,4 +1,7 @@
 import pytest
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph
 from pydantic import ValidationError
 
 from langgraph_openai_serve import (
@@ -7,6 +10,7 @@ from langgraph_openai_serve import (
     GraphFeature,
     GraphRegistry,
 )
+from tests.graph.support.schemas import MessageState
 
 EXPECTED_FACTORY_RESOLUTIONS = 2
 
@@ -107,3 +111,40 @@ async def test_factory_result_must_be_a_compiled_state_graph() -> None:
 
     with pytest.raises(GraphError, match="compiled LangGraph"):
         await config.resolve_graph()
+
+
+def two_step_graph(**compile_options):
+    def step(_state: MessageState) -> dict:
+        return {"messages": [AIMessage(content="step")]}
+
+    graph = StateGraph(MessageState).add_node("first", step).add_node("second", step)
+    graph = graph.set_entry_point("first").add_edge("first", "second")
+    return graph.set_finish_point("second").compile(**compile_options)
+
+
+@pytest.mark.parametrize(
+    ("compile_options", "error"),
+    [
+        pytest.param(
+            {"interrupt_before": ["second"]}, "interrupt_before", id="interrupt-before"
+        ),
+        pytest.param(
+            {"interrupt_after": ["first"]}, "interrupt_after", id="interrupt-after"
+        ),
+        pytest.param(
+            {"checkpointer": InMemorySaver()},
+            "checkpointer",
+            id="checkpointer-without-interrupts",
+        ),
+    ],
+)
+async def test_graphs_lgos_cannot_serve_are_rejected(
+    compile_options: dict, error: str
+) -> None:
+    graph = two_step_graph(**compile_options)
+
+    with pytest.raises(GraphError, match=error):
+        GraphConfig(graph=graph, description="DUMMY")
+    factory = GraphConfig(graph=lambda: graph, description="DUMMY")
+    with pytest.raises(GraphError, match=error):
+        await factory.resolve_graph()

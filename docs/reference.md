@@ -154,10 +154,15 @@ graph's `messages` stream. Configure private `ChatOpenAI` calls with
 LangChain then uses the complete invocation path and does not emit model stream
 chunks for that call.
 
-A directly supplied compiled graph is reused. A sync or async graph factory is
-called for every request and is never cached; LGOS validates each resolved value
-as a compiled state graph and rechecks its context schema and interrupt
-checkpointer capabilities before execution. A registry with an
+A directly supplied compiled graph is reused and validated when its
+`GraphConfig` is built. A sync or async graph factory is called for every request
+and is never cached; LGOS validates each resolved value as a compiled state graph
+and rechecks it before execution. Validation checks the context schema and
+interrupt checkpointer capabilities, rejects static breakpoints
+(`interrupt_before` or `interrupt_after`), since LGOS pauses only at
+`interrupt()`, and rejects a checkpointer on a graph without
+`GraphFeature.INTERRUPTS`, since clients send the full conversation with every
+other request. A registry with an
 interrupt-enabled graph and no `run_coordinator` fails during `GraphRegistry`
 construction. A graph may declare both interrupts and background; a background
 run that reaches an interrupt completes with `lgos_interrupt` function calls,
