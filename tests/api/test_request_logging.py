@@ -139,8 +139,9 @@ async def test_handled_server_error_is_logged(
     caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
     registry = GraphRegistry(
         graphs={
+            # A factory is validated per request, so its error is a server error.
             "broken": GraphConfig(
-                graph=message_graph,
+                graph=lambda: message_graph,
                 description="Broken graph",
                 features={GraphFeature.INTERRUPTS},
             )

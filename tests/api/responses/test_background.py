@@ -70,7 +70,7 @@ class _Graph:
 
     def config(self, **options) -> GraphConfig:
         graph = (
-            StateGraph(MessageState)
+            StateGraph(MessageState, context_schema=options.get("client_settings"))
             .add_node("reply", self.reply)
             .set_entry_point("reply")
             .set_finish_point("reply")
