@@ -63,7 +63,7 @@ async def collect_response(
     run: GraphRun,
     *,
     response_id: str | None = None,
-    created_at: float | None = None,
+    created_at: int | None = None,
 ) -> Response:
     """Build one non-streaming Response from the graph's durable output."""
     async with run:
@@ -108,7 +108,7 @@ def _builder(
     run: GraphRun,
     *,
     response_id: str | None = None,
-    created_at: float | None = None,
+    created_at: int | None = None,
 ) -> ResponsesEventBuilder:
     return ResponsesEventBuilder(
         request,
