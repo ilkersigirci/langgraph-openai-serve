@@ -267,14 +267,22 @@ SDK, for example with `opentelemetry-instrument`.
 
 `gen_ai.workflow.name` is the registered model. Both signals cover graph
 execution through the final output; they exclude lease waits, background queue
-time, and checkpoint cleanup. A run that raises an exception fails: the span
-status is `ERROR`, and `error.type` is the exception type, qualified by its
-module unless it is built in. A cancelled run, such as a closed stream or a
-cancelled background Response, is not a failure. The exception propagates to
-its handler: LGOS routes and the background engines log it with its traceback,
-and direct Python callers receive it. The span does not repeat it as an event.
-The histogram uses the conventions' bucket boundaries, which start at one
-second; configure an SDK View for finer boundaries.
+time, and checkpoint cleanup. The span is current only while LGOS advances the
+graph: spans the graph creates, such as model calls, are its children, while
+code that consumes a stream keeps its own parent span between events. A run
+that ends before its output exists fails: one that raises an exception, one
+cancelled by a disconnecting client or a cancelled background Response, and one
+whose stream the consumer closes mid-run. The span status is then `ERROR` with
+the exception message, if any, and `error.type` is the exception type, qualified
+by its module unless it is built in, such as `asyncio.exceptions.CancelledError`
+or `GeneratorExit`. Closing a stream after its final output is not a failure.
+[Design Choices](explanation/design-choices.md) lists the tracers whose
+cancellation handling this follows. A raised `Exception` propagates to its
+handler: LGOS routes and the background engines log it with its traceback, and
+direct Python callers receive it; cancellations and closed streams are not
+logged. The span does not repeat an exception as an event. The histogram uses
+the conventions' bucket boundaries, which start at one second; configure an SDK
+View for finer boundaries.
 
 ### Runtime Settings
 

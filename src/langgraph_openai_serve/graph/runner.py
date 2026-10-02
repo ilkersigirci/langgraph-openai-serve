@@ -132,7 +132,7 @@ async def stream_run(
     if stream_updates:
         stream_mode.append("updates")
 
-    with invoke_workflow(run.request):
+    with invoke_workflow(run.request) as workflow:
         final_output: Any = _MISSING
         interrupts: dict[str, Interrupt] = {}
         # LangGraph implements astream as an async generator, while its overload
@@ -151,8 +151,8 @@ async def stream_run(
                 version="v2",
             ),
         )
-        async with aclosing(graph_stream):
-            async for part in graph_stream:
+        async with aclosing(workflow.iterate(graph_stream)) as parts:
+            async for part in parts:
                 if part["type"] == "values":
                     if not part["ns"]:
                         final_output = part["data"]
@@ -162,15 +162,24 @@ async def stream_run(
                 elif (event := _visible_event(part)) is not None:
                     yield event
 
+        output: LangGraphOutput
         if interrupts:
-            yield _interrupt_batch(run, interrupts.values())
-            return
-        if final_output is _MISSING:
+            output = _interrupt_batch(run, interrupts.values())
+        elif final_output is _MISSING:
             msg = "LangGraph stream completed without a final value."
             raise RuntimeError(msg)
-        message = await run.config.render_output(final_output)
-        usage = run.usage_metadata()
-        yield message.model_copy(update={"usage_metadata": usage}) if usage else message
+        else:
+            with workflow.active():
+                message = await run.config.render_output(final_output)
+            usage = run.usage_metadata()
+            output = (
+                message.model_copy(update={"usage_metadata": usage})
+                if usage
+                else message
+            )
+    # The run ends with its output; the consumer's handling of it is not part of
+    # the workflow.
+    yield output
 
 
 def _visible_event(part: StreamPart[Any, Any]) -> LangGraphStreamEvent | None:
