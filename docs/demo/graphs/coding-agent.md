@@ -109,9 +109,11 @@ The request timeout starts when the request acquires the workspace lock.
 Disconnecting or timing out closes Codex but does not roll back edits already
 made. The workspace lock remains held until shutdown finishes, including slow
 cleanup or repeated cancellation. Shutdown can exceed the request timeout;
-client and gateway timeouts must allow for coding tasks, queue time, and cleanup.
-A waiting request and a long command emit no events, so a gateway's stream-idle
-timeout must also exceed them. The bundled Bifrost provider sets both timeouts.
+client and gateway request timeouts must allow for coding tasks, queue time, and
+cleanup. The bundled Bifrost provider raises its request timeout. While a
+request waits for the workspace or runs a long command, LGOS sends
+[keepalive comments](../../explanation/openai-compatibility.md#streaming), which
+reset the bundled Bifrost provider's stream-idle timer.
 
 ## Try It
 

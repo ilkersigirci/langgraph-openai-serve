@@ -40,10 +40,13 @@ Bifrost exposes each service as a custom provider:
 | `lgos-files` | `lgos-files-api:8000` | Files only |
 | `aigateway` | `aigateway.home.ilkerflix.com` | `aigateway/openai/gpt-4o-mini-tts`; audio only |
 
-The coding-agent provider raises Bifrost's request and stream-idle timeouts.
-A [coding-agent request](graphs/coding-agent.md#streaming-and-state) emits
-nothing while it waits for the shared workspace or runs a long command, which
-would otherwise end the stream.
+The coding-agent provider raises Bifrost's request timeout, which bounds a
+whole non-streaming response; a
+[coding-agent request](graphs/coding-agent.md#streaming-and-state) can wait for
+the shared workspace and then run until its own time limit. Streams keep the
+default stream-idle timeout: LGOS
+[keepalive comments](../explanation/openai-compatibility.md#streaming) reset it
+while a request waits or runs a long command.
 
 It also exposes the `LGOS PostgreSQL Reports` Virtual MCP at
 `http://localhost:3000/mcp/lgos-postgres`. This named bundle selects six tools

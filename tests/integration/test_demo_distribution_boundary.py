@@ -215,9 +215,9 @@ def test_bifrost_outwaits_a_coding_agent_request() -> None:
     )
     network = config["providers"]["lgos-api-coding-agent"]["network_config"]
 
-    # A request emits nothing while it waits for the workspace or runs a command.
+    # Bifrost's request timeout bounds a whole non-streaming response. LGOS
+    # keepalive comments reset its stream-idle timer.
     assert network["default_request_timeout_in_seconds"] > int(limit)
-    assert network["stream_idle_timeout_in_seconds"] > int(limit)
 
 
 def test_bundled_gateways_serve_the_ui_speech_models() -> None:
