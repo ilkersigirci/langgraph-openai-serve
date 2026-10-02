@@ -67,6 +67,22 @@ The formatter can include LGOS context fields such as `request_id`, `model`,
 instrumentation is enabled, its `otelTraceID` and `otelSpanID` fields can
 coexist with these application fields.
 
+LGOS adds these fields to its own records. To add them to every record handled
+during a request, including logs from graph nodes, dependencies, and the host,
+install `RequestContextFilter` on the output handler:
+
+```python
+import logging
+
+from langgraph_openai_serve import RequestContextFilter
+
+handler = logging.StreamHandler()
+handler.addFilter(RequestContextFilter())
+logging.getLogger().addHandler(handler)
+```
+
+A field that a record already carries keeps its value.
+
 Set severity floors on each output handler, not only on the root logger. A
 propagated record is offered directly to ancestor handlers, so an ancestor
 logger's level does not filter a child logger that explicitly emits a lower

@@ -6,10 +6,16 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
 from starlette import status
 
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
+from langgraph_openai_serve import (
+    GraphConfig,
+    GraphFeature,
+    GraphRegistry,
+    RequestContextFilter,
+)
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.core.logging import bind_log_context, get_logger
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
@@ -275,3 +281,46 @@ async def test_host_routes_are_not_wrapped_by_lgos_middleware(
 
     assert "x-request-id" not in host_response.headers
     assert lgos_response.headers.get("x-request-id")
+
+
+async def test_host_handler_adds_request_fields_to_graph_node_records() -> None:
+    node_logger = logging.getLogger("tests.graph_node")
+    records: list[logging.LogRecord] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = Capture()
+    handler.addFilter(RequestContextFilter())
+    node_logger.addHandler(handler)
+
+    def answer(_state: MessageState) -> dict:
+        node_logger.warning("node.ran")
+        return {"messages": [AIMessage(content="done")]}
+
+    graph = StateGraph(MessageState).add_node("answer", answer)
+    graph = graph.set_entry_point("answer").set_finish_point("answer").compile()
+    registry = GraphRegistry(
+        graphs={"logging": GraphConfig(graph=graph, description="Logging graph")}
+    )
+    app = LanggraphOpenaiServe(registry=registry).bind_openai_api(prefix="/v1").app
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/v1/chat/completions",
+                headers={"X-Request-ID": "node-request"},
+                json={
+                    "model": "logging",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+    finally:
+        node_logger.removeHandler(handler)
+
+    assert response.status_code == status.HTTP_200_OK
+    (record,) = records
+    assert record.__dict__["request_id"] == "node-request"
+    assert record.__dict__["model"] == "logging"
