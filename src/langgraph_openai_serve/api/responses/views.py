@@ -59,11 +59,10 @@ async def create_response(  # ruff: ignore[too-many-arguments, too-many-position
         checkpoint_scope=checkpoint_scope,
     )
     if response_request.stream:
-        body = stream_owner.start(
+        return stream_owner.start(
             responses_service.stream_response(response_request, run),
             run,
         )
-        return StreamingResponse(body, media_type="text/event-stream")
     return await responses_service.collect_response(response_request, run)
 
 

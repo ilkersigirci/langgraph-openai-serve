@@ -363,6 +363,12 @@ event handling and [Request Cancellation](langgraph-integration.md#request-cance
 for request-scoped disconnect cancellation, proxy behavior, and cooperative
 limits.
 
+While a graph produces no output, such as during a long tool call, LGOS sends an
+SSE comment (`: ping`) every 15 seconds, as FastAPI's native SSE responses do, so
+idle proxy timeouts do not close the stream; SSE clients, including the OpenAI
+SDKs, ignore comments. Streams also send `Cache-Control: no-cache` and
+`X-Accel-Buffering: no`, which stops Nginx from buffering them.
+
 LGOS aggregates usage reported by LangChain model calls across the graph run.
 Completed and incomplete Responses include it in `usage`, and a Responses stream
 carries it on its terminal Response object. Chat streams add the standard final
