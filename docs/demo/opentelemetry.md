@@ -141,10 +141,10 @@ Use these values when querying LGOS Responses telemetry:
 | Conversation correlation | `gen_ai.conversation.id`, supplied through `metadata.conversation_id` |
 
 LGOS records the workflow span and metric; HTTP spans and metrics come from
-FastAPI. A Stop click, a closed stream, or a cancelled background Response is
-not a failure, so only a run that raised an exception carries `error.type`. The
-optional Langfuse callback marks a cancelled run's observations as errors, so
-query the workflow span or metric for failures.
+FastAPI. A run that raised an exception or stopped before its output, through a
+Stop click, a closed stream, or a cancelled background Response, carries
+`error.type`, so failure panels include cancellations. Its value, such as
+`asyncio.exceptions.CancelledError` or `GeneratorExit`, tells them apart.
 
 The `/v1/models` diagnostic above verifies export, but does not populate
 Responses request panels. Send a message from either UI to verify
