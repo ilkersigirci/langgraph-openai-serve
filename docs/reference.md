@@ -214,14 +214,19 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
 `LANGFUSE_BASE_URL` is optional; Langfuse Cloud is the default. Set it only for
-a different cloud region or a self-hosted instance. Langfuse's
-`CallbackHandler` owns its standard SDK configuration and error behavior. LGOS
-constructs it on the first graph run that needs runnable configuration, then
-reuses that process-wide handler. When enabled, the deployment-level toggle is
-authoritative: LGOS adds Langfuse alongside empty, list, or manager callbacks
-without altering the registered `GraphConfig` or caller-owned collection. To
-provide a custom Langfuse handler, leave the toggle off and pass that handler
-through `runtime_callbacks`.
+a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
+owns its standard SDK configuration and error behavior. LGOS constructs it on
+the first graph run that needs runnable configuration, then reuses that
+process-wide handler. Before that, LGOS creates the Langfuse client with
+`should_export_span` from `langgraph_openai_serve.integrations.langfuse`:
+Langfuse's default export filter without LGOS's [OpenTelemetry](#opentelemetry)
+spans, so each trace keeps the callback's root observation with the run's input
+and output. An application that creates its own Langfuse client first keeps its
+filter; pass the same `should_export_span` to keep those trace roots. When
+enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
+alongside empty, list, or manager callbacks without altering the registered
+`GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
+leave the toggle off and pass that handler through `runtime_callbacks`.
 
 For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
@@ -246,6 +251,38 @@ access to them.
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
 advertises polling-only background Responses.
+
+### OpenTelemetry
+
+LGOS reports every graph execution through the OpenTelemetry API, following the
+GenAI [workflow span](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span)
+and [workflow metric](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiinvoke_workflowduration)
+conventions. The API records nothing until the host application configures an
+SDK, for example with `opentelemetry-instrument`.
+
+| Signal | Name | Attributes |
+| --- | --- | --- |
+| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |
+| Histogram, unit `s` | `gen_ai.invoke_workflow.duration` | `gen_ai.workflow.name`, and `error.type` on failure |
+
+`gen_ai.workflow.name` is the registered model. Both signals cover graph
+execution through the final output; they exclude lease waits, background queue
+time, and checkpoint cleanup. The span is current only while LGOS advances the
+graph: spans the graph creates, such as model calls, are its children, while
+code that consumes a stream keeps its own parent span between events. A run
+that ends before its output exists fails: one that raises an exception, one
+cancelled by a disconnecting client or a cancelled background Response, and one
+whose stream the consumer closes mid-run. The span status is then `ERROR` with
+the exception message, if any, and `error.type` is the exception type, qualified
+by its module unless it is built in, such as `asyncio.exceptions.CancelledError`
+or `GeneratorExit`. Closing a stream after its final output is not a failure.
+[Design Choices](explanation/design-choices.md) lists the tracers whose
+cancellation handling this follows. A raised `Exception` propagates to its
+handler: LGOS routes and the background engines log it with its traceback, and
+direct Python callers receive it; cancellations and closed streams are not
+logged. The span does not repeat an exception as an event. The histogram uses
+the conventions' bucket boundaries, which start at one second; configure an SDK
+View for finer boundaries.
 
 ### Runtime Settings
 

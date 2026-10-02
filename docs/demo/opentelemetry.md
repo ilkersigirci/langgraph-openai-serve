@@ -74,25 +74,27 @@ Exact environment settings are listed in
 
 | Producer | Exported signals | Demo integration |
 | --- | --- | --- |
-| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, and Hatchet's native producer spans |
-| Coding-agent API | Traces, metrics, and logs | Python auto-instrumentation and FastAPI's native request telemetry |
+| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, LGOS workflow telemetry, and Hatchet's native producer spans |
+| Coding-agent API | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, and LGOS workflow telemetry |
 | Files API | Traces, metrics, and logs | Python auto-instrumentation and FastAPI's native request telemetry |
-| Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation plus Hatchet's native task spans |
+| Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation, LGOS workflow telemetry, and Hatchet's native task spans |
 | Chainlit | Traces | Python auto-instrumentation and FastAPI's native request telemetry; the long-lived Socket.IO connection and prompt-recording OpenAI instrumentors are excluded |
 | Open WebUI | Traces | Open WebUI's native OpenTelemetry settings |
 | Bifrost | Traces | Bifrost's OpenTelemetry plugin with content logging disabled |
 | LiteLLM | Traces and GenAI metrics | LiteLLM's native OpenTelemetry v2 integration with message-content capture disabled |
 | Local Collector | Its own metrics | Direct OTLP/HTTP export to the configured gateway |
 
-The package itself remains instrumentation-neutral. `opentelemetry-instrument`
-configures each demo process's providers, OTLP export, logging, and client
-instrumentation. Each demo FastAPI application records its own requests with
-[FastAPI's native OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/)
-through those providers and sets `auto_configure` to `False`, so FastAPI adds no
-second export. Health checks and Chainlit's Socket.IO connection are not traced.
-Routes include the mount, for example `http.route=/v1/responses`. Commands that
-Codex runs inside its own process are progress statuses, not spans. W3C trace
-context connects requests across the UI, proxy, gateway, and API when every hop
+LGOS reports each graph run as a GenAI workflow span and duration metric; see
+the package [OpenTelemetry reference](../reference.md#opentelemetry).
+`opentelemetry-instrument` configures each demo process's providers, OTLP
+export, logging, and client instrumentation. Each demo FastAPI application
+records its own requests with [FastAPI's native
+OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/) through
+those providers and sets `auto_configure` to `False`, so FastAPI adds no second
+export. Health checks and Chainlit's Socket.IO connection are not traced. Routes
+include the mount, for example `http.route=/v1/responses`. Commands that Codex
+runs inside its own process are progress statuses, not spans. W3C trace context
+connects requests across the UI, proxy, gateway, and API when every hop
 preserves `traceparent`.
 
 Bifrost's managed Responses route forwards `Idempotency-Key`, `traceparent`,
@@ -132,16 +134,17 @@ Use these values when querying LGOS Responses telemetry:
 | --- | --- |
 | HTTP request metrics | `http.route=/v1/responses` (`http_route` in Prometheus) |
 | API request span | `POST /v1/responses` |
-| Graph execution span | `lgos.graph_run` |
+| Graph execution span | `invoke_workflow {model}`, with `gen_ai.operation.name=invoke_workflow` |
+| Graph run metric | `gen_ai.invoke_workflow.duration` (`gen_ai_invoke_workflow_duration_seconds` in Prometheus) |
+| Failed graph run | `error.type` on the workflow span and metric |
 | Originating UI | The trace's root service: `lgos-chainlit` or `lgos-openwebui` |
 | Conversation correlation | `gen_ai.conversation.id`, supplied through `metadata.conversation_id` |
 
-Graph spans and Langfuse's `session.id` come from the optional Langfuse callback;
-HTTP spans and metrics come from FastAPI. On spans from the `langfuse-sdk`
-instrumentation scope, the Collector copies `session.id` to
-`gen_ai.conversation.id` when the latter is absent. There the value identifies a
-UI conversation; other services use `session.id` for their own sessions.
-Langfuse's original attribute is preserved, and no fallback ID is generated.
+LGOS records the workflow span and metric; HTTP spans and metrics come from
+FastAPI. A run that raised an exception or stopped before its output, through a
+Stop click, a closed stream, or a cancelled background Response, carries
+`error.type`, so failure panels include cancellations. Its value, such as
+`asyncio.exceptions.CancelledError` or `GeneratorExit`, tells them apart.
 
 The `/v1/models` diagnostic above verifies export, but does not populate
 Responses request panels. Send a message from either UI to verify
@@ -192,40 +195,43 @@ worker spans under the same trace ID.
 
 ### Query Foreground And Background Runs
 
-Graph-duration dashboards select `lgos.graph_run` from every service, so they
-include the background worker. In background mode, the API span ends after
-submission; the worker's `lgos.graph_run` span carries the execution duration
-and the normalized `gen_ai.conversation.id`. Requiring a conversation ID on
-`POST /v1/responses` omits these runs.
+In background mode, the API span ends after submission; the worker's workflow
+span and measurement carry the execution duration and `gen_ai.conversation.id`.
+Requiring a conversation ID on `POST /v1/responses` omits these runs. Only graph
+services emit the workflow metric, so graph run, failure, and duration panels
+need no service filter:
 
-For a Chainlit conversation table, query the graph span and
-`gen_ai.conversation.id` in both execution modes:
+```promql
+sum(increase(gen_ai_invoke_workflow_duration_seconds_count{service_namespace="lgos", error_type!=""}[$__range]))
+```
+
+For a Chainlit conversation table, query the workflow span in both execution
+modes:
 
 ```traceql
 { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && resource.service.name = "lgos-chainlit" }
->> { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && name = "lgos.graph_run" && span.gen_ai.conversation.id != nil }
+>> { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && span.gen_ai.operation.name = "invoke_workflow" && span.gen_ai.conversation.id != nil }
 | select(span.gen_ai.conversation.id)
 ```
 
 Use `lgos-openwebui` for the other client. The descendant operator preserves
-client attribution through the gateway and Hatchet. Graph span-metric queries
-select `span_name="lgos.graph_run"` the same way. These durations exclude
-Hatchet queue time, and graph rows appear after the span finishes. Graph spans
-and conversation links require the optional Langfuse callback in each graph
-process.
+client attribution through the gateway and Hatchet. Durations exclude Hatchet
+queue time, and graph rows appear after the span finishes.
 
-Request metrics still need a service filter because LiteLLM also reports
-`http.route=/v1/responses`. Fill it from the services that run graphs rather
-than a fixed list, for example with a Grafana variable:
+HTTP request metrics need a service filter because LiteLLM also reports
+`http.route=/v1/responses`. Fill it from the services that emit the workflow
+metric rather than a fixed list, for example with a Grafana variable:
 
 ```promql
-label_values(traces_spanmetrics_latency_count{service_namespace="lgos", span_name="lgos.graph_run"}, service)
+label_values(gen_ai_invoke_workflow_duration_seconds_count{service_namespace="lgos"}, service_name)
 ```
 
-Adding a graph service then needs no Collector or dashboard change.
+Adding a graph service then needs no dashboard change.
 
-The mapping applies during ingestion. Worker traces stored before it was enabled
-retain only `session.id` and need that attribute when queried historically.
+Graph-run counters start when a process records its first run. Prometheus 3.7
+and later counts that first value in `increase()` and `rate()` only with
+`--enable-feature=created-timestamp-zero-ingestion`, which writes each OTLP
+series' start time as a zero sample. Without it, low-traffic panels undercount.
 
 ## Collector Behavior
 
@@ -253,8 +259,10 @@ rejected-data metrics in that backend.
 
 When `LGOS_ENABLE_LANGFUSE=True`, LGOS adds the Langfuse callback to graph runs.
 Langfuse exports its observations through its native integration; the local
-Collector is not a Langfuse proxy. Do not add a second Langfuse exporter unless
-the deployment intentionally owns and tests that additional path.
+Collector is not a Langfuse proxy. LGOS keeps its workflow span out of Langfuse,
+so each Langfuse trace starts at the callback's `lgos.graph_run` observation. Do
+not add a second Langfuse exporter unless the deployment intentionally owns and
+tests that additional path.
 
 The Collector removes known Langfuse and GenAI payload attributes only from the
 general OTLP pipeline. Configure Langfuse's own masking and retention policy
@@ -264,7 +272,7 @@ before enabling it for sensitive workloads.
 
 The overlay does not choose the remote backend or its authentication,
 retention, sampling, access-control, and capacity policies. It also does not
-replace ingress access logs or add manual spans to LGOS. Before production use,
+replace ingress access logs. Before production use,
 the deployment must:
 
 - secure the OTLP gateway and validate TLS and authentication;
