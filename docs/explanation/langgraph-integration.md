@@ -216,11 +216,14 @@ For streaming Responses and Chat Completions (`stream=true`), LGOS ties graph
 iteration to the HTTP response lifetime. A request-scoped FastAPI dependency
 owns the producer task and memory channel behind `StreamingResponse`. When the
 client disconnects, dependency cleanup cancels that producer once and awaits it,
-which closes the graph stream, then releases the prepared run. The producer is a
-separate asyncio task because Starlette's AnyIO cancellation repeats at every
-await, which leaves LangGraph node tasks running once a stream reads message
-or custom events or subgraphs. This uses the normal OpenAI streaming
-connection; LGOS adds no custom cancellation route, header, or SSE event.
+which closes the graph stream, then releases the prepared run. Every graph run
+also reads LangGraph's stream from its own asyncio task. AnyIO cancellation,
+which Starlette and the in-memory background engine use, repeats at every
+await, and that leaves LangGraph node tasks running in parallel steps or once a
+stream reads message or custom events or subgraphs. The task receives a single
+cancellation instead, so cancelling any run, through asyncio or AnyIO, stops its
+graph work. This uses the normal OpenAI streaming connection; LGOS adds no
+custom cancellation route, header, or SSE event.
 
 !!! warning "Cancellation is cooperative"
 
