@@ -112,6 +112,10 @@ deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
 
+`RequestContextFilter` adds the active request's LGOS fields, such as
+`request_id`, to log records; install it on a host handler to enrich every
+record. See [Production Logging](how-to-guides/production-logging.md#application-formatting).
+
 Responses `input_file.file_id` content and native Chat file parts normalize to
 the same LangChain file block, so graphs receive native `file_id` values and
 decide whether to download, parse, or forward them. File upload and storage
