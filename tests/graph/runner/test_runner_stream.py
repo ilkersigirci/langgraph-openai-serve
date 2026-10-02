@@ -1,7 +1,12 @@
+from collections.abc import Awaitable, Callable
+from contextlib import aclosing
+
+import pytest
+from anyio import Event, create_task_group, fail_after, sleep_forever
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
-from langgraph.graph import StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import (
     CustomStreamPart,
     MessagesStreamPart,
@@ -12,6 +17,7 @@ from langgraph.types import (
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.run import GraphRun
 from langgraph_openai_serve.graph.runner import (
+    run_langgraph,
     run_langgraph_stream,
     stream_run,
 )
@@ -216,3 +222,60 @@ async def test_stream_uses_final_root_value_with_subgraph_values_present() -> No
         events = [event async for event in stream_run(run)]
 
     assert events == [AIMessage(content="root")]
+
+
+async def stream_events(request, graph_registry: GraphRegistry) -> None:
+    events = run_langgraph_stream(request, [HumanMessage(content="hi")], graph_registry)
+    async with aclosing(events):
+        async for _event in events:
+            pass
+
+
+async def invoke(request, graph_registry: GraphRegistry) -> None:
+    await run_langgraph(request, [HumanMessage(content="hi")], graph_registry)
+
+
+@pytest.mark.parametrize(
+    ("run", "nodes"),
+    [
+        pytest.param(stream_events, 1, id="token-stream"),
+        pytest.param(invoke, 2, id="parallel-nodes"),
+    ],
+)
+async def test_anyio_cancellation_stops_graph_work(
+    run: Callable[[object, GraphRegistry], Awaitable[None]],
+    nodes: int,
+    make_request,
+) -> None:
+    all_started, all_stopped = Event(), Event()
+    started: list[None] = []
+    stopped: list[None] = []
+
+    async def wait(_state: MessageState) -> dict:
+        # A node cancelled before it starts never reaches its finally block.
+        started.append(None)
+        if len(started) == nodes:
+            all_started.set()
+        try:
+            await sleep_forever()
+        finally:
+            stopped.append(None)
+            if len(stopped) == nodes:
+                all_stopped.set()
+        return {}
+
+    graph = StateGraph(MessageState)
+    for index in range(nodes):
+        name = f"wait-{index}"
+        graph = graph.add_node(name, wait).add_edge(START, name).add_edge(name, END)
+    registry = GraphRegistry(
+        graphs={"wait": GraphConfig(graph=graph.compile(), description="DUMMY")}
+    )
+
+    with fail_after(1):
+        # A cancel scope cancels again at every await, unlike one asyncio cancel.
+        async with create_task_group() as tasks:
+            tasks.start_soon(run, make_request("wait"), registry)
+            await all_started.wait()
+            tasks.cancel_scope.cancel()
+        await all_stopped.wait()

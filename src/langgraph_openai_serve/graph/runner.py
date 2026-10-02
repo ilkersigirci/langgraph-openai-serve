@@ -1,9 +1,11 @@
 """Run LangGraph workflows from protocol-neutral requests and messages."""
 
+import asyncio
 from collections.abc import AsyncGenerator, Collection
-from contextlib import aclosing
-from typing import Any, cast
+from contextlib import aclosing, suppress
+from typing import Any, Generic, TypeVar, cast
 
+from anyio import CancelScope, create_memory_object_stream
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.types import (
     Command,
@@ -25,6 +27,41 @@ LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
 LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
 
 _MISSING = object()
+_Item = TypeVar("_Item")
+
+
+class TaskStream(Generic[_Item]):
+    """
+    Produce an async generator's items from a dedicated asyncio task.
+
+    AnyIO cancels a scope again at every await, and LangGraph then leaves node
+    tasks running once it runs them in the background: in parallel steps, or
+    while a stream reads message or custom events or subgraphs. The producer
+    task instead receives exactly one asyncio cancellation, however its consumer
+    is cancelled.
+    """
+
+    def __init__(self, source: AsyncGenerator[_Item, None], *, name: str) -> None:
+        # An unbuffered handoff propagates consumer backpressure into the source.
+        self._send, self.receive = create_memory_object_stream[_Item](max_buffer_size=0)
+
+        async def produce() -> None:
+            async with self._send, aclosing(source):
+                async for item in source:
+                    await self._send.send(item)
+
+        self._producer = asyncio.create_task(produce(), name=name)
+
+    async def aclose(self) -> None:
+        """Stop the producer, then raise the exception that ended it, if any."""
+        with CancelScope(shield=True):
+            try:
+                self._producer.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._producer
+            finally:
+                self._send.close()
+                self.receive.close()
 
 
 async def run_langgraph(
@@ -123,9 +160,6 @@ async def stream_run(
     """
     run.begin_execution()
     # Without streaming, request only root values, exactly like ainvoke().
-    # LangGraph stops node tasks on one asyncio cancellation in every mode, but
-    # AnyIO's repeated cancellation leaves them running once a stream reads
-    # message or custom events or subgraphs; only token streams need those.
     stream_mode: list[StreamMode] = ["values"]
     if streaming:
         stream_mode += ["messages", "custom"]
@@ -151,8 +185,9 @@ async def stream_run(
                 version="v2",
             ),
         )
-        async with aclosing(workflow.iterate(graph_stream)) as parts:
-            async for part in parts:
+        parts = TaskStream(workflow.iterate(graph_stream), name="langgraph-astream")
+        try:
+            async for part in parts.receive:
                 if part["type"] == "values":
                     if not part["ns"]:
                         final_output = part["data"]
@@ -161,6 +196,8 @@ async def stream_run(
                         )
                 elif (event := _visible_event(part)) is not None:
                     yield event
+        finally:
+            await parts.aclose()
 
         output: LangGraphOutput
         if interrupts:
