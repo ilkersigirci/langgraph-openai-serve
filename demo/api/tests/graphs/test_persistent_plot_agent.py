@@ -251,7 +251,7 @@ async def test_streaming_response_completes_with_display_file_call(
                 _tool_call("show_quarterly_revenue", {}, "show-1"),
                 AIMessage(content="Q4 is highest at $230k."),
             ],
-            disable_streaming=True,
+            tags=["nostream"],
         )
     )
     app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app

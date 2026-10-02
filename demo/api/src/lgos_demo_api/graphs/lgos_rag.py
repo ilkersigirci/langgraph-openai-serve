@@ -176,7 +176,7 @@ def _chat_model() -> ChatOpenAI:
 
 @cache
 def _internal_chat_model() -> ChatOpenAI:
-    return _chat_model().model_copy(update={"disable_streaming": True})
+    return _chat_model().model_copy(update={"tags": ["nostream"]})
 
 
 class _DocsIndex:
