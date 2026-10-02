@@ -173,8 +173,8 @@ background worker:
    recent conversation text plus an attachment marker. It does not download
    attachment bytes.
 3. The selected path runs. Files are resolved only inside a model node that
-   needs them; research and note drafting use private
-   `ChatOpenAI(disable_streaming=True)` calls.
+   needs them; research and note drafting use private model calls tagged
+   `nostream`.
 4. With foreground streaming enabled, `answer` is the only token-streaming model
    call. Research and notebook status events appear as commentary. Background
    clients receive the polled result without streaming or commentary.

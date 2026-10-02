@@ -97,9 +97,8 @@ sequenceDiagram
 
 Streaming combines native LangGraph `updates` for completed tool calls/results,
 `custom` for existing `status_event()` progress, and `messages` for answer tokens.
-The answer model streams normally. Private selection calls use
-`ChatOpenAI(disable_streaming=True)`, so intermediate model text never enters the
-public answer.
+The answer model streams normally. Private selection calls carry LangGraph's
+`nostream` tag, so intermediate model text never enters the public answer.
 Streaming Responses show progress as commentary. Non-streaming responses omit
 this transient commentary.
 

@@ -138,7 +138,7 @@ intermediate updates.
     Background](../how-to-guides/background-responses.md).
 
 Internal model calls that must not reach the assistant text stream carry
-LangGraph's `nostream` tag, for example `model.with_config(tags=["nostream"])`.
+LangGraph's `nostream` tag, for example `ChatOpenAI(..., tags=["nostream"])`.
 Graph authors must follow the
 [assistant text parity contract](openai-compatibility.md#assistant-text-parity)
 because a graph cannot retract an intermediate draft after it has streamed it.

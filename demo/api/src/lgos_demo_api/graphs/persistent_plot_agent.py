@@ -256,7 +256,9 @@ def _chat_model() -> ChatOpenAI:
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         temperature=0,
-        disable_streaming=True,
+        # Keep every agent turn out of the stream; LGOS sends the final answer
+        # from the graph's state.
+        tags=["nostream"],
         model_kwargs={"parallel_tool_calls": False},
     )
 

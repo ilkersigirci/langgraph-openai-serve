@@ -40,7 +40,7 @@ flowchart TD
 ```
 
 The retry is deliberately bounded to one rewrite. Routing, grading, and
-rewriting use internal `ChatOpenAI(disable_streaming=True)` calls; retrieval uses
+rewriting use internal `ChatOpenAI` calls tagged `nostream`; retrieval uses
 the in-memory vector index. Direct, grounded, and no-result answers are the
 user-visible streamed model calls.
 

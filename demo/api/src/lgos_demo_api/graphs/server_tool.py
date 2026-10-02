@@ -48,14 +48,15 @@ class ServerToolState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def _chat_model(*, disable_streaming: bool = False) -> ChatOpenAI:
+def _chat_model(*, private: bool = False) -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.OPENAI_MODEL,
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         use_responses_api=True,
         store=False,
-        disable_streaming=disable_streaming,
+        # LangGraph emits none of a nostream call's output in its messages stream.
+        tags=["nostream"] if private else None,
     )
 
 
@@ -87,7 +88,7 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
         raise ValueError("web_search requires a non-empty query")
     if settings.WEB_SEARCH_BACKEND == "openai":
         result = await (
-            _chat_model(disable_streaming=True)
+            _chat_model(private=True)
             .bind_tools([{"type": "web_search"}], tool_choice="required")
             .ainvoke(query)
         )
@@ -158,7 +159,7 @@ def create_server_tool_graph() -> CompiledStateGraph[
 ]:
     """Select tools once, execute them, then stream an answer with citations."""
     model = _chat_model()
-    internal_model = _chat_model(disable_streaming=True)
+    internal_model = _chat_model(private=True)
 
     def start(
         _state: ServerToolState, runtime: Runtime[GraphRequest]

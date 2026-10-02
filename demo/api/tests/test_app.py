@@ -498,15 +498,15 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         requests.append(body)
         assert request.url.path.endswith("/responses")
         assert body["store"] is False
+        # The private selection call streams too, but its tokens stay hidden.
+        assert bool(body.get("stream")) == stream
         if selecting:
-            assert not body.get("stream")
             assert body["tools"][0]["type"] == "custom"
             assert body["tools"][0]["name"] == "lgos_package_version"
             assert body["parallel_tool_calls"] is False
             assert body["tool_choice"] == choice
         else:
             assert "tools" not in body
-            assert bool(body.get("stream")) == stream
             result = next(
                 item
                 for item in body["input"]
@@ -555,38 +555,51 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
             "output": output,
         }
         if body.get("stream"):
-            text = result["output"]
-            item = output[0]
             events = [
                 {
                     "type": "response.created",
                     "response": {**payload, "output": [], "status": "in_progress"},
-                },
-                {
-                    "type": "response.output_item.added",
-                    "output_index": 0,
-                    "item": {**item, "content": [], "status": "in_progress"},
-                },
-                {
-                    "type": "response.content_part.added",
-                    "output_index": 0,
-                    "content_index": 0,
-                    "item_id": item["id"],
-                    "part": {"type": "output_text", "text": "", "annotations": []},
-                },
-                *[
-                    {
-                        "type": "response.output_text.delta",
-                        "output_index": 0,
-                        "content_index": 0,
-                        "item_id": item["id"],
-                        "delta": delta,
-                    }
-                    for delta in (text[:10], text[10:])
-                ],
-                {"type": "response.output_item.done", "output_index": 0, "item": item},
-                {"type": "response.completed", "response": payload},
+                }
             ]
+            for index, item in enumerate(output):
+                if item["type"] == "message":
+                    text = item["content"][0]["text"]
+                    events += [
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": index,
+                            "item": {**item, "content": [], "status": "in_progress"},
+                        },
+                        {
+                            "type": "response.content_part.added",
+                            "output_index": index,
+                            "content_index": 0,
+                            "item_id": item["id"],
+                            "part": {
+                                "type": "output_text",
+                                "text": "",
+                                "annotations": [],
+                            },
+                        },
+                        *[
+                            {
+                                "type": "response.output_text.delta",
+                                "output_index": index,
+                                "content_index": 0,
+                                "item_id": item["id"],
+                                "delta": delta,
+                            }
+                            for delta in (text[:10], text[10:])
+                        ],
+                    ]
+                events.append(
+                    {
+                        "type": "response.output_item.done",
+                        "output_index": index,
+                        "item": item,
+                    }
+                )
+            events.append({"type": "response.completed", "response": payload})
             return Response(
                 200,
                 headers={"content-type": "text/event-stream"},

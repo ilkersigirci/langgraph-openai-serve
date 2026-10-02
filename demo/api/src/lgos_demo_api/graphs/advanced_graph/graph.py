@@ -149,7 +149,9 @@ def create_advanced_graph(
     store: BaseStore,
     web_search_tool: BaseTool = web_search,
 ) -> AdvancedGraph:
-    internal_model = model.model_copy(update={"disable_streaming": True})
+    internal_model = model.model_copy(
+        update={"tags": [*(model.tags or []), "nostream"]}
+    )
     research_graph = create_research_graph(
         internal_model,
         knowledge,
