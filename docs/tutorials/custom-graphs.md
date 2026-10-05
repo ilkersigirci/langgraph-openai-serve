@@ -238,11 +238,11 @@ same ordered content for a complete response.
 
     Tag private model calls with LangGraph's
     [`nostream`](https://docs.langchain.com/oss/python/langgraph/streaming#omit-messages-from-the-stream)
-    tag, for example `ChatOpenAI(..., tags=["nostream"])`. The call still runs
-    and returns its output, but LangGraph emits none of it, so internal graph
-    work never appears as assistant output while public model calls continue to
-    stream normally. Reserve `disable_streaming=True` for models that cannot
-    stream.
+    tag, for example `ChatOpenAI(..., tags=[TAG_NOSTREAM])` with `TAG_NOSTREAM`
+    from `langgraph.constants`. The call still runs and returns its output, but
+    LangGraph emits none of its tokens, so internal graph work never appears as
+    assistant output while public model calls continue to stream normally.
+    Reserve `disable_streaming=True` for models that cannot stream.
 
 ## Status Updates
 

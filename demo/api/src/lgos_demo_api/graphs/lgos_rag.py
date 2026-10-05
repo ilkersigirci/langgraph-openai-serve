@@ -22,6 +22,7 @@ from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.config import get_stream_writer
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -171,12 +172,15 @@ def _chat_model() -> ChatOpenAI:
         base_url=settings.OPENAI_BASE_URL,
         api_key=SecretStr(settings.OPENAI_API_KEY),
         temperature=0,
+        # ChatOpenAI asks for streamed usage only from OpenAI's default URL; ask
+        # through the gateway too, so LGOS can report streamed calls' usage.
+        stream_usage=True,
     )
 
 
 @cache
 def _internal_chat_model() -> ChatOpenAI:
-    return _chat_model().model_copy(update={"tags": ["nostream"]})
+    return _chat_model().model_copy(update={"tags": [TAG_NOSTREAM]})
 
 
 class _DocsIndex:

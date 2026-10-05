@@ -12,6 +12,7 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
@@ -150,7 +151,7 @@ def create_advanced_graph(
     web_search_tool: BaseTool = web_search,
 ) -> AdvancedGraph:
     internal_model = model.model_copy(
-        update={"tags": [*(model.tags or []), "nostream"]}
+        update={"tags": [*(model.tags or []), TAG_NOSTREAM]}
     )
     research_graph = create_research_graph(
         internal_model,

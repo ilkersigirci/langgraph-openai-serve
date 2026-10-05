@@ -11,6 +11,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.messages.tool import tool_call
 from langchain_openai import ChatOpenAI
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph_openai_serve import (
@@ -256,9 +257,12 @@ def _chat_model() -> ChatOpenAI:
         base_url=settings.OPENAI_BASE_URL,
         api_key=settings.OPENAI_API_KEY,
         temperature=0,
+        # ChatOpenAI asks for streamed usage only from OpenAI's default URL; ask
+        # through the gateway too, so LGOS can report streamed calls' usage.
+        stream_usage=True,
         # Keep every agent turn out of the stream; LGOS sends the final answer
         # from the graph's state.
-        tags=["nostream"],
+        tags=[TAG_NOSTREAM],
         model_kwargs={"parallel_tool_calls": False},
     )
 

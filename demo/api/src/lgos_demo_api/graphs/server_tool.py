@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMe
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI, custom_tool
 from langgraph.config import get_stream_writer
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -56,7 +57,7 @@ def _chat_model(*, private: bool = False) -> ChatOpenAI:
         use_responses_api=True,
         store=False,
         # LangGraph emits none of a nostream call's output in its messages stream.
-        tags=["nostream"] if private else None,
+        tags=[TAG_NOSTREAM] if private else None,
     )
 
 

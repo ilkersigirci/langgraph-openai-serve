@@ -376,6 +376,12 @@ empty-choices usage chunk only when the request sets
 `stream_options={"include_usage": true}`. When underlying providers report no
 usage, LGOS omits it rather than estimating tokens.
 
+A model call that streams reports usage only when its request asks for it, and
+LangChain's `ChatOpenAI` asks automatically only for OpenAI's default URL. Set
+[`stream_usage=True`](https://reference.langchain.com/python/langchain-openai/chat_models/ChatOpenAI/stream_usage)
+on models that stream through another base URL, such as a gateway. This includes
+private calls tagged `nostream`, which still stream from the provider.
+
 ### Assistant Text Parity
 
 The final rendered `AIMessage.text` is the canonical assistant text.

@@ -156,7 +156,8 @@ Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
 graph's `messages` stream. To keep a private model call out of the stream, tag
 it with LangGraph's
 [`nostream`](https://docs.langchain.com/oss/python/langgraph/streaming#omit-messages-from-the-stream)
-tag, for example `ChatOpenAI(..., tags=["nostream"])`; the call still runs and
+tag (`langgraph.constants.TAG_NOSTREAM`), for example
+`ChatOpenAI(..., tags=[TAG_NOSTREAM])`; the call still runs and
 returns its output, but LangGraph emits none of its tokens.
 [`disable_streaming=True`](https://reference.langchain.com/python/langchain-core/language_models/chat_models/BaseChatModel/disable_streaming)
 is for models that cannot stream: it makes the provider request non-streaming,
