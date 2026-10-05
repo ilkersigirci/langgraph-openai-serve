@@ -171,10 +171,10 @@ A directly supplied compiled graph is reused and validated when its
 and is never cached; LGOS validates each resolved value as a compiled state graph
 and rechecks it before execution. Validation checks the context schema and
 interrupt checkpointer capabilities, rejects static breakpoints
-(`interrupt_before` or `interrupt_after`), since LGOS pauses only at
-`interrupt()`, and rejects a checkpointer on a graph without
-`GraphFeature.INTERRUPTS`, since clients send the full conversation with every
-other request. A registry with an
+(`interrupt_before` or `interrupt_after`) in the graph or its subgraph nodes,
+since LGOS pauses only at `interrupt()`, and rejects a checkpointer, including
+`checkpointer=True`, on a graph without `GraphFeature.INTERRUPTS`, since clients
+send the full conversation with every other request. A registry with an
 interrupt-enabled graph and no `run_coordinator` fails during `GraphRegistry`
 construction. A graph may declare both interrupts and background; a background
 run that reaches an interrupt completes with `lgos_interrupt` function calls,

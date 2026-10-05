@@ -1,7 +1,10 @@
+from collections.abc import Callable
+
 import pytest
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
 from langgraph_openai_serve import (
@@ -122,26 +125,45 @@ def two_step_graph(**compile_options):
     return graph.set_finish_point("second").compile(**compile_options)
 
 
+def with_subgraph(subgraph):
+    graph = StateGraph(MessageState).add_node("subgraph", subgraph)
+    return graph.set_entry_point("subgraph").set_finish_point("subgraph").compile()
+
+
 @pytest.mark.parametrize(
-    ("compile_options", "error"),
+    ("build", "error"),
     [
         pytest.param(
-            {"interrupt_before": ["second"]}, "interrupt_before", id="interrupt-before"
+            lambda: two_step_graph(interrupt_before=["second"]),
+            "interrupt_before",
+            id="interrupt-before",
         ),
         pytest.param(
-            {"interrupt_after": ["first"]}, "interrupt_after", id="interrupt-after"
+            lambda: two_step_graph(interrupt_after=["first"]),
+            "interrupt_after",
+            id="interrupt-after",
         ),
         pytest.param(
-            {"checkpointer": InMemorySaver()},
+            lambda: with_subgraph(two_step_graph(interrupt_after=["first"])),
+            "interrupt_after",
+            id="subgraph-interrupt-after",
+        ),
+        pytest.param(
+            lambda: two_step_graph(checkpointer=InMemorySaver()),
             "checkpointer",
             id="checkpointer-without-interrupts",
+        ),
+        pytest.param(
+            lambda: two_step_graph(checkpointer=True),
+            "checkpointer",
+            id="inherited-checkpointer",
         ),
     ],
 )
 async def test_graphs_lgos_cannot_serve_are_rejected(
-    compile_options: dict, error: str
+    build: Callable[[], CompiledStateGraph], error: str
 ) -> None:
-    graph = two_step_graph(**compile_options)
+    graph = build()
 
     with pytest.raises(GraphError, match=error):
         GraphConfig(graph=graph, description="DUMMY")

@@ -7,6 +7,7 @@ from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.pregel import Pregel
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -165,12 +166,18 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
         msg = "Graph factories must return a compiled LangGraph StateGraph."
         raise GraphError(msg)
 
-    # LGOS reports only interrupt() pauses; a static breakpoint would end the run
-    # early and render its partial state as the final answer.
-    if graph.interrupt_before_nodes or graph.interrupt_after_nodes:
+    # LGOS reports only interrupt() pauses; a static breakpoint, in the graph or
+    # a subgraph node, would end the run early and render its partial state as
+    # the final answer.
+    graphs = [graph, *(subgraph for _, subgraph in graph.get_subgraphs(recurse=True))]
+    if any(
+        isinstance(item, Pregel)
+        and (item.interrupt_before_nodes or item.interrupt_after_nodes)
+        for item in graphs
+    ):
         msg = (
-            "Graphs must pause with interrupt(); compile them without "
-            "interrupt_before or interrupt_after."
+            "Graphs must pause with interrupt(); compile them and their subgraphs "
+            "without interrupt_before or interrupt_after."
         )
         raise GraphError(msg)
 
@@ -196,9 +203,12 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
                 "checkpointer with thread deletion."
             )
             raise GraphError(msg)
-    elif isinstance(graph.checkpointer, BaseCheckpointSaver):
+    elif graph.checkpointer is True or isinstance(
+        graph.checkpointer, BaseCheckpointSaver
+    ):
         # LGOS supplies a checkpoint thread only to interrupt runs; clients send
-        # the full conversation with every other request.
+        # the full conversation with every other request. checkpointer=True, which
+        # inherits a parent's saver, also fails on a root graph.
         msg = "Only interrupt-enabled graphs may be compiled with a checkpointer."
         raise GraphError(msg)
 
