@@ -56,11 +56,11 @@ not control retained telemetry.
 
 ## Application formatting
 
-Configure logging in the host application. The runnable demo's
-`demo/api/src/lgos_demo_api/core/logging.py` shows how to format LGOS and
-Uvicorn server records together without changing the LGOS package. The demo
-disables Uvicorn access logs; enable access logging at the ASGI server or
-ingress layer that owns request timing and retention.
+Configure logging in the host application. [`lgos serve`](server.md) does this
+for you; `langgraph_openai_serve/server/logging.py` shows how it formats LGOS,
+Uvicorn, and application records together as JSON. It disables Uvicorn access
+logs; enable access logging at the ingress layer that owns request timing and
+retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
 `stream`, and `operation_id`. If OpenTelemetry's Python logging

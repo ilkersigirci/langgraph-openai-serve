@@ -1,5 +1,7 @@
+import logging
 from dataclasses import dataclass
 
+from opentelemetry import trace
 from opentelemetry.sdk.metrics.export import HistogramDataPoint, InMemoryMetricReader
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -34,3 +36,16 @@ class Telemetry:
             for point in metric.data.data_points
             if isinstance(point, HistogramDataPoint)
         ]
+
+
+class TraceContextHandler(logging.Handler):
+    """Record each log record with the span context active when it was emitted."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+        self.contexts: list[trace.SpanContext] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+        self.contexts.append(trace.get_current_span().get_span_context())

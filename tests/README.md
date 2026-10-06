@@ -7,6 +7,10 @@ Keep test setup explicit and assertions focused on observable behavior.
 - `tests/` owns the installed package's API, graph runner, and utility tests.
 - `tests/api/interrupt/` keeps the Responses interrupt codec, response, HTTP
   contract, durable-state, and concurrency coverage together.
+- `tests/server/` covers `lgos serve`, `lgos worker`, and
+  `langgraph_openai_serve.server`. Build its apps with
+  `tests.server.support.server_settings()`, so `LGOS_*` variables from the
+  environment never reach a test.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `just demo/test`; add `--editable` to overlay the current LGOS
   checkout into both graph API test runs.
@@ -114,7 +118,9 @@ timer only masks the environment failure.
 - Graphs with `features={GraphFeature.INTERRUPTS}` must use a fresh
   `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer and a fresh
   `InMemoryRunCoordinator` per test. Register the coordinator on
-  `GraphRegistry.run_coordinator`.
+  `GraphRegistry.run_coordinator`. Server tests instead compile with the
+  `ServerResources` a fresh app opens, which are in-process without
+  `LGOS_POSTGRES_URI`.
 - The checkpointer used by an interrupt graph must implement asynchronous state
   reads, checkpoint writes, pending writes, and `adelete_thread`;
   configuration-error tests should make whichever

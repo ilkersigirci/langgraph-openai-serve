@@ -1,0 +1,26 @@
+services:
+  api:
+    command: ["opentelemetry-instrument", "lgos", "serve"]
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+  worker:
+    command: ["opentelemetry-instrument", "lgos", "worker"]
+    environment:
+      OTEL_SERVICE_NAME: {{ cookiecutter.project_name }}-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      OTEL_COLLECTOR_UPSTREAM: ${OTEL_COLLECTOR_UPSTREAM}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./docker/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+

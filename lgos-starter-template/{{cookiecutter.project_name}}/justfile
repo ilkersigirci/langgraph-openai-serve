@@ -1,0 +1,72 @@
+set default-list
+set dotenv-load
+set minimum-version := "1.58.0"
+set positional-arguments
+set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
+
+# The registry factory that `lgos serve` and `lgos worker` run.
+export LGOS_REGISTRY := "{{ cookiecutter.project_slug }}.registry:create_registry"
+
+# Local runs default to in-process background Responses; containers read .env as is.
+export LGOS_BACKGROUND := if env("LGOS_BACKGROUND", "") == "" { "memory" } else { env("LGOS_BACKGROUND") }
+
+# Generate a lockfile, install dependencies, and create .env only if absent.
+setup:
+    uv sync
+    [ -e .env ] || cp .env.example .env
+
+# Serve the graphs; set APP_OPENAI_API_KEY in .env first.
+run:
+    uv run --locked lgos serve
+
+# Export traces, metrics, and logs to OTEL_EXPORTER_OTLP_ENDPOINT.
+run-otel:
+    uv run --locked opentelemetry-instrument lgos serve
+
+# Run background Responses from Hatchet; requires LGOS_BACKGROUND=hatchet.
+worker:
+    uv run --locked lgos worker
+
+# Start the local database for durable interrupts.
+postgres:
+    docker compose up --wait postgres
+
+# Run tests without a provider, database, or telemetry service.
+test *args:
+    uv run --locked pytest "$@"
+
+lint:
+    just --fmt --check
+    uv run --locked ruff check .
+    uv run --locked ruff format --check .
+
+format:
+    just --fmt
+    uv run --locked ruff check --fix .
+    uv run --locked ruff format .
+
+type-check:
+    uv run --locked ty check src
+
+# Preview or strictly build the application documentation.
+[arg('serve', long, value='true')]
+docs serve='false':
+    uv run --locked zensical {% raw %}{{ if serve == "true" { "serve --dev-addr 127.0.0.1:8001" } else { "build --clean --strict" } }}{% endraw %}
+
+# Validate every Compose model without contacting services.
+compose-config:
+    docker compose --env-file .env.example --profile background config --quiet
+    docker compose --env-file .env.example -f compose.yaml -f docker/otel.yaml --profile background config --quiet
+
+check: test lint type-check docs
+
+# Build and run the containers; COMPOSE_PROFILES=background adds the worker.
+up *args:
+    docker compose up --build --wait "$@"
+
+down:
+    docker compose down
+
+# Install hooks after initializing your Git repository.
+hooks-install:
+    uv run --locked prek install

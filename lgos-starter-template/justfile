@@ -1,0 +1,16 @@
+set default-list
+set minimum-version := "1.58.0"
+set positional-arguments
+set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
+
+# Test the default rendering and alternate project identifiers.
+test *args:
+    uv run --locked pytest "$@"
+
+# Check the template-maintenance Python code; rendered code is checked by CI.
+lint:
+    just --fmt --check
+    uv run --locked ruff check tests lgos_template_extensions.py
+    uv run --locked ruff format --check tests lgos_template_extensions.py
+
+check: test lint

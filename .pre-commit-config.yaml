@@ -1,3 +1,6 @@
+# Cookiecutter source is checked after rendering by the starter test suite.
+exclude: '^lgos-starter-template/(hooks/|\{\{cookiecutter\.project_name\}\}/)'
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

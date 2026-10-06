@@ -81,6 +81,8 @@ Package settings:
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `False` | Enables docs only for the mounted OpenAI app. |
 | `LGOS_ENABLE_LANGFUSE` | `False` | Lazily adds the package Langfuse callback to every graph run. |
 
+The `lgos` command adds the [server settings](how-to-guides/server.md#settings).
+
 Settings prefixed with `DEMO_` belong to the independent example applications
 and are documented under [Demo Settings and Commands](demo/reference.md).
 
@@ -386,7 +388,10 @@ is held. Choose a TTL longer than the longest time a user may take to answer. To
 write your own cleanup, select threads whose checkpoint metadata contains
 `OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
 confirm that its latest checkpoint in any namespace is still older than your
-TTL, and delete it through the checkpointer.
+TTL, and delete it through the checkpointer. `lgos serve` runs this sweep in
+each API process, configured by `LGOS_INTERRUPT_TTL_MINUTES` and
+`LGOS_INTERRUPT_SWEEP_INTERVAL_MINUTES`; set the interval to `0` when one
+scheduled job sweeps instead.
 
 ### PostgreSQL Coordination
 
@@ -458,6 +463,18 @@ at submission.
 
 See [Run Responses In The Background](how-to-guides/background-responses.md)
 for the client contract, graph requirements, and deployment wiring.
+
+## Server
+
+Install `langgraph-openai-serve[server]` for the `lgos` command and
+`langgraph_openai_serve.server`. `lgos serve module:attribute` and
+`lgos worker module:attribute` run a `RegistryFactory`: a callable that takes
+`ServerResources` (`checkpointer`, `store`, `run_coordinator`) and returns a
+`GraphRegistry`, or an async context manager that yields one.
+`create_app(factory, settings=...)` returns the FastAPI application that
+`lgos serve` runs; its lifespan opens the resources and mounts the OpenAI
+routes. `ServerSettings` reads the `LGOS_*` server settings. See
+[Run The LGOS Server](how-to-guides/server.md).
 
 ## Streaming Status
 

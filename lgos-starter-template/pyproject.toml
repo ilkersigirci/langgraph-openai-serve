@@ -1,0 +1,22 @@
+[project]
+name = "lgos-starter-template-tests"
+version = "0.1.0"
+requires-python = ">=3.11,<3.15"
+dependencies = ["cookiecutter>=2.7.1,<3", "pytest>=9,<10", "pyyaml>=6,<7", "ruff>=0.16.10,<0.17"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--import-mode=importlib"]
+
+[tool.ruff]
+extend = "../demo/ruff.toml"
+extend-exclude = ["hooks", "*cookiecutter*"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Generator tests execute fixed commands against isolated temporary projects.
+"tests/*.py" = ["assert", "implicit-namespace-package", "suspicious-subprocess-import", "subprocess-without-shell-equals-true"]
+# Cookiecutter imports this standalone module from the template directory.
+"lgos_template_extensions.py" = ["implicit-namespace-package"]

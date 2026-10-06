@@ -1,0 +1,71 @@
+name: Test starter template
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.23"
+          python-version: "3.13"
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+      - run: just lgos-starter-template/check
+
+  application:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.23"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+      - name: Generate outside the repository
+        env:
+          TEMPLATE_PYTHON: ${{ matrix.python }}
+        run: >-
+          uv run --project lgos-starter-template --locked cookiecutter
+          ./lgos-starter-template --no-input --output-dir "$RUNNER_TEMP"
+          project_name=starter-ci python_version="$TEMPLATE_PYTHON"
+      # The template and the server it runs change together, so check the
+      # generated project against this checkout rather than the PyPI release.
+      - name: Use this checkout's LGOS
+        working-directory: ${{ runner.temp }}/starter-ci
+        run: uv add --no-sync --editable "$GITHUB_WORKSPACE" --extra server
+      - name: Install and check the application
+        working-directory: ${{ runner.temp }}/starter-ci
+        run: |
+          just setup
+          just check
+          just compose-config
+          uv build --wheel

@@ -58,6 +58,22 @@ tracing = [
     "langchain>=1.2.11",
     "langfuse>=4.0.0,<5.0.0",
 ]
+# The `lgos` command: every integration, JSON logging, and OpenTelemetry export.
+server = [
+    "langgraph_openai_serve[hatchet,postgres,tracing]",
+    "fastapi>=0.142.2", # Native FastAPI telemetry that the server configures.
+    "hatchet-sdk[otel]>=1.40.3,<2",
+    "opentelemetry-distro>=0.66b0,<0.67",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2",
+    "opentelemetry-instrumentation-httpx>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-logging>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-psycopg>=0.66b0,<0.67",
+    "psycopg[binary]>=3.3.4,<4", # Container images need the bundled libpq.
+    "structlog>=26.1.0,<27",
+]
+
+[project.scripts]
+lgos = "langgraph_openai_serve.cli:main"
 
 [dependency-groups]
 dev = [
@@ -80,9 +96,8 @@ test = [
     "pytest-xdist>=3.6.1",
     "pytest>=9.0.2",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
-    "psycopg[binary,pool]>=3.3.4,<4",
+    "langgraph_openai_serve[server]",
     "pytest-env>=1.6.0",
-    "hatchet-sdk>=1.40.3,<2",
     "opentelemetry-sdk>=1.35.0,<2",
 ]
 [tool.uv]
@@ -104,13 +119,13 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.ruff]
-target-version = "py311"
 line-length = 88
 src = ["src"]
 respect-gitignore = true
 
 extend-exclude = [
     "docs",
+    "lgos-starter-template", # Jinja templates and their tests have a separate check.
 ]
 
 [tool.ruff.format]
