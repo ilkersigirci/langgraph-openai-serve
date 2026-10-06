@@ -69,3 +69,33 @@ jobs:
           just check
           just compose-config
           uv build --wheel
+
+  image:
+    name: Image with released LGOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: "0.12.23"
+          python-version: "3.13"
+          enable-cache: true
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: "1.58.0"
+      - name: Generate outside the repository
+        run: >-
+          uv run --project lgos-starter-template --locked cookiecutter
+          ./lgos-starter-template --no-input --output-dir "$RUNNER_TEMP"
+          project_name=starter-image
+      # A path source cannot enter the build context, so the image installs the
+      # PyPI release that the template's constraint selects.
+      - name: Build the application image
+        working-directory: ${{ runner.temp }}/starter-image
+        run: |
+          just setup
+          docker build --tag starter-image:ci .
+          docker run --rm --entrypoint lgos starter-image:ci --help
