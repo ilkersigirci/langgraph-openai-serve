@@ -39,8 +39,7 @@ dependencies = [
     "fastapi>=0.121.0",
     "langgraph>=1.2.6,<2.0.0",
     "openai>=3.20.0,<4.0.0",
-    # Graph runs report through the API only; without an SDK it records nothing.
-    "opentelemetry-api>=1.35.0,<2",
+    "opentelemetry-api>=1.35.0,<2", # NOTE: Graph runs report through the API only; without an SDK it records nothing.
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
     "uvicorn>=0.51.0",
