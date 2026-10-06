@@ -10,6 +10,7 @@ from langgraph_openai_serve import (
     openai_server,
 )
 from langgraph_openai_serve.core.settings import Settings
+from tests.graph.support.telemetry import Telemetry
 
 
 def _bind_test_app(
@@ -140,6 +141,26 @@ async def test_openai_api_schema_describes_mounted_api(
     assert "/models" in schema["paths"]
     assert "/models/{model}" in schema["paths"]
     assert schema["servers"] == [{"url": "/v1"}]
+
+
+async def test_mounted_api_leaves_http_telemetry_to_the_host(
+    graph_registry: GraphRegistry,
+    telemetry: Telemetry,
+) -> None:
+    host = FastAPI(telemetry={"tracing": False, "metrics": False, "logs": False})
+    LanggraphOpenaiServe(registry=graph_registry, app=host).bind_openai_api()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=host), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    spans = telemetry.span_exporter.get_finished_spans()
+    assert [span.name for span in spans] == ["invoke_workflow test"]
 
 
 def test_openai_api_prefix_settings_normalizes_trailing_slash() -> None:

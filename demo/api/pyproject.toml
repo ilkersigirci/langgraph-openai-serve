@@ -9,7 +9,7 @@ dependencies = [
     "fastapi>=0.142.2",
     "hatchet-sdk[otel]", # LGOS supplies Hatchet; the demo also needs its telemetry extra.
     "httpx2>=2.13,<3",
-    "langchain-openai>=1.6.2",
+    "langchain-openai>=1.6.6",
     "langchain-text-splitters>=1.1.0",
     "langgraph-openai-serve[hatchet,postgres,tracing]>=0.27.0",
     "numpy>=2.4.6",

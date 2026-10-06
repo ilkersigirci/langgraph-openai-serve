@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -53,7 +53,7 @@ class InMemoryRunCoordinator:
         self._active: set[str] = set()
 
     @asynccontextmanager
-    async def __call__(self, key: str, /) -> AsyncIterator[None]:
+    async def __call__(self, key: str, /) -> AsyncGenerator[None, None]:
         """Hold the lease for ``key`` or raise ``RunBusyError``."""
         if key in self._active:
             raise RunBusyError

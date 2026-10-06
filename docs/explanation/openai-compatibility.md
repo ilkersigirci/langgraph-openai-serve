@@ -503,7 +503,11 @@ status; graph adapters such as `context_factory` may raise it too. Shared
 handlers translate FastAPI validation and HTTP errors into the same envelope.
 A `GraphError` or any other unexpected failure returns HTTP 500 with
 `type: "server_error"` and the message `Internal server error`; the details are
-logged, not returned.
+logged, not returned. A LangChain `ContextOverflowError`, which provider
+integrations such as `langchain-openai` raise when a model call exceeds the
+context window, returns HTTP 400 with `code: "context_length_exceeded"` instead,
+so OpenAI clients do not retry it. Streams and background Responses report it as
+`server_error`, like any other graph failure.
 
 Invalid runtime settings return HTTP 400 with
 `param: "metadata.lgos_settings"`. A proxy-stripped model

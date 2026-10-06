@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -128,7 +128,7 @@ async def test_failed_run_keeps_its_error_when_its_lease_release_fails() -> None
     released = Event()
 
     @asynccontextmanager
-    async def failing_lease() -> AsyncIterator[None]:
+    async def failing_lease() -> AsyncGenerator[None, None]:
         try:
             yield
         finally:
@@ -212,7 +212,7 @@ async def test_hung_cleanup_is_abandoned_and_releases_the_lease(
     released = Event()
 
     @asynccontextmanager
-    async def lease() -> AsyncIterator[None]:
+    async def lease() -> AsyncGenerator[None, None]:
         try:
             yield
         finally:

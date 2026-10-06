@@ -277,6 +277,11 @@ and [workflow metric](https://github.com/open-telemetry/semantic-conventions-gen
 conventions. The API records nothing until the host application configures an
 SDK, for example with `opentelemetry-instrument`.
 
+HTTP request telemetry belongs to the host app. The mounted OpenAI app turns off
+[FastAPI's native OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/),
+so the host's `telemetry` settings, including turning it off, cover LGOS routes,
+and `http.route` includes the mount, such as `/v1/responses`.
+
 | Signal | Name | Attributes |
 | --- | --- | --- |
 | Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |

@@ -5,7 +5,7 @@ LGOS uses only the OpenTelemetry API, so nothing is recorded until the
 application configures an SDK.
 """
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from importlib.metadata import version
 from time import perf_counter
@@ -32,7 +32,7 @@ _duration = _meter.create_histogram(
 
 
 @contextmanager
-def invoke_workflow(request: GraphRequest) -> Iterator[Span]:
+def invoke_workflow(request: GraphRequest) -> Generator[Span, None, None]:
     """
     Record one graph execution as an ``invoke_workflow`` span and duration.
 

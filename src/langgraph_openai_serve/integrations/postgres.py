@@ -1,6 +1,6 @@
 """PostgreSQL coordination for interrupt-enabled graph runs."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from hashlib import sha256
 from threading import BoundedSemaphore
@@ -47,7 +47,7 @@ class PostgresRunCoordinator:
         self._capacity = BoundedSemaphore(max_concurrent_leases)
 
     @asynccontextmanager
-    async def __call__(self, key: str, /) -> AsyncIterator[None]:
+    async def __call__(self, key: str, /) -> AsyncGenerator[None, None]:
         """Hold a PostgreSQL advisory lock for one interrupt run."""
         if not self._capacity.acquire(blocking=False):
             raise RunBusyError

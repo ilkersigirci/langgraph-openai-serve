@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from http import HTTPStatus
@@ -133,7 +133,7 @@ async def test_a_run_answered_during_the_sweep_is_kept(
     answered: list[object] = []
 
     @asynccontextmanager
-    async def answer_before_the_lease(_key: str) -> AsyncIterator[None]:
+    async def answer_before_the_lease(_key: str) -> AsyncGenerator[None, None]:
         # The user answers after the sweep listed the run as expired.
         resume = InterruptResume(
             run_id=first.run_id, values={first.interrupts[0].id: "yes"}

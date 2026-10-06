@@ -21,7 +21,7 @@ from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator
 
     from anyio.abc import TaskGroup
 
@@ -134,7 +134,7 @@ class InMemoryBackgroundBackend:
         self._tasks: TaskGroup | None = None
 
     @asynccontextmanager
-    async def lifespan(self, _app: object) -> AsyncIterator[None]:
+    async def lifespan(self, _app: object) -> AsyncGenerator[None, None]:
         """Own the execution tasks for one ASGI application lifespan."""
         async with create_task_group() as tasks:
             self._tasks = tasks

@@ -46,8 +46,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 
 - Reserve `conftest.py` for fixtures and pytest hooks or configuration. Put
   importable builders, data, and assertion helpers in support modules.
-- `tests/conftest.py` owns app, client, and fresh in-memory SQLite saver
-  fixtures shared by package tests.
+- `tests/conftest.py` owns app, client, in-memory OpenTelemetry SDK, and fresh
+  in-memory SQLite saver fixtures shared by package tests.
 - Subdirectory `conftest.py` files may add local fixtures. Package graph tests
   import reusable builders from `tests.graph.support` modules.
 - Prefer explicit fixture arguments over autouse fixtures. Reserve autouse for
