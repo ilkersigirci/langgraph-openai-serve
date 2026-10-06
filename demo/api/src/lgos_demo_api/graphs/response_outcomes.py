@@ -1,6 +1,7 @@
 """Deterministic graph demonstrating native Responses terminal outcomes."""
 
-from typing import Annotated, Sequence
+from collections.abc import Sequence
+from typing import Annotated
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, StateGraph

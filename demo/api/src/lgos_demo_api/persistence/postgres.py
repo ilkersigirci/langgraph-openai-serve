@@ -1,7 +1,7 @@
 """PostgreSQL persistence wiring for the demo API and background worker."""
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
@@ -34,11 +34,13 @@ class PostgresRuntime:
 
 
 @asynccontextmanager
-async def postgres_runtime(postgres_uri: str) -> AsyncIterator[PostgresRuntime]:
-    """Open one ready pool for checkpoints, Store data, and interrupt coordination.
+async def postgres_runtime(postgres_uri: str) -> AsyncGenerator[PostgresRuntime, None]:
+    """
+    Open one ready pool for checkpoints, Store data, and interrupt coordination.
 
     Yields:
         Configured PostgreSQL-backed graph dependencies.
+
     """
     await setup_postgres_schema(postgres_uri)
     pool_context = cast(
@@ -83,7 +85,7 @@ async def setup_postgres_schema(postgres_uri: str) -> None:
                     "SELECT pg_try_advisory_lock(%s) AS acquired", (_SCHEMA_LOCK_ID,)
                 )
                 row = await cursor.fetchone()
-                assert row is not None
+                assert row is not None  # ruff: ignore[assert] - SELECT pg_try_advisory_lock always returns one row.
                 if row["acquired"]:
                     break
                 await anyio.sleep(0.1)

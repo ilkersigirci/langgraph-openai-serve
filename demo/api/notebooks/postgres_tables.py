@@ -144,7 +144,7 @@ def _(mo, postgres, table_selector):
         SELECT *
         FROM {_qualified_table}
         LIMIT 50
-        """,
+        """,  # ruff: ignore[hardcoded-sql-expression] - Both identifiers are quoted by the PostgreSQL dialect above.
         engine=postgres,
     )
     return

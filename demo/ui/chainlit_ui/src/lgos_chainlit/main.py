@@ -1,5 +1,5 @@
 import os
-from collections.abc import AsyncIterator, MutableMapping
+from collections.abc import AsyncGenerator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -29,7 +29,7 @@ serve_public_files()
 config.features.audio.enabled = settings.AUDIO_STT_MODEL is not None
 
 if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
-    assert settings.OPENAI_GATEWAY_API_KEY is not None
+    assert settings.OPENAI_GATEWAY_API_KEY is not None  # ruff: ignore[assert] - Pydantic settings validation already enforces this invariant.
     config.features.mcp.servers = [
         mcp_gateway_config(gateway, settings.OPENAI_GATEWAY_API_KEY)
     ]
@@ -49,7 +49,7 @@ async def _close_chainlit_data_layer() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await setup_chainlit_schema(str(get_chainlit_settings().DATABASE_URL))
         if settings.ENABLE_OAUTH_TOKEN_FORWARDING:

@@ -1,6 +1,6 @@
 """Standalone OpenAI-compatible Files service backed by S3."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import boto3
@@ -49,7 +49,7 @@ def create_files_app(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Close the synchronous boto3 client during shutdown."""
     try:
         yield

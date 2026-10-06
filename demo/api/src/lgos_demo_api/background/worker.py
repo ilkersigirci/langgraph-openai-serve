@@ -23,7 +23,13 @@ from lgos_demo_api.persistence.postgres import postgres_runtime
 
 
 async def _lifespan() -> AsyncGenerator[GraphRegistry, None]:
-    """Yield the graphs that Hatchet tasks read from ``context.lifespan``."""
+    """
+    Manage the graphs available to Hatchet tasks.
+
+    Yields:
+        The registry that tasks read from ``context.lifespan``.
+
+    """
     async with (
         postgres_runtime(settings.POSTGRES_URI) as runtime,
         open_advanced_graph(runtime.checkpointer, runtime.store) as advanced_graph,

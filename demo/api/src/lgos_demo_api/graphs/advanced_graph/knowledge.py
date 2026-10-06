@@ -60,7 +60,7 @@ class OpenAICompatibleKnowledgeBase:
         return uploaded.id
 
     async def index(self, file_id: str) -> IndexStatus:
-        try:
+        try:  # ruff: ignore[too-many-statements-in-try-clause] - Retrieve, create, and poll share the same recoverable upload outcome.
             with fail_after(60):
                 try:
                     await self.client.vector_stores.files.retrieve(

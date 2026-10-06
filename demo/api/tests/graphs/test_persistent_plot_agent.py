@@ -3,7 +3,7 @@ import re
 from collections.abc import Callable
 from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest.mock import AsyncMock
 
 import httpx2
@@ -164,10 +164,10 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
             self.kwargs = kwargs
             self.files = SimpleNamespace(create=create_file)
 
-        async def __aenter__(self) -> "FakeOpenAI":
+        async def __aenter__(self) -> Self:
             return self
 
-        async def __aexit__(self, *_args: Any) -> None:
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
@@ -242,10 +242,10 @@ async def test_streaming_response_completes_with_display_file_call(
         def __init__(self, **_kwargs: Any) -> None:
             self.files = SimpleNamespace(create=create_file)
 
-        async def __aenter__(self) -> "FakeOpenAI":
+        async def __aenter__(self) -> Self:
             return self
 
-        async def __aexit__(self, *_args: Any) -> None:
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)

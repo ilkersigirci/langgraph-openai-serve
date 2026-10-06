@@ -196,7 +196,7 @@ def retrieve_file_content(
     )
 
 
-async def openai_http_exception_handler(
+async def openai_http_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
     _request: Request,
     exc: StarletteHTTPException,
 ) -> JSONResponse:
@@ -218,7 +218,7 @@ async def openai_http_exception_handler(
     )
 
 
-async def openai_request_validation_exception_handler(
+async def openai_request_validation_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
     _request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
@@ -243,12 +243,12 @@ async def openai_request_validation_exception_handler(
     )
 
 
-async def openai_unhandled_exception_handler(
+async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
     """Hide internal exception details behind a stable error response."""
-    logger.exception(
+    logger.error(
         "Unhandled Files API error for %s %s",
         request.method,
         request.url.path,

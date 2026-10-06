@@ -102,8 +102,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.persistent_plot_agent = create_persistent_plot_agent(runtime.store)
         app.state.advanced_graph = advanced_graph
         background_tasks.start_soon(_expire_interrupt_runs, runtime)
-        yield
-        background_tasks.cancel_scope.cancel()
+        try:
+            yield
+        finally:
+            background_tasks.cancel_scope.cancel()
 
     logger.info("demo.server.stopped")
 
@@ -171,7 +173,7 @@ def create_custom_app() -> FastAPI:
         },
         # The lifespan creates graphs and the coordinator after registration,
         # so these factories read them from app.state on each request.
-        run_coordinator=lambda key: app.state.run_coordinator(key),
+        run_coordinator=lambda key: app.state.run_coordinator(key),  # ruff: ignore[unnecessary-lambda] - Resolve app.state after lifespan initialization on every request.
     )
 
     graph_serve = LanggraphOpenaiServe(

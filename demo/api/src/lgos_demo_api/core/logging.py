@@ -9,7 +9,7 @@ import structlog
 class _DropUvicornColorMessage(logging.Filter):
     """Remove Uvicorn's redundant ANSI-formatted copy before any export."""
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:  # ruff: ignore[no-self-use] - Overrides logging.Filter.filter.
         record.__dict__.pop("color_message", None)
         return True
 

@@ -2,7 +2,7 @@
 
 import os
 import re
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Test-only subprocess with explicit arguments and no shell.
 from uuid import uuid4
 
 import pytest
@@ -14,8 +14,10 @@ pytestmark = pytest.mark.integration
 
 
 def workspace_command(*args: str) -> str:
-    return subprocess.check_output(
-        ["docker", "exec", "lgos-api-coding-agent", *args], text=True, timeout=10
+    return subprocess.check_output(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
+        ["docker", "exec", "lgos-api-coding-agent", *args],  # ruff: ignore[start-process-with-partial-path] - The integration test uses Docker from the developer PATH.
+        text=True,
+        timeout=10,
     )
 
 
@@ -64,7 +66,8 @@ async def test_shell_execution_edits_streaming_and_persistent_follow_up() -> Non
                 item.type == "message" and item.phase == "commentary"
                 for item in response.output
             )
-            assert response.usage and response.usage.total_tokens > 0
+            assert response.usage
+            assert response.usage.total_tokens > 0
             follow_up = await client.responses.create(
                 model="lgos-api-coding-agent/coding-agent",
                 store=False,

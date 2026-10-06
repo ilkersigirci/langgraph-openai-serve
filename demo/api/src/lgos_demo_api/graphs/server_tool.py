@@ -63,7 +63,8 @@ def _chat_model(*, private: bool = False) -> ChatOpenAI:
 
 @custom_tool
 def lgos_package_version(distribution: str) -> str:
-    """Get an installed server package version.
+    """
+    Get an installed server package version.
 
     Input one of: langgraph-openai-serve, langgraph, langchain,
     langchain-openai, or openai.
@@ -86,7 +87,8 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
     """Search the public web through the configured backend."""
     query = query.strip()
     if not query:
-        raise ValueError("web_search requires a non-empty query")
+        msg = "web_search requires a non-empty query"
+        raise ValueError(msg)
     if settings.WEB_SEARCH_BACKEND == "openai":
         result = await (
             _chat_model(private=True)

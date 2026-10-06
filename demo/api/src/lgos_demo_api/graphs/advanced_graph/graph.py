@@ -123,7 +123,8 @@ def _routing_messages(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
         if content:
             routed.append(message.model_copy(update={"content": content}))
     if not routed:
-        raise ValueError("The advanced graph requires a user message.")
+        msg = "The advanced graph requires a user message."
+        raise ValueError(msg)
     return routed[-8:]
 
 
@@ -141,7 +142,7 @@ def _new_turn(intent: Intent) -> AdvancedState:
     }
 
 
-def create_advanced_graph(
+def create_advanced_graph(  # ruff: ignore[complex-structure, too-many-statements] - The graph factory keeps its closure-bound nodes and wiring together.
     *,
     model: ChatOpenAI,
     knowledge: KnowledgeBase | None,
@@ -191,15 +192,15 @@ def create_advanced_graph(
         )
         raw = result["raw"]
         if not isinstance(raw, AIMessage):
-            raise TypeError("The intent router did not return an AI message.")
+            msg = "The intent router did not return an AI message."
+            raise TypeError(msg)
         if terminal := terminal_message(raw):
             return {**_new_turn("chat"), "messages": [terminal], "terminal": True}
         decision = result["parsed"]
-        if not isinstance(decision, IntentDecision):
-            raise ValueError(
-                "The intent router returned an invalid decision."
-            ) from result["parsing_error"]
-        return _new_turn(decision.intent)
+        if isinstance(decision, IntentDecision):
+            return _new_turn(decision.intent)
+        msg = "The intent router returned an invalid decision."
+        raise ValueError(msg) from result["parsing_error"]
 
     def research_available(context: AdvancedContext) -> bool:
         request = context.request

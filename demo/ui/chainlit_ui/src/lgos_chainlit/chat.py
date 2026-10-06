@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -139,8 +139,9 @@ class _Turn:
         await send_speech_button(self.answer)
 
     @asynccontextmanager
-    async def _keep_partial_answer(self) -> AsyncIterator[None]:
-        """Keep text shown before Stop or a failure.
+    async def _keep_partial_answer(self) -> AsyncGenerator[None, None]:
+        """
+        Keep text shown before Stop or a failure.
 
         Stopped text stays in later model context, as the user saw it; text
         from a failed request does not.
@@ -221,7 +222,7 @@ async def set_chat_profiles(
 
 
 @cl.set_starters
-async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:
+async def set_starters(_current_user: cl.User | None = None) -> list[cl.Starter]:  # ruff: ignore[unused-async] - Chainlit awaits this callback.
     return [
         cl.Starter(
             label="About",
@@ -265,13 +266,13 @@ async def on_message(message: cl.Message) -> None:
 
 
 @cl.on_audio_start
-async def on_audio_start() -> bool:
+async def on_audio_start() -> bool:  # ruff: ignore[unused-async] - Chainlit awaits this callback.
     start_dictation()
     return True
 
 
 @cl.on_audio_chunk
-async def on_audio_chunk(chunk: cl.InputAudioChunk) -> None:
+async def on_audio_chunk(chunk: cl.InputAudioChunk) -> None:  # ruff: ignore[unused-async] - Chainlit awaits this callback.
     add_dictation_chunk(chunk)
 
 
@@ -309,6 +310,7 @@ async def _reply(message: cl.Message) -> None:
         response = await turn.request(input_items)
         await interrupt_workflow.publish(response, model_id=model)
     except Exception as exc:
+        logger.exception("Responses request failed")
         await send_ui_message(f"Response failed: {exc}")
 
 
@@ -364,7 +366,7 @@ async def _background_response(
         store=True,
     )
     previous_status = None
-    try:
+    try:  # ruff: ignore[too-many-statements-in-try-clause] - Cancellation must cancel the remote response throughout polling.
         while response.status in {"queued", "in_progress"}:
             if response.status != previous_status:
                 await commentary.add(
@@ -388,7 +390,7 @@ async def _background_response(
     return response
 
 
-async def _stream_response(
+async def _stream_response(  # ruff: ignore[complex-structure] - Handle stream event variants within the message lifetime.
     request: dict[str, Any],
     assistant_message: cl.Message,
     commentary: CommentarySteps | CommentaryTaskList,
@@ -409,7 +411,7 @@ async def _stream_response(
                     phases[event.output_index] = item.phase
                 continue
             if (
-                event.type == "response.output_text.delta"
+                event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
                 or event.type == "response.refusal.delta"
             ):
                 phase = phases.get(event.output_index)
@@ -417,7 +419,7 @@ async def _stream_response(
                     final_text_streamed = True
                     await message_stream.stream_token(event.delta)
                 continue
-            if event.type == "response.incomplete" or event.type == "response.failed":
+            if event.type == "response.incomplete" or event.type == "response.failed":  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
                 raise_for_response(event.response)
             if event.type == "response.output_text.done":
                 if phases.get(event.output_index) == "commentary":

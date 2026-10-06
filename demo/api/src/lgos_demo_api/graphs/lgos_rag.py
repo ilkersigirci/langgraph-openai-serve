@@ -379,8 +379,10 @@ async def generate_answer(
             ("system", ANSWER_PROMPT),
             (
                 "human",
-                "Question:\n{question}\n\nSearch query:\n{query}"
-                "\n\n<context>\n{context}\n</context>",
+                (
+                    "Question:\n{question}\n\nSearch query:\n{query}"
+                    "\n\n<context>\n{context}\n</context>"
+                ),
             ),
         ]
     )

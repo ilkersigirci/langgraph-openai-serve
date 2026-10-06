@@ -1,7 +1,7 @@
 """OpenTelemetry boundary tests for the demo deployment."""
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging.config import DictConfigurator
 from unittest.mock import Mock
@@ -19,8 +19,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from lgos_demo_api import app as app_module
-from lgos_demo_api.background import components as background_components
-from lgos_demo_api.background import worker as background_worker
+from lgos_demo_api.background import (
+    components as background_components,
+    worker as background_worker,
+)
 from lgos_demo_api.core.logging import LOGGING_CONFIG
 from lgos_demo_api.core.otel import instrument_hatchet
 
@@ -224,7 +226,7 @@ async def test_startup_leaves_export_to_the_process_sdk(
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
 
     @asynccontextmanager
-    async def no_resources(_app: FastAPI) -> AsyncIterator[None]:
+    async def no_resources(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
     monkeypatch.setattr(app_module, "lifespan", no_resources)

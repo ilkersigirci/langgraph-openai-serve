@@ -10,7 +10,7 @@ the SDK pairs startup and shutdown under cancellation.
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import TypedDict
@@ -28,8 +28,8 @@ async def _start(codex: AsyncCodex) -> Exception | asyncio.CancelledError | None
     # Return errors to the owner. Python 3.14 reports a shielded task's later
     # exception as unhandled after its waiter was cancelled, even if retrieved.
     try:
-        await codex.__aenter__()
-    except (Exception, asyncio.CancelledError) as exc:
+        await codex.__aenter__()  # ruff: ignore[unnecessary-dunder-call] - Own SDK startup separately so cancellation cannot orphan its process.
+    except (Exception, asyncio.CancelledError) as exc:  # ruff: ignore[blind-except] - Return startup errors for the runtime owner to re-raise after cleanup.
         return exc
     return None
 
@@ -47,7 +47,7 @@ async def _close(
 
 
 @asynccontextmanager
-async def own_codex(codex: AsyncCodex) -> AsyncIterator[AsyncCodex]:
+async def own_codex(codex: AsyncCodex) -> AsyncGenerator[AsyncCodex, None]:
     startup = asyncio.create_task(_start(codex))
     try:
         error = await asyncio.shield(startup)
@@ -185,9 +185,10 @@ def runtime_events(
 
 
 @asynccontextmanager
-async def _time_limit(deadline: float) -> AsyncIterator[None]:
+async def _time_limit(deadline: float) -> AsyncGenerator[None, None]:
     try:
         async with asyncio.timeout_at(deadline):
             yield
     except TimeoutError as exc:
-        raise GraphError("The coding agent exceeded its request time limit.") from exc
+        msg = "The coding agent exceeded its request time limit."
+        raise GraphError(msg) from exc

@@ -45,7 +45,7 @@ class FakeGateway:
 
 def response(
     *output: ResponseOutputItem,
-    id: str = "resp_test",
+    id: str = "resp_test",  # ruff: ignore[builtin-argument-shadowing] - The test double preserves the SDK keyword parameter.
     status: str = "completed",
     **fields: Any,
 ) -> Response:
@@ -68,7 +68,7 @@ def response(
 def message(
     text: str,
     *,
-    id: str = "msg_answer",
+    id: str = "msg_answer",  # ruff: ignore[builtin-argument-shadowing] - The test double preserves the SDK keyword parameter.
     phase: str | None = "final_answer",
     annotations: Sequence[Annotation] = (),
 ) -> ResponseOutputMessage:
@@ -104,7 +104,8 @@ def reply(response: Response) -> httpx2.Response:
 
 
 def streamed(response: Response, *, deltas: bool = True) -> httpx2.Response:
-    """Stream a Response as text deltas followed by its terminal event.
+    """
+    Stream a Response as text deltas followed by its terminal event.
 
     Without deltas, the stream resembles a proxy that forwards only lifecycle
     events.

@@ -57,7 +57,8 @@ def review_report(
         decision = answer.strip().lower()
         if decision in {"approve", "reject"}:
             return {"decision": decision}
-    raise ValueError("Report review response must be approve or reject.")
+    msg = "Report review response must be approve or reject."
+    raise ValueError(msg)
 
 
 async def finish_report(

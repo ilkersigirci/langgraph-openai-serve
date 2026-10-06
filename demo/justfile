@@ -58,31 +58,31 @@ test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") edit
 [timestamp]
 lint:
     just --fmt --check
-    {{ api_run }} ruff check src tests
-    {{ api_run }} ruff format --check src tests
-    {{ files_run }} ruff check src tests
-    {{ files_run }} ruff format --check src tests
-    {{ coding_agent_run }} ruff check src tests
-    {{ coding_agent_run }} ruff format --check src tests
-    {{ chainlit_run }} ruff check src tests
-    {{ chainlit_run }} ruff format --check src tests
-    {{ openwebui_run }} ruff check src tests
-    {{ openwebui_run }} ruff format --check src tests
+    {{ api_run }} ruff check .
+    {{ api_run }} ruff format --check .
+    {{ files_run }} ruff check .
+    {{ files_run }} ruff format --check .
+    {{ coding_agent_run }} ruff check .
+    {{ coding_agent_run }} ruff format --check .
+    {{ chainlit_run }} ruff check .
+    {{ chainlit_run }} ruff format --check .
+    {{ openwebui_run }} ruff check .
+    {{ openwebui_run }} ruff format --check .
 
 # Format and fix every project; accepts Ruff check flags such as --unsafe-fixes.
 [group('local')]
 format *args:
     just --fmt
-    {{ api_run }} ruff format src tests
-    {{ api_run }} ruff check --fix src tests "$@"
-    {{ files_run }} ruff format src tests
-    {{ files_run }} ruff check --fix src tests "$@"
-    {{ coding_agent_run }} ruff format src tests
-    {{ coding_agent_run }} ruff check --fix src tests "$@"
-    {{ chainlit_run }} ruff format src tests
-    {{ chainlit_run }} ruff check --fix src tests "$@"
-    {{ openwebui_run }} ruff format src tests
-    {{ openwebui_run }} ruff check --fix src tests "$@"
+    {{ api_run }} ruff format .
+    {{ api_run }} ruff check --fix . "$@"
+    {{ files_run }} ruff format .
+    {{ files_run }} ruff check --fix . "$@"
+    {{ coding_agent_run }} ruff format .
+    {{ coding_agent_run }} ruff check --fix . "$@"
+    {{ chainlit_run }} ruff format .
+    {{ chainlit_run }} ruff check --fix . "$@"
+    {{ openwebui_run }} ruff format .
+    {{ openwebui_run }} ruff check --fix . "$@"
 
 # Type-check every project; add --editable to use the parent LGOS source.
 [arg('editable', long, value='true')]

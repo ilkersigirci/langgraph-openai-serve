@@ -48,8 +48,8 @@ runs:
       env:
         PROJECT_DIR: ${{ inputs.directory }}
       run: |
-        uv run --directory "$PROJECT_DIR" --locked ruff check src tests
-        uv run --directory "$PROJECT_DIR" --locked ruff format --check src tests
+        uv run --directory "$PROJECT_DIR" --locked ruff check .
+        uv run --directory "$PROJECT_DIR" --locked ruff format --check .
 
     - name: Verify the packaged API corpus
       if: inputs.verify-api-corpus == 'true'

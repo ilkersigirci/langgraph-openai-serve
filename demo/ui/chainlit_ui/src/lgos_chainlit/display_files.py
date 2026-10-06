@@ -39,7 +39,8 @@ async def display_file(call: ResponseFunctionToolCall) -> dict[str, object]:
     try:
         arguments = DisplayFileArguments.model_validate_json(call.arguments)
     except ValueError as exc:
-        raise ValueError("The display_file call contains invalid arguments.") from exc
+        msg = "The display_file call contains invalid arguments."
+        raise ValueError(msg) from exc
 
     download = await v1_client.files.content(
         arguments.file_id, extra_query={"provider": gateway.files_provider}

@@ -4,6 +4,7 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import AsyncMock, Mock
 
+import anyio
 import chainlit as cl
 import chainlit.config
 import httpx2
@@ -86,7 +87,9 @@ def task_lists(
     async def record(element) -> None:
         if element["type"] == "tasklist":
             file = chainlit_context.session.files[element["chainlitKey"]]
-            states.append(json.loads(Path(file["path"]).read_text()))
+            states.append(
+                json.loads(await anyio.Path(file["path"]).read_text(encoding="utf-8"))
+            )
         await send_element(element)
 
     monkeypatch.setattr(chainlit_context.emitter, "send_element", record)

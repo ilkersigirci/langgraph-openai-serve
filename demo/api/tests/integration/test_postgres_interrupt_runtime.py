@@ -2,7 +2,7 @@
 
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -51,7 +51,7 @@ def _api_app(runtime: PostgresRuntime) -> FastAPI:
 
 
 @asynccontextmanager
-async def _openai_client(runtime: PostgresRuntime) -> AsyncIterator[AsyncOpenAI]:
+async def _openai_client(runtime: PostgresRuntime) -> AsyncGenerator[AsyncOpenAI, None]:
     async with (
         AsyncClient(
             transport=ASGITransport(app=_api_app(runtime)),

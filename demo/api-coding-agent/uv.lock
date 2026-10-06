@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.15"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -659,6 +659,7 @@ wheels = [
 name = "lgos-api-coding-agent"
 version = "0.1.0"
 source = { editable = "." }
+default-groups = ["dev", "test"]
 dependencies = [
     { name = "fastapi" },
     { name = "langgraph-openai-serve", extra = ["tracing"] },
@@ -696,8 +697,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ruff", specifier = ">=0.16.3" },
-    { name = "ty", specifier = ">=0.0.72" },
+    { name = "ruff", specifier = ">=0.16.10" },
+    { name = "ty", specifier = ">=0.0.84" },
 ]
 test = [
     { name = "anyio", specifier = ">=4.14,<5" },

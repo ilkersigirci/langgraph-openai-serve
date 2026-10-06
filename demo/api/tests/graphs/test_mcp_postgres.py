@@ -12,8 +12,7 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.graph.runner import run_langgraph
 
-from lgos_demo_api.graphs import mcp_postgres as graph_module
-from lgos_demo_api.graphs import simple_external_tools
+from lgos_demo_api.graphs import mcp_postgres as graph_module, simple_external_tools
 
 COUNT_USERS = ClientFunctionTool(
     name="lgos_postgres-count_chainlit_users",

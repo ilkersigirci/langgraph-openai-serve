@@ -48,6 +48,6 @@ request flow and examples. This project has its own dependencies and lockfile.
 
 ```bash
 uv run --locked pytest
-uv run --locked ruff check src tests
+uv run --locked ruff check .
 uv run --locked ty check src
 ```

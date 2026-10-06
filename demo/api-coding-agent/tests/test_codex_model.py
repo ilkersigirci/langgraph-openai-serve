@@ -1,5 +1,6 @@
 import json
 from hashlib import sha256
+from typing import TYPE_CHECKING
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -9,8 +10,10 @@ from openai_codex.models import Notification
 
 from lgos_api_coding_agent.app import Conversation, graph_config
 from lgos_api_coding_agent.codex_model import conversation_prompt
-from lgos_api_coding_agent.codex_runtime import CodexTurn
 from tests.support import answer_deltas, event, message, model, openai_client, terminal
+
+if TYPE_CHECKING:
+    from lgos_api_coding_agent.codex_runtime import CodexTurn
 
 
 def delta(identifier: str, text: str) -> Notification:
@@ -112,7 +115,9 @@ async def test_commentary_is_status_answer_has_parity_and_usage_is_counted_once(
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
-@pytest.mark.parametrize("started,deltas", [(True, True), (True, False), (False, True)])
+@pytest.mark.parametrize(
+    ("started", "deltas"), [(True, True), (True, False), (False, True)]
+)
 async def test_phase_less_answers_and_completed_fallback(
     phase, started, deltas
 ) -> None:

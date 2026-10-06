@@ -233,7 +233,7 @@ async def test_response_outcomes_exposes_native_refusal(
     )
 
     assert response.status == "completed"
-    assert response.output_text == ""
+    assert response.output_text == ""  # ruff: ignore[compare-to-empty-string] - Distinguish the empty string from other falsey values.
     assert response.output[0].content[0].model_dump() == {
         "type": "refusal",
         "refusal": "I cannot help with bypassing safety controls.",

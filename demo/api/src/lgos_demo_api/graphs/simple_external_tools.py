@@ -1,6 +1,7 @@
 """Simple model graph with tools supplied by the OpenAI client."""
 
-from typing import Annotated, Any, Sequence
+from collections.abc import Sequence
+from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_openai import ChatOpenAI

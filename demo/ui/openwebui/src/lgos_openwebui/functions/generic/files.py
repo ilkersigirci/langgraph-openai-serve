@@ -27,7 +27,7 @@ async def _with_response_file_parts(
     *,
     base_url: str,
     api_key: str,
-    timeout: float,
+    timeout: float,  # ruff: ignore[async-function-with-timeout] - Forward the HTTP client timeout; this is not a task cancellation scope.
     provider: str,
 ) -> list[OpenWebUIMessage]:
     """Upload this turn's files and attach native Responses input parts."""
@@ -113,7 +113,7 @@ async def _handle_display_file(
     *,
     files_base_url: str,
     api_key: str,
-    timeout: float,
+    timeout: float,  # ruff: ignore[async-function-with-timeout] - Forward the HTTP client timeout; this is not a task cancellation scope.
     provider: str,
 ) -> dict[str, str]:
     """Persist a generated image or interactive chart through native UI events."""

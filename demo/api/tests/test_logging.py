@@ -1,7 +1,7 @@
 """Production logging configuration tests."""
 
 import json
-import subprocess
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Test-only subprocess with explicit arguments and no shell.
 import sys
 import textwrap
 
@@ -39,7 +39,7 @@ def test_json_logging_preserves_lgos_context_fields() -> None:
         """
     )
 
-    result = subprocess.run(
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
         [sys.executable, "-c", script],
         capture_output=True,
         check=False,

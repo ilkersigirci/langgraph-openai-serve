@@ -1,4 +1,5 @@
-"""Publish LGOS metadata through Bifrost's native model catalog.
+"""
+Publish LGOS metadata through Bifrost's native model catalog.
 
 Bifrost stores model attributes only on existing pricing rows, and only its
 pricing datasheet creates those rows. `prepare` therefore writes a datasheet
@@ -110,7 +111,7 @@ def main() -> None:
     sync = commands.add_parser("sync", help="Publish attributes to a healthy Bifrost")
     sync.add_argument("--gateway-url", required=True, help="Bifrost root URL")
     args = parser.parse_args()
-    try:
+    try:  # ruff: ignore[too-many-statements-in-try-clause] - The CLI reports failures from the whole sync operation consistently.
         if args.command == "prepare":
             with ExitStack() as stack:
                 sources: dict[str, httpx2.Client] = {}
@@ -118,7 +119,7 @@ def main() -> None:
                     provider, _, url = source.partition("=")
                     if not url or provider in sources:
                         msg = "Sources must use unique PROVIDER=URL pairs"
-                        raise ValueError(msg)
+                        raise ValueError(msg)  # ruff: ignore[raise-within-try] - Local validation uses the same error reporting as remote failures.
                     sources[provider] = stack.enter_context(
                         httpx2.Client(base_url=f"{url.rstrip('/')}/", timeout=30)
                     )
@@ -135,9 +136,11 @@ def main() -> None:
             print(f"Published metadata for {len(attributes)} LGOS models to Bifrost")
     except ValidationError:
         # Validation errors quote their input, which can hold complete settings.
-        raise SystemExit("Bifrost model sync failed: invalid catalog data") from None
+        msg = "Bifrost model sync failed: invalid catalog data"
+        raise SystemExit(msg) from None
     except (httpx2.HTTPError, OSError, ValueError) as exc:
-        raise SystemExit(f"Bifrost model sync failed: {exc}") from None
+        msg = f"Bifrost model sync failed: {exc}"
+        raise SystemExit(msg) from None
 
 
 if __name__ == "__main__":

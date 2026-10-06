@@ -64,7 +64,7 @@ dev = [
     "ipykernel>=6.29.5",
     "prek>=0.3.11",
     "ruff>=0.16.10",
-    "ty>=0.0.72",
+    "ty>=0.0.84",
 ]
 doc = [
     # Zensical uses its mike fork as the versioning bridge until native support:
@@ -87,7 +87,7 @@ test = [
 ]
 [tool.uv]
 default-groups = ["dev", "doc", "test"]
-required-version = "==0.12.1"
+required-version = "==0.12.23"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -212,32 +212,6 @@ unfixable = [
     "module-import-not-at-top-of-file",
     "unused-import",
 ]
-"demo/*" = [
-    "D",
-    "hardcoded-bind-all-interfaces",
-    "import-outside-top-level",
-    "print",
-]
-"demo/*/tests/*" = [
-    "ANN",
-    "D",
-    "FBT",
-    "assert",
-    "hardcoded-password-default",
-    "hardcoded-password-func-arg",
-    "hardcoded-password-string",
-    "implicit-namespace-package",
-    "import-outside-top-level",
-    "no-self-use",
-    "private-member-access",
-    "unused-async",
-    "unused-function-argument",
-    "unused-lambda-argument",
-    "unused-method-argument",
-]
-"demo/ui/openwebui/*" = [
-    "D",
-]
 "src/langgraph_openai_serve/core/settings.py" = [
     "boolean-type-hint-positional-argument",
 ]
@@ -280,4 +254,4 @@ exclude_lines = [
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.1,<0.13"]
+requires = ["uv_build>=0.12.23,<0.13"]

@@ -51,6 +51,6 @@ def _with_processing_disabled(scope: Scope) -> Scope:
 
 def create_app() -> RawFileUploads:
     """Load the pinned Open WebUI application behind the raw-upload policy."""
-    open_webui_app = cast(ASGIApp, import_module("open_webui.main").app)
+    open_webui_app = cast("ASGIApp", import_module("open_webui.main").app)
 
     return RawFileUploads(open_webui_app)

@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 class Filter:
     class UserValves(BaseModel):
+        """Choose the graph context supplied by each user."""
+
         use_history: bool = Field(
             default=False,
             description="Include prior messages in the model input.",
@@ -21,7 +23,7 @@ class Filter:
             description="Adapt explanations for the selected audience.",
         )
 
-    async def inlet(
+    async def inlet(  # ruff: ignore[no-self-use] - Open WebUI calls inlet on the Filter instance.
         self,
         body: dict[str, Any],
         __user__: dict[str, Any],

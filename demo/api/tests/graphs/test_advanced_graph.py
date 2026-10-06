@@ -149,7 +149,7 @@ class ModelProvider:
         self.requests.append(payload)
         assert request.url.path.endswith("/responses")
         assert payload["store"] is False
-        assert payload["temperature"] == 0.7
+        assert payload["temperature"] == pytest.approx(0.7)
         response = self.responses.popleft()
         if not payload.get("stream", False):
             return httpx2.Response(200, json=response)
@@ -177,7 +177,8 @@ class FixtureKnowledgeBase:
     async def upload(self, filename, content):
         self.uploads.append((filename, content))
         if self.upload_error:
-            raise httpx2.ReadError("connection lost")
+            msg = "connection lost"
+            raise httpx2.ReadError(msg)
         return "file_saved"
 
     async def index(self, file_id):
@@ -203,7 +204,8 @@ async def graph_client(
     store = store or InMemoryStore()
 
     async def unexpected_file_request(request):
-        raise AssertionError(f"Unexpected Files API request: {request.url}")
+        msg = f"Unexpected Files API request: {request.url}"
+        raise AssertionError(msg)
 
     async with (
         httpx2.AsyncClient(

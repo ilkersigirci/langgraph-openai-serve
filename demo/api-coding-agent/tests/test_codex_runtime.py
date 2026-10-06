@@ -38,7 +38,8 @@ class StartingCodex(AsyncCodex):
             await self.release.wait()
         self.alive = True
         await self.closed.wait()
-        raise RuntimeError("Runtime closed during initialize")
+        msg = "Runtime closed during initialize"
+        raise RuntimeError(msg)
 
     async def close(self) -> None:
         self.release.set()

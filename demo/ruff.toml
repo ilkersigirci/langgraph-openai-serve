@@ -1,0 +1,142 @@
+# Keep the rule selection aligned with the package pyproject.toml. This local
+# baseline keeps the demo independently copyable without the parent checkout.
+target-version = "py311"
+line-length = 88
+
+[format]
+skip-magic-trailing-comma = false
+
+[lint]
+preview = true
+
+# Note: `select` requires short alphanumeric prefix codes for linter categories.
+select = [
+    "A", # flake8-builtins
+    "ANN", # flake8-annotations
+    "ARG", # flake8-unused-arguments
+    "ASYNC", # async
+    "B",  # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C",  # flake8-comprehensions
+    "C9",  # mccabe
+    "D",   # pydocstyle
+    "DOC", # pydoclint
+    "DTZ", # flake8-datetimez
+    "E",  # pycodestyle errors (default)
+    "EM",  # flake8-errmsg
+    "ERA", # eradicate
+    "EXE", # flake8-executable
+    "F",  # pyflakes (default)
+    "FA", # flake8-future-annotations
+    "FAST", # fastapi
+    "FBT", # flake8-boolean-trap
+    "FIX", # flake8-fixme
+    "FLY", # flynt
+    "FURB", # refurb
+    "G",  # flake8-logging-format
+    "I",  # isort
+    "ICN", # flake8-import-conventions
+    "INP", # flake8-no-pep420
+    "ISC", # flake8-implicit-str-concat
+    "LOG", # flake8-logging
+    "N", # pep8-naming
+    "PD", # pandas-vet
+    "PERF", # perflint
+    "PGH", # pygrep-hooks
+    "PIE", # pie
+    "PL",  # pylint
+    "PLC", # pylint convention
+    "PLE", # pylint error
+    "PLW", # pylint warning
+    "PT", # flake8-pytest-style
+    "PTH", # pathlib
+    "PYI", # flake8-pyi
+    "Q",  # flake8-quotes
+    "RET", # return
+    "RSE", # flake8-raise
+    "RUF", # Enable all ruff-specific checks
+    "S",   # flake8-bandit
+    "SIM", # simplify
+    "SLF", # flake8-self
+    "SLOT", # flake8-slots
+    "suspicious-eval-usage", # eval
+    "T10", # flake8-debugger
+    "T20", # flake8-print
+    "TC", # flake8-type-checking
+    "TD", # flake8-todos
+    "TID", # flake8-tidy-imports
+    "TRY", # tryceratops
+    "UP", # pyupgrade
+    "W",  # pycodestyle warnings
+    "YTT", # flake8-2020
+]
+
+# Note: For specific rules, we use their full English names rather than
+# numeric codes for better readability.
+ignore = [
+    # Examples document their workflows without requiring boilerplate on every symbol.
+    "undocumented-public-class",
+    "undocumented-public-function",
+    "undocumented-public-method",
+    "undocumented-magic-method",
+    "any-type",
+    "docstring-missing-exception",
+    "docstring-missing-returns",
+    "import-outside-top-level",
+    "incorrect-blank-line-before-class",
+    "line-too-long",
+    "multi-line-summary-first-line",
+    "undocumented-public-init",
+    "undocumented-public-module",
+    "undocumented-public-package",
+    "yield-in-context-manager-in-async-generator",
+]
+
+unfixable = [
+    "unused-import",
+]
+
+[lint.per-file-ignores]
+# Runnable demo servers intentionally listen on every container interface.
+"**/src/**/app.py" = ["hardcoded-bind-all-interfaces"]
+"**/src/lgos_chainlit/main.py" = ["hardcoded-bind-all-interfaces"]
+# Operator-facing synchronization commands report their results on stdout.
+"**/sync_bifrost.py" = ["print"]
+"**/sync_litellm.py" = ["print"]
+"**/sync_functions.py" = ["print"]
+"**/tests/**/*.py" = [
+    # Fixtures and test doubles follow the interfaces they inject or replace.
+    "ANN",
+    "FBT",
+    "no-self-use",
+    "unused-async",
+    "unused-function-argument",
+    "unused-lambda-argument",
+    "unused-method-argument",
+    # Assertions, literal expectations, dummy credentials, and private state are
+    # useful at test boundaries.
+    "assert",
+    "hardcoded-password-default",
+    "hardcoded-password-func-arg",
+    "hardcoded-password-string",
+    "implicit-namespace-package",
+    "import-private-name",
+    "magic-value-comparison",
+    "private-member-access",
+    # End-to-end scenarios keep their setup, doubles, and assertions together.
+    "complex-structure",
+    "docstring-missing-yields",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-statements",
+]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.isort]
+combine-as-imports = true
+
+[lint.pylint]
+# Framework adapters expose explicit keyword options alongside injected clients.
+max-args = 8

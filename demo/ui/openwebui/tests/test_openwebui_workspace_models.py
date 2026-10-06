@@ -503,13 +503,19 @@ def test_workspace_model_declares_lgos_settings_as_openwebui_chat_variables() ->
     _, wrapper = client.post.call_args.kwargs["json"]["models"]
     assert wrapper["params"]["system"].splitlines() == [
         "<lgos-chat-variables>",
-        "{{chat.variables.mode | select"
-        ':label="Mode: brief | detailed":default="brief"'
-        ':options=["brief","detailed"]}}',
-        "{{chat.variables.assistant_name | text"
-        ':label="Assistant Name":default="Helper, v2"}}',
-        "{{chat.variables.delay | number"
-        ':label="Delay (seconds)":default=5:step=1:min=0:max=300}}',
+        (
+            "{{chat.variables.mode | select"
+            ':label="Mode: brief | detailed":default="brief"'
+            ':options=["brief","detailed"]}}'
+        ),
+        (
+            "{{chat.variables.assistant_name | text"
+            ':label="Assistant Name":default="Helper, v2"}}'
+        ),
+        (
+            "{{chat.variables.delay | number"
+            ':label="Delay (seconds)":default=5:step=1:min=0:max=300}}'
+        ),
         "</lgos-chat-variables>",
     ]
 

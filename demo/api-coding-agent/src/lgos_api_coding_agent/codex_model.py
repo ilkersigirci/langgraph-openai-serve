@@ -44,8 +44,9 @@ def conversation_prompt(messages: list[BaseMessage]) -> str:
         if message.type not in roles or any(
             block["type"] != "text" for block in message.content_blocks
         ):
+            msg = "The Codex adapter accepts text conversation history only."
             raise InvalidRequestError(
-                "The Codex adapter accepts text conversation history only.",
+                msg,
                 param="input",
                 code="unsupported_input",
             )
@@ -74,9 +75,8 @@ class CodexChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: object,
     ) -> ChatResult:
-        raise NotImplementedError(
-            "The Codex adapter requires asynchronous graph execution."
-        )
+        msg = "The Codex adapter requires asynchronous graph execution."
+        raise NotImplementedError(msg)
 
     async def _agenerate(
         self,
@@ -88,17 +88,23 @@ class CodexChatModel(BaseChatModel):
         **kwargs: object,
     ) -> ChatResult:
         return await agenerate_from_stream(
-            self._astream(messages, thread_name=thread_name)
+            self._astream(
+                messages,
+                stop=stop,
+                run_manager=run_manager,
+                thread_name=thread_name,
+                **kwargs,
+            )
         )
 
-    async def _astream(
+    async def _astream(  # ruff: ignore[complex-structure, too-many-branches, too-many-statements] - Keep ordered SDK notification handling in one streaming state machine.
         self,
         messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        stop: list[str] | None = None,  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
         *,
         thread_name: str | None = None,
-        **kwargs: object,
+        **kwargs: object,  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
     ) -> AsyncIterator[ChatGenerationChunk]:
         transcript = conversation_prompt(messages)
         writer = get_stream_writer()
@@ -147,14 +153,14 @@ class CodexChatModel(BaseChatModel):
                         streamed = answers.get(item.id)
                         if item.phase is MessagePhase.commentary:
                             if streamed:
-                                raise GraphError(
-                                    "Codex changed an answer's message phase."
-                                )
+                                msg = "Codex changed an answer's message phase."
+                                raise GraphError(msg)
                             writer(status_event(item.text))
                         elif streamed and streamed != item.text:
-                            raise GraphError(
+                            msg = (
                                 "Codex completed text differs from its streamed answer."
                             )
+                            raise GraphError(msg)
                         elif not streamed and item.text:
                             yield answer(item.id, item.text)
                     case ItemStartedNotification(
@@ -196,12 +202,12 @@ class CodexChatModel(BaseChatModel):
                             reason = (
                                 turn.error.message if turn.error else turn.status.value
                             )
-                            raise GraphError(
-                                f"Codex did not complete the turn: {reason}"
-                            )
+                            msg = f"Codex did not complete the turn: {reason}"
+                            raise GraphError(msg)
                         completed = True
             if not completed or not any(answers.values()):
-                raise GraphError("Codex ended without a completed answer.")
+                msg = "Codex ended without a completed answer."
+                raise GraphError(msg)
             if usage is not None:
                 yield ChatGenerationChunk(
                     message=AIMessageChunk(

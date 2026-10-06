@@ -50,7 +50,7 @@ a direct user request to update the file is approval.
   `gateway`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
   together when adding a module.
 - Validate OpenWebUI changes from `ui/openwebui/` with:
-  `uv run --locked pytest`, `uv run --locked ruff check src tests`, and
+  `uv run --locked pytest`, `uv run --locked ruff check .`, and
   `uv run --locked ty check src`.
 
 ## Chainlit Utilities

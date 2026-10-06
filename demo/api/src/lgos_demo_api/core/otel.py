@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
-from hatchet_sdk import ClientConfig
+if TYPE_CHECKING:
+    from hatchet_sdk import ClientConfig
 
 
 def instrument_hatchet(config: ClientConfig) -> None:

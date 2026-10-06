@@ -120,7 +120,7 @@ class OpenWebUIBody(BaseModel):
 
     @property
     def model_id(self) -> str:
-        """Return the graph model from Open WebUI's ``<pipe>.<model>`` ID."""
+        """The graph model from Open WebUI's ``<pipe>.<model>`` ID."""
         return self.model.partition(".")[2]
 
 
@@ -160,7 +160,7 @@ class OpenWebUIMetadata(BaseModel):
         for key, value in values.items():
             # A chat keeps the variables of every model it has used. Open WebUI
             # treats empty values as unset, so LGOS applies its defaults.
-            if key not in field_types or value is None or value == "":
+            if key not in field_types or value is None or value == "":  # ruff: ignore[compare-to-empty-string] - Distinguish the empty string from other falsey values.
                 continue
             field_type = field_types[key]
             if field_type == "checkbox":
@@ -188,7 +188,7 @@ def supports_display_file(model_id: str) -> bool:
     return model_id.rsplit("/", 1)[-1] == PERSISTENT_PLOT_MODEL_NAME
 
 
-class InterruptCancelled(Exception):
+class InterruptCancelled(Exception):  # ruff: ignore[error-suffix-on-exception-name] - Cancellation is control flow, not an application error.
     """The user cancelled Open WebUI's native interrupt prompt."""
 
 

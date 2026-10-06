@@ -30,8 +30,8 @@ lgos-demo-api-sync-litellm = "lgos_demo_api.utils.sync_litellm:main"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.3",
-    "ty>=0.0.72",
+    "ruff>=0.16.10",
+    "ty>=0.0.84",
     "marimo>=0.24.0",
     "polars>=1.9.0",
     "sqlalchemy>=2.0,<3",
@@ -71,17 +71,22 @@ markers = [
 ]
 
 [tool.ruff]
-target-version = "py311"
-line-length = 88
+extend = "../ruff.toml"
 src = ["src", "tests"]
 
-[tool.ruff.lint]
-select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
-ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
+[tool.ruff.lint.extend-per-file-ignores]
 "notebooks/*.py" = [
-    "F541", # Marimo serializes SQL cells as f-strings for reactive interpolation.
+    "print", # Notebook cells display client responses on stdout.
+    # Marimo generates cell signatures, names, and explicit returns from its DAG.
+    "ANN",
+    "invalid-argument-name",
+    "non-lowercase-variable-in-function",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "useless-return",
+    "used-dummy-variable",
+    "implicit-namespace-package",
+    "f-string-missing-placeholders", # SQL cells use f-strings for reactive interpolation.
 ]
 
 ###### MARIMO START #######
@@ -175,4 +180,4 @@ include_default_snippets = true
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.1,<0.13"]
+requires = ["uv_build>=0.12.23,<0.13"]

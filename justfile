@@ -51,13 +51,13 @@ docs serve='false' address='0.0.0.0:7999' *args:
 hooks *args='--all-files':
     uv run --locked prek run "$@"
 
-# Check Just formatting and Ruff against selected or default paths.
+# Check Just formatting and Ruff for the whole repository or selected paths.
 [group('quality')]
 [script]
 lint *targets:
     just --fmt --check
     if (( $# == 0 )); then
-        set -- src tests
+        set -- .
     fi
     uv run --locked --module ruff format "$@" --check --diff
     uv run --locked --module ruff check "$@"
@@ -68,11 +68,11 @@ lint *targets:
 type-check path='src':
     uv run --locked ty check "$1"
 
-# Run every static package check.
+# Check repository lint and package types.
 [group('quality')]
 check: lint type-check
 
-# Format and fix selected or default paths; add --unsafe for unsafe Ruff fixes.
+# Format and fix the whole repository or selected paths; add --unsafe for unsafe fixes.
 [arg('unsafe', long, value='true')]
 [group('quality')]
 [script]
@@ -80,7 +80,7 @@ format unsafe='false' *targets:
     just --fmt
     shift
     if (( $# == 0 )); then
-        set -- src tests
+        set -- .
     fi
     uv run --locked --module ruff format "$@"
     uv run --locked --module ruff check "$@" --fix --show-fixes {{ if unsafe == "true" { "--unsafe-fixes" } else { "" } }}

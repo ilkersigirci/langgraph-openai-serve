@@ -1,7 +1,8 @@
 """Deterministic graph combining output from multiple streaming nodes."""
 
+from collections.abc import Sequence
 from operator import add
-from typing import Annotated, Sequence
+from typing import Annotated
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, START, StateGraph

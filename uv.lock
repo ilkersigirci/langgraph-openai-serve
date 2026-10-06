@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.15"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'emscripten'",
@@ -1336,6 +1336,7 @@ wheels = [
 name = "langgraph-openai-serve"
 version = "0.0.1"
 source = { editable = "." }
+default-groups = ["dev", "doc", "test"]
 dependencies = [
     { name = "anyio" },
     { name = "fastapi" },
@@ -1410,7 +1411,7 @@ dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "prek", specifier = ">=0.3.11" },
     { name = "ruff", specifier = ">=0.16.10" },
-    { name = "ty", specifier = ">=0.0.72" },
+    { name = "ty", specifier = ">=0.0.84" },
 ]
 doc = [
     { name = "mike", git = "https://github.com/squidfunk/mike.git?rev=2d4ad799442f4592db8ad53b179bfb33db8c69ac" },
