@@ -104,7 +104,10 @@ runs in Langfuse.
 
 The server reads these from the process environment, alongside the
 [package settings](../reference.md#settings), `HATCHET_CLIENT_*`, `LANGFUSE_*`,
-and `OTEL_*`. An empty value counts as unset.
+and `OTEL_*`. An empty value counts as unset. In `.env` files that Just or
+`uv run --env-file` load, single-quote JSON lists, as in
+`LGOS_CORS_ORIGINS='["https://app.example.com"]'`; those loaders strip
+unquoted double quotes.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
