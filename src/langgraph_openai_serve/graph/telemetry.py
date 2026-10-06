@@ -5,12 +5,10 @@ LGOS uses only the OpenTelemetry API, so nothing is recorded until the
 application configures an SDK.
 """
 
-from collections.abc import AsyncGenerator, Iterator
-from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib.metadata import version
 from time import perf_counter
-from typing import TypeVar
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Span, StatusCode
@@ -32,52 +30,9 @@ _duration = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=_WORKFLOW_BUCKETS,
 )
 
-_Event = TypeVar("_Event")
-
-
-@dataclass(frozen=True)
-class Workflow:
-    """The span of one graph execution, current only while LGOS advances it."""
-
-    span: Span
-
-    def active(self) -> AbstractContextManager[Span]:
-        """Make the span current; ``invoke_workflow`` alone sets its status."""
-        return trace.use_span(
-            self.span, record_exception=False, set_status_on_exception=False
-        )
-
-    async def iterate(
-        self, events: AsyncGenerator[_Event, None]
-    ) -> AsyncGenerator[_Event, None]:
-        """
-        Advance ``events`` with the span current, but yield them without it.
-
-        A span current across ``yield`` would parent the consumer's work between
-        events, and a stream closed from another context, such as by garbage
-        collection, could not detach it.
-
-        Yields:
-            Each event of ``events``.
-
-        """
-        try:
-            while True:
-                with self.active():
-                    try:
-                        event = await anext(events)
-                    except StopAsyncIteration:
-                        return
-                yield event
-        finally:
-            # Closing a stream early still runs graph work, such as LangGraph's
-            # exit checkpoint write.
-            with self.active():
-                await events.aclose()
-
 
 @contextmanager
-def invoke_workflow(request: GraphRequest) -> Iterator[Workflow]:
+def invoke_workflow(request: GraphRequest) -> Iterator[Span]:
     """
     Record one graph execution as an ``invoke_workflow`` span and duration.
 
@@ -86,7 +41,7 @@ def invoke_workflow(request: GraphRequest) -> Iterator[Workflow]:
     request, or a consumer closing the stream mid-run.
 
     Yields:
-        The run's workflow, whose span becomes current only through its methods.
+        The run's span, which callers make current only around graph work.
 
     """
     attributes = {
@@ -99,7 +54,7 @@ def invoke_workflow(request: GraphRequest) -> Iterator[Workflow]:
     span = _tracer.start_span(f"invoke_workflow {request.model}", attributes=attributes)
     started = perf_counter()
     try:
-        yield Workflow(span)
+        yield span
     except BaseException as exc:
         # An exception should be recorded once, as a log where it is handled.
         # LGOS routes, background engines, and direct callers handle it, so the
@@ -120,4 +75,4 @@ def invoke_workflow(request: GraphRequest) -> Iterator[Workflow]:
         span.end()
 
 
-__all__ = ["INSTRUMENTATION_SCOPE", "Workflow", "invoke_workflow"]
+__all__ = ["INSTRUMENTATION_SCOPE", "invoke_workflow"]

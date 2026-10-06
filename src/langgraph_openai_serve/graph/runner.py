@@ -15,6 +15,7 @@ from langgraph.types import (
     StreamPart,
     UpdatesStreamPart,
 )
+from opentelemetry import trace
 
 from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph import interrupt
@@ -57,6 +58,9 @@ class TaskStream(Generic[_Item]):
         with CancelScope(shield=True):
             try:
                 self._producer.cancel()
+                # Like asyncio.TaskGroup, also ignore a producer that cancelled
+                # itself: re-raised, that would read as the consumer's cancellation.
+                # LangGraph raises NodeCancelledError for a node that cancels itself.
                 with suppress(asyncio.CancelledError):
                     await self._producer
             finally:
@@ -166,7 +170,7 @@ async def stream_run(
     if stream_updates:
         stream_mode.append("updates")
 
-    with invoke_workflow(run.request) as workflow:
+    with invoke_workflow(run.request) as span:
         final_output: Any = _MISSING
         interrupts: dict[str, Interrupt] = {}
         # LangGraph implements astream as an async generator, while its overload
@@ -185,7 +189,12 @@ async def stream_run(
                 version="v2",
             ),
         )
-        parts = TaskStream(workflow.iterate(graph_stream), name="langgraph-astream")
+        # asyncio copies this context into the producer task. Graph execution
+        # and cleanup inherit the span without changing the consumer's context.
+        with trace.use_span(
+            span, record_exception=False, set_status_on_exception=False
+        ):
+            parts = TaskStream(graph_stream, name="langgraph-astream")
         try:
             async for part in parts.receive:
                 if part["type"] == "values":
@@ -206,7 +215,9 @@ async def stream_run(
             msg = "LangGraph stream completed without a final value."
             raise RuntimeError(msg)
         else:
-            with workflow.active():
+            with trace.use_span(
+                span, record_exception=False, set_status_on_exception=False
+            ):
                 message = await run.config.render_output(final_output)
             usage = run.usage_metadata()
             output = (

@@ -1,3 +1,4 @@
+from asyncio import CancelledError
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 
@@ -6,6 +7,7 @@ from anyio import Event, create_task_group, fail_after, sleep_forever
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langgraph.errors import NodeCancelledError
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import (
     CustomStreamPart,
@@ -279,3 +281,32 @@ async def test_anyio_cancellation_stops_graph_work(
             await all_started.wait()
             tasks.cancel_scope.cancel()
         await all_stopped.wait()
+
+
+@pytest.mark.parametrize("run", [stream_events, invoke], ids=["streamed", "collected"])
+async def test_node_that_cancels_itself_fails_the_run(
+    run: Callable[[object, GraphRegistry], Awaitable[None]],
+    make_request,
+) -> None:
+    async def draft(_state: MessageState) -> dict:
+        return {"messages": [AIMessage(content="draft")]}
+
+    async def review(_state: MessageState) -> dict:
+        # As when a node awaits work that another task cancelled.
+        raise CancelledError
+
+    graph = (
+        StateGraph(MessageState)
+        .add_node("draft", draft)
+        .add_node("review", review)
+        .add_edge(START, "draft")
+        .add_edge("draft", "review")
+        .add_edge("review", END)
+    )
+    registry = GraphRegistry(
+        graphs={"review": GraphConfig(graph=graph.compile(), description="DUMMY")}
+    )
+
+    # The run fails as an ordinary exception rather than answering with the draft.
+    with pytest.raises(NodeCancelledError):
+        await run(make_request("review"), registry)
