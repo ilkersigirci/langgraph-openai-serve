@@ -42,7 +42,7 @@ just demo/up lgos-db --wait
 
 ??? info "Demo environment settings"
 
-    The API reads `DEMO_API_POSTGRES_URI` from the demo environment. Use
+    The server reads `LGOS_POSTGRES_URI` from the demo environment. Use
     [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
     for the supplied connection settings.
 
@@ -197,7 +197,7 @@ See [Core Graph Patterns](graphs/core-patterns.md#response-outcomes) for when a
 refusal differs from an incomplete response and which terminal events clients
 must handle.
 
-For background Responses, enable `DEMO_API_BACKGROUND_ENABLED`, start the
+For background Responses, set `LGOS_BACKGROUND=hatchet`, start the
 independent `just demo/background-worker` process, or run the complete UI path
 with the `background` Compose profile and `just demo/compose`.
 `advanced-graph`, `background-mock`, and `background-interrupt` support it.

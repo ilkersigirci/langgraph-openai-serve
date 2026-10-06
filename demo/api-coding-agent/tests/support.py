@@ -1,26 +1,36 @@
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import httpx2
 from langchain_core.language_models import BaseChatModel
+from langgraph_openai_serve.server import ServerSettings, create_app
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseStreamEvent
 from openai_codex.generated.notification_registry import NOTIFICATION_MODELS
 from openai_codex.models import Notification
 
-from lgos_api_coding_agent.app import create_app
 from lgos_api_coding_agent.codex_model import CodexChatModel
 from lgos_api_coding_agent.codex_runtime import CodexTurn
+from lgos_api_coding_agent.registry import create_registry
 
 
-def openai_client(model: BaseChatModel) -> AsyncOpenAI:
-    """Return an OpenAI client for the app serving ``model`` in-process."""
-    return AsyncOpenAI(
-        api_key="test",
-        base_url="http://test/v1",
-        http_client=httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=create_app(model))
-        ),
+@asynccontextmanager
+async def openai_client(model: BaseChatModel) -> AsyncGenerator[AsyncOpenAI, None]:
+    """Serve ``model`` in-process and call it through the OpenAI SDK."""
+    app = create_app(
+        lambda resources: create_registry(resources, model=model),
+        # Explicit values win over LGOS_* variables from the demo environment.
+        settings=ServerSettings(POSTGRES_URI=None, BACKGROUND="none"),
     )
+    async with (
+        app.router.lifespan_context(app),
+        AsyncOpenAI(
+            api_key="test",
+            base_url="http://test/v1",
+            http_client=httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)),
+        ) as client,
+    ):
+        yield client
 
 
 def answer_deltas(events: list[ResponseStreamEvent]) -> list[str]:

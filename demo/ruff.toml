@@ -1,6 +1,6 @@
 # Keep the rule selection aligned with the package pyproject.toml. This local
 # baseline keeps the demo independently copyable without the parent checkout.
-target-version = "py311"
+# Each project's requires-python sets the target version.
 line-length = 88
 
 [format]

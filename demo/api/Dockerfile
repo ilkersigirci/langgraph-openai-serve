@@ -19,7 +19,9 @@ ARG PGID
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    LGOS_HOST=0.0.0.0 \
+    LGOS_REGISTRY=lgos_demo_api.registry:open_registry
 
 WORKDIR /app
 
@@ -27,7 +29,7 @@ RUN groupadd --gid "$PGID" app \
     && useradd --uid "$PUID" --gid "$PGID" --create-home \
         --shell /usr/sbin/nologin app
 
-CMD ["lgos-demo-api"]
+CMD ["lgos", "serve"]
 
 FROM python AS dependencies
 
@@ -60,7 +62,7 @@ COPY --from=lgos src /workspace/langgraph-openai-serve/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install \
         --python /app/.venv/bin/python \
-        --editable "/workspace/langgraph-openai-serve[tracing]"
+        --editable "/workspace/langgraph-openai-serve[server]"
 
 USER app
 

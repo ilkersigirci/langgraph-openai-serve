@@ -6,7 +6,8 @@ FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE} AS base
 ARG PUID=1000
 ARG PGID=1000
-ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    LGOS_HOST=0.0.0.0 LGOS_REGISTRY=lgos_api_coding_agent.registry:create_registry
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl git ripgrep \
@@ -23,13 +24,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src /app/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-default-groups
-CMD ["lgos-api-coding-agent"]
+CMD ["lgos", "serve"]
 
 FROM base AS development
 COPY --from=lgos pyproject.toml README.md LICENSE /opt/langgraph-openai-serve/
 COPY --from=lgos src /opt/langgraph-openai-serve/src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/.venv/bin/python --editable /opt/langgraph-openai-serve
+    uv pip install --python /app/.venv/bin/python --editable "/opt/langgraph-openai-serve[server]"
 USER app
 
 FROM base AS production

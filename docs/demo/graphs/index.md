@@ -47,8 +47,8 @@ or expose event replay.
 
 Most graph code is owned by the independent `demo/api` project:
 
-- `demo/api/src/lgos_demo_api/app.py` registers graph names as OpenAI model
-  names.
+- `demo/api/src/lgos_demo_api/registry.py` registers graph names as OpenAI
+  model names for `lgos serve` and `lgos worker`.
 - `demo/api/src/lgos_demo_api/graphs/` contains its graphs and adapters.
 - `demo/api-coding-agent/src/lgos_api_coding_agent/` owns the separately deployed coding-agent showcase, currently backed by Codex.
 - `demo/api/src/lgos_demo_api/corpus/` contains the Markdown packaged with the

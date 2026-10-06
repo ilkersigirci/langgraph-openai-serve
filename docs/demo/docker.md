@@ -176,7 +176,7 @@ settings](reference.md#opentelemetry-settings).
     # Choose litellm or bifrost.
     OPENAI_GATEWAY_TYPE=litellm
     COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
-    DEMO_API_BACKGROUND_ENABLED=True
+    LGOS_BACKGROUND=hatchet
     HATCHET_CLIENT_TOKEN=...
     ```
 

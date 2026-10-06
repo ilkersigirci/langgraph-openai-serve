@@ -10,7 +10,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 - `tests/server/` covers `lgos serve`, `lgos worker`, and
   `langgraph_openai_serve.server`. Build its apps with
   `tests.server.support.server_settings()`, so `LGOS_*` variables from the
-  environment never reach a test.
+  environment never reach a test. Its live PostgreSQL path runs through
+  `just demo/test-postgres --editable`.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `just demo/test`; add `--editable` to overlay the current LGOS
   checkout into both graph API test runs.

@@ -37,7 +37,8 @@ runs:
         uv_args=(--directory "$PROJECT_DIR" --locked)
         ty_args=(src)
         if [[ -n "$EDITABLE_PACKAGE" ]]; then
-          uv_args+=(--with-editable "$EDITABLE_PACKAGE")
+          # The server extra supplies `lgos serve` and its integrations.
+          uv_args+=(--with-editable "$EDITABLE_PACKAGE[server]")
           ty_args+=(--extra-search-path "$EDITABLE_PACKAGE/src")
         fi
         uv run "${uv_args[@]}" pytest

@@ -8,8 +8,8 @@ from langgraph_openai_serve import GraphError
 from openai import BadRequestError
 from openai_codex.models import Notification
 
-from lgos_api_coding_agent.app import Conversation, graph_config
 from lgos_api_coding_agent.codex_model import conversation_prompt
+from lgos_api_coding_agent.registry import Conversation, graph_config
 from tests.support import answer_deltas, event, message, model, openai_client, terminal
 
 if TYPE_CHECKING:

@@ -40,7 +40,7 @@ Docker supplies the execution boundary: a non-root process, read-only root,
 writable workspace and temporary directories, and no Docker socket. Codex has
 network access, including to the other demo services, and can read its own
 model credential. Use this shared service
-with trusted users and repositories. Running `lgos-api-coding-agent` directly on the host
+with trusted users and repositories. Running the coding agent directly on the host
 would give its commands the host process's permissions.
 
 See the [graph guide](../../docs/demo/graphs/coding-agent.md) for the

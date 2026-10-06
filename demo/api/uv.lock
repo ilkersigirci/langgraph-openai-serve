@@ -1322,34 +1322,38 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.28.0"
+version = "0.29.0rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "openai" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/ff/19a610a02171274a8989e75d62227efc0672f884061f3b56ac25358fbcf8/langgraph_openai_serve-0.28.0.tar.gz", hash = "sha256:2d647d50e117f49e402250271a17ca0455ae07269dbeec667f9abf230df41f3e", size = 53038, upload-time = "2026-09-29T17:47:58.48Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/ac/686595ef4ec3e74ea6d9fa8ad514553e6faed0668dfd24ef3fc96d24aa92/langgraph_openai_serve-0.29.0rc1.tar.gz", hash = "sha256:0d959025bd604a7007457846e104a6b1093f64386e0d0e51da235c705b362ba5", size = 61461, upload-time = "2026-10-06T15:45:18.649Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/a5/0a60e80bf1bc8d8af94bc6253cce212b20aae38713212fb9d5bc7d749873/langgraph_openai_serve-0.28.0-py3-none-any.whl", hash = "sha256:675704c5e78d32f2b902da1bdb5d4c875e3459a70d71a277fffe714ffb8193f1", size = 74263, upload-time = "2026-09-29T17:47:57.194Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/ca/b1524d1b94d87d023bc1e423a9b67c529bf78d488154aaaf08059174c927/langgraph_openai_serve-0.29.0rc1-py3-none-any.whl", hash = "sha256:11272422152df4bc386b6b3dc208956f97695d21b044adbe3dc9e1e136ff1989", size = 86964, upload-time = "2026-10-06T15:45:17.276Z" },
 ]
 
 [package.optional-dependencies]
-hatchet = [
-    { name = "hatchet-sdk" },
-]
-postgres = [
-    { name = "langgraph-checkpoint-postgres" },
-    { name = "psycopg" },
-    { name = "psycopg-pool" },
-]
-tracing = [
+server = [
+    { name = "fastapi" },
+    { name = "hatchet-sdk", extra = ["otel"] },
     { name = "langchain" },
     { name = "langfuse" },
+    { name = "langgraph-checkpoint-postgres" },
+    { name = "opentelemetry-distro" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-instrumentation-httpx" },
+    { name = "opentelemetry-instrumentation-logging" },
+    { name = "opentelemetry-instrumentation-psycopg" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
+    { name = "structlog" },
 ]
 
 [[package]]
@@ -1412,22 +1416,13 @@ version = "0.1.0"
 source = { editable = "." }
 default-groups = ["dev", "test"]
 dependencies = [
-    { name = "fastapi" },
-    { name = "hatchet-sdk", extra = ["otel"] },
     { name = "httpx2" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
-    { name = "langgraph-openai-serve", extra = ["hatchet", "postgres", "tracing"] },
+    { name = "langgraph-openai-serve", extra = ["server"] },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "opentelemetry-distro" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-instrumentation-logging" },
-    { name = "opentelemetry-instrumentation-psycopg" },
     { name = "plotly" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "structlog" },
 ]
 
 [package.dev-dependencies]
@@ -1450,21 +1445,12 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.142.2" },
-    { name = "hatchet-sdk", extras = ["otel"] },
     { name = "httpx2", specifier = ">=2.13,<3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
-    { name = "langgraph-openai-serve", extras = ["hatchet", "postgres", "tracing"], specifier = ">=0.27.0" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.29.0rc1" },
     { name = "numpy", specifier = ">=2.4.6" },
-    { name = "opentelemetry-distro", specifier = ">=0.66b0,<0.67" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.45.0,<2" },
-    { name = "opentelemetry-instrumentation-httpx", specifier = ">=0.66b0,<0.67" },
-    { name = "opentelemetry-instrumentation-logging", specifier = ">=0.66b0,<0.67" },
-    { name = "opentelemetry-instrumentation-psycopg", specifier = ">=0.66b0,<0.67" },
     { name = "plotly", specifier = ">=6,<7" },
-    { name = "psycopg", extras = ["binary"] },
-    { name = "structlog", specifier = ">=26.1.0,<27" },
 ]
 
 [package.metadata.requires-dev]

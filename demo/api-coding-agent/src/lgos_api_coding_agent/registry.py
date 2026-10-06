@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated
 
-import uvicorn
-from fastapi import FastAPI
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langgraph.graph import END, START, StateGraph
@@ -16,9 +14,9 @@ from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
     GraphRequest,
-    LanggraphOpenaiServe,
 )
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
+from langgraph_openai_serve.server import ServerResources
 from pydantic import BaseModel
 
 from lgos_api_coding_agent.codex_model import CodexChatModel
@@ -69,23 +67,13 @@ def graph_config(model: BaseChatModel) -> GraphConfig:
     )
 
 
-def create_app(model: BaseChatModel | None = None) -> FastAPI:
+def create_registry(
+    _resources: ServerResources, *, model: BaseChatModel | None = None
+) -> GraphRegistry:
+    """Serve the coding agent; Codex keeps its own thread memory."""
     if model is None:
         settings = RuntimeSettings()
         model = CodexChatModel(
             event_source=runtime_events(settings), model_name=settings.model
         )
-    registry = GraphRegistry(graphs={GRAPH_ID: graph_config(model)})
-    # FastAPI records requests through the global providers; export belongs to
-    # `opentelemetry-instrument`, so FastAPI must not add its own.
-    app = FastAPI(
-        telemetry={
-            "auto_configure": False,
-            "exclude": lambda scope: scope["path"].endswith("/health"),
-        }
-    )
-    return LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api().app
-
-
-def main() -> None:
-    uvicorn.run(create_app(), host="0.0.0.0", port=8000)
+    return GraphRegistry(graphs={GRAPH_ID: graph_config(model)})

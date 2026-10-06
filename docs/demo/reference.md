@@ -161,9 +161,14 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 
 ## Demo API Settings
 
+The demo API and its worker run `lgos serve` and `lgos worker`. Their server
+settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
+`LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
+described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
+graphs read these `DEMO_API_` settings:
+
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_API_PORT` | HTTP port used by `lgos-demo-api` |
 | `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
 | `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | Upstream generation model |
@@ -174,12 +179,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
-| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
-| `DEMO_API_INTERRUPT_TTL_MINUTES` | Age after which the demo API deletes a paused interrupt run; keep it longer than any expected review wait |
-| `DEMO_API_INTERRUPT_SWEEP_INTERVAL_MINUTES` | How often the demo API looks for expired paused runs |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
-| `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
-| `DEMO_API_HATCHET_WORKER_SLOTS` | Worker concurrency, 1 to 4: each interrupt graph run holds one of the worker's four PostgreSQL run leases. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
 | `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |

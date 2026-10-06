@@ -91,7 +91,7 @@ services:
     environment:
       <<: *lgos-otel-server-environment
       OTEL_SERVICE_NAME: lgos-demo-api
-    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -104,7 +104,7 @@ services:
     environment:
       <<: *lgos-otel-server-environment
       OTEL_SERVICE_NAME: lgos-demo-api
-    command: ["opentelemetry-instrument", "lgos-demo-api"]
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -117,7 +117,7 @@ services:
     environment:
       <<: *lgos-otel-server-environment
       OTEL_SERVICE_NAME: lgos-background-worker
-    command: ["opentelemetry-instrument", "lgos-demo-background-worker"]
+    command: ["opentelemetry-instrument", "lgos", "worker"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -130,7 +130,7 @@ services:
     environment:
       <<: *lgos-otel-server-environment
       OTEL_SERVICE_NAME: lgos-api-coding-agent
-    command: ["opentelemetry-instrument", "lgos-api-coding-agent"]
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
