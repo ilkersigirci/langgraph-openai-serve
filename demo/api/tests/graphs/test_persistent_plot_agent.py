@@ -63,7 +63,7 @@ def _registry(model: BaseChatModel) -> GraphRegistry:
     graph = create_persistent_plot_agent(InMemoryStore(), model)
     return GraphRegistry(
         graphs={
-            "persistent-plot-agent": create_persistent_plot_agent_config(lambda: graph),
+            "persistent-plot-agent": create_persistent_plot_agent_config(graph),
         }
     )
 
@@ -393,11 +393,7 @@ async def test_streamed_response_reports_the_private_agent_model_usage(
         )
         graph = create_persistent_plot_agent(InMemoryStore())
         registry = GraphRegistry(
-            graphs={
-                "persistent-plot-agent": create_persistent_plot_agent_config(
-                    lambda: graph
-                )
-            }
+            graphs={"persistent-plot-agent": create_persistent_plot_agent_config(graph)}
         )
         app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
         async with (

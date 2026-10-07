@@ -1,6 +1,6 @@
 """Responses-only general chatbot built from ordinary LangGraph nodes."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import httpx2
 from langchain_core.messages import (
@@ -331,7 +331,7 @@ def create_advanced_graph(  # ruff: ignore[complex-structure, too-many-statement
 
 
 def create_advanced_graph_config(
-    graph_factory: Callable[[], AdvancedGraph],
+    graph: AdvancedGraph,
 ) -> GraphConfig:
     def context(request: GraphRequest, _options: None) -> AdvancedContext:
         return AdvancedContext(request=request)
@@ -350,7 +350,7 @@ def create_advanced_graph_config(
         )
 
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description=(
             "General-purpose Responses chatbot with client-executed tools, routed "
             "research, file understanding, cited answers, and reviewed persistent "

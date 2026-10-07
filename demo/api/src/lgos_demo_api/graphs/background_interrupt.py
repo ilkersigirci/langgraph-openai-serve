@@ -1,6 +1,5 @@
 """Deterministic background report with durable approval and resumption."""
 
-from collections.abc import Callable
 from typing import Literal
 
 from langchain_core.messages import AIMessage
@@ -90,10 +89,10 @@ def create_background_interrupt_graph(
 
 
 def create_background_interrupt_graph_config(
-    graph_factory: Callable[[], BackgroundInterruptGraph],
+    graph: BackgroundInterruptGraph,
 ) -> GraphConfig:
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description=(
             "Demonstrates deterministic background preparation, human approval, "
             "and background resumption without a model call."

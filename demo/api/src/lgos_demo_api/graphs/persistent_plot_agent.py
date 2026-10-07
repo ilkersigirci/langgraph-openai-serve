@@ -1,6 +1,6 @@
 """A persistent chart managed by a LangChain agent."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated, Any, Literal
@@ -359,11 +359,11 @@ def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
 
 
 def create_persistent_plot_agent_config(
-    graph_factory: Callable[[], PersistentPlotAgent],
+    graph: PersistentPlotAgent,
 ) -> GraphConfig:
     """Create the OpenAI-facing configuration for the agent."""
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description="Uses an agent to inspect and edit a persistent revenue chart.",
         context_factory=context_factory,
         client_settings=PersistentPlotAgentSettings,

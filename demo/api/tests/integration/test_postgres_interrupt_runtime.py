@@ -48,7 +48,7 @@ def _resources(postgres_uri: str) -> AbstractAsyncContextManager[ServerResources
 def _api_app(runtime: ServerResources) -> FastAPI:
     graph = create_interruptible_graph(runtime.checkpointer)
     registry = GraphRegistry(
-        graphs={MODEL: create_interruptible_graph_config(lambda: graph)},
+        graphs={MODEL: create_interruptible_graph_config(graph)},
         run_coordinator=runtime.run_coordinator,
     )
     return LanggraphOpenaiServe(registry=registry).bind_openai_api().app

@@ -69,10 +69,10 @@ async def open_registry(
     ) as advanced_graph:
         yield GraphRegistry(
             graphs={
-                "advanced-graph": create_advanced_graph_config(lambda: advanced_graph),
+                "advanced-graph": create_advanced_graph_config(advanced_graph),
                 "background-mock": background_mock_graph_config,
                 "background-interrupt": create_background_interrupt_graph_config(
-                    lambda: background_interrupt_graph,
+                    background_interrupt_graph,
                 ),
                 "citation-events": citation_graph_config,
                 "file-input": file_input_graph_config,
@@ -88,11 +88,11 @@ async def open_registry(
                 "status-events": status_event_graph_config,
                 "response-outcomes": response_outcome_graph_config,
                 "persistent-plot-agent": create_persistent_plot_agent_config(
-                    lambda: persistent_plot_agent,
+                    persistent_plot_agent,
                 ),
                 "simple-graph-external-tools": simple_external_tools_graph_config,
                 "interruptible-approval": create_interruptible_graph_config(
-                    lambda: interruptible_graph,
+                    interruptible_graph,
                 ),
             },
             run_coordinator=resources.run_coordinator,

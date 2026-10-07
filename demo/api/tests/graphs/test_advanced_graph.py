@@ -229,7 +229,7 @@ async def graph_client(
             store=store,
             web_search_tool=fixture_web_search,
         )
-        config = create_advanced_graph_config(lambda: graph)
+        config = create_advanced_graph_config(graph)
         app = (
             LanggraphOpenaiServe(
                 registry=GraphRegistry(
@@ -806,7 +806,7 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
             web_search_tool=fixture_web_search,
         )
         registry = GraphRegistry(
-            graphs={"advanced-graph": create_advanced_graph_config(lambda: graph)},
+            graphs={"advanced-graph": create_advanced_graph_config(graph)},
             run_coordinator=InMemoryRunCoordinator(),
         )
         request = ResponseCreateRequest(
