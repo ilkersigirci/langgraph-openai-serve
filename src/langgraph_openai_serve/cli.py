@@ -17,6 +17,7 @@ _REGISTRY = click.Argument(["registry"], envvar="LGOS_REGISTRY")
 
 
 @click.group()
+@click.version_option(package_name="langgraph_openai_serve")
 def main() -> None:
     """Serve a graph registry or run its Hatchet worker."""
 

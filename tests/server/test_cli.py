@@ -4,6 +4,7 @@ import socket
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Test-only subprocess with explicit arguments and no shell.
 import sys
 import time
+from importlib.metadata import version
 from pathlib import Path
 
 import click
@@ -29,6 +30,14 @@ def _environment(**variables: str) -> dict[str, str]:
         if not key.startswith(("LGOS_", "UVICORN_", "WEB_CONCURRENCY"))
     }
     return {**environment, "LGOS_ENABLE_LANGFUSE": "False", **variables}
+
+
+def test_lgos_reports_the_installed_package_version() -> None:
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
+        [LGOS, "--version"], capture_output=True, check=True, text=True
+    )
+
+    assert result.stdout == f"lgos, version {version('langgraph_openai_serve')}\n"
 
 
 @pytest.mark.parametrize(
