@@ -9,7 +9,7 @@ dependencies = [
     "httpx2>=2.13,<3",
     "langchain-openai>=1.6.6",
     "langchain-text-splitters>=1.1.0",
-    "langgraph-openai-serve[server]>=0.29.0rc2",
+    "langgraph-openai-serve[server]>=0.29.0",
     "numpy>=2.4.6",
     "plotly>=6,<7",
 ]
