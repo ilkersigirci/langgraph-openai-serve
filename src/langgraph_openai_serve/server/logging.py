@@ -1,9 +1,12 @@
-"""JSON logging on stdout for the server and worker processes."""
+"""Structured logging on stdout for the server and worker processes."""
 
 import logging.config
+import os
+import sys
 from typing import Any
 
 import structlog
+from structlog.typing import Processor
 
 from langgraph_openai_serve.core.logging import RequestContextFilter
 
@@ -27,7 +30,7 @@ def logging_config(application: str, *, root_level: int) -> dict[str, Any]:
             "request_context": {"()": RequestContextFilter},
         },
         "formatters": {
-            "json": {
+            "structlog": {
                 "()": structlog.stdlib.ProcessorFormatter,
                 "foreign_pre_chain": [
                     structlog.stdlib.add_log_level,
@@ -37,17 +40,15 @@ def logging_config(application: str, *, root_level: int) -> dict[str, Any]:
                 ],
                 "processors": [
                     structlog.processors.StackInfoRenderer(),
-                    structlog.processors.format_exc_info,
-                    structlog.processors.EventRenamer("message"),
                     structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                    structlog.processors.JSONRenderer(),
+                    *_renderers(),
                 ],
             }
         },
         "handlers": {
             "stdout": {
                 "class": "logging.StreamHandler",
-                "formatter": "json",
+                "formatter": "structlog",
                 # Records from graph nodes and dependencies also get request IDs.
                 "filters": ["request_context"],
                 "level": "INFO",
@@ -71,6 +72,19 @@ def logging_config(application: str, *, root_level: int) -> dict[str, Any]:
     }
 
 
+def _renderers() -> list[Processor]:
+    """Render readable lines for a person at a terminal and JSON for collectors."""
+    if sys.stdout.isatty():
+        # ConsoleRenderer formats exceptions itself. Like structlog's default
+        # configuration, honor the NO_COLOR convention.
+        return [structlog.dev.ConsoleRenderer(colors=not os.environ.get("NO_COLOR"))]
+    return [
+        structlog.processors.format_exc_info,
+        structlog.processors.EventRenamer("message"),
+        structlog.processors.JSONRenderer(),
+    ]
+
+
 def configure_logging(application: str, *, root_level: int) -> None:
-    """Install the JSON configuration for a process that is not run by Uvicorn."""
+    """Install the logging configuration for a process that Uvicorn does not run."""
     logging.config.dictConfig(logging_config(application, root_level=root_level))

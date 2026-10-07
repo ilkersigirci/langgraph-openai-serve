@@ -64,8 +64,8 @@ lgos serve my_app.registry:create_registry --port 8080 --reload
 UVICORN_HOST=0.0.0.0 UVICORN_WORKERS=4 lgos serve my_app.registry:create_registry
 ```
 
-LGOS changes two defaults: it writes [JSON logs](#logs-and-telemetry), which
-`--log-config` replaces, and turns off access logs, which `--access-log`
+LGOS changes two defaults: it writes [structured logs](#logs-and-telemetry),
+which `--log-config` replaces, and turns off access logs, which `--access-log`
 enables. `--env-file` loads `LGOS_*` settings, but as with `UVICORN_*`
 variables, name the registry on the command line or in the process environment.
 
@@ -112,11 +112,11 @@ startup under an advisory lock, and deletes paused runs older than
 
 ## Logs And Telemetry
 
-Both commands write JSON records to stdout. Records from LGOS, Uvicorn,
-Hatchet, and the registry's top-level package appear at `INFO`; other loggers
-at `WARNING`. Every record handled during a request carries the
-[LGOS request fields](production-logging.md), including records from graph
-nodes.
+Both commands write JSON records to stdout, or readable lines when stdout is a
+terminal. Records from LGOS, Uvicorn, Hatchet, and the registry's top-level
+package appear at `INFO`; other loggers at `WARNING`. Every record handled
+during a request carries the [LGOS request fields](production-logging.md),
+including records from graph nodes.
 
 Launch either command with `opentelemetry-instrument` to export traces,
 metrics, and logs through the standard `OTEL_*` variables:

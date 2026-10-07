@@ -40,8 +40,8 @@ Docker host, `host.docker.internal` is available for host services.
 
 ## Observability
 
-JSON logging is always enabled, and LGOS adds request and model fields to
-records from your graphs too. Set `LGOS_ENABLE_LANGFUSE=True` with the
+Logs are JSON, or readable lines in a terminal, and LGOS adds request and
+model fields to records from your graphs too. Set `LGOS_ENABLE_LANGFUSE=True` with the
 `LANGFUSE_*` credentials of an existing project to trace graph runs. Langfuse
 can record model inputs and outputs; configure masking and retention there.
 
