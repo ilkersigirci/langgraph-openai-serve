@@ -5,7 +5,6 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langgraph_openai_serve import (
     ClientFunctionTool,
-    GraphConfig,
     GraphRegistry,
     GraphRequest,
     NamedFunctionToolChoice,
@@ -13,6 +12,7 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs import simple_external_tools as graph_module
+from lgos_demo_api.utils import client_tools
 
 MODEL = "simple-graph-external-tools"
 WEATHER_PARAMETERS = {
@@ -66,13 +66,7 @@ class RecordingModel:
 
 def _registry() -> GraphRegistry:
     return GraphRegistry(
-        graphs={
-            MODEL: GraphConfig(
-                graph=graph_module.simple_external_tools_graph,
-                description="DUMMY",
-                request_to_input=graph_module.request_to_input,
-            )
-        }
+        graphs={MODEL: graph_module.simple_external_tools_graph_config}
     )
 
 
@@ -91,7 +85,7 @@ async def test_client_tools_are_bound_and_returned_to_the_client(
             ],
         )
     )
-    monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
     graph_request = GraphRequest(
         model=MODEL,
         metadata={},
@@ -122,7 +116,7 @@ async def test_tool_results_are_forwarded_with_the_complete_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = RecordingModel(AIMessage(content="It is sunny in Istanbul."))
-    monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
     graph_request = GraphRequest(
         model=MODEL,
         metadata={},

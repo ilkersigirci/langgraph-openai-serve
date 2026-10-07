@@ -1,48 +1,18 @@
 """Simple model graph with tools supplied by the OpenAI client."""
 
-from collections.abc import Sequence
-from typing import Annotated, Any
-
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph_openai_serve import (
-    ClientFunctionTool,
-    ClientToolChoice,
-    GraphConfig,
-    GraphRequest,
-    NamedFunctionToolChoice,
-)
-from pydantic import BaseModel, Field
+from langgraph_openai_serve import GraphConfig
 
-from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.simple import DEFAULT_SYSTEM_PROMPT
+from lgos_demo_api.utils.client_tools import (
+    ClientToolsState,
+    invoke_client_tool_model,
+    request_to_input,
+)
 
 
-class ExternalToolsState(BaseModel):
-    """Messages and client-owned tools for one model invocation."""
-
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    tools: tuple[ClientFunctionTool, ...] = Field(default_factory=tuple)
-    tool_choice: ClientToolChoice | None = None
-    parallel_tool_calls: bool | None = None
-
-
-def request_to_input(
-    request: GraphRequest,
-    messages: list[BaseMessage],
-) -> ExternalToolsState:
-    """Keep client-provided tools with the messages sent to the model."""
-    return ExternalToolsState(
-        messages=messages,
-        tools=request.tools,
-        tool_choice=request.tool_choice,
-        parallel_tool_calls=request.parallel_tool_calls,
-    )
-
-
-async def generate(state: ExternalToolsState) -> dict[str, list[AIMessage]]:
+async def generate(state: ClientToolsState) -> dict[str, list[AIMessage]]:
     """Return a model response without executing client-owned tools."""
     model_response = await invoke_client_tool_model(
         state,
@@ -52,60 +22,7 @@ async def generate(state: ExternalToolsState) -> dict[str, list[AIMessage]]:
     return {"messages": [model_response]}
 
 
-async def invoke_client_tool_model(
-    state: ExternalToolsState,
-    *,
-    system_prompt: str,
-    temperature: float,
-    default_tool_choice: ClientToolChoice | None = None,
-) -> AIMessage:
-    """Invoke the shared chat model while leaving tool execution to the client."""
-    model = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=temperature,
-    )
-    conversation = [SystemMessage(content=system_prompt), *state.messages]
-
-    if state.tools:
-        binding_options: dict[str, Any] = {}
-        tool_choice = state.tool_choice or default_tool_choice
-        if tool_choice is not None:
-            binding_options["tool_choice"] = _chat_tool_choice(tool_choice)
-        if state.parallel_tool_calls is not None:
-            binding_options["parallel_tool_calls"] = state.parallel_tool_calls
-        return await model.bind_tools(
-            [_chat_tool(tool) for tool in state.tools],
-            **binding_options,
-        ).ainvoke(conversation)
-    return await model.ainvoke(conversation)
-
-
-def _chat_tool(tool: ClientFunctionTool) -> dict[str, object]:
-    function: dict[str, object] = {"name": tool.name}
-    if tool.description is not None:
-        function["description"] = tool.description
-    if tool.parameters is not None:
-        function["parameters"] = dict(tool.parameters)
-    if tool.strict is not None:
-        function["strict"] = tool.strict
-    return {"type": "function", "function": function}
-
-
-def _chat_tool_choice(tool_choice: ClientToolChoice) -> str | dict[str, object]:
-    if isinstance(tool_choice, NamedFunctionToolChoice):
-        return {
-            "type": "function",
-            "function": {"name": tool_choice.name},
-        }
-    if isinstance(tool_choice, str):
-        return tool_choice
-    msg = "This graph only supports client-owned function tools."
-    raise ValueError(msg)
-
-
-workflow = StateGraph(ExternalToolsState)
+workflow = StateGraph(ClientToolsState)
 workflow.add_node("generate", generate)
 workflow.add_edge("generate", END)
 workflow.set_entry_point("generate")
@@ -120,10 +37,4 @@ simple_external_tools_graph_config = GraphConfig(
     request_to_input=request_to_input,
 )
 
-__all__ = [
-    "ExternalToolsState",
-    "invoke_client_tool_model",
-    "request_to_input",
-    "simple_external_tools_graph",
-    "simple_external_tools_graph_config",
-]
+__all__ = ["simple_external_tools_graph", "simple_external_tools_graph_config"]

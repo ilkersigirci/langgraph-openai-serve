@@ -17,7 +17,6 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph_openai_serve import (
-    ClientFunctionTool,
     GraphConfig,
     GraphFeature,
     GraphRequest,
@@ -42,6 +41,7 @@ from lgos_demo_api.graphs.advanced_graph.state import (
 )
 from lgos_demo_api.graphs.server_tool import web_search
 from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.client_tools import chat_tool
 from lgos_demo_api.utils.file_inputs import resolve_file_inputs
 
 _ROUTER_PROMPT = """Classify the latest user request into exactly one workflow.
@@ -90,17 +90,6 @@ def create_model(http_client: httpx2.AsyncClient) -> ChatOpenAI:
         max_retries=0,
         max_tokens=4_096,
     )
-
-
-def _function_tool(tool_definition: ClientFunctionTool) -> dict[str, object]:
-    function: dict[str, object] = {"name": tool_definition.name}
-    if tool_definition.description is not None:
-        function["description"] = tool_definition.description
-    if tool_definition.parameters is not None:
-        function["parameters"] = dict(tool_definition.parameters)
-    if tool_definition.strict is not None:
-        function["strict"] = tool_definition.strict
-    return {"type": "function", "function": function}
 
 
 def _has_attachment(message: HumanMessage) -> bool:
@@ -256,7 +245,7 @@ def create_advanced_graph(  # ruff: ignore[complex-structure, too-many-statement
             if choice == "required" and state.get("web_search_used"):
                 choice = "auto"
             writer = model.bind_tools(
-                [_function_tool(tool_definition) for tool_definition in request.tools],
+                [chat_tool(tool) for tool in request.tools],
                 tool_choice=choice,
                 **(
                     {"parallel_tool_calls": request.parallel_tool_calls}
