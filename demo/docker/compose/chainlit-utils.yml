@@ -1,0 +1,16 @@
+# Opt in with `just demo/compose --dev --chainlit-utils`. The build context comes
+# from development.yml, so this override is not usable without --dev.
+services:
+  lgos-chainlit:
+    image: lgos-chainlit:local-utils
+    build:
+      target: local-utils
+      additional_contexts:
+        chainlit_utils: ../../../../chainlit-utils
+    volumes:
+      - type: bind
+        source: ../../../../chainlit-utils/src/chainlit_utils
+        target: /workspace/chainlit-utils/src/chainlit_utils
+        read_only: true
+        bind:
+          create_host_path: false

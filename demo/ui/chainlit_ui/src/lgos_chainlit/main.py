@@ -1,7 +1,8 @@
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from chainlit.config import config
 from chainlit.data import get_data_layer
@@ -28,7 +29,7 @@ serve_public_files()
 config.features.audio.enabled = settings.AUDIO_STT_MODEL is not None
 
 if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
-    assert settings.OPENAI_GATEWAY_API_KEY is not None
+    assert settings.OPENAI_GATEWAY_API_KEY is not None  # ruff: ignore[assert] - Pydantic settings validation already enforces this invariant.
     config.features.mcp.servers = [
         mcp_gateway_config(gateway, settings.OPENAI_GATEWAY_API_KEY)
     ]
@@ -48,7 +49,7 @@ async def _close_chainlit_data_layer() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await setup_chainlit_schema(str(get_chainlit_settings().DATABASE_URL))
         if settings.ENABLE_OAUTH_TOKEN_FORWARDING:
@@ -59,7 +60,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await _close_chainlit_data_layer()
 
 
-app = FastAPI(lifespan=lifespan)
+def _untraced(scope: MutableMapping[str, Any]) -> bool:
+    # One Socket.IO connection carries a whole chat session. Leaving it out lets
+    # each outbound gateway request start its own trace.
+    path = scope["path"]
+    return path.endswith("/health") or path.startswith("/ws/socket.io")
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    # FastAPI records requests through the global providers; export belongs to
+    # `opentelemetry-instrument`, so FastAPI must not add its own.
+    telemetry={"auto_configure": False, "exclude": _untraced},
+)
 configure_auth(app)
 
 mount_chainlit(

@@ -8,18 +8,18 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "boto3>=1.43.75,<2",
     "chainlit>=2.12.0,<3",
-    "chainlit-utils[audio,sso]>=0.2.11,<0.3",
+    "chainlit-utils[audio,sso]>=0.2.13,<0.3",
     "cryptography>=49,<50",
     "emoji>=2,<3",
-    "fastapi[standard]>=0.121.0",
+    "fastapi[standard]>=0.142.2",
     "openai>=3.14.1,<4",
-    "opentelemetry-distro>=0.65b0,<0.66",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0,<2",
-    "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
-    "opentelemetry-instrumentation-httpx>=0.65b0,<0.66",
+    "opentelemetry-distro>=0.66b0,<0.67",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2",
+    "opentelemetry-instrumentation-httpx>=0.66b0,<0.67",
     "plotly>=6,<7",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
+    "requests>=2.32,<3", # Chainlit imports Traceloop, which imports requests without declaring it.
 ]
 
 [project.scripts]
@@ -27,8 +27,8 @@ lgos-chainlit = "lgos_chainlit.main:run"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.3",
-    "ty>=0.0.72",
+    "ruff>=0.16.10",
+    "ty>=0.0.84",
 ]
 test = [
     "anyio>=4.14,<5",
@@ -55,6 +55,7 @@ env = [
     "U:DATABASE_URL",
     "DEMO_CHAINLIT_LOGIN_TYPE=mock",
     "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False",
+    "DEMO_CHAINLIT_STATUS_DISPLAY=steps",
     "CHAINLIT_ENV_FILE=__pytest_no_dotenv__",
     "OPENAI_GATEWAY_TYPE=litellm",
     "OPENAI_GATEWAY_BASE_URL=https://gateway.example",
@@ -74,14 +75,9 @@ env = [
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py311"
-line-length = 88
+extend = "../../ruff.toml"
 src = ["src", "tests"]
-
-[tool.ruff.lint]
-select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
-ignore = ["E501"]
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.1,<0.13"]
+requires = ["uv_build>=0.12.23,<0.13"]

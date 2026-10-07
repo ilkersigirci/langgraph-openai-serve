@@ -6,7 +6,7 @@ gateway's `/model/info` endpoint.
 
 ## Usage
 
-`just demo/compose` syncs both demo catalogs after LiteLLM and its
+`just demo/compose` syncs the API A, API B, and coding-agent catalogs after LiteLLM and its
 dependencies are healthy, then starts and syncs Open WebUI. Open the UIs after
 the command completes. The `--dev` and `--otel` flags keep the same sequence.
 

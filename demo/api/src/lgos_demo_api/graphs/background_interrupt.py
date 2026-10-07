@@ -1,6 +1,5 @@
 """Deterministic background report with durable approval and resumption."""
 
-from collections.abc import Callable
 from typing import Literal
 
 from langchain_core.messages import AIMessage
@@ -57,7 +56,8 @@ def review_report(
         decision = answer.strip().lower()
         if decision in {"approve", "reject"}:
             return {"decision": decision}
-    raise ValueError("Report review response must be approve or reject.")
+    msg = "Report review response must be approve or reject."
+    raise ValueError(msg)
 
 
 async def finish_report(
@@ -89,10 +89,10 @@ def create_background_interrupt_graph(
 
 
 def create_background_interrupt_graph_config(
-    graph_factory: Callable[[], BackgroundInterruptGraph],
+    graph: BackgroundInterruptGraph,
 ) -> GraphConfig:
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description=(
             "Demonstrates deterministic background preparation, human approval, "
             "and background resumption without a model call."

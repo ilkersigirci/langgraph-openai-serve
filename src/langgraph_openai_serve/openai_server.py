@@ -128,6 +128,9 @@ class LanggraphOpenaiServe:
             title="LangGraph OpenAI Compatible API",
             description="An OpenAI-compatible API for LangGraph",
             version=get_version(),
+            # FastAPI's native telemetry belongs to the host app, so the host's
+            # settings, including turning it off, also cover the mounted routes.
+            telemetry={"tracing": False, "metrics": False, "logs": False},
             **settings.fastapi_docs_kwargs,
         )
         # Dependencies in mounted routes resolve against the mounted app.

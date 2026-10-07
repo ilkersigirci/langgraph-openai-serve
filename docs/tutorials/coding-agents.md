@@ -10,6 +10,10 @@ The demo
 is the smallest tool-enabled graph. It forwards client-provided tools to the
 upstream model and does not execute them.
 
+To serve a coding agent behind LGOS, see the
+[coding-agent showcase](../demo/graphs/coding-agent.md). That service runs Codex
+on the server and accepts requests from the demo UIs.
+
 ## Endpoint And Model
 
 Connect directly to LGOS and use the exact model ID from `GET /v1/models`:

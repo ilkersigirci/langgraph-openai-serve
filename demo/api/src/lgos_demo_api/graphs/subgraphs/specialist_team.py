@@ -19,7 +19,7 @@ def _select_route(question: str) -> Route:
     return "docs"
 
 
-async def route_question(state: ComplexSubgraphState) -> dict[str, str]:
+def route_question(state: ComplexSubgraphState) -> dict[str, str]:
     normalized_question = " ".join(state.question.strip().split())
     route = _select_route(normalized_question)
     return {

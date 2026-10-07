@@ -149,7 +149,7 @@ class ModelProvider:
         self.requests.append(payload)
         assert request.url.path.endswith("/responses")
         assert payload["store"] is False
-        assert payload["temperature"] == 0.7
+        assert payload["temperature"] == pytest.approx(0.7)
         response = self.responses.popleft()
         if not payload.get("stream", False):
             return httpx2.Response(200, json=response)
@@ -177,7 +177,8 @@ class FixtureKnowledgeBase:
     async def upload(self, filename, content):
         self.uploads.append((filename, content))
         if self.upload_error:
-            raise httpx2.ReadError("connection lost")
+            msg = "connection lost"
+            raise httpx2.ReadError(msg)
         return "file_saved"
 
     async def index(self, file_id):
@@ -203,7 +204,8 @@ async def graph_client(
     store = store or InMemoryStore()
 
     async def unexpected_file_request(request):
-        raise AssertionError(f"Unexpected Files API request: {request.url}")
+        msg = f"Unexpected Files API request: {request.url}"
+        raise AssertionError(msg)
 
     async with (
         httpx2.AsyncClient(
@@ -227,7 +229,7 @@ async def graph_client(
             store=store,
             web_search_tool=fixture_web_search,
         )
-        config = create_advanced_graph_config(lambda: graph)
+        config = create_advanced_graph_config(graph)
         app = (
             LanggraphOpenaiServe(
                 registry=GraphRegistry(
@@ -773,8 +775,14 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
         nonlocal request_count
         request_count += 1
         if request_count == 1:
-            assert not json.loads(request.content)["stream"]
-            return httpx2.Response(200, json=intent_response("chat"))
+            # The private intent call streams too, but its tokens stay hidden.
+            if not json.loads(request.content).get("stream"):
+                return httpx2.Response(200, json=intent_response("chat"))
+            return httpx2.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content=response_events(intent_response("chat")),
+            )
         return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
@@ -798,7 +806,7 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
             web_search_tool=fixture_web_search,
         )
         registry = GraphRegistry(
-            graphs={"advanced-graph": create_advanced_graph_config(lambda: graph)},
+            graphs={"advanced-graph": create_advanced_graph_config(graph)},
             run_coordinator=InMemoryRunCoordinator(),
         )
         request = ResponseCreateRequest(

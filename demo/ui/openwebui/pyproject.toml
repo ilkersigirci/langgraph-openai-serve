@@ -18,8 +18,8 @@ lgos-openwebui-sync = "lgos_openwebui.sync_functions:main"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.3",
-    "ty>=0.0.72",
+    "ruff>=0.16.10",
+    "ty>=0.0.84",
 ]
 test = [
     "anyio>=4.14,<5",
@@ -42,14 +42,19 @@ addopts = [
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py311"
-line-length = 88
+extend = "../../ruff.toml"
 src = ["src", "tests"]
 
-[tool.ruff.lint]
-select = ["B", "E", "F", "I", "PIE", "PTH", "RUF", "SIM", "W"]
-ignore = ["E501"]
+[tool.ruff.lint.extend-per-file-ignores]
+# Open WebUI parses these module docstrings as frontmatter, including the title.
+"src/lgos_openwebui/functions/generic/function.py" = [
+    "missing-trailing-period",
+    "missing-terminal-punctuation",
+]
+"src/lgos_openwebui/functions/uservalves_simple.py" = [
+    "missing-blank-line-after-summary",
+]
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.1,<0.13"]
+requires = ["uv_build>=0.12.23,<0.13"]

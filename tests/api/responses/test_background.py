@@ -37,7 +37,7 @@ from tests.graph.support.interrupt import make_multi_interrupt_graph
 from tests.graph.support.schemas import MessageState
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator
 
     from fastapi import Request
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -70,7 +70,7 @@ class _Graph:
 
     def config(self, **options) -> GraphConfig:
         graph = (
-            StateGraph(MessageState)
+            StateGraph(MessageState, context_schema=options.get("client_settings"))
             .add_node("reply", self.reply)
             .set_entry_point("reply")
             .set_finish_point("reply")
@@ -88,7 +88,7 @@ async def _client(
     registry: GraphRegistry,
     *,
     configured: bool = True,
-) -> AsyncIterator[AsyncOpenAI]:
+) -> AsyncGenerator[AsyncOpenAI, None]:
     backend = InMemoryBackgroundBackend(registry)
     app = FastAPI(lifespan=backend.lifespan)
 

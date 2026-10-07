@@ -1,6 +1,7 @@
 """Deterministic long stream for checking streaming and Stop in the demo UIs."""
 
-from typing import Annotated, Sequence
+from collections.abc import Sequence
+from typing import Annotated
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, BaseMessage

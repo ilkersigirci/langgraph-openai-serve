@@ -1,9 +1,11 @@
 """Run LangGraph workflows from protocol-neutral requests and messages."""
 
+import asyncio
 from collections.abc import AsyncGenerator, Collection
-from contextlib import aclosing
-from typing import Any, cast
+from contextlib import aclosing, suppress
+from typing import Any, Generic, TypeVar, cast
 
+from anyio import CancelScope, create_memory_object_stream
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.types import (
     Command,
@@ -13,17 +15,57 @@ from langgraph.types import (
     StreamPart,
     UpdatesStreamPart,
 )
+from opentelemetry import trace
 
 from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph import interrupt
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.graph.run import GraphRun, prepare_run
+from langgraph_openai_serve.graph.telemetry import invoke_workflow
 
 LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
 LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
 
 _MISSING = object()
+_Item = TypeVar("_Item")
+
+
+class TaskStream(Generic[_Item]):
+    """
+    Produce an async generator's items from a dedicated asyncio task.
+
+    AnyIO cancels a scope again at every await, and LangGraph then leaves node
+    tasks running once it runs them in the background: in parallel steps, or
+    while a stream reads message or custom events or subgraphs. The producer
+    task instead receives exactly one asyncio cancellation, however its consumer
+    is cancelled.
+    """
+
+    def __init__(self, source: AsyncGenerator[_Item, None], *, name: str) -> None:
+        # An unbuffered handoff propagates consumer backpressure into the source.
+        self._send, self.receive = create_memory_object_stream[_Item](max_buffer_size=0)
+
+        async def produce() -> None:
+            async with self._send, aclosing(source):
+                async for item in source:
+                    await self._send.send(item)
+
+        self._producer = asyncio.create_task(produce(), name=name)
+
+    async def aclose(self) -> None:
+        """Stop the producer, then raise the exception that ended it, if any."""
+        with CancelScope(shield=True):
+            try:
+                self._producer.cancel()
+                # Like asyncio.TaskGroup, also ignore a producer that cancelled
+                # itself: re-raised, that would read as the consumer's cancellation.
+                # LangGraph raises NodeCancelledError for a node that cancels itself.
+                with suppress(asyncio.CancelledError):
+                    await self._producer
+            finally:
+                self._send.close()
+                self.receive.close()
 
 
 async def run_langgraph(
@@ -122,51 +164,70 @@ async def stream_run(
     """
     run.begin_execution()
     # Without streaming, request only root values, exactly like ainvoke().
-    # LangGraph stops node tasks on one asyncio cancellation in every mode, but
-    # AnyIO's repeated cancellation leaves them running once a stream reads
-    # message or custom events or subgraphs; only token streams need those.
     stream_mode: list[StreamMode] = ["values"]
     if streaming:
         stream_mode += ["messages", "custom"]
     if stream_updates:
         stream_mode.append("updates")
 
-    final_output: Any = _MISSING
-    interrupts: dict[str, Interrupt] = {}
-    # LangGraph implements astream as an async generator, while its overload
-    # returns AsyncIterator. Keep the concrete type so cancellation closes it.
-    graph_stream = cast(
-        "AsyncGenerator[StreamPart[Any, Any], None]",
-        run.graph.astream(
-            run.inputs,
-            config=run.runnable_config,
-            context=run.context,
-            stream_mode=stream_mode,
-            subgraphs=streaming,
-            output_keys=run.graph.output_channels,
-            # Persist interrupt runs only when they pause or exit.
-            durability="exit" if run.interrupt is not None else None,
-            version="v2",
-        ),
-    )
-    async with aclosing(graph_stream):
-        async for part in graph_stream:
-            if part["type"] == "values":
-                if not part["ns"]:
-                    final_output = part["data"]
-                    interrupts.update((item.id, item) for item in part["interrupts"])
-            elif (event := _visible_event(part)) is not None:
-                yield event
+    with invoke_workflow(run.request) as span:
+        final_output: Any = _MISSING
+        interrupts: dict[str, Interrupt] = {}
+        # LangGraph implements astream as an async generator, while its overload
+        # returns AsyncIterator. Keep the concrete type so cancellation closes it.
+        graph_stream = cast(
+            "AsyncGenerator[StreamPart[Any, Any], None]",
+            run.graph.astream(
+                run.inputs,
+                config=run.runnable_config,
+                context=run.context,
+                stream_mode=stream_mode,
+                subgraphs=streaming,
+                output_keys=run.graph.output_channels,
+                # Persist interrupt runs only when they pause or exit.
+                durability="exit" if run.interrupt is not None else None,
+                version="v2",
+            ),
+        )
+        # asyncio copies this context into the producer task. Graph execution
+        # and cleanup inherit the span without changing the consumer's context.
+        with trace.use_span(
+            span, record_exception=False, set_status_on_exception=False
+        ):
+            parts = TaskStream(graph_stream, name="langgraph-astream")
+        try:
+            async for part in parts.receive:
+                if part["type"] == "values":
+                    if not part["ns"]:
+                        final_output = part["data"]
+                        interrupts.update(
+                            (item.id, item) for item in part["interrupts"]
+                        )
+                elif (event := _visible_event(part)) is not None:
+                    yield event
+        finally:
+            await parts.aclose()
 
-    if interrupts:
-        yield _interrupt_batch(run, interrupts.values())
-        return
-    if final_output is _MISSING:
-        msg = "LangGraph stream completed without a final value."
-        raise RuntimeError(msg)
-    message = await run.config.render_output(final_output)
-    usage = run.usage_metadata()
-    yield message.model_copy(update={"usage_metadata": usage}) if usage else message
+        output: LangGraphOutput
+        if interrupts:
+            output = _interrupt_batch(run, interrupts.values())
+        elif final_output is _MISSING:
+            msg = "LangGraph stream completed without a final value."
+            raise RuntimeError(msg)
+        else:
+            with trace.use_span(
+                span, record_exception=False, set_status_on_exception=False
+            ):
+                message = await run.config.render_output(final_output)
+            usage = run.usage_metadata()
+            output = (
+                message.model_copy(update={"usage_metadata": usage})
+                if usage
+                else message
+            )
+    # The run ends with its output; the consumer's handling of it is not part of
+    # the workflow.
+    yield output
 
 
 def _visible_event(part: StreamPart[Any, Any]) -> LangGraphStreamEvent | None:

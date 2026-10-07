@@ -445,20 +445,18 @@ async def test_interrupt_resumes_after_checkpointer_and_graph_restart(
     assert completed.text == "resumed:approve"
 
 
-async def test_interrupt_enabled_graph_requires_checkpointer() -> None:
-    config = GraphConfig(
-        graph=make_message_graph("ok"),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-    )
-
+def test_interrupt_enabled_graph_requires_checkpointer() -> None:
     with pytest.raises(GraphError, match="checkpointer"):
-        await config.resolve_graph()
+        GraphConfig(
+            graph=make_message_graph("ok"),
+            description="DUMMY",
+            features={GraphFeature.INTERRUPTS},
+        )
 
 
 def test_interrupt_enabled_graph_requires_run_coordinator() -> None:
     config = GraphConfig(
-        graph=make_message_graph("ok"),
+        graph=make_interrupt_graph(checkpointer=MinimalAsyncCheckpointer()),
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
     )
@@ -479,18 +477,15 @@ def test_interrupt_enabled_graph_requires_run_coordinator() -> None:
         pytest.param(AsyncCheckpointerWithoutDelete, id="missing-thread-deletion"),
     ],
 )
-async def test_interrupt_checkpointer_must_override_required_async_methods(
+def test_interrupt_checkpointer_must_override_required_async_methods(
     checkpointer_type: type[BaseCheckpointSaver],
 ) -> None:
-    checkpointer = checkpointer_type()
-    config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-    )
-
     with pytest.raises(GraphError, match="fully asynchronous"):
-        await config.resolve_graph()
+        GraphConfig(
+            graph=make_interrupt_graph(checkpointer=checkpointer_type()),
+            description="DUMMY",
+            features={GraphFeature.INTERRUPTS},
+        )
 
 
 async def test_interrupt_checkpointer_accepts_minimal_async_interface() -> None:

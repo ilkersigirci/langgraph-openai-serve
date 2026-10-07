@@ -2,7 +2,7 @@
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest.mock import AsyncMock, call
 
 import httpx2
@@ -50,10 +50,10 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             )
             clients.append(self)
 
-        async def __aenter__(self) -> "FakeOpenAI":
+        async def __aenter__(self) -> Self:
             return self
 
-        async def __aexit__(self, *_: Any) -> None:
+        async def __aexit__(self, *_: object) -> None:
             return None
 
     monkeypatch.setattr(file_input_module, "AsyncOpenAI", FakeOpenAI)

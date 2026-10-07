@@ -25,7 +25,8 @@ def _tool_row(result: CallToolResult) -> dict[str, object]:
     payload = json.loads(block.text)
     rows = payload["data"]["statements"][0]["rows"]
     assert payload["success"] is True
-    assert isinstance(rows, list) and len(rows) == 1
+    assert isinstance(rows, list)
+    assert len(rows) == 1
     row = rows[0]
     assert isinstance(row, dict)
     return row

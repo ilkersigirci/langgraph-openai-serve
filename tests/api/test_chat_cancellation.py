@@ -78,7 +78,7 @@ async def _wait_until_started(
 
 
 @asynccontextmanager
-async def _serve_over_tcp(app: FastAPI) -> AsyncIterator[str]:
+async def _serve_over_tcp(app: FastAPI) -> AsyncGenerator[str, None]:
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(("127.0.0.1", 0))
@@ -250,6 +250,7 @@ async def test_immediate_stream_close_releases_prepared_run() -> None:
 
     coordinator = InMemoryRunCoordinator()
     run = GraphRun(
+        request=cast("Any", None),
         config=cast("Any", None),
         graph=cast("Any", None),
         inputs=None,

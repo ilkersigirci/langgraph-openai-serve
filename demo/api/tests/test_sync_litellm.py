@@ -112,7 +112,9 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
 
         assert sync_models(source, gateway, **args) == {"research/graph": "updated"}
         assert deployment["model_info"]["lgos"] == model.lgos.model_dump(mode="json")
-        assert deployment["model_info"]["input_cost_per_token"] == 0.00001
+        assert deployment["model_info"]["input_cost_per_token"] == pytest.approx(
+            0.00001
+        )
         assert deployment["litellm_params"] == operator_params
         assert sync_models(source, gateway, **args) == {"research/graph": "unchanged"}
         assert len(writes) == 2

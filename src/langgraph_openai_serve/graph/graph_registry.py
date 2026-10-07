@@ -1,13 +1,20 @@
 import inspect
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
 from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from langgraph.pregel import Pregel
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from langgraph_openai_serve.core.errors import (
     GraphError,
@@ -66,6 +73,13 @@ class GraphConfig(BaseModel):
             value.default_values()
         return value
 
+    @model_validator(mode="after")
+    def validate_compiled_graph(self) -> Self:
+        """Fail at registration when a directly supplied graph cannot be served."""
+        if isinstance(self.graph, CompiledStateGraph):
+            _validate_resolved_graph(self.graph, self)
+        return self
+
     def supports(self, feature: GraphFeature) -> bool:
         """Return whether this graph supports a feature."""
         return feature in self.features
@@ -73,10 +87,8 @@ class GraphConfig(BaseModel):
     async def resolve_graph(self) -> CompiledStateGraph:
         """Get the graph instance, resolving callable graph factories."""
         if isinstance(self.graph, CompiledStateGraph):
-            graph = self.graph
-        else:
-            graph = await _maybe_await(self.graph())
-        return _validate_resolved_graph(graph, self)
+            return self.graph
+        return _validate_resolved_graph(await _maybe_await(self.graph()), self)
 
     async def build_input(
         self,
@@ -149,9 +161,24 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
 
 
 def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStateGraph:
-    """Validate requirements that can change with each factory result."""
+    """Validate a supplied graph once, and a factory's result on every call."""
     if not isinstance(graph, CompiledStateGraph):
         msg = "Graph factories must return a compiled LangGraph StateGraph."
+        raise GraphError(msg)
+
+    # LGOS reports only interrupt() pauses; a static breakpoint, in the graph or
+    # a subgraph node, would end the run early and render its partial state as
+    # the final answer.
+    graphs = [graph, *(subgraph for _, subgraph in graph.get_subgraphs(recurse=True))]
+    if any(
+        isinstance(item, Pregel)
+        and (item.interrupt_before_nodes or item.interrupt_after_nodes)
+        for item in graphs
+    ):
+        msg = (
+            "Graphs must pause with interrupt(); compile them and their subgraphs "
+            "without interrupt_before or interrupt_after."
+        )
         raise GraphError(msg)
 
     if (
@@ -176,6 +203,14 @@ def _validate_resolved_graph(graph: object, config: GraphConfig) -> CompiledStat
                 "checkpointer with thread deletion."
             )
             raise GraphError(msg)
+    elif graph.checkpointer is True or isinstance(
+        graph.checkpointer, BaseCheckpointSaver
+    ):
+        # LGOS supplies a checkpoint thread only to interrupt runs; clients send
+        # the full conversation with every other request. checkpointer=True, which
+        # inherits a parent's saver, also fails on a root graph.
+        msg = "Only interrupt-enabled graphs may be compiled with a checkpointer."
+        raise GraphError(msg)
 
     return graph
 

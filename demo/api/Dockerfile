@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 ARG PYTHON_IMAGE=python:3.13-slim-trixie@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21
 
 ARG PUID=1000
 ARG PGID=1000
@@ -17,9 +17,13 @@ FROM ${PYTHON_IMAGE} AS python
 ARG PUID
 ARG PGID
 
+# `lgos worker` serves Hatchet's /health on port 8001; `lgos serve` ignores it.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UVICORN_HOST=0.0.0.0 \
+    HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED=true \
+    LGOS_REGISTRY=lgos_demo_api.registry:open_registry
 
 WORKDIR /app
 
@@ -27,7 +31,7 @@ RUN groupadd --gid "$PGID" app \
     && useradd --uid "$PUID" --gid "$PGID" --create-home \
         --shell /usr/sbin/nologin app
 
-CMD ["lgos-demo-api"]
+CMD ["lgos", "serve"]
 
 FROM python AS dependencies
 
@@ -60,7 +64,7 @@ COPY --from=lgos src /workspace/langgraph-openai-serve/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install \
         --python /app/.venv/bin/python \
-        --editable "/workspace/langgraph-openai-serve[tracing]"
+        --editable "/workspace/langgraph-openai-serve[server]"
 
 USER app
 

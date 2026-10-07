@@ -36,9 +36,11 @@ classifiers = [
 
 dependencies = [
     "anyio>=4.14,<5",
+    "click>=8.1", # NOTE: `lgos` passes `params` to `click.command`, added in 8.1.
     "fastapi>=0.121.0",
-    "langgraph>=1.1.10,<2.0.0",
-    "openai>=3.9.0,<4.0.0",
+    "langgraph>=1.2.6,<2.0.0",
+    "openai>=3.20.0,<4.0.0",
+    "opentelemetry-api>=1.35.0,<2", # NOTE: Graph runs report through the API only; without an SDK it records nothing.
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9.0",
     "uvicorn>=0.51.0",
@@ -57,13 +59,29 @@ tracing = [
     "langchain>=1.2.11",
     "langfuse>=4.0.0,<5.0.0",
 ]
+# The `lgos` command: every integration, JSON logging, and OpenTelemetry export.
+server = [
+    "langgraph_openai_serve[hatchet,postgres,tracing]",
+    "fastapi>=0.142.2", # Native FastAPI telemetry that the server configures.
+    "hatchet-sdk[otel]>=1.40.3,<2",
+    "opentelemetry-distro>=0.66b0,<0.67",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2",
+    "opentelemetry-instrumentation-httpx>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-logging>=0.66b0,<0.67",
+    "opentelemetry-instrumentation-psycopg>=0.66b0,<0.67",
+    "psycopg[binary]>=3.3.4,<4", # Container images need the bundled libpq.
+    "structlog>=26.1.0,<27",
+]
+
+[project.scripts]
+lgos = "langgraph_openai_serve.cli:main"
 
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
     "prek>=0.3.11",
-    "ruff>=0.16.3",
-    "ty>=0.0.72",
+    "ruff>=0.16.10",
+    "ty>=0.0.84",
 ]
 doc = [
     # Zensical uses its mike fork as the versioning bridge until native support:
@@ -79,13 +97,13 @@ test = [
     "pytest-xdist>=3.6.1",
     "pytest>=9.0.2",
     "langgraph-checkpoint-sqlite>=3.1.0,<4",
-    "psycopg[binary,pool]>=3.3.4,<4",
+    "langgraph_openai_serve[server]",
     "pytest-env>=1.6.0",
-    "hatchet-sdk>=1.40.3,<2",
+    "opentelemetry-sdk>=1.35.0,<2",
 ]
 [tool.uv]
 default-groups = ["dev", "doc", "test"]
-required-version = "==0.12.1"
+required-version = "==0.12.23"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -102,13 +120,13 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.ruff]
-target-version = "py311"
 line-length = 88
 src = ["src"]
 respect-gitignore = true
 
 extend-exclude = [
     "docs",
+    "lgos-starter-template", # Jinja templates and their tests have a separate check.
 ]
 
 [tool.ruff.format]
@@ -210,32 +228,6 @@ unfixable = [
     "module-import-not-at-top-of-file",
     "unused-import",
 ]
-"demo/*" = [
-    "D",
-    "hardcoded-bind-all-interfaces",
-    "import-outside-top-level",
-    "print",
-]
-"demo/*/tests/*" = [
-    "ANN",
-    "D",
-    "FBT",
-    "assert",
-    "hardcoded-password-default",
-    "hardcoded-password-func-arg",
-    "hardcoded-password-string",
-    "implicit-namespace-package",
-    "import-outside-top-level",
-    "no-self-use",
-    "private-member-access",
-    "unused-async",
-    "unused-function-argument",
-    "unused-lambda-argument",
-    "unused-method-argument",
-]
-"demo/ui/openwebui/*" = [
-    "D",
-]
 "src/langgraph_openai_serve/core/settings.py" = [
     "boolean-type-hint-positional-argument",
 ]
@@ -278,4 +270,4 @@ exclude_lines = [
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.1,<0.13"]
+requires = ["uv_build>=0.12.23,<0.13"]

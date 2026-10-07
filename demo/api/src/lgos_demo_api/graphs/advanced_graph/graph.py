@@ -1,6 +1,6 @@
 """Responses-only general chatbot built from ordinary LangGraph nodes."""
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import httpx2
 from langchain_core.messages import (
@@ -12,11 +12,11 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 from langgraph_openai_serve import (
-    ClientFunctionTool,
     GraphConfig,
     GraphFeature,
     GraphRequest,
@@ -41,6 +41,7 @@ from lgos_demo_api.graphs.advanced_graph.state import (
 )
 from lgos_demo_api.graphs.server_tool import web_search
 from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.client_tools import chat_tool
 from lgos_demo_api.utils.file_inputs import resolve_file_inputs
 
 _ROUTER_PROMPT = """Classify the latest user request into exactly one workflow.
@@ -91,17 +92,6 @@ def create_model(http_client: httpx2.AsyncClient) -> ChatOpenAI:
     )
 
 
-def _function_tool(tool_definition: ClientFunctionTool) -> dict[str, object]:
-    function: dict[str, object] = {"name": tool_definition.name}
-    if tool_definition.description is not None:
-        function["description"] = tool_definition.description
-    if tool_definition.parameters is not None:
-        function["parameters"] = dict(tool_definition.parameters)
-    if tool_definition.strict is not None:
-        function["strict"] = tool_definition.strict
-    return {"type": "function", "function": function}
-
-
 def _has_attachment(message: HumanMessage) -> bool:
     return isinstance(message.content, list) and any(
         isinstance(part, Mapping) and part.get("type") in {"file", "image", "image_url"}
@@ -122,7 +112,8 @@ def _routing_messages(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
         if content:
             routed.append(message.model_copy(update={"content": content}))
     if not routed:
-        raise ValueError("The advanced graph requires a user message.")
+        msg = "The advanced graph requires a user message."
+        raise ValueError(msg)
     return routed[-8:]
 
 
@@ -140,7 +131,7 @@ def _new_turn(intent: Intent) -> AdvancedState:
     }
 
 
-def create_advanced_graph(
+def create_advanced_graph(  # ruff: ignore[complex-structure, too-many-statements] - The graph factory keeps its closure-bound nodes and wiring together.
     *,
     model: ChatOpenAI,
     knowledge: KnowledgeBase | None,
@@ -149,7 +140,9 @@ def create_advanced_graph(
     store: BaseStore,
     web_search_tool: BaseTool = web_search,
 ) -> AdvancedGraph:
-    internal_model = model.model_copy(update={"disable_streaming": True})
+    internal_model = model.model_copy(
+        update={"tags": [*(model.tags or []), TAG_NOSTREAM]}
+    )
     research_graph = create_research_graph(
         internal_model,
         knowledge,
@@ -188,15 +181,15 @@ def create_advanced_graph(
         )
         raw = result["raw"]
         if not isinstance(raw, AIMessage):
-            raise TypeError("The intent router did not return an AI message.")
+            msg = "The intent router did not return an AI message."
+            raise TypeError(msg)
         if terminal := terminal_message(raw):
             return {**_new_turn("chat"), "messages": [terminal], "terminal": True}
         decision = result["parsed"]
-        if not isinstance(decision, IntentDecision):
-            raise ValueError(
-                "The intent router returned an invalid decision."
-            ) from result["parsing_error"]
-        return _new_turn(decision.intent)
+        if isinstance(decision, IntentDecision):
+            return _new_turn(decision.intent)
+        msg = "The intent router returned an invalid decision."
+        raise ValueError(msg) from result["parsing_error"]
 
     def research_available(context: AdvancedContext) -> bool:
         request = context.request
@@ -252,7 +245,7 @@ def create_advanced_graph(
             if choice == "required" and state.get("web_search_used"):
                 choice = "auto"
             writer = model.bind_tools(
-                [_function_tool(tool_definition) for tool_definition in request.tools],
+                [chat_tool(tool) for tool in request.tools],
                 tool_choice=choice,
                 **(
                     {"parallel_tool_calls": request.parallel_tool_calls}
@@ -327,7 +320,7 @@ def create_advanced_graph(
 
 
 def create_advanced_graph_config(
-    graph_factory: Callable[[], AdvancedGraph],
+    graph: AdvancedGraph,
 ) -> GraphConfig:
     def context(request: GraphRequest, _options: None) -> AdvancedContext:
         return AdvancedContext(request=request)
@@ -346,7 +339,7 @@ def create_advanced_graph_config(
         )
 
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description=(
             "General-purpose Responses chatbot with client-executed tools, routed "
             "research, file understanding, cited answers, and reviewed persistent "

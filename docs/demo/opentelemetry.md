@@ -17,7 +17,7 @@ flowchart LR
     direction TB
     clients["Chainlit and Open WebUI"]
     gateways["Bifrost or LiteLLM"]
-    apis["LGOS API A and B"]
+    apis["LGOS API A and B<br/>coding-agent API"]
     worker["Hatchet background worker"]
     collector["Local OpenTelemetry Collector"]
 
@@ -74,26 +74,36 @@ Exact environment settings are listed in
 
 | Producer | Exported signals | Demo integration |
 | --- | --- | --- |
-| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, explicit instrumentation of the mounted `/v1` app, and Hatchet's native producer spans |
-| Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation plus Hatchet's native task spans |
-| Chainlit | Traces | Python auto-instrumentation; long-lived Socket.IO traffic and prompt-recording OpenAI instrumentors are excluded |
+| LGOS API processes | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, LGOS workflow telemetry, and Hatchet's native producer spans |
+| Coding-agent API | Traces, metrics, and logs | Python auto-instrumentation, FastAPI's native request telemetry, and LGOS workflow telemetry |
+| Files API | Traces, metrics, and logs | Python auto-instrumentation and FastAPI's native request telemetry |
+| Hatchet background worker | Traces, metrics, and logs | Python auto-instrumentation, LGOS workflow telemetry, and Hatchet's native task spans |
+| Chainlit | Traces | Python auto-instrumentation and FastAPI's native request telemetry; the long-lived Socket.IO connection and prompt-recording OpenAI instrumentors are excluded |
 | Open WebUI | Traces | Open WebUI's native OpenTelemetry settings |
 | Bifrost | Traces | Bifrost's OpenTelemetry plugin with content logging disabled |
 | LiteLLM | Traces and GenAI metrics | LiteLLM's native OpenTelemetry v2 integration with message-content capture disabled |
 | Local Collector | Its own metrics | Direct OTLP/HTTP export to the configured gateway |
 
-The package itself remains instrumentation-neutral. The demo API instruments
-the mounted FastAPI application so spans retain LGOS route templates without
-duplicate host-application spans. W3C trace context connects requests across
-the UI, proxy, gateway, and API when every hop preserves `traceparent`.
+LGOS reports each graph run as a GenAI workflow span and duration metric; see
+the package [OpenTelemetry reference](../reference.md#opentelemetry).
+`opentelemetry-instrument` configures each demo process's providers, OTLP
+export, logging, and client instrumentation. Each demo FastAPI application
+records its own requests with [FastAPI's native
+OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/) through
+those providers and sets `auto_configure` to `False`, so FastAPI adds no second
+export. Health checks and Chainlit's Socket.IO connection are not traced. Routes
+include the mount, for example `http.route=/v1/responses`. Commands that Codex
+runs inside its own process are progress statuses, not spans. W3C trace context
+connects requests across the UI, proxy, gateway, and API when every hop
+preserves `traceparent`.
 
 Bifrost's managed Responses route forwards `Idempotency-Key`, `traceparent`,
-`tracestate`, and `user-agent` through the explicit client header allowlist in
-`demo/docker/configs/bifrost/config.json`. The API receives `lgos-chainlit` or
-`lgos-openwebui` as the user agent, which allows dashboards to distinguish the
-originating UI. The Collector removes Bifrost's high-cardinality idempotency
-header attribute before export; the header does not replace or alter W3C trace
-context.
+and `tracestate` through the explicit client header allowlist in
+`demo/docker/configs/bifrost/config.json`. The trace's root service,
+`lgos-chainlit` or `lgos-openwebui`, identifies the originating UI. Each UI also
+sends its name as `User-Agent`, which the gateway's request span records. The
+Collector removes Bifrost's high-cardinality idempotency header attribute before
+export; the header does not replace or alter W3C trace context.
 
 LiteLLM continues an incoming W3C `traceparent` and forwards it to its bundled
 LGOS model targets, so its HTTP, authentication, database, and model-call spans
@@ -118,26 +128,26 @@ database spend-log setting is independent of this OTLP policy.
     upstream [bug](https://github.com/BerriAI/litellm/issues/36863) remains.
     Operational LiteLLM logs remain available on stdout.
 
-Use these values when querying Responses telemetry for `lgos-demo-api`:
+Use these values when querying LGOS Responses telemetry:
 
 | Signal | Attribute or span name |
 | --- | --- |
-| HTTP request metrics | `http.route=/responses` (`http_route` in Prometheus) |
-| API request span | `POST /responses` |
-| Graph execution span | `lgos.graph_run` |
-| UI identity on the API span | `user_agent.original` |
+| HTTP request metrics | `http.route=/v1/responses` (`http_route` in Prometheus) |
+| API request span | `POST /v1/responses` |
+| Graph execution span | `invoke_workflow {model}`, with `gen_ai.operation.name=invoke_workflow` |
+| Graph run metric | `gen_ai.invoke_workflow.duration` (`gen_ai_invoke_workflow_duration_seconds` in Prometheus) |
+| Failed graph run | `error.type` on the workflow span and metric |
+| Originating UI | The trace's root service: `lgos-chainlit` or `lgos-openwebui` |
 | Conversation correlation | `gen_ai.conversation.id`, supplied through `metadata.conversation_id` |
 
-Graph spans and Langfuse's `session.id` come from the optional Langfuse callback;
-HTTP spans and metrics come from FastAPI instrumentation. For `lgos-demo-api`
-and `lgos-background-worker`, the Collector copies `session.id` to
-`gen_ai.conversation.id` when the latter is absent. Here the value identifies a
-UI conversation, not a browser session.
-Langfuse's original attribute is preserved, and no fallback ID is generated.
+LGOS records the workflow span and metric; HTTP spans and metrics come from
+FastAPI. A run that raised an exception or stopped before its output, through a
+Stop click, a closed stream, or a cancelled background Response, carries
+`error.type`, so failure panels include cancellations. Its value, such as
+`asyncio.exceptions.CancelledError` or `GeneratorExit`, tells them apart.
 
-The mounted API's route template omits `/v1`; the actual request URL remains
-`/v1/responses`. The `/v1/models` diagnostic above verifies export, but does not
-populate Responses request panels. Send a message from either UI to verify
+The `/v1/models` diagnostic above verifies export, but does not populate
+Responses request panels. Send a message from either UI to verify
 those panels and conversation links.
 
 The API also keeps structured JSON logs on stdout. Enabling OTLP logs adds a
@@ -185,38 +195,51 @@ worker spans under the same trace ID.
 
 ### Query Foreground And Background Runs
 
-Graph-duration dashboards must include both `lgos-demo-api` and
-`lgos-background-worker`. In background mode, the API span ends after submission;
-the worker's `lgos.graph_run` span carries the execution duration and the
-normalized `gen_ai.conversation.id`. Requiring a conversation ID on
-`POST /responses` omits these runs.
+In background mode, the API span ends after submission; the worker's workflow
+span and measurement carry the execution duration and `gen_ai.conversation.id`.
+Requiring a conversation ID on `POST /v1/responses` omits these runs. Only graph
+services emit the workflow metric, so graph run, failure, and duration panels
+need no service filter:
 
-For a Chainlit conversation table, query the graph span and
-`gen_ai.conversation.id` in both execution modes:
+```promql
+sum(increase(gen_ai_invoke_workflow_duration_seconds_count{service_namespace="lgos", error_type!=""}[$__range]))
+```
+
+For a Chainlit conversation table, query the workflow span in both execution
+modes:
 
 ```traceql
 { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && resource.service.name = "lgos-chainlit" }
->> { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && resource.service.name =~ "lgos-demo-api|lgos-background-worker" && name = "lgos.graph_run" && span.gen_ai.conversation.id != nil }
+>> { resource.service.namespace = "lgos" && resource.deployment.environment.name = "$environment" && span.gen_ai.operation.name = "invoke_workflow" && span.gen_ai.conversation.id != nil }
 | select(span.gen_ai.conversation.id)
 ```
 
 Use `lgos-openwebui` for the other client. The descendant operator preserves
-client attribution through the gateway and Hatchet. Match both service names
-in graph span-metric queries with
-`service=~"lgos-demo-api|lgos-background-worker"` as well. These durations exclude
-Hatchet queue time, and graph rows appear after the span finishes. Graph spans
-and conversation links require the optional Langfuse callback in both processes.
+client attribution through the gateway and Hatchet. Durations exclude Hatchet
+queue time, and graph rows appear after the span finishes.
 
-The mapping applies during ingestion. Worker traces stored before it was enabled
-retain only `session.id` and need that attribute when queried historically.
+HTTP request metrics need a service filter because LiteLLM also reports
+`http.route=/v1/responses`. Fill it from the services that emit the workflow
+metric rather than a fixed list, for example with a Grafana variable:
+
+```promql
+label_values(gen_ai_invoke_workflow_duration_seconds_count{service_namespace="lgos"}, service_name)
+```
+
+Adding a graph service then needs no dashboard change.
+
+Graph-run counters start when a process records its first run. Prometheus 3.7
+and later counts that first value in `increase()` and `rate()` only with
+`--enable-feature=created-timestamp-zero-ingestion`, which writes each OTLP
+series' start time as a zero sample. Without it, low-traffic panels undercount.
 
 ## Collector Behavior
 
 The local Collector:
 
 - accepts OTLP/gRPC and OTLP/HTTP only on its internal ingest network;
-- removes streamed ASGI transport spans and known prompt/response payload
-  attributes before data reaches its persistent queue;
+- removes Open WebUI's streamed ASGI transport spans and known prompt/response
+  payload attributes before data reaches its persistent queue;
 - adds the configured service namespace, environment, and host identity;
 - retries and batches export through a file-backed queue capped at 256 MiB;
   and
@@ -236,8 +259,10 @@ rejected-data metrics in that backend.
 
 When `LGOS_ENABLE_LANGFUSE=True`, LGOS adds the Langfuse callback to graph runs.
 Langfuse exports its observations through its native integration; the local
-Collector is not a Langfuse proxy. Do not add a second Langfuse exporter unless
-the deployment intentionally owns and tests that additional path.
+Collector is not a Langfuse proxy. LGOS keeps its workflow span out of Langfuse,
+so each Langfuse trace starts at the callback's `lgos.graph_run` observation. Do
+not add a second Langfuse exporter unless the deployment intentionally owns and
+tests that additional path.
 
 The Collector removes known Langfuse and GenAI payload attributes only from the
 general OTLP pipeline. Configure Langfuse's own masking and retention policy
@@ -247,7 +272,7 @@ before enabling it for sensitive workloads.
 
 The overlay does not choose the remote backend or its authentication,
 retention, sampling, access-control, and capacity policies. It also does not
-replace ingress access logs or add manual spans to LGOS. Before production use,
+replace ingress access logs. Before production use,
 the deployment must:
 
 - secure the OTLP gateway and validate TLS and authentication;

@@ -35,7 +35,8 @@ def _knowledge_tool(knowledge: KnowledgeBase) -> BaseTool:
         """Search the configured private knowledge base for relevant documents."""
         query = query.strip()
         if not query:
-            raise ValueError("knowledge_search requires a non-empty query")
+            msg = "knowledge_search requires a non-empty query"
+            raise ValueError(msg)
         results = await knowledge.search(query)
         if not results:
             return "No relevant knowledge-base results."

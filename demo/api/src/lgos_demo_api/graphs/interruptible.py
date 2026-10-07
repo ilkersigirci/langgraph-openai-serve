@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage
@@ -111,11 +110,11 @@ def output_to_message(output: ReviewState) -> AIMessage:
 
 
 def create_interruptible_graph_config(
-    graph_factory: Callable[[], CompiledStateGraph],
+    graph: CompiledStateGraph,
 ) -> GraphConfig:
     """Create the interrupt demo config around its lifespan-managed graph."""
     return GraphConfig(
-        graph=graph_factory,
+        graph=graph,
         description=(
             "Demonstrates durable choice-or-text human review before protected "
             "actions execute."

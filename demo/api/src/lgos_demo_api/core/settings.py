@@ -3,9 +3,7 @@ from typing import Annotated, Literal
 from pydantic import (
     AfterValidator,
     AnyHttpUrl,
-    Field,
     PlainValidator,
-    PositiveInt,
     TypeAdapter,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,9 +14,6 @@ HttpUrlStr = Annotated[
     PlainValidator(AnyHttpUrlAdapter.validate_strings),
     AfterValidator(lambda value: str(value).rstrip("/")),
 ]
-# An interrupt graph run holds one of the process's four PostgreSQL run leases
-# (see persistence/postgres.py), so more slots would fail those runs as busy.
-WorkerSlots = Annotated[int, Field(ge=1, le=4)]
 
 
 class Settings(BaseSettings):
@@ -44,10 +39,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    POSTGRES_URI: str = "postgresql://lgos:lgos@localhost:3001/lgos"
-    INTERRUPT_TTL_MINUTES: PositiveInt = 43200
-    INTERRUPT_SWEEP_INTERVAL_MINUTES: PositiveInt = 5
-    PORT: int = 8000
     OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = "DUMMY"
     OPENAI_MODEL: str = "gpt-5.4-mini"
@@ -59,8 +50,6 @@ class Settings(BaseSettings):
     WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
-    BACKGROUND_ENABLED: bool = False
-    HATCHET_WORKER_SLOTS: WorkerSlots = 4
 
 
 settings = Settings()

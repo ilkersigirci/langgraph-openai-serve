@@ -1,15 +1,15 @@
 # Bifrost Gateway
 
-The Compose stack runs two LGOS API services behind one pinned Bifrost gateway.
-Both services use the same demo image and graph set. Their separate provider
-identities demonstrate how independently deployed APIs can share one proxy
-endpoint. The configuration at
+The Compose stack runs API A, API B, and the coding-agent API behind one pinned
+Bifrost gateway. API A and API B share the demo image and graph set; the
+coding-agent API serves its own graph. Their separate provider identities
+demonstrate how independently deployed APIs can share one proxy endpoint. The configuration at
 `demo/docker/configs/bifrost/config.json` belongs to the demo, not the LGOS
 package.
 
 !!! info "Native Responses preserves phase"
 
-    With `responses` and `responses_stream` enabled for both graph providers,
+    With `responses` and `responses_stream` enabled for the graph providers,
     the bundled Bifrost gateway's normalized
     `/openai/v1` route preserves the tested `user`, `input_file`,
     function-continuation, final-answer `phase`, and multiple commentary
@@ -36,8 +36,17 @@ Bifrost exposes each service as a custom provider:
 | --- | --- | --- |
 | `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
 | `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
+| `lgos-api-coding-agent` | `lgos-api-coding-agent:8000` | `lgos-api-coding-agent/coding-agent` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
 | `aigateway` | `aigateway.home.ilkerflix.com` | `aigateway/openai/gpt-4o-mini-tts`; audio only |
+
+The coding-agent provider raises Bifrost's request timeout, which bounds a
+whole non-streaming response; a
+[coding-agent request](graphs/coding-agent.md#streaming-and-state) can wait for
+the shared workspace and then run until its own time limit. Streams keep the
+default stream-idle timeout: LGOS
+[keepalive comments](../explanation/openai-compatibility.md#streaming) reset it
+while a request waits or runs a long command.
 
 It also exposes the `LGOS PostgreSQL Reports` Virtual MCP at
 `http://localhost:3000/mcp/lgos-postgres`. This named bundle selects six tools
@@ -99,7 +108,7 @@ model attributes only on pricing rows, and only its pricing datasheet creates
 those rows. Compose therefore runs two jobs from the demo API image:
 
 1. `lgos-bifrost-catalog` runs before Bifrost starts. It reads every graph's
-   complete detail from both APIs and writes a datasheet of zero-priced
+   complete detail from all three graph APIs and writes a datasheet of zero-priced
    Responses rows, plus the matching attributes, under
    `demo/docker/volumes/bifrost/catalog/`. Bifrost loads that datasheet through
    `framework.pricing.pricing_url`; with an empty config store, it does not
@@ -143,7 +152,7 @@ malformed metadata.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, speech, and MCP requests. Bifrost loads it as one native virtual key whose
-provider policies allow `lgos-a`, `lgos-b`, and `lgos-files`, plus only the
+provider policies allow `lgos-a`, `lgos-b`, `lgos-api-coding-agent`, and `lgos-files`, plus only the
 two speech models on `aigateway`. The key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
@@ -185,11 +194,10 @@ in `config.json`. Bifrost loads this configuration at startup, so
 restart the service after changing it. The graph providers do not enable Chat
 Completions or Responses-to-Chat fallback.
 
-The client header allowlist forwards `Idempotency-Key`, `traceparent`,
-`tracestate`, and `user-agent` through managed Responses requests. The first
-supports safe background-create retries; the others preserve distributed trace
-context and the originating UI's identity at LGOS. See the [OpenTelemetry
-guide](opentelemetry.md#signal-ownership).
+The client header allowlist forwards `Idempotency-Key`, `traceparent`, and
+`tracestate` through managed Responses requests. The first supports safe
+background-create retries; the others preserve distributed trace context. See
+the [OpenTelemetry guide](opentelemetry.md#signal-ownership).
 
 ## Background Responses
 

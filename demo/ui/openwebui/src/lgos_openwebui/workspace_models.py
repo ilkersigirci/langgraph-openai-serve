@@ -217,8 +217,9 @@ def sync_workspace_models(
 
     payloads = []
     for spec in specs:
-        payloads.append(_hidden_base_model_payload(spec))
-        payloads.append(_workspace_model_payload(spec))
+        payloads.extend(
+            (_hidden_base_model_payload(spec), _workspace_model_payload(spec))
+        )
         if spec.id == "lgos-a/simple-graph" and not spec.limited:
             simple_model = _workspace_model_payload(spec)
             # Its Filter supplies settings instead of Chat Variables.
@@ -263,7 +264,7 @@ def sync_workspace_models(
         ).raise_for_status()
 
 
-def _chat_variable_field(
+def _chat_variable_field(  # ruff: ignore[too-many-return-statements] - Each supported schema shape returns its own field declaration.
     name: str,
     schema: JsonValue,
     default: JsonValue,

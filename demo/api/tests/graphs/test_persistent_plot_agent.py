@@ -1,16 +1,20 @@
 import json
 import re
 from collections.abc import Callable
+from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest.mock import AsyncMock
 
+import httpx2
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from langchain_openai import ChatOpenAI
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import (
     ClientFunctionTool,
@@ -59,7 +63,7 @@ def _registry(model: BaseChatModel) -> GraphRegistry:
     graph = create_persistent_plot_agent(InMemoryStore(), model)
     return GraphRegistry(
         graphs={
-            "persistent-plot-agent": create_persistent_plot_agent_config(lambda: graph),
+            "persistent-plot-agent": create_persistent_plot_agent_config(graph),
         }
     )
 
@@ -160,10 +164,10 @@ async def test_agent_uploads_plotly_and_returns_display_file_call(
             self.kwargs = kwargs
             self.files = SimpleNamespace(create=create_file)
 
-        async def __aenter__(self) -> "FakeOpenAI":
+        async def __aenter__(self) -> Self:
             return self
 
-        async def __aexit__(self, *_args: Any) -> None:
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
@@ -238,10 +242,10 @@ async def test_streaming_response_completes_with_display_file_call(
         def __init__(self, **_kwargs: Any) -> None:
             self.files = SimpleNamespace(create=create_file)
 
-        async def __aenter__(self) -> "FakeOpenAI":
+        async def __aenter__(self) -> Self:
             return self
 
-        async def __aexit__(self, *_args: Any) -> None:
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
@@ -251,7 +255,7 @@ async def test_streaming_response_completes_with_display_file_call(
                 _tool_call("show_quarterly_revenue", {}, "show-1"),
                 AIMessage(content="Q4 is highest at $230k."),
             ],
-            disable_streaming=True,
+            tags=[TAG_NOSTREAM],
         )
     )
     app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
@@ -342,3 +346,79 @@ async def test_agent_does_not_upload_when_display_tool_is_unavailable(
     assert message.text == "Q4 is highest at €230k."
     assert not message.tool_calls
     client.assert_not_called()
+
+
+async def test_streamed_response_reports_the_private_agent_model_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    usage = {"prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9}
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        assert body["stream"]
+        chunk = {"id": "c1", "object": "chat.completion.chunk", "created": 0}
+        chunks = [
+            {
+                **chunk,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": "Q4 is highest."},
+                        "finish_reason": None,
+                    }
+                ],
+            },
+            {
+                **chunk,
+                "model": "test-model",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+        ]
+        # Like OpenAI, a stream reports usage only when the request asks for it.
+        if body.get("stream_options", {}).get("include_usage"):
+            chunks.append(
+                {**chunk, "model": "test-model", "choices": [], "usage": usage}
+            )
+        text = "".join(f"data: {json.dumps(item)}\n\n" for item in chunks)
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=text + "data: [DONE]\n\n",
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as provider:
+        monkeypatch.setattr(
+            plot_module, "ChatOpenAI", partial(ChatOpenAI, http_async_client=provider)
+        )
+        graph = create_persistent_plot_agent(InMemoryStore())
+        registry = GraphRegistry(
+            graphs={"persistent-plot-agent": create_persistent_plot_agent_config(graph)}
+        )
+        app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
+        async with (
+            AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as http,
+            AsyncOpenAI(
+                api_key="test",
+                base_url="http://test/v1",
+                http_client=http,
+                max_retries=0,
+            ) as client,
+        ):
+            stream = await client.responses.create(
+                model="persistent-plot-agent",
+                input="Which quarter is highest?",
+                metadata={"conversation_id": "thread-usage"},
+                store=False,
+                stream=True,
+                user="user-1",
+            )
+            events = [event async for event in stream]
+
+    completed = events[-1]
+    assert isinstance(completed, ResponseCompletedEvent)
+    assert completed.response.output_text == "Q4 is highest."
+    assert completed.response.usage is not None
+    assert completed.response.usage.total_tokens == usage["total_tokens"]

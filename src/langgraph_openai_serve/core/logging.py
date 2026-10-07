@@ -58,7 +58,12 @@ def exception_type_name(exc: BaseException) -> str:
 
 
 class RequestContextFilter(logging.Filter):
-    """Add active LGOS request fields to records emitted by LGOS loggers."""
+    """
+    Add the active LGOS request fields to log records.
+
+    LGOS installs it on its own loggers. A host that installs it on a handler
+    also enriches records from graph nodes, dependencies, and its own code.
+    """
 
     def __init__(self) -> None:
         super().__init__()

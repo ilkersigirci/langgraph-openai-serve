@@ -1,6 +1,6 @@
 """Own the external clients the advanced graph needs in one process."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import httpx2
@@ -36,7 +36,7 @@ def _vector_store_connection() -> tuple[str, str]:
 async def open_advanced_graph(
     checkpointer: BaseCheckpointSaver,
     store: BaseStore,
-) -> AsyncIterator[AdvancedGraph]:
+) -> AsyncGenerator[AdvancedGraph, None]:
     """
     Build the advanced graph and close its clients on exit.
 

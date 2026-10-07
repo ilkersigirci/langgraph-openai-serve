@@ -310,7 +310,7 @@ async def test_litellm_native_stream_preserves_commentary(
     ]
 
 
-@pytest.mark.parametrize("provider,source_index", [("lgos-a", 0), ("lgos-b", 1)])
+@pytest.mark.parametrize(("provider", "source_index"), [("lgos-a", 0), ("lgos-b", 1)])
 async def test_litellm_preserves_upstream_text_deltas(
     provider: str,
     source_index: int,

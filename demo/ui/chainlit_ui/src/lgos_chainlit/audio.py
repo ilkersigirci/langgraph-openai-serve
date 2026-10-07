@@ -9,8 +9,7 @@ from lgos_chainlit.settings import settings
 
 async def end_dictation() -> None:
     """Transcribe the finished recording into the chat input."""
-    # main.py enables the microphone only when a transcription model is set.
-    assert settings.AUDIO_STT_MODEL is not None
+    assert settings.AUDIO_STT_MODEL is not None  # ruff: ignore[assert] - main.py enables the microphone only with an STT model.
     await audio.end_dictation(client=v1_client, model=settings.AUDIO_STT_MODEL)
 
 

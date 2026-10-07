@@ -93,7 +93,10 @@ flowchart LR
 `LanggraphOpenaiServe` is the boundary between your FastAPI app and the
 OpenAI-compatible sub-application. It mounts the sub-application at the
 configured prefix. The host application owns middleware such as CORS,
-authentication, and telemetry.
+authentication, and telemetry. [`lgos serve`](../how-to-guides/server.md) is a
+ready-made host: it configures CORS, logging, telemetry, and persistence from
+`LGOS_*` settings, takes HTTP server options from Uvicorn, and leaves
+authentication to a gateway or to middleware added to its application.
 
 The mounted OpenAI app owns the public HTTP surface: model listing, Responses,
 Chat Completions, health checks, request validation, response schemas, and

@@ -1,0 +1,22 @@
+[project]
+site_name = {{ cookiecutter.project_name | tojson }}
+site_description = {{ cookiecutter.project_description | tojson }}
+docs_dir = "docs"
+site_dir = "public"
+nav = [
+  { Home = "index.md" },
+  { "Your Graphs" = "graphs.md" },
+  { Configuration = "configuration.md" },
+  { Deployment = "deployment.md" },
+]
+
+[project.theme]
+variant = "modern"
+features = ["content.code.copy", "content.tabs.link", "navigation.sections"]
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+[project.markdown_extensions.tables]

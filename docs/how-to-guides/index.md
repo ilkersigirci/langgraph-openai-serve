@@ -10,6 +10,13 @@ application.
 
 <div class="grid cards" markdown>
 
+-   :material-server-outline:{ .lg .middle } __Run the server__
+
+    Serve a graph registry with `lgos serve`: logging, telemetry, persistence,
+    and background work included.
+
+    [:octicons-arrow-right-24: Run the LGOS server](server.md)
+
 -   :material-tune-variant:{ .lg .middle } __Configure runtime settings__
 
     Let OpenAI clients discover and choose a safe, typed subset of per-request

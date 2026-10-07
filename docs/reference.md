@@ -81,6 +81,8 @@ Package settings:
 | `LGOS_OPENAI_API_DOCS_ENABLED` | `False` | Enables docs only for the mounted OpenAI app. |
 | `LGOS_ENABLE_LANGFUSE` | `False` | Lazily adds the package Langfuse callback to every graph run. |
 
+The `lgos` command adds the [server settings](how-to-guides/server.md#settings).
+
 Settings prefixed with `DEMO_` belong to the independent example applications
 and are documented under [Demo Settings and Commands](demo/reference.md).
 
@@ -111,6 +113,10 @@ default `"default"` scope is suitable only for a single-tenant or shared-trust
 deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
+
+`RequestContextFilter` adds the active request's LGOS fields, such as
+`request_id`, to log records; install it on a host handler to enrich every
+record. See [Production Logging](how-to-guides/production-logging.md#application-formatting).
 
 Responses `input_file.file_id` content and native Chat file parts normalize to
 the same LangChain file block, so graphs receive native `file_id` values and
@@ -149,15 +155,28 @@ not make a caller-owned callback handler or callback manager internally
 immutable.
 
 Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
-graph's `messages` stream. Configure private `ChatOpenAI` calls with
-[`disable_streaming=True`](https://reference.langchain.com/python/langchain-core/language_models/chat_models/BaseChatModel/disable_streaming);
-LangChain then uses the complete invocation path and does not emit model stream
-chunks for that call.
+graph's `messages` stream. To keep a private model call out of the stream, tag
+it with LangGraph's
+[`nostream`](https://docs.langchain.com/oss/python/langgraph/streaming#omit-messages-from-the-stream)
+tag (`langgraph.constants.TAG_NOSTREAM`), for example
+`ChatOpenAI(..., tags=[TAG_NOSTREAM])`; the call still runs and
+returns its output, but LangGraph emits none of its tokens.
+[`disable_streaming=True`](https://reference.langchain.com/python/langchain-core/language_models/chat_models/BaseChatModel/disable_streaming)
+is for models that cannot stream: it makes the provider request non-streaming,
+and LangGraph emits the call's complete message instead. With either option,
+LangGraph also emits a complete message that a node returns into state. LGOS
+forwards neither complete message, but other consumers of the graph's stream
+see them.
 
-A directly supplied compiled graph is reused. A sync or async graph factory is
-called for every request and is never cached; LGOS validates each resolved value
-as a compiled state graph and rechecks its context schema and interrupt
-checkpointer capabilities before execution. A registry with an
+A directly supplied compiled graph is reused and validated when its
+`GraphConfig` is built. A sync or async graph factory is called for every request
+and is never cached; LGOS validates each resolved value as a compiled state graph
+and rechecks it before execution. Validation checks the context schema and
+interrupt checkpointer capabilities, rejects static breakpoints
+(`interrupt_before` or `interrupt_after`) in the graph or its subgraph nodes,
+since LGOS pauses only at `interrupt()`, and rejects a checkpointer, including
+`checkpointer=True`, on a graph without `GraphFeature.INTERRUPTS`, since clients
+send the full conversation with every other request. A registry with an
 interrupt-enabled graph and no `run_coordinator` fails during `GraphRegistry`
 construction. A graph may declare both interrupts and background; a background
 run that reaches an interrupt completes with `lgos_interrupt` function calls,
@@ -214,14 +233,19 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
 `LANGFUSE_BASE_URL` is optional; Langfuse Cloud is the default. Set it only for
-a different cloud region or a self-hosted instance. Langfuse's
-`CallbackHandler` owns its standard SDK configuration and error behavior. LGOS
-constructs it on the first graph run that needs runnable configuration, then
-reuses that process-wide handler. When enabled, the deployment-level toggle is
-authoritative: LGOS adds Langfuse alongside empty, list, or manager callbacks
-without altering the registered `GraphConfig` or caller-owned collection. To
-provide a custom Langfuse handler, leave the toggle off and pass that handler
-through `runtime_callbacks`.
+a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
+owns its standard SDK configuration and error behavior. LGOS constructs it on
+the first graph run that needs runnable configuration, then reuses that
+process-wide handler. Before that, LGOS creates the Langfuse client with
+`should_export_span` from `langgraph_openai_serve.integrations.langfuse`:
+Langfuse's default export filter without LGOS's [OpenTelemetry](#opentelemetry)
+spans, so each trace keeps the callback's root observation with the run's input
+and output. An application that creates its own Langfuse client first keeps its
+filter; pass the same `should_export_span` to keep those trace roots. When
+enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
+alongside empty, list, or manager callbacks without altering the registered
+`GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
+leave the toggle off and pass that handler through `runtime_callbacks`.
 
 For explicit construction, import
 `langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
@@ -246,6 +270,43 @@ access to them.
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
 advertises polling-only background Responses.
+
+### OpenTelemetry
+
+LGOS reports every graph execution through the OpenTelemetry API, following the
+GenAI [workflow span](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md#invoke-workflow-span)
+and [workflow metric](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiinvoke_workflowduration)
+conventions. The API records nothing until the host application configures an
+SDK, for example with `opentelemetry-instrument`.
+
+HTTP request telemetry belongs to the host app. The mounted OpenAI app turns off
+[FastAPI's native OpenTelemetry](https://fastapi.tiangolo.com/advanced/opentelemetry/),
+so the host's `telemetry` settings, including turning it off, cover LGOS routes,
+and `http.route` includes the mount, such as `/v1/responses`.
+
+| Signal | Name | Attributes |
+| --- | --- | --- |
+| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |
+| Histogram, unit `s` | `gen_ai.invoke_workflow.duration` | `gen_ai.workflow.name`, and `error.type` on failure |
+
+`gen_ai.workflow.name` is the registered model. Both signals cover graph
+execution through the final output; they exclude lease waits, background queue
+time, and checkpoint cleanup. The span is current only while LGOS advances the
+graph: spans the graph creates, such as model calls, are its children, while
+code that consumes a stream keeps its own parent span between events. A run
+that ends before its output exists fails: one that raises an exception, one
+cancelled by a disconnecting client or a cancelled background Response, and one
+whose stream the consumer closes mid-run. The span status is then `ERROR` with
+the exception message, if any, and `error.type` is the exception type, qualified
+by its module unless it is built in, such as `asyncio.exceptions.CancelledError`
+or `GeneratorExit`. Closing a stream after its final output is not a failure.
+[Design Choices](explanation/design-choices.md) lists the tracers whose
+cancellation handling this follows. A raised `Exception` propagates to its
+handler: LGOS routes and the background engines log it with its traceback, and
+direct Python callers receive it; cancellations and closed streams are not
+logged. The span does not repeat an exception as an event. The histogram uses
+the conventions' bucket boundaries, which start at one second; configure an SDK
+View for finer boundaries.
 
 ### Runtime Settings
 
@@ -327,7 +388,10 @@ is held. Choose a TTL longer than the longest time a user may take to answer. To
 write your own cleanup, select threads whose checkpoint metadata contains
 `OPERATION_ID_METADATA_KEY` from the same module, then hold each run's lease,
 confirm that its latest checkpoint in any namespace is still older than your
-TTL, and delete it through the checkpointer.
+TTL, and delete it through the checkpointer. `lgos serve` runs this sweep in
+each API process, configured by `LGOS_INTERRUPT_TTL_MINUTES` and
+`LGOS_INTERRUPT_SWEEP_INTERVAL_MINUTES`; set the interval to `0` when one
+scheduled job sweeps instead.
 
 ### PostgreSQL Coordination
 
@@ -399,6 +463,19 @@ at submission.
 
 See [Run Responses In The Background](how-to-guides/background-responses.md)
 for the client contract, graph requirements, and deployment wiring.
+
+## Server
+
+Install `langgraph-openai-serve[server]` for the `lgos` command and
+`langgraph_openai_serve.server`. `lgos serve module:attribute` and
+`lgos worker module:attribute` run a `RegistryFactory`: a callable that takes
+`ServerResources` (`checkpointer`, `store`, `run_coordinator`) and returns a
+`GraphRegistry`, or an async context manager that yields one. `lgos serve`
+also accepts every Uvicorn option and `UVICORN_*` variable.
+`create_app(factory, settings=...)` returns the FastAPI application that
+`lgos serve` runs; its lifespan opens the resources and mounts the OpenAI
+routes. `ServerSettings` reads the `LGOS_*` server settings. See
+[Run The LGOS Server](how-to-guides/server.md).
 
 ## Streaming Status
 

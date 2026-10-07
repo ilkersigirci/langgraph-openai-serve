@@ -1,6 +1,6 @@
 # Demo Architecture
 
-The Docker demo runs two independently addressable LGOS API containers and one
+The Docker demo runs three independently addressable LGOS graph API containers and one
 logical central Files service. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects a
 first-class OpenAI-compatible edge for both Chainlit and Open WebUI. LiteLLM
 uses managed Responses and Bifrost uses native Responses. Both use normal
@@ -43,8 +43,10 @@ flowchart LR
     direction TB
     api_a["API A<br/>FastAPI + LGOS + demo graphs"]
     api_b["API B<br/>FastAPI + LGOS + demo graphs"]
+    coding["Coding-agent API<br/>LGOS + Codex"]
   end
 
+  workspace[("Shared coding workspace directory")]
   files["Files service<br/>OpenAI Files API + S3 repository"]
   speech["aigateway<br/>OpenAI speech models"]
   dbhub["DBHub<br/>read-only MCP server"]
@@ -64,9 +66,13 @@ flowchart LR
   sdk <-->|"Responses"| litellm
   bifrost <-->|"provider: lgos-a"| api_a
   bifrost <-->|"provider: lgos-b"| api_b
+  bifrost <-->|"provider: lgos-api-coding-agent"| coding
   bifrost <-->|"provider: lgos-files"| files
   litellm <-->|"managed inference"| api_a
   litellm <-->|"managed inference"| api_b
+  litellm <-->|"managed inference"| coding
+  coding <--> workspace
+  coding <-->|"Codex Responses requests"| model
   litellm <-->|"provider: litellm_proxy"| files
   bifrost <-->|"provider: aigateway"| speech
   litellm <-->|"aigateway/* models"| speech
@@ -118,10 +124,10 @@ lifecycle. Chainlit and Open WebUI discover the capability, create a non-streami
 background Response, and poll or cancel through the OpenAI SDK. Hatchet runs
 each job and stores its status and Response, which every API replica reads.
 
-At startup, the graph APIs, background worker, and Chainlit apply their pending
+At startup, API A, API B, the background worker, and Chainlit apply their pending
 schema migrations. Once API A and Chainlit are healthy, the idempotent MCP
 setup creates the reporting views, role, and grants before DBHub starts. The
-selected gateway waits for DBHub, both graph APIs, and the Files service. The
+selected gateway waits for DBHub, all three graph APIs, and the Files service. The
 diagram shows request traffic rather than those readiness dependencies.
 Compose runs one Files process for the demo; production deployments may run
 multiple stateless replicas over the same repository.
@@ -154,10 +160,13 @@ flowchart LR
     locks["PostgreSQL advisory locks"]
   end
 
+  coding["Coding-agent service"]
+  workspace[("Shared coding workspace directory")]
   files_service["Central Files service"]
   s3[("S3-compatible service<br/>separate UI and Files buckets")]
   openwebui_data[("Open WebUI data volume<br/>transcripts, raw uploads, and embeds")]
 
+  coding -->|"source files and command results"| workspace
   chainlit -->|"conversation and UI metadata"| chainlit_rows
   chainlit -->|"element content"| s3
   files_service -->|"opaque inference files"| s3
@@ -167,7 +176,7 @@ flowchart LR
   plot -->|"thread-scoped chart document"| store
 ```
 
-Both API containers run the same image and graph set, but Bifrost
+API A and API B run the same image and graph set, but Bifrost
 treats them as separate providers. They share PostgreSQL for durable LangGraph
 checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
 uses the same database for UI metadata and S3 for element bodies. Open WebUI
@@ -179,9 +188,13 @@ Human Review](graphs/interruptible-approval.md). Background execution is
 described in [Background Mock](graphs/background-mock.md);
 `advanced-graph` runs in the same worker when a client requests background
 mode. When
-`LGOS_ENABLE_LANGFUSE=True`, each API adds the Langfuse callback to graph runs
-and exports observations directly to the configured Langfuse service. Langfuse
+`LGOS_ENABLE_LANGFUSE=True`, API A and API B add the Langfuse callback to graph runs
+and export observations directly to the configured Langfuse service. Langfuse
 is not a Compose service or a proxy in the request path.
+
+The [coding-agent service](graphs/coding-agent.md) owns a shared persistent
+workspace directory and the Codex threads that its conversations resume. It
+serializes requests. It uses neither PostgreSQL nor the central Files service.
 
 The optional Compose overlay adds a separate telemetry path without changing
 request or state ownership. Its complete signal flow and operational boundary

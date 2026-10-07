@@ -31,19 +31,6 @@ x-lgos-otel-server-environment: &lgos-otel-server-environment
   OTEL_PYTHON_LOG_CORRELATION: "true"
   OTEL_PYTHON_LOG_HANDLER_LEVEL: info
 
-x-lgos-otel-api-environment: &lgos-otel-api-environment
-  <<: *lgos-otel-server-environment
-  # The demo has a host FastAPI app and a mounted LGOS FastAPI app. Instrument
-  # the mounted app explicitly so spans retain its endpoint route templates.
-  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: fastapi
-  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /v1/health$
-  OTEL_SERVICE_NAME: lgos-demo-api
-
-x-lgos-otel-files-environment: &lgos-otel-files-environment
-  <<: *lgos-otel-server-environment
-  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
-  OTEL_SERVICE_NAME: lgos-files-api
-
 x-lgos-otel-python-environment: &lgos-otel-python-environment
   <<: *lgos-otel-environment
   OTEL_METRICS_EXPORTER: none
@@ -52,7 +39,7 @@ x-lgos-otel-python-environment: &lgos-otel-python-environment
 services:
   lgos-otel-collector:
     container_name: lgos-otel-collector
-    image: otel/opentelemetry-collector-contrib:0.158.0@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
+    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
     restart: $RESTART_POLICY
     command: ["--config=/etc/otelcol/config.yaml"]
     user: "$PUID:$PGID"
@@ -102,8 +89,9 @@ services:
       - default
       - lgos-otel-ingest
     environment:
-      <<: *lgos-otel-api-environment
-    command: ["opentelemetry-instrument", "lgos-demo-api"]
+      <<: *lgos-otel-server-environment
+      OTEL_SERVICE_NAME: lgos-demo-api
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -114,8 +102,9 @@ services:
       - default
       - lgos-otel-ingest
     environment:
-      <<: *lgos-otel-api-environment
-    command: ["opentelemetry-instrument", "lgos-demo-api"]
+      <<: *lgos-otel-server-environment
+      OTEL_SERVICE_NAME: lgos-demo-api
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -128,7 +117,20 @@ services:
     environment:
       <<: *lgos-otel-server-environment
       OTEL_SERVICE_NAME: lgos-background-worker
-    command: ["opentelemetry-instrument", "lgos-demo-background-worker"]
+    command: ["opentelemetry-instrument", "lgos", "worker"]
+    restart: $RESTART_POLICY
+    depends_on:
+      lgos-otel-collector:
+        condition: service_started
+
+  lgos-api-coding-agent:
+    networks:
+      - default
+      - lgos-otel-ingest
+    environment:
+      <<: *lgos-otel-server-environment
+      OTEL_SERVICE_NAME: lgos-api-coding-agent
+    command: ["opentelemetry-instrument", "lgos", "serve"]
     restart: $RESTART_POLICY
     depends_on:
       lgos-otel-collector:
@@ -139,7 +141,8 @@ services:
       - default
       - lgos-otel-ingest
     environment:
-      <<: *lgos-otel-files-environment
+      <<: *lgos-otel-server-environment
+      OTEL_SERVICE_NAME: lgos-files-api
     command: ["opentelemetry-instrument", "lgos-files-api"]
     restart: $RESTART_POLICY
     depends_on:
@@ -153,10 +156,6 @@ services:
     environment:
       <<: *lgos-otel-python-environment
       OTEL_SERVICE_NAME: lgos-chainlit
-      # Chainlit messages use one long-lived Socket.IO connection. Excluding
-      # that transport lets automatic client instrumentation form a trace per
-      # outbound request instead of grouping the whole chat session into one.
-      OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$,/ws/socket[.]io
       # Chainlit transitively installs GenAI instrumentors that record prompt
       # content. HTTPX2 remains enabled for propagation and transport tracing.
       OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: openai,openai_agents
@@ -176,6 +175,7 @@ services:
       ENABLE_OTEL_METRICS: "false"
       ENABLE_OTEL_LOGS: "false"
       OTEL_SERVICE_NAME: lgos-openwebui
+      # Open WebUI instruments FastAPI with the contrib instrumentor.
       OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: /health$
     depends_on:
       lgos-otel-collector:

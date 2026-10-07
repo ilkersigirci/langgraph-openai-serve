@@ -26,13 +26,16 @@ def _(mo):
 
 
 @app.cell
-def _():
+def _(mo):
     import sqlalchemy
+    from langgraph_openai_serve.server import ServerSettings
     from sqlalchemy.engine import make_url
 
-    from lgos_demo_api.core.settings import settings
-
-    _url = make_url(settings.POSTGRES_URI).set(drivername="postgresql+psycopg")
+    _postgres_uri = ServerSettings().POSTGRES_URI
+    mo.stop(_postgres_uri is None, mo.md("Set `LGOS_POSTGRES_URI` to browse tables."))
+    _url = make_url(_postgres_uri.get_secret_value()).set(
+        drivername="postgresql+psycopg"
+    )
     postgres = sqlalchemy.create_engine(
         _url,
         connect_args={"options": "-c default_transaction_read_only=on"},
@@ -89,7 +92,7 @@ def _(mo, postgres):
 def _(mo, table_inventory):
     mo.stop(
         table_inventory.is_empty(),
-        mo.md("No user tables found. Start `lgos-demo-api` to initialize its schema."),
+        mo.md("No user tables found. Start the demo API to initialize its schema."),
     )
     _tables = table_inventory.select("table_schema", "table_name").iter_rows()
     table_options = {f"{schema}.{table}": (schema, table) for schema, table in _tables}
@@ -144,7 +147,7 @@ def _(mo, postgres, table_selector):
         SELECT *
         FROM {_qualified_table}
         LIMIT 50
-        """,
+        """,  # ruff: ignore[hardcoded-sql-expression] - Both identifiers are quoted by the PostgreSQL dialect above.
         engine=postgres,
     )
     return

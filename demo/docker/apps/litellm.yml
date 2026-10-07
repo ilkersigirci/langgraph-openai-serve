@@ -32,6 +32,8 @@ services:
         condition: service_healthy
       lgos-demo-api-b:
         condition: service_healthy
+      lgos-api-coding-agent:
+        condition: service_healthy
       lgos-files-api:
         condition: service_healthy
     environment:
@@ -44,9 +46,6 @@ services:
       OPENAI_API_KEY: DUMMY
       LGOS_MCP_AUTH_TOKEN: $LGOS_MCP_AUTH_TOKEN
       AIGATEWAY_API_KEY: $AIGATEWAY_API_KEY
-      ##### CUSTOM IMAGE #####
-      # Honor each deployment's native Responses streaming capability.
-      LITELLM_ENABLE_RESPONSES_STREAMING_FIX: "true"
     # Initialize the Admin UI database through the image's proxy CLI.
     command:
       - --config

@@ -15,8 +15,10 @@ from lgos_demo_api.graphs import simple as simple_module
             [
                 (
                     "system",
-                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
-                    "Adapt explanations for beginner readers.",
+                    (
+                        f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                        "Adapt explanations for beginner readers."
+                    ),
                 ),
                 ("human", "First"),
                 ("ai", "Prior answer"),
@@ -29,8 +31,10 @@ from lgos_demo_api.graphs import simple as simple_module
             [
                 (
                     "system",
-                    f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
-                    "Adapt explanations for expert readers.",
+                    (
+                        f"{simple_module.DEFAULT_SYSTEM_PROMPT} "
+                        "Adapt explanations for expert readers."
+                    ),
                 ),
                 ("human", "Latest"),
             ],

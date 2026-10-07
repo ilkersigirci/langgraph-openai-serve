@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -12,6 +12,7 @@ from langgraph_openai_serve import GraphConfig, GraphFeature
 from langgraph_openai_serve.graph import run as run_module
 from langgraph_openai_serve.graph.run import GraphRun, InterruptRun
 from langgraph_openai_serve.graph.runner import collect_run, stream_run
+from tests.graph.support.request import graph_request
 
 THREAD_ID = "checkpoint-cleanup-thread"
 
@@ -60,6 +61,7 @@ def cleanup_run(
     output_to_message: Callable[[Any], Any] | None = None,
 ) -> GraphRun:
     return GraphRun(
+        request=graph_request("DUMMY"),
         config=GraphConfig(
             graph=lambda: graph,
             description="DUMMY",
@@ -126,7 +128,7 @@ async def test_failed_run_keeps_its_error_when_its_lease_release_fails() -> None
     released = Event()
 
     @asynccontextmanager
-    async def failing_lease() -> AsyncIterator[None]:
+    async def failing_lease() -> AsyncGenerator[None, None]:
         try:
             yield
         finally:
@@ -210,7 +212,7 @@ async def test_hung_cleanup_is_abandoned_and_releases_the_lease(
     released = Event()
 
     @asynccontextmanager
-    async def lease() -> AsyncIterator[None]:
+    async def lease() -> AsyncGenerator[None, None]:
         try:
             yield
         finally:

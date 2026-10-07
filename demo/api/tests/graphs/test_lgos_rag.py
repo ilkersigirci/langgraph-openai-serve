@@ -1,13 +1,12 @@
 from collections import deque
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from langgraph.types import CustomStreamPart
 from langgraph_openai_serve import (
     GraphConfig,
     GraphRegistry,
@@ -19,6 +18,9 @@ from langgraph_openai_serve.graph.events import status_description
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
 from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
+
+if TYPE_CHECKING:
+    from langgraph.types import CustomStreamPart
 
 ANSWER = (
     "Use the [registered model](https://example.com/second) through the OpenAI "
@@ -109,7 +111,7 @@ async def _stream(
 
 def _status_timeline(stream: list[object]) -> list[str | None]:
     return [
-        status_description(cast(CustomStreamPart, item)["data"])
+        status_description(cast("CustomStreamPart", item)["data"])
         for item in stream
         if isinstance(item, dict)
     ]
@@ -250,7 +252,7 @@ async def test_retrieval_uses_rewritten_query_and_returns_streamed_cited_answer(
 
     stream = await _stream(graph_request, messages)
     streamed_answer = "".join(item for item in stream if isinstance(item, str))
-    final_message = cast(AIMessage, stream[-1])
+    final_message = cast("AIMessage", stream[-1])
     citations = citations_from_message(final_message)
 
     assert queries == [REWRITTEN_QUESTION]

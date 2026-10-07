@@ -37,15 +37,17 @@ The application or deployment configures:
 - stdout/stderr routing and collection;
 - trusted request-ID policy, retention, redaction, and access controls;
 - ASGI server or ingress access logs; and
-- OpenTelemetry instrumentation, metrics, traces, and OTLP export. The demo's
-  optional [Demo OpenTelemetry](../demo/opentelemetry.md) overlay shows one
+- the OpenTelemetry SDK, OTLP export, and server or client instrumentation.
+  LGOS reports graph runs through the OpenTelemetry API; see
+  [OpenTelemetry](../reference.md#opentelemetry). The demo's optional
+  [Demo OpenTelemetry](../demo/opentelemetry.md) overlay shows one
   Collector-based deployment pattern.
 
 For latency percentiles and distributed request timing, use the deployment's
 metrics and tracing system rather than adding a per-request application log.
 
 LGOS does not configure the root logger, install output handlers, select a
-formatter, write log files, or create OpenTelemetry trace and span IDs.
+formatter, write log files, or configure an OpenTelemetry SDK.
 
 If browser code needs to read the returned request ID, expose
 `X-Request-ID` in the host application's CORS configuration. Restrict accepted
@@ -54,16 +56,32 @@ not control retained telemetry.
 
 ## Application formatting
 
-Configure logging in the host application. The runnable demo's
-`demo/api/src/lgos_demo_api/core/logging.py` shows how to format LGOS and
-Uvicorn server records together without changing the LGOS package. The demo
-disables Uvicorn access logs; enable access logging at the ASGI server or
-ingress layer that owns request timing and retention.
+Configure logging in the host application. [`lgos serve`](server.md) does this
+for you; `langgraph_openai_serve/server/logging.py` shows how it formats LGOS,
+Uvicorn, and application records together as JSON, or as readable lines at a
+terminal. It disables Uvicorn access logs unless you pass `--access-log`; prefer
+access logging at the ingress layer that owns request timing and retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
 `stream`, and `operation_id`. If OpenTelemetry's Python logging
 instrumentation is enabled, its `otelTraceID` and `otelSpanID` fields can
 coexist with these application fields.
+
+LGOS adds these fields to its own records. To add them to every record handled
+during a request, including logs from graph nodes, dependencies, and the host,
+install `RequestContextFilter` on the output handler:
+
+```python
+import logging
+
+from langgraph_openai_serve import RequestContextFilter
+
+handler = logging.StreamHandler()
+handler.addFilter(RequestContextFilter())
+logging.getLogger().addHandler(handler)
+```
+
+A field that a record already carries keeps its value.
 
 Set severity floors on each output handler, not only on the root logger. A
 propagated record is offered directly to ancestor handlers, so an ancestor
@@ -103,4 +121,5 @@ It is therefore metadata here, not a custom trace ID.
 
 For end-to-end distributed tracing, configure the host application and proxy
 to propagate W3C/OpenTelemetry context. LGOS does not install a second tracing
-system or create a parent span around the HTTP request.
+system or create a span around the HTTP request; its graph-run span joins the
+active trace.

@@ -1,0 +1,50 @@
+name: {{ cookiecutter.project_name }}
+
+x-application: &application
+  build: .
+  image: {{ cookiecutter.project_name }}:local
+  init: true
+  env_file: .env
+  environment:
+    UVICORN_HOST: 0.0.0.0
+    UVICORN_PORT: 8000
+    LGOS_POSTGRES_URI: ${DOCKER_POSTGRES_URI}
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  api:
+    <<: *application
+    ports:
+      - "127.0.0.1:${UVICORN_PORT}:8000"
+  worker:
+    <<: *application
+    profiles: [background]
+    command: ["lgos", "worker"]
+    healthcheck:
+      # The image checks the API; the worker reports Hatchet's own health.
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - checkpoints:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  checkpoints:

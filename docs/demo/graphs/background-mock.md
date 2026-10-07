@@ -173,7 +173,7 @@ and resume polling through either tested gateway route documented in the
 [proxy guide](../../how-to-guides/openai-proxies.md).
 
 The implementation lives in
-`demo/api/src/lgos_demo_api/graphs/background_mock.py`. The API-side backend
-is in `demo/api/src/lgos_demo_api/background/components.py`;
-`demo/api/src/lgos_demo_api/background/worker.py` provides the separately
-deployed worker.
+`demo/api/src/lgos_demo_api/graphs/background_mock.py`. The API and the
+separately deployed worker run `lgos serve` and `lgos worker` on the same
+registry, `demo/api/src/lgos_demo_api/registry.py`; the
+[LGOS server](../../how-to-guides/server.md) supplies the Hatchet backend.

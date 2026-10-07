@@ -27,7 +27,7 @@ class State(TypedDict, total=False):
     answer: str
 
 
-async def generate(state: State, runtime: Runtime[AppContext]) -> Output:
+def generate(state: State, runtime: Runtime[AppContext]) -> Output:
     user_id = runtime.context.user_id
     question = state["question"]
     return {"answer": f"{user_id} asked: {question}"}

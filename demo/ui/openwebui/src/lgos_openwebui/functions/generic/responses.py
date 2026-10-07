@@ -5,7 +5,7 @@ import json as responses_json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Any, Union
+from typing import Any
 
 import openai.types.responses as response_types
 from openai.types.responses import (
@@ -26,6 +26,7 @@ from .contracts import (
     DisplayFileArguments,
     OpenWebUIEventEmitter,
     OpenWebUIMessage,
+    OpenWebUIMessageToolCall,
     OpenWebUIToolSpec,
     supports_display_file,
 )
@@ -47,7 +48,7 @@ def _patch_legacy_custom_tool_output() -> None:
         ResponseOutputItemDoneEvent,
     )
 
-    compatible_item = Union[ResponseOutputItem, ResponseCustomToolCallOutput]
+    compatible_item = ResponseOutputItem | ResponseCustomToolCallOutput
     fields = (
         (Response, "output", list[compatible_item]),
         (ResponseOutputItemAddedEvent, "item", compatible_item),
@@ -138,6 +139,53 @@ def _openwebui_chunk(
     }
 
 
+def _responses_content(content: JsonValue) -> str | list[dict[str, str]]:
+    """Retain supported text and file parts from one transcript message."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return []
+    parts = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        text = part.get("text")
+        if part.get("type") in {"text", "input_text"} and isinstance(text, str):
+            parts.append({"type": "input_text", "text": text})
+        elif part.get("type") == "input_file":
+            file_id = part.get("file_id")
+            if isinstance(file_id, str) and file_id:
+                parts.append({"type": "input_file", "file_id": file_id})
+    return parts
+
+
+def _responses_mcp_calls(
+    tool_calls: Sequence[OpenWebUIMessageToolCall], tool_names: Mapping[str, str]
+) -> list[dict[str, str]]:
+    """Translate only calls owned by the configured MCP gateway."""
+    calls = []
+    for tool_call in tool_calls:
+        if (
+            not tool_call.id
+            or tool_call.function is None
+            or tool_call.function.name is None
+        ):
+            continue
+        gateway_name = tool_names.get(tool_call.function.name)
+        if gateway_name is None:
+            continue
+        calls.append(
+            {
+                "type": "function_call",
+                "call_id": tool_call.id,
+                "name": gateway_name,
+                "arguments": tool_call.function.arguments or "{}",
+                "status": "completed",
+            }
+        )
+    return calls
+
+
 def _responses_input(
     messages: Sequence[OpenWebUIMessage],
     *,
@@ -164,46 +212,13 @@ def _responses_input(
         message_fields = {"role": role}
         if role == "assistant":
             message_fields["phase"] = message.phase or "final_answer"
-        if isinstance(content, str) and content:
-            items.append({**message_fields, "content": content})
-        elif isinstance(content, list):
-            parts = []
-            for part in content:
-                if not isinstance(part, dict):
-                    continue
-                if part.get("type") in {"text", "input_text"} and isinstance(
-                    part.get("text"), str
-                ):
-                    parts.append({"type": "input_text", "text": part["text"]})
-                elif part.get("type") == "input_file":
-                    file_id = part.get("file_id")
-                    if isinstance(file_id, str) and file_id:
-                        parts.append({"type": "input_file", "file_id": file_id})
-            if parts:
-                items.append({**message_fields, "content": parts})
+        if response_content := _responses_content(content):
+            items.append({**message_fields, "content": response_content})
 
-        if role != "assistant" or not mcp_tool_names:
-            continue
-        for tool_call in message.tool_calls:
-            if not tool_call.id or tool_call.function is None:
-                continue
-            gateway_name = (
-                mcp_tool_names.get(tool_call.function.name)
-                if tool_call.function.name is not None
-                else None
-            )
-            if gateway_name is None:
-                continue
-            mcp_call_ids.add(tool_call.id)
-            items.append(
-                {
-                    "type": "function_call",
-                    "call_id": tool_call.id,
-                    "name": gateway_name,
-                    "arguments": tool_call.function.arguments or "{}",
-                    "status": "completed",
-                }
-            )
+        if role == "assistant" and mcp_tool_names:
+            calls = _responses_mcp_calls(message.tool_calls, mcp_tool_names)
+            mcp_call_ids.update(call["call_id"] for call in calls)
+            items.extend(calls)
     return items
 
 
@@ -287,7 +302,7 @@ async def _background_response(
         }
     response = await client.responses.create(**background_request)
     previous_status = None
-    try:
+    try:  # ruff: ignore[too-many-statements-in-try-clause] - Cancellation must cancel the remote response throughout polling.
         while response.status in ACTIVE_BACKGROUND_STATUSES:
             if response.status != previous_status:
                 await on_status(response.status)
@@ -327,9 +342,8 @@ def _raise_for_response(response: Response) -> None:
         return
     if response.status == "incomplete":
         reason = response.incomplete_details
-        raise RuntimeError(
-            f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
-        )
+        msg = f"Response incomplete: {reason.reason if reason else 'unknown reason'}."
+        raise RuntimeError(msg)
     detail = response.error
     raise RuntimeError(detail.message if detail is not None else "Response failed.")
 

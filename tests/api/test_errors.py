@@ -1,11 +1,16 @@
+from collections.abc import Awaitable, Callable
+
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from httpx2 import ASGITransport, AsyncClient
+from langchain_core.exceptions import ContextOverflowError
+from langgraph.graph import StateGraph
 from openai import AsyncOpenAI, BadRequestError, NotFoundError
 from starlette import status
 
-from langgraph_openai_serve import GraphRegistry, LanggraphOpenaiServe
+from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
+from tests.graph.support.schemas import MessageState
 
 
 async def test_validation_error_returns_openai_error(
@@ -267,6 +272,52 @@ async def test_http_error_returns_openai_error(
             "type": "invalid_request_error",
             "param": "model",
             "code": "model_not_found",
+            "misalignment": None,
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "create",
+    [
+        pytest.param(
+            lambda client: client.chat.completions.create(
+                model="overflow", messages=[{"role": "user", "content": "Hi"}]
+            ),
+            id="chat",
+        ),
+        pytest.param(
+            lambda client: client.responses.create(model="overflow", input="Hi"),
+            id="responses",
+        ),
+    ],
+)
+async def test_model_context_overflow_returns_non_retryable_openai_error(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    create: Callable[[AsyncOpenAI], Awaitable[object]],
+) -> None:
+    def overflow(_state: MessageState) -> MessageState:
+        msg = "This model's maximum context length is 8 tokens."
+        raise ContextOverflowError(msg)
+
+    graph_registry.graphs["overflow"] = GraphConfig(
+        graph=StateGraph(MessageState)
+        .add_node("overflow", overflow)
+        .set_entry_point("overflow")
+        .compile(),
+        description="DUMMY",
+    )
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await create(openai_client)
+
+    assert exc_info.value.response.json() == {
+        "error": {
+            "message": "The input exceeds the model's context window.",
+            "type": "invalid_request_error",
+            "param": None,
+            "code": "context_length_exceeded",
             "misalignment": None,
         }
     }

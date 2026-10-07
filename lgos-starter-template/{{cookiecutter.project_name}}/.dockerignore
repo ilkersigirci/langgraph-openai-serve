@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage*
+htmlcov
+public
+dist
+tests
+docs
+.agents
+.github

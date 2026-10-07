@@ -17,6 +17,7 @@ run without it. This reference explains settings without duplicating their defau
 | --- | --- | --- |
 | `demo/api` | Example FastAPI and LangGraph application | Yes, from PyPI by default |
 | `demo/files_api` | OpenAI-compatible Files service and S3 adapter | No |
+| `demo/api-coding-agent` | Coding-agent showcase and persistent workspace (currently Codex) | Yes, from PyPI by default |
 | `demo/ui/chainlit_ui` | Persistent OpenAI-protocol client | No |
 | `demo/ui/openwebui` | Open WebUI Function sources and sync command | No |
 | `demo/docker` | Compose gateway configuration and service data directories | No |
@@ -31,31 +32,33 @@ integration commands:
 
 | Command | Purpose |
 | --- | --- |
-| `just demo/up <service>` | Start one published Compose service and its dependencies; add `--dev` for checkout images or `--wait` to detach |
+| `just demo/up <service>` | Start one Compose service and its dependencies; add `--dev` for checkout images or `--wait` to detach |
 | `just demo/api [--editable] [--port <port>]` | Set up checkpoints and run one local graph API process |
 | `just demo/background-worker [--editable]` | Run the independently deployed Hatchet worker for polling-only background Responses |
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
+| `just demo/test-coding-agent [--editable]` | Check coding-agent shell execution, persisted edits, streaming, usage, and history through the running gateway |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
 | `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
 | `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
-| `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize both LGOS catalogs into Bifrost; then refresh Open WebUI with `sync-openwebui` |
-| `just demo/compose` | Start the published stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
+| `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize all LGOS graph catalogs into Bifrost; then refresh Open WebUI with `sync-openwebui` |
+| `just demo/compose` | Start the default stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
-| `just demo/compose --otel` | Run the ordered published stack with the OTEL overlay |
+| `just demo/compose --otel` | Run the ordered default stack with the OTEL overlay |
 | `just demo/compose --dev --otel` | Build the checkout and run the ordered stack with the OTEL overlay |
+| `just demo/compose --dev --chainlit-utils` | Build the checkout with Chainlit using an editable sibling [`chainlit-utils` checkout](docker.md#compose-modes) |
 | `just demo/down` | Stop and remove every stack variant |
-| `just demo/sync` | Synchronize all four projects from their lockfiles |
-| `just demo/test [--editable]` | Test all four projects, optionally overlaying the parent LGOS checkout |
+| `just demo/sync` | Synchronize every project from its lockfile |
+| `just demo/test [--editable]` | Test every project, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
 | `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, idempotent replay, and polling-only validation through the selected gateway |
-| `just demo/lint` | Check all four projects with Ruff |
-| `just demo/format` | Format the Justfile and fix Python style in all four projects; accepts Ruff flags such as `--unsafe-fixes` |
-| `just demo/type-check [--editable]` | Type-check all four projects |
+| `just demo/lint` | Check every project with Ruff |
+| `just demo/format` | Format the Justfile and fix Python style in every project; accepts Ruff flags such as `--unsafe-fixes` |
+| `just demo/type-check [--editable]` | Type-check every project |
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
 Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
-`lgos-background-worker`,
+`lgos-api-coding-agent`, `lgos-background-worker`,
 `lgos-files-api`, `lgos-postgres-mcp`, `lgos-bifrost`, `lgos-litellm`,
 `lgos-chainlit`, and `lgos-openwebui`. Put arguments for the underlying command
 after `--` when a recipe has its own options, for example
@@ -63,7 +66,8 @@ after `--` when a recipe has its own options, for example
 
 Use `just demo/` to list recipes in the `local`, `integration`, `checks`,
 `docker prod`, and `docker dev` groups. Docker recipes use published images by
-default; `--dev` selects builds from the current checkout. Shared recipes appear
+default, except the coding-agent service, which always builds locally. `--dev`
+selects checkout builds and editable LGOS for both graph API projects. Shared recipes appear
 in both Docker groups.
 
 `just --usage demo/api` shows its options and defaults. The `--port` option
@@ -96,7 +100,7 @@ after [catalog sync](bifrost.md#declarative-model-metadata).
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_IMAGE_TAG` | Tag selected for all project-owned demo images |
+| `DEMO_IMAGE_TAG` | Tag selected for the published demo images; the coding-agent image is built locally |
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
@@ -157,9 +161,14 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 
 ## Demo API Settings
 
+The demo API and its worker run `lgos serve` and `lgos worker`. Their server
+settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
+`LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
+described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
+graphs read these `DEMO_API_` settings:
+
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_API_PORT` | HTTP port used by `lgos-demo-api` |
 | `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
 | `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
 | `DEMO_API_OPENAI_MODEL` | Upstream generation model |
@@ -170,12 +179,7 @@ gateway intentionally accepts cleartext OTLP/HTTP.
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
-| `DEMO_API_POSTGRES_URI` | Database for LangGraph checkpoints, Store data, and interrupt coordination |
-| `DEMO_API_INTERRUPT_TTL_MINUTES` | Age after which the demo API deletes a paused interrupt run; keep it longer than any expected review wait |
-| `DEMO_API_INTERRUPT_SWEEP_INTERVAL_MINUTES` | How often the demo API looks for expired paused runs |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
-| `DEMO_API_BACKGROUND_ENABLED` | Enables the API-side Hatchet backend; the independent worker must also be running. |
-| `DEMO_API_HATCHET_WORKER_SLOTS` | Worker concurrency, 1 to 4: each interrupt graph run holds one of the worker's four PostgreSQL run leases. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
 | `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |
@@ -187,11 +191,26 @@ should inject
 any additional native `HATCHET_CLIENT_*` connection settings into both the API
 and worker processes.
 
-The API also reads the package-owned `LGOS_OPENAI_API_PREFIX`,
-`LGOS_OPENAI_API_DOCS_ENABLED`, and `LGOS_ENABLE_LANGFUSE` settings documented
+The API serves the OpenAI routes at the package's default `/v1` prefix, which
+the gateway wiring assumes. It also reads the package-owned
+`LGOS_OPENAI_API_DOCS_ENABLED` and `LGOS_ENABLE_LANGFUSE` settings documented
 in the package [Reference](../reference.md#settings). Its settings model supports
 a local `.env` file; the installed LGOS package itself reads only process
 environment values or explicit constructor arguments.
+
+## Coding Agent Settings
+
+These settings belong to `demo/api-coding-agent`. Defaults live in `demo/.env.example`.
+
+| Setting | Purpose |
+| --- | --- |
+| `DEMO_CODING_AGENT_BASE_URL` | Upstream Responses base URL, defaulting to the demo API upstream. May point to an AI gateway. |
+| `DEMO_CODING_AGENT_API_KEY` | Upstream model credential. Available inside the coding-agent container. |
+| `DEMO_CODING_AGENT_MODEL` | Codex-compatible upstream model ID; separate from the public graph ID. |
+| `DEMO_CODING_AGENT_TIMEOUT_SECONDS` | Active request time limit, excluding time waiting for another workspace request. Runtime cleanup may exceed the limit. |
+
+See the [coding-agent graph guide](graphs/coding-agent.md) for its shared
+workspace, container execution boundary, and invocation examples.
 
 ## Files API Settings
 

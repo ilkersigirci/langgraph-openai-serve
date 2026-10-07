@@ -1,23 +1,21 @@
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from unittest.mock import Mock
 
 import httpx2
 import pytest
 from fastapi import FastAPI
-from httpx2 import ASGITransport, AsyncClient
+from httpx2 import AsyncClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRequest
+from langgraph_openai_serve import GraphConfig, GraphRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+from langgraph_openai_serve.server import ServerResources, ServerSettings, create_app
 from openai import AsyncOpenAI, BadRequestError
 
-from lgos_demo_api import app as app_module
-from lgos_demo_api.background import worker as worker_module
+from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs import server_tool
 from lgos_demo_api.graphs.advanced_graph import resources as advanced_resources
 from lgos_demo_api.graphs.simple import SimpleContext
-from lgos_demo_api.persistence.postgres import PostgresRuntime
+from lgos_demo_api.registry import open_registry
 from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
@@ -53,8 +51,14 @@ def _rebuild_server_tool_graph(demo_app: FastAPI) -> None:
 
 
 @pytest.fixture
-def demo_app() -> FastAPI:
-    return app_module.create_custom_app()
+async def demo_app() -> AsyncIterator[FastAPI]:
+    app = create_app(
+        open_registry,
+        # Explicit values win over LGOS_* variables that just loads from demo/.env.
+        settings=ServerSettings(POSTGRES_URI=None, BACKGROUND="none"),
+    )
+    async with app.router.lifespan_context(app):
+        yield app
 
 
 @pytest.fixture
@@ -132,18 +136,6 @@ async def test_app_lists_exactly_the_documented_models(
     assert plot_extension["client_settings"]["json_schema"]["properties"]["chart_type"][
         "enum"
     ] == ["bar", "line"]
-
-
-async def test_cors_exposes_request_id(demo_app: FastAPI) -> None:
-    transport = ASGITransport(app=demo_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/v1/health",
-            headers={"Origin": "https://client.example"},
-        )
-
-    assert response.headers["access-control-expose-headers"] == "X-Request-ID"
-    assert response.headers["x-request-id"]
 
 
 async def test_simple_model_retrieval_exposes_runtime_settings(
@@ -233,7 +225,7 @@ async def test_response_outcomes_exposes_native_refusal(
     )
 
     assert response.status == "completed"
-    assert response.output_text == ""
+    assert response.output_text == ""  # ruff: ignore[compare-to-empty-string] - Distinguish the empty string from other falsey values.
     assert response.output[0].content[0].model_dump() == {
         "type": "refusal",
         "refusal": "I cannot help with bypassing safety controls.",
@@ -291,26 +283,15 @@ async def test_complex_subgraphs_preserve_streaming_parity(
     assert streamed == complete.output_text
 
 
-async def test_lifespan_installs_shared_postgres_runtime(
-    demo_app: FastAPI,
+async def test_registry_compiles_graphs_with_server_resources(
     monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
-    coordinator = InMemoryRunCoordinator()
-
-    runtime = PostgresRuntime(
-        checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
-        store=InMemoryStore(),  # type: ignore[arg-type]
-        run_coordinator=coordinator,  # type: ignore[arg-type]
+    resources = ServerResources(
+        checkpointer=sqlite_checkpointer,
+        store=InMemoryStore(),
+        run_coordinator=InMemoryRunCoordinator(),
     )
-
-    @asynccontextmanager
-    async def postgres_runtime(postgres_uri: str):
-        assert postgres_uri == app_module.settings.POSTGRES_URI
-        yield runtime
-
-    runtime_factory = Mock(wraps=postgres_runtime)
-    monkeypatch.setattr(app_module, "postgres_runtime", runtime_factory)
     upstream_clients: list[httpx2.AsyncClient] = []
     create_model = advanced_resources.create_model
 
@@ -320,55 +301,16 @@ async def test_lifespan_installs_shared_postgres_runtime(
 
     monkeypatch.setattr(advanced_resources, "create_model", capture_upstream_client)
 
-    async with app_module.lifespan(demo_app):
+    async with open_registry(resources) as registry:
         assert not upstream_clients[0].is_closed
-        assert demo_app.state.interruptible_graph.checkpointer is sqlite_checkpointer
-        assert (
-            demo_app.state.background_interrupt_graph.checkpointer
-            is sqlite_checkpointer
-        )
-        assert demo_app.state.run_coordinator is coordinator
-        assert demo_app.state.persistent_plot_agent.store is runtime.store
-
-        async with demo_app.state.graph_registry.run_coordinator("thread-1"):
-            pass
+        for model_id in ("interruptible-approval", "background-interrupt"):
+            graph = await registry.get_graph(model_id).resolve_graph()
+            assert graph.checkpointer is sqlite_checkpointer
+        plot_agent = await registry.get_graph("persistent-plot-agent").resolve_graph()
+        assert plot_agent.store is resources.store
+        assert registry.run_coordinator is resources.run_coordinator
 
     assert upstream_clients[0].is_closed
-    runtime_factory.assert_called_once_with(app_module.settings.POSTGRES_URI)
-
-
-async def test_worker_registers_every_background_model_the_api_serves(
-    demo_app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
-    sqlite_checkpointer: AsyncSqliteSaver,
-) -> None:
-    runtime = PostgresRuntime(
-        checkpointer=sqlite_checkpointer,  # type: ignore[arg-type]
-        store=InMemoryStore(),  # type: ignore[arg-type]
-        run_coordinator=InMemoryRunCoordinator(),  # type: ignore[arg-type]
-    )
-
-    @asynccontextmanager
-    async def postgres_runtime(_postgres_uri: str):
-        yield runtime
-
-    @asynccontextmanager
-    async def open_advanced_graph(_checkpointer: object, _store: object):
-        yield Mock()
-
-    monkeypatch.setattr(worker_module, "postgres_runtime", postgres_runtime)
-    monkeypatch.setattr(worker_module, "open_advanced_graph", open_advanced_graph)
-    lifespan = worker_module._lifespan()
-    worker_graphs = await anext(lifespan)
-    await lifespan.aclose()
-
-    # A job's model ID must resolve in the worker, or its run fails.
-    api_background_models = {
-        name
-        for name, config in demo_app.state.graph_registry.graphs.items()
-        if config.supports(GraphFeature.BACKGROUND)
-    }
-    assert set(worker_graphs.graphs) == api_background_models
 
 
 @pytest.mark.parametrize(
@@ -397,28 +339,12 @@ def test_vector_store_credentials_are_isolated_from_a_separate_endpoint(
     vector_api_key: str | None,
     expected: tuple[str, str],
 ) -> None:
-    monkeypatch.setattr(
-        app_module.settings, "OPENAI_BASE_URL", "https://model.example/v1"
-    )
-    monkeypatch.setattr(app_module.settings, "OPENAI_API_KEY", "model-secret")
-    monkeypatch.setattr(app_module.settings, "VECTOR_STORE_BASE_URL", vector_base_url)
-    monkeypatch.setattr(app_module.settings, "VECTOR_STORE_API_KEY", vector_api_key)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://model.example/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "model-secret")
+    monkeypatch.setattr(settings, "VECTOR_STORE_BASE_URL", vector_base_url)
+    monkeypatch.setattr(settings, "VECTOR_STORE_API_KEY", vector_api_key)
 
     assert advanced_resources._vector_store_connection() == expected
-
-
-def test_main_leaves_access_logging_to_the_deployment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import uvicorn
-
-    run = Mock()
-    monkeypatch.setattr(uvicorn, "run", run)
-
-    app_module.main()
-
-    run.assert_called_once()
-    assert run.call_args.kwargs["access_log"] is False
 
 
 @pytest.mark.parametrize(
@@ -498,15 +424,15 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         requests.append(body)
         assert request.url.path.endswith("/responses")
         assert body["store"] is False
+        # The private selection call streams too, but its tokens stay hidden.
+        assert bool(body.get("stream")) == stream
         if selecting:
-            assert not body.get("stream")
             assert body["tools"][0]["type"] == "custom"
             assert body["tools"][0]["name"] == "lgos_package_version"
             assert body["parallel_tool_calls"] is False
             assert body["tool_choice"] == choice
         else:
             assert "tools" not in body
-            assert bool(body.get("stream")) == stream
             result = next(
                 item
                 for item in body["input"]
@@ -555,38 +481,51 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
             "output": output,
         }
         if body.get("stream"):
-            text = result["output"]
-            item = output[0]
             events = [
                 {
                     "type": "response.created",
                     "response": {**payload, "output": [], "status": "in_progress"},
-                },
-                {
-                    "type": "response.output_item.added",
-                    "output_index": 0,
-                    "item": {**item, "content": [], "status": "in_progress"},
-                },
-                {
-                    "type": "response.content_part.added",
-                    "output_index": 0,
-                    "content_index": 0,
-                    "item_id": item["id"],
-                    "part": {"type": "output_text", "text": "", "annotations": []},
-                },
-                *[
-                    {
-                        "type": "response.output_text.delta",
-                        "output_index": 0,
-                        "content_index": 0,
-                        "item_id": item["id"],
-                        "delta": delta,
-                    }
-                    for delta in (text[:10], text[10:])
-                ],
-                {"type": "response.output_item.done", "output_index": 0, "item": item},
-                {"type": "response.completed", "response": payload},
+                }
             ]
+            for index, item in enumerate(output):
+                if item["type"] == "message":
+                    text = item["content"][0]["text"]
+                    events += [
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": index,
+                            "item": {**item, "content": [], "status": "in_progress"},
+                        },
+                        {
+                            "type": "response.content_part.added",
+                            "output_index": index,
+                            "content_index": 0,
+                            "item_id": item["id"],
+                            "part": {
+                                "type": "output_text",
+                                "text": "",
+                                "annotations": [],
+                            },
+                        },
+                        *[
+                            {
+                                "type": "response.output_text.delta",
+                                "output_index": index,
+                                "content_index": 0,
+                                "item_id": item["id"],
+                                "delta": delta,
+                            }
+                            for delta in (text[:10], text[10:])
+                        ],
+                    ]
+                events.append(
+                    {
+                        "type": "response.output_item.done",
+                        "output_index": index,
+                        "item": item,
+                    }
+                )
+            events.append({"type": "response.completed", "response": payload})
             return Response(
                 200,
                 headers={"content-type": "text/event-stream"},

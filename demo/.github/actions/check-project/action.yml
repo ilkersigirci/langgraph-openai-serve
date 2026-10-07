@@ -37,7 +37,8 @@ runs:
         uv_args=(--directory "$PROJECT_DIR" --locked)
         ty_args=(src)
         if [[ -n "$EDITABLE_PACKAGE" ]]; then
-          uv_args+=(--with-editable "$EDITABLE_PACKAGE")
+          # The server extra supplies `lgos serve` and its integrations.
+          uv_args+=(--with-editable "$EDITABLE_PACKAGE[server]")
           ty_args+=(--extra-search-path "$EDITABLE_PACKAGE/src")
         fi
         uv run "${uv_args[@]}" pytest
@@ -48,8 +49,8 @@ runs:
       env:
         PROJECT_DIR: ${{ inputs.directory }}
       run: |
-        uv run --directory "$PROJECT_DIR" --locked ruff check src tests
-        uv run --directory "$PROJECT_DIR" --locked ruff format --check src tests
+        uv run --directory "$PROJECT_DIR" --locked ruff check .
+        uv run --directory "$PROJECT_DIR" --locked ruff format --check .
 
     - name: Verify the packaged API corpus
       if: inputs.verify-api-corpus == 'true'

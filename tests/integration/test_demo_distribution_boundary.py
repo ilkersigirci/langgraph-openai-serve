@@ -94,7 +94,13 @@ async def test_demo_tests_forward_quoted_arguments_without_a_dotenv_file(
     commands = [json.loads(line) for line in content.splitlines()]
     assert [command["args"] for command in commands] == [
         ["run", "--directory", project, "--locked", "pytest", "-k", selection]
-        for project in ("api", "files_api", "ui/chainlit_ui", "ui/openwebui")
+        for project in (
+            "api",
+            "files_api",
+            "api-coding-agent",
+            "ui/chainlit_ui",
+            "ui/openwebui",
+        )
     ]
     assert all(command["cwd"] == str(demo) for command in commands)
 
@@ -197,6 +203,21 @@ def test_bifrost_has_one_files_provider() -> None:
     )
     files_keys = config["providers"]["lgos-files"]["keys"]
     assert any(key.get("use_for_batch_api") is True for key in files_keys)
+
+
+def test_bifrost_outwaits_a_coding_agent_request() -> None:
+    env = (DEMO_ROOT / ".env.example").read_text(encoding="utf-8")
+    [limit] = re.findall(
+        r"^DEMO_CODING_AGENT_TIMEOUT_SECONDS=(\d+)$", env, re.MULTILINE
+    )
+    config = json.loads(
+        (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
+    )
+    network = config["providers"]["lgos-api-coding-agent"]["network_config"]
+
+    # Bifrost's request timeout bounds a whole non-streaming response. LGOS
+    # keepalive comments reset its stream-idle timer.
+    assert network["default_request_timeout_in_seconds"] > int(limit)
 
 
 def test_bundled_gateways_serve_the_ui_speech_models() -> None:
@@ -304,12 +325,14 @@ def test_demo_repository_links_resolve() -> None:
         DEMO_ROOT / "README.md",
         DEMO_ROOT / "api/README.md",
         DEMO_ROOT / "files_api/README.md",
+        DEMO_ROOT / "api-coding-agent/README.md",
         DEMO_ROOT / "ui/chainlit_ui/README.md",
         DEMO_ROOT / "ui/openwebui/README.md",
     ]
     for source_root in (
         DEMO_ROOT / "api/src",
         DEMO_ROOT / "files_api/src",
+        DEMO_ROOT / "api-coding-agent/src",
         DEMO_ROOT / "ui/chainlit_ui/src",
         DEMO_ROOT / "ui/openwebui/src",
     ):

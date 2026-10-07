@@ -8,19 +8,23 @@ set script-interpreter := ["bash", "-euo", "pipefail"]
 set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
 
 api_run := "uv run --directory api --locked"
-editable_api_run := api_run + " --with-editable ../.."
+editable_api_run := api_run + " --with-editable '../..[server]'"
 files_run := "uv run --directory files_api --locked"
+coding_agent_run := "uv run --directory api-coding-agent --locked"
+editable_coding_agent_run := coding_agent_run + " --with-editable '../..[server]'"
 chainlit_run := "uv run --directory ui/chainlit_ui --locked"
 openwebui_run := "uv run --directory ui/openwebui --locked"
 compose_command := "docker compose -f docker/compose/demo.yml"
 compose_dev_command := compose_command + " -f docker/compose/development.yml"
+demo_registry := "lgos_demo_api.registry:open_registry"
 
-# Synchronize all four projects from their lockfiles.
+# Synchronize every project from its lockfile.
 [group('local')]
 [timestamp]
 sync:
     uv --directory api sync --locked
     uv --directory files_api sync --locked
+    uv --directory api-coding-agent sync --locked
     uv --directory ui/chainlit_ui sync --locked
     uv --directory ui/openwebui sync --locked
 
@@ -31,6 +35,7 @@ sync:
 test editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest "${@:2}"
     {{ files_run }} pytest "${@:2}"
+    {{ if editable == "true" { editable_coding_agent_run } else { coding_agent_run } }} pytest "${@:2}"
     {{ chainlit_run }} pytest "${@:2}"
     {{ openwebui_run }} pytest "${@:2}"
 
@@ -49,32 +54,36 @@ marimo editable='false' host='0.0.0.0' port='2718' *args:
 test-postgres $DEMO_API_TEST_POSTGRES_URI=env("DEMO_API_TEST_POSTGRES_URI") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_postgres_interrupt_runtime.py tests/integration/test_postgres_persistent_plot_agent.py "${@:3}"
 
-# Check lint and formatting for all four projects.
+# Check lint and formatting for every project.
 [group('local')]
 [timestamp]
 lint:
     just --fmt --check
-    {{ api_run }} ruff check src tests
-    {{ api_run }} ruff format --check src tests
-    {{ files_run }} ruff check src tests
-    {{ files_run }} ruff format --check src tests
-    {{ chainlit_run }} ruff check src tests
-    {{ chainlit_run }} ruff format --check src tests
-    {{ openwebui_run }} ruff check src tests
-    {{ openwebui_run }} ruff format --check src tests
+    {{ api_run }} ruff check .
+    {{ api_run }} ruff format --check .
+    {{ files_run }} ruff check .
+    {{ files_run }} ruff format --check .
+    {{ coding_agent_run }} ruff check .
+    {{ coding_agent_run }} ruff format --check .
+    {{ chainlit_run }} ruff check .
+    {{ chainlit_run }} ruff format --check .
+    {{ openwebui_run }} ruff check .
+    {{ openwebui_run }} ruff format --check .
 
-# Format and fix all four projects; accepts Ruff check flags such as --unsafe-fixes.
+# Format and fix every project; accepts Ruff check flags such as --unsafe-fixes.
 [group('local')]
 format *args:
     just --fmt
-    {{ api_run }} ruff format src tests
-    {{ api_run }} ruff check --fix src tests "$@"
-    {{ files_run }} ruff format src tests
-    {{ files_run }} ruff check --fix src tests "$@"
-    {{ chainlit_run }} ruff format src tests
-    {{ chainlit_run }} ruff check --fix src tests "$@"
-    {{ openwebui_run }} ruff format src tests
-    {{ openwebui_run }} ruff check --fix src tests "$@"
+    {{ api_run }} ruff format .
+    {{ api_run }} ruff check --fix . "$@"
+    {{ files_run }} ruff format .
+    {{ files_run }} ruff check --fix . "$@"
+    {{ coding_agent_run }} ruff format .
+    {{ coding_agent_run }} ruff check --fix . "$@"
+    {{ chainlit_run }} ruff format .
+    {{ chainlit_run }} ruff check --fix . "$@"
+    {{ openwebui_run }} ruff format .
+    {{ openwebui_run }} ruff check --fix . "$@"
 
 # Type-check every project; add --editable to use the parent LGOS source.
 [arg('editable', long, value='true')]
@@ -82,6 +91,7 @@ format *args:
 type-check editable='false':
     {{ if editable == "true" { editable_api_run } else { api_run } }} ty check src {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
     {{ files_run }} ty check src
+    {{ if editable == "true" { editable_coding_agent_run } else { coding_agent_run } }} ty check src {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
     {{ chainlit_run }} ty check src
     {{ openwebui_run }} ty check src
 
@@ -94,6 +104,12 @@ compose-config:
     {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
     {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
 
+# Test real coding-agent streaming through the running selected gateway.
+[arg('editable', long, value='true')]
+[group('integration')]
+test-coding-agent editable='false' *args:
+    {{ if editable == "true" { editable_coding_agent_run } else { coding_agent_run } }} pytest -m integration tests/test_live.py "${@:2}"
+
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]
 [group('checks')]
@@ -101,16 +117,16 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 
 # Run one API process; add --editable to use the parent LGOS checkout.
 [arg('editable', long, value='true')]
-[arg('DEMO_API_PORT', long='port')]
+[arg('UVICORN_PORT', long='port')]
 [group('local')]
-api $DEMO_API_PORT=env("LGOS_A_PORT") editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-api
+api $UVICORN_PORT=env("LGOS_A_PORT") editable='false':
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos serve {{ demo_registry }}
 
 # Run the independent Hatchet agent worker for background Responses.
 [arg('editable', long, value='true')]
 [group('local')]
 background-worker editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos-demo-background-worker
+    {{ if editable == "true" { editable_api_run } else { api_run } }} lgos worker {{ demo_registry }}
 
 # Run the OpenAI Files service locally.
 [arg('DEMO_API_FILES_PORT', long='port')]
@@ -209,15 +225,16 @@ sync-bifrost dev='false':
     {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-catalog
     {{ if dev == "true" { compose_dev_command } else { compose_command } }} run --rm --no-deps --pull never lgos-bifrost-sync
 
-# Start and synchronize the stack; add --dev and/or --otel as needed.
+# Start and synchronize the stack; add --dev, --otel, or --dev --chainlit-utils as needed.
+[arg('chainlit_utils', long='chainlit-utils', value='true')]
 [arg('dev', long, value='true')]
 [arg('otel', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
 [script]
-compose dev='false' otel='false' *up_args:
-    compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }})
-    up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:3}")
+compose dev='false' otel='false' chainlit_utils='false' *up_args:
+    compose=({{ if dev == "true" { compose_dev_command } else { compose_command } }} {{ if otel == "true" { "-f docker/compose/otel.yml" } else { "" } }} {{ if chainlit_utils == "true" { "-f docker/compose/chainlit-utils.yml" } else { "" } }})
+    up_args=({{ if dev == "true" { "--build" } else { "" } }} "${@:4}")
     services="$("${compose[@]}" config --services)"
     gateway_service="$(sed -n -e '/^lgos-litellm$/p' -e '/^lgos-bifrost$/p' <<< "$services")"
     background_service="$(sed -n '/^lgos-background-worker$/p' <<< "$services")"
@@ -231,7 +248,7 @@ compose dev='false' otel='false' *up_args:
             "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service" "${background_services[@]}"
             ;;
         litellm:|bifrost:)
-            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-files-api "${background_services[@]}"
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-api-coding-agent lgos-files-api "${background_services[@]}"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
@@ -242,6 +259,7 @@ compose dev='false' otel='false' *up_args:
     if [[ "$OPENAI_GATEWAY_TYPE" == "litellm" ]]; then
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a
         "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
+        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-api-coding-agent:8000/v1 --prefix lgos-api-coding-agent
     fi
     if [[ "$gateway_service" == "lgos-bifrost" ]]; then
         "${compose[@]}" run --rm --no-deps --pull never lgos-bifrost-sync

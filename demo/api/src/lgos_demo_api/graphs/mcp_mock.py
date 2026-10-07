@@ -14,7 +14,9 @@ class MockToolCallingChatModel(FakeMessagesListChatModel):
     """Fake chat model that supports tool binding for the deterministic demo."""
 
     def bind_tools(
-        self, tools: list[BaseTool], **kwargs: Any
+        self,
+        tools: list[BaseTool],  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
+        **kwargs: Any,  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
     ) -> "MockToolCallingChatModel":  # ty: ignore[invalid-method-override]
         return self
 
@@ -22,12 +24,12 @@ class MockToolCallingChatModel(FakeMessagesListChatModel):
 class MockMCPClient:
     """Minimal stand-in for an MCP client that discovers tools asynchronously."""
 
-    async def get_tools(self) -> list[BaseTool]:
+    async def get_tools(self) -> list[BaseTool]:  # ruff: ignore[no-self-use] - Mirror the MCP client's instance method.
         return [mock_weather_tool]
 
 
 @tool
-async def mock_weather_tool(city: str) -> str:
+async def mock_weather_tool(city: str) -> str:  # ruff: ignore[unused-async] - LangChain runs sync tools in a worker thread.
     """Get deterministic mock weather for a city."""
     return f"The mock MCP weather service says it is sunny in {city}."
 

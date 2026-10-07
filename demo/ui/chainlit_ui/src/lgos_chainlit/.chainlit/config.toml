@@ -49,7 +49,7 @@ allowed_urls = []
 name = "LangGraph OpenAI Serve"
 description = "OpenAI-compatible LangGraph demo"
 confirm_new_chat = true
-cot = "hidden"
+cot = "tool_call"
 alert_style = "classic"
 # chainlit-utils fills the chat input with dictated speech; see on_audio_end in chat.py.
 custom_js = "/public/chainlit-utils/dictation.js"

@@ -13,6 +13,8 @@ entry point.
   async-test guidance for restricted coding-agent sandboxes.
 - Read `demo/AGENTS.md` before changing files under `demo/` or changing public
   graph APIs; it owns all demo-specific guidance.
+- Read `lgos-starter-template/AGENTS.md` before changing the template, or demo
+  API conventions it adapts.
 - Read `docs/index.md` only when you need the full docs map.
 - Use `docs/getting-started.md` for the minimal package application.
 - Use `docs/reference.md` for the package API and settings.
@@ -66,7 +68,10 @@ entry point.
 - `src/langgraph_openai_serve/openai_server.py`: FastAPI binding.
 - `src/langgraph_openai_serve/background.py`: background engine contract,
   job execution, and the in-memory engine.
+- `src/langgraph_openai_serve/server/` and `cli.py`: the `lgos serve` and
+  `lgos worker` host behind the `server` extra.
 - `src/langgraph_openai_serve/integrations/`: optional Hatchet, PostgreSQL, and
   Langfuse adapters.
 - `demo/`: runnable API and UI examples.
+- `lgos-starter-template/`: Cookiecutter template for independent applications.
 - `tests/`: pytest coverage.

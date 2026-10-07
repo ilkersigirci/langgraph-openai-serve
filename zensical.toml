@@ -12,6 +12,7 @@ docs_dir = "docs"
 nav = [
   { Home = "index.md" },
   { "Getting Started" = "getting-started.md" },
+  { "Starter Template" = "starter-template.md" },
   { "How It Works" = [
     "explanation/index.md",
     { "Architecture Overview" = "explanation/architecture.md" },
@@ -34,6 +35,7 @@ nav = [
       { "File Input" = "demo/graphs/file-input.md" },
       { "Events and Citations" = "demo/graphs/events-and-citations.md" },
       { "LGOS RAG" = "demo/graphs/lgos-rag.md" },
+      { "Coding Agent" = "demo/graphs/coding-agent.md" },
       { "Complex Subgraphs" = "demo/graphs/complex-subgraphs.md" },
       { "Persistent Plot Agent" = "demo/graphs/persistent-plot-agent.md" },
       { "Interruptible Human Review" = "demo/graphs/interruptible-approval.md" },
@@ -57,6 +59,7 @@ nav = [
   ]},
   { "How-To Guides" = [
     "how-to-guides/index.md",
+    { "Run The Server" = "how-to-guides/server.md" },
     { "LangGraph Runtime Settings" = "how-to-guides/langgraph-runtime-settings.md" },
     { Authentication = "how-to-guides/authentication.md" },
     { "Production Logging" = "how-to-guides/production-logging.md" },

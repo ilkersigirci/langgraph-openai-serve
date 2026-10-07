@@ -3,6 +3,11 @@
 Build a small application that registers one LangGraph graph as an OpenAI
 `model` using the installed `langgraph-openai-serve` package.
 
+!!! tip "Start from a complete application"
+
+    The [Cookiecutter starter](starter-template.md) generates a project that
+    [`lgos serve`](how-to-guides/server.md) runs, with tests and Docker.
+
 !!! tip "Looking for a ready-made stack?"
 
     The [self-contained demo](demo/index.md) provides example graphs,

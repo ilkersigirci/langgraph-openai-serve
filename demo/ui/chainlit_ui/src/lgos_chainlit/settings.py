@@ -87,6 +87,7 @@ class Settings(BaseSettings):
         description="Built-in OpenAI voice used for spoken answers.",
     )
     ENABLE_OAUTH_TOKEN_FORWARDING: bool = False
+    STATUS_DISPLAY: Literal["steps", "tasklist"] = "steps"
     LOGIN_TYPE: ChainlitLoginType = "mock"
     OAUTH_RESOURCE: str | None = Field(default=None, min_length=1)
     OAUTH_ISSUER: str | None = None
@@ -101,9 +102,8 @@ class Settings(BaseSettings):
         if value is not None:
             resource = TypeAdapter(AnyUrl).validate_python(value)
             if resource.fragment is not None or value != value.strip():
-                raise ValueError(
-                    "OAuth resource must be an absolute URI without a fragment or surrounding whitespace."
-                )
+                msg = "OAuth resource must be an absolute URI without a fragment or surrounding whitespace."
+                raise ValueError(msg)
         return value
 
     @field_validator("OAUTH_ISSUER")
@@ -118,9 +118,8 @@ class Settings(BaseSettings):
                 or issuer.username
                 or value != value.strip()
             ):
-                raise ValueError(
-                    "OAuth issuer must be an HTTPS URL without credentials, query, or fragment."
-                )
+                msg = "OAuth issuer must be an HTTPS URL without credentials, query, or fragment."
+                raise ValueError(msg)
         return value
 
     @field_validator("OAUTH_ENCRYPTION_KEYS")
@@ -130,27 +129,28 @@ class Settings(BaseSettings):
             try:
                 Fernet(key.get_secret_value())
             except (ValueError, TypeError):
-                raise ValueError("OAuth encryption keys must be Fernet keys.") from None
+                msg = "OAuth encryption keys must be Fernet keys."
+                raise ValueError(msg) from None
         return keys
 
     @model_validator(mode="after")
     def validate_gateway_auth(self) -> Self:
         if self.LOGIN_TYPE == "oauth" and not self.OAUTH_ISSUER:
-            raise ValueError("DEMO_CHAINLIT_OAUTH_ISSUER must be an HTTPS issuer URL.")
+            msg = "DEMO_CHAINLIT_OAUTH_ISSUER must be an HTTPS issuer URL."
+            raise ValueError(msg)
 
         if self.ENABLE_OAUTH_TOKEN_FORWARDING:
             if self.LOGIN_TYPE != "oauth":
-                raise ValueError(
+                msg = (
                     "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING requires OAuth login."
                 )
+                raise ValueError(msg)
             if not self.OAUTH_ENCRYPTION_KEYS:
-                raise ValueError(
-                    "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS must be configured."
-                )
+                msg = "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS must be configured."
+                raise ValueError(msg)
         elif _is_unconfigured(self.OPENAI_GATEWAY_API_KEY):
-            raise ValueError(
-                "OPENAI_GATEWAY_API_KEY must be configured when OAuth token forwarding is disabled."
-            )
+            msg = "OPENAI_GATEWAY_API_KEY must be configured when OAuth token forwarding is disabled."
+            raise ValueError(msg)
         return self
 
 
@@ -219,11 +219,12 @@ class ChainlitSettings(BaseSettings):
             missing_settings = ", ".join(missing)
             msg = f"Configure the required Chainlit OAuth settings: {missing_settings}."
             raise ValueError(msg)
-        assert self.CHAINLIT_URL is not None
-        if not self.CHAINLIT_URL.startswith("https://"):
-            raise ValueError("CHAINLIT_URL must use HTTPS for OAuth.")
+        if not (self.CHAINLIT_URL or "").startswith("https://"):
+            msg = "CHAINLIT_URL must use HTTPS for OAuth."
+            raise ValueError(msg)
         if "openid" not in (self.OAUTH_GENERIC_SCOPES or "").split():
-            raise ValueError("OAUTH_GENERIC_SCOPES must include openid.")
+            msg = "OAUTH_GENERIC_SCOPES must include openid."
+            raise ValueError(msg)
         return self
 
 

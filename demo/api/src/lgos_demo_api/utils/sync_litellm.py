@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from collections.abc import Iterable, Sequence
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
@@ -37,6 +38,20 @@ def _is_owned(deployment: Deployment, *, prefix: str) -> bool:
     )
 
 
+def _owned_deployments(
+    names: Iterable[str], deployments: Sequence[Deployment], *, prefix: str
+) -> dict[str, Deployment | None]:
+    """Reject ambiguous or independently managed matches before any writes."""
+    existing: dict[str, Deployment | None] = {}
+    for name in names:
+        matches = [item for item in deployments if item.model_name == name]
+        if len(matches) > 1 or (matches and not _is_owned(matches[0], prefix=prefix)):
+            msg = f"{name}: conflicts with ambiguous or non-sync-owned deployment"
+            raise ValueError(msg)
+        existing[name] = matches[0] if matches else None
+    return existing
+
+
 def sync_models(
     source: httpx2.Client,
     gateway: httpx2.Client,
@@ -55,15 +70,7 @@ def sync_models(
     response = gateway.get("model/info")
     response.raise_for_status()
     deployments = Deployments.model_validate(response.json()).data
-    # Validate every desired name before writing. Ambiguous or independently
-    # managed matches need an operator decision, not a guessed target.
-    existing: dict[str, Deployment | None] = {}
-    for name in desired:
-        matches = [item for item in deployments if item.model_name == name]
-        if len(matches) > 1 or (matches and not _is_owned(matches[0], prefix=prefix)):
-            msg = f"{name}: conflicts with ambiguous or non-sync-owned deployment"
-            raise ValueError(msg)
-        existing[name] = matches[0] if matches else None
+    existing = _owned_deployments(desired, deployments, prefix=prefix)
 
     results: dict[str, str] = {}
     for name, model in desired.items():
@@ -165,12 +172,12 @@ def main() -> None:
         for name, action in results.items():
             print(f"{name}: {'would be ' if args.dry_run else ''}{action}")
     except ValidationError:
-        raise SystemExit(
-            "LiteLLM model sync failed: invalid catalog response"
-        ) from None
+        msg = "LiteLLM model sync failed: invalid catalog response"
+        raise SystemExit(msg) from None
     except (httpx2.HTTPError, ValueError, KeyError) as exc:
         # Do not print response bodies: management errors can echo credentials.
-        raise SystemExit(f"LiteLLM model sync failed: {exc}") from None
+        msg = f"LiteLLM model sync failed: {exc}"
+        raise SystemExit(msg) from None
 
 
 if __name__ == "__main__":

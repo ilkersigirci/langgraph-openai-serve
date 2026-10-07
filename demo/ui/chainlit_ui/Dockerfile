@@ -1,4 +1,8 @@
-FROM ghcr.io/astral-sh/uv:0.12.1-python3.13-trixie-slim@sha256:8db423175bfff42bd1c81f77280bc92f10ef9cf03161803bd5cb6e15d86c3d10
+# The chainlit-utils Compose override replaces this fallback with the sibling
+# checkout as the "chainlit_utils" named build context.
+FROM scratch AS chainlit_utils
+
+FROM ghcr.io/astral-sh/uv:0.12.23-python3.13-trixie-slim@sha256:a6aeb5c166af9f765f9c68e585b5a5148c28f3b8a362f90151cecea88b21a3e2 AS base
 
 ARG PUID=1000
 ARG PGID=1000
@@ -29,3 +33,19 @@ RUN groupadd --gid "$PGID" app \
 USER app
 
 CMD ["lgos-chainlit"]
+
+FROM base AS local-utils
+
+USER root
+
+COPY --from=chainlit_utils pyproject.toml README.md LICENSE /workspace/chainlit-utils/
+COPY --from=chainlit_utils src /workspace/chainlit-utils/src
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /app/.venv/bin/python \
+        --editable "/workspace/chainlit-utils[audio,sso]"
+
+USER app
+
+# The default build uses only the project and its locked PyPI dependencies.
+FROM base AS production

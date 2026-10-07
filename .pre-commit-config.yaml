@@ -1,3 +1,6 @@
+# Cookiecutter source is checked after rendering by the starter test suite.
+exclude: '^lgos-starter-template/(hooks/|\{\{cookiecutter\.project_name\}\}/)'
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -16,13 +19,13 @@ repos:
         args: ["--maxkb=1000"]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.1
+    rev: 0.12.23
     hooks:
       - id: uv-lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3
+    rev: v0.16.10
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--exit-non-zero-on-fix]
       - id: ruff-format

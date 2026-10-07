@@ -11,6 +11,9 @@ OpenAI-compatible `/v1` API.
 
 [Build your first app :octicons-arrow-right-24:](getting-started.md){ .md-button .md-button--primary }
 
+Use the [Cookiecutter starter](starter-template.md) to generate an independent
+application that [`lgos serve`](how-to-guides/server.md) runs.
+
 <div class="grid cards" markdown>
 
 -   :material-rocket-launch-outline:{ .lg .middle } __Use the package__

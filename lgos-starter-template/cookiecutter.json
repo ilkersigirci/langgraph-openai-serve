@@ -1,0 +1,28 @@
+{
+  "project_name": "my-graph-api",
+  "project_slug": "{{ cookiecutter.project_name | replace('-', '_') }}",
+  "project_description": "LangGraph workflows served through an OpenAI-compatible API",
+  "author": "Your Name",
+  "email": "you@example.com",
+  "python_version": [
+    "3.13",
+    "3.14",
+    "3.12",
+    "3.11"
+  ],
+  "license": [
+    "MIT",
+    "Proprietary"
+  ],
+  "_extensions": [
+    "lgos_template_extensions.UnicodeJSONExtension"
+  ],
+  "_copy_without_render": [
+    ".agents/CODE_STYLE.md",
+    "ruff.toml"
+  ],
+  "_jinja2_env_vars": {
+    "trim_blocks": true,
+    "lstrip_blocks": true
+  }
+}

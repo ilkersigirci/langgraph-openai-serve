@@ -3,7 +3,7 @@
 import asyncio
 import importlib.util
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -24,7 +24,7 @@ def assert_optional_integrations_are_not_installed() -> None:
 
 
 @contextmanager
-def hostile_working_directory() -> Iterator[None]:
+def hostile_working_directory() -> Generator[None, None, None]:
     original_working_directory = Path.cwd()
     with TemporaryDirectory() as temporary_directory:
         Path(temporary_directory, ".env").write_text(

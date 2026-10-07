@@ -7,9 +7,14 @@ Keep test setup explicit and assertions focused on observable behavior.
 - `tests/` owns the installed package's API, graph runner, and utility tests.
 - `tests/api/interrupt/` keeps the Responses interrupt codec, response, HTTP
   contract, durable-state, and concurrency coverage together.
+- `tests/server/` covers `lgos serve`, `lgos worker`, and
+  `langgraph_openai_serve.server`. Build its apps with
+  `tests.server.support.server_settings()`, so `LGOS_*` variables from the
+  environment never reach a test. Its live PostgreSQL path runs through
+  `just demo/test-postgres --editable`.
 - Each project under `demo/` owns its tests and lockfile. Run all of them with
   `just demo/test`; add `--editable` to overlay the current LGOS
-  checkout into the API test run.
+  checkout into both graph API test runs.
 - Live demo integration tests are excluded from default pytest runs. Start the
   required services and use the dedicated recipe, such as
   `just demo/test-bifrost --editable` or
@@ -46,8 +51,8 @@ Keep test setup explicit and assertions focused on observable behavior.
 
 - Reserve `conftest.py` for fixtures and pytest hooks or configuration. Put
   importable builders, data, and assertion helpers in support modules.
-- `tests/conftest.py` owns app, client, and fresh in-memory SQLite saver
-  fixtures shared by package tests.
+- `tests/conftest.py` owns app, client, in-memory OpenTelemetry SDK, and fresh
+  in-memory SQLite saver fixtures shared by package tests.
 - Subdirectory `conftest.py` files may add local fixtures. Package graph tests
   import reusable builders from `tests.graph.support` modules.
 - Prefer explicit fixture arguments over autouse fixtures. Reserve autouse for
@@ -114,7 +119,9 @@ timer only masks the environment failure.
 - Graphs with `features={GraphFeature.INTERRUPTS}` must use a fresh
   `AsyncSqliteSaver.from_conn_string(":memory:")` checkpointer and a fresh
   `InMemoryRunCoordinator` per test. Register the coordinator on
-  `GraphRegistry.run_coordinator`.
+  `GraphRegistry.run_coordinator`. Server tests instead compile with the
+  `ServerResources` a fresh app opens, which are in-process without
+  `LGOS_POSTGRES_URI`.
 - The checkpointer used by an interrupt graph must implement asynchronous state
   reads, checkpoint writes, pending writes, and `adelete_thread`;
   configuration-error tests should make whichever

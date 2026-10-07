@@ -1,6 +1,6 @@
 """Standalone OpenAI-compatible Files service backed by S3."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import boto3
@@ -30,6 +30,12 @@ def create_files_app(
         title="LGOS Files API",
         version="0.1.0",
         lifespan=lifespan,
+        # FastAPI records requests through the global providers; export belongs
+        # to `opentelemetry-instrument`, so FastAPI must not add its own.
+        telemetry={
+            "auto_configure": False,
+            "exclude": lambda scope: scope["path"].endswith("/health"),
+        },
     )
     app.state.file_repository = repository
     configure_openai_error_handlers(app)
@@ -43,7 +49,7 @@ def create_files_app(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Close the synchronous boto3 client during shutdown."""
     try:
         yield
