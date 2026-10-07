@@ -119,7 +119,7 @@ unquoted double quotes.
 | `LGOS_INTERRUPT_TTL_MINUTES` | `43200` | Age at which paused runs are deleted |
 | `LGOS_INTERRUPT_SWEEP_INTERVAL_MINUTES` | `5` | Interval between expiry sweeps; `0` disables them |
 | `LGOS_BACKGROUND` | `none` | `none`, `memory`, or `hatchet` |
-| `LGOS_HATCHET_WORKER_SLOTS` | `4` | Concurrent worker runs; with PostgreSQL, below `LGOS_POSTGRES_POOL_SIZE` |
+| `LGOS_HATCHET_WORKER_SLOTS` | `4` | Concurrent worker runs; with PostgreSQL, `lgos worker` needs it below `LGOS_POSTGRES_POOL_SIZE` |
 
 The command has no built-in authentication. Put a gateway in front of it, or
 host LGOS yourself as described in [authentication](authentication.md).

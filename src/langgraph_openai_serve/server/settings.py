@@ -1,8 +1,8 @@
 """Settings for ``lgos serve`` and ``lgos worker``."""
 
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt, SecretStr, model_validator
+from pydantic import Field, NonNegativeInt, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,17 +29,3 @@ class ServerSettings(BaseSettings):
     INTERRUPT_SWEEP_INTERVAL_MINUTES: NonNegativeInt = 5
     BACKGROUND: Literal["none", "memory", "hatchet"] = "none"
     HATCHET_WORKER_SLOTS: PositiveInt = 4
-
-    @model_validator(mode="after")
-    def check_worker_leases(self) -> Self:
-        """Fail at startup rather than when a worker runs out of run leases."""
-        if (
-            self.POSTGRES_URI is not None
-            and self.HATCHET_WORKER_SLOTS >= self.POSTGRES_POOL_SIZE
-        ):
-            msg = (
-                "LGOS_HATCHET_WORKER_SLOTS must be below LGOS_POSTGRES_POOL_SIZE: "
-                "each running interrupt holds one pool connection."
-            )
-            raise ValueError(msg)
-        return self

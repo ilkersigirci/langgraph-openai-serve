@@ -44,7 +44,16 @@ def run_worker(factory: RegistryFactory, settings: ServerSettings) -> None:
     """Run background Responses for the same registry the API serves."""
     if settings.BACKGROUND != "hatchet":
         msg = "Set LGOS_BACKGROUND=hatchet before starting the worker."
-        raise RuntimeError(msg)
+        raise ValueError(msg)
+    if (
+        settings.POSTGRES_URI is not None
+        and settings.HATCHET_WORKER_SLOTS >= settings.POSTGRES_POOL_SIZE
+    ):
+        msg = (
+            "LGOS_HATCHET_WORKER_SLOTS must be below LGOS_POSTGRES_POOL_SIZE: "
+            "each running interrupt holds one pool connection."
+        )
+        raise ValueError(msg)
 
     async def lifespan() -> AsyncGenerator[GraphRegistry, None]:
         async with (
