@@ -28,6 +28,12 @@ requests; `just run` alone keeps them in its process for development. Interrupt
 runs that move between the API and the worker need a shared `LGOS_POSTGRES_URI`.
 No Hatchet server is deployed here.
 
+The image enables Hatchet's
+[worker health check](https://docs.hatchet.run/v1/worker-healthchecks): under
+`lgos worker`, port 8001 serves `/health`, which returns 200 once the worker is
+connected to Hatchet, and Prometheus `/metrics`. Compose checks the worker
+container with `/health`; point your orchestrator's probes at it too.
+
 For an external service, its address must be reachable from inside the
 containers. `localhost` inside a container names that container. On a local
 Docker host, `host.docker.internal` is available for host services.
@@ -65,8 +71,10 @@ before forwarding traces.
 
 `lgos serve` has no built-in authentication. Put a gateway with bearer-token
 authentication and TLS in front of it, and set explicit browser origins with
-`LGOS_CORS_ORIGINS`. To authenticate in Python, add custom routes, or isolate
-checkpoints per tenant, host LGOS in your own FastAPI application instead; see
+`LGOS_CORS_ORIGINS`. To authenticate in Python or add custom routes,
+[extend the application](https://ilkersigirci.github.io/langgraph-openai-serve/latest/how-to-guides/server/#extend-the-application).
+To isolate checkpoints per tenant, host LGOS in your own FastAPI application
+instead; see
 [authentication](https://ilkersigirci.github.io/langgraph-openai-serve/latest/how-to-guides/authentication/).
 
 Configure your reverse proxy to pass streaming responses without buffering and

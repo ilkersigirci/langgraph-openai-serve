@@ -117,9 +117,9 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 
 # Run one API process; add --editable to use the parent LGOS checkout.
 [arg('editable', long, value='true')]
-[arg('LGOS_PORT', long='port')]
+[arg('UVICORN_PORT', long='port')]
 [group('local')]
-api $LGOS_PORT=env("LGOS_A_PORT") editable='false':
+api $UVICORN_PORT=env("LGOS_A_PORT") editable='false':
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos serve {{ demo_registry }}
 
 # Run the independent Hatchet agent worker for background Responses.

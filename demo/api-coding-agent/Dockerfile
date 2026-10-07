@@ -7,7 +7,7 @@ FROM ${PYTHON_IMAGE} AS base
 ARG PUID=1000
 ARG PGID=1000
 ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    LGOS_HOST=0.0.0.0 LGOS_REGISTRY=lgos_api_coding_agent.registry:create_registry
+    UVICORN_HOST=0.0.0.0 LGOS_REGISTRY=lgos_api_coding_agent.registry:create_registry
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl git ripgrep \

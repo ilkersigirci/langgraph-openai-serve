@@ -9,7 +9,8 @@ uvx cookiecutter https://github.com/ilkersigirci/langgraph-openai-serve.git \
   --directory lgos-starter-template
 ```
 
-The [starter guide](../docs/starter-template.md) describes the options and the
+Add `--checkout <tag>` to generate the template of a specific release. The
+[starter guide](../docs/starter-template.md) describes the options and the
 first run.
 
 ## Maintain the template

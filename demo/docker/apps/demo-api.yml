@@ -52,7 +52,7 @@ x-lgos-demo-api: &lgos-demo-api
       hard: 8192
   environment:
     <<: *lgos-demo-api-environment
-  healthcheck:
+  healthcheck: &lgos-demo-api-healthcheck
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health', timeout=2)"]
     start_period: 60s
     interval: 5s
@@ -87,7 +87,8 @@ services:
       lgos-db:
         condition: service_healthy
     healthcheck:
-      disable: true
+      <<: *lgos-demo-api-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=2)"]
 
   lgos-model-sync:
     <<: *lgos-demo-api

@@ -20,10 +20,12 @@ RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
+# `lgos worker` serves Hatchet's /health on port 8001; `lgos serve` ignores it.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    LGOS_HOST=0.0.0.0 \
+    UVICORN_HOST=0.0.0.0 \
+    HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED=true \
     LGOS_REGISTRY={{ cookiecutter.project_slug }}.registry:create_registry
 USER app
 EXPOSE 8000

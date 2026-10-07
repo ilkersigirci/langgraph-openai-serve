@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock
 
 import anyio
 import pytest
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from httpx2 import ASGITransport, AsyncClient
 
 from langgraph_openai_serve import GraphConfig, GraphRegistry
@@ -118,6 +120,36 @@ async def test_cors_exposes_the_request_id_to_browser_code() -> None:
     assert response.headers["access-control-allow-origin"] == origin
     assert response.headers["access-control-expose-headers"] == "X-Request-ID"
     assert response.headers["x-request-id"]
+
+
+async def test_extended_app_guards_the_openai_routes_beside_its_own() -> None:
+    app = create_app(create_registry, settings=server_settings())
+
+    @app.middleware("http")
+    async def require_api_key(request: Request, call_next):
+        if request.headers.get("authorization") != "Bearer secret":
+            return JSONResponse(
+                {"detail": "Invalid API key"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+        return await call_next(request)
+
+    @app.get("/version")
+    async def version() -> dict[str, str]:
+        return {"version": "1.0"}
+
+    authorized = {"Authorization": "Bearer secret"}
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        rejected = await http.get("/v1/models")
+        models = await http.get("/v1/models", headers=authorized)
+        custom = await http.get("/version", headers=authorized)
+
+    assert rejected.status_code == status.HTTP_401_UNAUTHORIZED
+    assert {model["id"] for model in models.json()["data"]} == {"chat", "approval"}
+    assert custom.json() == {"version": "1.0"}
 
 
 async def test_restarted_app_serves_the_newly_opened_registry() -> None:

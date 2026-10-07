@@ -10,9 +10,11 @@ environment variables take precedence.
 | `APP_OPENAI_API_KEY`, `APP_OPENAI_MODEL` | Upstream credentials and model |
 | `CLIENT_BASE_URL`, `CLIENT_API_KEY` | Application endpoint and key used by examples |
 
-The server reads `LGOS_*`, `HATCHET_CLIENT_*`, `LANGFUSE_*`, and `OTEL_*`. The
-most common are `LGOS_POSTGRES_URI` for durable interrupts, `LGOS_BACKGROUND`
-for background Responses, and `LGOS_ENABLE_LANGFUSE` for tracing. See the
+The server reads `UVICORN_*`, `LGOS_*`, `HATCHET_CLIENT_*`, `LANGFUSE_*`, and
+`OTEL_*`. `lgos serve` is Uvicorn's command, so `UVICORN_HOST`, `UVICORN_PORT`,
+and every other Uvicorn option apply. The most common LGOS settings are
+`LGOS_POSTGRES_URI` for durable interrupts, `LGOS_BACKGROUND` for background
+Responses, and `LGOS_ENABLE_LANGFUSE` for tracing. See the
 [LGOS server settings](https://ilkersigirci.github.io/langgraph-openai-serve/latest/how-to-guides/server/#settings)
 for the full list. `.env.example` lists every variable this project uses.
 

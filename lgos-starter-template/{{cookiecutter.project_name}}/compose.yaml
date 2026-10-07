@@ -6,8 +6,8 @@ x-application: &application
   init: true
   env_file: .env
   environment:
-    LGOS_HOST: 0.0.0.0
-    LGOS_PORT: 8000
+    UVICORN_HOST: 0.0.0.0
+    UVICORN_PORT: 8000
     LGOS_POSTGRES_URI: ${DOCKER_POSTGRES_URI}
   extra_hosts:
     - host.docker.internal:host-gateway
@@ -22,13 +22,14 @@ services:
   api:
     <<: *application
     ports:
-      - "127.0.0.1:${LGOS_PORT}:8000"
+      - "127.0.0.1:${UVICORN_PORT}:8000"
   worker:
     <<: *application
     profiles: [background]
     command: ["lgos", "worker"]
     healthcheck:
-      disable: true
+      # The image checks the API; the worker reports Hatchet's own health.
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8001/health', timeout=3)"]
   postgres:
     image: postgres:18.6
     environment:

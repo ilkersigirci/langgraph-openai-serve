@@ -6,9 +6,13 @@ import sys
 import time
 from pathlib import Path
 
+import click
 import httpx2
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REGISTRY = "tests.server.support:create_registry"
+LGOS = str(Path(sys.executable).with_name("lgos"))
 
 
 def _free_port() -> int:
@@ -17,21 +21,33 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
-def test_lgos_serve_runs_a_registry_from_the_working_directory() -> None:
-    port = _free_port()
+def _environment(**variables: str) -> dict[str, str]:
+    # Server variables from the developer's shell must not reach the command.
     environment = {
-        key: value for key, value in os.environ.items() if not key.startswith("LGOS_")
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("LGOS_", "UVICORN_", "WEB_CONCURRENCY"))
     }
-    environment |= {
-        "LGOS_PORT": str(port),
-        "LGOS_ENABLE_LANGFUSE": "False",
-        # Container images name their registry once, through the environment.
-        "LGOS_REGISTRY": "tests.server.support:create_registry",
-    }
+    return {**environment, "LGOS_ENABLE_LANGFUSE": "False", **variables}
+
+
+@pytest.mark.parametrize(
+    ("arguments", "variables"),
+    [
+        # Container images name the registry and Uvicorn options in the environment.
+        pytest.param([], {"LGOS_REGISTRY": REGISTRY}, id="environment"),
+        # Platforms set WEB_CONCURRENCY, which Uvicorn reads for its worker count.
+        pytest.param([REGISTRY], {"WEB_CONCURRENCY": "2"}, id="workers"),
+    ],
+)
+def test_lgos_serve_runs_a_registry_from_the_working_directory(
+    arguments: list[str], variables: dict[str, str]
+) -> None:
+    port = _free_port()
     process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
-        [str(Path(sys.executable).with_name("lgos")), "serve"],
+        [LGOS, "serve", *arguments],
         cwd=PROJECT_ROOT,
-        env=environment,
+        env=_environment(UVICORN_PORT=str(port), **variables),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -44,7 +60,7 @@ def test_lgos_serve_runs_a_registry_from_the_working_directory() -> None:
                 httpx2.get(f"http://127.0.0.1:{port}/v1/health").raise_for_status()
                 break
             except httpx2.TransportError:
-                assert process.poll() is None, process.communicate()[1]
+                assert process.poll() is None, process.communicate()
                 assert time.monotonic() < deadline, "lgos serve did not start"
                 time.sleep(0.1)
         models = httpx2.get(f"http://127.0.0.1:{port}/v1/models").json()
@@ -55,3 +71,35 @@ def test_lgos_serve_runs_a_registry_from_the_working_directory() -> None:
     assert {model["id"] for model in models["data"]} == {"chat", "approval"}
     messages = {json.loads(line)["message"] for line in stdout.splitlines()}
     assert {"server.persistence.in_memory", "Application startup complete."} <= messages
+
+
+@pytest.mark.parametrize(
+    ("arguments", "variables", "env_file"),
+    [
+        pytest.param(
+            [],
+            {"LGOS_BACKGROUND": "memory", "WEB_CONCURRENCY": "2"},
+            "",
+            id="environment",
+        ),
+        pytest.param(["--workers", "2"], {}, "LGOS_BACKGROUND=memory\n", id="options"),
+    ],
+)
+def test_lgos_serve_rejects_memory_background_across_workers(
+    tmp_path: Path, arguments: list[str], variables: dict[str, str], env_file: str
+) -> None:
+    # Each worker keeps its own runs, so a poll can reach one that never saw it.
+    settings = tmp_path / ".env"
+    settings.write_text(env_file)
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
+        [LGOS, "serve", REGISTRY, "--env-file", str(settings), *arguments],
+        cwd=PROJECT_ROOT,
+        env=_environment(UVICORN_PORT=str(_free_port()), **variables),
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == click.UsageError.exit_code, result.stdout
+    assert "LGOS_BACKGROUND=memory" in result.stderr

@@ -11,6 +11,8 @@
 - CI validates generated projects outside this checkout against this checkout's
   LGOS, so template and server changes land together. The image job uses the
   released LGOS, so it passes again once a needed server change is published.
+- Users generate from `main` by default, so raise the template's LGOS floor to
+  the release that ships any server change the template relies on.
 - Langfuse and Hatchet are external services. Include their client configuration
   and the application worker, not server deployments.
 - Template-maintenance dependencies live here; generated applications own their

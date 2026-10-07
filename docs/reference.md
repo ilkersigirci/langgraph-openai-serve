@@ -470,7 +470,8 @@ Install `langgraph-openai-serve[server]` for the `lgos` command and
 `langgraph_openai_serve.server`. `lgos serve module:attribute` and
 `lgos worker module:attribute` run a `RegistryFactory`: a callable that takes
 `ServerResources` (`checkpointer`, `store`, `run_coordinator`) and returns a
-`GraphRegistry`, or an async context manager that yields one.
+`GraphRegistry`, or an async context manager that yields one. `lgos serve`
+also accepts every Uvicorn option and `UVICORN_*` variable.
 `create_app(factory, settings=...)` returns the FastAPI application that
 `lgos serve` runs; its lifespan opens the resources and mounts the OpenAI
 routes. `ServerSettings` reads the `LGOS_*` server settings. See

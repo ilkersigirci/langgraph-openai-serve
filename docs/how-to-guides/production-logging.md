@@ -59,8 +59,8 @@ not control retained telemetry.
 Configure logging in the host application. [`lgos serve`](server.md) does this
 for you; `langgraph_openai_serve/server/logging.py` shows how it formats LGOS,
 Uvicorn, and application records together as JSON. It disables Uvicorn access
-logs; enable access logging at the ingress layer that owns request timing and
-retention.
+logs unless you pass `--access-log`; prefer access logging at the ingress layer
+that owns request timing and retention.
 
 The formatter can include LGOS context fields such as `request_id`, `model`,
 `stream`, and `operation_id`. If OpenTelemetry's Python logging

@@ -17,10 +17,12 @@ FROM ${PYTHON_IMAGE} AS python
 ARG PUID
 ARG PGID
 
+# `lgos worker` serves Hatchet's /health on port 8001; `lgos serve` ignores it.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    LGOS_HOST=0.0.0.0 \
+    UVICORN_HOST=0.0.0.0 \
+    HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED=true \
     LGOS_REGISTRY=lgos_demo_api.registry:open_registry
 
 WORKDIR /app

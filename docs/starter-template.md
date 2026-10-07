@@ -25,6 +25,17 @@ Install [uv](https://docs.astral.sh/uv/), Bash, and
     uvx cookiecutter ./lgos-starter-template
     ```
 
+??? note "Generate the template of a specific release"
+
+    The GitHub command uses the template on `main`. To use the template of an
+    earlier LGOS release instead, add its
+    [release tag](https://github.com/ilkersigirci/langgraph-openai-serve/tags):
+
+    ```bash
+    uvx cookiecutter https://github.com/ilkersigirci/langgraph-openai-serve.git \
+      --directory lgos-starter-template --checkout <tag>
+    ```
+
 Choose the project name, Python package name, description, author, email,
 Python version, and license. To generate non-interactively:
 

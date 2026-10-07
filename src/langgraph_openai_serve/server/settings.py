@@ -17,8 +17,6 @@ class ServerSettings(BaseSettings):
         frozen=True,
     )
 
-    HOST: str = "127.0.0.1"
-    PORT: Annotated[int, Field(ge=1, le=65535)] = 8000
     CORS_ORIGINS: list[str] = []
     # Without a database, checkpoints and run leases live in this process only.
     POSTGRES_URI: SecretStr | None = None

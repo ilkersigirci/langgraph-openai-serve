@@ -8,8 +8,9 @@ Responses. Your project supplies only the graphs.
 uv add "langgraph-openai-serve[server]"
 ```
 
-Use the [library API](../getting-started.md) instead when your own FastAPI
-application must own authentication, custom routes, or middleware.
+To add authentication, custom routes, or middleware,
+[extend the application](#extend-the-application) or use the
+[library API](../getting-started.md) in your own FastAPI application.
 
 ## Registry Factory
 
@@ -51,6 +52,29 @@ Like Uvicorn, the command imports from the working directory first, so an
 installed package and a local module both work, and `LGOS_REGISTRY` can name the
 factory instead of the argument, for example once in a container image.
 
+## HTTP Server
+
+`lgos serve` is [Uvicorn's command](https://uvicorn.dev/settings/) with the
+registry in place of the application. Every Uvicorn option applies through its
+flag or its `UVICORN_*` variable, and so do `WEB_CONCURRENCY` and
+`FORWARDED_ALLOW_IPS`. `lgos serve --help` lists them.
+
+```bash
+lgos serve my_app.registry:create_registry --port 8080 --reload
+UVICORN_HOST=0.0.0.0 UVICORN_WORKERS=4 lgos serve my_app.registry:create_registry
+```
+
+LGOS changes two defaults: it writes [JSON logs](#logs-and-telemetry), which
+`--log-config` replaces, and turns off access logs, which `--access-log`
+enables. `--env-file` loads `LGOS_*` settings, but as with `UVICORN_*`
+variables, name the registry on the command line or in the process environment.
+
+Each Uvicorn worker is a separate process, like a replica. Workers need a shared
+`LGOS_POSTGRES_URI` for interrupts and `LGOS_BACKGROUND=hatchet` for background
+Responses, and each opens its own `LGOS_POSTGRES_POOL_SIZE` connections.
+`lgos serve` refuses to start more than one worker with
+`LGOS_BACKGROUND=memory`.
+
 ## Persistence And Background Work
 
 Without `LGOS_POSTGRES_URI`, the checkpointer, store, and run coordinator live
@@ -81,6 +105,10 @@ startup under an advisory lock, and deletes paused runs older than
 
     The worker runs the same factory, so both processes serve one catalog.
     Interrupt runs that move between them need a shared `LGOS_POSTGRES_URI`.
+    For container health checks, set Hatchet's
+    `HATCHET_CLIENT_WORKER_HEALTHCHECK_ENABLED=true`: the worker then serves
+    [`/health`](https://docs.hatchet.run/v1/worker-healthchecks) on port 8001,
+    which returns 200 once it is connected to Hatchet.
 
 ## Logs And Telemetry
 
@@ -103,16 +131,15 @@ runs in Langfuse.
 ## Settings
 
 The server reads these from the process environment, alongside the
-[package settings](../reference.md#settings), `HATCHET_CLIENT_*`, `LANGFUSE_*`,
-and `OTEL_*`. An empty value counts as unset. In `.env` files that Just or
-`uv run --env-file` load, single-quote JSON lists, as in
-`LGOS_CORS_ORIGINS='["https://app.example.com"]'`; those loaders strip
+[package settings](../reference.md#settings), [`UVICORN_*`](#http-server),
+`HATCHET_CLIENT_*`, `LANGFUSE_*`, and `OTEL_*`. An empty value counts as unset.
+In `.env` files that Just or `uv run --env-file` load, single-quote JSON lists,
+as in `LGOS_CORS_ORIGINS='["https://app.example.com"]'`; those loaders strip
 unquoted double quotes.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `LGOS_REGISTRY` | unset | Registry factory used when the command names none |
-| `LGOS_HOST`, `LGOS_PORT` | `127.0.0.1`, `8000` | Listen address |
 | `LGOS_CORS_ORIGINS` | `[]` | JSON list of allowed browser origins |
 | `LGOS_POSTGRES_URI` | unset | PostgreSQL for checkpoints, store, and run leases |
 | `LGOS_POSTGRES_POOL_SIZE` | `5` | Connections per process; one serves checkpoints and each running interrupt holds one of the rest |
@@ -122,7 +149,35 @@ unquoted double quotes.
 | `LGOS_HATCHET_WORKER_SLOTS` | `4` | Concurrent worker runs; with PostgreSQL, `lgos worker` needs it below `LGOS_POSTGRES_POOL_SIZE` |
 
 The command has no built-in authentication. Put a gateway in front of it, or
-host LGOS yourself as described in [authentication](authentication.md).
+[extend the application](#extend-the-application).
+
+## Extend The Application
+
+`create_app` returns the FastAPI application that `lgos serve` runs. To add
+routes, middleware such as the [API key middleware](authentication.md), or
+other FastAPI features, extend it in your own module:
+
+```python title="my_app/asgi.py"
+from langgraph_openai_serve.server import create_app
+
+from my_app.auth import APIKeyMiddleware
+from my_app.registry import create_registry
+from my_app.routes import router
+
+app = create_app(create_registry)
+app.add_middleware(APIKeyMiddleware)
+app.include_router(router)
+```
+
+Serve the module with Uvicorn, or any other ASGI server:
+
+```bash
+uvicorn my_app.asgi:app --host 0.0.0.0
+```
+
+Uvicorn then applies its own logging configuration. To keep JSON records with
+the LGOS request fields, pass a `--log-config` that follows
+[production logging](production-logging.md).
 
 ## Test The Application
 
