@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "langgraph-openai-serve[server]>=0.29.0rc1",
+    "langgraph-openai-serve[server]>=0.29.0rc2",
     "openai-codex>=0.159.0",
     "pydantic-settings>=2.9.0",
 ]
