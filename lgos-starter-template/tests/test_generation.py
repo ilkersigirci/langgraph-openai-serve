@@ -29,6 +29,8 @@ def test_generated_project_has_valid_code_and_configuration(tmp_path: Path) -> N
     # Setup creates both; generation installs nothing.
     assert not (generated_project / ".env").exists()
     assert not (generated_project / "uv.lock").exists()
+    assert (generated_project / ".github" / "workflows" / "ci.yml").is_file()
+    assert not (generated_project / ".gitlab-ci.yml").exists()
 
 
 def check_python_style(project: Path) -> None:
@@ -58,6 +60,7 @@ def test_custom_identity_and_python_version(
                 "author": "İlker SIĞIRCI 🚀",
                 "python_version": python_version,
                 "license": "Proprietary",
+                "ci": "gitlab",
             },
         )
     )
@@ -78,6 +81,11 @@ def test_custom_identity_and_python_version(
     docs = tomllib.loads((project / "zensical.toml").read_text(encoding="utf-8"))
     assert docs["project"]["site_description"] == config["project"]["description"]
     assert not (project / "LICENSE").exists()
+    assert not (project / ".github").exists()
+    gitlab_ci = yaml.safe_load((project / ".gitlab-ci.yml").read_text(encoding="utf-8"))
+    assert gitlab_ci["default"]["image"].endswith(
+        f"-python{python_version}-trixie-slim"
+    )
     check_python_style(project)
 
 

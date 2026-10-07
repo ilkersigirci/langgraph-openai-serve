@@ -40,6 +40,18 @@ def test_lgos_reports_the_installed_package_version() -> None:
     assert result.stdout == f"lgos, version {version('langgraph_openai_serve')}\n"
 
 
+def test_server_without_hatchet_background_skips_the_hatchet_sdk() -> None:
+    # The SDK and gRPC add about a second to every process and test start.
+    code = (
+        "import sys, langgraph_openai_serve.server; print('hatchet_sdk' in sys.modules)"
+    )
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
+        [sys.executable, "-c", code], capture_output=True, check=True, text=True
+    )
+
+    assert result.stdout == "False\n"
+
+
 @pytest.mark.parametrize(
     ("arguments", "variables"),
     [

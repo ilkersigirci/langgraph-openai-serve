@@ -19,6 +19,9 @@ This installs dependencies, creates `uv.lock`, and copies `.env.example` to
 just run
 ```
 
+`just run` passes Uvicorn options through: `just run --reload` restarts the
+server when code changes, which also discards in-process interrupt state.
+
 Call the graph from another terminal:
 
 ```bash

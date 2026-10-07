@@ -26,7 +26,8 @@ Tests render the template into temporary directories, validate generated
 Python/configuration, and check formatting. CI additionally installs generated
 applications outside this checkout with this checkout's LGOS, runs their tests,
 types, docs, and Compose checks, and builds their wheels. Their image is built
-against the LGOS release that the template's constraint selects.
+against the LGOS release that the template's constraint selects and must start
+healthy beside PostgreSQL.
 
 Hosting lives in LGOS (`langgraph_openai_serve.server`); generated projects own
 only their graphs, settings, tests, and docs, adapted from `demo/` conventions.

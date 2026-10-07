@@ -12,7 +12,6 @@ from langgraph_openai_serve.background import (
     InMemoryBackgroundBackend,
 )
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
-from langgraph_openai_serve.server.hatchet import create_hatchet_backend
 from langgraph_openai_serve.server.runtime import (
     RegistryFactory,
     expire_paused_runs,
@@ -41,6 +40,12 @@ def create_app(
                 await stack.enter_async_context(memory.lifespan(app))
                 background = memory
             elif settings.BACKGROUND == "hatchet":
+                # The Hatchet SDK and gRPC take about a second to import, so
+                # only processes that submit background runs load them.
+                from langgraph_openai_serve.server.hatchet import (
+                    create_hatchet_backend,
+                )
+
                 background = create_hatchet_backend()
             tasks = await stack.enter_async_context(anyio.create_task_group())
             # Registered after the task group, this runs before the group exits.

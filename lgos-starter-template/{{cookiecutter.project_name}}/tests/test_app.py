@@ -1,23 +1,27 @@
 import pytest
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 from tests.support import ANSWER
 
 
-async def test_registered_models_advertise_their_features(
+async def test_registry_serves_each_graph_as_a_model(
     openai_client: AsyncOpenAI,
 ) -> None:
     models = await openai_client.models.list()
     assert {model.id for model in models.data} == {"simple-graph", "approval"}
-    simple = await openai_client.models.retrieve("simple-graph")
-    extension = simple.model_extra["lgos"]
-    assert extension["features"] == ["background"]
-    assert extension["client_settings"]["defaults"] == {
-        "use_history": True,
-        "audience": "general",
-    }
-    approval = await openai_client.models.retrieve("approval")
-    assert set(approval.model_extra["lgos"]["features"]) == {"interrupts", "background"}
+
+
+async def test_simple_graph_rejects_invalid_runtime_settings(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as error:
+        await openai_client.responses.create(
+            model="simple-graph",
+            input="Hello",
+            metadata={"lgos_settings": '{"audience": "children"}'},
+            store=False,
+        )
+    assert error.value.param == "metadata.lgos_settings"
 
 
 @pytest.mark.parametrize("stream", [False, True], ids=["response", "stream"])

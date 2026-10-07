@@ -4,24 +4,18 @@ set minimum-version := "1.58.0"
 set positional-arguments
 set shell := ["bash", "--norc", "-euo", "pipefail", "-c"]
 
-# The registry factory that `lgos serve` and `lgos worker` run.
-export LGOS_REGISTRY := "{{ cookiecutter.project_slug }}.registry:create_registry"
-
-# Local runs default to in-process background Responses; containers read .env as is.
-export LGOS_BACKGROUND := if env("LGOS_BACKGROUND", "") == "" { "memory" } else { env("LGOS_BACKGROUND") }
-
 # Generate a lockfile, install dependencies, and create .env only if absent.
 setup:
     uv sync
     [ -e .env ] || cp .env.example .env
 
-# Serve the graphs; set APP_OPENAI_API_KEY in .env first.
-run:
-    uv run --locked lgos serve
+# Serve the graphs with optional Uvicorn options such as --reload.
+run *args:
+    uv run --locked lgos serve "$@"
 
 # Export traces, metrics, and logs to OTEL_EXPORTER_OTLP_ENDPOINT.
-run-otel:
-    uv run --locked opentelemetry-instrument lgos serve
+run-otel *args:
+    uv run --locked opentelemetry-instrument lgos serve "$@"
 
 # Run background Responses from Hatchet; requires LGOS_BACKGROUND=hatchet.
 worker:

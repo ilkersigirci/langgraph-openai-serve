@@ -28,8 +28,8 @@ def main() -> None:
     parser.add_argument("--cancel", action="store_true")
     args = parser.parse_args()
     with OpenAI(
-        base_url=os.getenv("CLIENT_BASE_URL", "http://localhost:8000/v1"),
-        api_key=os.getenv("CLIENT_API_KEY", "DUMMY"),
+        base_url=os.environ["CLIENT_BASE_URL"],
+        api_key=os.environ["CLIENT_API_KEY"],
     ) as client:
         response = client.responses.create(
             model="simple-graph",

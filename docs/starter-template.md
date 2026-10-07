@@ -37,7 +37,9 @@ Install [uv](https://docs.astral.sh/uv/), Bash, and
     ```
 
 Choose the project name, Python package name, description, author, email,
-Python version, and license. To generate non-interactively:
+Python version, license, and CI provider: GitHub Actions or GitLab CI. Either
+pipeline runs the lint, test, and documentation checks as parallel jobs. To
+generate non-interactively:
 
 ```bash
 uvx cookiecutter ./lgos-starter-template --no-input project_name=research-api

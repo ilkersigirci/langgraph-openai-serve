@@ -14,12 +14,25 @@
     "MIT",
     "Proprietary"
   ],
+  "ci": [
+    "github",
+    "gitlab"
+  ],
+  "__prompts__": {
+    "project_name": "Project name (lowercase words separated by hyphens)",
+    "project_slug": "Python package name",
+    "project_description": "Short description",
+    "author": "Author name",
+    "email": "Author email",
+    "python_version": "Python version",
+    "license": "License",
+    "ci": "CI provider"
+  },
   "_extensions": [
     "lgos_template_extensions.UnicodeJSONExtension"
   ],
   "_copy_without_render": [
-    ".agents/CODE_STYLE.md",
-    "ruff.toml"
+    ".agents/CODE_STYLE.md"
   ],
   "_jinja2_env_vars": {
     "trim_blocks": true,

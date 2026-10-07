@@ -2,8 +2,11 @@
 
 Run `just test` for the service-free suite and `just check` for all local
 quality checks. Tests assert observable behavior through the OpenAI SDK and
-the real server app, using deterministic model responses.
+the real server app, using deterministic model responses. Run a larger suite in
+parallel with `just test -n auto`, so keep each test independent of the others.
 
+- Tests read `.env` like the application, so run `just setup` first. Pytest
+  replaces `APP_OPENAI_API_KEY` with a placeholder, so tests never see a real key.
 - `tests/support.py` builds the app with a fake model and explicit server
   settings, so `LGOS_*` values from `.env` never reach a test. Its in-process
   resources need no database, Hatchet tenant, or Langfuse project.

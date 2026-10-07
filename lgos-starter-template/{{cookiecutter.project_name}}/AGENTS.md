@@ -14,8 +14,8 @@
   non-idempotent side effects.
 - Raise LGOS `InvalidRequestError` for request validation and `GraphError` for
   graph configuration/output errors.
-- Keep graph settings under `APP_`; LGOS owns the `LGOS_`, `LANGFUSE_`,
-  `HATCHET_`, and `OTEL_` namespaces.
+- Keep graph settings under `APP_`; LGOS owns the `LGOS_`, `UVICORN_`,
+  `LANGFUSE_`, `HATCHET_`, and `OTEL_` namespaces.
 - `.env.example` documents deployment defaults; `.env` contains local secrets.
   Do not read, modify, or commit secrets unless the task requires it.
 - Use `uv sync --locked` after initial setup. Change dependencies and the

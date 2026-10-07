@@ -93,9 +93,13 @@ jobs:
           project_name=starter-image
       # A path source cannot enter the build context, so the image installs the
       # PyPI release that the template's constraint selects.
-      - name: Build the application image
+      - name: Start the application image
         working-directory: ${{ runner.temp }}/starter-image
         run: |
           just setup
-          docker build --tag starter-image:ci .
-          docker run --rm --entrypoint lgos starter-image:ci --help
+          sed -i 's/^APP_OPENAI_API_KEY=.*/APP_OPENAI_API_KEY=ci/' .env
+          just up
+      - name: Show container logs
+        if: failure()
+        working-directory: ${{ runner.temp }}/starter-image
+        run: docker compose logs

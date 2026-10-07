@@ -6,11 +6,13 @@ __pycache__
 *.py[cod]
 .pytest_cache
 .ruff_cache
-.coverage*
-htmlcov
 public
 dist
 tests
 docs
 .agents
+{% if cookiecutter.ci == "github" %}
 .github
+{% else %}
+.gitlab-ci.yml
+{% endif %}

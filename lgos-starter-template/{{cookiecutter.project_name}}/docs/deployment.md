@@ -18,13 +18,20 @@ For a managed database, point `DOCKER_POSTGRES_URI` (containers) or
 `LGOS_POSTGRES_URI` (local processes) at it, remove the Compose `postgres`
 service, and manage backups and retention in your deployment.
 
+Compose restarts the containers unless you stop them. On stop, the API lets
+in-flight responses finish for up to `UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN`
+seconds, then cancels the rest and shuts down cleanly before Compose's
+`stop_grace_period` ends. Raise both for longer graph runs. Other orchestrators
+need the same order: keep their grace period, such as Kubernetes'
+`terminationGracePeriodSeconds`, above the Uvicorn timeout.
+
 ## Background execution
 
 Set `LGOS_BACKGROUND=hatchet` and `HATCHET_CLIENT_TOKEN` for an existing Hatchet
 tenant; the API and worker must share the token, endpoints, and
 `HATCHET_CLIENT_NAMESPACE`. Run the worker with `just worker`, or add
-`background` to `COMPOSE_PROFILES`. Until then, containers reject background
-requests; `just run` alone keeps them in its process for development. Interrupt
+`background` to `COMPOSE_PROFILES`. Until then, `LGOS_BACKGROUND=memory` runs
+background Responses in the API process, which loses them on restart. Interrupt
 runs that move between the API and the worker need a shared `LGOS_POSTGRES_URI`.
 No Hatchet server is deployed here.
 

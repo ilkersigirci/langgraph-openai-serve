@@ -1,6 +1,7 @@
 """The model catalog that ``lgos serve`` and ``lgos worker`` run."""
 
 from langchain_core.language_models import BaseChatModel
+from langchain_openai import ChatOpenAI
 from langgraph_openai_serve import GraphConfig, GraphFeature, GraphRegistry
 from langgraph_openai_serve.server import ServerResources
 
@@ -11,6 +12,9 @@ from {{ cookiecutter.project_slug }}.graphs.simple import (
     SimpleContext,
     create_simple_graph,
 )
+from {{ cookiecutter.project_slug }}.settings import (
+    settings,
+)
 
 
 def create_registry(
@@ -18,6 +22,13 @@ def create_registry(
     *,
     model: BaseChatModel | None = None,
 ) -> GraphRegistry:
+    # Tests inject a model; the server builds one from the settings.
+    if model is None:
+        model = ChatOpenAI(
+            model=settings.OPENAI_MODEL,
+            base_url=settings.OPENAI_BASE_URL,
+            api_key=settings.OPENAI_API_KEY,
+        )
     return GraphRegistry(
         graphs={
             "simple-graph": GraphConfig(

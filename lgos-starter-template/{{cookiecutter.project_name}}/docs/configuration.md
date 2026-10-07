@@ -1,8 +1,10 @@
 # Configuration
 
 `src/{{ cookiecutter.project_slug }}/settings.py` holds the graphs' own settings
-under the `APP_` prefix. Pydantic loads `.env` for those fields; process
-environment variables take precedence.
+under the `APP_` prefix in a `settings` object that other modules import.
+Pydantic loads `.env` for those fields; process environment variables take
+precedence. Every field is required, so the server stops at startup until
+`.env` sets `APP_OPENAI_API_KEY`.
 
 | Variable | Purpose |
 | --- | --- |

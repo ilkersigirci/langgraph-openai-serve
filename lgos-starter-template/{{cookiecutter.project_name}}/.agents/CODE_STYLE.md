@@ -9,11 +9,8 @@ optimize performance when requirements or evidence justify it.
   is unclear, fragile, or unnecessarily complex, and improve it when doing so
   remains within the task's scope.
 - Keep changes focused. A small change in legacy code does not justify an
-  unrelated refactor.
-- This project is in early development. Prefer a clean current design over
-  compatibility shims or deprecation layers. Project APIs may break, but
-  preserve required external contracts such as OpenAI compatibility. Update
-  affected callers, tests, and documentation in the same change.
+  unrelated refactor. Update affected callers, tests, and documentation in the
+  same change.
 - Resolve consequential ambiguity before coding. State assumptions and surface
   meaningful tradeoffs instead of silently choosing an interpretation.
 
@@ -43,19 +40,6 @@ Write the minimum code that fully solves the stated problem.
   genuinely shared.
 - Prefer standard protocols, official SDKs, and established libraries over
   hand-rolled equivalents.
-
-## API Package Layout
-
-- Organize API resources as feature packages.
-- Keep FastAPI transport behavior in `views.py`, application operations in
-  `service.py`, and Pydantic boundary models in `schemas.py`.
-- Put route-local FastAPI dependencies in `deps.py`. Dependencies shared by
-  multiple resource packages belong in `api/deps.py`.
-- Add responsibility-specific modules such as `events.py` or `interrupts.py`
-  when a feature needs them. Prefer these domain names over generic `utils.py`
-  modules or `utils/` packages.
-- Do not create empty conventional modules. Add `permissions.py`, `models.py`,
-  or `repository.py` only when the resource actually owns that responsibility.
 
 ## Comments
 

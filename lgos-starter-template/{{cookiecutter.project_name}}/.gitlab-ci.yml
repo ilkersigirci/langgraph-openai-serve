@@ -1,0 +1,36 @@
+# Lint, test, and docs jobs run in parallel, like `just check`.
+variables:
+  UV_CACHE_DIR: .uv-cache
+  # GitLab mounts the build directory separately, so uv copies instead of linking.
+  UV_LINK_MODE: copy
+  # Puts the `just` installed below on the image's PATH.
+  UV_TOOL_BIN_DIR: /usr/local/bin
+
+default:
+  image: ghcr.io/astral-sh/uv:0.12.23-python{{ cookiecutter.python_version }}-trixie-slim
+  interruptible: true
+  cache:
+    - key:
+        files:
+          - uv.lock
+      paths:
+        - $UV_CACHE_DIR
+  before_script:
+    - uv tool install rust-just==1.58.0
+  after_script:
+    - uv cache prune --ci
+
+lint:
+  script:
+    - just lint
+    - just type-check
+
+test:
+  script:
+    # Tests read settings from .env, like the application.
+    - cp .env.example .env
+    - just test -n auto
+
+docs:
+  script:
+    - just docs

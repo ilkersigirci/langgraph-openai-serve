@@ -4,11 +4,15 @@ x-application: &application
   build: .
   image: {{ cookiecutter.project_name }}:local
   init: true
+  restart: unless-stopped
   env_file: .env
   environment:
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 8000
     LGOS_POSTGRES_URI: ${DOCKER_POSTGRES_URI}
+  # Compose kills a container 10 seconds after stopping it by default. Keep this
+  # above UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN so the API can shut down cleanly.
+  stop_grace_period: 60s
   extra_hosts:
     - host.docker.internal:host-gateway
   security_opt:
@@ -32,6 +36,7 @@ services:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8001/health', timeout=3)"]
   postgres:
     image: postgres:18.6
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

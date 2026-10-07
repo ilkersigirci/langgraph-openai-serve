@@ -1,11 +1,16 @@
 # Baseline adapted from the LGOS demo; keep project-specific changes here.
 # Ruff infers the target version from requires-python in pyproject.toml.
 line-length = 88
+{% if cookiecutter.ci == "gitlab" %}
+# GitLab CI keeps uv's cache inside the project.
+extend-exclude = [".uv-cache"]
+{% endif %}
 
 [format]
 skip-magic-trailing-comma = false
 
 [lint]
+# Required to name rules below instead of using their numeric codes.
 preview = true
 
 # Note: `select` requires short alphanumeric prefix codes for linter categories.
@@ -16,8 +21,7 @@ select = [
     "ASYNC", # async
     "B",  # flake8-bugbear
     "BLE", # flake8-blind-except
-    "C",  # flake8-comprehensions
-    "C9",  # mccabe
+    "C",  # flake8-comprehensions and mccabe
     "D",   # pydocstyle
     "DOC", # pydoclint
     "DTZ", # flake8-datetimez
@@ -27,7 +31,6 @@ select = [
     "EXE", # flake8-executable
     "F",  # pyflakes (default)
     "FA", # flake8-future-annotations
-    "FAST", # fastapi
     "FBT", # flake8-boolean-trap
     "FIX", # flake8-fixme
     "FLY", # flynt
@@ -39,14 +42,10 @@ select = [
     "ISC", # flake8-implicit-str-concat
     "LOG", # flake8-logging
     "N", # pep8-naming
-    "PD", # pandas-vet
     "PERF", # perflint
     "PGH", # pygrep-hooks
     "PIE", # pie
     "PL",  # pylint
-    "PLC", # pylint convention
-    "PLE", # pylint error
-    "PLW", # pylint warning
     "PT", # flake8-pytest-style
     "PTH", # pathlib
     "PYI", # flake8-pyi
@@ -58,7 +57,6 @@ select = [
     "SIM", # simplify
     "SLF", # flake8-self
     "SLOT", # flake8-slots
-    "suspicious-eval-usage", # eval
     "T10", # flake8-debugger
     "T20", # flake8-print
     "TC", # flake8-type-checking
@@ -73,7 +71,7 @@ select = [
 # Note: For specific rules, we use their full English names rather than
 # numeric codes for better readability.
 ignore = [
-    # Examples document their workflows without requiring boilerplate on every symbol.
+    # Document behavior where it helps; public symbols need no docstring boilerplate.
     "undocumented-public-class",
     "undocumented-public-function",
     "undocumented-public-method",
