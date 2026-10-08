@@ -12,7 +12,6 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs import simple_external_tools as graph_module
-from lgos_demo_api.utils import client_tools
 
 MODEL = "simple-graph-external-tools"
 WEATHER_PARAMETERS = {
@@ -85,7 +84,7 @@ async def test_client_tools_are_bound_and_returned_to_the_client(
             ],
         )
     )
-    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **_: model)
     graph_request = GraphRequest(
         model=MODEL,
         metadata={},
@@ -116,7 +115,7 @@ async def test_tool_results_are_forwarded_with_the_complete_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = RecordingModel(AIMessage(content="It is sunny in Istanbul."))
-    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **_: model)
     graph_request = GraphRequest(
         model=MODEL,
         metadata={},

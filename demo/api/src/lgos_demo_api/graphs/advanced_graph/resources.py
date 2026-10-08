@@ -19,19 +19,6 @@ from lgos_demo_api.graphs.advanced_graph.knowledge import (
 from lgos_demo_api.graphs.advanced_graph.state import AdvancedGraph
 
 
-def _vector_store_connection() -> tuple[str, str]:
-    """Resolve storage credentials without leaking the model provider's key."""
-    if settings.VECTOR_STORE_BASE_URL:
-        return (
-            settings.VECTOR_STORE_BASE_URL,
-            settings.VECTOR_STORE_API_KEY or "DUMMY",
-        )
-    return (
-        settings.OPENAI_BASE_URL,
-        settings.VECTOR_STORE_API_KEY or settings.OPENAI_API_KEY,
-    )
-
-
 @asynccontextmanager
 async def open_advanced_graph(
     checkpointer: BaseCheckpointSaver,
@@ -46,17 +33,11 @@ async def open_advanced_graph(
         The compiled advanced graph.
 
     """
-    vector_store_base_url, vector_store_api_key = _vector_store_connection()
     async with (
         httpx2.AsyncClient(timeout=60) as upstream_http,
         AsyncOpenAI(
-            base_url=vector_store_base_url,
-            api_key=vector_store_api_key,
-            default_headers=(
-                {"x-bf-api-key": settings.VECTOR_STORE_BIFROST_KEY_NAME}
-                if settings.VECTOR_STORE_BIFROST_KEY_NAME
-                else None
-            ),
+            base_url=settings.vector_store_base_url,
+            api_key=settings.OPENAI_GATEWAY_API_KEY,
             http_client=upstream_http,
             max_retries=0,
         ) as vector_store_client,

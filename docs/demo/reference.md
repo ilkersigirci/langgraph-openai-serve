@@ -104,15 +104,17 @@ after [catalog sync](bifrost.md#declarative-model-metadata).
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
-| `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit process and integration tests |
-| `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
+| `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit, API, worker, and notebook processes and integration tests |
+| `OPENAI_GATEWAY_TYPE` | Gateway used by the demo UIs and model clients: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP, and by the graph and coding-agent APIs for their model and vector-store calls; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
 | `DEMO_AUDIO_STT_MODEL` | Gateway model ID both UIs use to transcribe microphone input through `/v1/audio/transcriptions`; Chainlit hides its microphone when empty |
 | `DEMO_AUDIO_TTS_MODEL` | Gateway model ID both UIs use to speak answers through `/v1/audio/speech`; Chainlit hides its read-aloud button when empty |
 | `DEMO_AUDIO_TTS_VOICE` | OpenAI voice for spoken answers; Chainlit defaults to `alloy` |
-| `AIGATEWAY_API_KEY` | aigateway.home.ilkerflix.com key the bundled gateways use only for their `aigateway/*` speech models |
+| `OPENAI_UPSTREAM_BASE_URL` | Root, without `/v1`, of the OpenAI-compatible upstream behind the bundled LiteLLM's `openai/*` models and OpenAI passthrough; defaults to the OpenAI API. Bifrost reads its upstream from `DEMO_BIFROST_CONFIG` |
+| `OPENAI_UPSTREAM_API_KEY` | Upstream API key the bundled gateways use for their `openai/*` graph, embedding, and speech models and for vector-store passthrough. It must keep files and vector stores in one upstream account |
+| `DEMO_BIFROST_CONFIG` | Bifrost configuration file, relative to `demo/docker/apps/`. Point it at a gitignored `config.local.json` copy to change the upstream URL, which Bifrost cannot read from the environment |
 | `LGOS_MCP_DB_PASSWORD` | Password for the dedicated read-only `lgos_mcp` PostgreSQL login; DBHub receives it through an interpolated individual connection field, so URL encoding is not required |
 | `LGOS_MCP_AUTH_TOKEN` | Internal bearer token used by LiteLLM or Bifrost when it connects to DBHub |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |
@@ -165,18 +167,19 @@ The demo API and its worker run `lgos serve` and `lgos worker`. Their server
 settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
 `LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
 described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
-graphs read these `DEMO_API_` settings:
+graphs share `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY` with the UIs.
+Model calls use `/v1`; the advanced graph's knowledge Files and vector stores
+use `/openai_passthrough/v1` with that same credential. The local API, worker,
+and notebook recipes set the gateway root to `DEMO_GATEWAY_HOST_URL`.
+
+Graph-specific settings use the `DEMO_API_` prefix:
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
-| `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
-| `DEMO_API_OPENAI_MODEL` | Upstream generation model |
-| `DEMO_API_VECTOR_STORE_BASE_URL` | OpenAI-compatible vector-service base URL for `advanced-graph`; falls back to the model base URL |
-| `DEMO_API_VECTOR_STORE_API_KEY` | Vector-service API key; uses the model key only when the vector base URL is omitted, otherwise defaults to `DUMMY` |
-| `DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` | Optional Bifrost managed-key pin for stateful vector-store passthrough requests |
+| `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` | Gateway model ID for the Chat Completions graphs and the default of `simple-graph`'s `model` setting; it must call tools without reasoning-specific parameters |
+| `DEMO_API_OPENAI_RESPONSES_MODEL` | Gateway model ID for the Responses graphs: `advanced-graph`, `file-input`, and `server-tool`. `simple-graph` also offers it through Chat Completions |
 | `DEMO_API_VECTOR_STORE_ID` | Shared knowledge-base ID searched by `advanced-graph`; required for document search and saved notes |
-| `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
+| `DEMO_API_OPENAI_EMBEDDING_MODEL` | Gateway embedding model ID used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
@@ -200,13 +203,14 @@ environment values or explicit constructor arguments.
 
 ## Coding Agent Settings
 
-These settings belong to `demo/api-coding-agent`. Defaults live in `demo/.env.example`.
+These settings belong to `demo/api-coding-agent`. Compose derives the base URL
+and key from the gateway settings; the other defaults live in `demo/.env.example`.
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_CODING_AGENT_BASE_URL` | Upstream Responses base URL, defaulting to the demo API upstream. May point to an AI gateway. |
-| `DEMO_CODING_AGENT_API_KEY` | Upstream model credential. Available inside the coding-agent container. |
-| `DEMO_CODING_AGENT_MODEL` | Codex-compatible upstream model ID; separate from the public graph ID. |
+| `DEMO_CODING_AGENT_BASE_URL` | Responses base URL for Codex. Compose sets `${OPENAI_GATEWAY_BASE_URL}/v1`. |
+| `DEMO_CODING_AGENT_API_KEY` | Model credential for Codex. Compose sets `OPENAI_GATEWAY_API_KEY`; available inside the coding-agent container. |
+| `DEMO_CODING_AGENT_MODEL` | Codex-compatible gateway model ID, defaulting to `DEMO_API_OPENAI_RESPONSES_MODEL`; separate from the public graph ID. |
 | `DEMO_CODING_AGENT_TIMEOUT_SECONDS` | Active request time limit, excluding time waiting for another workspace request. Runtime cleanup may exceed the limit. |
 
 See the [coding-agent graph guide](graphs/coding-agent.md) for its shared

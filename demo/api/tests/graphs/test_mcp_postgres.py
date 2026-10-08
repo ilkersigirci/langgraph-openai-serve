@@ -13,7 +13,6 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.runner import run_langgraph
 
 from lgos_demo_api.graphs import mcp_postgres as graph_module
-from lgos_demo_api.utils import client_tools
 
 COUNT_USERS = ClientFunctionTool(
     name="lgos_postgres-count_chainlit_users",
@@ -88,7 +87,7 @@ async def test_database_turn_requires_an_allowlisted_tool(
             tool_calls=[{"name": COUNT_USERS.name, "args": {}, "id": "call-1"}],
         )
     )
-    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **_: model)
 
     result = await run_langgraph(
         _request(COUNT_USERS, UNRELATED_TOOL),
@@ -108,7 +107,7 @@ async def test_database_result_allows_a_final_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = RecordingModel(AIMessage(content="There are 12 Chainlit users."))
-    monkeypatch.setattr(client_tools, "ChatOpenAI", lambda **_: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **_: model)
     messages = [
         HumanMessage(content="How many Chainlit users do I have?"),
         AIMessage(

@@ -105,11 +105,10 @@ sends its name as `User-Agent`, which the gateway's request span records. The
 Collector removes Bifrost's high-cardinality idempotency header attribute before
 export; the header does not replace or alter W3C trace context.
 
-LiteLLM continues an incoming W3C `traceparent` and forwards it to its bundled
-LGOS model targets, so its HTTP, authentication, database, and model-call spans
-stay in the same UI-to-LGOS trace. Do not copy that forwarding setting to a
-deployment whose models target third-party APIs without confirming they accept
-the header. LiteLLM's native GenAI histograms cover operation duration, token
+LiteLLM continues an incoming W3C `traceparent` and forwards it to every model
+target, so its HTTP, authentication, database, and model-call spans stay in the
+same UI-to-LGOS trace. The upstream models receive the header too. Confirm
+that any other provider accepts it before adding that provider. LiteLLM's native GenAI histograms cover operation duration, token
 usage, cost, time to first token, time per output token, and provider response
 duration. The bundled configuration limits metric labels to operation and
 provider; requested model remains on model-call spans. LiteLLM adds token type

@@ -117,8 +117,8 @@ The [coding-agent showcase](../docs/demo/graphs/coding-agent.md)
 runs as a separate service in the stack. Select `lgos-api-coding-agent/coding-agent`
 in either UI to edit files and run commands or tests in its persistent workspace,
 `docker/volumes/lgos-coding-agent`. Conversations share the workspace and run one at
-a time. Codex uses its own upstream model settings and the container's execution
-permissions. Use it with trusted users and repositories.
+a time. Codex calls its model through the selected gateway and runs with the
+container's execution permissions. Use it with trusted users and repositories.
 
 ## Run containers independently
 

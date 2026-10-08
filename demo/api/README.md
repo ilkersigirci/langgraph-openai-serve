@@ -20,6 +20,11 @@ LangGraph checkpointer, Store, and interrupt coordination.
 Set the package-owned `LGOS_ENABLE_LANGFUSE=True` and provide the `LANGFUSE_*`
 credentials to enable LGOS's lazy tracing integration for every demo graph.
 
+LLM-backed graphs use `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`.
+Start either bundled gateway from `demo/`; the standalone example connects to
+its host port. Model calls use `/v1`, and the advanced graph's shared knowledge
+uses `/openai_passthrough/v1` with the same credential.
+
 The graph API does not expose Files routes or receive S3 credentials. Its
 `file-input` graph reads the independent [`files_api`](../files_api/) service
 through `DEMO_API_FILES_BASE_URL`, then sends inline file data to the configured
@@ -29,7 +34,9 @@ The `lgos-rag` graph reads a compact Markdown corpus packaged under
 `src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
 external documentation checkout.
 
-`just demo/marimo --editable` opens the notebook workspace.
+`just demo/marimo --editable` opens the notebook workspace. For its AI assistant,
+copy `.marimo.toml.example` to `.marimo.toml`; the `gateway/` model prefix selects
+the bundled gateway and preserves its `openai/...` model ID.
 `custom_api.py` demonstrates synchronous, streaming, and asynchronous Responses
 calls; `graph_runner.py` compares the Responses endpoint with direct graph
 execution.

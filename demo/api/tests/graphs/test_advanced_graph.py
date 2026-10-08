@@ -41,7 +41,7 @@ def model_response(text="", *, calls=(), refusal=None, incomplete=False):
         "id": "resp_provider",
         "object": "response",
         "created_at": 1,
-        "model": "gpt-5.4-mini",
+        "model": "gpt-6-luna",
         "status": "incomplete" if incomplete else "completed",
         "error": None,
         "incomplete_details": {"reason": "max_output_tokens"} if incomplete else None,
@@ -149,7 +149,10 @@ class ModelProvider:
         self.requests.append(payload)
         assert request.url.path.endswith("/responses")
         assert payload["store"] is False
-        assert payload["temperature"] == pytest.approx(0.7)
+        # Some models reject sampling controls or a reasoning effort, so the
+        # graph leaves both to the provider.
+        assert "temperature" not in payload
+        assert "reasoning" not in payload
         response = self.responses.popleft()
         if not payload.get("stream", False):
             return httpx2.Response(200, json=response)

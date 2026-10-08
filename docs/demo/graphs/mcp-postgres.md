@@ -33,7 +33,7 @@ sequenceDiagram
   participant UI as Chainlit / Open WebUI
   participant Gateway as LiteLLM / Bifrost
   participant LGOS as LGOS / mcp-postgres
-  participant Model as Upstream model
+  participant Model as Model via gateway
   participant DBHub as DBHub MCP server
   participant DB as lgos-db / mcp_demo
 

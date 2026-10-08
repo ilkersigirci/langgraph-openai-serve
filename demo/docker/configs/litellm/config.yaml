@@ -1,20 +1,36 @@
 # Register database-backed LGOS models with the demo's sync-litellm command.
-# The speech models below forward to aigateway under the IDs Bifrost uses. Each
-# sets api_base and api_key because this container's OPENAI_* defaults target
-# the Files API; the leading `openai/` selects LiteLLM's OpenAI client.
+# The graph, embedding, and speech models below forward to the configured
+# upstream, the OpenAI API by default, under the IDs Bifrost uses. Each sets
+# api_base and api_key because this container's OPENAI_* defaults target the
+# Files API. use_in_pass_through lends their key to /openai_passthrough, which
+# serves the advanced graph's vector store.
 model_list:
-  - model_name: aigateway/openai/gpt-4o-mini-transcribe
+  - model_name: openai/gpt-6-luna
+    litellm_params: &openai_upstream
+      model: openai/gpt-6-luna
+      api_base: os.environ/OPENAI_UPSTREAM_API_BASE
+      api_key: os.environ/OPENAI_UPSTREAM_API_KEY
+      use_in_pass_through: true
+  - model_name: openai/gpt-4.1-mini
     litellm_params:
-      model: openai/openai/gpt-4o-mini-transcribe
-      api_base: https://aigateway.home.ilkerflix.com/v1
-      api_key: os.environ/AIGATEWAY_API_KEY
+      <<: *openai_upstream
+      model: openai/gpt-4.1-mini
+  - model_name: openai/text-embedding-3-small
+    litellm_params:
+      <<: *openai_upstream
+      model: openai/text-embedding-3-small
+    model_info:
+      mode: embedding
+  - model_name: openai/gpt-4o-mini-transcribe
+    litellm_params:
+      <<: *openai_upstream
+      model: openai/gpt-4o-mini-transcribe
     model_info:
       mode: audio_transcription
-  - model_name: aigateway/openai/gpt-4o-mini-tts
+  - model_name: openai/gpt-4o-mini-tts
     litellm_params:
-      model: openai/openai/gpt-4o-mini-tts
-      api_base: https://aigateway.home.ilkerflix.com/v1
-      api_key: os.environ/AIGATEWAY_API_KEY
+      <<: *openai_upstream
+      model: openai/gpt-4o-mini-tts
     model_info:
       mode: audio_speech
 
@@ -39,8 +55,8 @@ files_settings:
     api_key: DUMMY
 
 litellm_settings:
-  # Bundled models target LGOS on the private Compose network, so preserve the
-  # caller's W3C trace across the gateway-to-API hop.
+  # Preserve the caller's W3C trace across the gateway-to-LGOS hop. LiteLLM
+  # applies this to every model, so OpenAI API requests carry it too.
   forward_traceparent_to_llm_provider: true
 
 # Keep Prometheus cardinality bounded to attributes LiteLLM always populates.

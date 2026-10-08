@@ -65,7 +65,9 @@ def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "import json, os, sys\n"
         "with open(os.environ['TASK_TEST_LOG'], 'a') as log:\n"
         "    log.write(json.dumps({'args': sys.argv[1:], "
-        "'cwd': os.getcwd()}) + '\\n')\n"
+        "'cwd': os.getcwd(), "
+        "'gateway_url': os.environ.get('OPENAI_GATEWAY_BASE_URL'), "
+        "'gateway_key': os.environ.get('OPENAI_GATEWAY_API_KEY')}) + '\\n')\n"
     )
     uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
@@ -126,6 +128,31 @@ async def test_notebook_task_passes_host_literally(task_log: Path) -> None:
     assert result.returncode == 0, result.stderr.decode()
     command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
     assert command["args"][-5:] == ["--host", host, "--port", "2818", "notebooks"]
+
+
+@pytest.mark.parametrize("recipe", ["api", "background-worker", "marimo"])
+async def test_local_graph_tasks_use_the_host_gateway(
+    task_log: Path, monkeypatch: pytest.MonkeyPatch, recipe: str
+) -> None:
+    monkeypatch.setenv("DEMO_GATEWAY_HOST_URL", "http://localhost:4321")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://lgos-bifrost:4000")
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-gateway-key")
+
+    result = await anyio.run_process(
+        [
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / recipe),
+        ],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
+    assert command["gateway_url"] == "http://localhost:4321"
+    assert command["gateway_key"] == "test-gateway-key"
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:
@@ -220,17 +247,21 @@ def test_bifrost_outwaits_a_coding_agent_request() -> None:
     assert network["default_request_timeout_in_seconds"] > int(limit)
 
 
-def test_bundled_gateways_serve_the_ui_speech_models() -> None:
+def test_bundled_gateways_serve_the_default_demo_models() -> None:
     env = dict(
         line.split("=", 1)
         for line in (DEMO_ROOT / ".env.example")
         .read_text(encoding="utf-8")
         .splitlines()
-        if line.startswith("DEMO_AUDIO_")
+        if line.startswith(("DEMO_AUDIO_", "DEMO_API_OPENAI_"))
     )
-    litellm = (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(
-        encoding="utf-8"
+    litellm = yaml.safe_load(
+        (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(encoding="utf-8")
     )
+    deployments = {
+        deployment["model_name"]: deployment["litellm_params"]
+        for deployment in litellm["model_list"]
+    }
     bifrost = json.loads(
         (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
     )
@@ -240,15 +271,19 @@ def test_bundled_gateways_serve_the_ui_speech_models() -> None:
         for grant in virtual_key["provider_configs"]
     }
 
-    for setting, request in (
-        ("DEMO_AUDIO_STT_MODEL", "transcription"),
-        ("DEMO_AUDIO_TTS_MODEL", "speech"),
+    for setting in (
+        "DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL",
+        "DEMO_API_OPENAI_RESPONSES_MODEL",
+        "DEMO_API_OPENAI_EMBEDDING_MODEL",
+        "DEMO_AUDIO_STT_MODEL",
+        "DEMO_AUDIO_TTS_MODEL",
     ):
         model_id = env[setting]
         provider, _, model = model_id.partition("/")
-        assert f"model_name: {model_id}\n" in litellm
-        provider_config = bifrost["providers"][provider]["custom_provider_config"]
-        assert provider_config["allowed_requests"][request] is True
+        deployment = deployments[model_id]
+        assert deployment["model"] == model_id
+        assert deployment["api_base"] == "os.environ/OPENAI_UPSTREAM_API_BASE"
+        assert deployment["api_key"] == "os.environ/OPENAI_UPSTREAM_API_KEY"
         assert model in grants[provider]
 
 
@@ -287,7 +322,7 @@ def test_chainlit_receives_only_its_configuration() -> None:
     ):
         assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
     for unrelated_secret in (
-        "DEMO_API_OPENAI_API_KEY",
+        "OPENAI_UPSTREAM_API_KEY",
         "DEMO_OPENWEBUI_ADMIN_PASSWORD",
         "LANGFUSE_SECRET_KEY",
         "LITELLM_MASTER_KEY",

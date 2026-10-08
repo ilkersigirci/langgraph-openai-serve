@@ -47,7 +47,7 @@ sequenceDiagram
     participant Tools as package metadata / web_search
   end
   participant Search as SearXNG / Degoog
-  participant Model as Upstream model
+  participant Model as Model via gateway
 
   UI->>API: input + explicit tools
   API->>API: Validate graph allowlist
@@ -137,8 +137,8 @@ To use an upstream OpenAI Responses model's native search instead:
 DEMO_API_WEB_SEARCH_BACKEND=openai
 ```
 
-The URL is ignored in `openai` mode. The configured upstream model or gateway
-must support the OpenAI Responses `web_search` tool.
+The URL is ignored in `openai` mode. The configured gateway model and its
+upstream must support the OpenAI Responses `web_search` tool.
 
 ```python
 from openai import OpenAI

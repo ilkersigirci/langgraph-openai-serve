@@ -9,7 +9,8 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 - `uv`
 - Bash and Just 1.58.0 or newer
 - PostgreSQL (the included Compose service requires Docker)
-- An OpenAI-compatible upstream model only if you call the LLM-backed graphs
+- A running demo gateway only if you call the LLM-backed graphs; it forwards
+  their model calls upstream
 - A Hatchet deployment and client token only for background Responses
 
 !!! tip "Start without an upstream model"
@@ -46,8 +47,11 @@ just demo/up lgos-db --wait
     [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
     for the supplied connection settings.
 
-    LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
-    `DEMO_API_OPENAI_API_KEY`, and `DEMO_API_OPENAI_MODEL`. The
+    LLM-backed graphs call `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` through
+    Chat Completions or `DEMO_API_OPENAI_RESPONSES_MODEL` through Responses,
+    via the selected gateway using `OPENAI_GATEWAY_BASE_URL` and
+    `OPENAI_GATEWAY_API_KEY`. Local API, worker, and notebook recipes set the
+    root to `DEMO_GATEWAY_HOST_URL`; Compose uses the gateway's service URL. The
     `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL`. Its corpus is
     packaged with the API. The `server-tool` graph reads
     `DEMO_API_WEB_SEARCH_BACKEND` and `DEMO_API_WEB_SEARCH_URL` to choose its
