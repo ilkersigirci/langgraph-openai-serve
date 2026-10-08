@@ -1,7 +1,6 @@
 """Agentic RAG graph over the bundled LGOS corpus."""
 
 import asyncio
-from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
@@ -19,18 +18,16 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph_openai_serve import GraphConfig, status_event
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field
 
-from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.models import chat_completions_model, embedding_model
 
 DOCS_ROOT = Path(__file__).resolve().parents[1] / "corpus"
 DOCS_BASE_URL = (
@@ -156,33 +153,6 @@ def split_documents(documents: list[Document]) -> list[Document]:
     return splitter.split_documents(documents)
 
 
-@cache
-def _embedding_model() -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(
-        model=settings.OPENAI_EMBEDDING_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=SecretStr(settings.OPENAI_API_KEY),
-    )
-
-
-@cache
-def _chat_model() -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=SecretStr(settings.OPENAI_API_KEY),
-        temperature=0,
-        # ChatOpenAI asks for streamed usage only from OpenAI's default URL; ask
-        # through the gateway too, so LGOS can report streamed calls' usage.
-        stream_usage=True,
-    )
-
-
-@cache
-def _internal_chat_model() -> ChatOpenAI:
-    return _chat_model().model_copy(update={"tags": [TAG_NOSTREAM]})
-
-
 class _DocsIndex:
     """Lazy, concurrency-safe in-memory index for the bundled LGOS docs."""
 
@@ -197,7 +167,7 @@ class _DocsIndex:
         async with self.lock:
             if self.store is None:
                 chunks = split_documents(load_documents())
-                store = InMemoryVectorStore(_embedding_model())
+                store = InMemoryVectorStore(embedding_model())
                 await store.aadd_documents(
                     chunks,
                     ids=[
@@ -244,14 +214,14 @@ async def retrieve_lgos_rag(query: str) -> tuple[str, list[Document]]:
 
 
 def _retrieval_decider() -> Runnable[LanguageModelInput, AIMessage]:
-    return _internal_chat_model().bind_tools(
+    return chat_completions_model(private=True).bind_tools(
         [retrieve_lgos_rag],
         parallel_tool_calls=False,
     )
 
 
 def _document_grader() -> Runnable[LanguageModelInput, Any]:
-    return _internal_chat_model().with_structured_output(
+    return chat_completions_model(private=True).with_structured_output(
         GradeDocuments,
         method="function_calling",
     )
@@ -324,7 +294,7 @@ async def generate_query_or_respond(
         response = decision
     else:
         _emit_status("Preparing the response")
-        response = await _chat_model().ainvoke(
+        response = await chat_completions_model().ainvoke(
             [SystemMessage(content=DIRECT_RESPONSE_PROMPT), *state.messages],
         )
         _emit_status("Answer ready")
@@ -358,7 +328,7 @@ async def rewrite_question(
     """Rewrite an unsuccessful retrieval query before trying again."""
     _emit_status("Refining the search query")
     query = _retrieval_query(state)
-    response = await _internal_chat_model().ainvoke(
+    response = await chat_completions_model(private=True).ainvoke(
         [HumanMessage(content=REWRITE_PROMPT.format(query=query))],
     )
     rewritten_query = str(response.text).strip() or query
@@ -386,7 +356,7 @@ async def generate_answer(
             ),
         ]
     )
-    answer = await (prompt | _chat_model()).ainvoke(
+    answer = await (prompt | chat_completions_model()).ainvoke(
         {
             "question": _original_question(state),
             "query": _retrieval_query(state),
@@ -408,7 +378,7 @@ async def answer_no_results(
             ("human", "Question:\n{question}"),
         ]
     )
-    answer = await (prompt | _chat_model()).ainvoke(
+    answer = await (prompt | chat_completions_model()).ainvoke(
         {"question": _original_question(state)},
     )
     _emit_status("Answer ready")

@@ -307,11 +307,11 @@ for the shared API rules.
 
 | Path | Required service |
 | --- | --- |
-| Every request | Responses-capable upstream model and demo PostgreSQL runtime |
+| Every request | Responses-capable gateway model and demo PostgreSQL runtime |
 | File understanding | Central OpenAI-compatible Files API |
 | MCP tools | Selected gateway with an MCP server authorized for the UI credential |
 | Public research | Configured HTTP search endpoint or upstream Responses Web search |
-| Shared-knowledge read and write | OpenAI-compatible Files and vector-store service plus a vector-store ID |
+| Shared-knowledge read and write | Upstream Files and vector store through the gateway's OpenAI passthrough, plus a vector-store ID |
 
 ??? example "Relevant `demo/.env` values"
 
@@ -322,21 +322,20 @@ for the shared API rules.
     LGOS_GATEWAY_PORT=3000
     OPENAI_GATEWAY_TYPE=bifrost
     OPENAI_GATEWAY_API_KEY=sk-bf-replace-me
+    OPENAI_UPSTREAM_API_KEY=replace-me
 
-    DEMO_API_OPENAI_BASE_URL=https://api.openai.com/v1
-    DEMO_API_OPENAI_API_KEY=replace-me
-    DEMO_API_OPENAI_MODEL=gpt-5.4-mini
+    DEMO_API_OPENAI_RESPONSES_MODEL=openai/gpt-6-luna
     DEMO_API_WEB_SEARCH_BACKEND=openai
 
-    DEMO_API_VECTOR_STORE_BASE_URL=
-    DEMO_API_VECTOR_STORE_API_KEY=
     DEMO_API_VECTOR_STORE_ID=vs_replace_me
     ```
 
     Set `OPENAI_GATEWAY_TYPE=litellm` to use LiteLLM with the same gateway
-    credential. A blank vector-store ID disables only shared-knowledge search
-    and saving. The full [settings reference](../reference.md#demo-api-settings)
-    covers a separate vector provider and the HTTP search backend.
+    credential. The graph's model and vector-store calls both go through that
+    gateway, so the vector store must belong to the upstream account behind
+    `OPENAI_UPSTREAM_API_KEY`. A blank vector-store ID disables only
+    shared-knowledge search and saving. The full [settings reference](../reference.md#demo-api-settings)
+    covers the vector-store routing and the HTTP search backend.
 
 The graph depends on a small knowledge interface for search, upload, and
 indexing. The included adapter uses OpenAI-compatible Files and vector-store

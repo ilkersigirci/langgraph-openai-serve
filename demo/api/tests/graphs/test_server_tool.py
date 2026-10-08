@@ -53,7 +53,7 @@ async def test_graph_does_not_execute_an_unselected_tool(
         ),
         AIMessage(content="Search is not enabled."),
     )
-    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **kwargs: model)
     monkeypatch.setattr(server_tool, "search_web", unexpected_search)
     graph = server_tool.create_server_tool_graph()
     request = GraphRequest(

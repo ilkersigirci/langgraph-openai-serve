@@ -45,9 +45,9 @@ flowchart LR
    message. A conversation's first request, or one without both values,
    starts a thread from the supplied history as a JSON transcript with explicit
    roles. Codex's native agent loop chooses commands, edits, and verification.
-3. Codex calls the configured upstream model using its native
+3. Codex calls the configured model through the selected gateway's
+   `/v1/responses` route using its native
    [custom provider settings](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers).
-   The upstream can itself be an AI gateway exposing native Responses.
 4. The adapter streams answer text through LangChain and progress through
    LGOS `status_event()`. LGOS returns standard Responses events to the UI.
 5. Completion, failure, timeout, or disconnection closes the request's runtime
@@ -55,7 +55,7 @@ flowchart LR
 
 The demo reuses its existing LiteLLM model sync and Bifrost provider/catalog
 configuration. There is one coding-agent service and no additional proxy or gateway
-credential provisioning job.
+credential provisioning job; its model calls use the shared gateway key.
 
 ## Streaming and State
 
@@ -118,9 +118,10 @@ reset the bundled Bifrost provider's stream-idle timer.
 ## Try It
 
 Configure the [demo stack](../docker.md). Copy the coding-agent settings from
-`demo/.env.example` into an existing `demo/.env` when upgrading. The upstream
-URL, key, and model default to the demo API's values; choose an upstream model
-that supports Codex's native Responses requests.
+`demo/.env.example` into an existing `demo/.env` when upgrading. Compose sends
+Codex's model calls to the selected gateway with `OPENAI_GATEWAY_API_KEY`, and
+the model defaults to `DEMO_API_OPENAI_RESPONSES_MODEL`; choose a gateway model that
+supports Codex's native Responses requests.
 
 ```bash
 just demo/compose --dev
@@ -182,7 +183,8 @@ and avoids a custom seccomp profile for a nested sandbox.
 !!! note "Shared coding workspace"
 
     Use this service with trusted users and repositories. Codex can access the
-    mounted workspace, network, and its own upstream model credential. The
+    mounted workspace, network, and the shared gateway key it uses for model
+    calls, which also authorizes the gateway's other demo models and MCP tools. The
     container receives no database or S3 credentials, host Codex login, or
     Docker socket, but it shares the demo network and can reach the other demo
     services. This is one shared workspace, not isolation between tenants or

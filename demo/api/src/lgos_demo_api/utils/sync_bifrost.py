@@ -41,8 +41,8 @@ def prepare_catalog(
     for provider, source in sources.items():
         validate_namespace(provider)
         for name, model in read_model_catalog(source).items():
-            # Zero prices only anchor the attributes: graphs pay for their LLM
-            # calls outside Bifrost. Limits and capabilities stay unset.
+            # Zero prices only anchor the attributes: a graph's own model calls
+            # are separate gateway requests. Limits and capabilities stay unset.
             pricing[f"{provider}/{name}"] = {
                 "provider": provider,
                 "mode": "responses",

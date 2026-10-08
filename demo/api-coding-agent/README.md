@@ -31,15 +31,16 @@ Codex remembers each UI conversation: requests carrying `user` and
 discarded when they end.
 
 `DEMO_CODING_AGENT_BASE_URL`, `DEMO_CODING_AGENT_API_KEY`, and `DEMO_CODING_AGENT_MODEL` select the
-upstream Responses model. Their defaults use the demo API's upstream. They can
-point to another gateway deployment as long as it supports Codex's Responses
-requests. The UI-facing gateway routes directly to `http://lgos-api-coding-agent:8000/v1`
+Responses model Codex calls. Compose points the URL and key at the selected
+demo gateway and `OPENAI_GATEWAY_API_KEY`; the model defaults to
+`DEMO_API_OPENAI_RESPONSES_MODEL` and must support Codex's Responses requests. The
+UI-facing gateway routes directly to `http://lgos-api-coding-agent:8000/v1`
 using the demo's existing model catalog sync.
 
 Docker supplies the execution boundary: a non-root process, read-only root,
 writable workspace and temporary directories, and no Docker socket. Codex has
-network access, including to the other demo services, and can read its own
-model credential. Use this shared service
+network access, including to the other demo services, and can read the shared
+gateway key it uses for model calls. Use this shared service
 with trusted users and repositories. Running the coding agent directly on the host
 would give its commands the host process's permissions.
 

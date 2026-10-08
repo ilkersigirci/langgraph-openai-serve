@@ -45,7 +45,10 @@ services:
       OPENAI_BASE_URL: http://lgos-files-api:8000/v1
       OPENAI_API_KEY: DUMMY
       LGOS_MCP_AUTH_TOKEN: $LGOS_MCP_AUTH_TOKEN
-      AIGATEWAY_API_KEY: $AIGATEWAY_API_KEY
+      OPENAI_UPSTREAM_API_BASE: ${OPENAI_UPSTREAM_BASE_URL}/v1
+      OPENAI_UPSTREAM_API_KEY: $OPENAI_UPSTREAM_API_KEY
+      # Only /openai_passthrough reads this; OPENAI_BASE_URL wins elsewhere.
+      OPENAI_API_BASE: $OPENAI_UPSTREAM_BASE_URL
     # Initialize the Admin UI database through the image's proxy CLI.
     command:
       - --config

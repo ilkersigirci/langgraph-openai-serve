@@ -24,7 +24,6 @@ from langgraph_openai_serve import (
 )
 from openai import AsyncOpenAI
 
-from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.advanced_graph.knowledge import KnowledgeBase
 from lgos_demo_api.graphs.advanced_graph.notebook import create_notebook_graph
 from lgos_demo_api.graphs.advanced_graph.research import (
@@ -43,6 +42,7 @@ from lgos_demo_api.graphs.server_tool import web_search
 from lgos_demo_api.utils.citations import cite_markdown_links
 from lgos_demo_api.utils.client_tools import chat_tool
 from lgos_demo_api.utils.file_inputs import resolve_file_inputs
+from lgos_demo_api.utils.models import responses_model
 
 _ROUTER_PROMPT = """Classify the latest user request into exactly one workflow.
 
@@ -75,15 +75,7 @@ actions."""
 
 
 def create_model(http_client: httpx2.AsyncClient) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0.7,
-        # LangChain otherwise removes temperature for GPT-5 models.
-        reasoning={"effort": "none"},
-        use_responses_api=True,
-        store=False,
+    return responses_model(
         output_version="responses/v1",
         http_async_client=http_client,
         timeout=60,

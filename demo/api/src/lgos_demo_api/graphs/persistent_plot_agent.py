@@ -10,8 +10,6 @@ from langchain.tools import ToolRuntime, tool
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.messages.tool import tool_call
-from langchain_openai import ChatOpenAI
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph_openai_serve import (
@@ -27,6 +25,7 @@ from plotly import graph_objects as go
 from pydantic import BaseModel, ConfigDict, Field
 
 from lgos_demo_api.core.settings import settings
+from lgos_demo_api.utils.models import chat_completions_model
 
 ARTIFACT_KEY = "quarterly-revenue"
 DISPLAY_FILE_TOOL_NAME = "display_file"
@@ -251,29 +250,20 @@ async def update_quarterly_revenue(
     return _tool_result(updated, summary), await _publish(updated, context)
 
 
-def _chat_model() -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0,
-        # ChatOpenAI asks for streamed usage only from OpenAI's default URL; ask
-        # through the gateway too, so LGOS can report streamed calls' usage.
-        stream_usage=True,
-        # Keep every agent turn out of the stream; LGOS sends the final answer
-        # from the graph's state.
-        tags=[TAG_NOSTREAM],
-        model_kwargs={"parallel_tool_calls": False},
-    )
-
-
 def create_persistent_plot_agent(
     store: BaseStore,
     model: BaseChatModel | None = None,
 ) -> PersistentPlotAgent:
     """Build the agent with its lifespan-managed Store."""
+    if model is None:
+        model = chat_completions_model(
+            # Keep every agent turn out of the stream; LGOS sends the final
+            # answer from the graph's state.
+            private=True,
+            model_kwargs={"parallel_tool_calls": False},
+        )
     return create_agent(
-        model=model or _chat_model(),
+        model=model,
         tools=[show_quarterly_revenue, update_quarterly_revenue],
         system_prompt=SYSTEM_PROMPT,
         context_schema=PersistentPlotAgentContext,

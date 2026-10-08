@@ -85,10 +85,10 @@ src = ["src", "tests"]
 enabled = true
 
 [tool.marimo.ai.models]
-chat_model = "aigateway/openai/gpt-5.4-mini" # Non-default: explicit model selection
+chat_model = "gateway/openai/gpt-4.1-mini" # Non-default: explicit model selection
 custom_models = []
 displayed_models = []
-edit_model = "aigateway/openai/gpt-5.4-mini" # Non-default: explicit model selection
+edit_model = "gateway/openai/gpt-4.1-mini" # Non-default: explicit model selection
 
 [tool.marimo.completion]
 activate_on_typing = true

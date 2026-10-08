@@ -389,7 +389,8 @@ async def test_streamed_response_reports_the_private_agent_model_usage(
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as provider:
         monkeypatch.setattr(
-            plot_module, "ChatOpenAI", partial(ChatOpenAI, http_async_client=provider)
+            "lgos_demo_api.utils.models.ChatOpenAI",
+            partial(ChatOpenAI, http_async_client=provider),
         )
         graph = create_persistent_plot_agent(InMemoryStore())
         registry = GraphRegistry(

@@ -148,12 +148,28 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
     assert client_settings["defaults"] == {
         "use_history": False,
         "audience": "general",
+        "model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,
     }
-    assert client_settings["json_schema"]["properties"]["audience"]["enum"] == [
-        "general",
-        "beginner",
-        "expert",
+    properties = client_settings["json_schema"]["properties"]
+    assert properties["audience"]["enum"] == ["general", "beginner", "expert"]
+    assert properties["model"]["enum"] == [
+        settings.OPENAI_CHAT_COMPLETIONS_MODEL,
+        settings.OPENAI_RESPONSES_MODEL,
     ]
+
+
+async def test_simple_model_rejects_an_unoffered_model(
+    openai_client: AsyncOpenAI,
+) -> None:
+    with pytest.raises(BadRequestError) as error:
+        await openai_client.responses.create(
+            model="simple-graph",
+            input="Hello",
+            store=False,
+            metadata={"lgos_settings": '{"model":"openai/unregistered"}'},
+        )
+
+    assert error.value.body["param"] == "metadata.lgos_settings"
 
 
 @pytest.mark.parametrize(
@@ -167,6 +183,10 @@ async def test_simple_model_retrieval_exposes_runtime_settings(
         (
             {"lgos_settings": '{"audience":"expert"}'},
             SimpleContext(audience="expert"),
+        ),
+        (
+            {"lgos_settings": f'{{"model":"{settings.OPENAI_RESPONSES_MODEL}"}}'},
+            SimpleContext(model=settings.OPENAI_RESPONSES_MODEL),
         ),
     ],
 )
@@ -314,40 +334,6 @@ async def test_registry_compiles_graphs_with_server_resources(
 
 
 @pytest.mark.parametrize(
-    ("vector_base_url", "vector_api_key", "expected"),
-    [
-        (
-            None,
-            None,
-            ("https://model.example/v1", "model-secret"),
-        ),
-        (
-            "https://vectors.example/v1",
-            None,
-            ("https://vectors.example/v1", "DUMMY"),
-        ),
-        (
-            "https://vectors.example/v1",
-            "vector-secret",
-            ("https://vectors.example/v1", "vector-secret"),
-        ),
-    ],
-)
-def test_vector_store_credentials_are_isolated_from_a_separate_endpoint(
-    monkeypatch: pytest.MonkeyPatch,
-    vector_base_url: str | None,
-    vector_api_key: str | None,
-    expected: tuple[str, str],
-) -> None:
-    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://model.example/v1")
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "model-secret")
-    monkeypatch.setattr(settings, "VECTOR_STORE_BASE_URL", vector_base_url)
-    monkeypatch.setattr(settings, "VECTOR_STORE_API_KEY", vector_api_key)
-
-    assert advanced_resources._vector_store_connection() == expected
-
-
-@pytest.mark.parametrize(
     "tools", [[], [{"type": "custom", "name": "lgos_package_version"}]]
 )
 async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
@@ -366,7 +352,7 @@ async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
             pytest.fail("Package lookup must not be bound when disabled.")
 
     model = NoToolsModel(responses=[AIMessage(content="Package lookup is disabled.")])
-    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **kwargs: model)
     _rebuild_server_tool_graph(demo_app)
     details = await openai_client.models.retrieve("server-tool")
     assert "client_settings" not in details.lgos
@@ -535,8 +521,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
 
     async with AsyncClient(transport=MockTransport(respond)) as provider:
         monkeypatch.setattr(
-            server_tool,
-            "ChatOpenAI",
+            "lgos_demo_api.utils.models.ChatOpenAI",
             lambda **kwargs: ChatOpenAI(http_async_client=provider, **kwargs),
         )
         _rebuild_server_tool_graph(demo_app)
@@ -650,7 +635,7 @@ async def test_server_web_search_runs_through_http_backend(
     monkeypatch.setattr(
         server_tool.settings, "WEB_SEARCH_URL", "https://searxng.example.com/search"
     )
-    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: model)
+    monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **kwargs: model)
     _rebuild_server_tool_graph(demo_app)
     monkeypatch.setattr(server_tool, "search_web", search)
 
@@ -755,7 +740,9 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
     )
     models = iter([model, model, provider])
     monkeypatch.setattr(server_tool.settings, "WEB_SEARCH_BACKEND", "openai")
-    monkeypatch.setattr(server_tool, "ChatOpenAI", lambda **kwargs: next(models))
+    monkeypatch.setattr(
+        "lgos_demo_api.utils.models.ChatOpenAI", lambda **kwargs: next(models)
+    )
     _rebuild_server_tool_graph(demo_app)
 
     response = await openai_client.responses.create(

@@ -69,7 +69,7 @@
       {
         "id": "lgos-demo",
         "name": "LGOS demo clients",
-        "description": "Demo UI access to LGOS providers, aigateway speech models, and read-only PostgreSQL MCP tools",
+        "description": "Demo UI and graph access to LGOS providers, OpenAI API models, and read-only PostgreSQL MCP tools",
         "value": "env.BIFROST_DEMO_VIRTUAL_KEY",
         "is_active": true,
         "provider_configs": [
@@ -98,10 +98,13 @@
             "weight": 1.0
           },
           {
-            "provider": "aigateway",
+            "provider": "openai",
             "allowed_models": [
-              "openai/gpt-4o-mini-transcribe",
-              "openai/gpt-4o-mini-tts"
+              "gpt-4.1-mini",
+              "gpt-6-luna",
+              "text-embedding-3-small",
+              "gpt-4o-mini-transcribe",
+              "gpt-4o-mini-tts"
             ],
             "key_ids": ["*"],
             "weight": 1.0
@@ -207,28 +210,17 @@
         }
       }
     },
-    "aigateway": {
+    "openai": {
       "keys": [
         {
-          "name": "aigateway",
-          "value": "env.AIGATEWAY_API_KEY",
-          "models": [
-            "openai/gpt-4o-mini-transcribe",
-            "openai/gpt-4o-mini-tts"
-          ],
+          "name": "openai",
+          "value": "env.OPENAI_UPSTREAM_API_KEY",
+          "models": ["*"],
           "weight": 1.0
         }
       ],
       "network_config": {
-        "base_url": "https://aigateway.home.ilkerflix.com",
-        "allow_private_network": true
-      },
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "speech": true,
-          "transcription": true
-        }
+        "base_url": "https://api.openai.com"
       }
     }
   },

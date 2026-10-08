@@ -241,7 +241,12 @@ settings](reference.md#opentelemetry-settings).
     the checked-in
     `mcp_servers.lgos_postgres` entry and `LGOS_MCP_AUTH_TOKEN` for the external
     gateway, just as the Files configuration is adapted below. The external
-    gateway URL must be reachable from both UI containers. On another host,
+    gateway URL must be reachable from both UI containers and from the graph
+    API, worker, and coding-agent containers, which call their models through
+    it. Set `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL`,
+    `DEMO_API_OPENAI_RESPONSES_MODEL`, `DEMO_API_OPENAI_EMBEDDING_MODEL`, and the
+    `DEMO_AUDIO_*` models to IDs that gateway registers. The advanced graph's
+    vector store also needs that gateway's `/openai_passthrough` route. On another host,
     expose DBHub only on a private address reachable by that gateway.
 
     `just demo/compose` (or the same command with `--dev`) starts
@@ -286,8 +291,9 @@ settings](reference.md#opentelemetry-settings).
     replace those upstream URLs with addresses reachable from that gateway.
 
     The external deployment continues to own its database, TLS, credentials,
-    and Admin UI SSO. The selected credentials must allow the LGOS models, Files
-    operations, the configured MCP tools, and native `/model/info`. Chainlit can
+    and Admin UI SSO. The selected credentials must allow the LGOS models, the
+    `DEMO_API_OPENAI_*` model IDs the graphs call, Files operations, the
+    configured MCP tools, and native `/model/info`. Chainlit can
     enable [delegated OAuth](chainlit.md#persistence-and-login); it then ignores
     the shared static key and disables its native MCP connection.
     If the gateway already configures `litellm_proxy` Files,

@@ -1,201 +1,155 @@
 # Demo Architecture
 
-The Docker demo runs three independently addressable LGOS graph API containers and one
-logical central Files service. `OPENAI_GATEWAY_TYPE=litellm|bifrost` selects a
-first-class OpenAI-compatible edge for both Chainlit and Open WebUI. LiteLLM
-uses managed Responses and Bifrost uses native Responses. Both use normal
-Files routing. LiteLLM serves metadata from native `/model/info`; Bifrost uses
-native `/v1/models` attributes. No UI
-connects directly to an upstream container, and neither UI imports
-`langgraph-openai-serve`. See
-[Package Architecture](../explanation/architecture.md) for what happens inside
-each API process.
+The demo is a complete deployment of `langgraph-openai-serve` (LGOS): two chat
+UIs, an AI gateway, three LGOS APIs, and the services they share. It is shaped
+like a production system on purpose. Every component is an independent
+application, and the request path between them is OpenAI-compatible HTTP and
+MCP, so you can replace a UI, the gateway, or an LGOS API without changing the
+others.
 
-!!! warning "Managed gateway normalization boundaries"
+This page explains how the parts work together, from the outside in. For what
+happens inside one LGOS API process, see
+[Package Architecture](../explanation/architecture.md).
 
-    The bundled Bifrost native Responses route preserves standard fields, file
-    input, commentary, `phase`, `store: false`, and upstream error `type` and
-    `param`; normalized model detail remains lossy. The
-    bundled `homeserver-litellm` image preserves native streaming and
-    commentary; error metadata remains rewritten.
-    The UIs use the selected gateway's managed/native inference path and
-    synchronized native catalog metadata. See
-    [Docker Compose](docker.md#demo-services) and [Bifrost Gateway](bifrost.md).
+Three ideas shape the whole stack:
 
-## Request Path
+- **One gateway in, one gateway out.** Every UI request and every model call
+  passes the gateway. It authenticates callers, owns the model catalog, and
+  holds the only upstream provider key.
+- **Graphs are models.** Each LGOS API publishes its LangGraph graphs as
+  OpenAI models, so a UI selects a graph the same way it selects a model.
+- **Clients own conversations.** The UIs store transcripts. LGOS stores only
+  paused runs and the data a graph saves on purpose.
+
+## Components
 
 ```mermaid
-flowchart LR
-  user["Browser user"]
+flowchart TB
+  uis["Chat UIs<br/>Chainlit, Open WebUI"]
+  gateway["AI gateway<br/>LiteLLM or Bifrost"]
 
-  subgraph clients["Demo clients"]
-    direction TB
-    chainlit["Chainlit"]
-    openwebui["Open WebUI"]
+  subgraph lgos["LGOS APIs"]
+    direction LR
+    api["Demo API A and B<br/>example graphs"]
+    coding["Coding-agent API<br/>Codex"]
   end
 
-  bifrost["Bifrost gateway"]
-  litellm["LiteLLM<br/>managed inference + model/info"]
-  gateway["OPENAI_GATEWAY_TYPE<br/>selects one gateway"]
-  sdk["OpenAI SDK test"]
+  files["Files API<br/>S3-backed"]
+  dbhub["DBHub<br/>read-only MCP"]
+  upstream["Upstream model API<br/>OpenAI by default"]
 
-  subgraph apis["LGOS demo APIs"]
-    direction TB
-    api_a["API A<br/>FastAPI + LGOS + demo graphs"]
-    api_b["API B<br/>FastAPI + LGOS + demo graphs"]
-    coding["Coding-agent API<br/>LGOS + Codex"]
-  end
-
-  workspace[("Shared coding workspace directory")]
-  files["Files service<br/>OpenAI Files API + S3 repository"]
-  speech["aigateway<br/>OpenAI speech models"]
-  dbhub["DBHub<br/>read-only MCP server"]
-  database[("lgos-db PostgreSQL<br/>dedicated mcp_demo schema")]
-
-  model["Upstream OpenAI-compatible model"]
-  hatchet["Hatchet workflow service"]
-  worker["Optional background worker"]
-
-  user <--> chainlit
-  user <--> openwebui
-  chainlit <-->|"OpenAI API + native MCP"| gateway
-  openwebui <-->|"OpenAI API + native MCP"| gateway
-  gateway <-.->|"bifrost"| bifrost
-  gateway <-.->|"litellm"| litellm
-  sdk <-->|"catalog + native/raw Responses"| bifrost
-  sdk <-->|"Responses"| litellm
-  bifrost <-->|"provider: lgos-a"| api_a
-  bifrost <-->|"provider: lgos-b"| api_b
-  bifrost <-->|"provider: lgos-api-coding-agent"| coding
-  bifrost <-->|"provider: lgos-files"| files
-  litellm <-->|"managed inference"| api_a
-  litellm <-->|"managed inference"| api_b
-  litellm <-->|"managed inference"| coding
-  coding <--> workspace
-  coding <-->|"Codex Responses requests"| model
-  litellm <-->|"provider: litellm_proxy"| files
-  bifrost <-->|"provider: aigateway"| speech
-  litellm <-->|"aigateway/* models"| speech
-  bifrost <-->|"allowlisted MCP tools"| dbhub
-  litellm <-->|"allowlisted MCP tools"| dbhub
-  api_a <-->|"trigger, read, cancel run"| hatchet
-  api_b <-->|"trigger, read, cancel run"| hatchet
-  hatchet <-->|"job + Response"| worker
-  worker <-->|"checkpoints, Store, locks"| database
-  worker -->|"when a graph calls a model"| model
-  dbhub -->|"lgos_mcp read-only role"| database
-  api_a <-->|"when a graph calls a model"| model
-  api_b <-->|"when a graph calls a model"| model
+  uis -->|"models, Responses, Files,<br/>speech, MCP"| gateway
+  gateway -->|"graph requests"| api & coding
+  api & coding -.->|"model calls"| gateway
+  gateway -->|"uploads and downloads"| files
+  gateway -->|"MCP tools"| dbhub
+  gateway -->|"model calls, speech,<br/>vector stores"| upstream
+  api -->|"file reads and writes"| files
 ```
 
-With LiteLLM selected, the UIs read native `/model/info`, use `model_info.lgos`
-for capabilities and settings, and send `model_name` unchanged through managed
-Responses routing. With Bifrost selected, they read provider-qualified IDs and
-complete metadata from native `/v1/models` attributes, and send
-the catalog ID unchanged through native Responses routing, where its prefix
-selects the provider. Both choices upload
-attachments through normal gateway Files routing before sending the returned
-`file_id` to a graph. This preserves descriptions and runtime capabilities
-without allowing UI inference to bypass the gateway's normal data plane.
-For `mcp-postgres`, the clients also discover and execute the gateway's native
-MCP tools; DBHub and the database credential remain behind that gateway. See
-[PostgreSQL Through Native MCP](graphs/mcp-postgres.md).
+Solid arrows are client requests. Dotted arrows are the model calls a graph
+makes while it runs; they return to the same gateway as separate requests. The
+optional background worker and Hatchet are shown in
+[Background Mock](graphs/background-mock.md#topology).
 
-Speech stays in the clients. Chainlit and Open WebUI transcribe microphone
-recordings through the gateway's `/v1/audio/transcriptions` route, send the
-transcript as a normal text turn, and read answers aloud through
-`/v1/audio/speech`. The bundled gateways forward those calls to aigateway's
-OpenAI models; LGOS never receives audio. See the
-[Chainlit](chainlit.md#voice) and [Open WebUI](open-webui.md#voice) voice guides.
+| Component | Compose service | Responsibility | Details |
+| --- | --- | --- | --- |
+| Chainlit | `lgos-chainlit` | Chat UI built on `chainlit-utils`. | [Chainlit Client](chainlit.md) |
+| Open WebUI | `lgos-openwebui` | Chat UI whose synced Generic Function sends each chat to the gateway. Workspace Models expose each graph and its settings. | [Open WebUI Functions](open-webui.md) |
+| AI gateway | `lgos-litellm` or `lgos-bifrost` | Authenticates callers, routes graph models to their API, serves the catalog with LGOS metadata, routes Files and MCP, and forwards model, speech, and vector-store calls upstream. | [Bifrost Gateway](bifrost.md), [LiteLLM Model Sync](litellm-sync.md) |
+| Demo API A and B | `lgos-demo-api-a`, `lgos-demo-api-b` | One image running `lgos serve` with the demo graph registry. Two copies show independent APIs behind one gateway, sharing PostgreSQL state. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
+| Coding-agent API | `lgos-api-coding-agent` | An LGOS app that serves Codex as one graph and edits a shared workspace directory. | [Coding Agent](graphs/coding-agent.md) |
+| Background worker | `lgos-background-worker` | `lgos worker` with the demo registry. Runs background Responses delivered by Hatchet. Enabled by the `background` profile. | [Background Mock](graphs/background-mock.md) |
+| Files API | `lgos-files-api` | OpenAI Files API over S3, giving every graph API one file namespace. | [Run the Files API](files-api.md) |
+| DBHub | `lgos-postgres-mcp` | Read-only MCP server with six fixed reports. `lgos-mcp-db-setup` creates its database role and views. | [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) |
+| PostgreSQL | `lgos-db` | Shared database for the LGOS apps, Chainlit, LiteLLM, and the MCP reporting views. | [State Ownership](#state-ownership) |
+| Catalog sync | `lgos-model-sync`, `lgos-bifrost-catalog`, `lgos-bifrost-sync` | Publish each graph's description, features, and settings into the gateway catalog. | [Model Catalog](#model-catalog) |
 
-The [LGOS-owned sync command](litellm-sync.md) registers concrete models and full
-metadata in LiteLLM's database. Run it after graph changes; the gateway needs no
-LGOS-specific code. Protocol tests
-compare its managed stream with the direct LGOS endpoint; UI clients never
-make that direct connection.
+The optional [OpenTelemetry overlay](opentelemetry.md) adds a collector for
+traces, metrics, and logs without changing these paths.
 
-[Bifrost catalog sync](bifrost.md#declarative-model-metadata) prepares a pricing
-datasheet with zero-priced graph rows, then publishes full metadata through
-the gateway's native management API. Startup runs both jobs, and the metadata
-is rebuilt after gateway recreation from the graph registrations.
+## External Services
 
-Background-capable models use the selected gateway's normal Responses
-lifecycle. Chainlit and Open WebUI discover the capability, create a non-streaming
-background Response, and poll or cancel through the OpenAI SDK. Hatchet runs
-each job and stores its status and Response, which every API replica reads.
+The stack relies on these services outside Compose:
 
-At startup, API A, API B, the background worker, and Chainlit apply their pending
-schema migrations. Once API A and Chainlit are healthy, the idempotent MCP
-setup creates the reporting views, role, and grants before DBHub starts. The
-selected gateway waits for DBHub, all three graph APIs, and the Files service. The
-diagram shows request traffic rather than those readiness dependencies.
-Compose runs one Files process for the demo; production deployments may run
-multiple stateless replicas over the same repository.
+| External service | Used by | Needed for |
+| --- | --- | --- |
+| Upstream OpenAI-compatible API | AI gateway | LLM-backed graphs, the coding agent, speech, and vector stores |
+| S3-compatible storage | Files API, Chainlit | Attachments, generated files, and Chainlit elements |
+| Hatchet | Demo APIs, background worker | Background Responses only |
+| SearXNG or Degoog | `server-tool`, `advanced-graph` | Self-hosted web search only |
+| Langfuse, OpenTelemetry collector | LGOS APIs, telemetry overlay | Optional observability |
+| OAuth provider | Chainlit | OAuth login only |
+
+## How Requests Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Chainlit or Open WebUI
+  participant GW as AI gateway
+  participant API as LGOS API
+  participant LLM as Upstream model API
+
+  UI->>GW: Responses request, model lgos-a/simple-graph
+  GW->>API: same request, model simple-graph
+  API->>API: run the graph on the conversation
+  API->>GW: Chat Completions call, model openai/gpt-4.1-mini
+  GW->>LLM: model call with the provider key
+  LLM-->>API: tokens, through the gateway
+  API-->>UI: Responses stream, through the gateway
+```
+
+The model ID's prefix tells the gateway which LGOS API serves the graph. The
+API runs the graph and streams standard Responses events: text, status
+updates, citations, and tool calls. When the graph needs an LLM, it calls the
+same gateway with an `openai/*` model ID, so the API never holds a provider
+key.
+
+Feature flows build on this path and live with their graphs:
+
+- File attachments: [File Input](graphs/file-input.md#request-flow)
+- Gateway MCP tools: [PostgreSQL Through Native MCP](graphs/mcp-postgres.md#request-flow)
+- Background Responses: [Background Mock](graphs/background-mock.md#request-flow)
+- Human review: [Interruptible Human Review](graphs/interruptible-approval.md#request-flow)
+
+## Model Catalog
+
+The UIs learn about graphs from the gateway catalog, not from the APIs. At
+startup, the catalog sync copies each LGOS API's `/v1/models` metadata into the
+gateway's native catalog, and the UIs use it to show settings forms, enable
+attachments, and connect MCP tools. See [LiteLLM Model Sync](litellm-sync.md) and
+[Bifrost metadata](bifrost.md#declarative-model-metadata); each gateway's
+routes are listed in [Docker Compose](docker.md#demo-services).
 
 ## State Ownership
 
-The UIs own their conversations. The API stores paused interrupt execution
-and explicit graph data, and Hatchet stores background runs; neither copies
-either UI transcript into LGOS.
+| Owner | State | Stored in |
+| --- | --- | --- |
+| Chainlit | Users, threads, and steps | PostgreSQL |
+| Chainlit | Element bodies, such as attachments and charts | S3, UI bucket |
+| Open WebUI | Transcripts, raw uploads, and embeds | Open WebUI data volume |
+| LGOS APIs and worker | Paused interrupt runs and same-run locks | PostgreSQL checkpoints and advisory locks |
+| `persistent-plot-agent` graph | Thread-scoped chart document | PostgreSQL, LangGraph Store |
+| Files API | Files used for inference | S3, Files bucket |
+| Hatchet | Background runs and their Responses | Hatchet |
+| Coding-agent API | Workspace files and Codex threads | Bind-mounted directories |
+| LiteLLM | Synced graph models and Admin UI data | PostgreSQL, `litellm` schema |
+| Bifrost | Configuration and catalog | Ephemeral SQLite, rebuilt at every start |
 
-```mermaid
-flowchart LR
-  subgraph clients["UI-owned state"]
-    direction TB
-    chainlit["Chainlit"]
-    openwebui["Open WebUI"]
-  end
+Recovery behavior lives in
+[Persistent Plot Agent](graphs/persistent-plot-agent.md) and
+[Interruptible Human Review](graphs/interruptible-approval.md).
 
-  subgraph api["LGOS API processes"]
-    direction TB
-    interrupts["LGOS interrupt handling"]
-    plot["persistent-plot-agent graph"]
-  end
+## From Demo To Production
 
-  subgraph postgres["One PostgreSQL database"]
-    direction TB
-    chainlit_rows["Chainlit users, threads, and steps"]
-    checkpoints["LangGraph checkpoints"]
-    store["LangGraph Store documents"]
-    locks["PostgreSQL advisory locks"]
-  end
+Every component runs the way it would in production. The demo takes a few
+shortcuts that a real deployment replaces:
 
-  coding["Coding-agent service"]
-  workspace[("Shared coding workspace directory")]
-  files_service["Central Files service"]
-  s3[("S3-compatible service<br/>separate UI and Files buckets")]
-  openwebui_data[("Open WebUI data volume<br/>transcripts, raw uploads, and embeds")]
-
-  coding -->|"source files and command results"| workspace
-  chainlit -->|"conversation and UI metadata"| chainlit_rows
-  chainlit -->|"element content"| s3
-  files_service -->|"opaque inference files"| s3
-  openwebui -->|"conversation and UI state"| openwebui_data
-  interrupts -->|"paused execution"| checkpoints
-  interrupts -->|"same-run coordination"| locks
-  plot -->|"thread-scoped chart document"| store
-```
-
-API A and API B run the same image and graph set, but Bifrost
-treats them as separate providers. They share PostgreSQL for durable LangGraph
-checkpoints, thread-scoped data, and interrupt-run coordination. Chainlit
-uses the same database for UI metadata and S3 for element bodies. Open WebUI
-keeps its state and native raw-upload copy in its bind-mounted data directory;
-the central Files service owns the separate inference copy. Detailed ownership
-and recovery behavior live in
-[Persistent Plot Agent](graphs/persistent-plot-agent.md) and [Interruptible
-Human Review](graphs/interruptible-approval.md). Background execution is
-described in [Background Mock](graphs/background-mock.md);
-`advanced-graph` runs in the same worker when a client requests background
-mode. When
-`LGOS_ENABLE_LANGFUSE=True`, API A and API B add the Langfuse callback to graph runs
-and export observations directly to the configured Langfuse service. Langfuse
-is not a Compose service or a proxy in the request path.
-
-The [coding-agent service](graphs/coding-agent.md) owns a shared persistent
-workspace directory and the Codex threads that its conversations resume. It
-serializes requests. It uses neither PostgreSQL nor the central Files service.
-
-The optional Compose overlay adds a separate telemetry path without changing
-request or state ownership. Its complete signal flow and operational boundary
-are documented in [Demo OpenTelemetry Overlay](opentelemetry.md).
+| Area | Demo shortcut | Production |
+| --- | --- | --- |
+| Gateway access | One static key shared by the UIs and the graph APIs; Bifrost's admin API has no authentication | Per-user or per-service credentials or SSO, an authenticated admin API, and TLS |
+| UI login | Chainlit mock login | OAuth; see [Chainlit production notes](chainlit.md#production-notes) |
+| LGOS APIs | No authentication; host ports published for direct tests | Reachable only from the gateway, or behind authentication middleware |
+| PostgreSQL | One container shared by every owner | Managed PostgreSQL with backups, monitoring, and failover; see [Docker Compose](docker.md#demo-services) |
+| Scaling | Two API replicas and one Files API process | More API and worker replicas behind the gateway; Files API replicas over the same bucket |
+| Provider keys | `OPENAI_UPSTREAM_API_KEY` on the bundled gateway | Unchanged: only the gateway holds provider keys |

@@ -59,8 +59,10 @@ services:
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
+    # The SQLite config store and its WAL each reach about 31 MiB during a
+    # pricing sync, so /tmp needs headroom beyond twice that.
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=$PUID,gid=$PGID,mode=1777
       - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
@@ -96,7 +98,7 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ../configs/bifrost/config.json
+        source: $DEMO_BIFROST_CONFIG
         target: /app/data/config.json
         read_only: true
         bind:
@@ -108,7 +110,7 @@ services:
       LOG_STYLE: json
       BIFROST_DEMO_VIRTUAL_KEY: $OPENAI_GATEWAY_API_KEY
       LGOS_MCP_AUTH_HEADER: Bearer $LGOS_MCP_AUTH_TOKEN
-      AIGATEWAY_API_KEY: $AIGATEWAY_API_KEY
+      OPENAI_UPSTREAM_API_KEY: $OPENAI_UPSTREAM_API_KEY
     # Bifrost reconciles file-defined Virtual MCPs before file-defined
     # virtual keys on first boot. Repeat the idempotent assignment once its API
     # is ready, then keep the service unhealthy until the assignment is visible.

@@ -157,6 +157,10 @@ the history setting before calling the upstream chat model:
 - `use_history=false` sends only the latest message.
 - `use_history=true` sends every message supplied in the current request.
 - `audience` is `general`, `beginner`, or `expert`.
+- `model` selects the configured Chat Completions model, the default, or the
+  Responses model. The graph calls either through Chat Completions and sets
+  `stream_usage=True`, so streamed answers report token usage through the
+  gateway.
 
 `use_history` does not load or persist conversation history; history exists only
 when the client includes it in the current request. See

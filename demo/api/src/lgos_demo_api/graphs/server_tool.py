@@ -7,9 +7,8 @@ import httpx2
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI, custom_tool
+from langchain_openai import custom_tool
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -25,6 +24,7 @@ from pydantic import BaseModel
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.models import responses_model
 from lgos_demo_api.utils.web_search import search_web
 
 _SEARCH_SNIPPET_LIMIT = 1_000
@@ -47,18 +47,6 @@ _ANSWER_PROMPT = (
 
 class ServerToolState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
-
-
-def _chat_model(*, private: bool = False) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        use_responses_api=True,
-        store=False,
-        # LangGraph emits none of a nostream call's output in its messages stream.
-        tags=[TAG_NOSTREAM] if private else None,
-    )
 
 
 @custom_tool
@@ -91,7 +79,7 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
         raise ValueError(msg)
     if settings.WEB_SEARCH_BACKEND == "openai":
         result = await (
-            _chat_model(private=True)
+            responses_model(private=True)
             .bind_tools([{"type": "web_search"}], tool_choice="required")
             .ainvoke(query)
         )
@@ -161,8 +149,8 @@ def create_server_tool_graph() -> CompiledStateGraph[
     ServerToolState, GraphRequest, ServerToolState, ServerToolState
 ]:
     """Select tools once, execute them, then stream an answer with citations."""
-    model = _chat_model()
-    internal_model = _chat_model(private=True)
+    model = responses_model()
+    internal_model = responses_model(private=True)
 
     def start(
         _state: ServerToolState, runtime: Runtime[GraphRequest]
