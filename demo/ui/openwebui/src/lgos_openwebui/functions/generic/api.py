@@ -1,8 +1,6 @@
-"""OpenAI-compatible client and model-catalog helpers."""
+"""OpenAI-compatible client helper."""
 
 from openai import AsyncOpenAI
-
-from .contracts import LGOS_MODEL_OWNER
 
 
 def _client(
@@ -18,8 +16,3 @@ def _client(
         max_retries=0,
         default_headers={"User-Agent": "lgos-openwebui"},
     )
-
-
-async def _list_model_ids(client: AsyncOpenAI) -> list[str]:
-    models = await client.models.list()
-    return [model.id for model in models.data if model.owned_by == LGOS_MODEL_OWNER]

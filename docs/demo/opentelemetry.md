@@ -17,7 +17,7 @@ flowchart LR
     direction TB
     clients["Chainlit and Open WebUI"]
     gateways["Bifrost or LiteLLM"]
-    apis["LGOS API A and B<br/>coding-agent API"]
+    apis["Demo API<br/>coding-agent API"]
     worker["Hatchet background worker"]
     collector["Local OpenTelemetry Collector"]
 
@@ -161,7 +161,7 @@ correlation values. See
 Enable the [background worker](docker.md) and run the same
 `just demo/compose --dev --otel` command. The worker uses service name
 `lgos-background-worker` and sends telemetry to the local Collector alongside
-the API replicas.
+the demo API.
 
 Both processes use the SDK's
 [`HatchetInstrumentor`](https://docs.hatchet.run/v1/opentelemetry). The API's
@@ -249,10 +249,8 @@ redaction boundary. Exceptions, tracebacks, and caller-controlled values can
 still contain sensitive data.
 
 To verify the pipeline, locate service `lgos-demo-api` in the configured
-backend and correlate the request with `lgos-otel-e2e`. The two API replicas
-share `service.name` and have different SDK-generated `service.instance.id`
-values. Monitor the Collector's exporter queue, capacity, send-failure, and
-rejected-data metrics in that backend.
+backend and correlate the request with `lgos-otel-e2e`. Monitor the Collector's
+exporter queue, capacity, send-failure, and rejected-data metrics in that backend.
 
 ## Langfuse Remains Separate
 

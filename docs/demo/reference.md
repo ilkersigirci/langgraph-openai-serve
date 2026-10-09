@@ -40,7 +40,7 @@ integration commands:
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
 | `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
-| `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
+| `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to reconcile all LGOS catalogs in one LiteLLM namespace; see [model sync](litellm-sync.md) |
 | `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize all LGOS graph catalogs into Bifrost; then refresh Open WebUI with `sync-openwebui` |
 | `just demo/compose` | Start the default stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
@@ -57,7 +57,7 @@ integration commands:
 | `just demo/type-check [--editable]` | Type-check every project |
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
-Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
+Common service names are `lgos-db`, `lgos-demo-api`,
 `lgos-api-coding-agent`, `lgos-background-worker`,
 `lgos-files-api`, `lgos-postgres-mcp`, `lgos-bifrost`, `lgos-litellm`,
 `lgos-chainlit`, and `lgos-openwebui`. Put arguments for the underlying command
@@ -72,9 +72,10 @@ in both Docker groups.
 
 `just --usage demo/api` shows its options and defaults. The `--port` option
 overrides the dotenv value; exported variables work too, for example
-`LGOS_A_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
+`LGOS_DEMO_API_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
 inspect commands. To validate Compose using the template without creating an
-environment file, run:
+environment file, check both gateways in published, development, and telemetry
+configurations:
 
 ```bash
 just --dotenv-path demo/.env.example demo/compose-config
@@ -131,7 +132,7 @@ Live test recipes read their endpoints from the `DEMO_TEST_*` values in
 
 ```bash
 just demo/test-postgres --uri postgresql://lgos:lgos@localhost:5432/lgos --editable
-just demo/test-direct --base-urls http://localhost:3104/v1 --files-url http://localhost:3106/v1
+just demo/test-direct --base-url http://localhost:3104/v1 --files-url http://localhost:3106/v1
 just demo/test-litellm --base-url https://litellm.example.com/v1 -- --verbose
 ```
 
@@ -183,8 +184,8 @@ Graph-specific settings use the `DEMO_API_` prefix:
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
-| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
-| `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
+| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the demo API and worker; leave it out of committed files outside this local template. |
+| `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the demo API and worker. |
 | `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |
 
 The background demo uses the `create_hatchet_task` defaults: 30-minute

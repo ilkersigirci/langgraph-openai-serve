@@ -18,7 +18,7 @@ Configure `demo/.env` using the coding-agent settings in `.env.example`, then ru
 just demo/compose --dev
 ```
 
-Select `lgos-api-coding-agent/coding-agent` in either UI. Try:
+Select `lgos/coding-agent` in either UI. Try:
 “Create a Python calculator with a unittest suite, run it, and report the result.”
 Follow up with “Add division and test division by zero.”
 

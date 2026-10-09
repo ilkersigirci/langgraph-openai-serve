@@ -138,8 +138,8 @@ The prompt is guidance, not authorization. Mutation is blocked in layers:
 | Network and authentication | DBHub publishes no host port, adds its Compose service name to the host-header allowlist, and requires a bearer token on MCP requests. Its container is read-only, drops Linux capabilities, and has resource limits. See DBHub's [authentication and allowed-host options](https://dbhub.ai/config/command-line). |
 | Gateway and UI | Each gateway allowlists exactly six downstream reports for the shared UI credential. The UIs attach that governed MCP surface only to models that advertise `mcp_tools`; this graph independently discards every function name outside its six reports. |
 
-API A and Chainlit create their persistence tables at startup. Once both are
-healthy, the database setup job replaces the reporting views, revokes broad
+The demo API and Chainlit create their persistence tables at startup. Once both
+are healthy, the database setup job replaces the reporting views, revokes broad
 access, and grants only those views in one transaction before DBHub starts.
 PostgreSQL privileges remain the final data-access authority.
 
@@ -163,15 +163,14 @@ client:
 
 === "Chainlit"
 
-    Open `http://localhost:3002`, select `lgos-a/mcp-postgres` or
-    `lgos-b/mcp-postgres`, then open the MCP menu and click **Connect** beside
-    `lgos-gateway`.
+    Open `http://localhost:3002`, select `lgos/mcp-postgres`, then open
+    the MCP menu and click **Connect** beside `lgos-gateway`.
 
 === "Open WebUI"
 
-    Open `http://localhost:3003`, select `LGOS / lgos-a/mcp-postgres` or
-    `LGOS / lgos-b/mcp-postgres`, and keep streaming enabled. The gateway MCP
-    connection is already attached to these Workspace Models.
+    Open `http://localhost:3003`, select `LGOS / lgos/mcp-postgres`, and
+    keep streaming enabled. The gateway MCP connection is already attached to
+    the Workspace Model.
 
 Send one prompt per turn so each answer uses fresh database evidence:
 

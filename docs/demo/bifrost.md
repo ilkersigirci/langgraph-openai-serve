@@ -1,9 +1,9 @@
 # Bifrost Gateway
 
-The Compose stack runs API A, API B, and the coding-agent API behind one pinned
-Bifrost gateway. API A and API B share the demo image and graph set; the
-coding-agent API serves its own graph. Their separate provider identities
-demonstrate how independently deployed APIs can share one proxy endpoint. The configuration at
+The Compose stack runs the demo API and the coding-agent API behind one pinned
+Bifrost gateway. The demo API serves the example graphs; the coding-agent
+API serves its own graph. Both use the public `lgos/` model namespace while
+remaining independently deployed. The configuration at
 `demo/docker/configs/bifrost/config.json` belongs to the demo, not the LGOS
 package.
 
@@ -35,9 +35,8 @@ built-in `openai` provider for upstream model and vector-store requests:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
-| `lgos-a` | `lgos-demo-api-a:8000` | `lgos-a/simple-graph` |
-| `lgos-b` | `lgos-demo-api-b:8000` | `lgos-b/simple-graph` |
-| `lgos-api-coding-agent` | `lgos-api-coding-agent:8000` | `lgos-api-coding-agent/coding-agent` |
+| `lgos` | `lgos-demo-api:8000` | `lgos/simple-graph` |
+| `coding-agent` (routing target) | `lgos-api-coding-agent:8000` | `lgos/coding-agent` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
 | `openai` | `api.openai.com` | `openai/gpt-4.1-mini` and `openai/gpt-6-luna`; graph, embedding, and speech models, plus vector-store passthrough |
 
@@ -74,23 +73,29 @@ catalog = OpenAI(
     api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
 )
 for model in catalog.models.list().data:
-    if model.owned_by == "langgraph-openai-serve":
+    if model.id.startswith("lgos/"):
         attributes = model.model_extra["additional_attributes"]
         metadata = json.loads(attributes["lgos"])
         print(model.id, metadata["description"], metadata["features"])
 ```
 
 Bifrost's catalog owns the provider-qualified IDs. With Bifrost selected, the
-UIs send a catalog ID such as `lgos-b/simple-graph` unchanged to native
+UIs send a catalog ID such as `lgos/simple-graph` unchanged to native
 `/openai/v1/responses`. Bifrost selects the provider from that prefix and
-forwards `simple-graph` upstream. The same catalog response supplies complete
+forwards `simple-graph` upstream. The `coding-agent` alias on `lgos` makes
+`lgos/coding-agent` discoverable, and a native governance routing rule sends it
+to the separate `coding-agent` provider. Model listing is disabled on that
+provider, so it does not publish another public ID. Bifrost aliases omit
+`owned_by`; the UIs identify graph models by the `lgos/` namespace.
+
+The same catalog response supplies complete
 LGOS descriptions, features, and client settings through
 `additional_attributes.lgos`, encoded as a JSON string. Bifrost also displays
 `additional_attributes.description` in its model editor.
 
 !!! warning "Bifrost ignores `x-model-provider` on Responses"
 
-    A bare `simple-graph` with `x-model-provider: lgos-b` is spread across every
+    A bare `simple-graph` with `x-model-provider: lgos` is spread across every
     provider the virtual key allows for that model, so keep the provider in the
     model ID.
 
@@ -109,7 +114,7 @@ model attributes only on pricing rows, and only its pricing datasheet creates
 those rows. Compose therefore runs two jobs from the demo API image:
 
 1. `lgos-bifrost-catalog` runs before Bifrost starts. It reads every graph's
-   complete detail from all three graph APIs and writes a datasheet of zero-priced
+   complete detail from both graph APIs and writes a datasheet of zero-priced
    Responses rows, plus the matching attributes, under
    `demo/docker/volumes/bifrost/catalog/`. Bifrost loads that datasheet through
    `framework.pricing.pricing_url`; with an empty config store, it does not
@@ -132,8 +137,13 @@ just demo/sync-openwebui
 Omit `--dev` when using published images. Chainlit rereads the catalog when a
 profile is selected. Open WebUI's generated Workspace Models need the second
 command to refresh their descriptions and forms. Add independently deployed
-APIs to the Bifrost provider configuration and to the catalog job's
-`--source PROVIDER=URL` arguments.
+APIs to the catalog job with another `--source-url URL`. Graph IDs must be
+unique across APIs. Add the backend provider with model listing disabled and
+allow it on the virtual key, because Bifrost checks the routed provider. Then
+expose its graph IDs as aliases on `lgos` and route them with native
+governance rules, following the coding-agent configuration. For replicas of
+the same API, keep the same provider and point it at a stable service URL.
+A failed source or duplicate graph ID leaves the previous catalog intact.
 
 The gateway's SQLite config store is ephemeral, so a restarted or recreated
 gateway loses the attributes. `just demo/compose` republishes them; after
@@ -154,7 +164,7 @@ malformed metadata.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, speech, and MCP requests. Bifrost loads it as one native virtual key whose
-provider policies allow `lgos-a`, `lgos-b`, `lgos-api-coding-agent`, and `lgos-files`, plus only the
+provider policies allow `lgos`, `coding-agent`, and `lgos-files`, plus only the
 default graph, embedding, and speech models on `openai`. The graph APIs and
 coding agent present the same key for their model calls, so add any other
 `DEMO_API_OPENAI_*` model to the virtual key's `openai` allowlist. The key is
@@ -183,8 +193,8 @@ that pool.
 
 ## Configuration Boundary
 
-All Bifrost custom providers use `openai` as their base provider. `lgos-a` and
-`lgos-b` enable only model listing and native Responses. `lgos-files` enables
+All Bifrost custom providers use `openai` as their base provider. `lgos`
+enables only model listing and native Responses. `lgos-files` enables
 only Files operations and targets the standalone S3-backed demo Files service.
 Upstream base URLs omit `/v1`, and the providers on the Compose network enable
 private-network access.
@@ -213,8 +223,9 @@ the [OpenTelemetry guide](opentelemetry.md#signal-ownership).
 
 ## Background Responses
 
-The UIs create a background Response through the selected model's provider
-prefix. Retrieve and cancel carry no model, so the UIs send the same provider
+The UIs create background Responses with an `lgos/<graph>` model.
+The `lgos` provider targets the demo API, which owns the background engine.
+Retrieve and cancel carry no model, so the UIs send the same provider
 in Bifrost's `provider` query parameter; without it, Bifrost routes them to its
 built-in `openai` provider, the upstream, which does not know LGOS Responses. See
 [Background Mock](graphs/background-mock.md) for startup and

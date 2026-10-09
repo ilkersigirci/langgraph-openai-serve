@@ -236,13 +236,13 @@ def test_discovery_projects_settings_from_gateway_model_details(
         },
     )
     other_model = Model(id="gpt-5", object="model", created=1, owned_by="openai")
-    providers = ("lgos-a", "lgos-future")
+    names = ("simple-graph", "z-coding-agent")
     responses: dict[str, object] = {}
     deployments = []
     native_models = []
-    for provider in providers:
+    for name in names:
         detail = graph.model_dump()
-        if provider == "lgos-future":
+        if name == "z-coding-agent":
             detail["lgos"]["client_settings"] = {
                 "json_schema": {
                     "properties": {
@@ -255,14 +255,15 @@ def test_discovery_projects_settings_from_gateway_model_details(
             native_models.append(
                 {
                     **graph.model_dump(exclude={"lgos"}),
-                    "id": f"{provider}/simple-graph",
+                    "id": f"lgos/{name}",
+                    "owned_by": None if name == "z-coding-agent" else graph.owned_by,
                     "additional_attributes": {"lgos": json.dumps(detail["lgos"])},
                 }
             )
         else:
             deployments.append(
                 {
-                    "model_name": f"{provider}/simple-graph",
+                    "model_name": f"lgos/{name}",
                     "model_info": {"lgos": detail["lgos"]},
                 }
             )
@@ -299,8 +300,8 @@ def test_discovery_projects_settings_from_gateway_model_details(
         )
 
     assert [spec.id for spec in specs] == [
-        "lgos-a/simple-graph",
-        "lgos-future/simple-graph",
+        "lgos/simple-graph",
+        "lgos/z-coding-agent",
     ]
     for spec in specs:
         assert spec.description == "Simple graph"
@@ -332,7 +333,7 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
                     json={
                         "data": [
                             {
-                                "model_name": "lgos-a/proxy-model",
+                                "model_name": "lgos/proxy-model",
                                 "model_info": {"lgos": {"features": []}},
                             }
                         ]
@@ -345,7 +346,7 @@ def test_discover_workspace_models_keeps_limited_models_visible() -> None:
             client, gateway=gateway_config("litellm", "https://gateway.example")
         )
 
-    assert specs == (WorkspaceModelSpec(id="lgos-a/proxy-model", fields=()),)
+    assert specs == (WorkspaceModelSpec(id="lgos/proxy-model", fields=()),)
 
 
 def test_workspace_model_spec_rejects_oversized_openwebui_ids() -> None:
@@ -523,7 +524,7 @@ def test_workspace_model_declares_lgos_settings_as_openwebui_chat_variables() ->
 def test_server_tool_workspace_model_has_fixed_chat_controls() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="lgos-a/server-tool",
+        id="lgos/server-tool",
         description="Server tools",
         fields=(),
     )
@@ -547,7 +548,7 @@ def test_client_tool_model_selects_the_gateway_connection() -> None:
         client,
         (
             WorkspaceModelSpec(
-                id="lgos-a/database-assistant",
+                id="lgos/database-assistant",
                 description="Database assistant",
                 fields=(),
                 supports_mcp_tools=True,
@@ -562,7 +563,7 @@ def test_client_tool_model_selects_the_gateway_connection() -> None:
 def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="lgos-a/advanced-graph",
+        id="lgos/advanced-graph",
         description="Advanced graph",
         fields=(),
         supports_mcp_tools=True,
@@ -582,7 +583,7 @@ def test_advanced_graph_workspace_model_has_web_search_and_mcp() -> None:
 def test_background_workspace_model_has_delivery_control() -> None:
     client = _client([])
     spec = WorkspaceModelSpec(
-        id="lgos-a/background-mock",
+        id="lgos/background-mock",
         description="Background report",
         fields=(),
         supports_background=True,
@@ -620,14 +621,14 @@ def test_simple_uservalves_model_reuses_pipe_without_chat_variable_controls(
         [
             {
                 "id": "lgos.uservalves_simple",
-                "base_model_id": "generic.lgos-a/simple-graph",
+                "base_model_id": "generic.lgos/simple-graph",
             }
         ]
         if existing
         else []
     )
     spec = WorkspaceModelSpec(
-        id="lgos-a/simple-graph",
+        id="lgos/simple-graph",
         description="Simple graph",
         fields=({"key": "use_history", "type": "checkbox", "default": False},),
     )

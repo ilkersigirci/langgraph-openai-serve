@@ -65,7 +65,7 @@ async def test_answer_gets_a_speech_button_when_a_speech_model_is_set(
     monkeypatch.setattr(chainlit_context.emitter, "send_element", send_element)
     if not speech:
         monkeypatch.setattr(audio.settings, "AUDIO_TTS_MODEL", None)
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     fake_gateway.replies.append(streamed(response(message("Paris."))))
 
     await chat.on_message(user_message("Capital of France?"))

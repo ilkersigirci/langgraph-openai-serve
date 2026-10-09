@@ -58,23 +58,14 @@ x-lgos-demo-api: &lgos-demo-api
     retries: 10
 
 services:
-  lgos-demo-api-a:
+  lgos-demo-api:
     <<: *lgos-demo-api
-    container_name: lgos-demo-api-a
+    container_name: lgos-demo-api
     depends_on:
       lgos-db:
         condition: service_healthy
     ports:
-      - "$LGOS_A_PORT:8000"
-
-  lgos-demo-api-b:
-    <<: *lgos-demo-api
-    container_name: lgos-demo-api-b
-    depends_on:
-      lgos-db:
-        condition: service_healthy
-    ports:
-      - "$LGOS_B_PORT:8000"
+      - "$LGOS_DEMO_API_PORT:8000"
 
   lgos-background-worker:
     <<: *lgos-demo-api

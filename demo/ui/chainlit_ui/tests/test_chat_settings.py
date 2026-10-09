@@ -72,11 +72,11 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
     fake_gateway.replies.append(
         model_info(
             {
-                "lgos-a/file-input": {
+                "lgos/file-input": {
                     "description": "Files",
                     "features": ["file_inputs"],
                 },
-                "lgos-a/stripped": {"features": []},
+                "lgos/stripped": {"features": []},
             }
         )
     )
@@ -91,8 +91,8 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
         )
         for profile in profiles
     ] == [
-        ("lgos-a/file-input", "Files", True),
-        ("lgos-a/stripped", LIMITED_FUNCTIONALITY_MESSAGE, False),
+        ("lgos/file-input", "Files", True),
+        ("lgos/stripped", LIMITED_FUNCTIONALITY_MESSAGE, False),
     ]
 
 
@@ -100,7 +100,7 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
     ("profile", "features", "saved", "offered", "tools"),
     [
         (
-            "lgos-a/background-report",
+            "lgos/background-report",
             ["background"],
             {BACKGROUND_SETTING_ID: True},
             {STREAMING_SETTING_ID: True, BACKGROUND_SETTING_ID: True},
@@ -118,7 +118,7 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
             [PACKAGE_VERSION_TOOL, {"type": "web_search"}],
         ),
         (
-            "lgos-a/advanced-graph",
+            "lgos/advanced-graph",
             ["mcp_tools"],
             {WEB_SEARCH_SETTING_ID: True},
             {STREAMING_SETTING_ID: True, WEB_SEARCH_SETTING_ID: True},
@@ -170,7 +170,7 @@ async def test_selected_settings_reach_the_responses_request(
         "assistant_name": "Guide",
     }
     await select_profile(
-        fake_gateway, "lgos-a/simple-graph", client_settings=RUNTIME_SETTINGS
+        fake_gateway, "lgos/simple-graph", client_settings=RUNTIME_SETTINGS
     )
     fake_gateway.replies.append(reply(response(message("Complete answer"))))
 
@@ -178,7 +178,7 @@ async def test_selected_settings_reach_the_responses_request(
 
     assert fake_gateway.bodies("/v1/responses") == [
         {
-            "model": "lgos-a/simple-graph",
+            "model": "lgos/simple-graph",
             "input": [{"role": "user", "content": "Hello"}],
             "tools": [],
             "user": "demo-user",
@@ -198,7 +198,7 @@ async def test_selected_settings_reach_the_responses_request(
     "model_reply",
     [
         httpx2.Response(503, json={"error": "unavailable"}),
-        model_info({"lgos-a/simple-graph": {"features": []}}),
+        model_info({"lgos/simple-graph": {"features": []}}),
     ],
     ids=["retrieval-failed", "invalid-metadata"],
 )
@@ -210,7 +210,7 @@ async def test_limited_metadata_keeps_saved_settings_with_a_warning(
 ) -> None:
     send_toast = AsyncMock()
     monkeypatch.setattr(chainlit_context.emitter, "send_toast", send_toast)
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     chainlit_context.session.chat_settings = {"mode": "detailed"}
     fake_gateway.replies.append(model_reply)
 
@@ -231,7 +231,7 @@ async def test_malformed_runtime_settings_keep_the_model_features(
 
     await select_profile(
         fake_gateway,
-        "lgos-a/simple-graph",
+        "lgos/simple-graph",
         features=["background"],
         client_settings={"json_schema": {}},
     )

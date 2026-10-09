@@ -359,15 +359,14 @@ maintained UI:
 
 === "Chainlit"
 
-    Open `http://localhost:3002` and select `lgos-a/advanced-graph` or
-    `lgos-b/advanced-graph`. Enable **Web search** for public research. Before
-    the MCP prompt, open the MCP menu and click **Connect** beside
-    `lgos-gateway`.
+    Open `http://localhost:3002` and select `lgos/advanced-graph`.
+    Enable **Web search** for public research. Before the MCP prompt, open the
+    MCP menu and click **Connect** beside `lgos-gateway`.
 
 === "Open WebUI"
 
     Open `http://localhost:3003` and select
-    **LGOS / lgos-a/advanced-graph** or **LGOS / lgos-b/advanced-graph**.
+    **LGOS / lgos/advanced-graph**.
     Enable the **Web search** Chat Variable for public research. The gateway MCP
     connection is already attached to the generated Workspace Model.
 
@@ -407,7 +406,7 @@ client = OpenAI(
     base_url=gateway_url,
     api_key=os.environ["OPENAI_GATEWAY_API_KEY"],
 )
-model = "lgos-a/advanced-graph"
+model = "lgos/advanced-graph"
 files_query = {"provider": "litellm_proxy"}
 
 

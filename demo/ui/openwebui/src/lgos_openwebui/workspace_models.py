@@ -220,7 +220,7 @@ def sync_workspace_models(
         payloads.extend(
             (_hidden_base_model_payload(spec), _workspace_model_payload(spec))
         )
-        if spec.id == "lgos-a/simple-graph" and not spec.limited:
+        if spec.id == "lgos/simple-graph" and not spec.limited:
             simple_model = _workspace_model_payload(spec)
             # Its Filter supplies settings instead of Chat Variables.
             simple_model.update(

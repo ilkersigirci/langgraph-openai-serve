@@ -54,7 +54,7 @@ def response(
             "id": id,
             "object": "response",
             "created_at": 0,
-            "model": "lgos-a/test",
+            "model": "lgos/test",
             "status": status,
             "output": list(output),
             "parallel_tool_calls": True,

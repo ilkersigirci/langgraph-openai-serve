@@ -139,8 +139,8 @@ settings](reference.md#opentelemetry-settings).
     just demo/up lgos-postgres-mcp --wait
     ```
 
-    Once API A and Chainlit are healthy, and so have created their tables, the
-    one-shot `lgos-mcp-db-setup` job creates or updates the dedicated `lgos_mcp`
+    Once the demo API and Chainlit are healthy and have created their tables,
+    the one-shot `lgos-mcp-db-setup` job creates or updates the dedicated `lgos_mcp`
     login and four curated views over live Chainlit users/conversations and
     pending LGOS interrupts. The role can read only those views. The pinned
     DBHub service then exposes six fixed reports only inside the Compose
@@ -153,15 +153,15 @@ settings](reference.md#opentelemetry-settings).
 === "Graph APIs"
 
     ```bash
-    just demo/up lgos-demo-api-a
-    just demo/up lgos-demo-api-b
+    just demo/up lgos-demo-api
+    just demo/up lgos-api-coding-agent
     ```
 
     Run each attached service in a separate terminal. Compose starts the shared
     PostgreSQL dependency automatically.
 
-    - `lgos-a`: `http://localhost:3004/v1`
-    - `lgos-b`: `http://localhost:3005/v1`
+    - `lgos-demo-api`: `http://localhost:3004/v1`
+    - `lgos-api-coding-agent`: gateway access via `lgos/coding-agent`
 
     For an independently deployed LiteLLM API, run the shared one-shot
     [model-sync job](litellm-sync.md) after the deployment's health check.
@@ -279,15 +279,13 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     Create the network by starting the demo backends first, for example with
-    `just demo/up lgos-demo-api-a`,
-    `just demo/up lgos-demo-api-b`,
+    `just demo/up lgos-demo-api`,
     `just demo/up lgos-api-coding-agent`, and
     `just demo/up lgos-files-api` in separate terminals, then
     `just demo/up lgos-postgres-mcp --wait`.
-    The existing gateway can then resolve `lgos-demo-api-a`,
-    `lgos-demo-api-b`, `lgos-api-coding-agent`, `lgos-files-api`, and
-    `lgos-postgres-mcp` using the
-    bundled sync, Files, and MCP configuration examples. For another host,
+    The existing gateway can then resolve `lgos-demo-api`, `lgos-api-coding-agent`,
+    `lgos-files-api`, and `lgos-postgres-mcp` using the bundled sync, Files, and
+    MCP configuration examples. For another host,
     replace those upstream URLs with addresses reachable from that gateway.
 
     The external deployment continues to own its database, TLS, credentials,
@@ -344,8 +342,7 @@ settings](reference.md#opentelemetry-settings).
     and LiteLLM's native
     [Responses endpoint](https://docs.litellm.ai/docs/response_api). Select an
     API with a provider-qualified model, such as
-    `lgos-a/custom-input-output-context` or
-    `lgos-b/custom-input-output-context`. The shared demo PostgreSQL service
+    `lgos/custom-input-output-context`. The shared demo PostgreSQL service
     keeps LiteLLM's Admin UI and gateway-management records in its own
     `litellm` schema; graph execution state remains owned by LGOS. LiteLLM's
     standard `files_settings` route uses `provider=litellm_proxy` to isolate

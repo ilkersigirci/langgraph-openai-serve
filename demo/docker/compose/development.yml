@@ -70,10 +70,7 @@ services:
         target: /opt/langgraph-openai-serve/src/langgraph_openai_serve
         read_only: true
 
-  lgos-demo-api-a:
-    <<: *lgos-demo-api-development
-
-  lgos-demo-api-b:
+  lgos-demo-api:
     <<: *lgos-demo-api-development
 
   lgos-background-worker:

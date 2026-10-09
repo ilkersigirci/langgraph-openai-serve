@@ -79,7 +79,7 @@ must route that ID to any LGOS API replica using the same background engine.
 | --- | --- | --- |
 | Direct LGOS | Pass | Replicas must use the same background engine. |
 | LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for LiteLLM parser compatibility. |
-| Bifrost `/openai/v1` | Pass | Send the create model's provider prefix, such as `lgos-a`, as the `provider` query parameter on retrieve and cancel; without it, Bifrost uses its built-in `openai` provider. |
+| Bifrost `/openai/v1` | Pass | Send the create model's provider prefix, such as `lgos`, as the `provider` query parameter on retrieve and cancel; without it, Bifrost uses its built-in `openai` provider. |
 
 These are results for the pinned demo images and configurations, not promises
 about other gateway releases. Run
@@ -90,7 +90,7 @@ between create and retrieve as part of deployment acceptance.
 ## Routing
 
 A gateway may expose provider-qualified model IDs such as
-`lgos-a/simple-graph`. Its native Responses route may require a documented
+`lgos/simple-graph`. Its native Responses route may require a documented
 provider selector or may translate the prefix itself. Keep that behavior in
 gateway configuration and send the unqualified graph name upstream. Clients
 connected directly to LGOS use the registered graph name unchanged.

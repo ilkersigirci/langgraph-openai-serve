@@ -1,7 +1,7 @@
 # Demo Architecture
 
 The demo is a complete deployment of `langgraph-openai-serve` (LGOS): two chat
-UIs, an AI gateway, three LGOS APIs, and the services they share. It is shaped
+UIs, an AI gateway, two LGOS APIs, and the services they share. It is shaped
 like a production system on purpose. Every component is an independent
 application, and the request path between them is OpenAI-compatible HTTP and
 MCP, so you can replace a UI, the gateway, or an LGOS API without changing the
@@ -30,7 +30,7 @@ flowchart TB
 
   subgraph lgos["LGOS APIs"]
     direction LR
-    api["Demo API A and B<br/>example graphs"]
+    api["Demo API<br/>example graphs"]
     coding["Coding-agent API<br/>Codex"]
   end
 
@@ -57,7 +57,7 @@ optional background worker and Hatchet are shown in
 | Chainlit | `lgos-chainlit` | Chat UI built on `chainlit-utils`. | [Chainlit Client](chainlit.md) |
 | Open WebUI | `lgos-openwebui` | Chat UI whose synced Generic Function sends each chat to the gateway. Workspace Models expose each graph and its settings. | [Open WebUI Functions](open-webui.md) |
 | AI gateway | `lgos-litellm` or `lgos-bifrost` | Authenticates callers, routes graph models to their API, serves the catalog with LGOS metadata, routes Files and MCP, and forwards model, speech, and vector-store calls upstream. | [Bifrost Gateway](bifrost.md), [LiteLLM Model Sync](litellm-sync.md) |
-| Demo API A and B | `lgos-demo-api-a`, `lgos-demo-api-b` | One image running `lgos serve` with the demo graph registry. Two copies show independent APIs behind one gateway, sharing PostgreSQL state. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
+| Demo API | `lgos-demo-api` | One image running `lgos serve` with the demo graph registry. It runs alongside the independent coding-agent API behind one gateway. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
 | Coding-agent API | `lgos-api-coding-agent` | An LGOS app that serves Codex as one graph and edits a shared workspace directory. | [Coding Agent](graphs/coding-agent.md) |
 | Background worker | `lgos-background-worker` | `lgos worker` with the demo registry. Runs background Responses delivered by Hatchet. Enabled by the `background` profile. | [Background Mock](graphs/background-mock.md) |
 | Files API | `lgos-files-api` | OpenAI Files API over S3, giving every graph API one file namespace. | [Run the Files API](files-api.md) |
@@ -90,7 +90,7 @@ sequenceDiagram
   participant API as LGOS API
   participant LLM as Upstream model API
 
-  UI->>GW: Responses request, model lgos-a/simple-graph
+  UI->>GW: Responses request, model lgos/simple-graph
   GW->>API: same request, model simple-graph
   API->>API: run the graph on the conversation
   API->>GW: Chat Completions call, model openai/gpt-4.1-mini
@@ -99,7 +99,8 @@ sequenceDiagram
   API-->>UI: Responses stream, through the gateway
 ```
 
-The model ID's prefix tells the gateway which LGOS API serves the graph. The
+The `lgos/` prefix identifies graph models. Gateway routing maps each graph
+to its API without exposing the deployment name in the public model ID. The
 API runs the graph and streams standard Responses events: text, status
 updates, citations, and tool calls. When the graph needs an LLM, it calls the
 same gateway with an `openai/*` model ID, so the API never holds a provider
@@ -149,7 +150,7 @@ shortcuts that a real deployment replaces:
 | --- | --- | --- |
 | Gateway access | One static key shared by the UIs and the graph APIs; Bifrost's admin API has no authentication | Per-user or per-service credentials or SSO, an authenticated admin API, and TLS |
 | UI login | Chainlit mock login | OAuth; see [Chainlit production notes](chainlit.md#production-notes) |
-| LGOS APIs | No authentication; host ports published for direct tests | Reachable only from the gateway, or behind authentication middleware |
+| LGOS APIs | No authentication; demo API host port published for direct tests | Reachable only from the gateway, or behind authentication middleware |
 | PostgreSQL | One container shared by every owner | Managed PostgreSQL with backups, monitoring, and failover; see [Docker Compose](docker.md#demo-services) |
-| Scaling | Two API replicas and one Files API process | More API and worker replicas behind the gateway; Files API replicas over the same bucket |
+| Scaling | Demo API, coding-agent API, and one Files API process | More API and worker replicas behind the gateway; Files API replicas over the same bucket |
 | Provider keys | `OPENAI_UPSTREAM_API_KEY` on the bundled gateway | Unchanged: only the gateway holds provider keys |

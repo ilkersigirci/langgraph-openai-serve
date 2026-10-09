@@ -74,19 +74,13 @@
         "is_active": true,
         "provider_configs": [
           {
-            "provider": "lgos-a",
+            "provider": "lgos",
             "allowed_models": ["*"],
             "key_ids": ["*"],
             "weight": 1.0
           },
           {
-            "provider": "lgos-b",
-            "allowed_models": ["*"],
-            "key_ids": ["*"],
-            "weight": 1.0
-          },
-          {
-            "provider": "lgos-api-coding-agent",
+            "provider": "coding-agent",
             "allowed_models": ["*"],
             "key_ids": ["*"],
             "weight": 1.0
@@ -111,20 +105,40 @@
           }
         ]
       }
+    ],
+    "routing_rules": [
+      {
+        "id": "lgos-coding-agent",
+        "name": "LGOS coding agent",
+        "enabled": true,
+        "cel_expression": "provider == 'lgos' && model == 'coding-agent'",
+        "targets": [
+          {
+            "provider": "coding-agent",
+            "model": "coding-agent",
+            "weight": 1.0
+          }
+        ],
+        "scope": "global",
+        "priority": 0
+      }
     ]
   },
   "providers": {
-    "lgos-a": {
+    "lgos": {
       "keys": [
         {
-          "name": "lgos-a",
+          "name": "lgos",
           "value": "DUMMY",
           "models": ["*"],
-          "weight": 1.0
+          "weight": 1.0,
+          "aliases": {
+            "coding-agent": "coding-agent"
+          }
         }
       ],
       "network_config": {
-        "base_url": "http://lgos-demo-api-a:8000",
+        "base_url": "http://lgos-demo-api:8000",
         "allow_private_network": true
       },
       "custom_provider_config": {
@@ -138,34 +152,10 @@
         }
       }
     },
-    "lgos-b": {
+    "coding-agent": {
       "keys": [
         {
-          "name": "lgos-b",
-          "value": "DUMMY",
-          "models": ["*"],
-          "weight": 1.0
-        }
-      ],
-      "network_config": {
-        "base_url": "http://lgos-demo-api-b:8000",
-        "allow_private_network": true
-      },
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "list_models": true,
-          "responses": true,
-          "responses_stream": true,
-          "responses_retrieve": true,
-          "responses_cancel": true
-        }
-      }
-    },
-    "lgos-api-coding-agent": {
-      "keys": [
-        {
-          "name": "lgos-api-coding-agent",
+          "name": "coding-agent",
           "value": "DUMMY",
           "models": ["*"],
           "weight": 1.0
@@ -179,7 +169,7 @@
       "custom_provider_config": {
         "base_provider_type": "openai",
         "allowed_requests": {
-          "list_models": true,
+          "list_models": false,
           "responses": true,
           "responses_stream": true
         }

@@ -36,7 +36,7 @@ def test_packaged_chainlit_config_enables_file_attachments() -> None:
 
 
 def _attach_notes(chainlit_context, tmp_path: Path) -> cl.Message:
-    chainlit_context.session.chat_profile = "lgos-a/file-input"
+    chainlit_context.session.chat_profile = "lgos/file-input"
     # Chainlit applies the selected profile's overrides to WebSocket sessions.
     chainlit_context.session.config = config.with_overrides(file_upload_overrides(True))
     notes = tmp_path / "notes.txt"
@@ -99,7 +99,7 @@ async def test_attachments_stay_in_the_client_tool_continuation(
     tmp_path: Path,
 ) -> None:
     turn = _attach_notes(chainlit_context, tmp_path)
-    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    chainlit_context.session.chat_profile = "lgos/persistent-plot-agent"
     chart = function_call(
         "display_file",
         json.dumps(

@@ -31,16 +31,12 @@ services:
     <<: *lgos-bifrost-catalog-job
     command:
       - prepare
-      - --source
-      - lgos-a=http://lgos-demo-api-a:8000/v1
-      - --source
-      - lgos-b=http://lgos-demo-api-b:8000/v1
-      - --source
-      - lgos-api-coding-agent=http://lgos-api-coding-agent:8000/v1
+      - --source-url
+      - http://lgos-demo-api:8000/v1
+      - --source-url
+      - http://lgos-api-coding-agent:8000/v1
     depends_on:
-      lgos-demo-api-a:
-        condition: service_healthy
-      lgos-demo-api-b:
+      lgos-demo-api:
         condition: service_healthy
       lgos-api-coding-agent:
         condition: service_healthy
@@ -83,9 +79,7 @@ services:
       # periodically (every 10 minutes by default), so DBHub must be ready first.
       lgos-postgres-mcp:
         condition: service_healthy
-      lgos-demo-api-a:
-        condition: service_healthy
-      lgos-demo-api-b:
+      lgos-demo-api:
         condition: service_healthy
       lgos-files-api:
         condition: service_healthy

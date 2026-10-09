@@ -442,31 +442,32 @@ async def test_pipe_lists_native_litellm_model_info(
 async def test_pipe_uses_bifrost_aggregate_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    catalog_urls = []
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        assert str(request.url) == "https://bifrost.example/v1/models"
+        # A provider-listed graph, an alias (Bifrost omits its owner), and a
+        # model outside the LGOS namespace.
+        return httpx2.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "lgos/simple-graph",
+                        "object": "model",
+                        "owned_by": "langgraph-openai-serve",
+                    },
+                    {"id": "lgos/coding-agent", "object": "model"},
+                    {"id": "openai/gpt-5", "object": "model", "owned_by": "openai"},
+                ]
+            },
+        )
 
     @asynccontextmanager
-    async def catalog_client(
-        *, base_url: str, **_: object
-    ) -> AsyncGenerator[object, None]:
-        catalog_urls.append(base_url)
-        yield SimpleNamespace(
-            models=SimpleNamespace(
-                list=AsyncMock(
-                    return_value=SimpleNamespace(
-                        data=[
-                            SimpleNamespace(
-                                id="lgos-a/simple-graph",
-                                owned_by="langgraph-openai-serve",
-                            ),
-                            SimpleNamespace(
-                                id="lgos-b/simple-graph",
-                                owned_by="langgraph-openai-serve",
-                            ),
-                        ]
-                    )
-                )
-            )
-        )
+    async def catalog_client(**kwargs: Any) -> AsyncGenerator[AsyncOpenAI, None]:
+        async with AsyncOpenAI(
+            **kwargs,
+            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        ) as client:
+            yield client
 
     monkeypatch.setattr(generic_pipe, "_client", catalog_client)
     pipe = configured_pipe()
@@ -475,10 +476,15 @@ async def test_pipe_uses_bifrost_aggregate_catalog(
 
     models = await pipe.pipes()
 
-    assert catalog_urls == ["https://bifrost.example/v1"]
     assert models == [
-        {"id": "lgos-a/simple-graph", "name": "Generic / lgos-a/simple-graph"},
-        {"id": "lgos-b/simple-graph", "name": "Generic / lgos-b/simple-graph"},
+        {
+            "id": "lgos/simple-graph",
+            "name": "Generic / lgos/simple-graph",
+        },
+        {
+            "id": "lgos/coding-agent",
+            "name": "Generic / lgos/coding-agent",
+        },
     ]
 
 
@@ -546,7 +552,7 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
         configured_pipe(bundled_generic).pipe(
             {
                 **body(stream=streaming),
-                "model": "generic.lgos-a/server-tool",
+                "model": "generic.lgos/server-tool",
                 "tools": openwebui_tools,
             },
             __metadata__=chat_metadata(lgos_package_version=True, web_search=True),
@@ -572,7 +578,7 @@ async def test_bundle_maps_advanced_web_search_outside_graph_settings(
     result = await configured_pipe(bundled_generic).pipe(
         {
             **body(stream=False),
-            "model": "generic.lgos-a/advanced-graph",
+            "model": "generic.lgos/advanced-graph",
         },
         __metadata__=chat_metadata(web_search=True),
     )
@@ -660,8 +666,12 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 BACKGROUND_GATEWAYS = pytest.mark.parametrize(
     ("gateway_type", "model", "lifecycle_options"),
     [
-        ("litellm", "lgos-a/background-mock", {}),
-        ("bifrost", "lgos-b/background-mock", {"extra_query": {"provider": "lgos-b"}}),
+        ("litellm", "lgos/background-mock", {}),
+        (
+            "bifrost",
+            "lgos/background-mock",
+            {"extra_query": {"provider": "lgos"}},
+        ),
     ],
 )
 
@@ -780,7 +790,7 @@ async def test_chat_variables_of_previously_selected_models_are_not_sent(
     }
 
     result = await configured_pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos-a/advanced-graph"},
+        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
         __metadata__=metadata,
     )
 
@@ -851,7 +861,7 @@ async def test_uservalves_reach_responses_through_shared_pipe(
     }
     filtered = await Filter().inlet(request_body, {"valves": settings}, metadata)
     # Open WebUI resolves the Workspace Model to its manifold base before Pipe.
-    filtered["model"] = "generic.lgos-a/simple-graph"
+    filtered["model"] = "generic.lgos/simple-graph"
 
     result = await configured_pipe().pipe(
         filtered, __metadata__=metadata, __user__={"id": "user-123"}
@@ -859,7 +869,7 @@ async def test_uservalves_reach_responses_through_shared_pipe(
 
     assert result == "Hello."
     request = create.await_args.kwargs
-    assert request["model"] == "lgos-a/simple-graph"
+    assert request["model"] == "lgos/simple-graph"
     assert request["metadata"]["conversation_id"] == "thread-123"
     assert json.loads(request["metadata"]["lgos_settings"]) == {
         "use_history": settings.use_history,
@@ -952,7 +962,7 @@ async def test_chat_variables_reach_responses_with_their_declared_types(
     ]
 
     await configured_pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos-a/advanced-graph"},
+        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
         __metadata__={
             "chat_id": "thread-123",
             "chat_variables": chat_variables,
@@ -1005,7 +1015,7 @@ async def test_request_uses_a_native_responses_route(
         pipe.pipe(
             {
                 **body(stream=stream),
-                "model": "generic.lgos-a/interruptible-approval",
+                "model": "generic.lgos/interruptible-approval",
             },
             __metadata__={"chat_id": "thread-123"},
             __user__={"id": "user-123"},
@@ -1021,7 +1031,7 @@ async def test_request_uses_a_native_responses_route(
         request = create.await_args.kwargs
     assert base_urls == [f"https://gateway.example{base_path}"]
     # Bifrost selects the provider from the catalog ID's prefix.
-    assert request["model"] == "lgos-a/interruptible-approval"
+    assert request["model"] == "lgos/interruptible-approval"
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
@@ -1898,7 +1908,7 @@ async def test_gateway_tool_call_is_delegated_to_openwebui(
         },
     }
     request_body = {
-        "model": "generic.lgos-a/database-assistant",
+        "model": "generic.lgos/database-assistant",
         "messages": [
             {
                 "role": "user",
@@ -1946,7 +1956,7 @@ async def test_mcp_tool_execution_rejects_non_streaming_requests(
     tool_name = "lgos-gateway_database_report"
     result = await configured_pipe().pipe(
         {
-            "model": "generic.lgos-a/database-assistant",
+            "model": "generic.lgos/database-assistant",
             "messages": [{"role": "user", "content": "List the demo graphs."}],
             "stream": False,
         },

@@ -49,14 +49,20 @@ async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
         models = {
             model.id: model
             for model in catalog_models.data
-            if model.owned_by == "langgraph-openai-serve"
+            if model.id.startswith("lgos/")
         }
-        for model_id in ("lgos-a/simple-graph", "lgos-b/simple-graph"):
-            # The catalog sync publishes the complete detail extension, which
-            # the normalized /openai/v1 model routes omit.
-            attributes = (models[model_id].model_extra or {})["additional_attributes"]
-            extension = json.loads(attributes["lgos"])
-            assert set(extension["client_settings"]) == {"defaults", "json_schema"}
+        assert "lgos/coding-agent" in models
+        coding_attributes = (models["lgos/coding-agent"].model_extra or {})[
+            "additional_attributes"
+        ]
+        assert json.loads(coding_attributes["lgos"])["description"]
+        # The catalog sync publishes the complete detail extension, which
+        # the normalized /openai/v1 model routes omit.
+        attributes = (models["lgos/simple-graph"].model_extra or {})[
+            "additional_attributes"
+        ]
+        extension = json.loads(attributes["lgos"])
+        assert set(extension["client_settings"]) == {"defaults", "json_schema"}
 
         files_query = {"provider": "lgos-files"}
         uploaded = await catalog.files.create(
@@ -78,8 +84,7 @@ async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
             assert deleted.deleted is True
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_bifrost_native_responses_preserve_file_input(provider: str) -> None:
+async def test_bifrost_native_responses_preserve_file_input() -> None:
     assert BIFROST_BASE_URL is not None
     assert BIFROST_CATALOG_BASE_URL is not None
 
@@ -105,7 +110,7 @@ async def test_bifrost_native_responses_preserve_file_input(provider: str) -> No
         )
         try:
             response = await api_client.responses.create(
-                model=f"{provider}/custom-input-output-context",
+                model="lgos/custom-input-output-context",
                 input=[
                     {
                         "role": "user",
@@ -128,9 +133,8 @@ async def test_bifrost_native_responses_preserve_file_input(provider: str) -> No
             assert deleted.deleted is True
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 @BIFROST_MODEL_METADATA_XFAIL
-async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> None:
+async def test_bifrost_native_route_preserves_model_metadata() -> None:
     assert BIFROST_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -139,7 +143,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
         max_retries=0,
         timeout=10.0,
     ) as client:
-        model = await client.models.retrieve(f"{provider}/simple-graph")
+        model = await client.models.retrieve("lgos/simple-graph")
 
     model_extra = getattr(model, "model_extra", None)
     assert isinstance(model_extra, dict)
@@ -147,10 +151,7 @@ async def test_bifrost_native_route_preserves_model_metadata(provider: str) -> N
     assert set(extension["client_settings"]) == {"defaults", "json_schema"}
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_bifrost_native_responses_preserve_standard_fields(
-    provider: str,
-) -> None:
+async def test_bifrost_native_responses_preserve_standard_fields() -> None:
     assert BIFROST_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -160,7 +161,7 @@ async def test_bifrost_native_responses_preserve_standard_fields(
         timeout=10.0,
     ) as client:
         response = await client.responses.create(
-            model=f"{provider}/custom-input-output-context",
+            model="lgos/custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
             user="gateway-user",
@@ -173,8 +174,7 @@ async def test_bifrost_native_responses_preserve_standard_fields(
     assert (response.model_extra or {})["store"] is False
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None:
+async def test_bifrost_native_stream_preserves_commentary() -> None:
     assert BIFROST_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -184,7 +184,7 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
         timeout=10.0,
     ) as client:
         stream = await client.responses.create(
-            model=f"{provider}/status-events",
+            model="lgos/status-events",
             input="Build the report.",
             store=False,
             stream=True,
@@ -217,11 +217,10 @@ async def test_bifrost_native_stream_preserves_commentary(provider: str) -> None
     )
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_bifrost_native_function_output_continuation(provider: str) -> None:
+async def test_bifrost_native_function_output_continuation() -> None:
     assert BIFROST_BASE_URL is not None
-    model = f"{provider}/interruptible-approval"
-    public_request = f"Refund order ORDER-{provider.upper()}"
+    model = "lgos/interruptible-approval"
+    public_request = "Refund order ORDER-123"
 
     async with AsyncOpenAI(
         base_url=BIFROST_BASE_URL,
@@ -261,8 +260,7 @@ async def test_bifrost_native_function_output_continuation(provider: str) -> Non
     )
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_bifrost_preserves_openai_errors(provider: str) -> None:
+async def test_bifrost_preserves_openai_errors() -> None:
     assert BIFROST_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -275,7 +273,7 @@ async def test_bifrost_preserves_openai_errors(provider: str) -> None:
             # Governance rejects unknown provider-qualified models itself, so
             # request an LGOS validation error from a registered graph.
             await client.responses.create(
-                model=f"{provider}/simple-graph",
+                model="lgos/simple-graph",
                 input="Hi",
                 tools=[{"type": "custom", "name": "unknown_server_tool"}],
             )

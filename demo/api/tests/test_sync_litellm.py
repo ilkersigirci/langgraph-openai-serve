@@ -31,26 +31,82 @@ def model() -> ModelDetails:
 
 @pytest.fixture
 def source(model: ModelDetails) -> Iterator[httpx2.Client]:
+    with _source(model) as client:
+        yield client
+
+
+def _source(model: ModelDetails) -> httpx2.Client:
     def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.headers["Authorization"] == "Bearer source-key"
         if request.url.path == "/v1/models":
             return httpx2.Response(
                 200, json=ModelList(data=[model]).model_dump(mode="json")
             )
-        assert request.url.path == "/v1/models/graph"
+        assert request.url.path == f"/v1/models/{model.id}"
         return httpx2.Response(200, json=model.model_dump(mode="json"))
 
-    with httpx2.Client(
+    return httpx2.Client(
         base_url="https://source.invalid/v1/",
         headers={"Authorization": "Bearer source-key"},
         transport=httpx2.MockTransport(respond),
-    ) as client:
-        yield client
+    )
 
 
-@pytest.mark.parametrize("api_base", [None, "https://graphs.internal/v1"])
+def test_sync_combines_distinct_apis_without_pruning_their_models(
+    model: ModelDetails,
+) -> None:
+    deployments: list[dict[str, Any]] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET":
+            return httpx2.Response(200, json={"data": deployments})
+        assert request.url.path == "/model/new"
+        deployments.append(json.loads(request.content))
+        return httpx2.Response(200, json={})
+
+    with (
+        _source(model) as demo,
+        _source(model.model_copy(update={"id": "coding-agent"})) as coding,
+        httpx2.Client(
+            base_url="https://gateway.invalid/", transport=httpx2.MockTransport(respond)
+        ) as gateway,
+    ):
+        sources = {"http://demo/v1": demo, "http://coding/v1": coding}
+        assert sync_models(sources, gateway, prefix="lgos", api_key="DUMMY") == {
+            "lgos/graph": "created",
+            "lgos/coding-agent": "created",
+        }
+        assert sync_models(sources, gateway, prefix="lgos", api_key="DUMMY") == {
+            "lgos/graph": "unchanged",
+            "lgos/coding-agent": "unchanged",
+        }
+    assert {
+        item["model_name"]: item["litellm_params"]["api_base"] for item in deployments
+    } == {"lgos/graph": "http://demo/v1", "lgos/coding-agent": "http://coding/v1"}
+
+
+def test_colliding_sources_fail_before_touching_the_gateway(
+    source: httpx2.Client,
+) -> None:
+    def unexpected_request(request: httpx2.Request) -> httpx2.Response:
+        pytest.fail(f"Duplicate models must not touch the gateway: {request.url}")
+
+    with (
+        httpx2.Client(transport=httpx2.MockTransport(unexpected_request)) as gateway,
+        pytest.raises(
+            ValueError, match="Duplicate upstream model across sources: graph"
+        ),
+    ):
+        sync_models(
+            {"http://demo/v1": source, "http://coding/v1": source},
+            gateway,
+            prefix="lgos",
+            api_key="DUMMY",
+        )
+
+
 def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
-    source: httpx2.Client, model: ModelDetails, api_base: str | None
+    source: httpx2.Client, model: ModelDetails
 ) -> None:
     deployments: list[dict[str, Any]] = []
     writes: list[dict[str, Any]] = []
@@ -92,15 +148,14 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
             "prefix": "research",
             "api_key": "source-key",
         }
-        if api_base is not None:
-            args["api_base"] = api_base
-        assert sync_models(source, gateway, **args) == {"research/graph": "created"}
+        sources = {"https://graphs.internal/v1": source}
+        assert sync_models(sources, gateway, **args) == {"research/graph": "created"}
         deployment = deployments[0]
         assert deployment["model_info"]["lgos"] == model.lgos.model_dump(mode="json")
         assert deployment["model_info"]["lgos_sync"] is True
         assert deployment["litellm_params"] == {
             "model": "openai/graph",
-            "api_base": api_base or "https://source.invalid/v1",
+            "api_base": "https://graphs.internal/v1",
             "api_key": "source-key",
             "allowed_openai_params": ["user"],
         }
@@ -110,13 +165,13 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
         model.lgos.description = "Updated graph"
         model.lgos.client_settings = None
 
-        assert sync_models(source, gateway, **args) == {"research/graph": "updated"}
+        assert sync_models(sources, gateway, **args) == {"research/graph": "updated"}
         assert deployment["model_info"]["lgos"] == model.lgos.model_dump(mode="json")
         assert deployment["model_info"]["input_cost_per_token"] == pytest.approx(
             0.00001
         )
         assert deployment["litellm_params"] == operator_params
-        assert sync_models(source, gateway, **args) == {"research/graph": "unchanged"}
+        assert sync_models(sources, gateway, **args) == {"research/graph": "unchanged"}
         assert len(writes) == 2
 
 
@@ -181,17 +236,18 @@ def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
             transport=httpx2.MockTransport(gateway_response),
         ) as gateway,
     ):
-        args = {"api_base": "https://graphs.internal/v1", "api_key": "source-key"}
+        args = {"api_key": "source-key"}
+        sources = {"https://graphs.internal/v1": source}
         expected = {
             "research/graph": "created",
             "research/retired": "deleted",
         }
         assert (
-            sync_models(source, gateway, prefix="research", dry_run=True, **args)
+            sync_models(sources, gateway, prefix="research", dry_run=True, **args)
             == expected
         )
         assert deleted_ids == []
-        assert sync_models(source, gateway, prefix="research", **args) == expected
+        assert sync_models(sources, gateway, prefix="research", **args) == expected
 
     assert deleted_ids == ["retired-id"]
     assert {item["model_name"] for item in deployments} == {
@@ -228,14 +284,20 @@ def test_dry_run_and_failed_discovery_never_write(
     ):
         args = {
             "prefix": "research",
-            "api_base": "https://graphs.internal/v1",
             "api_key": "source-key",
         }
-        assert sync_models(source, gateway, dry_run=True, **args) == {
-            "research/graph": "created"
-        }
+        assert sync_models(
+            {"https://graphs.internal/v1": source}, gateway, dry_run=True, **args
+        ) == {"research/graph": "created"}
         with pytest.raises(httpx2.HTTPStatusError):
-            sync_models(unavailable, gateway, **args)
+            sync_models(
+                {
+                    "https://graphs.internal/v1": source,
+                    "https://failing.internal/v1": unavailable,
+                },
+                gateway,
+                **args,
+            )
 
 
 @pytest.mark.parametrize(
@@ -280,10 +342,9 @@ def test_ambiguous_or_non_sync_owned_deployments_are_not_modified(
         pytest.raises(ValueError, match="ambiguous or non-sync-owned deployment"),
     ):
         sync_models(
-            source,
+            {"https://graphs.internal/v1": source},
             gateway,
             prefix="research",
-            api_base="https://graphs.internal/v1",
             api_key="source-key",
         )
 
@@ -297,4 +358,4 @@ def test_invalid_namespace_is_rejected_before_discovery(prefix: str) -> None:
         httpx2.Client(transport=httpx2.MockTransport(unexpected_request)) as client,
         pytest.raises(ValueError, match="Model namespace"),
     ):
-        sync_models(client, client, prefix=prefix, api_base="unused", api_key="unused")
+        sync_models({"unused": client}, client, prefix=prefix, api_key="unused")

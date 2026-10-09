@@ -10,10 +10,7 @@ from openai.types.responses import Response, ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 from pydantic.json_schema import SkipJsonSchema
 
-from .api import (
-    _client,
-    _list_model_ids,
-)
+from .api import _client
 from .contracts import (
     BACKGROUND_SETTING_NAME,
     DISPLAY_FILE_TOOL_NAME,
@@ -32,6 +29,7 @@ from .gateway import (
     GatewayConfig,
     GatewayRoot,
     GatewayType,
+    bifrost_models,
     gateway_config,
     litellm_models,
 )
@@ -109,7 +107,8 @@ class Pipe:
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
             if gateway.provider_routing:
-                model_ids = await _list_model_ids(client)
+                catalog = await client.models.list()
+                model_ids = [model.id for model in bifrost_models(catalog.data)]
             else:
                 payload = await client.get(
                     f"{gateway.root_url}/model/info", cast_to=object

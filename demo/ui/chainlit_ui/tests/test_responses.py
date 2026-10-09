@@ -60,7 +60,7 @@ async def test_streamed_commentary_goes_to_the_task_list(
     task_lists,
     phase: str | None,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/status-events"
+    chainlit_context.session.chat_profile = "lgos/status-events"
     fake_gateway.replies.append(
         streamed(
             response(
@@ -89,7 +89,7 @@ async def test_status_steps_finish_and_stay_out_of_later_model_context(
     background: bool,
 ) -> None:
     if background:
-        await _select_background_profile(fake_gateway, "lgos-b/background-report")
+        await _select_background_profile(fake_gateway, "lgos/background-report")
         monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
         fake_gateway.replies += [
             reply(response(id="resp_bg", status="queued")),
@@ -98,7 +98,7 @@ async def test_status_steps_finish_and_stay_out_of_later_model_context(
         ]
         expected = ["Background response queued", "Background response in progress"]
     else:
-        chainlit_context.session.chat_profile = "lgos-a/status-events"
+        chainlit_context.session.chat_profile = "lgos/status-events"
         fake_gateway.replies.append(
             streamed(
                 response(
@@ -137,7 +137,7 @@ async def test_streamed_refusal_is_visible(
     fake_gateway,
     deltas: bool,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     refusal = ResponseOutputMessage(
         id="msg_refusal",
         type="message",
@@ -157,7 +157,7 @@ async def test_failed_stream_keeps_all_streamed_text(
     chainlit_context,
     fake_gateway,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     failed = response(
         message("Partial answer"),
         status="failed",
@@ -191,7 +191,7 @@ async def test_incomplete_stream_reports_its_reason(
     fake_gateway,
     status_steps,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     fake_gateway.replies.append(
         streamed(
             response(
@@ -221,7 +221,7 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
     streaming: bool,
 ) -> None:
     session = chainlit_context.session
-    session.chat_profile = "lgos-a/persistent-plot-agent"
+    session.chat_profile = "lgos/persistent-plot-agent"
     session.chat_settings[STREAMING_SETTING_ID] = streaming
     first = response(
         message("Rendering chart", id="msg_status", phase="commentary"),
@@ -269,7 +269,7 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
     ]
     initial, continuation = fake_gateway.bodies("/v1/responses")
     assert initial == {
-        "model": "lgos-a/persistent-plot-agent",
+        "model": "lgos/persistent-plot-agent",
         "input": history,
         "tools": [DISPLAY_FILE_TOOL],
         "user": "demo-user",
@@ -313,7 +313,7 @@ async def test_failed_response_reports_the_error_without_running_tools(
     chainlit_context,
     fake_gateway,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    chainlit_context.session.chat_profile = "lgos/persistent-plot-agent"
     chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = False
     fake_gateway.replies.append(
         reply(
@@ -350,7 +350,7 @@ def _use_gateway(monkeypatch: pytest.MonkeyPatch, gateway_type: str) -> str:
 
 BACKGROUND_GATEWAYS = pytest.mark.parametrize(
     ("gateway_type", "lifecycle_query"),
-    [("litellm", {}), ("bifrost", {"provider": "lgos-b"})],
+    [("litellm", {}), ("bifrost", {"provider": "lgos"})],
 )
 
 
@@ -365,7 +365,7 @@ async def test_background_response_is_polled_until_complete(
 ) -> None:
     responses_path = _use_gateway(monkeypatch, gateway_type)
     monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
-    await _select_background_profile(fake_gateway, "lgos-b/background-report")
+    await _select_background_profile(fake_gateway, "lgos/background-report")
     fake_gateway.replies += [
         reply(response(id="resp_bg", status="queued")),
         reply(response(id="resp_bg", status="in_progress")),
@@ -412,7 +412,7 @@ async def test_stopped_turn_cancels_its_background_response(
     lifecycle_query: dict[str, str],
 ) -> None:
     responses_path = _use_gateway(monkeypatch, gateway_type)
-    await _select_background_profile(fake_gateway, "lgos-b/background-report")
+    await _select_background_profile(fake_gateway, "lgos/background-report")
     polling = asyncio.Event()
 
     def in_progress(_request: httpx2.Request) -> httpx2.Response:
@@ -447,7 +447,7 @@ async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(
     chainlit_context,
     fake_gateway,
 ) -> None:
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     waiting = asyncio.Event()
     closed = asyncio.Event()
 
@@ -497,7 +497,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
     background: bool,
 ) -> None:
     monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
-    model_id = "lgos-a/interruptible-approval"
+    model_id = "lgos/interruptible-approval"
     await select_profile(fake_gateway, model_id, features=["background"])
     cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = background
     review_call = function_call(
@@ -584,7 +584,7 @@ async def test_text_before_a_pause_stays_in_the_conversation(
     fake_gateway,
     streaming: bool,
 ) -> None:
-    await select_profile(fake_gateway, "lgos-a/interruptible-approval")
+    await select_profile(fake_gateway, "lgos/interruptible-approval")
     chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = streaming
     paused = response(
         message("I checked ORDER-123."),
@@ -614,7 +614,7 @@ async def test_text_before_a_pause_stays_in_the_conversation(
 
 async def _pause_plot_for_review(fake_gateway) -> tuple[cl.Message, cl.Action]:
     """Pause a plot turn on a review; return the review and its approval."""
-    cl.context.session.chat_profile = "lgos-a/persistent-plot-agent"
+    cl.context.session.chat_profile = "lgos/persistent-plot-agent"
     review_call = function_call(
         "lgos_interrupt",
         json.dumps({"question": "Save the chart?", "choices": ["approve"]}),
