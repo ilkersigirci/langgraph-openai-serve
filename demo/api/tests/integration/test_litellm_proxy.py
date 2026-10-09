@@ -10,7 +10,7 @@ from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 from lgos_demo_api.graphs.interruptible import REVIEW_NOTICE
 
 LITELLM_BASE_URL = os.getenv("DEMO_TEST_LITELLM_BASE_URL")
-DIRECT_BASE_URLS = os.getenv("DEMO_TEST_DIRECT_BASE_URLS", "").split(",")
+DIRECT_BASE_URL = os.getenv("DEMO_TEST_DIRECT_BASE_URL")
 LITELLM_API_KEY = os.getenv("DEMO_TEST_LITELLM_API_KEY") or os.getenv(
     "OPENAI_GATEWAY_API_KEY", ""
 )
@@ -65,7 +65,10 @@ async def test_litellm_chat_catalog_discovers_lgos_models() -> None:
 
     assert response.status_code == 200
     model_groups = {item["model_group"] for item in response.json()["data"]}
-    assert {"lgos-a/simple-graph", "lgos-b/simple-graph"} <= model_groups
+    assert {
+        "lgos/simple-graph",
+        "lgos/coding-agent",
+    } <= model_groups
 
 
 async def test_litellm_model_info_requires_gateway_authentication() -> None:
@@ -80,9 +83,8 @@ async def test_litellm_model_info_requires_gateway_authentication() -> None:
     assert response.json()["error"]["type"] == "auth_error"
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 @pytest.mark.parametrize("stream", [False, True])
-async def test_litellm_native_chat_preserves_user(provider: str, stream: bool) -> None:
+async def test_litellm_native_chat_preserves_user(stream: bool) -> None:
     assert LITELLM_BASE_URL is not None
     async with AsyncOpenAI(
         base_url=LITELLM_BASE_URL,
@@ -91,7 +93,7 @@ async def test_litellm_native_chat_preserves_user(provider: str, stream: bool) -
         timeout=10.0,
     ) as client:
         response = await client.chat.completions.create(
-            model=f"{provider}/custom-input-output-context",
+            model="lgos/custom-input-output-context",
             messages=[{"role": "user", "content": "Preserve my request context."}],
             user="gateway-user",
             stream=stream,
@@ -112,8 +114,7 @@ async def test_litellm_native_chat_preserves_user(provider: str, stream: bool) -
     assert content == "gateway-user asked: Preserve my request context."
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> None:
+async def test_litellm_ui_catalog_drives_managed_responses() -> None:
     assert LITELLM_BASE_URL is not None
     async with AsyncOpenAI(
         base_url=LITELLM_BASE_URL,
@@ -128,7 +129,7 @@ async def test_litellm_ui_catalog_drives_managed_responses(provider: str) -> Non
         model = next(
             item
             for item in catalog["data"]
-            if item["model_name"] == f"{provider}/custom-input-output-context"
+            if item["model_name"] == "lgos/custom-input-output-context"
         )
         extension = model["model_info"]["lgos"]
         assert extension["description"]
@@ -177,8 +178,7 @@ async def test_litellm_files_route_preserves_content() -> None:
             assert deleted.deleted is True
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_native_responses_preserve_file_input(provider: str) -> None:
+async def test_litellm_native_responses_preserve_file_input() -> None:
     assert LITELLM_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -194,7 +194,7 @@ async def test_litellm_native_responses_preserve_file_input(provider: str) -> No
         )
         try:
             response = await client.responses.create(
-                model=f"{provider}/custom-input-output-context",
+                model="lgos/custom-input-output-context",
                 input=[
                     {
                         "role": "user",
@@ -217,8 +217,7 @@ async def test_litellm_native_responses_preserve_file_input(provider: str) -> No
             assert deleted.deleted is True
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
-async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> None:
+async def test_litellm_native_responses_preserve_lgos_output() -> None:
     assert LITELLM_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -228,7 +227,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
         timeout=10.0,
     ) as client:
         response = await client.responses.create(
-            model=f"{provider}/custom-input-output-context",
+            model="lgos/custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
             user="gateway-user",
@@ -240,7 +239,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
         assert response.output[0].phase == "final_answer"
 
         stream = await client.responses.create(
-            model=f"{provider}/custom-input-output-context",
+            model="lgos/custom-input-output-context",
             input="Stream through the gateway.",
             store=False,
             user="gateway-user",
@@ -274,7 +273,6 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
     )
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 @pytest.mark.parametrize(
     ("model", "prompt", "commentary_count"),
     [
@@ -283,7 +281,7 @@ async def test_litellm_native_responses_preserve_lgos_output(provider: str) -> N
     ],
 )
 async def test_litellm_native_stream_preserves_commentary(
-    provider: str, model: str, prompt: str, commentary_count: int
+    model: str, prompt: str, commentary_count: int
 ) -> None:
     assert LITELLM_BASE_URL is not None
 
@@ -294,7 +292,7 @@ async def test_litellm_native_stream_preserves_commentary(
         timeout=10.0,
     ) as client:
         stream = await client.responses.create(
-            model=f"{provider}/{model}",
+            model=f"lgos/{model}",
             input=prompt,
             store=False,
             stream=True,
@@ -310,26 +308,19 @@ async def test_litellm_native_stream_preserves_commentary(
     ]
 
 
-@pytest.mark.parametrize(("provider", "source_index"), [("lgos-a", 0), ("lgos-b", 1)])
-async def test_litellm_preserves_upstream_text_deltas(
-    provider: str,
-    source_index: int,
-) -> None:
-    if (
-        len(DIRECT_BASE_URLS) <= source_index
-        or not DIRECT_BASE_URLS[source_index].strip()
-    ):
-        pytest.skip("set the comma-separated direct LGOS test URLs")
+async def test_litellm_preserves_upstream_text_deltas() -> None:
+    if not DIRECT_BASE_URL:
+        pytest.skip("set the direct demo API test URL")
     assert LITELLM_BASE_URL is not None
 
     deltas_by_route: list[list[str]] = []
     for base_url, model, api_key in (
         (
-            DIRECT_BASE_URLS[source_index].strip(),
+            DIRECT_BASE_URL,
             "multi-node-streaming",
             os.getenv("DEMO_TEST_OPENAI_API_KEY", "DUMMY"),
         ),
-        (LITELLM_BASE_URL, f"{provider}/multi-node-streaming", LITELLM_API_KEY),
+        (LITELLM_BASE_URL, "lgos/multi-node-streaming", LITELLM_API_KEY),
     ):
         async with AsyncOpenAI(
             base_url=base_url,
@@ -363,14 +354,11 @@ async def test_litellm_preserves_upstream_text_deltas(
     assert managed == upstream
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 @pytest.mark.parametrize("stream", [False, True], ids=["non-streaming", "streaming"])
-async def test_litellm_native_function_output_continuation(
-    provider: str, stream: bool
-) -> None:
+async def test_litellm_native_function_output_continuation(stream: bool) -> None:
     assert LITELLM_BASE_URL is not None
-    model = f"{provider}/interruptible-approval"
-    public_request = f"Refund order ORDER-{provider.upper()}"
+    model = "lgos/interruptible-approval"
+    public_request = "Refund order ORDER-123"
 
     async with AsyncOpenAI(
         base_url=LITELLM_BASE_URL,
@@ -424,13 +412,12 @@ async def test_litellm_native_function_output_continuation(
     )
 
 
-@pytest.mark.parametrize("provider", ["lgos-a", "lgos-b"])
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
     reason="LiteLLM rewrites upstream OpenAI error metadata",
 )
-async def test_litellm_preserves_openai_errors(provider: str) -> None:
+async def test_litellm_preserves_openai_errors() -> None:
     assert LITELLM_BASE_URL is not None
 
     async with AsyncOpenAI(
@@ -441,7 +428,7 @@ async def test_litellm_preserves_openai_errors(provider: str) -> None:
     ) as client:
         with pytest.raises(BadRequestError) as exc_info:
             await client.responses.create(
-                model=f"{provider}/missing-gateway-model",
+                model="lgos/missing-gateway-model",
                 input="Hi",
             )
 

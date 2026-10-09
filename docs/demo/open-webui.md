@@ -34,7 +34,7 @@ determines which names execute in LGOS. Asking the advanced graph to remember or
 save something triggers its note-review flow without a graph-specific setting.
 The Pipe executes only native `function_call` items. Server custom calls and
 searches have distinct native types and are already complete.
-When `lgos-a/simple-graph` is available with valid metadata, sync also creates
+When `lgos/simple-graph` is available with valid metadata, sync also creates
 the dedicated UserValves example over the same manifold base.
 
 ## Server Tool Switches
@@ -188,9 +188,9 @@ The shared `demo/.env` supplies the sync credentials and gateway selection. See
 [sync settings](reference.md#open-webui-sync-settings) for their purposes. Set
 secrets in the environment rather than passing them on the command line.
 
-Choose a generated entry such as `LGOS / lgos-a/simple-graph` to use Chat
-Variables. Its Workspace Model ID is `lgos.lgos-a/simple-graph`, and its base
-model is `generic.lgos-a/simple-graph`. The raw `Generic / ...` manifold entry
+Choose a generated entry such as `LGOS / lgos/simple-graph` to use Chat
+Variables. Its Workspace Model ID is `lgos.lgos/simple-graph`, and its base
+model is `generic.lgos/simple-graph`. The raw `Generic / ...` manifold entry
 remains active and public but is hidden from the chat selector, following Open
 WebUI's
 [curated-interface guidance](https://docs.openwebui.com/features/workspace/models/#recommended-a-hidden-public-base-model-with-a-curated-model-on-top).
@@ -219,7 +219,7 @@ file does not update it.
 ## File Input
 
 Generated models enable Open WebUI's native file-upload control only when the
-graph advertises `file_inputs`. Select `LGOS / lgos-a/file-input` in the bundled
+graph advertises `file_inputs`. Select `LGOS / lgos/file-input` in the bundled
 demo to process an attachment. In the pinned release,
 `__metadata__["user_message"]` lists the files attached to the message that
 started this turn, images included. The Generic Function reads each file's
@@ -332,9 +332,9 @@ LGOS model, then use the Chat Variables control beside the message input. Since
 LGOS supplies defaults for every setting, the form does not block the first
 message merely to confirm them.
 
-![Open WebUI Chat Variables showing conversation-history and audience controls](../static/runtime_settings_openwebui.png)
+![Open WebUI Chat Variables showing model, audience, and conversation-history controls](../static/runtime_settings_openwebui.png)
 
-*Runtime settings synchronized from `lgos-a/simple-graph` and rendered as
+*Runtime settings synchronized from `lgos/simple-graph` and rendered as
 native Open WebUI Chat Variables.*
 
 When a chat has values, the Pipe serializes Open WebUI's generated Chat

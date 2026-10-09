@@ -37,7 +37,7 @@ flowchart LR
 ```
 
 1. The UI submits its text conversation history with model
-   `lgos-api-coding-agent/coding-agent`, its user identifier as OpenAI `user`,
+   `lgos/coding-agent`, its user identifier as OpenAI `user`,
    and its thread or chat identifier as `metadata.conversation_id`. The gateway
    forwards it directly to the coding-agent service's `/v1` API.
 2. A LangChain chat adapter starts a fresh Codex runtime in `/workspace`. It
@@ -128,7 +128,7 @@ just demo/compose --dev
 ```
 
 Omit `--dev` in a standalone copy of `demo/`. The coding-agent image builds locally.
-Normal stack startup registers `lgos-api-coding-agent/coding-agent` in the selected
+Normal stack startup registers `lgos/coding-agent` in the selected
 gateway and synchronizes Open WebUI's model list.
 
 In either UI select that model and ask:
@@ -154,7 +154,7 @@ base URL: `/v1` for LiteLLM or `/openai/v1` for Bifrost.
 
 ```python
 response = client.responses.create(
-    model="lgos-api-coding-agent/coding-agent",
+    model="lgos/coding-agent",
     input="Create hello.py, run it with Python, and report its output.",
     store=False,
 )

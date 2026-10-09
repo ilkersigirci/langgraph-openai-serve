@@ -96,14 +96,20 @@ type-check editable='false':
     {{ chainlit_run }} ty check src
     {{ openwebui_run }} ty check src
 
-# Validate published, development, and OTEL Compose models.
+# Validate both gateways with published, development, and OTEL Compose models.
 [group('checks')]
+[script]
 [timestamp]
 compose-config:
-    {{ compose_command }} --env-file .env.example --profile model-sync --profile background config --quiet
-    {{ compose_dev_command }} --env-file .env.example --profile model-sync --profile background config --quiet
-    {{ compose_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
-    {{ compose_dev_command }} --env-file .env.example -f docker/compose/otel.yml --profile model-sync --profile background config --quiet
+    for gateway in litellm bifrost; do
+        export OPENAI_GATEWAY_TYPE="$gateway"
+        # Compose ignores COMPOSE_PROFILES once any --profile flag is given.
+        options=(--env-file .env.example --profile "$gateway" --profile model-sync --profile background)
+        {{ compose_command }} "${options[@]}" config --quiet
+        {{ compose_dev_command }} "${options[@]}" config --quiet
+        {{ compose_command }} -f docker/compose/otel.yml "${options[@]}" config --quiet
+        {{ compose_dev_command }} -f docker/compose/otel.yml "${options[@]}" config --quiet
+    done
 
 # Test real coding-agent streaming through the running selected gateway.
 [arg('editable', long, value='true')]
@@ -121,7 +127,7 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 [arg('UVICORN_PORT', long='port')]
 [env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('local')]
-api $UVICORN_PORT=env("LGOS_A_PORT") editable='false':
+api $UVICORN_PORT=env("LGOS_DEMO_API_PORT") editable='false':
     {{ if editable == "true" { editable_api_run } else { api_run } }} lgos serve {{ demo_registry }}
 
 # Run the independent Hatchet agent worker for background Responses.
@@ -145,11 +151,11 @@ chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
     {{ chainlit_run }} uvicorn lgos_chainlit.main:app --host 0.0.0.0 --port "$LGOS_CHAINLIT_PORT"
 
 # Run optional live direct Responses integration tests.
-[arg('DEMO_TEST_DIRECT_BASE_URLS', long='base-urls')]
+[arg('DEMO_TEST_DIRECT_BASE_URL', long='base-url')]
 [arg('editable', long, value='true')]
 [arg('DEMO_TEST_FILES_BASE_URL', long='files-url')]
 [group('integration')]
-test-direct $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false' *args:
+test-direct $DEMO_TEST_DIRECT_BASE_URL=env("DEMO_TEST_DIRECT_BASE_URL") $DEMO_TEST_FILES_BASE_URL=env("DEMO_TEST_FILES_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_direct_responses.py "${@:4}"
 
 # Run Bifrost native integration tests.
@@ -172,25 +178,24 @@ test-background-gateway base_url='' model='' editable='false' *args:
     case "$OPENAI_GATEWAY_TYPE" in
         litellm)
             default_url="$DEMO_GATEWAY_HOST_URL/v1"
-            default_model="lgos-a/background-mock"
             ;;
         bifrost)
             default_url="$DEMO_GATEWAY_HOST_URL/openai/v1"
-            default_model="lgos-a/background-mock"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE must be litellm or bifrost" >&2
             exit 1
             ;;
     esac
+    default_model="lgos/background-mock"
     DEMO_TEST_BACKGROUND_GATEWAY_TYPE="$OPENAI_GATEWAY_TYPE" DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL="${1:-$default_url}" DEMO_TEST_BACKGROUND_GATEWAY_MODEL="${2:-$default_model}" {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_background_gateway.py "${@:4}"
 
 # Run LiteLLM managed-routing and native model-info integration tests.
 [arg('DEMO_TEST_LITELLM_BASE_URL', long='base-url')]
-[arg('DEMO_TEST_DIRECT_BASE_URLS', long='direct-urls')]
+[arg('DEMO_TEST_DIRECT_BASE_URL', long='direct-url')]
 [arg('editable', long, value='true')]
 [group('integration')]
-test-litellm $DEMO_TEST_LITELLM_BASE_URL=env("DEMO_TEST_LITELLM_BASE_URL") $DEMO_TEST_DIRECT_BASE_URLS=env("DEMO_TEST_DIRECT_BASE_URLS") editable='false' *args:
+test-litellm $DEMO_TEST_LITELLM_BASE_URL=env("DEMO_TEST_LITELLM_BASE_URL") $DEMO_TEST_DIRECT_BASE_URL=env("DEMO_TEST_DIRECT_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_litellm_proxy.py "${@:4}"
 
 # Start one Compose service; add --dev to build this checkout or --wait to detach.
@@ -213,7 +218,7 @@ reset-litellm-db:
 sync-openwebui:
     {{ openwebui_run }} python -m lgos_openwebui.sync_functions
 
-# Register one LGOS catalog in LiteLLM; add --dev for the checkout image.
+# Reconcile every LGOS catalog in one LiteLLM namespace; add --dev for the checkout image.
 [arg('dev', long, value='true')]
 [group('docker dev')]
 [group('docker prod')]
@@ -251,7 +256,7 @@ compose dev='false' otel='false' chainlit_utils='false' *up_args:
             "${compose[@]}" up --wait "${up_args[@]}" "$gateway_service" "${background_services[@]}"
             ;;
         litellm:|bifrost:)
-            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api-a lgos-demo-api-b lgos-api-coding-agent lgos-files-api "${background_services[@]}"
+            "${compose[@]}" up --wait "${up_args[@]}" lgos-postgres-mcp lgos-demo-api lgos-api-coding-agent lgos-files-api "${background_services[@]}"
             ;;
         *)
             echo "OPENAI_GATEWAY_TYPE and Compose profiles select different gateways" >&2
@@ -260,9 +265,7 @@ compose dev='false' otel='false' chainlit_utils='false' *up_args:
     esac
 
     if [[ "$OPENAI_GATEWAY_TYPE" == "litellm" ]]; then
-        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-a:8000/v1 --prefix lgos-a
-        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api-b:8000/v1 --prefix lgos-b
-        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-api-coding-agent:8000/v1 --prefix lgos-api-coding-agent
+        "${compose[@]}" run --rm --no-deps --pull never lgos-model-sync --source-url http://lgos-demo-api:8000/v1 --source-url http://lgos-api-coding-agent:8000/v1
     fi
     if [[ "$gateway_service" == "lgos-bifrost" ]]; then
         "${compose[@]}" run --rm --no-deps --pull never lgos-bifrost-sync

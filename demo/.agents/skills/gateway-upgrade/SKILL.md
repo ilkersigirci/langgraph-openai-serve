@@ -59,9 +59,11 @@ route or provider used here. In particular:
   undocumented `PUT /api/models/catalog`; `/openai/v1/models` still drops them.
   Recheck that attributes still need a pricing row, that boot still requires
   the pricing file to load, and recovery after the config store is recreated.
-- Bifrost selects a Responses provider only from the model prefix and
-  ignores `x-model-provider` there. Recheck this before changing how the UIs
-  address models.
+- Bifrost initially selects a Responses provider from the model prefix and
+  ignores `x-model-provider` there. The public `lgos/coding-agent` alias then
+  uses a native governance rule to reach the separate coding-agent provider.
+  Check both alias discovery (which omits `owned_by`) and routing before
+  changing how the UIs address models.
 - Bifrost resolves `env.` references in key values but not in `base_url`, so
   a different upstream needs a gitignored config copy via
   `DEMO_BIFROST_CONFIG`. Move the URL to the environment when a release

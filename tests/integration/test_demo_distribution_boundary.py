@@ -240,7 +240,7 @@ def test_bifrost_outwaits_a_coding_agent_request() -> None:
     config = json.loads(
         (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
     )
-    network = config["providers"]["lgos-api-coding-agent"]["network_config"]
+    network = config["providers"]["coding-agent"]["network_config"]
 
     # Bifrost's request timeout bounds a whole non-streaming response. LGOS
     # keepalive comments reset its stream-idle timer.

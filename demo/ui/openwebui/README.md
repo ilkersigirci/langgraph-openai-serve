@@ -47,7 +47,7 @@ one Workspace Model per public model name.
 LiteLLM's `model_info.lgos` supplies the full metadata and
 `model_name` is sent unchanged for inference. Each generated model
 exposes the current LGOS runtime settings as native per-chat Chat Variables.
-When `lgos-a/simple-graph` has valid metadata, sync also adds the separate
+When `lgos/simple-graph` has valid metadata, sync also adds the separate
 `lgos.uservalves_simple` example with its UserValves Filter. Each raw `Generic / ...`
 Function model is kept active and public but hidden from the chat model
 selector. Each sync

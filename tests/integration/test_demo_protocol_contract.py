@@ -117,7 +117,7 @@ def test_bifrost_graph_providers_allow_native_responses() -> None:
     config_path = REPOSITORY_ROOT / "demo/docker/configs/bifrost/config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    for provider_name in ("lgos-a", "lgos-b"):
+    for provider_name in ("lgos", "coding-agent"):
         allowed_requests = config["providers"][provider_name]["custom_provider_config"][
             "allowed_requests"
         ]

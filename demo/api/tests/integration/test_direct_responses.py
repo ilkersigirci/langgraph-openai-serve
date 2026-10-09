@@ -5,19 +5,14 @@ import pytest
 from openai import AsyncOpenAI, NotFoundError
 from openai.types.responses import ResponseFunctionToolCall
 
-DIRECT_BASE_URLS = tuple(
-    base_url.strip()
-    for base_url in os.getenv("DEMO_TEST_DIRECT_BASE_URLS", "").split(",")
-    if base_url.strip()
-)
+DIRECT_BASE_URL = os.getenv("DEMO_TEST_DIRECT_BASE_URL")
 FILES_BASE_URL = os.getenv("DEMO_TEST_FILES_BASE_URL")
 API_KEY = os.getenv("DEMO_TEST_OPENAI_API_KEY", "DUMMY")
-ENDPOINTS = DIRECT_BASE_URLS or (None,)
 
 
-def _graph_client(base_url: str) -> AsyncOpenAI:
+def _graph_client() -> AsyncOpenAI:
     return AsyncOpenAI(
-        base_url=base_url,
+        base_url=DIRECT_BASE_URL,
         api_key=API_KEY,
         max_retries=0,
         timeout=10.0,
@@ -27,8 +22,8 @@ def _graph_client(base_url: str) -> AsyncOpenAI:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not DIRECT_BASE_URLS,
-        reason="set the comma-separated direct LGOS test URLs",
+        not DIRECT_BASE_URL,
+        reason="set the direct demo API test URL",
     ),
 ]
 
@@ -57,13 +52,8 @@ async def test_direct_files_preserve_content() -> None:
             assert deleted.deleted is True
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_model_catalog_preserves_lgos_metadata(
-    base_url: str | None,
-) -> None:
-    assert base_url is not None
-
-    async with _graph_client(base_url) as client:
+async def test_direct_model_catalog_preserves_lgos_metadata() -> None:
+    async with _graph_client() as client:
         models = await client.models.list()
         model = await client.models.retrieve("simple-graph")
 
@@ -72,14 +62,10 @@ async def test_direct_model_catalog_preserves_lgos_metadata(
     assert isinstance(extension["description"], str)
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_responses_preserve_file_input(
-    base_url: str | None,
-) -> None:
-    assert base_url is not None
+async def test_direct_responses_preserve_file_input() -> None:
     file_id = "file-direct-transport"
 
-    async with _graph_client(base_url) as client:
+    async with _graph_client() as client:
         response = await client.responses.create(
             model="custom-input-output-context",
             input=[
@@ -99,13 +85,8 @@ async def test_direct_responses_preserve_file_input(
     assert file_id in response.output_text
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_responses_preserve_text_and_stream(
-    base_url: str | None,
-) -> None:
-    assert base_url is not None
-
-    async with _graph_client(base_url) as client:
+async def test_direct_responses_preserve_text_and_stream() -> None:
+    async with _graph_client() as client:
         response = await client.responses.create(
             model="custom-input-output-context",
             input="Where is the routing boundary?",
@@ -153,7 +134,6 @@ async def test_direct_responses_preserve_text_and_stream(
     )
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
 @pytest.mark.parametrize(
     ("model", "prompt", "commentary_count"),
     [
@@ -162,11 +142,9 @@ async def test_direct_responses_preserve_text_and_stream(
     ],
 )
 async def test_direct_stream_preserves_commentary(
-    base_url: str | None, model: str, prompt: str, commentary_count: int
+    model: str, prompt: str, commentary_count: int
 ) -> None:
-    assert base_url is not None
-
-    async with _graph_client(base_url) as client:
+    async with _graph_client() as client:
         stream = await client.responses.create(
             model=model,
             input=prompt,
@@ -184,12 +162,10 @@ async def test_direct_stream_preserves_commentary(
     ]
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_function_output_continuation(base_url: str | None) -> None:
-    assert base_url is not None
+async def test_direct_function_output_continuation() -> None:
     public_request = "Refund order ORDER-DIRECT"
 
-    async with _graph_client(base_url) as client:
+    async with _graph_client() as client:
         paused = await client.responses.create(
             model="interruptible-approval",
             input=public_request,
@@ -222,11 +198,8 @@ async def test_direct_function_output_continuation(base_url: str | None) -> None
     )
 
 
-@pytest.mark.parametrize("base_url", ENDPOINTS)
-async def test_direct_responses_preserve_openai_errors(base_url: str | None) -> None:
-    assert base_url is not None
-
-    async with _graph_client(base_url) as client:
+async def test_direct_responses_preserve_openai_errors() -> None:
+    async with _graph_client() as client:
         with pytest.raises(NotFoundError) as exc_info:
             await client.responses.create(model="missing-gateway-model", input="Hi")
 

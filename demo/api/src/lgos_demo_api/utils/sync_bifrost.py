@@ -13,18 +13,21 @@ import json
 from collections.abc import Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from urllib.parse import quote
 
 import httpx2
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from lgos_demo_api.utils.model_catalog import read_model_catalog, validate_namespace
+from lgos_demo_api.utils.model_catalog import read_model_catalogs
+
+# The custom provider in docker/configs/bifrost/config.json that owns the
+# public `lgos/` namespace.
+PROVIDER = "lgos"
 
 
 class ModelAttributes(BaseModel):
     """One entry of Bifrost's `PUT /api/models/catalog` request."""
 
-    provider: str
+    provider: str = PROVIDER
     model: str
     additional_attributes: dict[str, str]
 
@@ -38,29 +41,26 @@ def prepare_catalog(
     """Write graph pricing rows and the attributes to publish on them."""
     pricing: dict[str, dict[str, str | int]] = {}
     attributes: list[ModelAttributes] = []
-    for provider, source in sources.items():
-        validate_namespace(provider)
-        for name, model in read_model_catalog(source).items():
-            # Zero prices only anchor the attributes: a graph's own model calls
-            # are separate gateway requests. Limits and capabilities stay unset.
-            pricing[f"{provider}/{name}"] = {
-                "provider": provider,
-                "mode": "responses",
-                "input_cost_per_token": 0,
-                "output_cost_per_token": 0,
-            }
-            # Attribute values are strings, so the complete extension is JSON
-            # encoded. Bifrost's model editor displays the description.
-            attributes.append(
-                ModelAttributes(
-                    provider=provider,
-                    model=name,
-                    additional_attributes={
-                        "description": model.lgos.description,
-                        "lgos": model.lgos.model_dump_json(),
-                    },
-                )
+    for name, (_, model) in read_model_catalogs(sources).items():
+        # Zero prices only anchor the attributes: a graph's own model calls
+        # are separate gateway requests. Limits and capabilities stay unset.
+        pricing[f"{PROVIDER}/{name}"] = {
+            "provider": PROVIDER,
+            "mode": "responses",
+            "input_cost_per_token": 0,
+            "output_cost_per_token": 0,
+        }
+        # Attribute values are strings, so the complete extension is JSON
+        # encoded. Bifrost's model editor displays the description.
+        attributes.append(
+            ModelAttributes(
+                model=name,
+                additional_attributes={
+                    "description": model.lgos.description,
+                    "lgos": model.lgos.model_dump_json(),
+                },
             )
+        )
 
     directory.mkdir(parents=True, exist_ok=True)
     # A rerun can race Bifrost's periodic datasheet reload. Replace each file
@@ -77,13 +77,10 @@ def prepare_catalog(
 
 def sync_catalog(gateway: httpx2.Client, attributes: list[ModelAttributes]) -> None:
     """Replace the attributes of every prepared graph row."""
-    # After graph changes, reload the rewritten datasheet and the providers'
-    # cached model lists so new graphs have rows and appear in /v1/models.
+    # Reload the rewritten datasheet and the provider's cached model list so
+    # added graphs get rows and removed graphs leave /v1/models.
     gateway.post("api/pricing/force-sync").raise_for_status()
-    for provider in sorted({entry.provider for entry in attributes}):
-        gateway.post(
-            f"api/providers/{quote(provider, safe='')}/refresh-models"
-        ).raise_for_status()
+    gateway.post(f"api/providers/{PROVIDER}/refresh-models").raise_for_status()
     # Bifrost writes the batch in one transaction and rejects all of it when
     # any pricing row is missing.
     gateway.put(
@@ -102,11 +99,10 @@ def main() -> None:
         "prepare", help="Write the catalog before Bifrost starts"
     )
     prepare.add_argument(
-        "--source",
+        "--source-url",
         action="append",
         required=True,
-        metavar="PROVIDER=URL",
-        help="Bifrost provider name and its LGOS /v1 base URL",
+        help="LGOS /v1 base URL; repeat for every API in the namespace",
     )
     sync = commands.add_parser("sync", help="Publish attributes to a healthy Bifrost")
     sync.add_argument("--gateway-url", required=True, help="Bifrost root URL")
@@ -114,15 +110,12 @@ def main() -> None:
     try:  # ruff: ignore[too-many-statements-in-try-clause] - The CLI reports failures from the whole sync operation consistently.
         if args.command == "prepare":
             with ExitStack() as stack:
-                sources: dict[str, httpx2.Client] = {}
-                for source in args.source:
-                    provider, _, url = source.partition("=")
-                    if not url or provider in sources:
-                        msg = "Sources must use unique PROVIDER=URL pairs"
-                        raise ValueError(msg)  # ruff: ignore[raise-within-try] - Local validation uses the same error reporting as remote failures.
-                    sources[provider] = stack.enter_context(
+                sources = {
+                    url: stack.enter_context(
                         httpx2.Client(base_url=f"{url.rstrip('/')}/", timeout=30)
                     )
+                    for url in args.source_url
+                }
                 attributes = prepare_catalog(sources, args.directory)
             print(f"Prepared {len(attributes)} LGOS models for Bifrost")
         else:

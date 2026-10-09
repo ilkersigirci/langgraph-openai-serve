@@ -70,7 +70,7 @@ file under a unique `/tmp` path. Load it with `state-load` and delete it after
 closing the session. The `run-code` evaluator cannot read the CLI process
 environment.
 
-Open `/?model=lgos.lgos-a/persistent-plot-agent`. For another graph, use the
+Open `/?model=lgos.lgos/persistent-plot-agent`. For another graph, use the
 Workspace Model ID from `/api/models`. Fill `#chat-input`, submit the prompt,
 and wait for a completed assistant-role reply. Plotly renders inside the
 message iframe, so inspect the matching frame and its height.
@@ -83,7 +83,7 @@ This uses the shared `demo-user`; OAuth deployments require their configured
 login flow.
 
 Select the current profile label, then choose
-`lgos-a/persistent-plot-agent` by exact text. Wait for the profile settings
+`lgos/persistent-plot-agent` by exact text. Wait for the profile settings
 reload and `#chat-input` readiness before submitting because switching profiles
 resets the session. Native Plotly elements render in the main page.
 

@@ -28,14 +28,17 @@ def bifrost_models(models: list[Model]) -> list[Model]:
     """Decode native catalog attributes; incomplete metadata stays visible."""
     result = []
     for model in models:
-        if model.owned_by != LGOS_MODEL_OWNER:
+        # Bifrost aliases omit owned_by; the public namespace identifies LGOS.
+        if not model.id.startswith("lgos/"):
             continue
         attributes = (model.model_extra or {}).get("additional_attributes", {})
         try:
             extension = _BifrostAttributes.model_validate(attributes).lgos
         except ValidationError:
             extension = None
-        result.append(model.model_copy(update={"lgos": extension}))
+        result.append(
+            model.model_copy(update={"owned_by": LGOS_MODEL_OWNER, "lgos": extension})
+        )
     return result
 
 

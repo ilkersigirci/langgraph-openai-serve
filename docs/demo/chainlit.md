@@ -144,7 +144,7 @@ both inference providers.
 
 The attachment button appears only for profiles that advertise `file_inputs`
 and accepts up to five files of 10 MiB each per message. Select
-`lgos-a/file-input` or `lgos-b/file-input` to process an attachment with the
+`lgos/file-input` to process an attachment with the
 dedicated demo graph.
 If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
@@ -237,9 +237,9 @@ defaults, keeps the thread's saved selections for when the metadata returns,
 and shows a transient **Limited functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
-![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
+![Chainlit Settings panel showing stream, model, audience, and conversation-history controls](../static/runtime_settings_chainlit.png)
 
-*Runtime settings discovered from `lgos-a/simple-graph` and rendered as native
+*Runtime settings discovered from `lgos/simple-graph` and rendered as native
 Chainlit controls.*
 
 The same panel includes a Chainlit-owned **Stream response** switch for every
@@ -447,7 +447,7 @@ See [Authentication](../how-to-guides/authentication.md).
 
 ## Interrupt Demo
 
-Select `lgos-a/interruptible-approval` in the normal Chainlit profile menu, then
+Select `lgos/interruptible-approval` in the normal Chainlit profile menu, then
 send `Refund order ORDER-123 for the customer.` The same UI also handles
 interrupts returned by other profiles, including `advanced-graph`.
 

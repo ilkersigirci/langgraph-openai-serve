@@ -47,13 +47,13 @@ migrations when they start.
 ## LiteLLM Model Sync
 
 `lgos-demo-api-sync-litellm` registers LGOS model metadata through LiteLLM's
-native management API. Run
-`just demo/sync-litellm -- --source-url ... --prefix ...`;
+native management API. Repeat `--source-url` for every API in the shared
+`lgos/` namespace in one invocation of `just demo/sync-litellm`;
 see the [model sync guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
 for usage. The full-stack
 `just demo/compose [--dev] [--otel]` variants run the shared
-`lgos-model-sync` job for both demo APIs after the gateway is ready. Other
-deployment systems should run it after their own API health check.
+`lgos-model-sync` job for the demo API and coding-agent API after the gateway is
+ready. Other deployment systems should run it after all source APIs are healthy.
 Provide `LITELLM_MASTER_KEY` only to this operator command, not to UI clients.
 The command and its tests belong to this project; LiteLLM does not load them.
 

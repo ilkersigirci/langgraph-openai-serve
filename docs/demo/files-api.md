@@ -50,7 +50,7 @@ LGOS or LangGraph is required.
 ## Ownership Boundary
 
 Only this service receives the `DEMO_API_FILES_AWS_*` credentials and bucket
-configuration. LGOS API replicas receive only the Files base URL needed by a
+configuration. LGOS APIs receive only the Files base URL needed by a
 graph that resolves IDs. Chainlit's native element-storage credentials remain
 separate, and Open WebUI retains its native raw upload copy in its own data
 volume.
