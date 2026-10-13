@@ -259,13 +259,14 @@ application-created vendor handler through `runtime_callbacks`.
 
 LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
-request ID, registered graph model, (for interrupt runs) operation ID, (when
-the request supplies `metadata.conversation_id`) the Langfuse-recognized
-`langfuse_session_id`, and (when it names an end user with `safety_identifier` or
-the deprecated `user`) that end user as `lgos.user` and as the Langfuse-recognized
-`langfuse_user_id`. Graph code can read them with LangGraph's `get_config()`;
-use `lgos.user` for the end user, which does not depend on Langfuse. LangGraph
-also propagates primitive configurable values
+request ID, registered graph model, (for interrupt runs) operation ID, and
+(when it names an end user with `safety_identifier` or the deprecated `user`)
+that end user as `lgos.user`. Graph code can read them with LangGraph's
+`get_config()`, with or without Langfuse. When the toggle is on, LGOS also sets
+the end user and `metadata.conversation_id` as Langfuse's native user and
+session on every observation of the run; a custom handler passed with the
+toggle off does not receive them. LangGraph also propagates primitive
+configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
 custom Langfuse trace ID. See [Production Logging and Request
@@ -296,7 +297,7 @@ and `http.route` includes the mount, such as `/v1/responses`.
 
 | Signal | Name | Attributes |
 | --- | --- | --- |
-| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |
+| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, `user.id` and `session.id` with [Langfuse](how-to-guides/production-logging.md#langfuse-correlation) enabled, and `error.type` on failure |
 | Histogram, unit `s` | `gen_ai.invoke_workflow.duration` | `gen_ai.workflow.name`, and `error.type` on failure |
 
 `gen_ai.workflow.name` is the registered model. Both signals cover graph

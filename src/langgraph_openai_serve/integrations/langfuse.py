@@ -1,5 +1,6 @@
 """Lazy construction for the optional Langfuse tracing integration."""
 
+from contextlib import AbstractContextManager
 from functools import cache
 from typing import TYPE_CHECKING
 
@@ -37,3 +38,12 @@ def get_langfuse_callback() -> BaseCallbackHandler:
     # application that already created one keeps its own filter.
     Langfuse(should_export_span=should_export_span)
     return CallbackHandler()
+
+
+def trace_attributes(
+    *, user_id: str | None, session_id: str | None
+) -> AbstractContextManager[object]:
+    """Return Langfuse's context naming the end user and session of observations."""
+    from langfuse import propagate_attributes
+
+    return propagate_attributes(user_id=user_id, session_id=session_id)

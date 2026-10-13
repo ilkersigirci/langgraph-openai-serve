@@ -106,10 +106,7 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
         graphs={"interruptible": graph_config},
         run_coordinator=InMemoryRunCoordinator(),
     )
-    request = make_request(
-        "interruptible",
-        metadata={"conversation_id": "conversation-123"},
-    )
+    request = make_request("interruptible")
 
     await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
 
@@ -117,18 +114,13 @@ async def test_interrupt_callback_observes_native_checkpoint_metadata(
     metadata = recording_callback.root_metadata[0]
     assert metadata["lgos.model"] == "interruptible"
     assert metadata["lgos.operation_id"]
-    assert metadata["langfuse_session_id"] == "conversation-123"
     assert metadata["thread_id"]
     assert get_log_context() == {}
 
 
-@pytest.mark.parametrize(
-    ("conversation_id", "user"),
-    [(None, None), ("", ""), ("conversation-123", "user-123")],
-)
+@pytest.mark.parametrize("user", [None, "", "user-123"])
 async def test_callbacks_observe_request_correlation_metadata(
     make_request,
-    conversation_id: str | None,
     user: str | None,
 ) -> None:
     recording_callback = RecordingCallback()
@@ -142,11 +134,7 @@ async def test_callbacks_observe_request_correlation_metadata(
         "messages",
         user=user,
         metadata={
-            **(
-                {"conversation_id": conversation_id}
-                if conversation_id is not None
-                else {}
-            ),
+            "conversation_id": "conversation-123",
             "unrelated": "not callback metadata",
         },
     )
@@ -160,10 +148,10 @@ async def test_callbacks_observe_request_correlation_metadata(
     metadata = recording_callback.root_metadata[0]
     assert metadata["lgos.model"] == "messages"
     assert metadata["lgos.request_id"] == "request-123"
-    assert metadata.get("langfuse_session_id") == (conversation_id or None)
-    # The end user has an LGOS key of its own; Langfuse's key only mirrors it.
     assert metadata.get("lgos.user") == (user or None)
-    assert metadata.get("langfuse_user_id") == (user or None)
+    # Request metadata stays out of callback metadata; Langfuse receives the
+    # conversation as its native session instead.
+    assert "conversation-123" not in metadata.values()
     assert "unrelated" not in metadata
 
 

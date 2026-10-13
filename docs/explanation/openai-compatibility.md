@@ -179,9 +179,9 @@ protocol-neutral graph request unchanged.
 `metadata.conversation_id` is an optional, client-owned correlation value. It is
 a documented metadata convention, not a server-managed conversation resource.
 A client uses the same stable value for every Responses or Chat Completions request in
-one conversation. LGOS maps it to the Langfuse-recognized
-`RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
-trace, while Langfuse can group those traces in one
+one conversation. With Langfuse enabled, LGOS sets it as the Langfuse session
+of every observation; each request remains a separate trace, while Langfuse
+groups those traces in one
 [session](https://langfuse.com/docs/observability/features/sessions). It does
 not select checkpoint state or cause LGOS to retain conversation history; clients
 still supply the input needed by each ordinary request. Omit the field when no

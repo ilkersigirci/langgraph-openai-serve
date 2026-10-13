@@ -91,19 +91,29 @@ level.
 ## Langfuse correlation
 
 LGOS passes the following correlation metadata through LangChain's
-`RunnableConfig` on every run, and Langfuse reads it when
-`LGOS_ENABLE_LANGFUSE=True`:
+`RunnableConfig` on every run. Graph code reads it with LangGraph's
+`get_config()`, with or without Langfuse, and Langfuse records it as
+observation metadata when `LGOS_ENABLE_LANGFUSE=True`:
 
 - `lgos.request_id`, when an HTTP request context exists;
 - `lgos.operation_id`, for an interrupt operation;
 - `lgos.model`, the registered OpenAI-compatible graph model;
-- `langfuse_session_id`, when the request contains a non-empty
-  `metadata.conversation_id` string;
 - `lgos.user`, the end user, when the request names one with
-  `safety_identifier` or the deprecated `user`. Graph code reads it with
-  LangGraph's `get_config()`, with or without Langfuse;
-- `langfuse_user_id`, the same end user under the key Langfuse uses for
-  [user tracking](https://langfuse.com/docs/user-explorer).
+  `safety_identifier` or the deprecated `user`.
+
+With `LGOS_ENABLE_LANGFUSE=True`, LGOS also names the end user and the
+request's non-empty `metadata.conversation_id` string as Langfuse's native
+[user](https://langfuse.com/docs/observability/features/users) and
+[session](https://langfuse.com/docs/observability/features/sessions) on every
+observation of the run, so model calls and their cost count toward that user.
+It applies them with Langfuse's `propagate_attributes()` where the run starts:
+LangChain runs Langfuse's handler on worker threads with a copy of the
+caller's context, so trace attributes passed as callback metadata reach only
+the root observation
+([langfuse#16177](https://github.com/langfuse/langfuse/issues/16177)).
+Langfuse carries them in OpenTelemetry context, so LGOS's workflow span and,
+when Langfuse shares the application's tracer provider, the run's other spans
+also record them as the standard `user.id` and `session.id` attributes.
 
 Both endpoints use the stable graph run name `lgos.graph_run`. LangGraph propagates
 primitive `configurable` fields to callback metadata during execution, so an
@@ -115,9 +125,8 @@ generated trace ID.
 Langfuse's LangChain integration creates a trace for each invocation by
 default. Treat one Responses or Chat Completions request as one trace. When
 several requests belong to one conversation, send the same UI-owned value as
-`metadata.conversation_id`; LGOS maps it to Langfuse's `langfuse_session_id`, which
-groups the independent traces into one
-[session](https://langfuse.com/docs/observability/features/sessions). This is
+`metadata.conversation_id`; LGOS sets it as the Langfuse session, which groups
+the independent traces into one session. This is
 correlation only: LGOS remains stateless and the client must still send the
 input items needed by each request. The
 [Langfuse trace ID guidance](https://langfuse.com/docs/observability/features/trace-ids-and-distributed-tracing)

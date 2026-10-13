@@ -190,9 +190,11 @@ async def stream_run(
             ),
         )
         # asyncio copies this context into the producer task. Graph execution
-        # and cleanup inherit the span without changing the consumer's context.
-        with trace.use_span(
-            span, record_exception=False, set_status_on_exception=False
+        # and cleanup inherit the span and Langfuse attributes without changing
+        # the consumer's context.
+        with (
+            trace.use_span(span, record_exception=False, set_status_on_exception=False),
+            run.langfuse_attributes(),
         ):
             parts = TaskStream(graph_stream, name="langgraph-astream")
         try:
