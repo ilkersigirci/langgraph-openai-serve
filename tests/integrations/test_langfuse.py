@@ -1,5 +1,4 @@
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -19,9 +18,6 @@ from langgraph_openai_serve.integrations.langfuse import (
     should_export_span,
 )
 
-if TYPE_CHECKING:
-    from langfuse import Langfuse
-
 langfuse = pytest.importorskip(
     "langfuse", reason="Langfuse is the optional tracing extra."
 )
@@ -40,9 +36,7 @@ def finished_span(scope: str, attributes: dict[str, str]) -> ReadableSpan:
 
 
 @pytest.fixture
-def langfuse_export(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[tuple["Langfuse", InMemorySpanExporter]]:
+def langfuse_spans(monkeypatch: pytest.MonkeyPatch) -> Iterator[InMemorySpanExporter]:
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-lgos-test")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-lgos-test")
     monkeypatch.setenv("LANGFUSE_BASE_URL", "http://langfuse.invalid")
@@ -51,14 +45,18 @@ def langfuse_export(
         "langgraph_openai_serve.graph.run.settings", Settings(ENABLE_LANGFUSE=True)
     )
     exporter = InMemorySpanExporter()
-    # The first client of a Langfuse project configures its export, so the
-    # client LGOS creates for the same project reuses this exporter.
-    client = langfuse.Langfuse(tracer_provider=TracerProvider(), span_exporter=exporter)
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    # The first client of a Langfuse project configures its tracing, so the
+    # client LGOS creates for the same project records into this provider.
+    # Langfuse's processor still names the user and session as spans start,
+    # but sends nothing to Langfuse.
+    langfuse.Langfuse(tracer_provider=provider, should_export_span=lambda _span: False)
     get_langfuse_callback.cache_clear()
-    yield client, exporter
+    yield exporter
     get_langfuse_callback.cache_clear()
     # Langfuse keeps its clients for the life of the process, even after
-    # shutdown, so a later client would reuse this one's exporter.
+    # shutdown, so a later client would reuse this one's provider.
     from langfuse._client.resource_manager import LangfuseResourceManager  # ruff: ignore[import-private-name] - Langfuse has no public reset.
 
     LangfuseResourceManager.reset()
@@ -91,9 +89,8 @@ def test_langfuse_exports_its_default_spans_except_lgos_spans(
 
 
 async def test_every_langfuse_observation_of_a_run_names_its_user_and_session(
-    langfuse_export: tuple["Langfuse", InMemorySpanExporter],
+    langfuse_spans: InMemorySpanExporter,
 ) -> None:
-    client, exporter = langfuse_export
     graph_registry = GraphRegistry(
         graphs={
             "messages": GraphConfig(graph=make_message_graph(), description="DUMMY")
@@ -106,9 +103,8 @@ async def test_every_langfuse_observation_of_a_run_names_its_user_and_session(
     )
 
     await run_langgraph(request, [HumanMessage(content="question")], graph_registry)
-    client.flush()
 
-    observations = exporter.get_finished_spans()
+    observations = langfuse_spans.get_finished_spans()
     # The root run and its node, whose model call carries the run's cost.
     assert {"lgos.graph_run", "generate"} <= {span.name for span in observations}
     assert {
