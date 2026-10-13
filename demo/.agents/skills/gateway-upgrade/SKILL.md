@@ -55,7 +55,7 @@ route or provider used here. In particular:
 - Distinguish model-bound uploads and encoded file IDs from the demo's shared
   Files provider. Preserve one file namespace across both graph APIs.
 - Verify model list and detail separately from inference. Bifrost clients use
-  native `/v1/models` attributes that the catalog jobs write through the
+  native `/v1/models` attributes that the catalog job writes through the
   undocumented `PUT /api/models/catalog`; `/openai/v1/models` still drops them.
   Recheck that attributes still need a pricing row, that boot still requires
   the pricing file to load, and recovery after the config store is recreated.

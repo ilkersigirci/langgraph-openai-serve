@@ -5,33 +5,29 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph_openai_serve import GraphRequest
 
 from lgos_demo_api.graphs import server_tool
-from lgos_demo_api.graphs.server_tool import lgos_package_version
+from lgos_demo_api.graphs.server_tool import package_version
 
 
-async def test_package_version_reads_the_server_environment() -> None:
-    result = await lgos_package_version.ainvoke(" OpenAI ")
+@pytest.mark.parametrize(
+    ("distribution", "output"),
+    [
+        (" OpenAI ", f"openai=={version('openai')}"),
+        # Any installed distribution, not only the LGOS stack.
+        ("pydantic", f"pydantic=={version('pydantic')}"),
+        (
+            "not-a-real-distribution",
+            "not-a-real-distribution is not installed in this server runtime.",
+        ),
+        ("  ", "Name an installed Python distribution, such as openai."),
+    ],
+    ids=["normalized-name", "any-installed", "missing", "empty"],
+)
+async def test_package_version_reads_the_server_environment(
+    distribution: str, output: str
+) -> None:
+    result = await package_version.ainvoke(distribution)
 
-    assert result == [
-        {
-            "type": "custom_tool_call_output",
-            "output": f"openai=={version('openai')}",
-        }
-    ]
-
-
-async def test_unsupported_package_is_actionable() -> None:
-    result = await lgos_package_version.ainvoke("requests")
-
-    assert result == [
-        {
-            "type": "custom_tool_call_output",
-            "output": (
-                "Unsupported package: requests. Choose one of: "
-                "langgraph-openai-serve, langgraph, langchain, "
-                "langchain-openai, openai."
-            ),
-        }
-    ]
+    assert result == [{"type": "custom_tool_call_output", "output": output}]
 
 
 async def test_graph_does_not_execute_an_unselected_tool(
@@ -61,7 +57,7 @@ async def test_graph_does_not_execute_an_unselected_tool(
         metadata={},
         user=None,
         tools=(),
-        server_tools=("lgos_package_version",),
+        server_tools=("package_version",),
         tool_choice="auto",
         parallel_tool_calls=None,
     )

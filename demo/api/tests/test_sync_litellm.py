@@ -20,6 +20,8 @@ def model() -> ModelDetails:
             "lgos": {
                 "description": "An LGOS graph",
                 "features": ["interrupts"],
+                "server_tools": [],
+                "client_tools": [],
                 "client_settings": {
                     "json_schema": {"type": "object"},
                     "defaults": {"style": "brief"},

@@ -12,10 +12,7 @@ from lgos_chainlit import chat
 from lgos_chainlit.chat_settings import (
     BACKGROUND_SETTING_ID,
     LIMITED_FUNCTIONALITY_MESSAGE,
-    PACKAGE_VERSION_SETTING_ID,
-    PACKAGE_VERSION_TOOL,
     STREAMING_SETTING_ID,
-    WEB_SEARCH_SETTING_ID,
     chat_settings_metadata,
     configure_chat_settings,
     response_tools,
@@ -75,6 +72,8 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
                 "lgos/file-input": {
                     "description": "Files",
                     "features": ["file_inputs"],
+                    "server_tools": [],
+                    "client_tools": [],
                 },
                 "lgos/stripped": {"features": []},
             }
@@ -97,48 +96,47 @@ async def test_chat_profiles_use_list_metadata_for_descriptions_and_uploads(
 
 
 @pytest.mark.parametrize(
-    ("profile", "features", "saved", "offered", "tools"),
+    ("lgos", "saved", "offered", "tools"),
     [
         (
-            "lgos/background-report",
-            ["background"],
+            {"features": ["background"]},
             {BACKGROUND_SETTING_ID: True},
             {STREAMING_SETTING_ID: True, BACKGROUND_SETTING_ID: True},
             [],
         ),
         (
-            "provider/server-tool",
-            [],
-            {PACKAGE_VERSION_SETTING_ID: True, WEB_SEARCH_SETTING_ID: True},
+            {"server_tools": ["package_version", "web_search"]},
+            {"package_version": True, "web_search": True},
             {
                 STREAMING_SETTING_ID: True,
-                PACKAGE_VERSION_SETTING_ID: True,
-                WEB_SEARCH_SETTING_ID: True,
+                "package_version": True,
+                "web_search": True,
             },
-            [PACKAGE_VERSION_TOOL, {"type": "web_search"}],
+            [
+                {"type": "custom", "name": "package_version"},
+                {"type": "web_search"},
+            ],
         ),
         (
-            "lgos/advanced-graph",
-            ["mcp_tools"],
-            {WEB_SEARCH_SETTING_ID: True},
-            {STREAMING_SETTING_ID: True, WEB_SEARCH_SETTING_ID: True},
+            {"features": ["mcp_tools"], "server_tools": ["web_search"]},
+            {"web_search": True},
+            {STREAMING_SETTING_ID: True, "web_search": True},
             [GATEWAY_TOOL, {"type": "web_search"}],
         ),
         (
-            "provider/persistent-plot-agent",
-            [],
-            {WEB_SEARCH_SETTING_ID: True},
+            # Only advertised tools are offered, whatever the saved settings say.
+            {"client_tools": ["display_file"]},
+            {"web_search": True},
             {STREAMING_SETTING_ID: True},
             [DISPLAY_FILE_TOOL],
         ),
     ],
-    ids=["background", "server-tool", "advanced-graph", "plot-agent"],
+    ids=["background", "server-tools", "mcp-and-search", "client-tool"],
 )
-async def test_profile_settings_select_the_offered_tools(
+async def test_advertised_metadata_selects_the_offered_settings_and_tools(
     chainlit_context,
     fake_gateway,
-    profile: str,
-    features: list[str],
+    lgos: dict[str, object],
     saved: dict[str, object],
     offered: dict[str, object],
     tools: list[dict[str, object]],
@@ -153,7 +151,7 @@ async def test_profile_settings_select_the_offered_tools(
     )
     chainlit_context.session.chat_settings = saved
 
-    await select_profile(fake_gateway, profile, features=features)
+    await select_profile(fake_gateway, "lgos/any-graph", **lgos)
 
     assert cl.user_session.get("chat_settings") == offered
     assert response_tools() == tools

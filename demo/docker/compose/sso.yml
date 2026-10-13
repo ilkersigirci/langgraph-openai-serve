@@ -1,0 +1,89 @@
+# Optional SSO overlay: just demo/compose --sso (optionally with --dev).
+# Both UIs sign users in with OIDC and send each user's access token to the
+# bundled LiteLLM, which validates it. The settings are under SSO in
+# demo/.env.example.
+
+services:
+  lgos-litellm:
+    environment:
+      # LiteLLM's native JWT auth settings for the UIs' access tokens.
+      JWT_ISSUER: $DEMO_SSO_ISSUER
+      # LiteLLM reads the signing keys' jwks_uri from the issuer's discovery document.
+      JWT_PUBLIC_KEY_URL: ${DEMO_SSO_ISSUER}/.well-known/openid-configuration
+      JWT_AUDIENCE: $LITELLM_OIDC_AUDIENCE
+      # Admin UI login; members of the provider's admin group become proxy admins.
+      PROXY_BASE_URL: $DEMO_LITELLM_URL
+      AUTO_REDIRECT_UI_LOGIN_TO_SSO: "true"
+      GENERIC_CLIENT_ID: $LITELLM_CLIENT_ID
+      GENERIC_CLIENT_SECRET: $LITELLM_CLIENT_SECRET
+      GENERIC_AUTHORIZATION_ENDPOINT: $DEMO_LITELLM_OAUTH_AUTHORIZATION_ENDPOINT
+      GENERIC_TOKEN_ENDPOINT: $DEMO_LITELLM_OAUTH_TOKEN_ENDPOINT
+      GENERIC_USERINFO_ENDPOINT: $DEMO_LITELLM_OAUTH_USERINFO_ENDPOINT
+      GENERIC_CLIENT_USE_PKCE: "true"
+      PKCE_STRICT_CACHE_MISS: "true"
+      GENERIC_SCOPE: openid email profile groups
+      # The UIs' tokens carry the same sub, so a login and an API call share
+      # one Internal User.
+      GENERIC_USER_ID_ATTRIBUTE: sub
+      GENERIC_USER_EMAIL_ATTRIBUTE: email
+      GENERIC_USER_DISPLAY_NAME_ATTRIBUTE: name
+      GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE: internal_user
+      GENERIC_ROLE_MAPPINGS_GROUP_CLAIM: groups
+      GENERIC_ROLE_MAPPINGS_ROLES: '{"proxy_admin": ["admin"]}'
+
+  lgos-chainlit:
+    environment:
+      DEMO_CHAINLIT_LOGIN_TYPE: oauth
+      DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING: "true"
+      # Every Chainlit request sends the user's token.
+      OPENAI_GATEWAY_API_KEY: ""
+      CHAINLIT_URL: $CHAINLIT_URL
+      DEMO_CHAINLIT_OAUTH_ISSUER: $DEMO_SSO_ISSUER
+      DEMO_CHAINLIT_OAUTH_RESOURCE: $DEMO_CHAINLIT_OAUTH_RESOURCE
+      DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD: $DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD
+      DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS: $DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS
+      OAUTH_GENERIC_CLIENT_ID: $OAUTH_GENERIC_CLIENT_ID
+      OAUTH_GENERIC_CLIENT_SECRET: $OAUTH_GENERIC_CLIENT_SECRET
+      OAUTH_GENERIC_SCOPES: $OAUTH_GENERIC_SCOPES
+      OAUTH_GENERIC_NAME: $OAUTH_GENERIC_NAME
+      OAUTH_PROMPT: $OAUTH_PROMPT
+      OAUTH_GENERIC_PROMPT: $OAUTH_GENERIC_PROMPT
+
+  lgos-openwebui:
+    environment:
+      OPENAI_GATEWAY_API_KEY: ""
+      OPENAI_API_CONFIGS: '{"0": {"auth_type": "system_oauth"}}'
+      OPENAI_API_KEY: ""
+      AUDIO_STT_OPENAI_API_KEY: ""
+      AUDIO_TTS_OPENAI_API_KEY: ""
+      # The base connection with the user's token instead of the shared key.
+      TOOL_SERVER_CONNECTIONS: >-
+        [{"type": "mcp", "url": "${OPENAI_GATEWAY_BASE_URL}/mcp", "path": "",
+        "auth_type": "system_oauth",
+        "config": {"enable": true, "function_name_filter_list": [],
+        "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]},
+        "info": {"id": "lgos-gateway", "name": "LGOS Gateway",
+        "description": "MCP tools authorized for the signed-in user."}}]
+      WEBUI_URL: $DEMO_OPENWEBUI_URL
+      OPENID_REDIRECT_URI: ${DEMO_OPENWEBUI_URL}/oauth/oidc/callback
+      OPENID_PROVIDER_URL: ${DEMO_SSO_ISSUER}/.well-known/openid-configuration
+      OAUTH_CLIENT_ID: $DEMO_OPENWEBUI_OAUTH_CLIENT_ID
+      OAUTH_CLIENT_SECRET: $DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET
+      OAUTH_SCOPES: $DEMO_OPENWEBUI_OAUTH_SCOPES
+      OAUTH_AUTHORIZE_PARAMS: $DEMO_OPENWEBUI_OAUTH_AUTHORIZE_PARAMS
+      # Only SSO users sign in: the form is hidden and the sign-in API rejects
+      # passwords. The startup installs the Functions without signing in.
+      ENABLE_OAUTH_SIGNUP: true
+      ENABLE_SIGNUP: false
+      ENABLE_LOGIN_FORM: false
+      ENABLE_PASSWORD_AUTH: false
+      # The provider verified every user, so none waits for approval; members of
+      # its admin group become admins, as in LiteLLM.
+      DEFAULT_USER_ROLE: user
+      ENABLE_OAUTH_ROLE_MANAGEMENT: true
+      OAUTH_ROLES_CLAIM: groups
+      OAUTH_ALLOWED_ROLES: "*"
+      OAUTH_ADMIN_ROLES: admin
+      ENABLE_OAUTH_GROUP_MANAGEMENT: true
+      ENABLE_OAUTH_GROUP_CREATION: true
+      ENABLE_OAUTH_BACKCHANNEL_LOGOUT: true

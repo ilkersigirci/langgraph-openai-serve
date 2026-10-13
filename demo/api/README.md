@@ -59,10 +59,11 @@ The command and its tests belong to this project; LiteLLM does not load them.
 
 ## Bifrost Model Sync
 
-`python -m lgos_demo_api.utils.sync_bifrost` provides `prepare` and `sync`
-commands. Compose runs preparation before Bifrost starts, then publishes
-descriptions and complete LGOS metadata into its native catalog after it is
-healthy. Both jobs use this API image. No dashboard setup is needed.
+`python -m lgos_demo_api.utils.sync_bifrost` writes the graph rows of Bifrost's
+pricing datasheet, then publishes descriptions and complete LGOS metadata into
+the running gateway's native catalog, signed in with `BIFROST_ADMIN_USERNAME`
+and `BIFROST_ADMIN_PASSWORD`. Compose runs it from this API image once the graph
+APIs are healthy. No dashboard setup is needed.
 Run `just demo/sync-bifrost [--dev]` after graph metadata changes; see
 [Bifrost catalog sync](../../docs/demo/bifrost.md#declarative-model-metadata)
 for pricing and restart behavior.

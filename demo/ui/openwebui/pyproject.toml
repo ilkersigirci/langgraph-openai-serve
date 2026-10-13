@@ -1,20 +1,18 @@
 [project]
 name = "lgos-openwebui"
 version = "0.1.0"
-description = "Open WebUI integration and synchronization command for LGOS"
+description = "Open WebUI integration for LGOS"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
+# This code runs on the pinned Open WebUI image's packages; keep these equal to
+# the versions that image ships so the tests run what the image runs.
 dependencies = [
-    "httpx>=0.28,<1",
-    "httpx2>=2.13,<3",
-    "openai>=3.14.1,<4",
-    "pydantic>=2.11,<3",
-    "pydantic-settings>=2.9.0",
+    "httpx==0.28.1",
+    "openai==2.29.0",
+    "pydantic==2.13.4",
+    "starlette==1.7.0",
 ]
-
-[project.scripts]
-lgos-openwebui-sync = "lgos_openwebui.sync_functions:main"
 
 [dependency-groups]
 dev = [

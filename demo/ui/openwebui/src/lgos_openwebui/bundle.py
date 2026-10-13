@@ -1,4 +1,4 @@
-"""Flatten modular Open WebUI Function sources for database synchronization."""
+"""Flatten modular Open WebUI Function sources into one stored Function."""
 
 import ast
 from pathlib import Path
@@ -7,6 +7,7 @@ GENERIC_BUNDLE = (
     "contracts.py",
     "api.py",
     "gateway.py",
+    "catalog.py",
     "files.py",
     "responses.py",
     "metadata.py",

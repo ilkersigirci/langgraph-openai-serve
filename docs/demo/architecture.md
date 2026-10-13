@@ -55,7 +55,7 @@ optional background worker and Hatchet are shown in
 | Component | Compose service | Responsibility | Details |
 | --- | --- | --- | --- |
 | Chainlit | `lgos-chainlit` | Chat UI built on `chainlit-utils`. | [Chainlit Client](chainlit.md) |
-| Open WebUI | `lgos-openwebui` | Chat UI whose synced Generic Function sends each chat to the gateway. Workspace Models expose each graph and its settings. | [Open WebUI Functions](open-webui.md) |
+| Open WebUI | `lgos-openwebui` | Chat UI whose Generic Function, installed at startup, sends each graph chat to the gateway and lists each graph with its description and settings form. Its own OpenAI connection lists the gateway's other models. | [Open WebUI Functions](open-webui.md) |
 | AI gateway | `lgos-litellm` or `lgos-bifrost` | Authenticates callers, routes graph models to their API, serves the catalog with LGOS metadata, routes Files and MCP, and forwards model, speech, and vector-store calls upstream. | [Bifrost Gateway](bifrost.md), [LiteLLM Model Sync](litellm-sync.md) |
 | Demo API | `lgos-demo-api` | One image running `lgos serve` with the demo graph registry. It runs alongside the independent coding-agent API behind one gateway. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
 | Coding-agent API | `lgos-api-coding-agent` | An LGOS app that serves Codex as one graph and edits a shared workspace directory. | [Coding Agent](graphs/coding-agent.md) |
@@ -63,7 +63,7 @@ optional background worker and Hatchet are shown in
 | Files API | `lgos-files-api` | OpenAI Files API over S3, giving every graph API one file namespace. | [Run the Files API](files-api.md) |
 | DBHub | `lgos-postgres-mcp` | Read-only MCP server with six fixed reports. `lgos-mcp-db-setup` creates its database role and views. | [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) |
 | PostgreSQL | `lgos-db` | Shared database for the LGOS apps, Chainlit, LiteLLM, and the MCP reporting views. | [State Ownership](#state-ownership) |
-| Catalog sync | `lgos-model-sync`, `lgos-bifrost-catalog`, `lgos-bifrost-sync` | Publish each graph's description, features, and settings into the gateway catalog. | [Model Catalog](#model-catalog) |
+| Catalog sync | `lgos-model-sync`, `lgos-bifrost-sync` | Publish each graph's description, features, and settings into the running gateway's catalog. | [Model Catalog](#model-catalog) |
 
 The optional [OpenTelemetry overlay](opentelemetry.md) adds a collector for
 traces, metrics, and logs without changing these paths.
@@ -148,8 +148,8 @@ shortcuts that a real deployment replaces:
 
 | Area | Demo shortcut | Production |
 | --- | --- | --- |
-| Gateway access | One static key shared by the UIs and the graph APIs; Bifrost's admin API has no authentication | Per-user or per-service credentials or SSO, an authenticated admin API, and TLS |
-| UI login | Chainlit mock login | OAuth; see [Chainlit production notes](chainlit.md#production-notes) |
+| Gateway access | One static key shared by the graph APIs and, without the [SSO overlay](docker.md#sso-overlay), the UIs; demo admin credentials for the gateways' management APIs | Per-service credentials, each user's SSO token as with the SSO overlay, an authenticated admin API, and TLS |
+| UI login | Chainlit mock login and Open WebUI password login, unless the SSO overlay is used | OIDC, as with the SSO overlay; see [Chainlit production notes](chainlit.md#production-notes) |
 | LGOS APIs | No authentication; demo API host port published for direct tests | Reachable only from the gateway, or behind authentication middleware |
 | PostgreSQL | One container shared by every owner | Managed PostgreSQL with backups, monitoring, and failover; see [Docker Compose](docker.md#demo-services) |
 | Scaling | Demo API, coding-agent API, and one Files API process | More API and worker replicas behind the gateway; Files API replicas over the same bucket |

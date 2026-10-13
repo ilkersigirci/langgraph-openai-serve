@@ -129,7 +129,7 @@ just demo/compose --dev
 
 Omit `--dev` in a standalone copy of `demo/`. The coding-agent image builds locally.
 Normal stack startup registers `lgos/coding-agent` in the selected
-gateway and synchronizes Open WebUI's model list.
+gateway, and both UIs list it from there.
 
 In either UI select that model and ask:
 

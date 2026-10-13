@@ -8,7 +8,7 @@ from langgraph_openai_serve.api.models.schemas import (
     ModelDetails,
     ModelList,
 )
-from langgraph_openai_serve.graph.graph_registry import GraphRegistry
+from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 
 MODEL_CREATED = 1743771509
 MODEL_OWNER = "langgraph-openai-serve"
@@ -30,13 +30,7 @@ def get_models(graph_registry: GraphRegistry) -> ModelList:
             id=name,
             created=MODEL_CREATED,
             owned_by=MODEL_OWNER,
-            lgos=LangGraphModelSummaryExtension(
-                description=graph_config.description,
-                features=sorted(
-                    graph_config.features,
-                    key=lambda feature: feature.value,
-                ),
-            ),
+            lgos=_summary_extension(graph_config),
         )
         for name, graph_config in graph_registry.graphs.items()
     ]
@@ -60,11 +54,16 @@ def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
         created=MODEL_CREATED,
         owned_by=MODEL_OWNER,
         lgos=LangGraphModelExtension(
-            description=graph_config.description,
-            features=sorted(
-                graph_config.features,
-                key=lambda feature: feature.value,
-            ),
+            **dict(_summary_extension(graph_config)),
             client_settings=client_settings_details,
         ),
+    )
+
+
+def _summary_extension(graph_config: GraphConfig) -> LangGraphModelSummaryExtension:
+    return LangGraphModelSummaryExtension(
+        description=graph_config.description,
+        features=sorted(graph_config.features, key=lambda feature: feature.value),
+        server_tools=sorted(graph_config.server_tools),
+        client_tools=sorted(graph_config.client_tools),
     )

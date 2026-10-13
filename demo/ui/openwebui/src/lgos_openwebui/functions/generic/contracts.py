@@ -39,19 +39,15 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
-PERSISTENT_PLOT_MODEL_NAME = "persistent-plot-agent"
-PACKAGE_VERSION_TOOL_NAME = "lgos_package_version"
+# Both gateways publish every LGOS model under this public namespace.
+LGOS_MODEL_NAMESPACE = "lgos/"
+# OpenAI's built-in tool; every other advertised server tool is a custom tool.
 WEB_SEARCH_TOOL_NAME = "web_search"
 BACKGROUND_SETTING_NAME = "lgos_background"
-# Chat Variables the Pipe consumes itself; they never become graph settings.
-PIPE_SETTING_NAMES = frozenset(
-    {BACKGROUND_SETTING_NAME, PACKAGE_VERSION_TOOL_NAME, WEB_SEARCH_TOOL_NAME}
-)
+BACKGROUND_FEATURE = "background"
+FILE_INPUTS_FEATURE = "file_inputs"
+MCP_TOOLS_FEATURE = "mcp_tools"
 INTEGER_TEXT = re.compile(r"-?\d+")
-# Open WebUI prepends the rendered declarations to the first system message.
-# Form values are single-line, so these newline-anchored lines bound them.
-CHAT_VARIABLES_DECLARATION_START = "<lgos-chat-variables>\n"
-CHAT_VARIABLES_DECLARATION_END = "\n</lgos-chat-variables>"
 PipeChunk = str | dict[str, Any]
 PipeResponse = AsyncIterator[PipeChunk] | PipeChunk
 OpenWebUIEventEmitter = Callable[[dict[str, Any]], Awaitable[object]]
@@ -95,29 +91,6 @@ class OpenWebUIBody(BaseModel):
     model: str
     messages: list[OpenWebUIMessage]
 
-    @field_validator("messages")
-    @classmethod
-    def remove_chat_variable_declarations(
-        cls, messages: list[OpenWebUIMessage]
-    ) -> list[OpenWebUIMessage]:
-        """Keep UI settings out of the graph prompt; they travel as metadata."""
-        if not messages or messages[0].role != "system":
-            return messages
-        system = messages[0]
-        if not isinstance(system.content, str):
-            return messages
-        content = system.content
-        # Each native tool-loop continuation prepends another copy.
-        while content.startswith(CHAT_VARIABLES_DECLARATION_START):
-            end = content.find(CHAT_VARIABLES_DECLARATION_END)
-            if end == -1:
-                break
-            end += len(CHAT_VARIABLES_DECLARATION_END)
-            content = content[end:].removeprefix("\n")
-        if content == system.content:
-            return messages
-        return [system.model_copy(update={"content": content}), *messages[1:]]
-
     @property
     def model_id(self) -> str:
         """The graph model from Open WebUI's ``<pipe>.<model>`` ID."""
@@ -143,6 +116,19 @@ class OpenWebUIMetadata(BaseModel):
         ),
     )
     chat_variables: dict[str, JsonValue] = Field(default_factory=dict)
+    # The tool names the catalog published in the selected model's info.
+    server_tools: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasPath(
+            "model", "info", "meta", LGOS_EXTENSION_KEY, "server_tools"
+        ),
+    )
+    client_tools: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasPath(
+            "model", "info", "meta", LGOS_EXTENSION_KEY, "client_tools"
+        ),
+    )
     # Complete runtime settings added by a settings Filter such as UserValves.
     lgos_settings: dict[str, JsonValue] | None = None
     user_message: OpenWebUIUserMessage | None = None
@@ -181,11 +167,6 @@ class OpenWebUIToolSpec(BaseModel):
     description: str | None = None
     parameters: dict[str, JsonValue] | None = None
     strict: bool = False
-
-
-def supports_display_file(model_id: str) -> bool:
-    """Return whether the selected demo graph publishes displayable files."""
-    return model_id.rsplit("/", 1)[-1] == PERSISTENT_PLOT_MODEL_NAME
 
 
 class InterruptCancelled(Exception):  # ruff: ignore[error-suffix-on-exception-name] - Cancellation is control flow, not an application error.

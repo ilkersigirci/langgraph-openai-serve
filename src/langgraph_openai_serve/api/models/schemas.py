@@ -24,6 +24,8 @@ class LangGraphModelSummaryExtension(BaseModel):
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
     features: list[GraphFeature]
+    server_tools: list[str]
+    client_tools: list[str]
 
 
 class LangGraphModelExtension(LangGraphModelSummaryExtension):

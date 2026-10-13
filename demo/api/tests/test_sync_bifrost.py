@@ -12,8 +12,8 @@ from langgraph_openai_serve.api.models.schemas import (
 
 from lgos_demo_api.utils.sync_bifrost import (
     ModelAttributes,
-    prepare_catalog,
     sync_catalog,
+    write_datasheet,
 )
 
 
@@ -27,6 +27,8 @@ def model() -> ModelDetails:
             "lgos": {
                 "description": "An LGOS graph",
                 "features": ["interrupts"],
+                "server_tools": [],
+                "client_tools": [],
                 "client_settings": {
                     "json_schema": {"type": "object"},
                     "defaults": {"style": "brief"},
@@ -61,10 +63,10 @@ def sources(model: ModelDetails) -> Iterator[dict[str, httpx2.Client]]:
         yield {"team-a": team_a, "team-b": team_b}
 
 
-def test_prepare_writes_zero_priced_rows_with_complete_metadata(
+def test_datasheet_has_zero_priced_rows_for_complete_metadata(
     sources: dict[str, httpx2.Client], model: ModelDetails, tmp_path: Path
 ) -> None:
-    prepare_catalog(sources, tmp_path)
+    attributes = write_datasheet(sources, tmp_path)
 
     pricing = json.loads((tmp_path / "pricing.json").read_text())
     assert pricing == {
@@ -76,50 +78,45 @@ def test_prepare_writes_zero_priced_rows_with_complete_metadata(
         }
         for name in ("graph", "coding-agent")
     }
-    attributes = json.loads((tmp_path / "attributes.json").read_text())
-    assert [(entry["provider"], entry["model"]) for entry in attributes] == [
+    assert [(entry.provider, entry.model) for entry in attributes] == [
         ("lgos", "graph"),
         ("lgos", "coding-agent"),
     ]
     for entry in attributes:
-        published = entry["additional_attributes"]
+        published = entry.additional_attributes
         assert published["description"] == "An LGOS graph"
         assert LangGraphModelExtension.model_validate_json(published["lgos"]) == (
             model.lgos
         )
 
 
-def test_prepare_keeps_the_previous_catalog_when_a_source_fails(
+def test_datasheet_is_kept_when_a_source_fails(
     model: ModelDetails, tmp_path: Path
 ) -> None:
     (tmp_path / "pricing.json").write_text("previous")
-    (tmp_path / "attributes.json").write_text("previous")
 
     with (
         _source(model) as healthy,
         _source(model, available=False) as failing,
         pytest.raises(httpx2.HTTPStatusError),
     ):
-        prepare_catalog({"team-a": healthy, "team-b": failing}, tmp_path)
+        write_datasheet({"team-a": healthy, "team-b": failing}, tmp_path)
 
     assert (tmp_path / "pricing.json").read_text() == "previous"
-    assert (tmp_path / "attributes.json").read_text() == "previous"
 
 
-def test_colliding_sources_leave_the_previous_catalog_intact(
+def test_colliding_sources_leave_the_previous_datasheet_intact(
     model: ModelDetails, tmp_path: Path
 ) -> None:
     (tmp_path / "pricing.json").write_text("previous")
-    (tmp_path / "attributes.json").write_text("previous")
     with (
         _source(model) as source,
         pytest.raises(
             ValueError, match="Duplicate upstream model across sources: graph"
         ),
     ):
-        prepare_catalog({"demo": source, "coding": source}, tmp_path)
+        write_datasheet({"demo": source, "coding": source}, tmp_path)
     assert (tmp_path / "pricing.json").read_text() == "previous"
-    assert (tmp_path / "attributes.json").read_text() == "previous"
 
 
 @pytest.mark.parametrize(

@@ -70,7 +70,8 @@ For each request:
    schema defaults without writing them.
 4. An update batches every requested assignment, validates the complete
    document, and calls `store.aput()` once only when a value changed.
-5. When the request offers the client-owned `display_file` function, the tool
+5. When the request offers the client-owned `display_file` function, which
+   the UIs do because the model lists it in `lgos.client_tools`, the tool
    serializes the figure with Plotly, uploads the `.plotly.json` file through
    the OpenAI Files API, and returns a deterministic function call containing
    its `file_id` and `application/vnd.plotly.v1+json` media type.

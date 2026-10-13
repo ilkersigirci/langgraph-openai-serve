@@ -114,8 +114,8 @@ registered demo graph names.
 
 `just demo/api --editable` overlays this checkout without changing
 the self-contained demo project or its lockfile. The demo publishes independent
-API and Chainlit images and runs the pinned official Open WebUI image unchanged;
-its locked synchronization tool runs on the host. See the
+API and Chainlit images and runs a pinned, lightly patched Open WebUI image
+with the demo's Open WebUI integration mounted into it. See the
 [demo Docker Compose guide](docs/demo/docker.md).
 
 The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`

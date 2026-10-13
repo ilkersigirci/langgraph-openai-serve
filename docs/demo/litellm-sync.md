@@ -6,9 +6,9 @@ gateway's `/model/info` endpoint.
 
 ## Usage
 
-`just demo/compose` syncs the demo API and coding-agent catalogs after LiteLLM and its
-dependencies are healthy, then starts and syncs Open WebUI. Open the UIs after
-the command completes. The `--dev` and `--otel` flags keep the same sequence.
+`just demo/compose` starts LiteLLM first, then the LGOS services, and syncs the
+demo API and coding-agent catalogs once they are healthy. It then starts Open
+WebUI. Open the UIs after the command completes. The `--dev` and `--otel` flags keep the same sequence.
 
 To reconcile the bundled APIs together:
 
@@ -23,14 +23,13 @@ owns rollout and health checks; this command only copies the catalog. Use a
 single invocation containing every API in the `lgos` namespace. Graph IDs must
 be unique across these APIs. For replicas of the same API, use one stable service
 URL that balances traffic across replicas; their public model names stay unchanged.
-After a manual sync, reconnect Chainlit and run
-`just demo/sync-openwebui`; the host-side locked sync project uses the
-[host-reachable gateway configuration](open-webui.md#setup).
+After a manual sync, reconnect Chainlit and reload Open WebUI; both read the
+catalog when they list models.
 
 ## Gateway Credentials
 
 - `LITELLM_SYNC_BASE_URL`: the native administrator-key root reachable from
-  the sync container, not the delegated SSO endpoint.
+  the sync container.
 - `LITELLM_MASTER_KEY`: export an external gateway's admin key from CI or the
   operator environment. Do not put it in the shared UI `demo/.env` file.
 
@@ -93,5 +92,4 @@ and provide that variable to the job through Compose's `environment` or
 
 When retiring or renaming a provider namespace, remove its sync-owned deployments
 through LiteLLM's model management API or Admin UI. Syncing a new namespace does
-not delete entries in another namespace. Then rerun Open WebUI sync to remove
-its obsolete generated Workspace Models and hidden bases.
+not delete entries in another namespace.

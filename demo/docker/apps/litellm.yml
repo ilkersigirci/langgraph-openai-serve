@@ -23,19 +23,12 @@ services:
       nofile:
         soft: 4096
         hard: 8192
+    # The gateway starts before the LGOS services; it needs only its database.
     depends_on:
       lgos-db:
         condition: service_healthy
-      lgos-postgres-mcp:
-        condition: service_healthy
-      lgos-demo-api:
-        condition: service_healthy
-      lgos-api-coding-agent:
-        condition: service_healthy
-      lgos-files-api:
-        condition: service_healthy
     environment:
-      CONFIG_FILE_PATH: /app/config.yaml
+      CONFIG_FILE_PATH: /app/litellm-config/config.yaml
       DATABASE_URL: postgresql://lgos:lgos@lgos-db:5432/lgos?schema=litellm
       LITELLM_MASTER_KEY: $OPENAI_GATEWAY_API_KEY
       STORE_MODEL_IN_DB: "true"
@@ -50,7 +43,7 @@ services:
     # Initialize the Admin UI database through the image's proxy CLI.
     command:
       - --config
-      - /app/config.yaml
+      - /app/litellm-config/config.yaml
       - --host
       - 0.0.0.0
       - --port
@@ -62,7 +55,8 @@ services:
     volumes:
       - type: bind
         source: ../configs/litellm/config.yaml
-        target: /app/config.yaml
+        # The image's access_token validator sits in this directory.
+        target: /app/litellm-config/config.yaml
         read_only: true
         bind:
           create_host_path: false

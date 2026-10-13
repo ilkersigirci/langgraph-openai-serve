@@ -52,9 +52,10 @@ Restart Chainlit after changing it. Native steps are enabled by the bundled
 gateway authorization. By default, mock and OAuth login both use
 `OPENAI_GATEWAY_API_KEY` for Responses, Files, speech, and MCP. Set
 `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True` to send the signed-in user's
-access token instead. Delegated mode disables the static MCP connection and needs the gateway's
-API permission and `offline_access`; point `OPENAI_GATEWAY_BASE_URL` at the
-LiteLLM SSO endpoint. LiteLLM must authorize `/model/info` as well as Responses,
+access token instead; the demo's `just demo/compose --sso` sets both. Delegated
+mode needs the gateway's
+API permission and `offline_access`, and a LiteLLM that validates those
+tokens, such as the demo's bundled one with `--sso`. LiteLLM must authorize `/model/info` as well as Responses,
 Files, and the speech models for the user's credential. See the
 [Chainlit guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login)
 for both modes, key rotation, and logout behavior.

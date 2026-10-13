@@ -9,7 +9,6 @@ from typing import Any
 
 import openai.types.responses as response_types
 from openai.types.responses import (
-    CustomToolParam,
     FunctionToolParam,
     Response,
     ResponseFunctionToolCall,
@@ -21,14 +20,13 @@ from pydantic import JsonValue, TypeAdapter
 
 from .contracts import (
     DISPLAY_FILE_TOOL_NAME,
-    PACKAGE_VERSION_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
     OpenWebUIMessage,
     OpenWebUIMessageToolCall,
+    OpenWebUIMetadata,
     OpenWebUIToolSpec,
-    supports_display_file,
 )
 from .gateway import MCP_GATEWAY_ID
 
@@ -69,27 +67,22 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "strict": True,
     "parameters": DisplayFileArguments.model_json_schema(),
 }
-PACKAGE_VERSION_TOOL: CustomToolParam = {
-    "type": "custom",
-    "name": PACKAGE_VERSION_TOOL_NAME,
-}
 ACTIVE_BACKGROUND_STATUSES = {"queued", "in_progress"}
 logger = logging.getLogger(__name__)
 
 
-def _responses_tools(
-    model_id: str,
-    chat_variables: Mapping[str, JsonValue],
-) -> list[ToolParam]:
-    """Build the tools owned by the selected demo client and graph."""
+def _responses_tools(metadata: OpenWebUIMetadata) -> list[ToolParam]:
+    """Build the tools the selected model advertises and the user enabled."""
     tools: list[ToolParam] = (
-        [DISPLAY_FILE_TOOL] if supports_display_file(model_id) else []
+        [DISPLAY_FILE_TOOL] if DISPLAY_FILE_TOOL_NAME in metadata.client_tools else []
     )
-    # Only the generated server-tool and advanced-graph models declare these.
-    if chat_variables.get(PACKAGE_VERSION_TOOL_NAME) is True:
-        tools.append(PACKAGE_VERSION_TOOL)
-    if chat_variables.get(WEB_SEARCH_TOOL_NAME) is True:
-        tools.append({"type": "web_search"})
+    tools.extend(
+        {"type": "web_search"}
+        if name == WEB_SEARCH_TOOL_NAME
+        else {"type": "custom", "name": name}
+        for name in metadata.server_tools
+        if metadata.chat_variables.get(name) is True
+    )
     return tools
 
 

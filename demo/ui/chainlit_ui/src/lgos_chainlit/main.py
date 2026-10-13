@@ -27,14 +27,7 @@ get_chainlit_settings()
 keep_restored_sessions()
 serve_public_files()
 config.features.audio.enabled = settings.AUDIO_STT_MODEL is not None
-
-if not settings.ENABLE_OAUTH_TOKEN_FORWARDING:
-    assert settings.OPENAI_GATEWAY_API_KEY is not None  # ruff: ignore[assert] - Pydantic settings validation already enforces this invariant.
-    config.features.mcp.servers = [
-        mcp_gateway_config(gateway, settings.OPENAI_GATEWAY_API_KEY)
-    ]
-else:
-    config.features.mcp.enabled = False
+config.features.mcp.servers = [mcp_gateway_config(gateway)]
 
 
 async def _close_chainlit_data_layer() -> None:

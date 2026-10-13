@@ -10,18 +10,20 @@ The demo uses five independent uv projects rather than a uv workspace:
 | `demo/api-coding-agent` | `demo/api-coding-agent/uv.lock` | Local image build |
 | `demo/files_api` | `demo/files_api/uv.lock` | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `demo/ui/chainlit_ui` | `demo/ui/chainlit_ui/uv.lock` | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Host-run sync tool; unchanged pinned official Open WebUI image |
+| `demo/ui/openwebui` | `demo/ui/openwebui/uv.lock` | Tests only; its source is mounted into the pinned `homeserver-open-webui` image |
 
 Published project-owned images use only their project directories as build
 contexts. The Compose entrypoint is `docker/compose/demo.yml`; service
-definitions live in `docker/apps/`, while `docker/compose/development.yml` and
-`docker/compose/otel.yml` provide development and OpenTelemetry overlays.
+definitions live in `docker/apps/`, while `docker/compose/development.yml`,
+`docker/compose/otel.yml`, and `docker/compose/sso.yml` provide development,
+OpenTelemetry, and SSO overlays.
 Shared runtime assets remain under `demo/docker/`. The development overlay
 additionally supplies the parent LGOS checkout as a named context for the demo API and coding-agent API
-editable installs. Open WebUI runs its pinned official image unchanged. Its
-locked OpenAI v3 and HTTPX2 synchronization project runs on the host, while
-Compose mounts only the Function sources and small raw-upload policy into the
-upstream image. The two gateway fragments use pinned public images: upstream
+editable installs. Open WebUI runs the pinned `homeserver-open-webui` image,
+the official slim image with small patches. Compose mounts the
+`lgos_openwebui` package into it read-only and starts its
+app factory, which installs the Functions at startup.
+The two gateway fragments use pinned public images: upstream
 Bifrost and `homeserver-litellm`. There is no demo-wide `pyproject.toml`, uv
 workspace, shared Python environment, or shared lockfile.
 The API package includes the compact Markdown corpus used by `lgos-rag`.
@@ -63,10 +65,10 @@ settings](reference.md#opentelemetry-settings).
     just demo/compose
     ```
 
-    The command waits for the gateway and its dependencies, including Chainlit
-    and DBHub, syncs metadata into the selected gateway, then starts and syncs
-    Open WebUI. Bifrost also runs a catalog preparation job before starting.
-    Services remain running in the background. Compose owns [dependency order and
+    The command starts the gateway first, then the LGOS services, including
+    Chainlit and DBHub, which assume it is running. It syncs metadata into the
+    selected gateway, then starts Open WebUI. Services remain running in the
+    background. Compose owns [dependency order and
     readiness](https://docs.docker.com/compose/how-tos/startup-order/); `just` only
     sequences the repeatable sync jobs.
 
@@ -124,6 +126,37 @@ settings](reference.md#opentelemetry-settings).
     This tests all five projects without changing their dependency declarations
     or lockfiles. Chainlit and Open WebUI remain standalone clients and exercise
     whichever API their OpenAI base URL targets.
+
+### SSO Overlay
+
+By default, Chainlit uses mock login, Open WebUI password login, and both send
+`OPENAI_GATEWAY_API_KEY` for every user. Add `--sso` to any `just demo/compose`
+command to switch the stack to OIDC:
+
+```bash
+just demo/compose --sso
+```
+
+The `docker/compose/sso.yml` overlay reads the SSO section of `demo/.env` and:
+
+- signs users in to both UIs with OIDC, and makes each UI send the user's
+  access token instead of the shared key;
+- makes the bundled LiteLLM validate those RFC 9068 tokens with its native JWT
+  auth and apply each user's models, budget, and spend. A user reaches the MCP
+  servers marked `allow_all_keys` and those LiteLLM's Admin UI grants to them
+  or to a team they belong to; a proxy admin gets LiteLLM's admin view. Other
+  credentials, such as `OPENAI_GATEWAY_API_KEY` and the sync's master key, keep
+  LiteLLM's native authentication. Bifrost cannot validate the tokens, so
+  `--sso` needs `OPENAI_GATEWAY_TYPE=litellm`;
+- signs users in to LiteLLM's Admin UI through the same provider and as the
+  same LiteLLM user. Only members of the provider's `admin` group become proxy
+  admins and can open it; register `${DEMO_LITELLM_URL}/sso/callback` with
+  LiteLLM's client.
+
+The overlay applies to the stack it starts; `just demo/up` recreates a service
+without it. See [Chainlit login](chainlit.md#persistence-and-login) and
+[Open WebUI gateway credentials](open-webui.md#gateway-credentials) for each
+UI's settings.
 
 ## Demo Services
 
@@ -211,7 +244,7 @@ settings](reference.md#opentelemetry-settings).
     ```
 
     The UIs use native `/openai/v1/responses`, normal `/v1` Files routing, the
-    aggregate `/mcp` endpoint, and native `/v1/models` metadata. Compose prepares
+    aggregate `/mcp` endpoint, and native `/v1/models` metadata. Compose writes
     zero-priced graph rows and synchronizes descriptions, features, and client
     settings automatically. Use `--dev` to build this checkout. The named
     PostgreSQL Virtual MCP remains available at
@@ -228,12 +261,11 @@ settings](reference.md#opentelemetry-settings).
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
     ```
 
     Use the gateway root without `/v1`. Both UIs share the gateway type, base
-    URL, and `OPENAI_GATEWAY_API_KEY`, or Chainlit uses delegated OAuth when
-    explicitly enabled. An external LiteLLM uses the same
+    URL, and `OPENAI_GATEWAY_API_KEY`, or send each user's token with the
+    [SSO overlay](#sso-overlay). An external LiteLLM uses the same
     Responses, Files, and catalog routes as bundled LiteLLM.
 
     Both UIs derive their MCP endpoint from the same gateway root and use the
@@ -251,7 +283,7 @@ settings](reference.md#opentelemetry-settings).
 
     `just demo/compose` (or the same command with `--dev`) starts
     the demo APIs, Files service, Chainlit, and DBHub, syncs both
-    catalogs to the external LiteLLM, then starts and syncs Open WebUI. An empty
+    catalogs to the external LiteLLM, then starts Open WebUI. An empty
     `COMPOSE_PROFILES` disables both bundled gateways;
     the template normally selects one through
     `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}`. The external gateway and its
@@ -292,12 +324,11 @@ settings](reference.md#opentelemetry-settings).
     and Admin UI SSO. The selected credentials must allow the LGOS models, the
     `DEMO_API_OPENAI_*` model IDs the graphs call, Files operations, the
     configured MCP tools, and native `/model/info`. Chainlit can
-    enable [delegated OAuth](chainlit.md#persistence-and-login); it then ignores
-    the shared static key and disables its native MCP connection.
+    enable [delegated OAuth](chainlit.md#persistence-and-login); it then sends
+    each user's token instead of the shared static key, MCP included.
     If the gateway already configures `litellm_proxy` Files,
     reconcile that provider with the demo's shared Files namespace. Then run
-    `just demo/sync-openwebui` and the
-    [LiteLLM SDK checks](#demo-services) against the external URL.
+    the [LiteLLM SDK checks](#demo-services) against the external URL.
 
 === "LiteLLM"
 
@@ -389,8 +420,7 @@ settings](reference.md#opentelemetry-settings).
 
 === "Chainlit"
 
-    The bundled gateways already start Chainlit. With an external gateway and
-    its backends running:
+    With the gateway and its backends running:
 
     ```bash
     just demo/up lgos-chainlit
@@ -413,11 +443,11 @@ settings](reference.md#opentelemetry-settings).
 
     Open WebUI: `http://localhost:3003`
 
-    Compose runs the pinned official Open WebUI image unchanged. Follow the
-    [Open WebUI setup](open-webui.md#setup) to synchronize the bundled
-    Functions and generate Workspace Models from LGOS metadata.
-    The Compose service also mounts the temporary raw-upload policy described
-    under [Open WebUI file input](open-webui.md#file-input).
+    Compose runs the pinned `homeserver-open-webui` image. Its startup
+    installs the bundled Functions, and its model list reads each graph's
+    description and settings from the gateway; see the
+    [Open WebUI setup](open-webui.md#setup). The image keeps chat uploads raw,
+    as described under [Open WebUI file input](open-webui.md#file-input).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
 state, Open WebUI state—including its native raw file copies—and the

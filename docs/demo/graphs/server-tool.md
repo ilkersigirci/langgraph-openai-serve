@@ -3,8 +3,8 @@
 `server-tool` demonstrates two client-selected, server-executed tools through
 one standard Responses request:
 
-- `lgos_package_version` uses the Responses custom-tool shape but is executed
-  by LGOS rather than the client. Its free-form input names a supported Python
+- `package_version` uses the Responses custom-tool shape but is executed
+  by LGOS rather than the client. Its free-form input names any Python
   distribution installed in the API runtime.
 - `web_search` always uses the standard OpenAI declaration. The graph can run
   it through a self-managed SearXNG or Degoog endpoint, or use an upstream
@@ -77,9 +77,9 @@ sequenceDiagram
   API-->>UI: Annotations + response.completed
 ```
 
-1. The client includes `{"type":"custom","name":"lgos_package_version"}`
-   and/or `{"type":"web_search"}` in `tools`. There is no tool discovery
-   through the model endpoint and no automatic server-side enablement.
+1. The client includes `{"type":"custom","name":"package_version"}`
+   and/or `{"type":"web_search"}` in `tools`. The model advertises both names
+   in `lgos.server_tools`; there is no automatic server-side enablement.
 2. LGOS recognizes registered custom names as server selectors. Unregistered
    functions remain client-owned; this demo rejects those because it handles
    only its configured tools. `auto` lets the model decide, `required` requires
@@ -152,7 +152,7 @@ response = client.responses.create(
     ),
     store=False,
     tools=[
-        {"type": "custom", "name": "lgos_package_version"},
+        {"type": "custom", "name": "package_version"},
         {"type": "web_search"},
     ],
     tool_choice="required",
@@ -163,11 +163,13 @@ for item in response.output:
 print(response.output_text)
 ```
 
-`lgos_package_version` accepts `langgraph-openai-serve`, `langgraph`,
-`langchain`, `langchain-openai`, or `openai`. This allowlist keeps arbitrary
-environment inventory private. The tool reads installed distribution metadata;
-it does not embed version numbers that can go stale. In the combined request,
-`web_search` supplies current public release information.
+`package_version` accepts the name of any Python distribution installed in the
+API runtime, such as `langgraph-openai-serve`, `openai`, or `pydantic`. Names
+match case-insensitively, as Python packaging normalizes them. Selecting the
+tool therefore exposes the API runtime's package inventory to every user who
+can select it. The tool reads installed distribution metadata; it does not
+embed version numbers that can go stale. In the combined request, `web_search`
+supplies current public release information.
 
 To exercise only web search, use:
 
@@ -177,10 +179,10 @@ tool_choice="required",
 ```
 
 With only `web_search` supplied, `required` forces a search. In Chainlit, select
-the `server-tool` profile and enable either tool in chat settings. The generated
-Open WebUI Workspace Model exposes the same choices as Chat Variable checkboxes.
-The declarations are fixed client knowledge; neither UI discovers tool names
-from the server.
+the `server-tool` profile and enable either tool in chat settings. The Open
+WebUI model exposes the same choices as Chat Variable checkboxes. Both UIs
+build these controls from the model's advertised `lgos.server_tools`, not from
+its name.
 
 !!! note "One public contract"
 

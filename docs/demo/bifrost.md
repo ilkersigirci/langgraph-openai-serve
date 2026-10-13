@@ -27,8 +27,9 @@ just demo/compose --dev
 ```
 
 The development command builds this checkout. Use `just demo/compose` with a
-published demo image containing the catalog sync. Both commands prepare and
-synchronize metadata automatically; no dashboard edits are required.
+published demo image containing the catalog sync. Both commands start Bifrost
+before the LGOS services and synchronize metadata once the graph APIs are
+healthy; no dashboard edits are required.
 
 Bifrost exposes the graph and Files services as custom providers and uses its
 built-in `openai` provider for upstream model and vector-store requests:
@@ -111,32 +112,32 @@ must instead receive a URL reachable from the host.
 
 The demo API's graph registrations remain the source of truth. Bifrost stores
 model attributes only on pricing rows, and only its pricing datasheet creates
-those rows. Compose therefore runs two jobs from the demo API image:
+those rows. Bifrost loads that datasheet from
+`demo/docker/volumes/bifrost/catalog/pricing.json` through
+`framework.pricing.pricing_url` and does not start unless it loads, so the
+Compose service creates an empty one before Bifrost's first start.
 
-1. `lgos-bifrost-catalog` runs before Bifrost starts. It reads every graph's
-   complete detail from both graph APIs and writes a datasheet of zero-priced
-   Responses rows, plus the matching attributes, under
-   `demo/docker/volumes/bifrost/catalog/`. Bifrost loads that datasheet through
-   `framework.pricing.pricing_url`; with an empty config store, it does not
-   start unless the datasheet loads.
-2. `lgos-bifrost-sync` runs after Bifrost is healthy. It reloads the datasheet
-   and provider model lists, then replaces the `description` and `lgos`
-   attributes of every graph row in one `PUT /api/models/catalog` transaction.
+The `lgos-bifrost-sync` job, run from the demo API image against the running
+gateway, reads every graph's complete detail from both graph APIs and rewrites
+that datasheet with zero-priced Responses rows. Signed in as Bifrost's admin, it
+then reloads the datasheet and the provider's model list and replaces the
+`description` and `lgos` attributes of every graph row in one
+`PUT /api/models/catalog` transaction.
 
-`just demo/compose` runs both jobs; open either UI after it finishes. A failed
-job stops the command, and a failed graph API keeps the previous datasheet.
-Dashboard edits to these attributes last until the next sync.
+`just demo/compose` runs the job once the graph APIs are healthy; open either
+UI after it finishes. A failed job stops the command, and a failed graph API
+keeps the previous datasheet. Dashboard edits to these attributes last until
+the next sync.
 
 After changing graph descriptions, features, or settings, run:
 
 ```bash
 just demo/sync-bifrost --dev
-just demo/sync-openwebui
 ```
 
 Omit `--dev` when using published images. Chainlit rereads the catalog when a
-profile is selected. Open WebUI's generated Workspace Models need the second
-command to refresh their descriptions and forms. Add independently deployed
+profile is selected, and Open WebUI when it loads its model list. Add
+independently deployed
 APIs to the catalog job with another `--source-url URL`. Graph IDs must be
 unique across APIs. Add the backend provider with model listing disabled and
 allow it on the virtual key, because Bifrost checks the routed provider. Then
@@ -171,13 +172,14 @@ coding agent present the same key for their model calls, so add any other
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 
-The local dashboard and management API omit administrator authentication so
-Compose can perform its startup reconciliation and catalog sync. Before
-exposing Bifrost beyond a trusted development host, follow Bifrost's
-[authentication guidance](https://docs.getbifrost.ai/deployment-guides/config-json/client#authentication),
-configure an encryption key, restrict browser origins, and authenticate those
-management requests. A virtual key alone protects the data plane, not the
-management API.
+The dashboard and management API require the admin account that
+`governance.auth_config` reads from `BIFROST_ADMIN_USERNAME` and
+`BIFROST_ADMIN_PASSWORD`. Compose's startup reconciliation and the catalog sync
+send those credentials with HTTP Basic authentication. Replace the demo values
+before exposing Bifrost beyond a trusted development host, and follow Bifrost's
+[authentication guidance](https://docs.getbifrost.ai/deployment-guides/config-json/client#authentication)
+to configure an encryption key and restrict browser origins. A virtual key
+protects the data plane; the admin account protects the management API.
 
 The dedicated `lgos-files` provider enables Bifrost's normalized `file_upload`,
 `file_list`, `file_retrieve`, `file_content`, and `file_delete` operations.

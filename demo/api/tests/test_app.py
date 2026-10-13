@@ -111,6 +111,20 @@ async def test_app_lists_exactly_the_documented_models(
     assert extension == {
         "description": descriptions["interruptible-approval"],
         "features": ["interrupts"],
+        "server_tools": [],
+        "client_tools": [],
+    }
+    tools = {
+        model.id: (
+            (model.model_extra or {})["lgos"]["server_tools"],
+            (model.model_extra or {})["lgos"]["client_tools"],
+        )
+        for model in response.data
+    }
+    assert {model_id: names for model_id, names in tools.items() if any(names)} == {
+        "advanced-graph": (["web_search"], []),
+        "persistent-plot-agent": ([], ["display_file"]),
+        "server-tool": (["package_version", "web_search"], []),
     }
 
     for model_id, expected_features in (
@@ -333,9 +347,7 @@ async def test_registry_compiles_graphs_with_server_resources(
     assert upstream_clients[0].is_closed
 
 
-@pytest.mark.parametrize(
-    "tools", [[], [{"type": "custom", "name": "lgos_package_version"}]]
-)
+@pytest.mark.parametrize("tools", [[], [{"type": "custom", "name": "package_version"}]])
 async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
     demo_app: FastAPI,
     openai_client: AsyncOpenAI,
@@ -356,7 +368,6 @@ async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
     _rebuild_server_tool_graph(demo_app)
     details = await openai_client.models.retrieve("server-tool")
     assert "client_settings" not in details.lgos
-    assert "server_tools" not in details.lgos
     response = await openai_client.responses.create(
         model="server-tool",
         input="Which OpenAI SDK version is installed?",
@@ -387,7 +398,7 @@ async def test_server_tool_graph_rejects_client_functions(
         (False, "auto"),
         (False, "required"),
         (True, "required"),
-        (False, {"type": "custom", "name": "lgos_package_version"}),
+        (False, {"type": "custom", "name": "package_version"}),
     ],
 )
 async def test_server_custom_tool_executes_a_fresh_native_exchange(
@@ -414,7 +425,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         assert bool(body.get("stream")) == stream
         if selecting:
             assert body["tools"][0]["type"] == "custom"
-            assert body["tools"][0]["name"] == "lgos_package_version"
+            assert body["tools"][0]["name"] == "package_version"
             assert body["parallel_tool_calls"] is False
             assert body["tool_choice"] == choice
         else:
@@ -453,7 +464,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     "id": "ctc_new",
                     "type": "custom_tool_call",
                     "call_id": "call_new",
-                    "name": "lgos_package_version",
+                    "name": "package_version",
                     "input": "openai",
                     "status": "completed",
                 }
@@ -531,7 +542,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                 {
                     "type": "custom_tool_call",
                     "call_id": "call_old",
-                    "name": "lgos_package_version",
+                    "name": "package_version",
                     "input": "langgraph",
                 },
                 {
@@ -540,7 +551,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     "output": "langgraph==previous-version",
                 },
             ],
-            tools=[{"type": "custom", "name": "lgos_package_version"}],
+            tools=[{"type": "custom", "name": "package_version"}],
             tool_choice=choice,
             parallel_tool_calls=False,
             stream=stream,
@@ -568,7 +579,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         "message",
     ]
     assert output[0].call_id == output[1].call_id == "call_new"
-    assert output[0].name == "lgos_package_version"
+    assert output[0].name == "package_version"
     assert output[0].input == "openai"
     assert output[1].output == output[-1].content[0].text
     if stream:

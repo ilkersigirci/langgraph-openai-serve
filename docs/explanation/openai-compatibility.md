@@ -28,8 +28,8 @@ The implemented endpoints are listed in [Reference](../reference.md).
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
 feature discovery in a namespaced extension on model-list and
-model-retrieval responses. Runtime settings remain detail-only. Server-tool
-declarations are deliberately absent; clients select known tools per request:
+model-retrieval responses. Runtime settings remain detail-only. Tools are
+advertised by name only; clients still select them per request:
 
 ```json
 {
@@ -40,6 +40,8 @@ declarations are deliberately absent; clients select known tools per request:
   "lgos": {
     "description": "Streams responses with configurable history and audience.",
     "features": [],
+    "server_tools": [],
+    "client_tools": [],
     "client_settings": {
       "json_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -86,12 +88,21 @@ fields and feature values.
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
+`GraphConfig.server_tools` and `GraphConfig.client_tools` are serialized as
+the sorted `lgos.server_tools` and `lgos.client_tools` name lists, so clients
+know which tools a graph accepts without hard-coding graph names. A
+[server tool](#server-tools) runs inside the graph, and the client selects it
+per request. A client tool is a client-owned function the graph can call, such
+as [`display_file`](#files-and-display_file); a client offers it only when it
+implements that name. The lists carry no descriptions or schemas: the graph
+owns its server tools, and the client owns its functions.
+
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
-`lgos` object with `description` and `features`. Client-settings schemas
-remain detail-only.
+`lgos` object with `description`, `features`, `server_tools`, and
+`client_tools`. Client-settings schemas remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
-`lgos` extension, even when its feature list is empty and it
+`lgos` extension, even when its feature and tool lists are empty and it
 has no client settings. A client of this API reads descriptions from the list
 and retrieves the selected model details through the same OpenAI client.
 This keeps large schemas out of list responses and keeps internal or
@@ -113,7 +124,7 @@ LiteLLM clients read native `/model/info`, using `model_name` for routing and
 copies the detail into that native field; the UIs never contact LGOS directly.
 Bifrost clients decode the equivalent JSON string from
 `additional_attributes.lgos` on native `/v1/models`. Its
-[catalog sync](../demo/bifrost.md#declarative-model-metadata) prepares base pricing
+[catalog sync](../demo/bifrost.md#declarative-model-metadata) writes base pricing
 rows and publishes complete LGOS details through Bifrost's native management
 API. The `/openai/v1/models` conversion still drops those attributes.
 Concrete gateway configurations and native Responses requirements are documented under
@@ -551,15 +562,15 @@ Chat Completions returns HTTP 400 Bad Request.
 
 ### Server Tools
 
-`GraphConfig.server_tools` is an internal allowlist of tool names executed by a
-graph. It is not model metadata, and LGOS has no tool discovery protocol. The
-client already knows each public name and native OpenAI type, then selects it per
-request:
+`GraphConfig.server_tools` is the allowlist of tool names a graph executes.
+Model listing and retrieval advertise it as `lgos.server_tools`, so a client
+offers one selector per name: `web_search` with its built-in type and any other
+name with the `custom` type. The client selects them per request:
 
 ```json
 {
   "tools": [
-    {"type": "custom", "name": "lgos_package_version"},
+    {"type": "custom", "name": "package_version"},
     {"type": "web_search"}
   ]
 }
@@ -647,7 +658,9 @@ function. The client offers strict `display_file` arguments; the graph uploads
 the bytes and returns their `file_id`; the trusted client backend downloads and
 persists the file through its native UI; and the client appends a small matching
 `function_call_output`. Neither file bytes nor a protected bearer URL are placed
-in the transcript. There is no LGOS artifact field or custom chart event. See
+in the transcript. There is no LGOS artifact field or custom chart event. A
+graph that calls the function lists `display_file` in `GraphConfig.client_tools`,
+so clients offer it only to graphs that advertise it. See
 [Accept And Display Files](../how-to-guides/file-inputs.md#display-a-graph-generated-file).
 
 ### Interrupt Operation Identity

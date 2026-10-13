@@ -8,6 +8,7 @@ import sys
 import tomllib
 from pathlib import Path
 from string import Template
+from typing import Any
 
 import anyio
 import pytest
@@ -24,35 +25,58 @@ REPOSITORY_BLOB_LINK = re.compile(
 )
 
 
-def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> None:
-    service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+def compose_service(path: str, service: str) -> dict[str, Any]:
+    compose = yaml.safe_load((DEMO_ROOT / path).read_text(encoding="utf-8"))
+    return compose["services"][service]
 
+
+def compose_environment(path: str, service: str) -> dict[str, str]:
+    return compose_service(path, service)["environment"]
+
+
+def test_openwebui_runs_the_pinned_patched_image_without_a_local_build() -> None:
+    service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+    env = (DEMO_ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "image: $DEMO_OPENWEBUI_IMAGE\n" in service
     assert re.search(
-        r"^\s+image: ghcr\.io/open-webui/open-webui:\S+@sha256:[0-9a-f]{64}$",
-        service,
+        r"^DEMO_OPENWEBUI_IMAGE=ghcr\.io/ilkersigirci/homeserver-open-webui:\S+@sha256:[0-9a-f]{64}$",
+        env,
         re.MULTILINE,
     )
     assert "build:" not in service
     assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
 
 
-def test_openwebui_mcp_connection_is_the_one_the_sync_attaches() -> None:
-    compose = yaml.safe_load(
-        (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
-    )
-    environment = compose["services"]["lgos-openwebui"]["environment"]
-    # Compose interpolates $VAR and ${VAR} like string.Template.
-    connections = json.loads(
-        Template(environment["TOOL_SERVER_CONNECTIONS"]).substitute(
-            OPENAI_GATEWAY_BASE_URL="http://gateway:4000",
-            OPENAI_GATEWAY_API_KEY="sk-demo",
+def test_openwebui_mcp_connection_is_the_one_mcp_models_attach() -> None:
+    def connections(path: str) -> list[dict[str, Any]]:
+        environment = compose_environment(path, "lgos-openwebui")
+        # Compose interpolates $VAR and ${VAR} like string.Template.
+        return json.loads(
+            Template(environment["TOOL_SERVER_CONNECTIONS"]).substitute(
+                OPENAI_GATEWAY_BASE_URL="http://gateway:4000",
+                OPENAI_GATEWAY_API_KEY="sk-demo",
+            )
         )
-    )
 
-    assert [
-        (connection["url"], connection["key"], connection["info"]["id"])
-        for connection in connections
-    ] == [("http://gateway:4000/mcp", "sk-demo", MCP_GATEWAY_ID)]
+    (base,) = connections("docker/apps/openwebui.yml")
+    (sso,) = connections("docker/compose/sso.yml")
+
+    assert (base["url"], base["info"]["id"]) == (
+        "http://gateway:4000/mcp",
+        MCP_GATEWAY_ID,
+    )
+    assert (base["auth_type"], base["key"]) == ("bearer", "sk-demo")
+    # The overlay restates the whole entry; only its credential and wording differ.
+    assert sso.pop("auth_type") == "system_oauth"
+    assert "key" not in sso
+    del (
+        base["auth_type"],
+        base["key"],
+        base["info"]["description"],
+        sso["info"]["description"],
+    )
+    assert sso == base
 
 
 @pytest.fixture
@@ -310,24 +334,103 @@ def test_files_and_chainlit_s3_are_independently_configured() -> None:
 
 def test_chainlit_receives_only_its_configuration() -> None:
     compose = (DEMO_ROOT / "docker/apps/chainlit.yml").read_text(encoding="utf-8")
+    sso_environment = compose_environment("docker/compose/sso.yml", "lgos-chainlit")
 
     assert "env_file:" not in compose
+    for setting in ("CHAINLIT_AUTH_SECRET", "OPENAI_GATEWAY_API_KEY"):
+        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
     for setting in (
-        "CHAINLIT_AUTH_SECRET",
-        "OPENAI_GATEWAY_API_KEY",
-        "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
-        "DEMO_CHAINLIT_LOGIN_TYPE",
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
         "OAUTH_GENERIC_CLIENT_SECRET",
     ):
-        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
+        assert setting not in compose
+        assert sso_environment[setting] == f"${setting}"
     for unrelated_secret in (
         "OPENAI_UPSTREAM_API_KEY",
         "DEMO_OPENWEBUI_ADMIN_PASSWORD",
+        "DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET",
         "LANGFUSE_SECRET_KEY",
         "LITELLM_MASTER_KEY",
     ):
         assert unrelated_secret not in compose
+        assert unrelated_secret not in json.dumps(sso_environment)
+
+
+def test_only_the_sso_overlay_configures_litellms_token_validation() -> None:
+    config = yaml.safe_load(
+        (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(encoding="utf-8")
+    )
+    service = compose_service("docker/apps/litellm.yml", "lgos-litellm")
+    sso = compose_environment("docker/compose/sso.yml", "lgos-litellm")
+
+    # Native JWT auth rejects every JWT until the overlay sets its issuer, keys,
+    # and audience. LiteLLM loads the image's validator from the config file's
+    # directory.
+    settings = config["general_settings"]
+    assert settings["enable_jwt_auth"] is True
+    assert settings["litellm_jwtauth"]["custom_validate"] == (
+        "access_token.validate_claims"
+    )
+    jwt_settings = {"JWT_ISSUER", "JWT_PUBLIC_KEY_URL", "JWT_AUDIENCE"}
+    assert not jwt_settings & set(service["environment"])
+    assert jwt_settings <= set(sso)
+    assert [volume["target"] for volume in service["volumes"]] == [
+        "/app/litellm-config/config.yaml"
+    ]
+
+
+def test_sso_overlay_keeps_the_shared_gateway_key_out_of_both_uis() -> None:
+    for service, base in (
+        ("lgos-chainlit", "docker/apps/chainlit.yml"),
+        ("lgos-openwebui", "docker/apps/openwebui.yml"),
+    ):
+        merged = {
+            **compose_environment(base, service),
+            **compose_environment("docker/compose/sso.yml", service),
+        }
+        # In the demo the shared key is also LiteLLM's master key.
+        assert not [
+            name
+            for name, value in merged.items()
+            if "OPENAI_GATEWAY_API_KEY" in str(value)
+        ], service
+
+
+def test_sso_overlay_switches_both_uis_to_each_users_token() -> None:
+    modes = {
+        "base": (
+            compose_environment("docker/apps/chainlit.yml", "lgos-chainlit"),
+            compose_environment("docker/apps/openwebui.yml", "lgos-openwebui"),
+        ),
+        "sso": (
+            compose_environment("docker/compose/sso.yml", "lgos-chainlit"),
+            compose_environment("docker/compose/sso.yml", "lgos-openwebui"),
+        ),
+    }
+
+    assert {
+        mode: (
+            chainlit["DEMO_CHAINLIT_LOGIN_TYPE"],
+            chainlit["DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING"],
+            json.loads(openwebui["OPENAI_API_CONFIGS"]),
+        )
+        for mode, (chainlit, openwebui) in modes.items()
+    } == {
+        "base": ("mock", "false", {"0": {"auth_type": "bearer"}}),
+        "sso": ("oauth", "true", {"0": {"auth_type": "system_oauth"}}),
+    }
+
+    def resolved(value: str) -> str:
+        return Template(value).substitute(OPENAI_GATEWAY_BASE_URL="http://gateway")
+
+    # The Generic Pipe and speech authenticate like the OpenAI connection with
+    # their base URL, so the gateway decides every Open WebUI call.
+    base = modes["base"][1]
+    assert {
+        f"{resolved(base['OPENAI_GATEWAY_BASE_URL'])}/v1",
+        resolved(base["AUDIO_STT_OPENAI_API_BASE_URL"]),
+        resolved(base["AUDIO_TTS_OPENAI_API_BASE_URL"]),
+    } == {resolved(base["OPENAI_API_BASE_URL"])}
 
 
 def test_compose_ci_supplies_both_independent_s3_configurations() -> None:

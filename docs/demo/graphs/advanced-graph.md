@@ -366,9 +366,9 @@ maintained UI:
 === "Open WebUI"
 
     Open `http://localhost:3003` and select
-    **LGOS / lgos/advanced-graph**.
+    **lgos/advanced-graph**.
     Enable the **Web search** Chat Variable for public research. The gateway MCP
-    connection is already attached to the generated Workspace Model.
+    connection is already selected for the model.
 
 Try these paths:
 

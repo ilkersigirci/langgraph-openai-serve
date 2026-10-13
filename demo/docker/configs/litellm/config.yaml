@@ -54,6 +54,28 @@ files_settings:
     api_base: http://lgos-files-api:8000/v1
     api_key: DUMMY
 
+# LiteLLM's native JWT auth validates the UIs' OIDC access tokens as the
+# Internal User named by `sub`; the image's access_token validator requires
+# `exp`, `sub`, and the `llm:invoke` scope. The SSO overlay supplies the issuer,
+# signing keys, and audience; without them every JWT is rejected. Keys keep
+# LiteLLM's native authentication.
+general_settings:
+  enable_jwt_auth: true
+  litellm_jwtauth:
+    user_id_jwt_field: sub
+    user_id_upsert: true
+    end_user_id_jwt_field: sub
+    custom_validate: access_token.validate_claims
+    enforce_rbac: true
+    # Disable LiteLLM's built-in `litellm_proxy_admin` token scope.
+    admin_allowed_routes: []
+  # Tokens reach inference, model metadata, and MCP tools, whatever the user's role.
+  role_permissions:
+    - role: internal_user
+      routes: [openai_routes, model_info_routes, mcp_inference_routes, "/v1/models/*", "/models/*"]
+  # SSO users other than proxy admins call the API but cannot open the Admin UI.
+  ui_access_mode: admin_only
+
 litellm_settings:
   # Preserve the caller's W3C trace across the gateway-to-LGOS hop. LiteLLM
   # applies this to every model, so OpenAI API requests carry it too.

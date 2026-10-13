@@ -8,7 +8,7 @@ deployment's ASGI server or ingress proxy.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List registered graph models with LGOS descriptions and features. |
+| `GET` | `/v1/models` | List registered graph models with LGOS descriptions, features, and tool names. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/responses` | Run a graph now or accept an opted-in polling-only background Response. |
 | `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response. |
@@ -133,11 +133,15 @@ belong to an external OpenAI Files API, not the LGOS package. See
   advertise graph input and client-tool capabilities.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
-- `server_tools`: internal allowlist of server-executed tool names. A
-  registered custom tool is selected with the Responses `custom` type and name;
-  `web_search` uses its built-in type. The graph owns tool definitions and
-  execution. Model retrieval does not advertise tools. See
+- `server_tools`: allowlist of server-executed tool names, advertised as
+  `lgos.server_tools`. A registered custom tool is selected with the Responses
+  `custom` type and name; `web_search` uses its built-in type. The graph owns
+  tool definitions and execution. See
   [Server Tools](explanation/openai-compatibility.md#server-tools).
+- `client_tools`: names of client-owned functions the graph can call, such as
+  `display_file`, advertised as `lgos.client_tools` so clients offer only the
+  functions a graph uses. LGOS does not enforce the list, and a name cannot
+  also be a server tool.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
@@ -148,10 +152,10 @@ belong to an external OpenAI Files API, not the LGOS package. See
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
 
-`GraphConfig` is immutable after construction. Pydantic snapshots `features`
-and `server_tools` as frozen sets, so later mutations of the input collections
-cannot change a registered model. Freezing the declaration does
-not make a caller-owned callback handler or callback manager internally
+`GraphConfig` is immutable after construction. Pydantic snapshots `features`,
+`server_tools`, and `client_tools` as frozen sets, so later mutations of the
+input collections cannot change a registered model. Freezing the declaration
+does not make a caller-owned callback handler or callback manager internally
 immutable.
 
 Streaming forwards non-empty text from every `AIMessageChunk` emitted by the

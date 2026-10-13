@@ -221,8 +221,10 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
     streaming: bool,
 ) -> None:
     session = chainlit_context.session
-    session.chat_profile = "lgos/persistent-plot-agent"
-    session.chat_settings[STREAMING_SETTING_ID] = streaming
+    await select_profile(
+        fake_gateway, "lgos/persistent-plot-agent", client_tools=["display_file"]
+    )
+    cl.user_session.get("chat_settings")[STREAMING_SETTING_ID] = streaming
     first = response(
         message("Rendering chart", id="msg_status", phase="commentary"),
         message("Here is the chart. ", id="msg_intro"),
@@ -230,7 +232,7 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
             type="custom_tool_call",
             id="ctc_package",
             call_id="call_package",
-            name="lgos_package_version",
+            name="package_version",
             input="openai",
             status="completed",
         ),
@@ -286,7 +288,11 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
             "output": '{"displayed":true}',
         },
     ]
-    download = fake_gateway.requests[1]
+    (download,) = [
+        request
+        for request in fake_gateway.requests
+        if request.url.path.startswith("/v1/files/")
+    ]
     assert (download.url.path, dict(download.url.params)) == (
         "/v1/files/file-chart/content",
         {"provider": "litellm_proxy"},

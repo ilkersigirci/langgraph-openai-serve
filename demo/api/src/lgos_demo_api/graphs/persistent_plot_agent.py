@@ -357,6 +357,7 @@ def create_persistent_plot_agent_config(
         description="Uses an agent to inspect and edit a persistent revenue chart.",
         context_factory=context_factory,
         client_settings=PersistentPlotAgentSettings,
+        client_tools={DISPLAY_FILE_TOOL_NAME},
         output_to_message=output_to_message,
     )
 

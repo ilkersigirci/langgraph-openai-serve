@@ -6,10 +6,10 @@ import chainlit as cl
 from chainlit.input_widget import InputWidget, Switch
 from chainlit_utils.chat.settings import serialize_settings, settings_widgets
 from openai import OpenAIError
-from openai.types.responses import CustomToolParam, ToolParam
+from openai.types.responses import ToolParam
 
 from lgos_chainlit.clients import retrieve_model
-from lgos_chainlit.display_files import DISPLAY_FILE_TOOL
+from lgos_chainlit.display_files import DISPLAY_FILE_TOOL, DISPLAY_FILE_TOOL_NAME
 from lgos_chainlit.lgos_protocol import (
     BACKGROUND_FEATURE,
     LGOS_EXTENSION_KEY,
@@ -30,22 +30,14 @@ LIMITED_FUNCTIONALITY_MESSAGE = (
 MODEL_EXTENSION_SESSION_KEY = "lgos_model_extension"
 STREAMING_SETTING_ID = "lgos_chainlit_stream"
 BACKGROUND_SETTING_ID = "lgos_chainlit_background"
-PACKAGE_VERSION_SETTING_ID = "lgos_package_version"
-WEB_SEARCH_SETTING_ID = "web_search"
-PACKAGE_VERSION_PROFILES = {"server-tool"}
-WEB_SEARCH_PROFILES = {"advanced-graph", "server-tool"}
-DISPLAY_FILE_PROFILES = {"persistent-plot-agent"}
-PACKAGE_VERSION_TOOL: CustomToolParam = {
-    "type": "custom",
-    "name": PACKAGE_VERSION_SETTING_ID,
-}
+# OpenAI's built-in tool; every other advertised server tool is a custom tool.
+WEB_SEARCH_TOOL_NAME = "web_search"
 
 
 async def configure_chat_settings() -> None:
     """Retrieve the selected model and publish its supported settings."""
     model_id = cl.user_session.get("chat_profile")
     saved = cl.user_session.get("chat_settings")
-    graph = _graph_name()
     extension = None
     if model_id:
         try:
@@ -66,23 +58,15 @@ async def configure_chat_settings() -> None:
             initial=saved.get(STREAMING_SETTING_ID) is not False,
         )
     ]
-    if graph in PACKAGE_VERSION_PROFILES:
-        widgets.append(
+    if extension is not None:
+        widgets.extend(
             Switch(
-                id=PACKAGE_VERSION_SETTING_ID,
-                label="Package version",
-                description="Let LGOS inspect selected server package versions.",
-                initial=saved.get(PACKAGE_VERSION_SETTING_ID) is True,
+                id=name,
+                label=name.replace("_", " ").capitalize(),
+                description="Let the graph run this server tool.",
+                initial=saved.get(name) is True,
             )
-        )
-    if graph in WEB_SEARCH_PROFILES:
-        widgets.append(
-            Switch(
-                id=WEB_SEARCH_SETTING_ID,
-                label="Web search",
-                description="Let LGOS use its configured web-search backend.",
-                initial=saved.get(WEB_SEARCH_SETTING_ID) is True,
-            )
+            for name in extension.server_tools
         )
     if extension is not None and BACKGROUND_FEATURE in extension.features:
         widgets.append(
@@ -118,21 +102,23 @@ async def configure_chat_settings() -> None:
 
 
 def response_tools() -> list[ToolParam]:
-    """Return the tools available to the selected graph."""
-    graph = _graph_name()
+    """Return the tools the selected graph advertises and the user enabled."""
+    extension = _model_extension()
+    if extension is None:
+        return []
     selected = cl.user_session.get("chat_settings")
     tools: list[ToolParam] = []
-    if graph in DISPLAY_FILE_PROFILES:
+    if DISPLAY_FILE_TOOL_NAME in extension.client_tools:
         tools.append(DISPLAY_FILE_TOOL)
-    if _model_supports(MCP_TOOLS_FEATURE):
+    if MCP_TOOLS_FEATURE in extension.features:
         tools.extend(mcp_tools.response_tools())
-    if (
-        graph in PACKAGE_VERSION_PROFILES
-        and selected.get(PACKAGE_VERSION_SETTING_ID) is True
-    ):
-        tools.append(PACKAGE_VERSION_TOOL)
-    if graph in WEB_SEARCH_PROFILES and selected.get(WEB_SEARCH_SETTING_ID) is True:
-        tools.append({"type": "web_search"})
+    tools.extend(
+        {"type": "web_search"}
+        if name == WEB_SEARCH_TOOL_NAME
+        else {"type": "custom", "name": name}
+        for name in extension.server_tools
+        if selected.get(name) is True
+    )
     return tools
 
 
@@ -168,8 +154,3 @@ def _model_extension() -> LangGraphModelExtension | None:
 def _model_supports(feature: str) -> bool:
     extension = _model_extension()
     return extension is not None and feature in extension.features
-
-
-def _graph_name() -> str | None:
-    model_id = cl.user_session.get("chat_profile")
-    return model_id.rsplit("/", 1)[-1] if model_id else None
