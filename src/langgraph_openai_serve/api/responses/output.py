@@ -103,6 +103,7 @@ class ResponseContext:
                     else True
                 ),
                 "previous_response_id": request.previous_response_id,
+                "safety_identifier": request.safety_identifier,
                 "service_tier": "default",
                 "store": bool(request.store),
                 "text": {"format": {"type": "text"}},

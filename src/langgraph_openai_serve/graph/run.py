@@ -238,6 +238,9 @@ def _runnable_config(
     metadata = {"lgos.model": request.model}
     if conversation_id := request.metadata.get(CONVERSATION_METADATA_KEY):
         metadata["langfuse_session_id"] = conversation_id
+    if request.user:
+        metadata["lgos.user"] = request.user
+        metadata["langfuse_user_id"] = request.user
     if isinstance(request_id := get_log_context().get("request_id"), str):
         metadata["lgos.request_id"] = request_id
     if interrupt_run is None:

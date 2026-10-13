@@ -580,6 +580,30 @@ async def test_bundled_stream_keeps_sse_looking_text_as_content(
     assert all(chunk.choices[0].finish_reason is None for chunk in decoded)
 
 
+@pytest.mark.parametrize(
+    ("user", "gateway_user"),
+    [
+        ({"id": "openwebui-user", "oauth": None}, "openwebui-user"),
+        (
+            {"id": "openwebui-user", "oauth": {"oidc": {"sub": "oidc-subject"}}},
+            "oidc-subject",
+        ),
+    ],
+    ids=["password-login", "sso-login"],
+)
+async def test_requests_name_the_user_the_gateway_verifies(
+    monkeypatch: pytest.MonkeyPatch, user: dict[str, object], gateway_user: str
+) -> None:
+    create = AsyncMock(return_value=final_response("Done."))
+    install_client(monkeypatch, create=create)
+
+    await generic_pipe.Pipe().pipe(body(stream=False), __user__=user)
+
+    # Under SSO the gateway bills the token's subject, so the graph's own model
+    # calls name the same user.
+    assert create.await_args.kwargs["user"] == gateway_user
+
+
 async def test_non_streaming_request_uses_responses_and_final_answer_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

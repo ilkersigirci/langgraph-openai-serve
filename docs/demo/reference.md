@@ -108,7 +108,8 @@ after [catalog sync](bifrost.md#declarative-model-metadata).
 | `OPENAI_GATEWAY_TYPE` | Gateway used by the demo UIs and model clients: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP unless the [SSO overlay](docker.md#sso-overlay) sends each user's token, and by the graph and coding-agent APIs for their model and vector-store calls; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP unless the [SSO overlay](docker.md#sso-overlay) sends each user's token; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `DEMO_GRAPH_GATEWAY_API_KEY` | Gateway credential the graph and coding-agent APIs use for their model and vector-store calls. Defaults to `OPENAI_GATEWAY_API_KEY`; with the [SSO overlay](docker.md#sso-overlay) or in production, create a dedicated non-admin key in the gateway so the APIs never hold its admin key |
 | `DEMO_AUDIO_STT_MODEL` | Gateway model ID both UIs use to transcribe microphone input through `/v1/audio/transcriptions`; Chainlit hides its microphone when empty |
 | `DEMO_AUDIO_TTS_MODEL` | Gateway model ID both UIs use to speak answers through `/v1/audio/speech`; Chainlit hides its read-aloud button when empty |
 | `DEMO_AUDIO_TTS_VOICE` | OpenAI voice for spoken answers; Chainlit defaults to `alloy` |
@@ -174,10 +175,11 @@ The demo API and its worker run `lgos serve` and `lgos worker`. Their server
 settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
 `LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
 described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
-graphs share `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY` with the UIs.
-Model calls use `/v1`; the advanced graph's knowledge Files and vector stores
-use `/openai_passthrough/v1` with that same credential. The local API, worker,
-and notebook recipes set the gateway root to `DEMO_GATEWAY_HOST_URL`.
+graphs share `OPENAI_GATEWAY_BASE_URL` with the UIs and call it with
+`DEMO_GRAPH_GATEWAY_API_KEY`, which defaults to the UIs' key. Model calls use `/v1`; the advanced graph's
+knowledge Files and vector stores use `/openai_passthrough/v1` with that same
+credential. The local API, worker, and notebook recipes set the gateway root to
+`DEMO_GATEWAY_HOST_URL` and the key to `DEMO_GRAPH_GATEWAY_API_KEY`.
 
 Graph-specific settings use the `DEMO_API_` prefix:
 
@@ -216,7 +218,7 @@ and key from the gateway settings; the other defaults live in `demo/.env.example
 | Setting | Purpose |
 | --- | --- |
 | `DEMO_CODING_AGENT_BASE_URL` | Responses base URL for Codex. Compose sets `${OPENAI_GATEWAY_BASE_URL}/v1`. |
-| `DEMO_CODING_AGENT_API_KEY` | Model credential for Codex. Compose sets `OPENAI_GATEWAY_API_KEY`; available inside the coding-agent container. |
+| `DEMO_CODING_AGENT_API_KEY` | Model credential for Codex. Compose sets `DEMO_GRAPH_GATEWAY_API_KEY`; available inside the coding-agent container. |
 | `DEMO_CODING_AGENT_MODEL` | Codex-compatible gateway model ID, defaulting to `DEMO_API_OPENAI_RESPONSES_MODEL`; separate from the public graph ID. |
 | `DEMO_CODING_AGENT_TIMEOUT_SECONDS` | Active request time limit, excluding time waiting for another workspace request. Runtime cleanup may exceed the limit. |
 

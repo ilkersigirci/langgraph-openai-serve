@@ -2,7 +2,6 @@
 
 from collections.abc import Mapping, Sequence
 
-import httpx2
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -74,10 +73,9 @@ download URLs. Client function calls request client action; they are not complet
 actions."""
 
 
-def create_model(http_client: httpx2.AsyncClient) -> ChatOpenAI:
+def create_model() -> ChatOpenAI:
     return responses_model(
         output_version="responses/v1",
-        http_async_client=http_client,
         timeout=60,
         max_retries=0,
         max_tokens=4_096,

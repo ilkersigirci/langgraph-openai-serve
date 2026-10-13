@@ -3,7 +3,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import httpx2
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 from openai import AsyncOpenAI
@@ -17,6 +16,7 @@ from lgos_demo_api.graphs.advanced_graph.knowledge import (
     OpenAICompatibleKnowledgeBase,
 )
 from lgos_demo_api.graphs.advanced_graph.state import AdvancedGraph
+from lgos_demo_api.utils.models import GATEWAY_HTTP_CLIENT
 
 
 @asynccontextmanager
@@ -25,7 +25,7 @@ async def open_advanced_graph(
     store: BaseStore,
 ) -> AsyncGenerator[AdvancedGraph, None]:
     """
-    Build the advanced graph and close its clients on exit.
+    Build the advanced graph and close its Files client on exit.
 
     The API and the background worker both run this graph, so both open it here.
 
@@ -33,27 +33,29 @@ async def open_advanced_graph(
         The compiled advanced graph.
 
     """
-    async with (
-        httpx2.AsyncClient(timeout=60) as upstream_http,
-        AsyncOpenAI(
-            base_url=settings.vector_store_base_url,
-            api_key=settings.OPENAI_GATEWAY_API_KEY,
-            http_client=upstream_http,
-            max_retries=0,
-        ) as vector_store_client,
-        AsyncOpenAI(
-            base_url=settings.FILES_BASE_URL,
-            api_key="DUMMY",
-            max_retries=0,
-        ) as files_client,
-    ):
+    async with AsyncOpenAI(
+        base_url=settings.FILES_BASE_URL,
+        api_key="DUMMY",
+        max_retries=0,
+    ) as files_client:
         knowledge = (
-            OpenAICompatibleKnowledgeBase(vector_store_client, settings.VECTOR_STORE_ID)
+            OpenAICompatibleKnowledgeBase(
+                # Shares the process-wide gateway client, so it is never closed
+                # here: closing an SDK client closes the HTTP client it was given.
+                AsyncOpenAI(
+                    base_url=settings.vector_store_base_url,
+                    api_key=settings.OPENAI_GATEWAY_API_KEY,
+                    http_client=GATEWAY_HTTP_CLIENT,
+                    timeout=60,
+                    max_retries=0,
+                ),
+                settings.VECTOR_STORE_ID,
+            )
             if settings.VECTOR_STORE_ID
             else None
         )
         yield create_advanced_graph(
-            model=create_model(upstream_http),
+            model=create_model(),
             knowledge=knowledge,
             files=files_client,
             checkpointer=checkpointer,

@@ -20,7 +20,11 @@ LangGraph checkpointer, Store, and interrupt coordination.
 Set the package-owned `LGOS_ENABLE_LANGFUSE=True` and provide the `LANGFUSE_*`
 credentials to enable LGOS's lazy tracing integration for every demo graph.
 
-LLM-backed graphs use `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`.
+LLM-backed graphs use `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`,
+which Compose and the local recipes set to `DEMO_GRAPH_GATEWAY_API_KEY`. Each
+model call made during a graph run names that run's end user, which LGOS
+records as the run's `lgos.user` metadata, in LiteLLM's `x-litellm-end-user-id`
+header.
 Start either bundled gateway from `demo/`; the standalone example connects to
 its host port. Model calls use `/v1`, and the advanced graph's shared knowledge
 uses `/openai_passthrough/v1` with the same credential.

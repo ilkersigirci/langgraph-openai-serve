@@ -32,7 +32,7 @@ discarded when they end.
 
 `DEMO_CODING_AGENT_BASE_URL`, `DEMO_CODING_AGENT_API_KEY`, and `DEMO_CODING_AGENT_MODEL` select the
 Responses model Codex calls. Compose points the URL and key at the selected
-demo gateway and `OPENAI_GATEWAY_API_KEY`; the model defaults to
+demo gateway and `DEMO_GRAPH_GATEWAY_API_KEY`; the model defaults to
 `DEMO_API_OPENAI_RESPONSES_MODEL` and must support Codex's Responses requests. The
 UI-facing gateway routes directly to `http://lgos-api-coding-agent:8000/v1`
 using the demo's existing model catalog sync.

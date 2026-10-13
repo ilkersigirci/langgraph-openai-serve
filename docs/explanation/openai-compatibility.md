@@ -188,8 +188,9 @@ still supply the input needed by each ordinary request. Omit the field when no
 conversation exists; LGOS does not generate a fallback ID. Application graphs
 may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value shorter than 200
-characters. The value is distinct from the OpenAI `user` field, the interrupt
-run ID, and per-request trace or request identifiers.
+characters. The value is distinct from the end-user `safety_identifier` and
+`user` fields, the interrupt run ID, and per-request trace or request
+identifiers.
 
 ### Per-Request Resolution
 
@@ -244,7 +245,7 @@ not claim every field in the upstream OpenAI API.
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
-| `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
+| `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |
@@ -678,7 +679,8 @@ The run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
 run ID, so two models or authenticated tenant scopes do not share state.
 Configure the server scope from trusted request or authentication state, never
-caller-controlled metadata or the OpenAI `user` field. The default shared scope
+caller-controlled metadata or the end-user `safety_identifier` and `user`
+fields. The default shared scope
 is appropriate only for a single-tenant or shared-trust deployment.
 Conversation history remains client-owned; the checkpoint contains only the
 isolated workflow state needed while this operation is paused.

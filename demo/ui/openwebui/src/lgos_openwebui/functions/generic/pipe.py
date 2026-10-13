@@ -124,7 +124,7 @@ class Pipe:
         results = self._run(
             body,
             __metadata__ or {},
-            user_id=(__user__ or {}).get("id") or None,
+            user_id=_gateway_user_id(__user__ or {}),
             tools=__tools__ or {},
             streaming=streaming,
             event_emitter=__event_emitter__,
@@ -388,6 +388,17 @@ def _gateway() -> tuple[GatewayConfig, GatewaySettings]:
         settings.OPENAI_GATEWAY_TYPE, settings.OPENAI_GATEWAY_BASE_URL
     )
     return gateway, settings
+
+
+def _gateway_user_id(user: Mapping[str, Any]) -> str | None:
+    """
+    Name the user the gateway bills.
+
+    Under SSO the gateway verifies the access token's OIDC subject, which
+    differs from Open WebUI's own user ID; password users have no subject.
+    """
+    oidc = (user.get("oauth") or {}).get("oidc") or {}
+    return oidc.get("sub") or user.get("id") or None
 
 
 async def _user_credential(

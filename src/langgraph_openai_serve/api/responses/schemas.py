@@ -316,6 +316,8 @@ class ResponseCreateRequest(_ResponsesRequestModel):
     tools: list[ResponseTool] | None = None
     tool_choice: ResponseToolChoice | None = None
     parallel_tool_calls: bool | None = None
+    # OpenAI's end-user field; it replaces the deprecated `user`.
+    safety_identifier: str | None = None
     user: str | None = None
 
     # Accept OpenAI's values; the decoder allows `store=true` only for a

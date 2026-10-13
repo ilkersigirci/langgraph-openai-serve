@@ -43,6 +43,7 @@ test editable='false' *args:
 [arg('editable', long, value='true')]
 [arg('host', long)]
 [arg('port', long)]
+[env('OPENAI_GATEWAY_API_KEY', env('DEMO_GRAPH_GATEWAY_API_KEY'))]
 [env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('local')]
 marimo editable='false' host='0.0.0.0' port='2718' *args:
@@ -127,6 +128,7 @@ check editable='false': (test editable) lint (type-check editable) compose-confi
 # Run one API process; add --editable to use the parent LGOS checkout.
 [arg('editable', long, value='true')]
 [arg('UVICORN_PORT', long='port')]
+[env('OPENAI_GATEWAY_API_KEY', env('DEMO_GRAPH_GATEWAY_API_KEY'))]
 [env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('local')]
 api $UVICORN_PORT=env("LGOS_DEMO_API_PORT") editable='false':
@@ -134,6 +136,7 @@ api $UVICORN_PORT=env("LGOS_DEMO_API_PORT") editable='false':
 
 # Run the independent Hatchet agent worker for background Responses.
 [arg('editable', long, value='true')]
+[env('OPENAI_GATEWAY_API_KEY', env('DEMO_GRAPH_GATEWAY_API_KEY'))]
 [env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
 [group('local')]
 background-worker editable='false':

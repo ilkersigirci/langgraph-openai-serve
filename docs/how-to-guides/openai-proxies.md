@@ -9,8 +9,9 @@ Bifrost remain deployment choices and are not part of the package.
 
 Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
 
-- `POST /v1/responses`, including `store: false`, `user`, string-valued
-  `metadata`, client function tools, registered custom tools, and `web_search`;
+- `POST /v1/responses`, including `store: false`, `safety_identifier`, `user`,
+  string-valued `metadata`, client function tools, registered custom tools, and
+  `web_search`;
 - typed Responses SSE events, item IDs, output indices, sequence numbers, and
   assistant `phase` values;
 - complete `function_call` items and matching `function_call_output` items for

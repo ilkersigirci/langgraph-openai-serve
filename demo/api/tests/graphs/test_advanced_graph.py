@@ -26,6 +26,7 @@ from lgos_demo_api.graphs.advanced_graph import (
     create_model,
 )
 from lgos_demo_api.graphs.advanced_graph.knowledge import KnowledgeResult
+from lgos_demo_api.utils import models
 
 WEB_TOOL = [{"type": "web_search"}]
 SOURCE_URL = "https://docs.langchain.com/oss/python/langgraph/interrupts"
@@ -224,8 +225,11 @@ async def graph_client(
             max_retries=0,
         ) as files_client,
     ):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(models, "GATEWAY_HTTP_CLIENT", upstream_http)
+            model = create_model()
         graph = create_advanced_graph(
-            model=create_model(upstream_http),
+            model=model,
             knowledge=knowledge,
             files=files_client,
             checkpointer=checkpointer,
@@ -753,7 +757,9 @@ async def test_compatible_storage_adapter_uses_configured_endpoint():
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel):
+async def test_answer_stream_is_live_and_cancellable(
+    sqlite_checkpointer, cancel, monkeypatch: pytest.MonkeyPatch
+):
     release = Event()
     closed = Event()
     completed = Event()
@@ -800,8 +806,9 @@ async def test_answer_stream_is_live_and_cancellable(sqlite_checkpointer, cancel
             max_retries=0,
         ) as files,
     ):
+        monkeypatch.setattr(models, "GATEWAY_HTTP_CLIENT", http)
         graph = create_advanced_graph(
-            model=create_model(http),
+            model=create_model(),
             knowledge=None,
             files=files,
             checkpointer=sqlite_checkpointer,

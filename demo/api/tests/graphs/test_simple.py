@@ -1,12 +1,10 @@
 import json
-from functools import partial
 from typing import Any
 
 import httpx2
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from langchain_openai import ChatOpenAI
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs import simple as simple_module
@@ -118,10 +116,7 @@ async def test_selected_model_answers_through_chat_completions(
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as provider:
-        monkeypatch.setattr(
-            "lgos_demo_api.utils.models.ChatOpenAI",
-            partial(ChatOpenAI, http_async_client=provider),
-        )
+        monkeypatch.setattr("lgos_demo_api.utils.models.GATEWAY_HTTP_CLIENT", provider)
         result = await simple_module.simple_graph.ainvoke(
             simple_module.AgentState(messages=[HumanMessage(content="Hello")]),
             context=simple_module.SimpleContext(model=model_name),

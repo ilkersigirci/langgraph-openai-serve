@@ -160,7 +160,8 @@ async def test_local_graph_tasks_use_the_host_gateway(
 ) -> None:
     monkeypatch.setenv("DEMO_GATEWAY_HOST_URL", "http://localhost:4321")
     monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://lgos-bifrost:4000")
-    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-gateway-key")
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-ui-key")
+    monkeypatch.setenv("DEMO_GRAPH_GATEWAY_API_KEY", "test-graph-key")
 
     result = await anyio.run_process(
         [
@@ -176,7 +177,8 @@ async def test_local_graph_tasks_use_the_host_gateway(
     assert result.returncode == 0, result.stderr.decode()
     command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
     assert command["gateway_url"] == "http://localhost:4321"
-    assert command["gateway_key"] == "test-gateway-key"
+    # Graphs call the gateway with DEMO_GRAPH_GATEWAY_API_KEY, not the UIs' key.
+    assert command["gateway_key"] == "test-graph-key"
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:

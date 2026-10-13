@@ -43,7 +43,7 @@ def decode_responses_request(
         GraphRequest(
             model=request.model,
             metadata=dict(request.metadata or {}),
-            user=request.user,
+            user=request.safety_identifier or request.user,
             tools=tuple(
                 ClientFunctionTool(
                     name=tool.name,

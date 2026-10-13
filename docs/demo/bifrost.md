@@ -166,9 +166,11 @@ malformed metadata.
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, speech, and MCP requests. Bifrost loads it as one native virtual key whose
 provider policies allow `lgos`, `coding-agent`, and `lgos-files`, plus only the
-default graph, embedding, and speech models on `openai`. The graph APIs and
-coding agent present the same key for their model calls, so add any other
-`DEMO_API_OPENAI_*` model to the virtual key's `openai` allowlist. The key is
+default graph, embedding, and speech models on `openai`. By default the graph
+APIs and coding agent present the same key as `DEMO_GRAPH_GATEWAY_API_KEY` for
+their model calls, so add any other `DEMO_API_OPENAI_*` model to the virtual
+key's `openai` allowlist, or to the graph APIs' key if you give them one. The
+key is
 attached to only the fixed PostgreSQL Virtual MCP. Replace the demo value
 before exposing the gateway and retain Bifrost's required `sk-bf-` prefix.
 

@@ -23,7 +23,8 @@ and `{prefix}/openapi.json`.
 ### Responses Request
 
 The route accepts string or ordered message input, instructions, plain
-`input_text`, `input_file.file_id`, string-valued metadata, `user`, flat client
+`input_text`, `input_file.file_id`, string-valued metadata, `safety_identifier`
+and its deprecated alias `user`, flat client
 function tools, registered name-only custom-tool selectors, standard
 `web_search`, their choices,
 `parallel_tool_calls`, plain text output, and streaming. Replayed
@@ -108,9 +109,9 @@ Interrupt checkpoint keys and background Response authorization include this
 scope before model and run identity. Use
 an authenticated tenant or principal identifier when runs must be isolated
 between security domains; do not derive the scope from
-untrusted OpenAI metadata or the OpenAI `user` field. The
-default `"default"` scope is suitable only for a single-tenant or shared-trust
-deployment. The resolver must return the same scope for the initial request and
+untrusted OpenAI metadata or the end-user `safety_identifier` and `user`
+fields. The default `"default"` scope is suitable only for a single-tenant or
+shared-trust deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
 
@@ -199,7 +200,8 @@ creates. Graphs should access context from an injected `Runtime[Context]`.
 
 Graph adapters receive an immutable, protocol-neutral `GraphRequest` from either
 API's decoder. It exposes
-the shared `model`, `metadata`, `user`, normalized client function `tools`,
+the shared `model`, `metadata`, `user` (the end user from `safety_identifier`, or
+the deprecated `user` field), normalized client function `tools`,
 selected server-tool names in `server_tools`, `tool_choice`, and `parallel_tool_calls`
 values. `NamedFunctionToolChoice` identifies a required client function, while
 `NamedCustomToolChoice` identifies a required registered custom tool. A
@@ -257,9 +259,13 @@ application-created vendor handler through `runtime_callbacks`.
 
 LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
-request ID, registered graph model, (for interrupt runs) operation ID, and (when
+request ID, registered graph model, (for interrupt runs) operation ID, (when
 the request supplies `metadata.conversation_id`) the Langfuse-recognized
-`langfuse_session_id`. LangGraph also propagates primitive configurable values
+`langfuse_session_id`, and (when it names an end user with `safety_identifier` or
+the deprecated `user`) that end user as `lgos.user` and as the Langfuse-recognized
+`langfuse_user_id`. Graph code can read them with LangGraph's `get_config()`;
+use `lgos.user` for the end user, which does not depend on Langfuse. LangGraph
+also propagates primitive configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
 custom Langfuse trace ID. See [Production Logging and Request

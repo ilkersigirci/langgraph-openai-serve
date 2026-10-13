@@ -13,7 +13,6 @@ from openai import AsyncOpenAI, BadRequestError
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs import server_tool
-from lgos_demo_api.graphs.advanced_graph import resources as advanced_resources
 from lgos_demo_api.graphs.simple import SimpleContext
 from lgos_demo_api.registry import open_registry
 from lgos_demo_api.utils.web_search import WebSearchResult
@@ -318,7 +317,6 @@ async def test_complex_subgraphs_preserve_streaming_parity(
 
 
 async def test_registry_compiles_graphs_with_server_resources(
-    monkeypatch: pytest.MonkeyPatch,
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
     resources = ServerResources(
@@ -326,25 +324,13 @@ async def test_registry_compiles_graphs_with_server_resources(
         store=InMemoryStore(),
         run_coordinator=InMemoryRunCoordinator(),
     )
-    upstream_clients: list[httpx2.AsyncClient] = []
-    create_model = advanced_resources.create_model
-
-    def capture_upstream_client(client: httpx2.AsyncClient):
-        upstream_clients.append(client)
-        return create_model(client)
-
-    monkeypatch.setattr(advanced_resources, "create_model", capture_upstream_client)
-
     async with open_registry(resources) as registry:
-        assert not upstream_clients[0].is_closed
         for model_id in ("interruptible-approval", "background-interrupt"):
             graph = await registry.get_graph(model_id).resolve_graph()
             assert graph.checkpointer is sqlite_checkpointer
         plot_agent = await registry.get_graph("persistent-plot-agent").resolve_graph()
         assert plot_agent.store is resources.store
         assert registry.run_coordinator is resources.run_coordinator
-
-    assert upstream_clients[0].is_closed
 
 
 @pytest.mark.parametrize("tools", [[], [{"type": "custom", "name": "package_version"}]])
@@ -411,7 +397,6 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
     import json
 
     from httpx2 import MockTransport, Request, Response
-    from langchain_openai import ChatOpenAI
 
     requests = []
 
@@ -531,10 +516,7 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         return Response(200, json=payload)
 
     async with AsyncClient(transport=MockTransport(respond)) as provider:
-        monkeypatch.setattr(
-            "lgos_demo_api.utils.models.ChatOpenAI",
-            lambda **kwargs: ChatOpenAI(http_async_client=provider, **kwargs),
-        )
+        monkeypatch.setattr("lgos_demo_api.utils.models.GATEWAY_HTTP_CLIENT", provider)
         _rebuild_server_tool_graph(demo_app)
         response = await openai_client.responses.create(
             model="server-tool",

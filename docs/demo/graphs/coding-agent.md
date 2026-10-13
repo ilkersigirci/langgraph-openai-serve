@@ -119,7 +119,7 @@ reset the bundled Bifrost provider's stream-idle timer.
 
 Configure the [demo stack](../docker.md). Copy the coding-agent settings from
 `demo/.env.example` into an existing `demo/.env` when upgrading. Compose sends
-Codex's model calls to the selected gateway with `OPENAI_GATEWAY_API_KEY`, and
+Codex's model calls to the selected gateway with `DEMO_GRAPH_GATEWAY_API_KEY`, and
 the model defaults to `DEMO_API_OPENAI_RESPONSES_MODEL`; choose a gateway model that
 supports Codex's native Responses requests.
 

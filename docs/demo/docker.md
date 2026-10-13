@@ -145,13 +145,26 @@ The `docker/compose/sso.yml` overlay reads the SSO section of `demo/.env` and:
   auth and apply each user's models, budget, and spend. A user reaches the MCP
   servers marked `allow_all_keys` and those LiteLLM's Admin UI grants to them
   or to a team they belong to; a proxy admin gets LiteLLM's admin view. Other
-  credentials, such as `OPENAI_GATEWAY_API_KEY` and the sync's master key, keep
-  LiteLLM's native authentication. Bifrost cannot validate the tokens, so
-  `--sso` needs `OPENAI_GATEWAY_TYPE=litellm`;
+  credentials, such as `OPENAI_GATEWAY_API_KEY`, `DEMO_GRAPH_GATEWAY_API_KEY`,
+  and the sync's master key, keep LiteLLM's native authentication. Bifrost
+  cannot validate the tokens, so `--sso` needs `OPENAI_GATEWAY_TYPE=litellm`;
 - signs users in to LiteLLM's Admin UI through the same provider and as the
   same LiteLLM user. Only members of the provider's `admin` group become proxy
   admins and can open it; register `${DEMO_LITELLM_URL}/sso/callback` with
   LiteLLM's client.
+
+A graph's own model calls use the graph APIs' `DEMO_GRAPH_GATEWAY_API_KEY` and
+name the user in LiteLLM's `x-litellm-end-user-id` header. That key defaults to
+the shared key, which the bundled LiteLLM uses as its master key, so create a
+dedicated non-admin key in LiteLLM's Admin UI, such as one with the alias
+`lgos-graphs`, and set it before exposing the stack. Open WebUI and Chainlit
+send the token's subject as the OpenAI `user`, and LGOS passes it to the graph's
+model calls, so LiteLLM attributes both the graph request and its model calls
+to that user.
+LiteLLM's Logs list one row per caller, so a graph question shows the user's
+row and the graph key's model-call rows. With the
+[OpenTelemetry overlay](opentelemetry.md), both share one W3C trace ID as their
+session, and an admin opening either row sees the whole trace.
 
 The overlay applies to the stack it starts; `just demo/up` recreates a service
 without it. See [Chainlit login](chainlit.md#persistence-and-login) and

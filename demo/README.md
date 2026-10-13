@@ -60,7 +60,8 @@ bundled gateway through Docker Compose's native profiles. To reuse an existing
 LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
 `OPENAI_GATEWAY_BASE_URL` and `DEMO_GATEWAY_HOST_URL` to its HTTPS root (without
 `/v1`), and provide
-its shared key through `OPENAI_GATEWAY_API_KEY`. Chainlit can use that key with
+its shared key through `OPENAI_GATEWAY_API_KEY` and a dedicated non-admin key
+for the graph APIs through `DEMO_GRAPH_GATEWAY_API_KEY`. Chainlit can use that key with
 mock or SSO login, or enable [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
 This mode starts no gateway container.
 

@@ -90,14 +90,20 @@ level.
 
 ## Langfuse correlation
 
-When `LGOS_ENABLE_LANGFUSE=True`, LGOS passes the following correlation
-metadata through LangChain's `RunnableConfig`:
+LGOS passes the following correlation metadata through LangChain's
+`RunnableConfig` on every run, and Langfuse reads it when
+`LGOS_ENABLE_LANGFUSE=True`:
 
 - `lgos.request_id`, when an HTTP request context exists;
 - `lgos.operation_id`, for an interrupt operation;
 - `lgos.model`, the registered OpenAI-compatible graph model;
 - `langfuse_session_id`, when the request contains a non-empty
-  `metadata.conversation_id` string.
+  `metadata.conversation_id` string;
+- `lgos.user`, the end user, when the request names one with
+  `safety_identifier` or the deprecated `user`. Graph code reads it with
+  LangGraph's `get_config()`, with or without Langfuse;
+- `langfuse_user_id`, the same end user under the key Langfuse uses for
+  [user tracking](https://langfuse.com/docs/user-explorer).
 
 Both endpoints use the stable graph run name `lgos.graph_run`. LangGraph propagates
 primitive `configurable` fields to callback metadata during execution, so an

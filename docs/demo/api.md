@@ -50,7 +50,7 @@ just demo/up lgos-db --wait
     LLM-backed graphs call `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` through
     Chat Completions or `DEMO_API_OPENAI_RESPONSES_MODEL` through Responses,
     via the selected gateway using `OPENAI_GATEWAY_BASE_URL` and
-    `OPENAI_GATEWAY_API_KEY`. Local API, worker, and notebook recipes set the
+    `DEMO_GRAPH_GATEWAY_API_KEY`. Local API, worker, and notebook recipes set the
     root to `DEMO_GATEWAY_HOST_URL`; Compose uses the gateway's service URL. The
     `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL`. Its corpus is
     packaged with the API. The `server-tool` graph reads
