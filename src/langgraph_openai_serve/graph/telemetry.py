@@ -17,12 +17,12 @@ from langgraph_openai_serve.core.logging import exception_type_name
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 
-INSTRUMENTATION_SCOPE = "langgraph_openai_serve"
+_INSTRUMENTATION_SCOPE = "langgraph_openai_serve"
 # The histogram boundaries the conventions specify for workflow durations.
 _WORKFLOW_BUCKETS = (1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200)
 
-_tracer = trace.get_tracer(INSTRUMENTATION_SCOPE, version(INSTRUMENTATION_SCOPE))
-_meter = metrics.get_meter(INSTRUMENTATION_SCOPE, version(INSTRUMENTATION_SCOPE))
+_tracer = trace.get_tracer(_INSTRUMENTATION_SCOPE, version(_INSTRUMENTATION_SCOPE))
+_meter = metrics.get_meter(_INSTRUMENTATION_SCOPE, version(_INSTRUMENTATION_SCOPE))
 _duration = _meter.create_histogram(
     "gen_ai.invoke_workflow.duration",
     unit="s",
@@ -75,4 +75,4 @@ def invoke_workflow(request: GraphRequest) -> Generator[Span, None, None]:
         span.end()
 
 
-__all__ = ["INSTRUMENTATION_SCOPE", "invoke_workflow"]
+__all__ = ["invoke_workflow"]

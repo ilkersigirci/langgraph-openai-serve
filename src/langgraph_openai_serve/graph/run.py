@@ -135,7 +135,7 @@ class GraphRun:
 
     def langfuse_attributes(self) -> AbstractContextManager[object]:
         """
-        Name this run's end user and session on each of its Langfuse observations.
+        Name this run's end user, session, and graph on its Langfuse observations.
 
         Enter it where the graph's task starts. LangChain runs Langfuse's
         handler on worker threads with a copy of the caller's context, so the
@@ -148,6 +148,7 @@ class GraphRun:
         return trace_attributes(
             user_id=self.request.user or None,
             session_id=self.request.metadata.get(CONVERSATION_METADATA_KEY) or None,
+            trace_name=self.request.model,
         )
 
     def usage_metadata(self) -> UsageMetadata | None:

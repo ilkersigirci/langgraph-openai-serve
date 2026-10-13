@@ -1383,6 +1383,7 @@ server = [
     { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-instrumentation-psycopg" },
+    { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "structlog" },
@@ -1390,6 +1391,7 @@ server = [
 tracing = [
     { name = "langchain" },
     { name = "langfuse" },
+    { name = "opentelemetry-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -1436,6 +1438,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-httpx", marker = "extra == 'server'", specifier = ">=0.66b0,<0.67" },
     { name = "opentelemetry-instrumentation-logging", marker = "extra == 'server'", specifier = ">=0.66b0,<0.67" },
     { name = "opentelemetry-instrumentation-psycopg", marker = "extra == 'server'", specifier = ">=0.66b0,<0.67" },
+    { name = "opentelemetry-sdk", marker = "extra == 'tracing'", specifier = ">=1.35.0,<2" },
     { name = "psycopg", marker = "extra == 'postgres'", specifier = ">=3.3.4,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.3.4,<4" },
     { name = "psycopg-pool", marker = "extra == 'postgres'", specifier = ">=3.3.0,<4" },

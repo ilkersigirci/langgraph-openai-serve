@@ -242,13 +242,14 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
 owns its standard SDK configuration and error behavior. LGOS constructs it on
 the first graph run that needs runnable configuration, then reuses that
-process-wide handler. Before that, LGOS creates the Langfuse client with
-`should_export_span` from `langgraph_openai_serve.integrations.langfuse`:
-Langfuse's default export filter without LGOS's [OpenTelemetry](#opentelemetry)
-spans, so each trace keeps the callback's root observation with the run's input
-and output. An application that creates its own Langfuse client first keeps its
-filter; pass the same `should_export_span` to keep those trace roots. When
-enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
+process-wide handler. Before that, LGOS creates the Langfuse client with a
+tracer provider of its own, as Langfuse
+[recommends](https://langfuse.com/faq/all/existing-otel-setup) beside another
+tracing backend. Langfuse's observations, which carry prompts and outputs, then
+never reach the application's [OpenTelemetry](#opentelemetry) exporters, and the
+application's spans never reach Langfuse; both share each trace ID. An
+application that creates its own Langfuse client first keeps its own tracing
+setup. When enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
 alongside empty, list, or manager callbacks without altering the registered
 `GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
 leave the toggle off and pass that handler through `runtime_callbacks`.
@@ -263,9 +264,9 @@ request ID, registered graph model, (for interrupt runs) operation ID, and
 (when it names an end user with `safety_identifier` or the deprecated `user`)
 that end user as `lgos.user`. Graph code can read them with LangGraph's
 `get_config()`, with or without Langfuse. When the toggle is on, LGOS also sets
-the end user and `metadata.conversation_id` as Langfuse's native user and
-session on every observation of the run; a custom handler passed with the
-toggle off does not receive them. LangGraph also propagates primitive
+the end user, `metadata.conversation_id`, and the registered model as Langfuse's
+native user, session, and trace name on every observation of the run; a custom
+handler passed with the toggle off does not receive them. LangGraph also propagates primitive
 configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
@@ -297,14 +298,16 @@ and `http.route` includes the mount, such as `/v1/responses`.
 
 | Signal | Name | Attributes |
 | --- | --- | --- |
-| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, `user.id` and `session.id` with [Langfuse](how-to-guides/production-logging.md#langfuse-correlation) enabled, and `error.type` on failure |
+| Span, kind `INTERNAL` | `invoke_workflow {model}` | `gen_ai.operation.name=invoke_workflow`, `gen_ai.workflow.name`, `gen_ai.conversation.id` when the request supplies `metadata.conversation_id`, and `error.type` on failure |
 | Histogram, unit `s` | `gen_ai.invoke_workflow.duration` | `gen_ai.workflow.name`, and `error.type` on failure |
 
 `gen_ai.workflow.name` is the registered model. Both signals cover graph
 execution through the final output; they exclude lease waits, background queue
-time, and checkpoint cleanup. The span is current only while LGOS advances the
-graph: spans the graph creates, such as model calls, are its children, while
-code that consumes a stream keeps its own parent span between events. A run
+time, and checkpoint cleanup. While LGOS advances the graph, the span's context
+is current: spans the graph creates, such as model calls, are its children,
+while code that consumes a stream keeps its own parent span between events. The
+span itself is not current, so code in the graph cannot change it, and it
+carries only the attributes above; add attributes to spans of your own. A run
 that ends before its output exists fails: one that raises an exception, one
 cancelled by a disconnecting client or a cancelled background Response, and one
 whose stream the consumer closes mid-run. The span status is then `ERROR` with

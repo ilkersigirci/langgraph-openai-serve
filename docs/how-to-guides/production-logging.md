@@ -105,15 +105,16 @@ With `LGOS_ENABLE_LANGFUSE=True`, LGOS also names the end user and the
 request's non-empty `metadata.conversation_id` string as Langfuse's native
 [user](https://langfuse.com/docs/observability/features/users) and
 [session](https://langfuse.com/docs/observability/features/sessions) on every
-observation of the run, so model calls and their cost count toward that user.
+observation of the run, so model calls and their cost count toward that user,
+and names each trace after its registered model.
 It applies them with Langfuse's `propagate_attributes()` where the run starts:
 LangChain runs Langfuse's handler on worker threads with a copy of the
 caller's context, so trace attributes passed as callback metadata reach only
 the root observation
 ([langfuse#16177](https://github.com/langfuse/langfuse/issues/16177)).
-Langfuse carries them in OpenTelemetry context, so LGOS's workflow span and,
-when Langfuse shares the application's tracer provider, the run's other spans
-also record them as the standard `user.id` and `session.id` attributes.
+Langfuse records through a tracer provider of its own, so its observations,
+with their prompts and outputs, never reach the application's OpenTelemetry
+exporters; a Langfuse trace and the run's OpenTelemetry trace share one ID.
 
 Both endpoints use the stable graph run name `lgos.graph_run`. LangGraph propagates
 primitive `configurable` fields to callback metadata during execution, so an

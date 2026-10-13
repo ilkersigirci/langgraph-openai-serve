@@ -258,6 +258,40 @@ async def test_metadata_pair_limit_returns_openai_error(
     assert error["message"].startswith("metadata: ")
 
 
+@pytest.mark.parametrize(
+    "create",
+    [
+        pytest.param(
+            lambda client, end_user: client.chat.completions.create(
+                model="test",
+                messages=[{"role": "user", "content": "Hello"}],
+                safety_identifier=end_user,
+            ),
+            id="chat",
+        ),
+        pytest.param(
+            lambda client, end_user: client.responses.create(
+                model="test", input="Hello", safety_identifier=end_user
+            ),
+            id="responses",
+        ),
+    ],
+)
+async def test_safety_identifier_over_openai_limit_returns_openai_error(
+    openai_client: AsyncOpenAI,
+    create: Callable[[AsyncOpenAI, str], Awaitable[object]],
+) -> None:
+    # OpenAI documents a 128-character maximum on both endpoints.
+    await create(openai_client, "u" * 128)
+
+    with pytest.raises(BadRequestError) as exc_info:
+        await create(openai_client, "u" * 129)
+
+    error = exc_info.value.response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["param"] == "safety_identifier"
+
+
 async def test_http_error_returns_openai_error(
     openai_client: AsyncOpenAI,
 ) -> None:

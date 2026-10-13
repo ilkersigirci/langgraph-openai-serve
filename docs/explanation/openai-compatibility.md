@@ -245,7 +245,7 @@ not claim every field in the upstream OpenAI API.
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
-| `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
+| `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user in at most 128 characters, OpenAI's documented limit, and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |

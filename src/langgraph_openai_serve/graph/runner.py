@@ -16,6 +16,7 @@ from langgraph.types import (
     UpdatesStreamPart,
 )
 from opentelemetry import trace
+from opentelemetry.trace import NonRecordingSpan
 
 from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph import interrupt
@@ -189,13 +190,12 @@ async def stream_run(
                 version="v2",
             ),
         )
-        # asyncio copies this context into the producer task. Graph execution
-        # and cleanup inherit the span and Langfuse attributes without changing
-        # the consumer's context.
-        with (
-            trace.use_span(span, record_exception=False, set_status_on_exception=False),
-            run.langfuse_attributes(),
-        ):
+        # Graph work runs under the span's context, not the span itself: its spans
+        # are children, while code inside the graph, such as Langfuse's handler,
+        # cannot write onto the span. asyncio copies this context into the
+        # producer task, so the consumer's context does not change.
+        graph_parent = NonRecordingSpan(span.get_span_context())
+        with trace.use_span(graph_parent), run.langfuse_attributes():
             parts = TaskStream(graph_stream, name="langgraph-astream")
         try:
             async for part in parts.receive:
@@ -217,9 +217,7 @@ async def stream_run(
             msg = "LangGraph stream completed without a final value."
             raise RuntimeError(msg)
         else:
-            with trace.use_span(
-                span, record_exception=False, set_status_on_exception=False
-            ):
+            with trace.use_span(graph_parent):
                 message = await run.config.render_output(final_output)
             usage = run.usage_metadata()
             output = (
