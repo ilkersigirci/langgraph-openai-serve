@@ -17,7 +17,8 @@ The demo API registers these graph names as OpenAI models:
   network service or credentials.
 - `mcp-postgres` advertises MCP-tool support and requests only the read-only
   PostgreSQL reports that a native MCP client discovers from the gateway.
-- `complex-subgraphs` demonstrates routing across nested specialist graphs.
+- `nested-subgraphs` streams, reports status, and pauses for human review
+  inside nested subgraphs, in the foreground or background.
 - `multi-node-streaming` combines streamed contributions from two sequential
   nodes into one final assistant message.
 - `status-events` streams portable status updates for native client UI.

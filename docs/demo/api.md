@@ -204,7 +204,8 @@ must handle.
 For background Responses, set `LGOS_BACKGROUND=hatchet`, start the
 independent `just demo/background-worker` process, or run the complete UI path
 with the `background` Compose profile and `just demo/compose`.
-`advanced-graph`, `background-mock`, and `background-interrupt` support it.
+`advanced-graph`, `background-mock`, `background-interrupt`, and
+`nested-subgraphs` support it.
 Chainlit and Open WebUI expose polling through either bundled gateway. See
 [Background Mock](graphs/background-mock.md) for basic execution and
 [Background Interrupt](graphs/background-interrupt.md) for approval and resumption.

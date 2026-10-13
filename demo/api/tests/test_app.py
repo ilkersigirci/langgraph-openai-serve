@@ -23,7 +23,6 @@ DOCUMENTED_MODEL_IDS = {
     "background-mock",
     "mcp-postgres",
     "citation-events",
-    "complex-subgraphs",
     "custom-input-output-context",
     "file-input",
     "interruptible-approval",
@@ -31,6 +30,7 @@ DOCUMENTED_MODEL_IDS = {
     "mcp-mock",
     "persistent-plot-agent",
     "multi-node-streaming",
+    "nested-subgraphs",
     "response-outcomes",
     "simple-graph",
     "server-tool",
@@ -94,6 +94,7 @@ async def test_app_lists_exactly_the_documented_models(
         for model in response.data
     }
     assert features["file-input"] == ["file_inputs"]
+    assert features["nested-subgraphs"] == ["background", "interrupts"]
 
     advanced_model = await openai_client.models.retrieve("advanced-graph")
     advanced_extension = (advanced_model.model_extra or {})["lgos"]
@@ -286,36 +287,6 @@ async def test_response_outcomes_finishes_incomplete_stream_natively(
     assert response.output[0].status == "incomplete"
 
 
-async def test_complex_subgraphs_preserve_streaming_parity(
-    openai_client: AsyncOpenAI,
-) -> None:
-    complete = await openai_client.responses.create(
-        store=False,
-        model="complex-subgraphs",
-        input=[{"role": "user", "content": "Show nested subgraph routing docs."}],
-    )
-    stream = await openai_client.responses.create(
-        store=False,
-        model="complex-subgraphs",
-        input=[{"role": "user", "content": "Show nested subgraph routing docs."}],
-        stream=True,
-    )
-
-    phases = {}
-    final_deltas = []
-    async for event in stream:
-        if event.type == "response.output_item.added" and event.item.type == "message":
-            phases[event.output_index] = event.item.phase
-        elif (
-            event.type == "response.output_text.delta"
-            and phases.get(event.output_index) == "final_answer"
-        ):
-            final_deltas.append(event.delta)
-    streamed = "".join(final_deltas)
-
-    assert streamed == complete.output_text
-
-
 async def test_registry_compiles_graphs_with_server_resources(
     sqlite_checkpointer: AsyncSqliteSaver,
 ) -> None:
@@ -325,7 +296,11 @@ async def test_registry_compiles_graphs_with_server_resources(
         run_coordinator=InMemoryRunCoordinator(),
     )
     async with open_registry(resources) as registry:
-        for model_id in ("interruptible-approval", "background-interrupt"):
+        for model_id in (
+            "interruptible-approval",
+            "background-interrupt",
+            "nested-subgraphs",
+        ):
             graph = await registry.get_graph(model_id).resolve_graph()
             assert graph.checkpointer is sqlite_checkpointer
         plot_agent = await registry.get_graph("persistent-plot-agent").resolve_graph()

@@ -277,7 +277,7 @@ async def test_litellm_native_responses_preserve_lgos_output() -> None:
     ("model", "prompt", "commentary_count"),
     [
         ("status-events", "Build the report.", 3),
-        ("complex-subgraphs", "Show nested subgraph routing docs.", 1),
+        ("nested-subgraphs", "Quarterly risks", 1),
     ],
 )
 async def test_litellm_native_stream_preserves_commentary(
@@ -299,12 +299,15 @@ async def test_litellm_native_stream_preserves_commentary(
         )
         events = [event async for event in stream]
 
-    added_items = [
-        event.item for event in events if event.type == "response.output_item.added"
+    # nested-subgraphs then pauses with a review call, which interrupt expiry removes.
+    messages = [
+        event.item
+        for event in events
+        if event.type == "response.output_item.added" and event.item.type == "message"
     ]
-    assert [(item.phase, item.type) for item in added_items] == [
-        *[("commentary", "message")] * commentary_count,
-        ("final_answer", "message"),
+    assert [item.phase for item in messages] == [
+        *["commentary"] * commentary_count,
+        "final_answer",
     ]
 
 

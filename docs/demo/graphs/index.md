@@ -16,7 +16,7 @@ demo model catalogs.
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`mcp-mock`](core-patterns.md#mcp-mock) | Async MCP-style tool discovery and an agent tool loop | None | None |
 | [`mcp-postgres`](mcp-postgres.md) | Read-only database questions with MCP discovery and execution owned by the native UI client | `mcp_tools` | Upstream model, selected gateway, DBHub, and PostgreSQL |
-| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | None | None |
+| [`nested-subgraphs`](nested-subgraphs.md) | Streaming, status, human review, and background runs inside nested subgraphs, with no model call | `background`, `interrupts` | PostgreSQL checkpointer and run coordinator; Hatchet for background runs |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`response-outcomes`](core-patterns.md#response-outcomes) | Native refusal content and incomplete terminal responses | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | None | None |
@@ -36,15 +36,15 @@ PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 
 `persistent-plot-agent` stores application data with a LangGraph Store.
-`interruptible-approval` and `background-interrupt` checkpoint graph execution.
+`interruptible-approval`, `background-interrupt`, and `nested-subgraphs`
+checkpoint graph execution.
 `advanced-graph` uses both:
 checkpoints for human review and Store receipts for vector-service uploads. None
 makes LGOS the owner of UI conversation history.
 
-Background Responses from `advanced-graph`, `background-mock`, and
-`background-interrupt` are
-polling-only and stored by Hatchet. They still do not persist a UI conversation
-or expose event replay.
+Background Responses from `advanced-graph`, `background-mock`,
+`background-interrupt`, and `nested-subgraphs` are polling-only and stored by
+Hatchet. They still do not persist a UI conversation or expose event replay.
 
 ## Source Map
 

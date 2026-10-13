@@ -42,6 +42,7 @@ def _():
     from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph
     from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph
     from lgos_demo_api.graphs.multi_node_streaming import multi_node_streaming_graph
+    from lgos_demo_api.graphs.nested_subgraphs import create_nested_subgraphs_graph
     from lgos_demo_api.graphs.persistent_plot_agent import (
         create_persistent_plot_agent,
     )
@@ -51,9 +52,6 @@ def _():
     from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
     from lgos_demo_api.graphs.status_events import status_event_graph
     from lgos_demo_api.graphs.streaming_long_mock import streaming_long_mock_graph
-    from lgos_demo_api.graphs.subgraphs.specialist_team import (
-        create_specialist_team_graph,
-    )
 
     return (
         InMemorySaver,
@@ -61,8 +59,8 @@ def _():
         citation_graph,
         create_background_interrupt_graph,
         create_interruptible_graph,
+        create_nested_subgraphs_graph,
         create_persistent_plot_agent,
-        create_specialist_team_graph,
         custom_io_graph,
         lgos_rag,
         multi_node_streaming_graph,
@@ -84,8 +82,8 @@ async def _(
     citation_graph,
     create_background_interrupt_graph,
     create_interruptible_graph,
+    create_nested_subgraphs_graph,
     create_persistent_plot_agent,
-    create_specialist_team_graph,
     custom_io_graph,
     lgos_rag,
     multi_node_streaming_graph,
@@ -103,7 +101,7 @@ async def _(
         "citation-events": citation_graph,
         "mcp-mock": await mcp_mock_graph(),
         "mcp-postgres": mcp_postgres_graph,
-        "complex-subgraphs": create_specialist_team_graph(),
+        "nested-subgraphs": create_nested_subgraphs_graph(InMemorySaver()),
         "status-events": status_event_graph,
         "multi-node-streaming": multi_node_streaming_graph,
         "streaming-long-mock": streaming_long_mock_graph,

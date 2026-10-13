@@ -16,7 +16,6 @@ from lgos_demo_api.graphs.background_interrupt import (
 )
 from lgos_demo_api.graphs.background_mock import background_mock_graph_config
 from lgos_demo_api.graphs.citations import citation_graph_config
-from lgos_demo_api.graphs.complex_subgraphs import create_complex_subgraphs_graph_config
 from lgos_demo_api.graphs.custom_io import custom_io_graph_config
 from lgos_demo_api.graphs.file_input import file_input_graph_config
 from lgos_demo_api.graphs.interruptible import (
@@ -28,6 +27,10 @@ from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph_config
 from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph_config
 from lgos_demo_api.graphs.multi_node_streaming import (
     multi_node_streaming_graph_config,
+)
+from lgos_demo_api.graphs.nested_subgraphs import (
+    create_nested_subgraphs_graph,
+    create_nested_subgraphs_graph_config,
 )
 from lgos_demo_api.graphs.persistent_plot_agent import (
     create_persistent_plot_agent,
@@ -63,6 +66,7 @@ async def open_registry(
     background_interrupt_graph = create_background_interrupt_graph(
         resources.checkpointer
     )
+    nested_subgraphs_graph = create_nested_subgraphs_graph(resources.checkpointer)
     persistent_plot_agent = create_persistent_plot_agent(resources.store)
     async with open_advanced_graph(
         resources.checkpointer, resources.store
@@ -82,7 +86,9 @@ async def open_registry(
                 "custom-input-output-context": custom_io_graph_config,
                 "mcp-mock": mcp_mock_graph_config,
                 "mcp-postgres": mcp_postgres_graph_config,
-                "complex-subgraphs": create_complex_subgraphs_graph_config(),
+                "nested-subgraphs": create_nested_subgraphs_graph_config(
+                    nested_subgraphs_graph,
+                ),
                 "multi-node-streaming": multi_node_streaming_graph_config,
                 "streaming-long-mock": streaming_long_mock_graph_config,
                 "status-events": status_event_graph_config,
