@@ -8,13 +8,14 @@ The Chainlit project intentionally does not install or import the
 needs only the OpenAI wire contract. Its local declarations cover only LGOS
 model metadata and link to their authoritative source files.
 
-The `server-tool` profile has fixed opt-in switches for `lgos_package_version`
-and `web_search`; `advanced-graph` has only the **Web search** Chat Settings
-switch and receives gateway MCP tools separately through its advertised
-capability. Chainlit knows the server-tool names and includes only selected
-tools in the native Responses `tools` array; it does not discover those names
-from model metadata. Package lookup uses a name-only custom declaration, while
-search uses `{"type":"web_search"}`. LGOS completes selected server tools inside
+Each server tool a profile advertises in `lgos.server_tools` becomes an opt-in
+Chat Settings switch labelled from its name: `server-tool` gets
+**Package version** and **Web search**, while `advanced-graph` gets only
+**Web search** and receives gateway MCP tools separately through its advertised
+capability. Chainlit includes only selected tools in the native Responses
+`tools` array, and offers `display_file` only to profiles that list it in
+`lgos.client_tools`. A custom tool uses a name-only declaration, while search
+uses `{"type":"web_search"}`. LGOS completes selected server tools inside
 the same Response, so Chainlit executes only returned `function_call` items. The
 advanced graph enters note review when the user asks to remember or save
 something, not through a UI setting.
@@ -54,15 +55,15 @@ value before starting the UI; neither service reads the other's S3 settings.
     just demo/compose
     ```
 
-    With LiteLLM selected, this syncs model metadata after Chainlit starts, so
-    open `http://localhost:3002` once the command completes.
+    It syncs model metadata into the gateway after Chainlit starts, so open
+    `http://localhost:3002` once the command completes.
 
     With an external gateway, `just demo/up lgos-chainlit` starts only
     Chainlit and PostgreSQL.
 
 === "Local processes"
 
-    Start the selected gateway and its dependencies from one terminal:
+    Start the selected gateway first:
 
     === "LiteLLM"
 
@@ -76,8 +77,14 @@ value before starting the UI; neither service reads the other's S3 settings.
         just demo/up lgos-bifrost
         ```
 
-    Both gateways use host port 3000 and also start the Chainlit container on
-    port 3002, which the MCP reports depend on. Run the local UI on another port:
+    Both gateways use host port 3000. Then start the MCP reports, which also
+    start the demo API and the Chainlit container on port 3002 they depend on:
+
+    ```bash
+    just demo/up lgos-postgres-mcp
+    ```
+
+    Run the local UI on another port:
 
     ```bash
     just demo/chainlit --port 5000
@@ -88,9 +95,9 @@ value before starting the UI; neither service reads the other's S3 settings.
 Both modes apply pending Chainlit schema migrations when the UI starts. See
 [Docker Compose](docker.md#demo-services) for container endpoints.
 
-When starting components independently with LiteLLM, [sync model
-metadata](litellm-sync.md) before using the UI. The full-stack Compose targets
-do this automatically.
+When starting components independently, sync model metadata before using the
+UI: [model sync](litellm-sync.md) for LiteLLM or `just demo/sync-bifrost` for
+Bifrost. The full-stack Compose targets do this automatically.
 Profile discovery and settings read `GET /model/info` with the current gateway
 credential. Entries with `model_info.lgos` become profiles; `model_name` is
 sent unchanged to managed `/v1/responses`. There are no provider allowlists,
@@ -117,11 +124,13 @@ signed-in user's access token.
 ## Gateway MCP
 
 The backend derives one trusted `/mcp` connection from the selected gateway
-root and uses the same credential as Responses and Files. The browser receives
-no URL or bearer token, and user-provided servers remain disabled. After you
-click **Connect**, Chainlit owns the session and discovers the tools authorized
-by the gateway. It sends them only when the selected model advertises the
-`mcp_tools` capability. `mcp-postgres` applies a fixed report allowlist at the
+root. The browser receives no URL or bearer token, and user-provided servers
+remain disabled. After you click **Connect**, Chainlit owns the session and
+discovers the tools authorized by the gateway. It sends them only when the
+selected model advertises the `mcp_tools` capability. Every MCP request carries
+the same credential as Responses and Files, resolved at that moment:
+`OPENAI_GATEWAY_API_KEY`, or the signed-in user's refreshed access token in
+delegated mode. `mcp-postgres` applies a fixed report allowlist at the
 API boundary, while general-purpose graphs can use the gateway-authorized tool
 catalog without knowing which MCP servers provide it.
 
@@ -144,7 +153,7 @@ both inference providers.
 
 The attachment button appears only for profiles that advertise `file_inputs`
 and accepts up to five files of 10 MiB each per message. Select
-`lgos-a/file-input` or `lgos-b/file-input` to process an attachment with the
+`lgos/file-input` to process an attachment with the
 dedicated demo graph.
 If an OpenAI API caller sends a native file part to a
 general graph such as `simple-graph`, LGOS preserves it, but that graph does not
@@ -237,9 +246,9 @@ defaults, keeps the thread's saved selections for when the metadata returns,
 and shows a transient **Limited functionality** warning after selection. Profile discovery itself stays
 list-only because descriptions and features arrive with the list response.
 
-![Chainlit Settings panel showing conversation-history and audience controls](../static/runtime_settings_chainlit.png)
+![Chainlit Settings panel showing stream, model, audience, and conversation-history controls](../static/runtime_settings_chainlit.png)
 
-*Runtime settings discovered from `lgos-a/simple-graph` and rendered as native
+*Runtime settings discovered from `lgos/simple-graph` and rendered as native
 Chainlit controls.*
 
 The same panel includes a Chainlit-owned **Stream response** switch for every
@@ -277,7 +286,7 @@ Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
 `metadata.conversation_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
-combines that value with the authenticated OpenAI `user` to scope its LangGraph
+combines that value with the authenticated `safety_identifier` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat
 history is added to LGOS. See the
 [persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)
@@ -289,11 +298,16 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
 | `oauth` | `false` | `OPENAI_GATEWAY_API_KEY` |
 | `oauth` | `true` | Signed-in user's OAuth access token |
 
+The demo's `chainlit.yml` sets the first row. `just demo/compose --sso` adds
+the [SSO overlay](docker.md#sso-overlay), which sets the last row. Outside
+Compose, such as with `just demo/chainlit`, Chainlit reads
+`DEMO_CHAINLIT_LOGIN_TYPE` and `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING`
+from its environment, which also allows the middle row.
+
 === "Mock login (default)"
 
-    `DEMO_CHAINLIT_LOGIN_TYPE=mock` maps every login to the shared `demo-user`.
-    Keep OAuth token forwarding disabled and configure
-    `OPENAI_GATEWAY_API_KEY`. This is for local use only.
+    Mock login maps every login to the shared `demo-user` and sends
+    `OPENAI_GATEWAY_API_KEY` to the gateway. This is for local use only.
 
 === "OIDC login"
 
@@ -308,45 +322,34 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     are honored. Set `OAUTH_PROMPT` globally, or use `OAUTH_GENERIC_PROMPT` when
     `OAUTH_GENERIC_NAME=generic` to override it for that provider.
 
+    With `just demo/compose --sso`, Chainlit delegates gateway authorization
+    to the signed-in user. Set these values in `demo/.env`:
+
     ```dotenv
-    DEMO_CHAINLIT_LOGIN_TYPE=oauth
+    DEMO_SSO_ISSUER=https://id.example.com
     CHAINLIT_URL=https://chat.example.com
-    DEMO_CHAINLIT_OAUTH_ISSUER=https://id.example.com
     DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD=client_secret_basic
+    DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_CLIENT_ID=YOUR_CLIENT_ID
     OAUTH_GENERIC_CLIENT_SECRET=YOUR_CLIENT_SECRET
     OAUTH_GENERIC_NAME=generic
-    OAUTH_GENERIC_SCOPES="openid profile email groups"
-    OPENAI_GATEWAY_TYPE=litellm
-    OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
-    DEMO_GATEWAY_HOST_URL=https://litellm.example.com
-    OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=False
-    ```
-
-    This authenticates users with SSO while sending the static Chainlit key to
-    the gateway. Chainlit does not store or refresh provider tokens in this mode.
-
-    !!! note "Scopes still apply when token forwarding is disabled"
-
-        `OAUTH_GENERIC_SCOPES` is always requested during OAuth login. For login
-        only, use `openid profile email groups`. Disabling token forwarding does
-        not remove gateway scopes such as `llm:invoke`; unsupported scopes can
-        still prevent sign-in.
-
-    To delegate gateway authorization to the signed-in user instead:
-
-    ```dotenv
-    DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True
-    DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS='["YOUR_GENERATED_FERNET_KEY"]'
     OAUTH_GENERIC_SCOPES="openid profile email groups offline_access llm:invoke"
-    OPENAI_GATEWAY_BASE_URL=https://litellm-sso.example.com
-    DEMO_GATEWAY_HOST_URL=https://litellm-sso.example.com
     ```
 
-    Chainlit ignores the shared static key in delegated mode and does not
-    register its static native MCP connection. Open WebUI and the gateway
-    services can continue using `OPENAI_GATEWAY_API_KEY`.
+    The same overlay makes the bundled LiteLLM validate those tokens; see the
+    [SSO overlay](docker.md#sso-overlay).
+
+    Outside Compose, set `DEMO_CHAINLIT_LOGIN_TYPE=oauth` and
+    `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING=True` yourself. With token
+    forwarding set to `False`, users sign in with SSO while Chainlit sends the
+    static key to the gateway and stores no provider tokens.
+    `OAUTH_GENERIC_SCOPES` is requested in either case, so for login only use
+    `openid profile email groups`; an unsupported gateway scope such as
+    `llm:invoke` can prevent sign-in.
+
+    Chainlit ignores the shared static key in delegated mode, which the SSO
+    overlay does not pass at all; MCP tools use the user's token too. The
+    gateway services keep using `OPENAI_GATEWAY_API_KEY`.
 
     Match `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` to the registered client:
     `client_secret_basic` (default) or `client_secret_post`. Authlib uses it for
@@ -370,11 +373,12 @@ for the API Store, Chainlit PostgreSQL, and S3 boundaries.
     With token forwarding enabled, Chainlit sends the access token as
     `Authorization: Bearer ...`.
 
-    The gateway must accept delegated tokens on Responses, Files, and native
-    `GET /model/info`. The custom LiteLLM image grants the native
-    `openai_routes` and `model_info_routes` route groups; no LGOS-specific
-    path allowlist is needed. The UI uses the list endpoint, which applies
-    LiteLLM's caller model permissions, and selects the model locally.
+    The gateway must accept delegated tokens on Responses, Files, MCP, and
+    native `GET /model/info`. The demo's LiteLLM `role_permissions` grant SSO
+    users the native `openai_routes`, `model_info_routes`, and
+    `mcp_inference_routes` route groups; no LGOS-specific path allowlist is
+    needed. The UI uses the list endpoint, which applies LiteLLM's caller model
+    permissions, and selects the model locally.
 
     In delegated mode, Chainlit keeps credentials encrypted in
     `lgos_chainlit_oauth_sessions`, created at startup. Each login has a distinct
@@ -447,7 +451,7 @@ See [Authentication](../how-to-guides/authentication.md).
 
 ## Interrupt Demo
 
-Select `lgos-a/interruptible-approval` in the normal Chainlit profile menu, then
+Select `lgos/interruptible-approval` in the normal Chainlit profile menu, then
 send `Refund order ORDER-123 for the customer.` The same UI also handles
 interrupts returned by other profiles, including `advanced-graph`.
 
@@ -587,10 +591,10 @@ Chainlit-specific settings:
 | Setting | Notes |
 | --- | --- |
 | `DEMO_CHAINLIT_STATUS_DISPLAY` | Status presentation: `steps` or `tasklist`; also applies to background polling. |
-| `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` or `oauth`. |
-| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token. |
+| `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` (default) or `oauth`. The SSO overlay sets `oauth`. |
+| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token; the SSO overlay sets it. |
 | `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 resource identifier passed in OAuth authorization and token requests. |
-| `DEMO_CHAINLIT_OAUTH_ISSUER` | Required for `oauth`. Exact HTTPS issuer; endpoints and signing keys come from discovery. |
+| `DEMO_CHAINLIT_OAUTH_ISSUER` | Required for `oauth`. Exact HTTPS issuer; endpoints and signing keys come from discovery. The SSO overlay sets it from `DEMO_SSO_ISSUER`. |
 | `DEMO_CHAINLIT_OAUTH_CLIENT_AUTH_METHOD` | `client_secret_basic` (default) or `client_secret_post`; used for code exchange and delegated refresh/revocation. |
 | `DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS` | Required only for OAuth token forwarding. JSON list of Fernet keys, primary encryption key first. |
 | `CHAINLIT_UTILS_MIGRATIONS_TABLE` | Chainlit-utils schema migration ledger. |
@@ -630,13 +634,13 @@ because those native contracts are release-specific.
 
 ## Production Notes
 
-- Set `DEMO_CHAINLIT_LOGIN_TYPE=oauth` in production; mock login provides no
-  access control or user isolation.
+- Use OAuth login in production, as `just demo/compose --sso` does; mock login
+  provides no access control or user isolation.
 - Choose static-key or delegated gateway authorization explicitly with
-  `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING`.
-- The trusted MCP gateway connection uses the same
-  `OPENAI_GATEWAY_API_KEY` as Responses and Files. It is not registered when
-  delegated token forwarding is enabled.
+  `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` when Chainlit runs outside the
+  demo Compose stack.
+- The gateway MCP connection uses the same credential as Responses and Files:
+  the static key, or each user's delegated token.
 - Keep OAuth, signing, and object-storage secrets outside source control.
 - Restrict `allow_origins` to the deployed HTTPS origin.
 - Configure session affinity for multiple UI workers and object storage for

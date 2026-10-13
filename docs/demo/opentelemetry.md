@@ -17,7 +17,7 @@ flowchart LR
     direction TB
     clients["Chainlit and Open WebUI"]
     gateways["Bifrost or LiteLLM"]
-    apis["LGOS API A and B<br/>coding-agent API"]
+    apis["Demo API<br/>coding-agent API"]
     worker["Hatchet background worker"]
     collector["Local OpenTelemetry Collector"]
 
@@ -105,11 +105,10 @@ sends its name as `User-Agent`, which the gateway's request span records. The
 Collector removes Bifrost's high-cardinality idempotency header attribute before
 export; the header does not replace or alter W3C trace context.
 
-LiteLLM continues an incoming W3C `traceparent` and forwards it to its bundled
-LGOS model targets, so its HTTP, authentication, database, and model-call spans
-stay in the same UI-to-LGOS trace. Do not copy that forwarding setting to a
-deployment whose models target third-party APIs without confirming they accept
-the header. LiteLLM's native GenAI histograms cover operation duration, token
+LiteLLM continues an incoming W3C `traceparent` and forwards it to every model
+target, so its HTTP, authentication, database, and model-call spans stay in the
+same UI-to-LGOS trace. The upstream models receive the header too. Confirm
+that any other provider accepts it before adding that provider. LiteLLM's native GenAI histograms cover operation duration, token
 usage, cost, time to first token, time per output token, and provider response
 duration. The bundled configuration limits metric labels to operation and
 provider; requested model remains on model-call spans. LiteLLM adds token type
@@ -162,7 +161,7 @@ correlation values. See
 Enable the [background worker](docker.md) and run the same
 `just demo/compose --dev --otel` command. The worker uses service name
 `lgos-background-worker` and sends telemetry to the local Collector alongside
-the API replicas.
+the demo API.
 
 Both processes use the SDK's
 [`HatchetInstrumentor`](https://docs.hatchet.run/v1/opentelemetry). The API's
@@ -250,10 +249,8 @@ redaction boundary. Exceptions, tracebacks, and caller-controlled values can
 still contain sensitive data.
 
 To verify the pipeline, locate service `lgos-demo-api` in the configured
-backend and correlate the request with `lgos-otel-e2e`. The two API replicas
-share `service.name` and have different SDK-generated `service.instance.id`
-values. Monitor the Collector's exporter queue, capacity, send-failure, and
-rejected-data metrics in that backend.
+backend and correlate the request with `lgos-otel-e2e`. Monitor the Collector's
+exporter queue, capacity, send-failure, and rejected-data metrics in that backend.
 
 ## Langfuse Remains Separate
 

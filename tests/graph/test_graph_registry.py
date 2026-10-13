@@ -21,28 +21,41 @@ EXPECTED_FACTORY_RESOLUTIONS = 2
 def test_graph_config_is_immutable_and_copies_owned_collections(message_graph) -> None:
     features = {GraphFeature.FILE_INPUTS}
     server_tools = {"package_version"}
+    client_tools = {"display_file"}
     config = GraphConfig(
         graph=message_graph,
         description="DUMMY",
         features=features,
         server_tools=server_tools,
+        client_tools=client_tools,
     )
 
     features.clear()
     server_tools.clear()
+    client_tools.clear()
 
     assert config.features == frozenset({GraphFeature.FILE_INPUTS})
     assert config.server_tools == frozenset({"package_version"})
+    assert config.client_tools == frozenset({"display_file"})
     with pytest.raises(ValidationError, match="frozen"):
         config.description = "Changed"
 
 
-def test_graph_config_rejects_empty_server_tool_names(message_graph) -> None:
+@pytest.mark.parametrize("field", ["server_tools", "client_tools"])
+def test_graph_config_rejects_empty_tool_names(message_graph, field: str) -> None:
     with pytest.raises(ValidationError, match="at least 1 character"):
+        GraphConfig.model_validate(
+            {"graph": message_graph, "description": "DUMMY", field: {""}}
+        )
+
+
+def test_graph_config_rejects_a_tool_owned_by_both_sides(message_graph) -> None:
+    with pytest.raises(ValidationError, match="both server and client tools: lookup"):
         GraphConfig(
             graph=message_graph,
             description="DUMMY",
-            server_tools={""},
+            server_tools={"lookup", "web_search"},
+            client_tools={"display_file", "lookup"},
         )
 
 

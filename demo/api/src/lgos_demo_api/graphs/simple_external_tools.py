@@ -17,7 +17,6 @@ async def generate(state: ClientToolsState) -> dict[str, list[AIMessage]]:
     model_response = await invoke_client_tool_model(
         state,
         system_prompt=DEFAULT_SYSTEM_PROMPT,
-        temperature=0.7,
     )
     return {"messages": [model_response]}
 

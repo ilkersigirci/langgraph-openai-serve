@@ -8,6 +8,7 @@ import sys
 import tomllib
 from pathlib import Path
 from string import Template
+from typing import Any
 
 import anyio
 import pytest
@@ -24,35 +25,58 @@ REPOSITORY_BLOB_LINK = re.compile(
 )
 
 
-def test_openwebui_uses_the_pinned_upstream_image_without_a_custom_build() -> None:
-    service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+def compose_service(path: str, service: str) -> dict[str, Any]:
+    compose = yaml.safe_load((DEMO_ROOT / path).read_text(encoding="utf-8"))
+    return compose["services"][service]
 
+
+def compose_environment(path: str, service: str) -> dict[str, str]:
+    return compose_service(path, service)["environment"]
+
+
+def test_openwebui_runs_the_pinned_patched_image_without_a_local_build() -> None:
+    service = (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
+    env = (DEMO_ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "image: $DEMO_OPENWEBUI_IMAGE\n" in service
     assert re.search(
-        r"^\s+image: ghcr\.io/open-webui/open-webui:\S+@sha256:[0-9a-f]{64}$",
-        service,
+        r"^DEMO_OPENWEBUI_IMAGE=ghcr\.io/ilkersigirci/homeserver-open-webui:\S+@sha256:[0-9a-f]{64}$",
+        env,
         re.MULTILINE,
     )
     assert "build:" not in service
     assert not (DEMO_ROOT / "ui/openwebui/Dockerfile").exists()
 
 
-def test_openwebui_mcp_connection_is_the_one_the_sync_attaches() -> None:
-    compose = yaml.safe_load(
-        (DEMO_ROOT / "docker/apps/openwebui.yml").read_text(encoding="utf-8")
-    )
-    environment = compose["services"]["lgos-openwebui"]["environment"]
-    # Compose interpolates $VAR and ${VAR} like string.Template.
-    connections = json.loads(
-        Template(environment["TOOL_SERVER_CONNECTIONS"]).substitute(
-            OPENAI_GATEWAY_BASE_URL="http://gateway:4000",
-            OPENAI_GATEWAY_API_KEY="sk-demo",
+def test_openwebui_mcp_connection_is_the_one_mcp_models_attach() -> None:
+    def connections(path: str) -> list[dict[str, Any]]:
+        environment = compose_environment(path, "lgos-openwebui")
+        # Compose interpolates $VAR and ${VAR} like string.Template.
+        return json.loads(
+            Template(environment["TOOL_SERVER_CONNECTIONS"]).substitute(
+                OPENAI_GATEWAY_BASE_URL="http://gateway:4000",
+                OPENAI_GATEWAY_API_KEY="sk-demo",
+            )
         )
-    )
 
-    assert [
-        (connection["url"], connection["key"], connection["info"]["id"])
-        for connection in connections
-    ] == [("http://gateway:4000/mcp", "sk-demo", MCP_GATEWAY_ID)]
+    (base,) = connections("docker/apps/openwebui.yml")
+    (sso,) = connections("docker/compose/sso.yml")
+
+    assert (base["url"], base["info"]["id"]) == (
+        "http://gateway:4000/mcp",
+        MCP_GATEWAY_ID,
+    )
+    assert (base["auth_type"], base["key"]) == ("bearer", "sk-demo")
+    # The overlay restates the whole entry; only its credential and wording differ.
+    assert sso.pop("auth_type") == "system_oauth"
+    assert "key" not in sso
+    del (
+        base["auth_type"],
+        base["key"],
+        base["info"]["description"],
+        sso["info"]["description"],
+    )
+    assert sso == base
 
 
 @pytest.fixture
@@ -65,7 +89,9 @@ def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "import json, os, sys\n"
         "with open(os.environ['TASK_TEST_LOG'], 'a') as log:\n"
         "    log.write(json.dumps({'args': sys.argv[1:], "
-        "'cwd': os.getcwd()}) + '\\n')\n"
+        "'cwd': os.getcwd(), "
+        "'gateway_url': os.environ.get('OPENAI_GATEWAY_BASE_URL'), "
+        "'gateway_key': os.environ.get('OPENAI_GATEWAY_API_KEY')}) + '\\n')\n"
     )
     uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
@@ -126,6 +152,33 @@ async def test_notebook_task_passes_host_literally(task_log: Path) -> None:
     assert result.returncode == 0, result.stderr.decode()
     command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
     assert command["args"][-5:] == ["--host", host, "--port", "2818", "notebooks"]
+
+
+@pytest.mark.parametrize("recipe", ["api", "background-worker", "marimo"])
+async def test_local_graph_tasks_use_the_host_gateway(
+    task_log: Path, monkeypatch: pytest.MonkeyPatch, recipe: str
+) -> None:
+    monkeypatch.setenv("DEMO_GATEWAY_HOST_URL", "http://localhost:4321")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://lgos-bifrost:4000")
+    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-ui-key")
+    monkeypatch.setenv("DEMO_GRAPH_GATEWAY_API_KEY", "test-graph-key")
+
+    result = await anyio.run_process(
+        [
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / recipe),
+        ],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
+    assert command["gateway_url"] == "http://localhost:4321"
+    # Graphs call the gateway with DEMO_GRAPH_GATEWAY_API_KEY, not the UIs' key.
+    assert command["gateway_key"] == "test-graph-key"
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:
@@ -213,24 +266,28 @@ def test_bifrost_outwaits_a_coding_agent_request() -> None:
     config = json.loads(
         (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
     )
-    network = config["providers"]["lgos-api-coding-agent"]["network_config"]
+    network = config["providers"]["coding-agent"]["network_config"]
 
     # Bifrost's request timeout bounds a whole non-streaming response. LGOS
     # keepalive comments reset its stream-idle timer.
     assert network["default_request_timeout_in_seconds"] > int(limit)
 
 
-def test_bundled_gateways_serve_the_ui_speech_models() -> None:
+def test_bundled_gateways_serve_the_default_demo_models() -> None:
     env = dict(
         line.split("=", 1)
         for line in (DEMO_ROOT / ".env.example")
         .read_text(encoding="utf-8")
         .splitlines()
-        if line.startswith("DEMO_AUDIO_")
+        if line.startswith(("DEMO_AUDIO_", "DEMO_API_OPENAI_"))
     )
-    litellm = (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(
-        encoding="utf-8"
+    litellm = yaml.safe_load(
+        (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(encoding="utf-8")
     )
+    deployments = {
+        deployment["model_name"]: deployment["litellm_params"]
+        for deployment in litellm["model_list"]
+    }
     bifrost = json.loads(
         (DEMO_ROOT / "docker/configs/bifrost/config.json").read_text(encoding="utf-8")
     )
@@ -240,15 +297,19 @@ def test_bundled_gateways_serve_the_ui_speech_models() -> None:
         for grant in virtual_key["provider_configs"]
     }
 
-    for setting, request in (
-        ("DEMO_AUDIO_STT_MODEL", "transcription"),
-        ("DEMO_AUDIO_TTS_MODEL", "speech"),
+    for setting in (
+        "DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL",
+        "DEMO_API_OPENAI_RESPONSES_MODEL",
+        "DEMO_API_OPENAI_EMBEDDING_MODEL",
+        "DEMO_AUDIO_STT_MODEL",
+        "DEMO_AUDIO_TTS_MODEL",
     ):
         model_id = env[setting]
         provider, _, model = model_id.partition("/")
-        assert f"model_name: {model_id}\n" in litellm
-        provider_config = bifrost["providers"][provider]["custom_provider_config"]
-        assert provider_config["allowed_requests"][request] is True
+        deployment = deployments[model_id]
+        assert deployment["model"] == model_id
+        assert deployment["api_base"] == "os.environ/OPENAI_UPSTREAM_API_BASE"
+        assert deployment["api_key"] == "os.environ/OPENAI_UPSTREAM_API_KEY"
         assert model in grants[provider]
 
 
@@ -275,24 +336,103 @@ def test_files_and_chainlit_s3_are_independently_configured() -> None:
 
 def test_chainlit_receives_only_its_configuration() -> None:
     compose = (DEMO_ROOT / "docker/apps/chainlit.yml").read_text(encoding="utf-8")
+    sso_environment = compose_environment("docker/compose/sso.yml", "lgos-chainlit")
 
     assert "env_file:" not in compose
+    for setting in ("CHAINLIT_AUTH_SECRET", "OPENAI_GATEWAY_API_KEY"):
+        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
     for setting in (
-        "CHAINLIT_AUTH_SECRET",
-        "OPENAI_GATEWAY_API_KEY",
-        "DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING",
-        "DEMO_CHAINLIT_LOGIN_TYPE",
         "DEMO_CHAINLIT_OAUTH_ENCRYPTION_KEYS",
         "OAUTH_GENERIC_CLIENT_SECRET",
     ):
-        assert re.search(rf"\b{setting}: \$\{{?{setting}\b", compose)
+        assert setting not in compose
+        assert sso_environment[setting] == f"${setting}"
     for unrelated_secret in (
-        "DEMO_API_OPENAI_API_KEY",
+        "OPENAI_UPSTREAM_API_KEY",
         "DEMO_OPENWEBUI_ADMIN_PASSWORD",
+        "DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET",
         "LANGFUSE_SECRET_KEY",
         "LITELLM_MASTER_KEY",
     ):
         assert unrelated_secret not in compose
+        assert unrelated_secret not in json.dumps(sso_environment)
+
+
+def test_only_the_sso_overlay_configures_litellms_token_validation() -> None:
+    config = yaml.safe_load(
+        (DEMO_ROOT / "docker/configs/litellm/config.yaml").read_text(encoding="utf-8")
+    )
+    service = compose_service("docker/apps/litellm.yml", "lgos-litellm")
+    sso = compose_environment("docker/compose/sso.yml", "lgos-litellm")
+
+    # Native JWT auth rejects every JWT until the overlay sets its issuer, keys,
+    # and audience. LiteLLM loads the image's validator from the config file's
+    # directory.
+    settings = config["general_settings"]
+    assert settings["enable_jwt_auth"] is True
+    assert settings["litellm_jwtauth"]["custom_validate"] == (
+        "access_token.validate_claims"
+    )
+    jwt_settings = {"JWT_ISSUER", "JWT_PUBLIC_KEY_URL", "JWT_AUDIENCE"}
+    assert not jwt_settings & set(service["environment"])
+    assert jwt_settings <= set(sso)
+    assert [volume["target"] for volume in service["volumes"]] == [
+        "/app/litellm-config/config.yaml"
+    ]
+
+
+def test_sso_overlay_keeps_the_shared_gateway_key_out_of_both_uis() -> None:
+    for service, base in (
+        ("lgos-chainlit", "docker/apps/chainlit.yml"),
+        ("lgos-openwebui", "docker/apps/openwebui.yml"),
+    ):
+        merged = {
+            **compose_environment(base, service),
+            **compose_environment("docker/compose/sso.yml", service),
+        }
+        # In the demo the shared key is also LiteLLM's master key.
+        assert not [
+            name
+            for name, value in merged.items()
+            if "OPENAI_GATEWAY_API_KEY" in str(value)
+        ], service
+
+
+def test_sso_overlay_switches_both_uis_to_each_users_token() -> None:
+    modes = {
+        "base": (
+            compose_environment("docker/apps/chainlit.yml", "lgos-chainlit"),
+            compose_environment("docker/apps/openwebui.yml", "lgos-openwebui"),
+        ),
+        "sso": (
+            compose_environment("docker/compose/sso.yml", "lgos-chainlit"),
+            compose_environment("docker/compose/sso.yml", "lgos-openwebui"),
+        ),
+    }
+
+    assert {
+        mode: (
+            chainlit["DEMO_CHAINLIT_LOGIN_TYPE"],
+            chainlit["DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING"],
+            json.loads(openwebui["OPENAI_API_CONFIGS"]),
+        )
+        for mode, (chainlit, openwebui) in modes.items()
+    } == {
+        "base": ("mock", "false", {"0": {"auth_type": "bearer"}}),
+        "sso": ("oauth", "true", {"0": {"auth_type": "system_oauth"}}),
+    }
+
+    def resolved(value: str) -> str:
+        return Template(value).substitute(OPENAI_GATEWAY_BASE_URL="http://gateway")
+
+    # The Generic Pipe and speech authenticate like the OpenAI connection with
+    # their base URL, so the gateway decides every Open WebUI call.
+    base = modes["base"][1]
+    assert {
+        f"{resolved(base['OPENAI_GATEWAY_BASE_URL'])}/v1",
+        resolved(base["AUDIO_STT_OPENAI_API_BASE_URL"]),
+        resolved(base["AUDIO_TTS_OPENAI_API_BASE_URL"]),
+    } == {resolved(base["OPENAI_API_BASE_URL"])}
 
 
 def test_compose_ci_supplies_both_independent_s3_configurations() -> None:

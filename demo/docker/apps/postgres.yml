@@ -55,7 +55,7 @@ services:
     cpus: "0.5"
     mem_limit: 256M
     depends_on:
-      lgos-demo-api-a:
+      lgos-demo-api:
         condition: service_healthy
       lgos-chainlit:
         condition: service_healthy

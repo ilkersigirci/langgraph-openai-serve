@@ -75,7 +75,7 @@ jobs:
           --env-file ${{ runner.temp }}/lgos-demo/.env
           -f demo/docker/compose/demo.yml
           -f demo/docker/compose/development.yml
-          build lgos-demo-api-a
+          build lgos-demo-api
 
       - name: Verify editable API packages
         run: |

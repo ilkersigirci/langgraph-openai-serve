@@ -76,6 +76,8 @@ class LangGraphModelExtension(BaseModel):
         StringConstraints(strip_whitespace=True, min_length=1),
     ]
     features: list[str]
+    server_tools: list[str]
+    client_tools: list[str]
     client_settings: Annotated[
         ModelClientSettings | None, WrapValidator(_settings_or_none)
     ] = None

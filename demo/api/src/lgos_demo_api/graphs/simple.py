@@ -4,19 +4,32 @@ from collections.abc import Sequence
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from lgos_demo_api.core.settings import settings
+from lgos_demo_api.utils.models import chat_completions_model
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful assistant called Langgraph Openai Serve. "
     "Chat with the user with a friendly tone."
 )
+# Both configured models accept plain Chat Completions requests without tools.
+MODEL_CHOICES = tuple(
+    dict.fromkeys(
+        (settings.OPENAI_CHAT_COMPLETIONS_MODEL, settings.OPENAI_RESPONSES_MODEL)
+    )
+)
+
+
+def _offered_model(model: str) -> str:
+    if model not in MODEL_CHOICES:
+        msg = f"Choose one of: {', '.join(MODEL_CHOICES)}"
+        raise ValueError(msg)
+    return model
 
 
 class AgentState(BaseModel):
@@ -38,6 +51,12 @@ class SimpleContext(ClientSettings):
         title="Audience",
         description="Adapt terminology and assumed knowledge to the selected audience.",
     )
+    model: Annotated[str, AfterValidator(_offered_model)] = Field(
+        default=MODEL_CHOICES[0],
+        title="Model",
+        description="Gateway model that writes the answer.",
+        json_schema_extra={"enum": list(MODEL_CHOICES)},
+    )
 
 
 async def generate(
@@ -45,13 +64,8 @@ async def generate(
     runtime: Runtime[SimpleContext],
 ) -> dict[str, list[AIMessage]]:
     """Generate a response to the latest message in the graph state."""
-    model = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0.7,
-    )
     context = runtime.context or SimpleContext()
+    model = chat_completions_model(context.model)
     messages = state.messages if context.use_history else state.messages[-1:]
     conversation = [
         SystemMessage(

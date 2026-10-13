@@ -173,6 +173,39 @@ async def test_modern_function_tools_remain_supported(
     ]
 
 
+@pytest.mark.parametrize(
+    ("identity", "end_user"),
+    [
+        ({"user": "legacy-user"}, "legacy-user"),
+        ({"safety_identifier": "user-123"}, "user-123"),
+        ({"safety_identifier": "user-123", "user": "legacy-user"}, "user-123"),
+    ],
+    ids=["deprecated-user", "safety-identifier", "both"],
+)
+async def test_chat_safety_identifier_names_the_end_user(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    identity: dict[str, str],
+    end_user: str,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture_request(
+        request: GraphRequest,
+        messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    replace_graph_config(graph_registry, "test", request_to_input=capture_request)
+
+    await openai_client.chat.completions.create(
+        model="test", messages=[{"role": "user", "content": "hello"}], **identity
+    )
+
+    assert [request.user for request in received] == [end_user]
+
+
 async def test_streaming_completion_forwards_llm_chunks(
     openai_client: AsyncOpenAI,
 ) -> None:

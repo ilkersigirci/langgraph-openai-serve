@@ -15,6 +15,7 @@ from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
     MetadataKey,
     MetadataValue,
+    SafetyIdentifier,
 )
 
 
@@ -130,6 +131,8 @@ class ChatCompletionRequest(_ChatRequestModel):
     messages: list[ChatCompletionRequestMessage] = Field(min_length=1)
     stream: bool | None = False
     stream_options: "ChatCompletionStreamOptions | None" = None
+    # OpenAI's end-user field; it replaces the deprecated `user`.
+    safety_identifier: SafetyIdentifier | None = None
     user: str | None = None
     tools: list[Tool] | None = None
     tool_choice: ChatToolChoice | None = None

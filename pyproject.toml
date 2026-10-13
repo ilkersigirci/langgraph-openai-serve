@@ -58,6 +58,7 @@ postgres = [
 tracing = [
     "langchain>=1.2.11",
     "langfuse>=4.0.0,<5.0.0",
+    "opentelemetry-sdk>=1.35.0,<2", # NOTE: Langfuse gets a tracer provider of its own.
 ]
 # The `lgos` command: every integration, JSON logging, and OpenTelemetry export.
 server = [

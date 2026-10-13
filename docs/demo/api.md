@@ -9,7 +9,8 @@ several LangGraph graphs through the OpenAI-compatible `/v1` interface.
 - `uv`
 - Bash and Just 1.58.0 or newer
 - PostgreSQL (the included Compose service requires Docker)
-- An OpenAI-compatible upstream model only if you call the LLM-backed graphs
+- A running demo gateway only if you call the LLM-backed graphs; it forwards
+  their model calls upstream
 - A Hatchet deployment and client token only for background Responses
 
 !!! tip "Start without an upstream model"
@@ -37,7 +38,7 @@ just demo/up lgos-db --wait
     Run the published API container and its PostgreSQL dependency:
 
     ```bash
-    just demo/up lgos-demo-api-a
+    just demo/up lgos-demo-api
     ```
 
 ??? info "Demo environment settings"
@@ -46,17 +47,20 @@ just demo/up lgos-db --wait
     [`.env.example`](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/.env.example)
     for the supplied connection settings.
 
-    LLM-backed graphs additionally read `DEMO_API_OPENAI_BASE_URL`,
-    `DEMO_API_OPENAI_API_KEY`, and `DEMO_API_OPENAI_MODEL`. The
+    LLM-backed graphs call `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` through
+    Chat Completions or `DEMO_API_OPENAI_RESPONSES_MODEL` through Responses,
+    via the selected gateway using `OPENAI_GATEWAY_BASE_URL` and
+    `DEMO_GRAPH_GATEWAY_API_KEY`. Local API, worker, and notebook recipes set the
+    root to `DEMO_GATEWAY_HOST_URL`; Compose uses the gateway's service URL. The
     `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL`. Its corpus is
     packaged with the API. The `server-tool` graph reads
     `DEMO_API_WEB_SEARCH_BACKEND` and `DEMO_API_WEB_SEARCH_URL` to choose its
     web-search execution backend. These settings and dependencies belong to the
     API project and are not installed with the library.
 
-The direct `lgos-a` base URL is `http://localhost:3004/v1`. Compose also runs
-the same image as independently addressable `lgos-b` on port 3005; the two
-services expose the same graph set under separate provider identities.
+The direct `lgos-demo-api` base URL is `http://localhost:3004/v1`. Compose also runs
+the independent `lgos-api-coding-agent` service. Both APIs publish their graphs
+under `lgos/` in the gateway; select `lgos/coding-agent` for the coding agent.
 The separate `lgos-files-api` project and image serve the central S3-backed
 Files API on port 3006. It is not mounted into either graph API; see its
 [run guide](files-api.md) and [settings](reference.md#files-api-settings).
@@ -83,7 +87,7 @@ response = client.responses.create(
     model="custom-input-output-context",
     input="Show me the custom adapter.",
     store=False,
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 print(response.output_text)
@@ -158,7 +162,7 @@ stream = client.responses.create(
     input="Prepare the media workflow.",
     store=False,
     stream=True,
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 phases = {}

@@ -35,6 +35,7 @@ ContextFactory = Callable[
     Any | Awaitable[Any],
 ]
 OutputToMessage = Callable[[Any], AIMessage | Awaitable[AIMessage]]
+ToolName = Annotated[str, StringConstraints(min_length=1)]
 _INTERRUPT_CHECKPOINTER_METHODS = (
     "aget_tuple",
     "aput",
@@ -53,9 +54,8 @@ class GraphConfig(BaseModel):
     ]
     features: frozenset[GraphFeature] = frozenset()
     client_settings: type[ClientSettings] | None = None
-    server_tools: frozenset[Annotated[str, StringConstraints(min_length=1)]] = (
-        frozenset()
-    )
+    server_tools: frozenset[ToolName] = frozenset()
+    client_tools: frozenset[ToolName] = frozenset()
     runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
@@ -72,6 +72,15 @@ class GraphConfig(BaseModel):
             value.json_schema()
             value.default_values()
         return value
+
+    @model_validator(mode="after")
+    def validate_tool_ownership(self) -> Self:
+        """Keep the side that executes each advertised tool unambiguous."""
+        if shared := self.server_tools & self.client_tools:
+            names = ", ".join(sorted(shared))
+            msg = f"Tools cannot be both server and client tools: {names}"
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_compiled_graph(self) -> Self:

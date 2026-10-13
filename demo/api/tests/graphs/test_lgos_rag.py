@@ -72,7 +72,11 @@ def _stub_chat_model(
     *responses: str,
 ) -> None:
     model = FakeListChatModel(responses=list(responses))
-    monkeypatch.setattr(lgos_rag_module, "_chat_model", lambda: model)
+    # Like ChatOpenAI, tag the model's runs so nostream calls stay private.
+    monkeypatch.setattr(
+        "lgos_demo_api.utils.models.ChatOpenAI",
+        lambda tags=None, **_: model.with_config(tags=tags or []),
+    )
 
 
 def _registry() -> GraphRegistry:
@@ -338,7 +342,10 @@ async def test_retrieval_answer_preserves_provider_content_and_outcome(
         response_metadata={"finish_reason": "stop" if refusal else "length"},
         usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
     )
-    _stub_runnable(monkeypatch, "_chat_model", answer)
+    monkeypatch.setattr(
+        "lgos_demo_api.utils.models.ChatOpenAI",
+        lambda **_: RunnableLambda(lambda _: answer),
+    )
 
     result = await lgos_rag_module.lgos_rag.ainvoke(
         {
@@ -382,13 +389,9 @@ async def test_irrelevant_retrieval_rewrites_once_then_stops(
         lgos_rag_module.GradeDocuments(binary_score="no"),
         lgos_rag_module.GradeDocuments(binary_score="no"),
     )
-    _stub_runnable(
-        monkeypatch,
-        "_internal_chat_model",
-        AIMessage(content=REWRITTEN_QUESTION),
-    )
     refusal = "I cannot answer that from the available LGOS documentation."
-    _stub_chat_model(monkeypatch, refusal)
+    # The graph rewrites the query before it writes the final answer.
+    _stub_chat_model(monkeypatch, REWRITTEN_QUESTION, refusal)
     graph_request, messages = make_graph_input("lgos-rag", content="How do I call it?")
 
     stream = await _stream(graph_request, messages)

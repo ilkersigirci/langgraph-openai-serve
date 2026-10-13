@@ -8,11 +8,13 @@ from typing import Any, cast
 from openai import OpenAIError
 from openai.types.responses import Response, ResponseFunctionToolCall
 from pydantic import BaseModel, Field
-from pydantic.json_schema import SkipJsonSchema
 
-from .api import (
-    _client,
-    _list_model_ids,
+from .api import _client
+from .catalog import (
+    USERVALVES_GRAPH_MODEL_ID,
+    USERVALVES_MODEL_ID,
+    OpenWebUIModel,
+    openwebui_models,
 )
 from .contracts import (
     BACKGROUND_SETTING_NAME,
@@ -30,9 +32,11 @@ from .contracts import (
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
     GatewayConfig,
-    GatewayRoot,
-    GatewayType,
+    GatewaySettings,
+    bifrost_models,
+    connection_sends_user_token,
     gateway_config,
+    gateway_settings,
     litellm_models,
 )
 from .interrupts import (
@@ -73,24 +77,8 @@ class PreparedResponsesRequest:
 
 class Pipe:
     class Valves(BaseModel):
-        """Configure gateway connections for this Pipe."""
+        """Tune the Pipe's gateway requests."""
 
-        # Open WebUI builds Valves() before any are stored; the demo sync stores
-        # the gateway values. SkipJsonSchema keeps the admin form's input types.
-        OPENAI_GATEWAY_TYPE: GatewayType | SkipJsonSchema[None] = Field(
-            default=None,
-            description="Gateway used for all OpenAI requests.",
-        )
-        OPENAI_GATEWAY_BASE_URL: GatewayRoot | SkipJsonSchema[None] = Field(
-            default=None,
-            description="Gateway root without the OpenAI API path.",
-        )
-        OPENAI_GATEWAY_API_KEY: str | SkipJsonSchema[None] = Field(
-            default=None,
-            min_length=1,
-            description="API key used for Responses and Files.",
-            json_schema_extra={"input": {"type": "password"}},
-        )
         OPENAI_API_TIMEOUT: float = Field(
             default=30,
             gt=0,
@@ -100,24 +88,25 @@ class Pipe:
     def __init__(self) -> None:
         self.valves = self.Valves()
 
-    async def pipes(self) -> list[dict[str, str]]:
-        """Expose every registered LangGraph model to Open WebUI."""
-        gateway, api_key = self._gateway()
+    async def pipes(
+        self, __oauth_token__: Mapping[str, Any] | None = None
+    ) -> list[OpenWebUIModel]:
+        """List the user's gateway graphs with the model info Open WebUI shows."""
+        gateway, settings = _gateway()
         async with _client(
             base_url=f"{gateway.root_url}/v1",
-            api_key=api_key,
+            api_key=await _user_credential(gateway, settings, __oauth_token__),
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
             if gateway.provider_routing:
-                model_ids = await _list_model_ids(client)
+                catalog = await client.models.list()
+                models = bifrost_models(catalog.data)
             else:
                 payload = await client.get(
                     f"{gateway.root_url}/model/info", cast_to=object
                 )
-                model_ids = [model.id for model in litellm_models(payload)]
-        return [
-            {"id": model_id, "name": f"Generic / {model_id}"} for model_id in model_ids
-        ]
+                models = litellm_models(payload)
+        return openwebui_models(models)
 
     async def pipe(
         self,
@@ -127,6 +116,7 @@ class Pipe:
         __user__: dict[str, Any] | None = None,
         __request__: OpenWebUIRequest | None = None,
         __tools__: dict[str, dict[str, Any]] | None = None,
+        __oauth_token__: Mapping[str, Any] | None = None,
     ) -> PipeResponse:
         """Run the selected graph through OpenAI Responses."""
         # Open WebUI selects its response mode with the same truthiness test.
@@ -134,11 +124,12 @@ class Pipe:
         results = self._run(
             body,
             __metadata__ or {},
-            user_id=(__user__ or {}).get("id") or None,
+            user_id=_gateway_user_id(__user__ or {}),
             tools=__tools__ or {},
             streaming=streaming,
             event_emitter=__event_emitter__,
             host_request=__request__,
+            oauth_token=__oauth_token__,
         )
         if streaming:
             return results
@@ -155,6 +146,7 @@ class Pipe:
         streaming: bool,
         event_emitter: OpenWebUIEventEmitter | None,
         host_request: OpenWebUIRequest | None,
+        oauth_token: Mapping[str, Any] | None,
     ) -> AsyncGenerator[PipeChunk, None]:
         """
         Own one Responses/tool loop for both Pipe response modes.
@@ -180,6 +172,7 @@ class Pipe:
                 tools=tools,
                 streaming=streaming,
                 host_request=host_request,
+                oauth_token=oauth_token,
             )
             async with _client(
                 base_url=prepared.gateway.responses_base_url,
@@ -325,9 +318,15 @@ class Pipe:
         tools: Mapping[str, Mapping[str, Any]],
         streaming: bool,
         host_request: OpenWebUIRequest | None,
+        oauth_token: Mapping[str, Any] | None,
     ) -> PreparedResponsesRequest:
-        gateway, api_key = self._gateway()
-        model_id = body.model_id
+        gateway, settings = _gateway()
+        api_key = await _user_credential(gateway, settings, oauth_token)
+        model_id = (
+            USERVALVES_GRAPH_MODEL_ID
+            if body.model_id == USERVALVES_MODEL_ID
+            else body.model_id
+        )
         mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(tools)
         # Open WebUI enters its native tool loop only for streams.
         if mcp_tools and not streaming:
@@ -375,26 +374,50 @@ class Pipe:
                 user_id,
                 background=background,
                 tools=[
-                    *_responses_tools(model_id, metadata.chat_variables),
+                    *_responses_tools(metadata),
                     *mcp_tools,
                 ],
                 previous_response_id=previous_response_id,
             ),
         )
 
-    def _gateway(self) -> tuple[GatewayConfig, str]:
-        valves = self.valves
-        if (
-            valves.OPENAI_GATEWAY_TYPE is None
-            or valves.OPENAI_GATEWAY_BASE_URL is None
-            or valves.OPENAI_GATEWAY_API_KEY is None
-        ):
-            msg = "The gateway valves are unset; run just demo/sync-openwebui."
+
+def _gateway() -> tuple[GatewayConfig, GatewaySettings]:
+    settings = gateway_settings()
+    gateway = gateway_config(
+        settings.OPENAI_GATEWAY_TYPE, settings.OPENAI_GATEWAY_BASE_URL
+    )
+    return gateway, settings
+
+
+def _gateway_user_id(user: Mapping[str, Any]) -> str | None:
+    """
+    Name the user the gateway bills.
+
+    Under SSO the gateway verifies the access token's OIDC subject, which
+    differs from Open WebUI's own user ID; password users have no subject.
+    """
+    oidc = (user.get("oauth") or {}).get("oidc") or {}
+    return oidc.get("sub") or user.get("id") or None
+
+
+async def _user_credential(
+    gateway: GatewayConfig,
+    settings: GatewaySettings,
+    oauth_token: Mapping[str, Any] | None,
+) -> str:
+    """Send what Open WebUI's own connection to the gateway sends."""
+    if not await connection_sends_user_token(gateway.root_url):
+        if settings.OPENAI_GATEWAY_API_KEY is None:
+            msg = "Set OPENAI_GATEWAY_API_KEY in Open WebUI's environment."
             raise RuntimeError(msg)
-        gateway = gateway_config(
-            valves.OPENAI_GATEWAY_TYPE, valves.OPENAI_GATEWAY_BASE_URL
-        )
-        return gateway, valves.OPENAI_GATEWAY_API_KEY
+        return settings.OPENAI_GATEWAY_API_KEY
+    # Falling back to the shared key would bypass the user's gateway permissions.
+    access_token = (oauth_token or {}).get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        msg = "Sign in again with SSO; Open WebUI has no access token for the gateway."
+        raise RuntimeError(msg)
+    return access_token
 
 
 def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:

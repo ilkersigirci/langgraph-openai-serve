@@ -20,6 +20,15 @@ LangGraph checkpointer, Store, and interrupt coordination.
 Set the package-owned `LGOS_ENABLE_LANGFUSE=True` and provide the `LANGFUSE_*`
 credentials to enable LGOS's lazy tracing integration for every demo graph.
 
+LLM-backed graphs use `OPENAI_GATEWAY_BASE_URL` and `OPENAI_GATEWAY_API_KEY`,
+which Compose and the local recipes set to `DEMO_GRAPH_GATEWAY_API_KEY`. Each
+model call made during a graph run names that run's end user, which LGOS
+records as the run's `lgos.user` metadata, in LiteLLM's `x-litellm-end-user-id`
+header.
+Start either bundled gateway from `demo/`; the standalone example connects to
+its host port. Model calls use `/v1`, and the advanced graph's shared knowledge
+uses `/openai_passthrough/v1` with the same credential.
+
 The graph API does not expose Files routes or receive S3 credentials. Its
 `file-input` graph reads the independent [`files_api`](../files_api/) service
 through `DEMO_API_FILES_BASE_URL`, then sends inline file data to the configured
@@ -29,7 +38,9 @@ The `lgos-rag` graph reads a compact Markdown corpus packaged under
 `src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
 external documentation checkout.
 
-`just demo/marimo --editable` opens the notebook workspace.
+`just demo/marimo --editable` opens the notebook workspace. For its AI assistant,
+copy `.marimo.toml.example` to `.marimo.toml`; the `gateway/` model prefix selects
+the bundled gateway and preserves its `openai/...` model ID.
 `custom_api.py` demonstrates synchronous, streaming, and asynchronous Responses
 calls; `graph_runner.py` compares the Responses endpoint with direct graph
 execution.
@@ -40,22 +51,23 @@ migrations when they start.
 ## LiteLLM Model Sync
 
 `lgos-demo-api-sync-litellm` registers LGOS model metadata through LiteLLM's
-native management API. Run
-`just demo/sync-litellm -- --source-url ... --prefix ...`;
+native management API. Repeat `--source-url` for every API in the shared
+`lgos/` namespace in one invocation of `just demo/sync-litellm`;
 see the [model sync guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
 for usage. The full-stack
 `just demo/compose [--dev] [--otel]` variants run the shared
-`lgos-model-sync` job for both demo APIs after the gateway is ready. Other
-deployment systems should run it after their own API health check.
+`lgos-model-sync` job for the demo API and coding-agent API after the gateway is
+ready. Other deployment systems should run it after all source APIs are healthy.
 Provide `LITELLM_MASTER_KEY` only to this operator command, not to UI clients.
 The command and its tests belong to this project; LiteLLM does not load them.
 
 ## Bifrost Model Sync
 
-`python -m lgos_demo_api.utils.sync_bifrost` provides `prepare` and `sync`
-commands. Compose runs preparation before Bifrost starts, then publishes
-descriptions and complete LGOS metadata into its native catalog after it is
-healthy. Both jobs use this API image. No dashboard setup is needed.
+`python -m lgos_demo_api.utils.sync_bifrost` writes the graph rows of Bifrost's
+pricing datasheet, then publishes descriptions and complete LGOS metadata into
+the running gateway's native catalog, signed in with `BIFROST_ADMIN_USERNAME`
+and `BIFROST_ADMIN_PASSWORD`. Compose runs it from this API image once the graph
+APIs are healthy. No dashboard setup is needed.
 Run `just demo/sync-bifrost [--dev]` after graph metadata changes; see
 [Bifrost catalog sync](../../docs/demo/bifrost.md#declarative-model-metadata)
 for pricing and restart behavior.

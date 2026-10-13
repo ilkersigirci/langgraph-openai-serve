@@ -55,16 +55,29 @@ route or provider used here. In particular:
 - Distinguish model-bound uploads and encoded file IDs from the demo's shared
   Files provider. Preserve one file namespace across both graph APIs.
 - Verify model list and detail separately from inference. Bifrost clients use
-  native `/v1/models` attributes that the catalog jobs write through the
+  native `/v1/models` attributes that the catalog job writes through the
   undocumented `PUT /api/models/catalog`; `/openai/v1/models` still drops them.
   Recheck that attributes still need a pricing row, that boot still requires
   the pricing file to load, and recovery after the config store is recreated.
-- Bifrost selects a Responses provider only from the model prefix and
-  ignores `x-model-provider` there. Recheck this before changing how the UIs
-  address models.
-- Bifrost resolves `env.` references in key values but not in
-  `base_url`, so the `aigateway` provider's URL is literal. Move it to the
-  environment when a release supports that.
+- Bifrost initially selects a Responses provider from the model prefix and
+  ignores `x-model-provider` there. The public `lgos/coding-agent` alias then
+  uses a native governance rule to reach the separate coding-agent provider.
+  Check both alias discovery (which omits `owned_by`) and routing before
+  changing how the UIs address models.
+- Bifrost resolves `env.` references in key values but not in `base_url`, so
+  a different upstream needs a gitignored config copy via
+  `DEMO_BIFROST_CONFIG`. Move the URL to the environment when a release
+  supports that.
+- The advanced graph's vector store uses each gateway's OpenAI passthrough:
+  Bifrost's `/openai_passthrough`, which targets its built-in `openai`
+  provider, and LiteLLM's built-in route with `OPENAI_API_BASE` and a
+  `use_in_pass_through` deployment key. Bifrost forwards a client
+  `x-model-provider` header, which breaks a chained Bifrost upstream, so the
+  upstream must stay the built-in provider. Recheck search, multipart file
+  upload, and vector-store file polling after an upgrade.
+- The graphs and Codex reach `openai/*` models through the gateway's `/v1`
+  Chat Completions, Responses, and embedding routes. Run `lgos-rag`,
+  `advanced-graph`, and the coding agent through the upgraded gateway.
 - Check response-ID handling and continuation after streaming as well as
   non-streaming creates. Clients must return opaque IDs unchanged.
 - Check the selected image's startup, authentication, migrations, and route

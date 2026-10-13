@@ -89,7 +89,6 @@ async def query_database(
     response = await client_tools.invoke_client_tool_model(
         state,
         system_prompt=_SYSTEM_PROMPT,
-        temperature=0,
         default_tool_choice="required" if _needs_database_tool(state) else "auto",
     )
     return {"messages": [response]}

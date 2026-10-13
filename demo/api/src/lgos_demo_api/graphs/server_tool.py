@@ -1,15 +1,14 @@
 """Client-selected tools executed by the LGOS demo application."""
 
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Annotated, Literal
 
 import httpx2
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI, custom_tool
+from langchain_openai import custom_tool
 from langgraph.config import get_stream_writer
-from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -25,16 +24,10 @@ from pydantic import BaseModel
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.models import responses_model
 from lgos_demo_api.utils.web_search import search_web
 
 _SEARCH_SNIPPET_LIMIT = 1_000
-_SUPPORTED_PACKAGES = (
-    "langgraph-openai-serve",
-    "langgraph",
-    "langchain",
-    "langchain-openai",
-    "openai",
-)
 _ANSWER_PROMPT = (
     "Help the user inspect this server's installed Python package versions and "
     "answer questions from the web. Use the collected tool results; never guess "
@@ -49,37 +42,21 @@ class ServerToolState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def _chat_model(*, private: bool = False) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        use_responses_api=True,
-        store=False,
-        # LangGraph emits none of a nostream call's output in its messages stream.
-        tags=[TAG_NOSTREAM] if private else None,
-    )
-
-
 @custom_tool
-def lgos_package_version(distribution: str) -> str:
+def package_version(name: str) -> str:
     """
-    Get an installed server package version.
+    Get the installed version of a Python distribution in this server.
 
-    Input one of: langgraph-openai-serve, langgraph, langchain,
-    langchain-openai, or openai.
+    Input a distribution name, such as langgraph-openai-serve or openai.
     """
-    package = distribution.strip().lower()
-    if package not in _SUPPORTED_PACKAGES:
-        supported = ", ".join(_SUPPORTED_PACKAGES)
-        return (
-            f"Unsupported package: {package or '(empty)'}. Choose one of: {supported}."
-        )
+    package = name.strip()
+    if not package:
+        return "Name an installed Python distribution, such as openai."
     try:
-        installed = version(package)
+        found = distribution(package)
     except PackageNotFoundError:
         return f"{package} is not installed in this server runtime."
-    return f"{package}=={installed}"
+    return f"{found.name}=={found.version}"
 
 
 @tool(response_format="content_and_artifact")
@@ -91,7 +68,7 @@ async def web_search(query: str) -> tuple[str, dict[str, str]]:
         raise ValueError(msg)
     if settings.WEB_SEARCH_BACKEND == "openai":
         result = await (
-            _chat_model(private=True)
+            responses_model(private=True)
             .bind_tools([{"type": "web_search"}], tool_choice="required")
             .ainvoke(query)
         )
@@ -132,7 +109,7 @@ def context_factory(request: GraphRequest, _settings: None) -> GraphRequest:
 
 
 _SERVER_TOOLS = {
-    lgos_package_version.name: lgos_package_version,
+    package_version.name: package_version,
     web_search.name: web_search,
 }
 
@@ -161,8 +138,8 @@ def create_server_tool_graph() -> CompiledStateGraph[
     ServerToolState, GraphRequest, ServerToolState, ServerToolState
 ]:
     """Select tools once, execute them, then stream an answer with citations."""
-    model = _chat_model()
-    internal_model = _chat_model(private=True)
+    model = responses_model()
+    internal_model = responses_model(private=True)
 
     def start(
         _state: ServerToolState, runtime: Runtime[GraphRequest]
@@ -240,14 +217,14 @@ server_tool_graph_config = GraphConfig(
         "Demonstrates LGOS-owned package version lookup and OpenAI-compatible "
         "web search."
     ),
-    server_tools={lgos_package_version.name, web_search.name},
+    server_tools={package_version.name, web_search.name},
     context_factory=context_factory,
 )
 
 
 __all__ = [
     "create_server_tool_graph",
-    "lgos_package_version",
+    "package_version",
     "server_tool_graph",
     "server_tool_graph_config",
     "web_search",

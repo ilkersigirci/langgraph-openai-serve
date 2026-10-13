@@ -8,7 +8,7 @@ deployment's ASGI server or ingress proxy.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/models` | List registered graph models with LGOS descriptions and features. |
+| `GET` | `/v1/models` | List registered graph models with LGOS descriptions, features, and tool names. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
 | `POST` | `/v1/responses` | Run a graph now or accept an opted-in polling-only background Response. |
 | `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response. |
@@ -23,7 +23,8 @@ and `{prefix}/openapi.json`.
 ### Responses Request
 
 The route accepts string or ordered message input, instructions, plain
-`input_text`, `input_file.file_id`, string-valued metadata, `user`, flat client
+`input_text`, `input_file.file_id`, string-valued metadata, `safety_identifier`
+and its deprecated alias `user`, flat client
 function tools, registered name-only custom-tool selectors, standard
 `web_search`, their choices,
 `parallel_tool_calls`, plain text output, and streaming. Replayed
@@ -108,9 +109,9 @@ Interrupt checkpoint keys and background Response authorization include this
 scope before model and run identity. Use
 an authenticated tenant or principal identifier when runs must be isolated
 between security domains; do not derive the scope from
-untrusted OpenAI metadata or the OpenAI `user` field. The
-default `"default"` scope is suitable only for a single-tenant or shared-trust
-deployment. The resolver must return the same scope for the initial request and
+untrusted OpenAI metadata or the end-user `safety_identifier` and `user`
+fields. The default `"default"` scope is suitable only for a single-tenant or
+shared-trust deployment. The resolver must return the same scope for the initial request and
 its resume; changing tenant identity makes the other scope's checkpoint
 deliberately unreachable.
 
@@ -133,11 +134,15 @@ belong to an external OpenAI Files API, not the LGOS package. See
   advertise graph input and client-tool capabilities.
 - `client_settings`: explicit public `ClientSettings` model class advertised by
   model retrieval.
-- `server_tools`: internal allowlist of server-executed tool names. A
-  registered custom tool is selected with the Responses `custom` type and name;
-  `web_search` uses its built-in type. The graph owns tool definitions and
-  execution. Model retrieval does not advertise tools. See
+- `server_tools`: allowlist of server-executed tool names, advertised as
+  `lgos.server_tools`. A registered custom tool is selected with the Responses
+  `custom` type and name; `web_search` uses its built-in type. The graph owns
+  tool definitions and execution. See
   [Server Tools](explanation/openai-compatibility.md#server-tools).
+- `client_tools`: names of client-owned functions the graph can call, such as
+  `display_file`, advertised as `lgos.client_tools` so clients offer only the
+  functions a graph uses. LGOS does not enforce the list, and a name cannot
+  also be a server tool.
 - `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
   When Langfuse tracing is enabled, LGOS adds its callback without mutating this
   collection or manager.
@@ -148,10 +153,10 @@ belong to an external OpenAI Files API, not the LGOS package. See
   validated public settings.
 - `output_to_message(output)`: custom graph output to a durable `AIMessage`.
 
-`GraphConfig` is immutable after construction. Pydantic snapshots `features`
-and `server_tools` as frozen sets, so later mutations of the input collections
-cannot change a registered model. Freezing the declaration does
-not make a caller-owned callback handler or callback manager internally
+`GraphConfig` is immutable after construction. Pydantic snapshots `features`,
+`server_tools`, and `client_tools` as frozen sets, so later mutations of the
+input collections cannot change a registered model. Freezing the declaration
+does not make a caller-owned callback handler or callback manager internally
 immutable.
 
 Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
@@ -195,7 +200,8 @@ creates. Graphs should access context from an injected `Runtime[Context]`.
 
 Graph adapters receive an immutable, protocol-neutral `GraphRequest` from either
 API's decoder. It exposes
-the shared `model`, `metadata`, `user`, normalized client function `tools`,
+the shared `model`, `metadata`, `user` (the end user from `safety_identifier`, or
+the deprecated `user` field), normalized client function `tools`,
 selected server-tool names in `server_tools`, `tool_choice`, and `parallel_tool_calls`
 values. `NamedFunctionToolChoice` identifies a required client function, while
 `NamedCustomToolChoice` identifies a required registered custom tool. A
@@ -236,13 +242,14 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
 owns its standard SDK configuration and error behavior. LGOS constructs it on
 the first graph run that needs runnable configuration, then reuses that
-process-wide handler. Before that, LGOS creates the Langfuse client with
-`should_export_span` from `langgraph_openai_serve.integrations.langfuse`:
-Langfuse's default export filter without LGOS's [OpenTelemetry](#opentelemetry)
-spans, so each trace keeps the callback's root observation with the run's input
-and output. An application that creates its own Langfuse client first keeps its
-filter; pass the same `should_export_span` to keep those trace roots. When
-enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
+process-wide handler. Before that, LGOS creates the Langfuse client with a
+tracer provider of its own, as Langfuse
+[recommends](https://langfuse.com/faq/all/existing-otel-setup) beside another
+tracing backend. Langfuse's observations, which carry prompts and outputs, then
+never reach the application's [OpenTelemetry](#opentelemetry) exporters, and the
+application's spans never reach Langfuse; both share each trace ID. An
+application that creates its own Langfuse client first keeps its own tracing
+setup. When enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
 alongside empty, list, or manager callbacks without altering the registered
 `GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
 leave the toggle off and pass that handler through `runtime_callbacks`.
@@ -253,9 +260,14 @@ application-created vendor handler through `runtime_callbacks`.
 
 LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
-request ID, registered graph model, (for interrupt runs) operation ID, and (when
-the request supplies `metadata.conversation_id`) the Langfuse-recognized
-`langfuse_session_id`. LangGraph also propagates primitive configurable values
+request ID, registered graph model, (for interrupt runs) operation ID, and
+(when it names an end user with `safety_identifier` or the deprecated `user`)
+that end user as `lgos.user`. Graph code can read them with LangGraph's
+`get_config()`, with or without Langfuse. When the toggle is on, LGOS also sets
+the end user, `metadata.conversation_id`, and the registered model as Langfuse's
+native user, session, and trace name on every observation of the run; a custom
+handler passed with the toggle off does not receive them. LangGraph also propagates primitive
+configurable values
 during execution, so callbacks on interrupt runs receive the derived checkpoint
 `thread_id`. LGOS does not set LangChain's native tracer `run_id` or force a
 custom Langfuse trace ID. See [Production Logging and Request
@@ -291,9 +303,11 @@ and `http.route` includes the mount, such as `/v1/responses`.
 
 `gen_ai.workflow.name` is the registered model. Both signals cover graph
 execution through the final output; they exclude lease waits, background queue
-time, and checkpoint cleanup. The span is current only while LGOS advances the
-graph: spans the graph creates, such as model calls, are its children, while
-code that consumes a stream keeps its own parent span between events. A run
+time, and checkpoint cleanup. While LGOS advances the graph, the span's context
+is current: spans the graph creates, such as model calls, are its children,
+while code that consumes a stream keeps its own parent span between events. The
+span itself is not current, so code in the graph cannot change it, and it
+carries only the attributes above; add attributes to spans of your own. A run
 that ends before its output exists fails: one that raises an exception, one
 cancelled by a disconnecting client or a cancelled background Response, and one
 whose stream the consumer closes mid-run. The span status is then `ERROR` with

@@ -21,7 +21,8 @@ Playwright to a demo project or change its lockfile for an agent-run check.
 - Inspect the running stack and ports with `docker compose ls` and `docker ps`.
   The default URLs are Chainlit `http://localhost:3002` and Open WebUI
   `http://localhost:3003`; honor deployment overrides.
-- After an Open WebUI Function change, run `just demo/sync-openwebui`. After a
+- After an Open WebUI Function change, restart `lgos-openwebui`; its startup
+  installs the changed Function. After a
   Chainlit source change, rebuild and recreate only `lgos-chainlit` with the
   running stack's Compose files and development overlay; its source is baked
   into the image even during development.
@@ -62,16 +63,17 @@ playwright-cli -s=lgos-openwebui open http://localhost:3003 \
 
 ## Open WebUI
 
-Authenticate with `DEMO_OPENWEBUI_ADMIN_EMAIL` and
+Without `--sso`, authenticate with `DEMO_OPENWEBUI_ADMIN_EMAIL` and
 `DEMO_OPENWEBUI_ADMIN_PASSWORD` without placing their values in CLI arguments
-or output. For API-assisted `/api/v1/auths/signin`, use a temporary external
+or output. Under `--sso`, Open WebUI rejects passwords, so a check needs a
+provider sign-in. For API-assisted `/api/v1/auths/signin`, use a temporary external
 helper that reads the demo environment and writes a mode-`0600` storage-state
 file under a unique `/tmp` path. Load it with `state-load` and delete it after
 closing the session. The `run-code` evaluator cannot read the CLI process
 environment.
 
-Open `/?model=lgos.lgos-a/persistent-plot-agent`. For another graph, use the
-Workspace Model ID from `/api/models`. Fill `#chat-input`, submit the prompt,
+Open `/?model=generic.lgos/persistent-plot-agent`. For another graph, use its
+model ID from `/api/models`. Fill `#chat-input`, submit the prompt,
 and wait for a completed assistant-role reply. Plotly renders inside the
 message iframe, so inspect the matching frame and its height.
 
@@ -83,7 +85,7 @@ This uses the shared `demo-user`; OAuth deployments require their configured
 login flow.
 
 Select the current profile label, then choose
-`lgos-a/persistent-plot-agent` by exact text. Wait for the profile settings
+`lgos/persistent-plot-agent` by exact text. Wait for the profile settings
 reload and `#chat-input` readiness before submitting because switching profiles
 resets the session. Native Plotly elements render in the main page.
 
@@ -104,12 +106,12 @@ resets the session. Native Plotly elements render in the main page.
 - After an Open WebUI image change, its first page load shows a What's New
   dialog that intercepts clicks, so actions time out. Dismiss it with
   `Okay, Let's Go!` before interacting.
-- Open WebUI `Model not found` requires checking that the `generic` Function is
-  active and its Workspace Model's base model exists. A failed Function import
-  can disable it; a successful sync preserves that state, so re-enable it after
-  repairing the import. Missing gateway valves, including valves unreadable
-  after a `DEMO_OPENWEBUI_SECRET_KEY` change, also hide every Generic model;
-  re-run the sync.
+- Open WebUI `Model not found` or missing LGOS models require checking that
+  the `generic` Function is active and that the Open WebUI log shows no
+  Function install or `pipes()` error. A failed Function import can disable
+  it; the startup install keeps that state, so re-enable it after repairing the
+  import. Missing or invalid `OPENAI_GATEWAY_*` variables in the Open WebUI
+  container also hide every LGOS model.
 - A clipped Open WebUI chart requires the native `iframe:height` notification
   used by Open WebUI's `FullHeightIframe` component.
 

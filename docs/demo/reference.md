@@ -19,7 +19,7 @@ run without it. This reference explains settings without duplicating their defau
 | `demo/files_api` | OpenAI-compatible Files service and S3 adapter | No |
 | `demo/api-coding-agent` | Coding-agent showcase and persistent workspace (currently Codex) | Yes, from PyPI by default |
 | `demo/ui/chainlit_ui` | Persistent OpenAI-protocol client | No |
-| `demo/ui/openwebui` | Open WebUI Function sources and sync command | No |
+| `demo/ui/openwebui` | Open WebUI Function sources and the app factory that installs them | No |
 | `demo/docker` | Compose gateway configuration and service data directories | No |
 
 Each Python project has its own `pyproject.toml`, virtual environment, and
@@ -39,13 +39,13 @@ integration commands:
 | `just demo/test-coding-agent [--editable]` | Check coding-agent shell execution, persisted edits, streaming, usage, and history through the running gateway |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
-| `just demo/sync-openwebui` | Sync the Open WebUI Functions, their gateway valves, and generated LGOS Workspace Models |
-| `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to register one LGOS catalog in LiteLLM; see [model sync](litellm-sync.md) |
-| `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize all LGOS graph catalogs into Bifrost; then refresh Open WebUI with `sync-openwebui` |
+| `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to reconcile all LGOS catalogs in one LiteLLM namespace; see [model sync](litellm-sync.md) |
+| `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize all LGOS graph catalogs into Bifrost |
 | `just demo/compose` | Start the default stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
 | `just demo/compose --otel` | Run the ordered default stack with the OTEL overlay |
 | `just demo/compose --dev --otel` | Build the checkout and run the ordered stack with the OTEL overlay |
+| `just demo/compose --sso` | Run the ordered stack with OIDC login and each user's token sent to the gateway; combine with `--dev` or `--otel` |
 | `just demo/compose --dev --chainlit-utils` | Build the checkout with Chainlit using an editable sibling [`chainlit-utils` checkout](docker.md#compose-modes) |
 | `just demo/down` | Stop and remove every stack variant |
 | `just demo/sync` | Synchronize every project from its lockfile |
@@ -57,7 +57,7 @@ integration commands:
 | `just demo/type-check [--editable]` | Type-check every project |
 | `just demo/check [--editable]` | Run tests, lint, type checks, and Compose validation |
 
-Common service names are `lgos-db`, `lgos-demo-api-a`, `lgos-demo-api-b`,
+Common service names are `lgos-db`, `lgos-demo-api`,
 `lgos-api-coding-agent`, `lgos-background-worker`,
 `lgos-files-api`, `lgos-postgres-mcp`, `lgos-bifrost`, `lgos-litellm`,
 `lgos-chainlit`, and `lgos-openwebui`. Put arguments for the underlying command
@@ -72,17 +72,17 @@ in both Docker groups.
 
 `just --usage demo/api` shows its options and defaults. The `--port` option
 overrides the dotenv value; exported variables work too, for example
-`LGOS_A_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
+`LGOS_DEMO_API_PORT=3104 just demo/api`. Add Just's `--dry-run` before the recipe to
 inspect commands. To validate Compose using the template without creating an
-environment file, run:
+environment file, check both gateways in published, development, and telemetry
+configurations:
 
 ```bash
 just --dotenv-path demo/.env.example demo/compose-config
 ```
 
-The local Chainlit and Open WebUI sync commands use the host-reachable
-`DEMO_GATEWAY_HOST_URL`. Open WebUI itself remains the unchanged pinned
-upstream image. See the
+The local Chainlit process uses the host-reachable `DEMO_GATEWAY_HOST_URL`.
+Open WebUI always runs its pinned published image. See the
 [Chainlit](chainlit.md#run-the-ui) and [Open WebUI](open-webui.md#setup) guides.
 
 `just demo/test-litellm --editable` and
@@ -104,23 +104,33 @@ after [catalog sync](bifrost.md#declarative-model-metadata).
 | `PUID` | Host user ID used by Compose services |
 | `PGID` | Host group ID used by Compose services |
 | `LGOS_*_PORT` | Host ports for the gateway, database, UIs, demo APIs, and Files API |
-| `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit process and integration tests |
-| `OPENAI_GATEWAY_TYPE` | Gateway used by both demo UIs: `litellm` or `bifrost` |
+| `DEMO_GATEWAY_HOST_URL` | Gateway root used by the local Chainlit, API, worker, and notebook processes and integration tests |
+| `OPENAI_GATEWAY_TYPE` | Gateway used by the demo UIs and model clients: `litellm` or `bifrost` |
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
-| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP unless the [SSO overlay](docker.md#sso-overlay) sends each user's token; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
+| `DEMO_GRAPH_GATEWAY_API_KEY` | Gateway credential the graph and coding-agent APIs use for their model and vector-store calls. Defaults to `OPENAI_GATEWAY_API_KEY`; with the [SSO overlay](docker.md#sso-overlay) or in production, create a dedicated non-admin key in the gateway so the APIs never hold its admin key |
 | `DEMO_AUDIO_STT_MODEL` | Gateway model ID both UIs use to transcribe microphone input through `/v1/audio/transcriptions`; Chainlit hides its microphone when empty |
 | `DEMO_AUDIO_TTS_MODEL` | Gateway model ID both UIs use to speak answers through `/v1/audio/speech`; Chainlit hides its read-aloud button when empty |
 | `DEMO_AUDIO_TTS_VOICE` | OpenAI voice for spoken answers; Chainlit defaults to `alloy` |
-| `AIGATEWAY_API_KEY` | aigateway.home.ilkerflix.com key the bundled gateways use only for their `aigateway/*` speech models |
+| `OPENAI_UPSTREAM_BASE_URL` | Root, without `/v1`, of the OpenAI-compatible upstream behind the bundled LiteLLM's `openai/*` models and OpenAI passthrough; defaults to the OpenAI API. Bifrost reads its upstream from `DEMO_BIFROST_CONFIG` |
+| `OPENAI_UPSTREAM_API_KEY` | Upstream API key the bundled gateways use for their `openai/*` graph, embedding, and speech models and for vector-store passthrough. It must keep files and vector stores in one upstream account |
+| `DEMO_BIFROST_CONFIG` | Bifrost configuration file, relative to `demo/docker/apps/`. Point it at a gitignored `config.local.json` copy to change the upstream URL, which Bifrost cannot read from the environment |
 | `LGOS_MCP_DB_PASSWORD` | Password for the dedicated read-only `lgos_mcp` PostgreSQL login; DBHub receives it through an interpolated individual connection field, so URL encoding is not required |
 | `LGOS_MCP_AUTH_TOKEN` | Internal bearer token used by LiteLLM or Bifrost when it connects to DBHub |
-| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key; see [Chainlit login](chainlit.md#persistence-and-login) |
-| `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container; may differ from the UI's SSO endpoint |
+| `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | Forward the signed-in user's OAuth access token to the gateway instead of using the static Chainlit key when Chainlit runs outside Compose; the [SSO overlay](docker.md#sso-overlay) sets it. See [Chainlit login](chainlit.md#persistence-and-login) |
+| `LITELLM_SYNC_BASE_URL` | Native LiteLLM administrator-key root reachable from the deployment sync container |
+| `DEMO_SSO_ISSUER` | The OIDC issuer of the [SSO overlay](docker.md#sso-overlay), shared by both UIs' logins and LiteLLM's token validation, which finds its signing keys through the issuer's discovery document |
+| `LITELLM_OIDC_AUDIENCE` | Audience those tokens must carry; both UIs request it with the `llm:invoke` scope the bundled LiteLLM requires |
+| `DEMO_LITELLM_URL` | Public LiteLLM URL for its Admin UI SSO login with the SSO overlay |
+| `LITELLM_CLIENT_ID`, `LITELLM_CLIENT_SECRET` | LiteLLM's OIDC client for that login |
+| `DEMO_LITELLM_OAUTH_AUTHORIZATION_ENDPOINT`, `DEMO_LITELLM_OAUTH_TOKEN_ENDPOINT`, `DEMO_LITELLM_OAUTH_USERINFO_ENDPOINT` | The provider's endpoints for that login; LiteLLM does not use discovery |
 | `LITELLM_MASTER_KEY` | Credential for model synchronization only. Export external admin keys from CI or the operator environment, not the shared UI `demo/.env` |
+| `BIFROST_ADMIN_USERNAME`, `BIFROST_ADMIN_PASSWORD` | Admin account for Bifrost's dashboard and management API, read by its `governance.auth_config`; the catalog sync and Compose's startup reconciliation sign in with it. Replace the demo values before exposing Bifrost |
 | `DEMO_LITELLM_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Docker Compose](docker.md#demo-services) |
 | `RESTART_POLICY` | Restart policy for services configured by the OTEL overlay |
-| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret that also encrypts stored valves; replace it outside local demos. Changing it resets every stored valve, so re-run the Open WebUI sync and set other valves again |
+| `DEMO_OPENWEBUI_IMAGE` | Required image reference; change it in `demo/.env` to select another compatible image. See [Open WebUI setup](open-webui.md#setup) |
+| `DEMO_OPENWEBUI_SECRET_KEY` | Open WebUI application secret; replace it outside local demos |
 
 ## Integration Test Settings
 
@@ -129,7 +139,7 @@ Live test recipes read their endpoints from the `DEMO_TEST_*` values in
 
 ```bash
 just demo/test-postgres --uri postgresql://lgos:lgos@localhost:5432/lgos --editable
-just demo/test-direct --base-urls http://localhost:3104/v1 --files-url http://localhost:3106/v1
+just demo/test-direct --base-url http://localhost:3104/v1 --files-url http://localhost:3106/v1
 just demo/test-litellm --base-url https://litellm.example.com/v1 -- --verbose
 ```
 
@@ -165,23 +175,25 @@ The demo API and its worker run `lgos serve` and `lgos worker`. Their server
 settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
 `LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
 described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
-graphs read these `DEMO_API_` settings:
+graphs share `OPENAI_GATEWAY_BASE_URL` with the UIs and call it with
+`DEMO_GRAPH_GATEWAY_API_KEY`, which defaults to the UIs' key. Model calls use `/v1`; the advanced graph's
+knowledge Files and vector stores use `/openai_passthrough/v1` with that same
+credential. The local API, worker, and notebook recipes set the gateway root to
+`DEMO_GATEWAY_HOST_URL` and the key to `DEMO_GRAPH_GATEWAY_API_KEY`.
+
+Graph-specific settings use the `DEMO_API_` prefix:
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_API_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL |
-| `DEMO_API_OPENAI_API_KEY` | Upstream key for provider-backed graphs |
-| `DEMO_API_OPENAI_MODEL` | Upstream generation model |
-| `DEMO_API_VECTOR_STORE_BASE_URL` | OpenAI-compatible vector-service base URL for `advanced-graph`; falls back to the model base URL |
-| `DEMO_API_VECTOR_STORE_API_KEY` | Vector-service API key; uses the model key only when the vector base URL is omitted, otherwise defaults to `DUMMY` |
-| `DEMO_API_VECTOR_STORE_BIFROST_KEY_NAME` | Optional Bifrost managed-key pin for stateful vector-store passthrough requests |
+| `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` | Gateway model ID for the Chat Completions graphs and the default of `simple-graph`'s `model` setting; it must call tools without reasoning-specific parameters |
+| `DEMO_API_OPENAI_RESPONSES_MODEL` | Gateway model ID for the Responses graphs: `advanced-graph`, `file-input`, and `server-tool`. `simple-graph` also offers it through Chat Completions |
 | `DEMO_API_VECTOR_STORE_ID` | Shared knowledge-base ID searched by `advanced-graph`; required for document search and saved notes |
-| `DEMO_API_OPENAI_EMBEDDING_MODEL` | Embedding model used by `lgos-rag` |
+| `DEMO_API_OPENAI_EMBEDDING_MODEL` | Gateway embedding model ID used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
 | `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
-| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the API replicas and worker; leave it out of committed files outside this local template. |
-| `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the API replicas and worker. |
+| `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the demo API and worker; leave it out of committed files outside this local template. |
+| `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the demo API and worker. |
 | `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |
 
 The background demo uses the `create_hatchet_task` defaults: 30-minute
@@ -200,13 +212,14 @@ environment values or explicit constructor arguments.
 
 ## Coding Agent Settings
 
-These settings belong to `demo/api-coding-agent`. Defaults live in `demo/.env.example`.
+These settings belong to `demo/api-coding-agent`. Compose derives the base URL
+and key from the gateway settings; the other defaults live in `demo/.env.example`.
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_CODING_AGENT_BASE_URL` | Upstream Responses base URL, defaulting to the demo API upstream. May point to an AI gateway. |
-| `DEMO_CODING_AGENT_API_KEY` | Upstream model credential. Available inside the coding-agent container. |
-| `DEMO_CODING_AGENT_MODEL` | Codex-compatible upstream model ID; separate from the public graph ID. |
+| `DEMO_CODING_AGENT_BASE_URL` | Responses base URL for Codex. Compose sets `${OPENAI_GATEWAY_BASE_URL}/v1`. |
+| `DEMO_CODING_AGENT_API_KEY` | Model credential for Codex. Compose sets `DEMO_GRAPH_GATEWAY_API_KEY`; available inside the coding-agent container. |
+| `DEMO_CODING_AGENT_MODEL` | Codex-compatible gateway model ID, defaulting to `DEMO_API_OPENAI_RESPONSES_MODEL`; separate from the public graph ID. |
 | `DEMO_CODING_AGENT_TIMEOUT_SECONDS` | Active request time limit, excluding time waiting for another workspace request. Runtime cleanup may exceed the limit. |
 
 See the [coding-agent graph guide](graphs/coding-agent.md) for its shared
@@ -225,17 +238,20 @@ These settings belong only to the independent `demo/files_api` project.
 | `DEMO_API_FILES_AWS_SECRET_ACCESS_KEY` | Required S3 secret key passed explicitly to boto3. |
 | `DEMO_API_FILES_AWS_DEFAULT_REGION` | Required S3 signing region passed explicitly to boto3. |
 
-## Open WebUI Sync Settings
+## Open WebUI Settings
 
-These settings configure the host-side Open WebUI synchronization command
-alongside the shared gateway values under [Stack Settings](#stack-settings).
-The command stores those gateway values in the Generic Function's valves.
+These settings configure the Open WebUI container. Its Generic Pipe also reads
+the shared gateway values under [Stack Settings](#stack-settings) from its
+environment.
 
 | Setting | Purpose |
 | --- | --- |
-| `DEMO_OPENWEBUI_URL` | Open WebUI API used by the sync command |
-| `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI sync account |
-| `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Open WebUI sync password |
+| `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI's bootstrap admin, created only in an empty database |
+| `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Password of that admin; the SSO overlay disables password sign-in |
+| `DEMO_OPENWEBUI_URL` | Public Open WebUI URL for the [SSO overlay](docker.md#sso-overlay); sets `WEBUI_URL` and the OIDC callback |
+| `DEMO_OPENWEBUI_OAUTH_CLIENT_ID`, `DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET` | The registered OIDC client for the SSO overlay |
+| `DEMO_OPENWEBUI_OAUTH_SCOPES` | Scopes requested at SSO login, including the gateway's permission and `offline_access` |
+| `DEMO_OPENWEBUI_OAUTH_AUTHORIZE_PARAMS` | Optional JSON authorize parameters for SSO login, such as an RFC 8707 `resource` |
 
 See [Chainlit settings](chainlit.md#settings-reference),
 [Open WebUI setup](open-webui.md#setup), and the

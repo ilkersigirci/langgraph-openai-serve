@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import (
     AfterValidator,
     AnyHttpUrl,
+    Field,
     PlainValidator,
     TypeAdapter,
 )
@@ -39,17 +40,32 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    OPENAI_BASE_URL: HttpUrlStr = "https://api.openai.com/v1"
-    OPENAI_API_KEY: str = "DUMMY"
-    OPENAI_MODEL: str = "gpt-5.4-mini"
-    VECTOR_STORE_BASE_URL: str | None = None
-    VECTOR_STORE_API_KEY: str | None = None
-    VECTOR_STORE_BIFROST_KEY_NAME: str | None = None
+    OPENAI_GATEWAY_BASE_URL: HttpUrlStr = Field(
+        default="http://localhost:3000",
+        validation_alias="OPENAI_GATEWAY_BASE_URL",
+    )
+    OPENAI_GATEWAY_API_KEY: str = Field(
+        default="DUMMY",
+        validation_alias="OPENAI_GATEWAY_API_KEY",
+        repr=False,
+    )
+    OPENAI_CHAT_COMPLETIONS_MODEL: str = "openai/gpt-4.1-mini"
+    OPENAI_RESPONSES_MODEL: str = "openai/gpt-6-luna"
     VECTOR_STORE_ID: str | None = None
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
     WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
     FILES_BASE_URL: HttpUrlStr = "http://localhost:3006/v1"
+
+    @property
+    def openai_base_url(self) -> str:
+        """OpenAI model routes shared by the bundled gateways."""
+        return f"{self.OPENAI_GATEWAY_BASE_URL}/v1"
+
+    @property
+    def vector_store_base_url(self) -> str:
+        """Keep knowledge Files and vector stores in the upstream account."""
+        return f"{self.OPENAI_GATEWAY_BASE_URL}/openai_passthrough/v1"
 
 
 settings = Settings()

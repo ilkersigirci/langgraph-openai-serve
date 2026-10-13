@@ -33,7 +33,7 @@ sequenceDiagram
   participant UI as Chainlit / Open WebUI
   participant Gateway as LiteLLM / Bifrost
   participant LGOS as LGOS / mcp-postgres
-  participant Model as Upstream model
+  participant Model as Model via gateway
   participant DBHub as DBHub MCP server
   participant DB as lgos-db / mcp_demo
 
@@ -99,7 +99,7 @@ This design follows the native ownership model of both maintained clients:
   Chainlit's official
   [MCP guide](https://docs.chainlit.io/advanced-features/mcp).
 - Open WebUI natively connects to external Streamable HTTP MCP servers and
-  supplies tools from servers attached to the selected Workspace Model. See its
+  supplies tools from the servers selected for the chat's model. See its
   official
   [native MCP guide](https://docs.openwebui.com/features/extensibility/mcp/).
 - LiteLLM and Bifrost own downstream connections, explicit tool allowlists, and
@@ -136,10 +136,10 @@ The prompt is guidance, not authorization. Mutation is blocked in layers:
 | PostgreSQL | The dedicated `lgos_mcp` login can select only four security-barrier reporting views and starts transactions read-only. It cannot select underlying tables or inherit broad reader roles. PostgreSQL documents [object privileges](https://www.postgresql.org/docs/current/ddl-priv.html) and [read-only session defaults](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-DEFAULT-TRANSACTION-READ-ONLY). |
 | DBHub | Six custom tools own fixed, parameterless SQL statements. Each is marked read-only, capped at one or 100 rows as appropriate, and limited by connection and query timeouts. No arbitrary SQL or schema-discovery tool is enabled. See DBHub's [TOML configuration](https://dbhub.ai/config/toml). |
 | Network and authentication | DBHub publishes no host port, adds its Compose service name to the host-header allowlist, and requires a bearer token on MCP requests. Its container is read-only, drops Linux capabilities, and has resource limits. See DBHub's [authentication and allowed-host options](https://dbhub.ai/config/command-line). |
-| Gateway and UI | Each gateway allowlists exactly six downstream reports for the shared UI credential. The UIs attach that governed MCP surface only to models that advertise `mcp_tools`; this graph independently discards every function name outside its six reports. |
+| Gateway and UI | Each gateway allowlists exactly six downstream reports for every UI credential. LiteLLM marks the server `allow_all_keys`; with the [SSO overlay](../docker.md#sso-overlay), turn that off and grant the server to users or teams to limit who can call it. The UIs attach that governed MCP surface only to models that advertise `mcp_tools`; this graph independently discards every function name outside its six reports. |
 
-API A and Chainlit create their persistence tables at startup. Once both are
-healthy, the database setup job replaces the reporting views, revokes broad
+The demo API and Chainlit create their persistence tables at startup. Once both
+are healthy, the database setup job replaces the reporting views, revokes broad
 access, and grants only those views in one transaction before DBHub starts.
 PostgreSQL privileges remain the final data-access authority.
 
@@ -163,15 +163,14 @@ client:
 
 === "Chainlit"
 
-    Open `http://localhost:3002`, select `lgos-a/mcp-postgres` or
-    `lgos-b/mcp-postgres`, then open the MCP menu and click **Connect** beside
-    `lgos-gateway`.
+    Open `http://localhost:3002`, select `lgos/mcp-postgres`, then open
+    the MCP menu and click **Connect** beside `lgos-gateway`.
 
 === "Open WebUI"
 
-    Open `http://localhost:3003`, select `LGOS / lgos-a/mcp-postgres` or
-    `LGOS / lgos-b/mcp-postgres`, and keep streaming enabled. The gateway MCP
-    connection is already attached to these Workspace Models.
+    Open `http://localhost:3003`, select `lgos/mcp-postgres`, and
+    keep streaming enabled. The gateway MCP connection is already selected for
+    the model.
 
 Send one prompt per turn so each answer uses fresh database evidence:
 

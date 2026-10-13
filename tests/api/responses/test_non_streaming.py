@@ -72,6 +72,44 @@ async def test_async_openai_creates_stateless_text_response(
     assert message.content[0].annotations == []
 
 
+@pytest.mark.parametrize(
+    ("identity", "end_user"),
+    [
+        ({"user": "legacy-user"}, "legacy-user"),
+        ({"safety_identifier": "user-123"}, "user-123"),
+        ({"safety_identifier": "user-123", "user": "legacy-user"}, "user-123"),
+    ],
+    ids=["deprecated-user", "safety-identifier", "both"],
+)
+async def test_safety_identifier_names_the_end_user_and_user_remains_its_alias(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    identity: dict[str, str],
+    end_user: str,
+) -> None:
+    received: list[GraphRequest] = []
+
+    def capture_input(
+        request: GraphRequest,
+        messages: list[BaseMessage],
+    ) -> dict[str, list[BaseMessage]]:
+        received.append(request)
+        return {"messages": messages}
+
+    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
+
+    response = await openai_client.responses.create(
+        model="test", input="hello", store=False, **identity
+    )
+
+    assert [request.user for request in received] == [end_user]
+    # A Response echoes the identity fields as the request sent them.
+    assert (response.safety_identifier, response.user) == (
+        identity.get("safety_identifier"),
+        identity.get("user"),
+    )
+
+
 async def test_message_input_preserves_order_roles_and_replay_metadata(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,

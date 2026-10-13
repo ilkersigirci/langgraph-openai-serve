@@ -28,8 +28,8 @@ The implemented endpoints are listed in [Reference](../reference.md).
 The [OpenAI Model object](https://developers.openai.com/api/reference/resources/models)
 has no `metadata` field. LGOS keeps its standard fields unchanged and places
 feature discovery in a namespaced extension on model-list and
-model-retrieval responses. Runtime settings remain detail-only. Server-tool
-declarations are deliberately absent; clients select known tools per request:
+model-retrieval responses. Runtime settings remain detail-only. Tools are
+advertised by name only; clients still select them per request:
 
 ```json
 {
@@ -40,6 +40,8 @@ declarations are deliberately absent; clients select known tools per request:
   "lgos": {
     "description": "Streams responses with configurable history and audience.",
     "features": [],
+    "server_tools": [],
+    "client_tools": [],
     "client_settings": {
       "json_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -86,12 +88,21 @@ fields and feature values.
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
+`GraphConfig.server_tools` and `GraphConfig.client_tools` are serialized as
+the sorted `lgos.server_tools` and `lgos.client_tools` name lists, so clients
+know which tools a graph accepts without hard-coding graph names. A
+[server tool](#server-tools) runs inside the graph, and the client selects it
+per request. A client tool is a client-owned function the graph can call, such
+as [`display_file`](#files-and-display_file); a client offers it only when it
+implements that name. The lists carry no descriptions or schemas: the graph
+owns its server tools, and the client owns its functions.
+
 `GET /v1/models` remains lightweight. Every entry contains the standard `id`,
 `object`, `created`, and `owned_by` fields plus a small
-`lgos` object with `description` and `features`. Client-settings schemas
-remain detail-only.
+`lgos` object with `description`, `features`, `server_tools`, and
+`client_tools`. Client-settings schemas remain detail-only.
 Every successful LGOS `GET /v1/models/{model}` response includes the complete
-`lgos` extension, even when its feature list is empty and it
+`lgos` extension, even when its feature and tool lists are empty and it
 has no client settings. A client of this API reads descriptions from the list
 and retrieves the selected model details through the same OpenAI client.
 This keeps large schemas out of list responses and keeps internal or
@@ -113,7 +124,7 @@ LiteLLM clients read native `/model/info`, using `model_name` for routing and
 copies the detail into that native field; the UIs never contact LGOS directly.
 Bifrost clients decode the equivalent JSON string from
 `additional_attributes.lgos` on native `/v1/models`. Its
-[catalog sync](../demo/bifrost.md#declarative-model-metadata) prepares base pricing
+[catalog sync](../demo/bifrost.md#declarative-model-metadata) writes base pricing
 rows and publishes complete LGOS details through Bifrost's native management
 API. The `/openai/v1/models` conversion still drops those attributes.
 Concrete gateway configurations and native Responses requirements are documented under
@@ -168,17 +179,18 @@ protocol-neutral graph request unchanged.
 `metadata.conversation_id` is an optional, client-owned correlation value. It is
 a documented metadata convention, not a server-managed conversation resource.
 A client uses the same stable value for every Responses or Chat Completions request in
-one conversation. LGOS maps it to the Langfuse-recognized
-`RunnableConfig.metadata.langfuse_session_id`; each request remains a separate
-trace, while Langfuse can group those traces in one
+one conversation. With Langfuse enabled, LGOS sets it as the Langfuse session
+of every observation; each request remains a separate trace, while Langfuse
+groups those traces in one
 [session](https://langfuse.com/docs/observability/features/sessions). It does
 not select checkpoint state or cause LGOS to retain conversation history; clients
 still supply the input needed by each ordinary request. Omit the field when no
 conversation exists; LGOS does not generate a fallback ID. Application graphs
 may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value shorter than 200
-characters. The value is distinct from the OpenAI `user` field, the interrupt
-run ID, and per-request trace or request identifiers.
+characters. The value is distinct from the end-user `safety_identifier` and
+`user` fields, the interrupt run ID, and per-request trace or request
+identifiers.
 
 ### Per-Request Resolution
 
@@ -233,7 +245,7 @@ not claim every field in the upstream OpenAI API.
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
-| `metadata`, `user` | Supported and passed through the protocol-neutral graph request boundary. They are not authentication. |
+| `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user in at most 128 characters, OpenAI's documented limit, and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |
@@ -551,15 +563,15 @@ Chat Completions returns HTTP 400 Bad Request.
 
 ### Server Tools
 
-`GraphConfig.server_tools` is an internal allowlist of tool names executed by a
-graph. It is not model metadata, and LGOS has no tool discovery protocol. The
-client already knows each public name and native OpenAI type, then selects it per
-request:
+`GraphConfig.server_tools` is the allowlist of tool names a graph executes.
+Model listing and retrieval advertise it as `lgos.server_tools`, so a client
+offers one selector per name: `web_search` with its built-in type and any other
+name with the `custom` type. The client selects them per request:
 
 ```json
 {
   "tools": [
-    {"type": "custom", "name": "lgos_package_version"},
+    {"type": "custom", "name": "package_version"},
     {"type": "web_search"}
   ]
 }
@@ -647,7 +659,9 @@ function. The client offers strict `display_file` arguments; the graph uploads
 the bytes and returns their `file_id`; the trusted client backend downloads and
 persists the file through its native UI; and the client appends a small matching
 `function_call_output`. Neither file bytes nor a protected bearer URL are placed
-in the transcript. There is no LGOS artifact field or custom chart event. See
+in the transcript. There is no LGOS artifact field or custom chart event. A
+graph that calls the function lists `display_file` in `GraphConfig.client_tools`,
+so clients offer it only to graphs that advertise it. See
 [Accept And Display Files](../how-to-guides/file-inputs.md#display-a-graph-generated-file).
 
 ### Interrupt Operation Identity
@@ -665,7 +679,8 @@ The run UUID is not a UI chat ID. LGOS derives a fixed-length internal
 checkpointer key from a server-trusted scope, the registered model, and the
 run ID, so two models or authenticated tenant scopes do not share state.
 Configure the server scope from trusted request or authentication state, never
-caller-controlled metadata or the OpenAI `user` field. The default shared scope
+caller-controlled metadata or the end-user `safety_identifier` and `user`
+fields. The default shared scope
 is appropriate only for a single-tenant or shared-trust deployment.
 Conversation history remains client-owned; the checkpoint contains only the
 isolated workflow state needed while this operation is paused.

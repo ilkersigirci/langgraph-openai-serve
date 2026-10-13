@@ -78,7 +78,9 @@ Responses has no generic artifact field. A graph that needs the client to show
 a generated file returns a client-owned function call and keeps the bytes in
 the Files service:
 
-1. The client offers a strict `display_file` function tool.
+1. The graph lists `display_file` in `GraphConfig.client_tools`, and the
+   client offers a strict `display_file` function tool to graphs that
+   advertise it in `lgos.client_tools`.
 2. The graph renders the file, uploads it with `purpose="user_data"`, and
    returns a deterministic `function_call` containing `file_id`, filename,
    media type, title, and alt text.

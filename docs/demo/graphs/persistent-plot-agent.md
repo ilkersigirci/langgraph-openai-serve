@@ -30,7 +30,7 @@ graph TD;
 ## Request Flow
 
 Both Chainlit and Open WebUI send their current model-context messages, a
-UI-provided user identifier as OpenAI `user`, and their stable thread or chat
+UI-provided user identifier as OpenAI `safety_identifier`, and their stable thread or chat
 identifier as `metadata.conversation_id`.
 
 ```mermaid
@@ -62,7 +62,7 @@ sequenceDiagram
 
 For each request:
 
-1. LGOS validates `user`, `metadata.conversation_id`, and the request-scoped chart
+1. LGOS validates `safety_identifier`, `metadata.conversation_id`, and the request-scoped chart
    settings.
 2. The agent selects the read or update tool from the user's natural-language
    request.
@@ -70,7 +70,8 @@ For each request:
    schema defaults without writing them.
 4. An update batches every requested assignment, validates the complete
    document, and calls `store.aput()` once only when a value changed.
-5. When the request offers the client-owned `display_file` function, the tool
+5. When the request offers the client-owned `display_file` function, which
+   the UIs do because the model lists it in `lgos.client_tools`, the tool
    serializes the figure with Plotly, uploads the `.plotly.json` file through
    the OpenAI Files API, and returns a deterministic function call containing
    its `file_id` and `application/vnd.plotly.v1+json` media type.
@@ -162,7 +163,7 @@ services and database layout.
 
 !!! warning "Correlation is not authorization"
 
-    `user` and `conversation_id` are request correlation values. A production
+    `safety_identifier` and `conversation_id` are request correlation values. A production
     application must derive them from authenticated server state and define a
     retention policy for stored chart documents.
 

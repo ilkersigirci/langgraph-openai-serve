@@ -9,6 +9,7 @@ from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
     MetadataKey,
     MetadataValue,
+    SafetyIdentifier,
 )
 
 
@@ -316,6 +317,8 @@ class ResponseCreateRequest(_ResponsesRequestModel):
     tools: list[ResponseTool] | None = None
     tool_choice: ResponseToolChoice | None = None
     parallel_tool_calls: bool | None = None
+    # OpenAI's end-user field; it replaces the deprecated `user`.
+    safety_identifier: SafetyIdentifier | None = None
     user: str | None = None
 
     # Accept OpenAI's values; the decoder allows `store=true` only for a

@@ -6,7 +6,9 @@ from runpy import run_path
 from typing import Any
 
 import pytest
-from demo.ui.openwebui.src.lgos_openwebui.workspace_models import chat_variable_fields
+from demo.ui.openwebui.src.lgos_openwebui.functions.generic.catalog import (
+    openwebui_models,
+)
 from openai.types import Model as OpenAIModel
 
 from langgraph_openai_serve.api.models.schemas import (
@@ -51,6 +53,8 @@ def _model_payload() -> dict[str, Any]:
                 GraphFeature.INTERRUPTS,
                 GraphFeature.MCP_TOOLS,
             ],
+            server_tools=["web_search"],
+            client_tools=["display_file"],
             client_settings=ModelClientSettings(
                 json_schema=ExampleSettings.json_schema(),
                 defaults=ExampleSettings.default_values(),
@@ -59,11 +63,9 @@ def _model_payload() -> dict[str, Any]:
     ).model_dump(mode="json")
 
 
-def _openwebui_settings_fields(
-    payload: dict[str, Any],
-) -> tuple[dict[str, Any], ...] | None:
-    model = OpenAIModel.model_validate(payload)
-    return chat_variable_fields(model)
+def _openwebui_settings_fields(payload: dict[str, Any]) -> object:
+    (model, *_) = openwebui_models([OpenAIModel.model_validate(payload)])
+    return model["info"]["meta"]["chat_variables_schema"]["fields"]
 
 
 def test_chainlit_accepts_model_detail_extension() -> None:
@@ -108,16 +110,22 @@ def test_openwebui_accepts_server_settings(additive_fields: bool) -> None:
         extension["features"].append("future_feature")
         extension["client_settings"]["future_field"] = True
 
-    assert _openwebui_settings_fields(payload) == (
+    assert _openwebui_settings_fields(payload) == [
         {"key": "enabled", "type": "checkbox", "label": "Enabled", "default": True},
-    )
+        {
+            "key": "web_search",
+            "type": "checkbox",
+            "label": "Web search",
+            "default": False,
+        },
+    ]
 
 
 def test_bifrost_graph_providers_allow_native_responses() -> None:
     config_path = REPOSITORY_ROOT / "demo/docker/configs/bifrost/config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    for provider_name in ("lgos-a", "lgos-b"):
+    for provider_name in ("lgos", "coding-agent"):
         allowed_requests = config["providers"][provider_name]["custom_provider_config"][
             "allowed_requests"
         ]

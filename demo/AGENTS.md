@@ -47,8 +47,13 @@ a direct user request to update the file is approval.
   Avoid `from __future__` imports, dynamic/local package imports, `__file__`,
   and other module-boundary assumptions in bundled modules.
 - Keep behavior in its responsibility module: `contracts`, `api`, `metadata`,
-  `gateway`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
+  `gateway`, `catalog`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
   together when adding a module.
+- Generic Open WebUI fixes belong to the `homeserver-open-webui` image. The
+  mounted app factory only adds LGOS-specific startup and namespace behavior:
+  the Function install and hiding the connection's `lgos/` models.
+- The dependency pins in `ui/openwebui/pyproject.toml` equal the versions the
+  image ships; change them with `DEMO_OPENWEBUI_IMAGE`.
 - Validate OpenWebUI changes from `ui/openwebui/` with:
   `uv run --locked pytest`, `uv run --locked ruff check .`, and
   `uv run --locked ty check src`.

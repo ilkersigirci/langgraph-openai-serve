@@ -3,9 +3,9 @@
 import json
 
 from .contracts import (
+    BACKGROUND_SETTING_NAME,
     CONVERSATION_METADATA_KEY,
     OPENAI_METADATA_VALUE_MAX_LENGTH,
-    PIPE_SETTING_NAMES,
     SETTINGS_METADATA_KEY,
     OpenWebUIMetadata,
 )
@@ -13,13 +13,15 @@ from .contracts import (
 
 def _request_metadata(metadata: OpenWebUIMetadata) -> dict[str, str]:
     request_metadata = {}
+    # The Pipe consumes these Chat Variables itself; they are not graph settings.
+    pipe_variables = {BACKGROUND_SETTING_NAME, *metadata.server_tools}
     settings = (
         metadata.lgos_settings
         if metadata.lgos_settings is not None
         else {
             name: value
             for name, value in metadata.chat_variables.items()
-            if name not in PIPE_SETTING_NAMES
+            if name not in pipe_variables
         }
     )
     if settings:

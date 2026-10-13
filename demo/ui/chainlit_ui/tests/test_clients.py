@@ -49,8 +49,8 @@ async def test_bifrost_catalog_preserves_provider_metadata(
         },
     }
     catalog = [
-        {**graph, "id": "team/graph"},
-        {**graph, "id": "other/graph"},
+        {**graph, "id": "lgos/graph"},
+        {**graph, "id": "lgos/coding-agent", "owned_by": None},
         {**graph, "id": "gpt-5", "owned_by": "openai"},
     ]
     fake_gateway.replies += [
@@ -59,8 +59,9 @@ async def test_bifrost_catalog_preserves_provider_metadata(
 
     models = await clients.list_models()
 
-    assert [model.id for model in models] == ["team/graph", "other/graph"]
-    assert (models[0].model_extra or {})["lgos"] == {
+    assert [model.id for model in models] == ["lgos/graph", "lgos/coding-agent"]
+    assert models[1].owned_by == "langgraph-openai-serve"
+    assert (models[1].model_extra or {})["lgos"] == {
         "description": "Graph",
         "features": [],
     }
@@ -79,7 +80,7 @@ async def test_model_retrieval_rejects_a_model_missing_from_the_native_catalog(
     )
 
     with pytest.raises(OpenAIError, match="not available"):
-        await clients.retrieve_model("lgos-a/simple-graph")
+        await clients.retrieve_model("lgos/simple-graph")
 
 
 async def test_litellm_model_info_owns_catalog_and_preserves_public_names(

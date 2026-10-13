@@ -12,8 +12,8 @@ from langgraph_openai_serve.api.models.schemas import (
 
 from lgos_demo_api.utils.sync_bifrost import (
     ModelAttributes,
-    prepare_catalog,
     sync_catalog,
+    write_datasheet,
 )
 
 
@@ -27,6 +27,8 @@ def model() -> ModelDetails:
             "lgos": {
                 "description": "An LGOS graph",
                 "features": ["interrupts"],
+                "server_tools": [],
+                "client_tools": [],
                 "client_settings": {
                     "json_schema": {"type": "object"},
                     "defaults": {"style": "brief"},
@@ -44,7 +46,7 @@ def _source(model: ModelDetails, *, available: bool = True) -> httpx2.Client:
             return httpx2.Response(
                 200, json=ModelList(data=[model]).model_dump(mode="json")
             )
-        assert request.url.path == "/v1/models/graph"
+        assert request.url.path == f"/v1/models/{model.id}"
         return httpx2.Response(200, json=model.model_dump(mode="json"))
 
     return httpx2.Client(
@@ -54,67 +56,81 @@ def _source(model: ModelDetails, *, available: bool = True) -> httpx2.Client:
 
 @pytest.fixture
 def sources(model: ModelDetails) -> Iterator[dict[str, httpx2.Client]]:
-    with _source(model) as team_a, _source(model) as team_b:
+    with (
+        _source(model) as team_a,
+        _source(model.model_copy(update={"id": "coding-agent"})) as team_b,
+    ):
         yield {"team-a": team_a, "team-b": team_b}
 
 
-def test_prepare_writes_zero_priced_rows_with_complete_metadata(
+def test_datasheet_has_zero_priced_rows_for_complete_metadata(
     sources: dict[str, httpx2.Client], model: ModelDetails, tmp_path: Path
 ) -> None:
-    prepare_catalog(sources, tmp_path)
+    attributes = write_datasheet(sources, tmp_path)
 
     pricing = json.loads((tmp_path / "pricing.json").read_text())
     assert pricing == {
-        f"{provider}/graph": {
-            "provider": provider,
+        f"lgos/{name}": {
+            "provider": "lgos",
             "mode": "responses",
             "input_cost_per_token": 0,
             "output_cost_per_token": 0,
         }
-        for provider in ("team-a", "team-b")
+        for name in ("graph", "coding-agent")
     }
-    attributes = json.loads((tmp_path / "attributes.json").read_text())
-    assert [(entry["provider"], entry["model"]) for entry in attributes] == [
-        ("team-a", "graph"),
-        ("team-b", "graph"),
+    assert [(entry.provider, entry.model) for entry in attributes] == [
+        ("lgos", "graph"),
+        ("lgos", "coding-agent"),
     ]
     for entry in attributes:
-        published = entry["additional_attributes"]
+        published = entry.additional_attributes
         assert published["description"] == "An LGOS graph"
         assert LangGraphModelExtension.model_validate_json(published["lgos"]) == (
             model.lgos
         )
 
 
-def test_prepare_keeps_the_previous_catalog_when_a_source_fails(
+def test_datasheet_is_kept_when_a_source_fails(
     model: ModelDetails, tmp_path: Path
 ) -> None:
     (tmp_path / "pricing.json").write_text("previous")
-    (tmp_path / "attributes.json").write_text("previous")
 
     with (
         _source(model) as healthy,
         _source(model, available=False) as failing,
         pytest.raises(httpx2.HTTPStatusError),
     ):
-        prepare_catalog({"team-a": healthy, "team-b": failing}, tmp_path)
+        write_datasheet({"team-a": healthy, "team-b": failing}, tmp_path)
 
     assert (tmp_path / "pricing.json").read_text() == "previous"
-    assert (tmp_path / "attributes.json").read_text() == "previous"
 
 
-def test_sync_loads_new_rows_before_replacing_attributes() -> None:
+def test_colliding_sources_leave_the_previous_datasheet_intact(
+    model: ModelDetails, tmp_path: Path
+) -> None:
+    (tmp_path / "pricing.json").write_text("previous")
+    with (
+        _source(model) as source,
+        pytest.raises(
+            ValueError, match="Duplicate upstream model across sources: graph"
+        ),
+    ):
+        write_datasheet({"demo": source, "coding": source}, tmp_path)
+    assert (tmp_path / "pricing.json").read_text() == "previous"
+
+
+@pytest.mark.parametrize(
+    "names", [("graph", "coding-agent"), ()], ids=["graphs", "empty"]
+)
+def test_sync_refreshes_discovery_before_replacing_attributes(
+    names: tuple[str, ...],
+) -> None:
     attributes = [
         ModelAttributes(
-            provider=provider,
             model=name,
             additional_attributes={"description": "Graph", "lgos": "{}"},
         )
-        for provider, name in (
-            ("team-b", "chat"),
-            ("team-a", "chat"),
-            ("team-b", "research"),
-        )
+        for name in names
     ]
     requests: list[tuple[str, str, object]] = []
 
@@ -131,8 +147,7 @@ def test_sync_loads_new_rows_before_replacing_attributes() -> None:
     # The attribute write fails atomically unless every pricing row exists.
     assert requests == [
         ("POST", "/api/pricing/force-sync", None),
-        ("POST", "/api/providers/team-a/refresh-models", None),
-        ("POST", "/api/providers/team-b/refresh-models", None),
+        ("POST", "/api/providers/lgos/refresh-models", None),
         (
             "PUT",
             "/api/models/catalog",

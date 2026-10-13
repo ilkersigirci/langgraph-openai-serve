@@ -44,6 +44,7 @@ class GraphRequest:
 
     model: str
     metadata: Mapping[str, str]
+    # The end user: `safety_identifier`, or OpenAI's deprecated `user` field.
     user: str | None
     tools: tuple[ClientFunctionTool, ...]
     tool_choice: ClientToolChoice | None

@@ -1,7 +1,6 @@
 import json
 import re
 from collections.abc import Callable
-from functools import partial
 from types import SimpleNamespace
 from typing import Any, Self
 from unittest.mock import AsyncMock
@@ -13,7 +12,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import (
@@ -79,7 +77,7 @@ def _last_tool_result(result: dict[str, Any]) -> str:
 @pytest.mark.parametrize(
     ("user", "metadata", "param"),
     [
-        (None, {"conversation_id": "thread-1"}, "user"),
+        (None, {"conversation_id": "thread-1"}, "safety_identifier"),
         ("user-1", None, "metadata.conversation_id"),
     ],
 )
@@ -388,9 +386,7 @@ async def test_streamed_response_reports_the_private_agent_model_usage(
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as provider:
-        monkeypatch.setattr(
-            plot_module, "ChatOpenAI", partial(ChatOpenAI, http_async_client=provider)
-        )
+        monkeypatch.setattr("lgos_demo_api.utils.models.GATEWAY_HTTP_CLIENT", provider)
         graph = create_persistent_plot_agent(InMemoryStore())
         registry = GraphRegistry(
             graphs={"persistent-plot-agent": create_persistent_plot_agent_config(graph)}

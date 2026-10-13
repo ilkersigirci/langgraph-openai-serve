@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import (
     ClientFunctionTool,
@@ -14,7 +13,7 @@ from langgraph_openai_serve import (
 )
 from pydantic import BaseModel, Field
 
-from lgos_demo_api.core.settings import settings
+from lgos_demo_api.utils.models import chat_completions_model
 
 
 class ClientToolsState(BaseModel):
@@ -43,16 +42,10 @@ async def invoke_client_tool_model(
     state: ClientToolsState,
     *,
     system_prompt: str,
-    temperature: float,
     default_tool_choice: ClientToolChoice | None = None,
 ) -> AIMessage:
     """Invoke the shared chat model while leaving tool execution to the client."""
-    model = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        temperature=temperature,
-    )
+    model = chat_completions_model()
     conversation = [SystemMessage(content=system_prompt), *state.messages]
 
     if state.tools:

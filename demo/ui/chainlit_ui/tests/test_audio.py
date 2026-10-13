@@ -46,7 +46,7 @@ async def test_recording_is_transcribed_by_the_configured_gateway_model(
 
     [transcription] = fake_gateway.requests
     assert transcription.url.path == "/v1/audio/transcriptions"
-    assert _form(transcription)["model"] == b"aigateway/openai/gpt-4o-mini-transcribe"
+    assert _form(transcription)["model"] == b"openai/gpt-4o-mini-transcribe"
     assert window_message.await_args.args[0]["text"] == "What time is it?"
 
 
@@ -65,7 +65,7 @@ async def test_answer_gets_a_speech_button_when_a_speech_model_is_set(
     monkeypatch.setattr(chainlit_context.emitter, "send_element", send_element)
     if not speech:
         monkeypatch.setattr(audio.settings, "AUDIO_TTS_MODEL", None)
-    chainlit_context.session.chat_profile = "lgos-a/simple-graph"
+    chainlit_context.session.chat_profile = "lgos/simple-graph"
     fake_gateway.replies.append(streamed(response(message("Paris."))))
 
     await chat.on_message(user_message("Capital of France?"))
@@ -110,7 +110,7 @@ async def test_read_aloud_uses_the_configured_gateway_model_and_voice(
     [request] = fake_gateway.requests
     assert request.url.path == "/v1/audio/speech"
     assert json.loads(request.content) == {
-        "model": "aigateway/openai/gpt-4o-mini-tts",
+        "model": "openai/gpt-4o-mini-tts",
         "voice": "alloy",
         "input": "It is noon in Paris.",
     }

@@ -1,66 +1,62 @@
-x-lgos-bifrost-catalog-job: &lgos-bifrost-catalog-job
-  image: ghcr.io/ilkersigirci/lgos-demo-api:$DEMO_IMAGE_TAG
-  pull_policy: always
-  profiles: [bifrost]
-  restart: "no"
-  user: "$PUID:$PGID"
-  read_only: true
-  tmpfs:
-    - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
-  security_opt:
-    - no-new-privileges:true
-  cap_drop: [ALL]
-  pids_limit: 256
-  cpus: "1.0"
-  mem_limit: 512M
-  entrypoint:
-    - python
-    - -m
-    - lgos_demo_api.utils.sync_bifrost
-    - --directory
-    - /catalog/catalog
-  volumes:
-    - type: bind
-      source: ../volumes/bifrost
-      target: /catalog
-      bind:
-        create_host_path: false
-
 services:
-  lgos-bifrost-catalog:
-    <<: *lgos-bifrost-catalog-job
-    command:
-      - prepare
-      - --source
-      - lgos-a=http://lgos-demo-api-a:8000/v1
-      - --source
-      - lgos-b=http://lgos-demo-api-b:8000/v1
-      - --source
-      - lgos-api-coding-agent=http://lgos-api-coding-agent:8000/v1
-    depends_on:
-      lgos-demo-api-a:
-        condition: service_healthy
-      lgos-demo-api-b:
-        condition: service_healthy
-      lgos-api-coding-agent:
-        condition: service_healthy
-
+  # Rerun after graph changes or a Bifrost restart: Bifrost rebuilds the config
+  # store that holds the attributes at every start.
   lgos-bifrost-sync:
-    <<: *lgos-bifrost-catalog-job
-    command: [sync, --gateway-url, "http://lgos-bifrost:4000"]
-    depends_on:
-      lgos-bifrost:
-        condition: service_healthy
-
-  lgos-bifrost:
-    container_name: lgos-bifrost
+    image: ghcr.io/ilkersigirci/lgos-demo-api:$DEMO_IMAGE_TAG
+    pull_policy: always
     profiles: [bifrost]
-    image: maximhq/bifrost:v2.2.5@sha256:65854fd1941ba8159f1f98cd69df380f6e8ac8cd374bde632c4e28f822a6f115
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=$PUID,gid=$PGID,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 512M
+    entrypoint:
+      - python
+      - -m
+      - lgos_demo_api.utils.sync_bifrost
+      - --directory
+      - /catalog/catalog
+      - --gateway-url
+      - $OPENAI_GATEWAY_BASE_URL
+    command:
+      - --source-url
+      - http://lgos-demo-api:8000/v1
+      - --source-url
+      - http://lgos-api-coding-agent:8000/v1
+    environment:
+      BIFROST_ADMIN_USERNAME: $BIFROST_ADMIN_USERNAME
+      BIFROST_ADMIN_PASSWORD: $BIFROST_ADMIN_PASSWORD
+    volumes:
+      - type: bind
+        source: ../volumes/bifrost
+        target: /catalog
+        bind:
+          create_host_path: false
+    depends_on:
+      lgos-bifrost:
+        condition: service_healthy
+      lgos-demo-api:
+        condition: service_healthy
+      lgos-api-coding-agent:
+        condition: service_healthy
+
+  lgos-bifrost:
+    container_name: lgos-bifrost
+    profiles: [bifrost]
+    image: maximhq/bifrost:v2.2.6@sha256:d0b4708ace1aa175766f94afa715fd9bba3a1b56c1dc2afff15a21edf3ae4e2a
+    restart: "no"
+    user: "$PUID:$PGID"
+    read_only: true
+    # The SQLite config store and its WAL each reach about 31 MiB during a
+    # pricing sync, so /tmp needs headroom beyond twice that.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=$PUID,gid=$PGID,mode=1777
       - /run:rw,noexec,nosuid,nodev,size=32m,uid=$PUID,gid=$PGID,mode=775
     security_opt:
       - no-new-privileges:true
@@ -74,19 +70,16 @@ services:
       nofile:
         soft: 4096
         hard: 8192
-    depends_on:
-      lgos-bifrost-catalog:
-        condition: service_completed_successfully
-      # Bifrost discovers MCP tools when it connects and resyncs them only
-      # periodically (every 10 minutes by default), so DBHub must be ready first.
-      lgos-postgres-mcp:
-        condition: service_healthy
-      lgos-demo-api-a:
-        condition: service_healthy
-      lgos-demo-api-b:
-        condition: service_healthy
-      lgos-files-api:
-        condition: service_healthy
+    # The gateway starts before the LGOS services and keeps retrying an
+    # unreachable MCP server. Bifrost exits when its price list cannot load, so
+    # it starts from an empty one until lgos-bifrost-sync writes the graph rows.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        mkdir -p /app/data/catalog &&
+        { [ -e /app/data/catalog/pricing.json ] || echo '{}' > /app/data/catalog/pricing.json; } &&
+        exec /app/docker-entrypoint.sh /app/main
     ports:
       - "$LGOS_GATEWAY_PORT:4000"
     volumes:
@@ -96,7 +89,7 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ../configs/bifrost/config.json
+        source: $DEMO_BIFROST_CONFIG
         target: /app/data/config.json
         read_only: true
         bind:
@@ -108,7 +101,9 @@ services:
       LOG_STYLE: json
       BIFROST_DEMO_VIRTUAL_KEY: $OPENAI_GATEWAY_API_KEY
       LGOS_MCP_AUTH_HEADER: Bearer $LGOS_MCP_AUTH_TOKEN
-      AIGATEWAY_API_KEY: $AIGATEWAY_API_KEY
+      OPENAI_UPSTREAM_API_KEY: $OPENAI_UPSTREAM_API_KEY
+      BIFROST_ADMIN_USERNAME: $BIFROST_ADMIN_USERNAME
+      BIFROST_ADMIN_PASSWORD: $BIFROST_ADMIN_PASSWORD
     # Bifrost reconciles file-defined Virtual MCPs before file-defined
     # virtual keys on first boot. Repeat the idempotent assignment once its API
     # is ready, then keep the service unhealthy until the assignment is visible.
@@ -117,8 +112,9 @@ services:
           - sh
           - -ec
           - |
+            admin="Authorization: Basic $$(printf '%s:%s' "$$BIFROST_ADMIN_USERNAME" "$$BIFROST_ADMIN_PASSWORD" | base64 -w 0)"
             attempt=0
-            until wget --quiet --tries=1 --timeout=2 \
+            until wget --quiet --tries=1 --timeout=2 --header "$$admin" \
               --output-document=/dev/null --post-data='' \
               http://localhost:4000/api/mcp/virtual-mcps/1/virtual-keys/lgos-demo
             do
@@ -131,7 +127,9 @@ services:
         - CMD-SHELL
         - >-
           wget --quiet --tries=1 --output-document=/dev/null http://localhost:4000/health &&
-          wget --quiet --tries=1 --output-document=- http://localhost:4000/api/mcp/virtual-mcps/1 |
+          wget --quiet --tries=1 --output-document=-
+          --header "Authorization: Basic $$(printf '%s:%s' "$$BIFROST_ADMIN_USERNAME" "$$BIFROST_ADMIN_PASSWORD" | base64 -w 0)"
+          http://localhost:4000/api/mcp/virtual-mcps/1 |
           grep -q '"lgos-demo"'
       interval: 5s
       timeout: 5s

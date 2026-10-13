@@ -108,7 +108,7 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             http_async_client=client,
             use_responses_api=True,
         )
-        monkeypatch.setattr(file_input_module, "ChatOpenAI", lambda **_: model)
+        monkeypatch.setattr("lgos_demo_api.utils.models.ChatOpenAI", lambda **_: model)
         result = await file_input_module.file_input_graph.ainvoke(
             file_input_module.FileInputState(
                 messages=[

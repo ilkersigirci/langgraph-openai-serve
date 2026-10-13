@@ -8,7 +8,6 @@ from langchain_core.messages.content import (
     ContentBlock,
     create_text_block,
 )
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import GraphConfig, GraphFeature
@@ -17,6 +16,7 @@ from pydantic import BaseModel
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.utils.file_inputs import load_file_block
+from lgos_demo_api.utils.models import responses_model
 
 DEFAULT_PROMPT = "Describe the attached file."
 INSTRUCTIONS = "Answer the user's request using the attached files."
@@ -77,13 +77,7 @@ async def process_files(state: FileInputState) -> dict[str, list[AIMessage]]:
             [await load_file_block(files_client, file_id) for file_id in file_ids]
         )
 
-    model = ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        base_url=settings.OPENAI_BASE_URL,
-        api_key=settings.OPENAI_API_KEY,
-        use_responses_api=True,
-        store=False,
-    )
+    model = responses_model()
     response = await model.ainvoke(
         [
             SystemMessage(content=INSTRUCTIONS),

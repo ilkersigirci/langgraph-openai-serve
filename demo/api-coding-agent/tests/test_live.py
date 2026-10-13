@@ -39,7 +39,7 @@ async def test_shell_execution_edits_streaming_and_persistent_follow_up() -> Non
             max_retries=0,
         ) as client:
             stream = await client.responses.create(
-                model="lgos-api-coding-agent/coding-agent",
+                model="lgos/coding-agent",
                 input=prompt,
                 stream=True,
                 store=False,
@@ -69,7 +69,7 @@ async def test_shell_execution_edits_streaming_and_persistent_follow_up() -> Non
             assert response.usage
             assert response.usage.total_tokens > 0
             follow_up = await client.responses.create(
-                model="lgos-api-coding-agent/coding-agent",
+                model="lgos/coding-agent",
                 store=False,
                 input=[
                     {"role": "user", "content": prompt},

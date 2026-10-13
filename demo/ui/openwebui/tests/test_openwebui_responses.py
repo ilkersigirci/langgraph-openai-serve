@@ -3,7 +3,13 @@
 import asyncio
 import json
 import sys
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -12,14 +18,12 @@ from typing import Any, Self
 from unittest.mock import AsyncMock, Mock, call
 from uuid import UUID
 
-import httpx2
 import pytest
-from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
     ResponseCustomToolCall,
-    ResponseCustomToolCallOutputItem,
+    ResponseCustomToolCallOutput,
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputRefusal,
@@ -43,8 +47,13 @@ from lgos_openwebui.functions.generic.interrupts import (
     _openwebui_interrupt_chunk,
     _openwebui_interrupt_completion,
 )
-from lgos_openwebui.functions.generic.responses import _responses_input
+from lgos_openwebui.functions.generic.responses import (
+    DISPLAY_FILE_TOOL,
+    _responses_input,
+)
 from lgos_openwebui.functions.uservalves_simple import Filter
+
+pytestmark = pytest.mark.usefixtures("gateway_environment")
 
 MODEL_ID = "interruptible-approval"
 QUALIFIED_MODEL_ID = f"generic.{MODEL_ID}"
@@ -167,7 +176,7 @@ async def test_streamed_text_and_the_full_review_stay_separate(
 
     install_client(monkeypatch, stream=scripted_stream)
 
-    chunks = await collect(configured_pipe().pipe(body(stream=True)))
+    chunks = await collect(generic_pipe.Pipe().pipe(body(stream=True)))
 
     content = "".join(
         chunk["choices"][0]["delta"].get("content", "") for chunk in chunks
@@ -197,17 +206,6 @@ def interrupt_call() -> ResponseFunctionToolCall:
     )
 
 
-def configured_pipe(module: ModuleType = generic_pipe) -> Any:
-    """Apply stored gateway valves the way Open WebUI does."""
-    pipe = module.Pipe()
-    pipe.valves = pipe.Valves(
-        OPENAI_GATEWAY_TYPE="litellm",
-        OPENAI_GATEWAY_BASE_URL="http://lgos-litellm:4000",
-        OPENAI_GATEWAY_API_KEY="test-api-key",
-    )
-    return pipe
-
-
 def body(*, stream: bool) -> dict[str, object]:
     return {
         "model": QUALIFIED_MODEL_ID,
@@ -216,8 +214,13 @@ def body(*, stream: bool) -> dict[str, object]:
     }
 
 
-def chat_metadata(**chat_variables: object) -> dict[str, object]:
-    """Metadata for a chat whose Workspace Model declares these variables."""
+def chat_metadata(
+    *,
+    server_tools: Sequence[str] = (),
+    client_tools: Sequence[str] = (),
+    **chat_variables: object,
+) -> dict[str, object]:
+    """Metadata for a chat whose model declares these Chat Variables and tools."""
     fields = [
         {"key": key, "type": "checkbox" if isinstance(value, bool) else "text"}
         for key, value in chat_variables.items()
@@ -225,7 +228,17 @@ def chat_metadata(**chat_variables: object) -> dict[str, object]:
     return {
         "chat_id": "thread-123",
         "chat_variables": chat_variables,
-        "model": {"info": {"meta": {"chat_variables_schema": {"fields": fields}}}},
+        "model": {
+            "info": {
+                "meta": {
+                    "chat_variables_schema": {"fields": fields},
+                    "lgos": {
+                        "server_tools": list(server_tools),
+                        "client_tools": list(client_tools),
+                    },
+                }
+            }
+        },
     }
 
 
@@ -271,7 +284,7 @@ async def test_additive_host_fields_are_ignored_at_the_validated_boundary(
     }
     request_body["messages"][0]["future_message_field"] = "preserved by host"
 
-    result = await configured_pipe().pipe(
+    result = await generic_pipe.Pipe().pipe(
         request_body,
         __metadata__={"chat_id": "thread-123", "future_metadata_field": True},
         __user__={"id": "user-123", "future_user_field": "value"},
@@ -283,7 +296,7 @@ async def test_additive_host_fields_are_ignored_at_the_validated_boundary(
         {"role": "user", "content": "Refund ORDER-123"}
     ]
     assert create.await_args.kwargs["metadata"] == {"conversation_id": "thread-123"}
-    assert create.await_args.kwargs["user"] == "user-123"
+    assert create.await_args.kwargs["safety_identifier"] == "user-123"
 
 
 async def collect(
@@ -384,102 +397,23 @@ def bundled_generic(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-async def test_pipe_without_stored_gateway_valves_points_to_the_sync(
+async def test_pipe_names_missing_gateway_settings_without_echoing_the_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     create = AsyncMock()
     install_client(monkeypatch, create=create)
-    # Open WebUI instantiates the Pipe before the sync stores any valves.
+    monkeypatch.delenv("OPENAI_GATEWAY_TYPE")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "not a URL")
     pipe = generic_pipe.Pipe()
 
     result = await pipe.pipe(body(stream=False))
 
-    assert "sync-openwebui" in result["error"]["detail"]
+    detail = result["error"]["detail"]
+    assert "OPENAI_GATEWAY_BASE_URL, OPENAI_GATEWAY_TYPE" in detail
+    assert "test-api-key" not in detail
     create.assert_not_awaited()
-    with pytest.raises(RuntimeError, match="sync-openwebui"):
+    with pytest.raises(RuntimeError, match="OPENAI_GATEWAY_TYPE"):
         await pipe.pipes()
-
-
-async def test_pipe_lists_native_litellm_model_info(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    deployment = {"model_name": "research/graph", "model_info": {"lgos": {}}}
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        assert request.method == "GET"
-        assert request.url.path == "/model/info"
-        assert request.headers["Authorization"] == "Bearer test-key"
-        return httpx2.Response(
-            200,
-            json={
-                "data": [
-                    deployment,
-                    deployment,
-                    {"model_name": "plain", "model_info": {"lgos": {}}},
-                    {"model_name": "gpt-5", "model_info": {}},
-                ]
-            },
-        )
-
-    @asynccontextmanager
-    async def catalog_client(**kwargs: Any) -> AsyncGenerator[AsyncOpenAI, None]:
-        async with AsyncOpenAI(
-            **kwargs,
-            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
-        ) as client:
-            yield client
-
-    monkeypatch.setattr(generic_pipe, "_client", catalog_client)
-    pipe = configured_pipe()
-    pipe.valves.OPENAI_GATEWAY_API_KEY = "test-key"
-    models = await pipe.pipes()
-    assert models == [
-        {"id": "research/graph", "name": "Generic / research/graph"},
-        {"id": "plain", "name": "Generic / plain"},
-    ]
-
-
-async def test_pipe_uses_bifrost_aggregate_catalog(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    catalog_urls = []
-
-    @asynccontextmanager
-    async def catalog_client(
-        *, base_url: str, **_: object
-    ) -> AsyncGenerator[object, None]:
-        catalog_urls.append(base_url)
-        yield SimpleNamespace(
-            models=SimpleNamespace(
-                list=AsyncMock(
-                    return_value=SimpleNamespace(
-                        data=[
-                            SimpleNamespace(
-                                id="lgos-a/simple-graph",
-                                owned_by="langgraph-openai-serve",
-                            ),
-                            SimpleNamespace(
-                                id="lgos-b/simple-graph",
-                                owned_by="langgraph-openai-serve",
-                            ),
-                        ]
-                    )
-                )
-            )
-        )
-
-    monkeypatch.setattr(generic_pipe, "_client", catalog_client)
-    pipe = configured_pipe()
-    pipe.valves.OPENAI_GATEWAY_TYPE = "bifrost"
-    pipe.valves.OPENAI_GATEWAY_BASE_URL = "https://bifrost.example"
-
-    models = await pipe.pipes()
-
-    assert catalog_urls == ["https://bifrost.example/v1"]
-    assert models == [
-        {"id": "lgos-a/simple-graph", "name": "Generic / lgos-a/simple-graph"},
-        {"id": "lgos-b/simple-graph", "name": "Generic / lgos-b/simple-graph"},
-    ]
 
 
 async def test_deployed_bundle_runs_responses_inference(
@@ -488,7 +422,7 @@ async def test_deployed_bundle_runs_responses_inference(
     create = AsyncMock(return_value=final_response("Bundle answer."))
     bundled_generic._client = lambda **_: FakeClient(create=create)
 
-    result = await configured_pipe(bundled_generic).pipe(body(stream=False))
+    result = await bundled_generic.Pipe().pipe(body(stream=False))
 
     assert result == "Bundle answer."
     request = create.await_args.kwargs
@@ -517,16 +451,15 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
                 "type": "custom_tool_call",
                 "id": "ctc_package",
                 "call_id": "call_package",
-                "name": "lgos_package_version",
+                "name": "package_version",
                 "input": "openai",
                 "status": "completed",
             }
         ),
-        ResponseCustomToolCallOutputItem(
+        ResponseCustomToolCallOutput(
             type="custom_tool_call_output",
             id="ctco_package",
             call_id="call_package",
-            status="completed",
             output="openai==installed-version",
         ),
     ]
@@ -543,18 +476,22 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
 
     bundled_generic._client = lambda **_: FakeClient(create=create, stream=stream)
     result = await collect(
-        configured_pipe(bundled_generic).pipe(
+        bundled_generic.Pipe().pipe(
             {
                 **body(stream=streaming),
-                "model": "generic.lgos-a/server-tool",
+                "model": "generic.lgos/server-tool",
                 "tools": openwebui_tools,
             },
-            __metadata__=chat_metadata(lgos_package_version=True, web_search=True),
+            __metadata__=chat_metadata(
+                server_tools=["package_version", "web_search"],
+                package_version=True,
+                web_search=True,
+            ),
         )
     )
     assert len(requests) == 1
     assert requests[0]["tools"] == [
-        {"type": "custom", "name": "lgos_package_version"},
+        {"type": "custom", "name": "package_version"},
         {"type": "web_search"},
     ]
     assert requests[0]["metadata"] == {"conversation_id": "thread-123"}
@@ -563,23 +500,36 @@ async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
     ) == "openai==installed-version"
 
 
-async def test_bundle_maps_advanced_web_search_outside_graph_settings(
+@pytest.mark.parametrize(
+    ("advertised", "chat_variables", "tools"),
+    [
+        (
+            {"server_tools": ["web_search"]},
+            {"web_search": True},
+            [{"type": "web_search"}],
+        ),
+        ({"server_tools": ["web_search"]}, {"web_search": False}, []),
+        ({"client_tools": ["display_file"]}, {}, [DISPLAY_FILE_TOOL]),
+    ],
+    ids=["enabled-server-tool", "disabled-server-tool", "client-tool"],
+)
+async def test_bundle_offers_the_advertised_tools_outside_graph_settings(
     bundled_generic: ModuleType,
+    advertised: dict[str, list[str]],
+    chat_variables: dict[str, object],
+    tools: list[dict[str, object]],
 ) -> None:
-    create = AsyncMock(return_value=final_response("Research complete."))
+    create = AsyncMock(return_value=final_response("Done."))
     bundled_generic._client = lambda **_: FakeClient(create=create)
 
-    result = await configured_pipe(bundled_generic).pipe(
-        {
-            **body(stream=False),
-            "model": "generic.lgos-a/advanced-graph",
-        },
-        __metadata__=chat_metadata(web_search=True),
+    result = await bundled_generic.Pipe().pipe(
+        {**body(stream=False), "model": "generic.lgos/any-graph"},
+        __metadata__=chat_metadata(**advertised, **chat_variables),
     )
 
-    assert result == "Research complete."
+    assert result == "Done."
     request = create.await_args.kwargs
-    assert request["tools"] == [{"type": "web_search"}]
+    assert request["tools"] == tools
     assert request["metadata"] == {"conversation_id": "thread-123"}
 
 
@@ -589,7 +539,7 @@ async def test_deployed_bundle_runs_non_streaming_interrupt(
     create = AsyncMock(return_value=response(interrupt_call()))
     bundled_generic._client = lambda **_: FakeClient(create=create)
 
-    result = await configured_pipe(bundled_generic).pipe(body(stream=False))
+    result = await bundled_generic.Pipe().pipe(body(stream=False))
 
     assert (
         result["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
@@ -622,7 +572,7 @@ async def test_bundled_stream_keeps_sse_looking_text_as_content(
 
     bundled_generic._client = lambda **_: FakeClient(stream=scripted_stream)
 
-    output = await collect(configured_pipe(bundled_generic).pipe(body(stream=True)))
+    output = await collect(bundled_generic.Pipe().pipe(body(stream=True)))
 
     # The host JSON-encodes objects; raw strings beginning with data: bypass it.
     decoded = [ChatCompletionChunk.model_validate(chunk) for chunk in output]
@@ -630,12 +580,36 @@ async def test_bundled_stream_keeps_sse_looking_text_as_content(
     assert all(chunk.choices[0].finish_reason is None for chunk in decoded)
 
 
+@pytest.mark.parametrize(
+    ("user", "gateway_user"),
+    [
+        ({"id": "openwebui-user", "oauth": None}, "openwebui-user"),
+        (
+            {"id": "openwebui-user", "oauth": {"oidc": {"sub": "oidc-subject"}}},
+            "oidc-subject",
+        ),
+    ],
+    ids=["password-login", "sso-login"],
+)
+async def test_requests_name_the_user_the_gateway_verifies(
+    monkeypatch: pytest.MonkeyPatch, user: dict[str, object], gateway_user: str
+) -> None:
+    create = AsyncMock(return_value=final_response("Done."))
+    install_client(monkeypatch, create=create)
+
+    await generic_pipe.Pipe().pipe(body(stream=False), __user__=user)
+
+    # Under SSO the gateway bills the token's subject, so the graph's own model
+    # calls name the same user.
+    assert create.await_args.kwargs["safety_identifier"] == gateway_user
+
+
 async def test_non_streaming_request_uses_responses_and_final_answer_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     create = AsyncMock(return_value=final_response("Approved."))
     install_client(monkeypatch, create=create)
-    pipe = configured_pipe()
+    pipe = generic_pipe.Pipe()
 
     result = await pipe.pipe(
         body(stream=False),
@@ -649,7 +623,8 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert "extra_headers" not in request
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
-    assert request["user"] == "user-123"
+    assert request["safety_identifier"] == "user-123"
+    assert "user" not in request
     assert request["metadata"] == {
         "conversation_id": "thread-123",
         "lgos_settings": '{"audience":"expert"}',
@@ -660,8 +635,12 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
 BACKGROUND_GATEWAYS = pytest.mark.parametrize(
     ("gateway_type", "model", "lifecycle_options"),
     [
-        ("litellm", "lgos-a/background-mock", {}),
-        ("bifrost", "lgos-b/background-mock", {"extra_query": {"provider": "lgos-b"}}),
+        ("litellm", "lgos/background-mock", {}),
+        (
+            "bifrost",
+            "lgos/background-mock",
+            {"extra_query": {"provider": "lgos"}},
+        ),
     ],
 )
 
@@ -698,8 +677,8 @@ async def test_background_response_uses_polling_and_native_statuses(
     async def emit(event: dict[str, Any]) -> None:
         events.append(event)
 
-    pipe = configured_pipe()
-    pipe.valves.OPENAI_GATEWAY_TYPE = gateway_type
+    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", gateway_type)
+    pipe = generic_pipe.Pipe()
     result = await collect(
         pipe.pipe(
             {**body(stream=True), "model": f"generic.{model}"},
@@ -757,7 +736,7 @@ async def test_interrupt_answers_follow_the_background_setting(
         ask_user_exchange(ask_user_card(call), {call.call_id: option("approve")})
     )
 
-    await configured_pipe().pipe(
+    await generic_pipe.Pipe().pipe(
         request_body, __metadata__=chat_metadata(lgos_background=True)
     )
 
@@ -772,15 +751,15 @@ async def test_chat_variables_of_previously_selected_models_are_not_sent(
     create = AsyncMock(return_value=final_response("Foreground response."))
     install_client(monkeypatch, create=create)
     # A chat keeps every model's variables; this model declares only web_search.
-    metadata = chat_metadata(web_search=True)
+    metadata = chat_metadata(server_tools=["web_search"], web_search=True)
     metadata["chat_variables"] = {
         "audience": "expert",
         "lgos_background": True,
         "web_search": True,
     }
 
-    result = await configured_pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos-a/advanced-graph"},
+    result = await generic_pipe.Pipe().pipe(
+        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
         __metadata__=metadata,
     )
 
@@ -817,8 +796,8 @@ async def test_background_response_is_cancelled_when_request_stops(
         "sleep",
         AsyncMock(side_effect=asyncio.CancelledError),
     )
-    pipe = configured_pipe()
-    pipe.valves.OPENAI_GATEWAY_TYPE = gateway_type
+    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", gateway_type)
+    pipe = generic_pipe.Pipe()
 
     with pytest.raises(asyncio.CancelledError):
         await collect(
@@ -845,74 +824,26 @@ async def test_uservalves_reach_responses_through_shared_pipe(
         "chat_variables": {"audience": "expert", "stale_setting": True},
     }
     request_body = {
-        "model": "lgos.uservalves_simple",
+        "model": "generic.uservalves_simple",
         "messages": [{"role": "user", "content": "Hello"}],
         "stream": False,
     }
+    # Open WebUI runs the model's Filter before the Pipe.
     filtered = await Filter().inlet(request_body, {"valves": settings}, metadata)
-    # Open WebUI resolves the Workspace Model to its manifold base before Pipe.
-    filtered["model"] = "generic.lgos-a/simple-graph"
 
-    result = await configured_pipe().pipe(
+    result = await generic_pipe.Pipe().pipe(
         filtered, __metadata__=metadata, __user__={"id": "user-123"}
     )
 
     assert result == "Hello."
     request = create.await_args.kwargs
-    assert request["model"] == "lgos-a/simple-graph"
+    assert request["model"] == "lgos/simple-graph"
     assert request["metadata"]["conversation_id"] == "thread-123"
     assert json.loads(request["metadata"]["lgos_settings"]) == {
         "use_history": settings.use_history,
         "audience": settings.audience,
     }
     assert request["input"] == [{"role": "user", "content": "Hello"}]
-
-
-RENDERED_DECLARATIONS = "<lgos-chat-variables>\nTrue\nexpert\n</lgos-chat-variables>"
-
-
-@pytest.mark.parametrize(
-    ("system", "expected_input"),
-    [
-        (RENDERED_DECLARATIONS, []),
-        (
-            f"{RENDERED_DECLARATIONS}\nBe brief.",
-            [{"role": "system", "content": "Be brief."}],
-        ),
-        (
-            f"{RENDERED_DECLARATIONS}\n{RENDERED_DECLARATIONS}\nBe brief.",
-            [{"role": "system", "content": "Be brief."}],
-        ),
-        (
-            "Be brief.\n<lgos-chat-variables>\nkept\n</lgos-chat-variables>",
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Be brief.\n<lgos-chat-variables>\nkept\n</lgos-chat-variables>"
-                    ),
-                }
-            ],
-        ),
-    ],
-    ids=["declarations-only", "chat-system-prompt", "tool-loop-repeat", "not-leading"],
-)
-async def test_rendered_chat_variable_declarations_never_reach_the_graph(
-    monkeypatch: pytest.MonkeyPatch,
-    system: str,
-    expected_input: list[dict[str, str]],
-) -> None:
-    create = AsyncMock(return_value=final_response("Hello."))
-    install_client(monkeypatch, create=create)
-    request_body = body(stream=False)
-    request_body["messages"].insert(0, {"role": "system", "content": system})
-
-    await configured_pipe().pipe(request_body)
-
-    assert create.await_args.kwargs["input"] == [
-        *expected_input,
-        {"role": "user", "content": "Refund ORDER-123"},
-    ]
 
 
 @pytest.mark.parametrize(
@@ -935,7 +866,7 @@ async def test_rendered_chat_variable_declarations_never_reach_the_graph(
             "lgos_background": False,
         },
     ],
-    ids=["declared-default-strings", "edited-form-values"],
+    ids=["text-form-values", "typed-form-values"],
 )
 async def test_chat_variables_reach_responses_with_their_declared_types(
     monkeypatch: pytest.MonkeyPatch, chat_variables: dict[str, object]
@@ -951,12 +882,19 @@ async def test_chat_variables_reach_responses_with_their_declared_types(
         {"key": "lgos_background", "type": "checkbox"},
     ]
 
-    await configured_pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos-a/advanced-graph"},
+    await generic_pipe.Pipe().pipe(
+        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
         __metadata__={
             "chat_id": "thread-123",
             "chat_variables": chat_variables,
-            "model": {"info": {"meta": {"chat_variables_schema": {"fields": fields}}}},
+            "model": {
+                "info": {
+                    "meta": {
+                        "chat_variables_schema": {"fields": fields},
+                        "lgos": {"server_tools": ["web_search"], "client_tools": []},
+                    }
+                }
+            },
         },
     )
 
@@ -997,15 +935,15 @@ async def test_request_uses_a_native_responses_route(
 
     stream_request = Mock(side_effect=response_stream)
     monkeypatch.setattr(generic_pipe, "_client", client)
-    pipe = configured_pipe()
-    pipe.valves.OPENAI_GATEWAY_TYPE = gateway_type
-    pipe.valves.OPENAI_GATEWAY_BASE_URL = "https://gateway.example"
+    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", gateway_type)
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "https://gateway.example")
+    pipe = generic_pipe.Pipe()
 
     result = await collect(
         pipe.pipe(
             {
                 **body(stream=stream),
-                "model": "generic.lgos-a/interruptible-approval",
+                "model": "generic.lgos/interruptible-approval",
             },
             __metadata__={"chat_id": "thread-123"},
             __user__={"id": "user-123"},
@@ -1021,7 +959,7 @@ async def test_request_uses_a_native_responses_route(
         request = create.await_args.kwargs
     assert base_urls == [f"https://gateway.example{base_path}"]
     # Bifrost selects the provider from the catalog ID's prefix.
-    assert request["model"] == "lgos-a/interruptible-approval"
+    assert request["model"] == "lgos/interruptible-approval"
 
 
 @pytest.mark.parametrize("phase", [None, "final_answer"])
@@ -1066,7 +1004,7 @@ async def test_stream_uses_sdk_final_response_and_excludes_commentary(
     emit = AsyncMock()
     install_client(monkeypatch, stream=scripted_stream)
     chunks = await collect(
-        configured_pipe().pipe(
+        generic_pipe.Pipe().pipe(
             body(stream=True),
             __event_emitter__=emit,
         )
@@ -1116,7 +1054,7 @@ async def test_refusal_is_visible_in_both_response_modes(
     install_client(
         monkeypatch, stream=scripted_stream, create=AsyncMock(return_value=completed)
     )
-    chunks = await collect(configured_pipe().pipe(body(stream=streaming)))
+    chunks = await collect(generic_pipe.Pipe().pipe(body(stream=streaming)))
     assert len(chunks) == 1
     assert (
         chunks[0]["choices"][0]["delta"]["content"] if streaming else chunks[0]
@@ -1159,7 +1097,7 @@ async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
     monkeypatch.setattr(generic_pipe, "_handle_display_file", display)
     emit = AsyncMock()
     chunks = await collect(
-        configured_pipe().pipe(body(stream=True), __event_emitter__=emit)
+        generic_pipe.Pipe().pipe(body(stream=True), __event_emitter__=emit)
     )
     assert "max_output_tokens" in chunks[0]["error"]["detail"]
     assert [call.args[0]["data"] for call in emit.await_args_list] == [
@@ -1207,7 +1145,7 @@ async def test_response_maps_final_answer_annotations_to_persistent_sources(
     )
 
     chunks = await collect(
-        configured_pipe().pipe(
+        generic_pipe.Pipe().pipe(
             body(stream=streaming),
             __event_emitter__=emit,
         )
@@ -1259,17 +1197,16 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
             "type": "custom_tool_call",
             "id": "ctc_package",
             "call_id": "call_package",
-            "name": "lgos_package_version",
+            "name": "package_version",
             "input": "openai",
             "status": "completed",
         }
     )
-    server_output = ResponseCustomToolCallOutputItem(
+    server_output = ResponseCustomToolCallOutput(
         type="custom_tool_call_output",
         id="ctco_package",
         call_id=server_call.call_id,
         output="openai==installed-version",
-        status="completed",
     )
     first = response(
         *final_response("Here is the chart. ").output,
@@ -1343,7 +1280,7 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         )
 
     result = await collect(
-        configured_pipe().pipe(
+        generic_pipe.Pipe().pipe(
             request_body, __event_emitter__=emitter, __request__=request
         )
     )
@@ -1525,7 +1462,7 @@ async def test_current_attachment_is_read_from_openwebui_into_an_input_file(
         "content_type": content_type,
     }
 
-    result = await configured_pipe().pipe(
+    result = await generic_pipe.Pipe().pipe(
         {**body(stream=False), "messages": [{"role": "user", "content": "Read it."}]},
         __metadata__={"user_message": {"files": [attachment]}},
         __request__=openwebui.request(),
@@ -1551,6 +1488,65 @@ async def test_current_attachment_is_read_from_openwebui_into_an_input_file(
     ]
 
 
+@pytest.mark.parametrize(
+    ("auth_type", "url", "credential"),
+    [
+        ("bearer", "http://lgos-litellm:4000/v1", "test-api-key"),
+        ("system_oauth", "http://lgos-litellm:4000/v1/", "user-access-token"),
+        # A connection to another gateway does not decide this one's credential.
+        ("system_oauth", "https://other.example/v1", "test-api-key"),
+    ],
+)
+async def test_responses_and_files_send_what_open_webuis_gateway_connection_sends(
+    monkeypatch: pytest.MonkeyPatch,
+    openwebui_connection: Callable[..., None],
+    auth_type: str,
+    url: str,
+    credential: str,
+) -> None:
+    api_keys = []
+    upload = AsyncMock(return_value=SimpleNamespace(id="file-uploaded"))
+    create = AsyncMock(return_value=final_response("Summarized."))
+
+    def client(*, api_key: str, **_: object) -> FakeClient:
+        api_keys.append(api_key)
+        return FakeClient(files=SimpleNamespace(create=upload), create=create)
+
+    monkeypatch.setattr(generic_pipe, "_client", client)
+    monkeypatch.setattr(generic_files, "_client", client)
+    openwebui_connection(auth_type, url)
+    attachment = {"id": "owui-file", "type": "file", "name": "report.pdf"}
+
+    result = await generic_pipe.Pipe().pipe(
+        body(stream=False),
+        __metadata__={"user_message": {"files": [attachment]}},
+        __request__=FakeOpenWebUI().request(),
+        __oauth_token__={"access_token": "user-access-token"},
+    )
+
+    assert result == "Summarized."
+    # One client uploads the attachment, the other runs the response.
+    assert api_keys == [credential, credential]
+
+
+@pytest.mark.parametrize("oauth_token", [None, {}, {"access_token": ""}])
+async def test_sso_requests_without_an_access_token_never_use_the_shared_key(
+    monkeypatch: pytest.MonkeyPatch,
+    openwebui_connection: Callable[..., None],
+    oauth_token: dict[str, str] | None,
+) -> None:
+    create = AsyncMock()
+    install_client(monkeypatch, create=create)
+    openwebui_connection("system_oauth")
+
+    result = await generic_pipe.Pipe().pipe(
+        body(stream=False), __oauth_token__=oauth_token
+    )
+
+    assert "Sign in again with SSO" in result["error"]["detail"]
+    create.assert_not_awaited()
+
+
 @pytest.mark.parametrize("choice", ["x" * 81, " approve"], ids=["long", "padded"])
 async def test_interrupt_choices_that_open_webui_would_alter_are_rejected(
     monkeypatch: pytest.MonkeyPatch, choice: str
@@ -1561,7 +1557,7 @@ async def test_interrupt_choices_that_open_webui_would_alter_are_rejected(
     )
     install_client(monkeypatch, create=AsyncMock(return_value=response(call)))
 
-    result = await configured_pipe().pipe(body(stream=False))
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     assert "80 characters" in result["error"]["detail"]
 
@@ -1572,7 +1568,7 @@ async def test_interrupt_call_ids_that_open_webui_would_truncate_are_rejected(
     call = interrupt_call().model_copy(update={"call_id": "call_" + "x" * 60})
     install_client(monkeypatch, create=AsyncMock(return_value=response(call)))
 
-    result = await configured_pipe().pipe(body(stream=False))
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     assert "call ID" in result["error"]["detail"]
 
@@ -1600,7 +1596,7 @@ async def test_unanswered_interrupt_card_ends_the_turn_without_resuming(
     create = AsyncMock(return_value=final_response("Unexpected resume"))
     install_client(monkeypatch, create=create)
 
-    output = await collect(configured_pipe().pipe(request))
+    output = await collect(generic_pipe.Pipe().pipe(request))
 
     assert output == ["Interrupt cancelled."]
     create.assert_not_awaited()
@@ -1631,7 +1627,7 @@ async def test_parallel_interrupt_batch_uses_one_prompt_and_resumes_every_call(
         ]
     )
     install_client(monkeypatch, create=create)
-    pipe = configured_pipe()
+    pipe = generic_pipe.Pipe()
 
     interrupted = await pipe.pipe(body(stream=False))
     (ask_user,) = interrupted["choices"][0]["message"]["tool_calls"]
@@ -1691,7 +1687,7 @@ async def test_mixed_interrupt_and_client_tool_batch_is_rejected(
     )
     install_client(monkeypatch, create=create)
 
-    result = await configured_pipe().pipe(body(stream=False))
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     assert result == {
         "error": {
@@ -1709,7 +1705,7 @@ async def test_interrupt_response_becomes_native_ask_user_call(
     create = AsyncMock(return_value=response(interrupt_call()))
     install_client(monkeypatch, create=create)
 
-    result = await configured_pipe().pipe(body(stream=False))
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     tool_call = result["choices"][0]["message"]["tool_calls"][0]
     assert tool_call["function"]["name"] == "ask_user"
@@ -1745,7 +1741,7 @@ async def test_invalid_interrupt_exchange_cannot_start_a_new_run(
     create = AsyncMock(return_value=final_response("Unexpected new run"))
     install_client(monkeypatch, create=create)
 
-    output = await collect(configured_pipe().pipe(request))
+    output = await collect(generic_pipe.Pipe().pipe(request))
 
     assert "interrupt" in output[0]["error"]["detail"]
     create.assert_not_awaited()
@@ -1758,7 +1754,7 @@ async def test_interrupt_response_with_preliminary_text_preserves_content_and_ou
     create = AsyncMock(return_value=response(first_part, interrupt_call()))
     install_client(monkeypatch, create=create)
 
-    result = await configured_pipe().pipe(body(stream=False))
+    result = await generic_pipe.Pipe().pipe(body(stream=False))
 
     assert result["choices"][0]["message"]["content"] == "Please confirm: "
     assert len(result["output"]) == 2
@@ -1778,7 +1774,7 @@ async def test_non_streaming_answer_allows_optional_phase(monkeypatch, phase):
     completed.output.insert(0, commentary)
     install_client(monkeypatch, create=AsyncMock(return_value=completed))
 
-    assert await configured_pipe().pipe(body(stream=False)) == "Answer"
+    assert await generic_pipe.Pipe().pipe(body(stream=False)) == "Answer"
 
 
 def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
@@ -1898,7 +1894,7 @@ async def test_gateway_tool_call_is_delegated_to_openwebui(
         },
     }
     request_body = {
-        "model": "generic.lgos-a/database-assistant",
+        "model": "generic.lgos/database-assistant",
         "messages": [
             {
                 "role": "user",
@@ -1909,7 +1905,7 @@ async def test_gateway_tool_call_is_delegated_to_openwebui(
     }
 
     result = await collect(
-        configured_pipe().pipe(
+        generic_pipe.Pipe().pipe(
             request_body,
             __tools__={
                 openwebui_tool_name: openwebui_tool,
@@ -1944,9 +1940,9 @@ async def test_mcp_tool_execution_rejects_non_streaming_requests(
     install_client(monkeypatch, create=create)
 
     tool_name = "lgos-gateway_database_report"
-    result = await configured_pipe().pipe(
+    result = await generic_pipe.Pipe().pipe(
         {
-            "model": "generic.lgos-a/database-assistant",
+            "model": "generic.lgos/database-assistant",
             "messages": [{"role": "user", "content": "List the demo graphs."}],
             "stream": False,
         },

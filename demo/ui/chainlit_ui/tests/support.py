@@ -54,7 +54,7 @@ def response(
             "id": id,
             "object": "response",
             "created_at": 0,
-            "model": "lgos-a/test",
+            "model": "lgos/test",
             "status": status,
             "output": list(output),
             "parallel_tool_calls": True,
@@ -235,7 +235,17 @@ async def select_profile(
     """Select a chat profile the way Chainlit does, then load its settings."""
     cl.context.session.chat_profile = model_id
     gateway.replies.append(
-        model_info({model_id: {"description": "Demo graph", "features": [], **lgos}})
+        model_info(
+            {
+                model_id: {
+                    "description": "Demo graph",
+                    "features": [],
+                    "server_tools": [],
+                    "client_tools": [],
+                    **lgos,
+                }
+            }
+        )
     )
     await configure_chat_settings()
 

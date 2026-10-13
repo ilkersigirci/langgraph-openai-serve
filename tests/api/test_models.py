@@ -64,7 +64,7 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
     }
 
 
-async def test_retrieved_model_exposes_sorted_graph_features(
+async def test_models_advertise_sorted_features_and_tool_names(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
     sqlite_checkpointer,
@@ -77,6 +77,8 @@ async def test_retrieved_model_exposes_sorted_graph_features(
             GraphFeature.FILE_INPUTS,
             GraphFeature.MCP_TOOLS,
         },
+        server_tools={"web_search", "package_version"},
+        client_tools={"display_file"},
     )
 
     response = await openai_client.models.retrieve("test")
@@ -86,6 +88,8 @@ async def test_retrieved_model_exposes_sorted_graph_features(
     expected_extension = {
         "description": "DUMMY",
         "features": ["file_inputs", "interrupts", "mcp_tools"],
+        "server_tools": ["package_version", "web_search"],
+        "client_tools": ["display_file"],
     }
     assert extension == expected_extension
     assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)

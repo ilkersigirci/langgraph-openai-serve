@@ -26,7 +26,8 @@ The demo API registers these graph names as OpenAI models:
 - `interruptible-approval` accepts a preset choice or custom reviewer feedback
   before protected actions, then resumes from a standard OpenAI tool result.
 
-`GET /v1/models` lists the registered names. Detailed retrieval of one model
-can additionally advertise LGOS features and safe client settings.
+`GET /v1/models` lists the registered names with each model's LGOS
+description, features, and server and client tool names. Detailed retrieval of
+one model also returns its safe client settings.
 The [demo graph catalog](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/graphs/index.md)
 summarizes the models and their runtime requirements.

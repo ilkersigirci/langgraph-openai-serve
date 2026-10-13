@@ -33,15 +33,14 @@ Open WebUI runtime owns its dependencies.
 | `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `api-coding-agent` | Coding-agent showcase with a persistent workspace (currently Codex) | Local image build during Compose startup |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `ui/openwebui` | Open WebUI Function sync and raw-upload policy | Host-run locked sync tool plus the unchanged pinned official image |
+| `ui/openwebui` | Open WebUI Functions, their startup install, and runtime model info | Mounted into the pinned `homeserver-open-webui` image |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. Bifrost and LiteLLM gateway configurations
-live under `docker/configs/`. Compose runs the demo API image as two
-independently addressable services, `lgos-a` and `lgos-b`. They
-serve the same graphs under separate provider identities so the stack can
-exercise native Responses routing through either gateway. The independent
-`lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
+live under `docker/configs/`. Compose runs `lgos-demo-api` and the independent
+`lgos-api-coding-agent` under the shared `lgos/` model namespace to showcase
+native Responses routing across distinct APIs through either gateway. The
+independent `lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
 and Bifrost are both first-class UI gateways. LiteLLM's image is configured in
 `.env.example`; Bifrost is pinned in its `docker/apps/` Compose fragment. Set
 `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
@@ -61,22 +60,21 @@ bundled gateway through Docker Compose's native profiles. To reuse an existing
 LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
 `OPENAI_GATEWAY_BASE_URL` and `DEMO_GATEWAY_HOST_URL` to its HTTPS root (without
 `/v1`), and provide
-its shared key through `OPENAI_GATEWAY_API_KEY`. Chainlit can use that key with
+its shared key through `OPENAI_GATEWAY_API_KEY` and a dedicated non-admin key
+for the graph APIs through `DEMO_GRAPH_GATEWAY_API_KEY`. Chainlit can use that key with
 mock or SSO login, or enable [delegated OAuth](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/chainlit.md#persistence-and-login).
 This mode starts no gateway container.
 
-The `just demo/compose [--dev] [--otel]` variants wait for the
-selected gateway and its dependencies, including Chainlit, sync all graph catalogs
-in the selected gateway, then start and sync Open WebUI. Bifrost first prepares
-zero-priced graph rows and then publishes complete LGOS metadata through its
-native catalog API. Run `just demo/sync-bifrost [--dev]` and
-`just demo/sync-openwebui` after graph metadata changes. See
+The `just demo/compose [--dev] [--otel]` variants start the selected gateway
+first, then the LGOS services, including Chainlit, which assume it is running.
+They sync all graph catalogs into the gateway, then start Open WebUI. Bifrost's
+sync writes zero-priced graph rows and publishes complete LGOS metadata through
+its native catalog API. Run `just demo/sync-bifrost [--dev]` after graph
+metadata changes or a Bifrost restart. See
 [Bifrost catalog sync](../docs/demo/bifrost.md#declarative-model-metadata).
-For an independently
-deployed API, run
-`just demo/sync-litellm` after
-its health check. The source URL and public namespace are explicit arguments;
-no per-API sync service is needed. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+For LiteLLM, run `just demo/sync-litellm` with a `--source-url` for every API in
+the shared `lgos/` namespace after all sources are healthy. Include independently
+deployed APIs in the same invocation. See [model sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
 for usage and external administrator credentials.
 Make the demo backends reachable from the gateway.
 Configure its native Files provider separately. See the
@@ -114,24 +112,18 @@ dropped Linux capabilities, and explicit CPU, memory, PID, and file-descriptor
 limits.
 
 The [coding-agent showcase](../docs/demo/graphs/coding-agent.md)
-runs as a separate service in the stack. Select `lgos-api-coding-agent/coding-agent`
+runs as a separate service in the stack. Select `lgos/coding-agent`
 in either UI to edit files and run commands or tests in its persistent workspace,
 `docker/volumes/lgos-coding-agent`. Conversations share the workspace and run one at
-a time. Codex uses its own upstream model settings and the container's execution
-permissions. Use it with trusted users and repositories.
+a time. Codex calls its model through the selected gateway and runs with the
+container's execution permissions. Use it with trusted users and repositories.
 
 ## Run containers independently
 
-Run the published `lgos-a` container on port 3004:
+Run the published `lgos-demo-api` container on port 3004:
 
 ```bash
-just demo/up lgos-demo-api-a
-```
-
-Run the same published image as `lgos-b` on port 3005:
-
-```bash
-just demo/up lgos-demo-api-b
+just demo/up lgos-demo-api
 ```
 
 Run the central Files API on port 3006:
@@ -140,7 +132,8 @@ Run the central Files API on port 3006:
 just demo/up lgos-files-api
 ```
 
-Run one native Responses gateway with its graph API dependencies:
+Run one native Responses gateway. It starts alone; the LGOS services assume it
+is running:
 
 ```bash
 just demo/up lgos-bifrost
@@ -150,24 +143,25 @@ just demo/up lgos-litellm
 
 Both use host port 3000. Stop the running gateway before switching to the other.
 
-The bundled gateways start Chainlit on port 3002 as a dependency of the MCP
-reports. To run Chainlit with an external gateway:
+Run Chainlit on port 3002:
 
 ```bash
 just demo/up lgos-chainlit
 ```
 
-With Open WebUI running, synchronize the Functions, their gateway valves, and
-the generated Workspace Models:
+Run Open WebUI on port 3003:
 
 ```bash
-just demo/sync-openwebui
+just demo/up lgos-openwebui
 ```
 
-The recipe runs the locked `ui/openwebui` project on the host. It discovers
-models through `DEMO_GATEWAY_HOST_URL` with the shared `OPENAI_GATEWAY_API_KEY`,
-so the official Open WebUI image remains unchanged. Compose configures Open
-WebUI's gateway MCP connection from the same root and key.
+Open WebUI installs its Functions when it starts and reads each graph's
+description and settings from the gateway whenever it lists models. Its own
+OpenAI connection lists the gateway's other models. Compose
+mounts the integration's app factory into the pinned `homeserver-open-webui`
+image and configures the Generic Pipe and the
+gateway MCP connection from `OPENAI_GATEWAY_BASE_URL` and
+`OPENAI_GATEWAY_API_KEY`.
 
 Compose starts each selected service's dependencies. The APIs, background
 worker, and Chainlit apply pending database migrations when they start.
@@ -185,7 +179,6 @@ shown for the API processes, to overlay the parent LGOS checkout:
 
 ```bash
 just demo/api --editable
-just demo/api --editable --port 3005
 just demo/background-worker --editable
 just demo/files
 just demo/chainlit
@@ -197,7 +190,7 @@ Chainlit alongside that stack, use `just demo/chainlit --port 5000` and open
 `http://localhost:5000`.
 
 Just loads `demo/.env` into the process environment. Exported variables take
-precedence, so `LGOS_A_PORT=3104 just demo/api` overrides the default port.
+precedence, so `LGOS_DEMO_API_PORT=3104 just demo/api` overrides the default port.
 The equivalent recipe option is `just demo/api --port 3104`.
 
 ## Run the stack
@@ -209,11 +202,11 @@ just demo/compose
 ```
 
 The command leaves a healthy stack running in the background. It starts the
-selected gateway and its dependencies, including Chainlit, syncs LiteLLM when
-selected, then starts and syncs Open WebUI. The stack publishes the gateway on
-port 3000, PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003, `lgos-a` on 3004,
-`lgos-b` on 3005, and the Files API on 3006. `OPENAI_GATEWAY_TYPE` selects the
-UI gateway.
+selected gateway, then the LGOS services, including Chainlit, syncs the graph
+catalogs into the gateway, then starts Open WebUI. The stack publishes the gateway on
+port 3000, PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003,
+`lgos-demo-api` on 3004, and the Files API on 3006. `OPENAI_GATEWAY_TYPE` selects
+the UI gateway.
 
 From the LGOS source checkout, build the project-owned application images
 from their own lockfiles and run the API against the editable parent package:
@@ -232,6 +225,10 @@ For local source changes with the same overlay, use
 `just demo/compose --dev --otel`.
 See the repository's [demo OpenTelemetry guide](../docs/demo/opentelemetry.md)
 for signal ownership and the external gateway contract.
+
+Add `--sso` to sign users in to both UIs with OIDC and send each user's access
+token to the bundled LiteLLM, which validates it; fill the SSO section of
+`.env` first. See the [SSO overlay](../docs/demo/docker.md#sso-overlay).
 
 For deployment-specific infrastructure references, see the
 [self-hosted service references](../docs/demo/self-hosted.md).

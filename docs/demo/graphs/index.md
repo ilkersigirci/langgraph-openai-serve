@@ -7,7 +7,7 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
-| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, OpenAI-compatible vector service, and PostgreSQL |
+| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, upstream vector store, and PostgreSQL |
 | [`background-interrupt`](background-interrupt.md) | Deterministic background report preparation, human approval, and background resumption | `background`, `interrupts` | Hatchet and PostgreSQL checkpointer and run coordinator |
 | [`background-mock`](background-mock.md) | Deterministic background execution in an independently deployed worker, with no model call | `background` | Hatchet |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
@@ -27,6 +27,9 @@ demo model catalogs.
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`server-tool`](server-tool.md) | Installed package versions and OpenAI-compatible web search selected by the client | None | Upstream model plus SearXNG, Degoog, or upstream OpenAI search |
 | [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | None | Upstream chat and embedding models |
+
+Graphs reach every model dependency through the selected gateway; see
+[How Requests Flow](../architecture.md#how-requests-flow).
 
 The demo API opens its PostgreSQL runtime during application startup, so
 PostgreSQL must be available even when you call a provider-free graph. Start it

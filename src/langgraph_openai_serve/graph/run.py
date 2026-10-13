@@ -1,7 +1,12 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
 import uuid
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    AsyncExitStack,
+    nullcontext,
+)
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
@@ -31,7 +36,10 @@ from langgraph_openai_serve.graph.interrupt import (
     resume_command,
 )
 from langgraph_openai_serve.graph.request import GraphRequest
-from langgraph_openai_serve.integrations.langfuse import get_langfuse_callback
+from langgraph_openai_serve.integrations.langfuse import (
+    get_langfuse_callback,
+    trace_attributes,
+)
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 
 if TYPE_CHECKING:
@@ -124,6 +132,24 @@ class GraphRun:
                     self._delete_checkpoint = False
                     checkpointer = cast("BaseCheckpointSaver", self.graph.checkpointer)
                     await checkpointer.adelete_thread(self.interrupt.thread_id)
+
+    def langfuse_attributes(self) -> AbstractContextManager[object]:
+        """
+        Name this run's end user, session, and graph on its Langfuse observations.
+
+        Enter it where the graph's task starts. LangChain runs Langfuse's
+        handler on worker threads with a copy of the caller's context, so the
+        handler's own propagation reaches only the root observation, and the
+        model calls carrying the run's cost would have no user
+        (https://github.com/langfuse/langfuse/issues/16177).
+        """
+        if not settings.ENABLE_LANGFUSE:
+            return nullcontext()
+        return trace_attributes(
+            user_id=self.request.user or None,
+            session_id=self.request.metadata.get(CONVERSATION_METADATA_KEY) or None,
+            trace_name=self.request.model,
+        )
 
     def usage_metadata(self) -> UsageMetadata | None:
         """Return provider-reported usage aggregated across the graph run."""
@@ -236,8 +262,8 @@ def _runnable_config(
             run_callbacks.add_handler(handler)
 
     metadata = {"lgos.model": request.model}
-    if conversation_id := request.metadata.get(CONVERSATION_METADATA_KEY):
-        metadata["langfuse_session_id"] = conversation_id
+    if request.user:
+        metadata["lgos.user"] = request.user
     if isinstance(request_id := get_log_context().get("request_id"), str):
         metadata["lgos.request_id"] = request_id
     if interrupt_run is None:
