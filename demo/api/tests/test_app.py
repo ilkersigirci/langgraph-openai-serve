@@ -230,7 +230,7 @@ async def test_custom_io_demo_works_through_openai_client(
         store=False,
         model="custom-input-output-context",
         input=[{"role": "user", "content": "Show me custom schemas."}],
-        user="demo-user",
+        safety_identifier="demo-user",
     )
 
     assert response.output_text == ("demo-user asked: Show me custom schemas.")

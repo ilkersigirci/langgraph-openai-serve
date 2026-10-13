@@ -179,7 +179,7 @@ async def test_selected_settings_reach_the_responses_request(
             "model": "lgos/simple-graph",
             "input": [{"role": "user", "content": "Hello"}],
             "tools": [],
-            "user": "demo-user",
+            "safety_identifier": "demo-user",
             "metadata": {
                 "lgos_settings": (
                     '{"use_history":false,"mode":"detailed","assistant_name":"Guide"}'

@@ -99,7 +99,8 @@ def sync_models(
                             "model": f"openai/{model.id}",
                             "api_base": api_base,
                             "api_key": api_key,
-                            # LiteLLM does not assume custom models accept Chat's user.
+                            # LiteLLM forwards Chat's safety_identifier to any model,
+                            # but its deprecated user only to OpenAI's own models.
                             "allowed_openai_params": ["user"],
                         },
                         "model_info": info,

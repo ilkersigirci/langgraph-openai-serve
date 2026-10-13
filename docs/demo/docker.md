@@ -158,13 +158,13 @@ name the user in LiteLLM's `x-litellm-end-user-id` header. That key defaults to
 the shared key, which the bundled LiteLLM uses as its master key, so create a
 dedicated non-admin key in LiteLLM's Admin UI, such as one with the alias
 `lgos-graphs`, and set it before exposing the stack. Open WebUI and Chainlit
-send the token's subject as the OpenAI `user`, and LGOS passes it to the graph's
+send the token's subject as the OpenAI `safety_identifier`, and LGOS passes it to the graph's
 model calls, so LiteLLM attributes both the graph request and its model calls
 to that user.
-LiteLLM's Logs list one row per caller, so a graph question shows the user's
-row and the graph key's model-call rows. With the
+LiteLLM's Logs group a session's rows per key, so a graph question shows the
+user's row and the graph key's model-call rows. With the
 [OpenTelemetry overlay](opentelemetry.md), both share one W3C trace ID as their
-session, and an admin opening either row sees the whole trace.
+session; an admin clicking either row's Session ID sees the whole trace.
 
 The overlay applies to the stack it starts; `just demo/up` recreates a service
 without it. See [Chainlit login](chainlit.md#persistence-and-login) and

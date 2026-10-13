@@ -90,8 +90,8 @@ one typed graph:
 
 1. `request_to_input` takes the final OpenAI message and returns
    `{"question": ...}` instead of the default message-state input.
-2. `context_factory` maps OpenAI `user` to immutable `AppContext`, falling back
-   to `anonymous` when it is absent.
+2. `context_factory` maps the end user, OpenAI `safety_identifier`, to immutable
+   `AppContext`, falling back to `anonymous` when it is absent.
 3. `generate` returns the graph-native `{"answer": ...}` output.
 4. `output_to_message` converts that output to the final `AIMessage`.
 
@@ -223,7 +223,7 @@ streaming and standard OpenAI function-call output.
 
 | Model | Prompt | Optional request value |
 | --- | --- | --- |
-| `custom-input-output-context` | `Show me custom schemas.` | `user="demo-user"` |
+| `custom-input-output-context` | `Show me custom schemas.` | `safety_identifier="demo-user"` |
 | `mcp-mock` | `What is the weather in Istanbul?` | None |
 | `multi-node-streaming` | `Build one answer from two nodes.` | None |
 | `response-outcomes` | `refusal` or `incomplete` | None |

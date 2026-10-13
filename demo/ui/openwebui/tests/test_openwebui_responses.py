@@ -296,7 +296,7 @@ async def test_additive_host_fields_are_ignored_at_the_validated_boundary(
         {"role": "user", "content": "Refund ORDER-123"}
     ]
     assert create.await_args.kwargs["metadata"] == {"conversation_id": "thread-123"}
-    assert create.await_args.kwargs["user"] == "user-123"
+    assert create.await_args.kwargs["safety_identifier"] == "user-123"
 
 
 async def collect(
@@ -601,7 +601,7 @@ async def test_requests_name_the_user_the_gateway_verifies(
 
     # Under SSO the gateway bills the token's subject, so the graph's own model
     # calls name the same user.
-    assert create.await_args.kwargs["user"] == gateway_user
+    assert create.await_args.kwargs["safety_identifier"] == gateway_user
 
 
 async def test_non_streaming_request_uses_responses_and_final_answer_only(
@@ -623,7 +623,8 @@ async def test_non_streaming_request_uses_responses_and_final_answer_only(
     assert "extra_headers" not in request
     assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
     assert request["store"] is False
-    assert request["user"] == "user-123"
+    assert request["safety_identifier"] == "user-123"
+    assert "user" not in request
     assert request["metadata"] == {
         "conversation_id": "thread-123",
         "lgos_settings": '{"audience":"expert"}',

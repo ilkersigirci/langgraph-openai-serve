@@ -415,8 +415,9 @@ The shared Pipe maps Open WebUI's stable `chat_id` to
 `metadata.conversation_id` on every Responses request, including the UserValves example.
 Langfuse can therefore group the
 chat's independent request traces into one session, while Open WebUI continues
-to own and resend the conversation history. The generic Pipe also forwards the
-opaque Open WebUI user ID as the standard OpenAI `user`; `persistent-plot-agent` uses
+to own and resend the conversation history. The generic Pipe also sends the
+user's OIDC subject, or Open WebUI's user ID without SSO, as the standard OpenAI
+`safety_identifier`; `persistent-plot-agent` uses
 both values to scope its chart document. Interrupt resumes reuse the same
 conversation value. See the
 [persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)

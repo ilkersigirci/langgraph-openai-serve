@@ -121,7 +121,7 @@ async def test_bifrost_native_responses_preserve_file_input() -> None:
                     }
                 ],
                 store=False,
-                user="gateway-user",
+                safety_identifier="gateway-user",
             )
             assert response.output_text.startswith("gateway-user asked:")
             assert uploaded.id in response.output_text
@@ -164,7 +164,7 @@ async def test_bifrost_native_responses_preserve_standard_fields() -> None:
             model="lgos/custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
-            user="gateway-user",
+            safety_identifier="gateway-user",
         )
 
     assert response.output_text == (

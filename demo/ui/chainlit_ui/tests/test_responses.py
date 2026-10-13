@@ -274,7 +274,7 @@ async def test_client_tool_continuation_replays_the_turn_and_keeps_answer_text(
         "model": "lgos/persistent-plot-agent",
         "input": history,
         "tools": [DISPLAY_FILE_TOOL],
-        "user": "demo-user",
+        "safety_identifier": "demo-user",
         "metadata": {"conversation_id": session.thread_id},
         "store": False,
         **({"stream": True} if streaming else {}),
@@ -560,7 +560,13 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
     resume = fake_gateway.bodies("/v1/responses")[-1]
     assert {
         key: resume[key]
-        for key in ("model", "previous_response_id", "input", "tools", "user")
+        for key in (
+            "model",
+            "previous_response_id",
+            "input",
+            "tools",
+            "safety_identifier",
+        )
     } == {
         "model": model_id,
         "previous_response_id": "resp_lg_review",
@@ -572,7 +578,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
             }
         ],
         "tools": [],
-        "user": "demo-user",
+        "safety_identifier": "demo-user",
     }
     assert resume["metadata"] == {"conversation_id": chainlit_context.session.thread_id}
     assert (resume.get("background", False), resume["store"]) == (

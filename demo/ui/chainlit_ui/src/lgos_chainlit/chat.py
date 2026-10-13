@@ -328,7 +328,8 @@ async def _request_response(
         "input": input_items,
         "previous_response_id": previous_response_id,
         "tools": response_tools(),
-        "user": authenticated_user_identifier(),
+        # OpenAI's end-user field, which replaces the deprecated `user`.
+        "safety_identifier": authenticated_user_identifier(),
         "metadata": {
             **chat_settings_metadata(),
             CONVERSATION_METADATA_KEY: cl.context.session.thread_id,

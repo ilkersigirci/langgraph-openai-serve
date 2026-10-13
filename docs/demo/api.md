@@ -87,7 +87,7 @@ response = client.responses.create(
     model="custom-input-output-context",
     input="Show me the custom adapter.",
     store=False,
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 print(response.output_text)
@@ -162,7 +162,7 @@ stream = client.responses.create(
     input="Prepare the media workflow.",
     store=False,
     stream=True,
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 phases = {}

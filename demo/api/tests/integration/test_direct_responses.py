@@ -78,7 +78,7 @@ async def test_direct_responses_preserve_file_input() -> None:
                 }
             ],
             store=False,
-            user="direct-user",
+            safety_identifier="direct-user",
         )
 
     assert response.output_text.startswith("direct-user asked:")
@@ -91,7 +91,7 @@ async def test_direct_responses_preserve_text_and_stream() -> None:
             model="custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
-            user="direct-user",
+            safety_identifier="direct-user",
         )
         assert response.output_text == (
             "direct-user asked: Where is the routing boundary?"
@@ -103,7 +103,7 @@ async def test_direct_responses_preserve_text_and_stream() -> None:
             model="custom-input-output-context",
             input="Stream directly.",
             store=False,
-            user="direct-user",
+            safety_identifier="direct-user",
             stream=True,
         )
         events = [event async for event in stream]

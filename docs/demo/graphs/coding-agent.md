@@ -37,7 +37,7 @@ flowchart LR
 ```
 
 1. The UI submits its text conversation history with model
-   `lgos/coding-agent`, its user identifier as OpenAI `user`,
+   `lgos/coding-agent`, its user identifier as OpenAI `safety_identifier`,
    and its thread or chat identifier as `metadata.conversation_id`. The gateway
    forwards it directly to the coding-agent service's `/v1` API.
 2. A LangChain chat adapter starts a fresh Codex runtime in `/workspace`. It
@@ -55,12 +55,12 @@ flowchart LR
 
 The demo reuses its existing LiteLLM model sync and Bifrost provider/catalog
 configuration. There is one coding-agent service and no additional proxy or gateway
-credential provisioning job; its model calls use the shared gateway key.
+credential provisioning job; its model calls use `DEMO_GRAPH_GATEWAY_API_KEY`.
 
 ## Streaming and State
 
 Codex owns the memory of a conversation. The service names each Codex thread
-with a hash of `user` and `metadata.conversation_id` and
+with a hash of `safety_identifier` and `metadata.conversation_id` and
 [resumes](https://github.com/openai/codex/blob/main/sdk/python/docs/getting-started.md)
 it on later requests, so Codex keeps its own record of the commands it ran and
 their output. The history the UI sends is then used only to start a thread.
@@ -80,8 +80,8 @@ and logs a warning.
 
 !!! note "Conversation IDs are not authorization"
 
-    `user` and `metadata.conversation_id` are request correlation values. Any
-    caller that sends the same pair continues that thread.
+    `safety_identifier` and `metadata.conversation_id` are request correlation
+    values. Any caller that sends the same pair continues that thread.
 
 Files persist in the mounted workspace across requests and container restarts.
 All conversations use the same workspace; the single service process serializes
@@ -183,7 +183,7 @@ and avoids a custom seccomp profile for a nested sandbox.
 !!! note "Shared coding workspace"
 
     Use this service with trusted users and repositories. Codex can access the
-    mounted workspace, network, and the shared gateway key it uses for model
+    mounted workspace, network, and the graph APIs' gateway key it uses for model
     calls, which also authorizes the gateway's other demo models and MCP tools. The
     container receives no database or S3 credentials, host Codex login, or
     Docker socket, but it shares the demo network and can reach the other demo

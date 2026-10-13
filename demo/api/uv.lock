@@ -1322,7 +1322,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.29.0"
+version = "0.30.0rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1335,9 +1335,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/45/c67e5d07531e452b7763be7d53a8061bb302ad589bfcf832617263655139/langgraph_openai_serve-0.29.0.tar.gz", hash = "sha256:eb7ae86e2612c5ea6c16b9f1938c72632f72913fe72d2b75ed0873e85953bf34", size = 62088, upload-time = "2026-10-07T13:24:51.365Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/87/6f/18c3a111a9b68f5277dd5ecce7b6812a5b3974195e8ec0357f5b138962ea/langgraph_openai_serve-0.30.0rc1.tar.gz", hash = "sha256:6106eb627910895e18ac451401f3b6bbb4ac82050154efa5b2c27fb1b430c59f", size = 62499, upload-time = "2026-10-13T11:37:11.693Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/12/538523083253426b91f06cda0bb5dc4006998cc43f4389a197bf0cb01843/langgraph_openai_serve-0.29.0-py3-none-any.whl", hash = "sha256:a2030007d4e9d5ad26320a7daa4ecd5fa1cd937b2bada508352d34e996b25477", size = 87585, upload-time = "2026-10-07T13:24:50.102Z" },
+    { url = "https://files.pythonhosted.org/packages/70/d5/3cedd28a5c73265921b433fed3acb7bf3293017ee3b72f5c11f32be57aed/langgraph_openai_serve-0.30.0rc1-py3-none-any.whl", hash = "sha256:b7a283e22a26cb737a8d629270d4df48c945bf23970c2604221e456dbf7c871b", size = 88095, upload-time = "2026-10-13T11:37:10.087Z" },
 ]
 
 [package.optional-dependencies]
@@ -1449,7 +1449,7 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.13,<3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.29.0" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.30.0rc1" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "plotly", specifier = ">=6,<7" },
 ]

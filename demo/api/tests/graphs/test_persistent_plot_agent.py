@@ -77,7 +77,7 @@ def _last_tool_result(result: dict[str, Any]) -> str:
 @pytest.mark.parametrize(
     ("user", "metadata", "param"),
     [
-        (None, {"conversation_id": "thread-1"}, "user"),
+        (None, {"conversation_id": "thread-1"}, "safety_identifier"),
         ("user-1", None, "metadata.conversation_id"),
     ],
 )

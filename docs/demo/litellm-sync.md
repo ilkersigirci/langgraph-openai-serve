@@ -76,9 +76,10 @@ and provide that variable to the job through Compose's `environment` or
 - Validates every source catalog before writing. Duplicate graph IDs across APIs and
   conflicting deployments not owned by this sync are rejected.
 - Creates missing `<prefix>/<model>` deployments with the full LGOS metadata
-  and native streaming enabled. New deployments also allow Chat `user` forwarding
-  via [`allowed_openai_params: [user]`](https://docs.litellm.ai/docs/completion/drop_params#set-allowed_openai_params-on-configyaml).
-  This is caller-supplied context, not authentication. Models without
+  and native streaming enabled. LiteLLM forwards the end-user `safety_identifier`
+  to them; new deployments also forward Chat's deprecated `user` alias via
+  [`allowed_openai_params: [user]`](https://docs.litellm.ai/docs/completion/drop_params#set-allowed_openai_params-on-configyaml).
+  Both are caller-supplied context, not authentication. Models without
   `model_info.lgos` are not shown by the UI integrations.
 - Updates only changed LGOS and streaming metadata. Existing routing,
   credentials, pricing, and rate limits are preserved.

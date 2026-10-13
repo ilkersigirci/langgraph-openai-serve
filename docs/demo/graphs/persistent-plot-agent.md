@@ -30,7 +30,7 @@ graph TD;
 ## Request Flow
 
 Both Chainlit and Open WebUI send their current model-context messages, a
-UI-provided user identifier as OpenAI `user`, and their stable thread or chat
+UI-provided user identifier as OpenAI `safety_identifier`, and their stable thread or chat
 identifier as `metadata.conversation_id`.
 
 ```mermaid
@@ -62,7 +62,7 @@ sequenceDiagram
 
 For each request:
 
-1. LGOS validates `user`, `metadata.conversation_id`, and the request-scoped chart
+1. LGOS validates `safety_identifier`, `metadata.conversation_id`, and the request-scoped chart
    settings.
 2. The agent selects the read or update tool from the user's natural-language
    request.
@@ -163,7 +163,7 @@ services and database layout.
 
 !!! warning "Correlation is not authorization"
 
-    `user` and `conversation_id` are request correlation values. A production
+    `safety_identifier` and `conversation_id` are request correlation values. A production
     application must derive them from authenticated server state and define a
     retention policy for stored chart documents.
 

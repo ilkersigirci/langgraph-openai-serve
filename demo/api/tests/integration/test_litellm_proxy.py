@@ -84,7 +84,7 @@ async def test_litellm_model_info_requires_gateway_authentication() -> None:
 
 
 @pytest.mark.parametrize("stream", [False, True])
-async def test_litellm_native_chat_preserves_user(stream: bool) -> None:
+async def test_litellm_native_chat_preserves_safety_identifier(stream: bool) -> None:
     assert LITELLM_BASE_URL is not None
     async with AsyncOpenAI(
         base_url=LITELLM_BASE_URL,
@@ -95,7 +95,7 @@ async def test_litellm_native_chat_preserves_user(stream: bool) -> None:
         response = await client.chat.completions.create(
             model="lgos/custom-input-output-context",
             messages=[{"role": "user", "content": "Preserve my request context."}],
-            user="gateway-user",
+            safety_identifier="gateway-user",
             stream=stream,
         )
         if stream:
@@ -137,7 +137,7 @@ async def test_litellm_ui_catalog_drives_managed_responses() -> None:
             model=model["model_name"],
             input="Use the catalog model through managed routing.",
             store=False,
-            user="gateway-user",
+            safety_identifier="gateway-user",
         )
 
     assert response.output_text == (
@@ -205,7 +205,7 @@ async def test_litellm_native_responses_preserve_file_input() -> None:
                     }
                 ],
                 store=False,
-                user="gateway-user",
+                safety_identifier="gateway-user",
             )
             assert response.output_text.startswith("gateway-user asked:")
             assert uploaded.id in response.output_text
@@ -230,7 +230,7 @@ async def test_litellm_native_responses_preserve_lgos_output() -> None:
             model="lgos/custom-input-output-context",
             input="Where is the routing boundary?",
             store=False,
-            user="gateway-user",
+            safety_identifier="gateway-user",
         )
         assert response.output_text == (
             "gateway-user asked: Where is the routing boundary?"
@@ -242,7 +242,7 @@ async def test_litellm_native_responses_preserve_lgos_output() -> None:
             model="lgos/custom-input-output-context",
             input="Stream through the gateway.",
             store=False,
-            user="gateway-user",
+            safety_identifier="gateway-user",
             stream=True,
         )
         events = [event async for event in stream]

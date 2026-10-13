@@ -11,7 +11,7 @@ package.
 
     With `responses` and `responses_stream` enabled for the graph providers,
     the bundled Bifrost gateway's normalized
-    `/openai/v1` route preserves the tested `user`, `input_file`,
+    `/openai/v1` route preserves the tested `safety_identifier`, `input_file`,
     function-continuation, final-answer `phase`, and multiple commentary
     `phase` and `store: false` contracts, plus the upstream error `type` and
     `param`. Normalized model detail does not expose LGOS extensions, and

@@ -334,8 +334,10 @@ def output_to_message(output: Any) -> AIMessage:
 
 def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
     if not request.user:
-        msg = "user is required for persistent plot agent storage."
-        raise InvalidRequestError(msg, param="user", code="missing_persistence_scope")
+        msg = "safety_identifier is required for persistent plot agent storage."
+        raise InvalidRequestError(
+            msg, param="safety_identifier", code="missing_persistence_scope"
+        )
     conversation_parameter = f"metadata.{CONVERSATION_METADATA_KEY}"
     conversation_id = request.metadata.get(CONVERSATION_METADATA_KEY)
     if not conversation_id:

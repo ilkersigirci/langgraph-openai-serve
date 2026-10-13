@@ -265,7 +265,8 @@ def _responses_request(
     if metadata:
         request["metadata"] = metadata
     if user_id is not None:
-        request["user"] = user_id
+        # OpenAI's end-user field, which replaces the deprecated `user`.
+        request["safety_identifier"] = user_id
     if previous_response_id is not None:
         request["previous_response_id"] = previous_response_id
     return request

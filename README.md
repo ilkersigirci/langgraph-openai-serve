@@ -87,7 +87,7 @@ response = client.responses.create(
     model="custom-input-output-context",
     input="Show me custom schemas.",
     store=False,
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 print(response.output_text)
@@ -100,7 +100,7 @@ same base URL:
 completion = client.chat.completions.create(
     model="custom-input-output-context",
     messages=[{"role": "user", "content": "Show me custom schemas."}],
-    user="demo-user",
+    safety_identifier="demo-user",
 )
 
 print(completion.choices[0].message.content)

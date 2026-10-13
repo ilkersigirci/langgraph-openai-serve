@@ -286,7 +286,7 @@ Opening a stored thread restores its role/content transcript and continues with
 the same login identity. The adapter also sends Chainlit's stable thread ID as
 `metadata.conversation_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
-combines that value with the authenticated OpenAI `user` to scope its LangGraph
+combines that value with the authenticated `safety_identifier` to scope its LangGraph
 chart document. The transcript remains owned and resent by Chainlit; no chat
 history is added to LGOS. See the
 [persistent plot agent ownership flow](graphs/persistent-plot-agent.md#ownership-boundaries)
