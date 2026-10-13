@@ -1322,7 +1322,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.30.0rc2"
+version = "0.30.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1335,9 +1335,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/18/3b/24934b88da5e6838fa7efafd2444c13ba36c55d9dcf742faa640faea7d0e/langgraph_openai_serve-0.30.0rc2.tar.gz", hash = "sha256:b18850121125ac9194573e4271802f4225a3ee40e3e64966e01c3b61f56b7904", size = 62831, upload-time = "2026-10-13T14:19:05.623Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/2a/b379db25d1b2b24ea1857349ae09b8c762d9158ea147bbe3c3a3383143fe/langgraph_openai_serve-0.30.0.tar.gz", hash = "sha256:4fa44e364ae09806902e41b23b8cce632e350b8674af535c869e0b10e9d2067b", size = 62891, upload-time = "2026-10-13T19:17:47.231Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/2a/eb4fd65b32c2ca786d3a1be560d19b71dd29df63c404a686b776d73e7c60/langgraph_openai_serve-0.30.0rc2-py3-none-any.whl", hash = "sha256:4e2ab7bb6eb53d41843d2b17fb4dcdaefbed332c1bdddf0b81140dc45e4f05b5", size = 88539, upload-time = "2026-10-13T14:19:04.154Z" },
+    { url = "https://files.pythonhosted.org/packages/21/60/100fe010a27798e142bba03a6cce636d44634ea5440e659ab5a6934d65cf/langgraph_openai_serve-0.30.0-py3-none-any.whl", hash = "sha256:2a8d22f9e6916695f71ff28d59adad9e7bcb8b2919702e5ad1aed0fc506ec453", size = 88407, upload-time = "2026-10-13T19:17:45.647Z" },
 ]
 
 [package.optional-dependencies]
@@ -1352,6 +1352,7 @@ server = [
     { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-instrumentation-psycopg" },
+    { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "structlog" },
@@ -1449,7 +1450,7 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.13,<3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.30.0rc2" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.30.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "plotly", specifier = ">=6,<7" },
 ]

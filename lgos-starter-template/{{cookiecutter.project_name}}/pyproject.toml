@@ -16,7 +16,7 @@ dependencies = [
     "langchain-core>=1.6.6,<2",
     "langchain-openai>=1.6.6",
     "langgraph>=1.2.6,<2",
-    "langgraph-openai-serve[server]>=0.29.0,<0.30",
+    "langgraph-openai-serve[server]>=0.30.0,<0.31",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9,<3",
 ]

@@ -255,15 +255,16 @@ exporter queue, capacity, send-failure, and rejected-data metrics in that backen
 ## Langfuse Remains Separate
 
 When `LGOS_ENABLE_LANGFUSE=True`, LGOS adds the Langfuse callback to graph runs.
-Langfuse exports its observations through its native integration; the local
-Collector is not a Langfuse proxy. LGOS keeps its workflow span out of Langfuse,
-so each Langfuse trace starts at the callback's `lgos.graph_run` observation. Do
-not add a second Langfuse exporter unless the deployment intentionally owns and
-tests that additional path.
+Langfuse records its observations through a tracer provider of its own and
+exports them to Langfuse directly, so they never enter this Collector's
+pipeline; the local Collector is not a Langfuse proxy. LGOS's workflow span
+stays out of Langfuse, so each Langfuse trace starts at the callback's
+`lgos.graph_run` observation, and it shares its trace ID with the run's
+OpenTelemetry trace. Do not add a second Langfuse exporter unless the deployment
+intentionally owns and tests that additional path.
 
-The Collector removes known Langfuse and GenAI payload attributes only from the
-general OTLP pipeline. Configure Langfuse's own masking and retention policy
-before enabling it for sensitive workloads.
+Langfuse stores model inputs and outputs. Configure its own masking and
+retention policy before enabling it for sensitive workloads.
 
 ## Deployment Responsibilities
 
