@@ -10,10 +10,10 @@ import re
 from importlib.metadata import version
 from typing import Any, Literal, NamedTuple
 
-from _shared import item_input, main, run, score
+from _shared import main, run, score
 from langchain_core.messages import convert_to_messages
 from langfuse import Evaluation, RunnerContext
-from langfuse.experiment import ExperimentItem, ExperimentResult, LocalExperimentItem
+from langfuse.experiment import ExperimentResult, LocalExperimentItem
 from langfuse.langchain import CallbackHandler
 from langgraph_openai_serve.graph.citations import citations_from_message
 
@@ -299,8 +299,8 @@ ITEMS = [_item(case) for case in CASES]
 _GRAPH = create_lgos_rag_graph()
 
 
-async def _answer(*, item: ExperimentItem, **_kwargs: Any) -> dict[str, Any]:
-    case = item_input(item)
+async def _answer(*, item: LocalExperimentItem, **_kwargs: Any) -> dict[str, Any]:
+    case = item["input"]
     state = await _GRAPH.ainvoke(
         {"messages": convert_to_messages(case["messages"])},
         # The handler records the graph's calls in the case's trace.

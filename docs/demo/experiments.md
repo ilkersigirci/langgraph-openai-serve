@@ -36,7 +36,7 @@ just demo/experiment lgos-rag --no-langfuse
 
 ```mermaid
 flowchart TD
-  sync["Sync the dataset from the script's cases"] --> run["Run the graph on every item"]
+  sync["Sync the dataset from the script's cases"] --> run["Run the graph on every synced case"]
   run --> checks["Score each check as pass or fail"]
   checks --> passed["Score the case passed when every check passed"]
   passed --> rate["Score the run's pass_rate"]
@@ -50,11 +50,13 @@ flowchart TD
    experiment, hold exactly them: it adds or updates changed cases and archives
    removed ones. Add cases in the script, not in Langfuse, which each run
    overwrites.
-2. The Langfuse experiment runner runs the graph on every item and records its
-   calls in the item's trace.
+2. The Langfuse experiment runner runs the graph on the items the run synced,
+   not on a fresh read of the dataset, so a concurrent run of other cases cannot
+   swap them. It records each case's graph calls in its trace.
 3. Each check that applies to a case becomes a `BOOLEAN` score, and the case is
    scored `passed` when it has checks and passes all of them. An evaluator that
-   raises fails its case with a score named after it, holding the error.
+   raises, returns anything but checks, or names a check `passed` fails its case
+   with a score named after it, holding the error.
 4. The run's `pass_rate` is the share of all cases scored `passed`. A case whose
    graph run raised has no scores, so it counts as failed, and its trace holds
    the error. The run's metadata records the evaluator version and the settings
@@ -63,9 +65,10 @@ flowchart TD
    few failing cases. Beyond that, the run raises `RegressionError` with each
    failing case and its failed checks.
 
-In Langfuse, **Datasets** shows each experiment's cases, and **Experiments** shows
-its runs. Compare two runs to see which cases a prompt, model, or retrieval
-change fixed or broke, or filter a run's items by `passed` to open the failures.
+In Langfuse, **Datasets** shows each experiment's cases and their versions, and
+**Experiments** shows its runs. Compare two runs to see which cases a prompt,
+model, or retrieval change fixed or broke, or filter a run's items by `passed`
+to open the failures.
 
 ## Add An Experiment
 
@@ -73,10 +76,11 @@ A new experiment, such as `experiments/advanced_graph.py`, is a Langfuse
 [experiment script](https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk)
 that leaves the dataset sync and the gate to `experiments/_shared.py`:
 
-- `ITEMS`: local dataset items, each with an `input`, an `expected_output`, and
-  a unique `metadata.case_id` that names the case.
+- `ITEMS`: local experiment items, each with an `input`, an `expected_output`,
+  and a unique `metadata.case_id` that names the case.
 - A task, `async def task(*, item, **kwargs)`, that runs the graph on
-  `item_input(item)` and returns what the checks need. Pass the graph a
+  `item["input"]` and returns what the checks need. It receives every item as a
+  local one, hosted or not. Pass the graph a
   Langfuse `CallbackHandler()` in its callbacks, so the item's trace holds the
   graph's calls.
 - An evaluator, `def checks(*, input, output, expected_output, **kwargs)`, that
@@ -85,20 +89,22 @@ that leaves the dataset sync and the gate to `experiments/_shared.py`:
   description, items, task, evaluators, failure budget, and metadata. Record an
   `evaluator_version` in the metadata, and change it when a check changes, so
   runs graded differently are not compared.
-- `main(experiment, ITEMS)` under `if __name__ == "__main__":`.
+- `main(experiment, ITEMS)` under `if __name__ == "__main__":`; without
+  Langfuse, it runs `ITEMS` locally.
 
 `run` rejects an experiment without cases or with a repeated case ID.
 `just demo/experiment advanced-graph` then runs the script.
 
 ## Run In CI
 
-The scripts follow the Langfuse experiment runner convention, so the
-[Langfuse experiment action](https://github.com/langfuse/experiment-action) can
-run them unchanged. Point its `experiment_path` at `demo/api/experiments`: it
-skips files that start with `_` and puts the folder on `sys.path`, so
-`_shared.py` is imported, not run. Leave its `dataset_name` unset, because each
-script syncs its own dataset; the action still records the commit, branch, and
-job in the run's metadata. The action runs the first `python` on `PATH`, so
-install the API project, put its virtual environment first on `PATH`, and set
-`should_skip_sdk_installation: "true"`. Give the job the gateway's URL and key
-too, because the experiments call real models.
+The scripts follow the Langfuse experiment runner convention, so the [Langfuse
+experiment action](https://github.com/langfuse/experiment-action) can run them
+unchanged. Point its `experiment_path` at `demo/api/experiments`: it skips files
+that start with `_` and puts the folder on `sys.path`, so `_shared.py` is
+imported, not run. Without a `dataset_name`, each script syncs and runs its own
+cases. With one, the script runs the dataset the action loads, such as a
+reviewed `dataset_version` that CI pins. Either way, the action records the
+commit, branch, and job in the run's metadata. The action runs the first
+`python` on `PATH`, so install the API project, put its virtual environment
+first on `PATH`, and set `should_skip_sdk_installation: "true"`. Give the job
+the gateway's URL and key too, because the experiments call real models.

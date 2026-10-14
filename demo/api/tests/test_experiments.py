@@ -1,11 +1,13 @@
+from datetime import UTC, datetime
+from types import FunctionType, SimpleNamespace
 from typing import Any
 
 import pytest
-from _shared import item_input, run, score
+from _shared import run, score
 from langfuse import Evaluation, Langfuse, RegressionError, RunnerContext
+from langfuse.api import DatasetItem, DatasetStatus
 from langfuse.experiment import (
     EvaluatorFunction,
-    ExperimentItem,
     ExperimentResult,
     LocalExperimentItem,
 )
@@ -20,11 +22,11 @@ ITEMS: list[LocalExperimentItem] = [
 ]
 
 
-async def _double(*, item: ExperimentItem, **_kwargs: Any) -> int:
-    if item_input(item) == 1:
+async def _double(*, item: LocalExperimentItem, **_kwargs: Any) -> int:
+    if item["input"] == 1:
         msg = "the gateway is down"
         raise RuntimeError(msg)
-    return item_input(item) * 2
+    return item["input"] * 2
 
 
 def checks(
@@ -105,15 +107,155 @@ def test_async_evaluators_score_cases() -> None:
     ] == [("double", 1.0), ("passed", 1.0)]
 
 
+def verdict_named(**_kwargs: Any) -> Evaluation:
+    return score("passed", passed=True)
+
+
+def malformed(**_kwargs: Any) -> dict[str, Any]:
+    return {"nme": "typo", "value": 0}
+
+
+def unscored(**_kwargs: Any) -> None:
+    return None
+
+
+@pytest.mark.parametrize("evaluator", [verdict_named, malformed, unscored])
+def test_an_evaluator_that_returns_no_valid_checks_fails_its_case(
+    evaluator: FunctionType,
+) -> None:
+    # Another evaluator's passing check must not carry the case.
+    with pytest.raises(RegressionError, match="1 of 1 cases failed") as error:
+        _run(ITEMS[2:], max_failures=0, evaluators=[checks, evaluator])
+    assert f"case 3: {evaluator.__name__}: " in str(error.value)
+
+
+REPEATED: list[LocalExperimentItem] = [
+    ITEMS[2],
+    {**ITEMS[0], "metadata": ITEMS[2]["metadata"]},
+]
+
+
 @pytest.mark.parametrize(
-    "items",
+    ("items", "data"),
     [
-        pytest.param([], id="no-cases"),
-        pytest.param(
-            [ITEMS[2], {**ITEMS[0], "metadata": ITEMS[2]["metadata"]}], id="repeated-id"
-        ),
+        pytest.param([], [], id="no-cases"),
+        # The Langfuse action can bring an empty dataset.
+        pytest.param(ITEMS, [], id="no-data"),
+        pytest.param(REPEATED, REPEATED, id="repeated-id"),
     ],
 )
-def test_cases_must_exist_with_unique_ids(items: list[LocalExperimentItem]) -> None:
+def test_a_run_needs_cases_with_unique_ids(
+    items: list[LocalExperimentItem], data: list[LocalExperimentItem]
+) -> None:
     with pytest.raises(ValueError, match=r"no cases|repeats case IDs"):
-        _run(items, max_failures=0)
+        run(
+            RunnerContext(client=Langfuse(tracing_enabled=False), data=data),
+            name="unit",
+            description="unit",
+            items=items,
+            task=_double,
+            evaluators=[checks],
+            max_failures=0,
+            metadata={},
+        )
+
+
+class _Datasets:
+    """A hosted dataset store; a rival run may sync its own cases mid-sync."""
+
+    def __init__(self, *hosted: DatasetItem, rival: DatasetItem | None = None) -> None:
+        self.items = {item.id: item for item in hosted}
+        self.writes: list[tuple[str, DatasetStatus]] = []
+        self.rival = rival
+
+    def create_dataset(self, **_kwargs: Any) -> None:
+        pass
+
+    def get_dataset(self, name: str) -> SimpleNamespace:
+        active = [i for i in self.items.values() if i.status == DatasetStatus.ACTIVE]
+        return SimpleNamespace(items=active)
+
+    def create_dataset_item(self, **fields: Any) -> DatasetItem:
+        item = _hosted(**fields)
+        self.items[item.id] = item
+        self.writes.append((item.id, item.status))
+        if self.rival:
+            # The rival archives this run's cases and adds its own.
+            for item_id, other in self.items.items():
+                self.items[item_id] = other.model_copy(
+                    update={"status": DatasetStatus.ARCHIVED}
+                )
+            self.items[self.rival.id], self.rival = self.rival, None
+        return item
+
+
+def _hosted(**fields: Any) -> DatasetItem:
+    now = datetime.now(UTC)
+    return DatasetItem.model_validate(
+        {
+            "status": DatasetStatus.ACTIVE,
+            "dataset_id": "dataset",
+            "dataset_name": "unit",
+            "created_at": now,
+            "updated_at": now,
+            "media_references": [],
+            **fields,
+        }
+    )
+
+
+def _sync_and_run(
+    datasets: _Datasets, monkeypatch: pytest.MonkeyPatch
+) -> ExperimentResult:
+    # A closed local port fails the runner's project lookup at once.
+    client = Langfuse(
+        public_key="unit",
+        secret_key="unit",
+        base_url="http://127.0.0.1:9",
+        tracing_enabled=False,
+    )
+    for method in ("create_dataset", "get_dataset", "create_dataset_item"):
+        monkeypatch.setattr(client, method, getattr(datasets, method))
+    return run(
+        RunnerContext(client=client),
+        name="unit",
+        description="unit",
+        items=ITEMS[2:],
+        task=_double,
+        evaluators=[checks],
+        max_failures=0,
+        metadata={},
+    )
+
+
+def test_a_run_evaluates_the_cases_it_synced(monkeypatch: pytest.MonkeyPatch) -> None:
+    rival = _hosted(
+        id="unit-rival", input=4, expected_output=8, metadata={"case_id": "rival"}
+    )
+    result = _sync_and_run(_Datasets(rival=rival), monkeypatch)
+
+    (item_result,) = result.item_results
+    assert isinstance(item_result.item, DatasetItem)
+    assert item_result.item.metadata == {"case_id": "case 3"}
+    assert item_result.output == 6
+
+
+def test_a_sync_writes_only_changed_and_removed_cases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed = _hosted(
+        id="unit-removed", input=5, expected_output=10, metadata={"case_id": "case 5"}
+    )
+    datasets = _Datasets(removed)
+    _sync_and_run(datasets, monkeypatch)
+    (added,) = [item_id for item_id, _ in datasets.writes if item_id != removed.id]
+    writes = list(datasets.writes)
+
+    # A second sync of the same cases rewrites nothing.
+    _sync_and_run(datasets, monkeypatch)
+
+    assert writes == [
+        (added, DatasetStatus.ACTIVE),
+        (removed.id, DatasetStatus.ARCHIVED),
+    ]
+    assert datasets.writes == writes
