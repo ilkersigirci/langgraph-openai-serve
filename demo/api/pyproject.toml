@@ -66,6 +66,10 @@ extend = "../ruff.toml"
 src = ["src", "tests"]
 
 [tool.ruff.lint.extend-per-file-ignores]
+"experiments/*.py" = [
+    "print", # Experiment scripts report their run on stdout.
+    "implicit-namespace-package", # Standalone scripts, not an importable package.
+]
 "notebooks/*.py" = [
     "print", # Notebook cells display client responses on stdout.
     # Marimo generates cell signatures, names, and explicit returns from its DAG.

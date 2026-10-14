@@ -54,15 +54,17 @@ sequenceDiagram
 1. `plan` makes one private call with structured output. It first decides
    whether the documentation answers the message, then writes one standalone
    query per distinct part, at most three, resolving references to earlier
-   turns. Greetings, thanks, questions about the conversation, and unrelated
-   requests get no queries. LangGraph's `nostream` tag keeps every planning
+   turns. Greetings, thanks, questions about the conversation, unrelated
+   requests, and messages too vague to search get no queries. LangGraph's `nostream` tag keeps every planning
    token out of the answer stream.
 2. `retrieve` is code only. It publishes a status per query, which streaming
    Responses shows as commentary, searches the queries in parallel, and merges
    the top ten sections of each. With no queries it does nothing, so a
    greeting never loads the index.
 3. `answer` is the only streamed call. With sections, it answers from them
-   alone and cites them; without sections, it replies briefly or declines.
+   alone and cites them, or asks one clarifying question when the question
+   could mean clearly different things. Without sections, it replies briefly,
+   asks what a vague message means, or declines.
    Markdown links and bare URLs that exactly match a retrieved section become
    OpenAI `url_citation` annotations, so a citation does not depend on the
    model's link formatting. Other links stay ordinary Markdown.
@@ -79,6 +81,11 @@ Three runs of the evaluation below, when it had 53 cases, failed at most one
 case each, with a median latency of about 3.4 seconds. Questions whose second
 search depends on the first search's results are the case a workflow cannot
 handle; add a bounded, opt-in agent mode if evaluation shows them failing.
+
+The graph asks its clarifying questions as ordinary replies, which the next
+message answers through the conversation. An LGOS interrupt would pause and
+checkpoint a read-only answer for nothing to approve, and declaring
+`interrupts` would make the model unavailable through Chat Completions.
 
 ## Documentation Index
 
@@ -117,7 +124,9 @@ searches only that section, so a question about an application of your own is
 not answered from the demo stack's setup. For example, with `library`, "How do I
 put LGOS behind LiteLLM?" finds the proxy guide instead of the demo's LiteLLM
 sync page. The scope filters the search itself, and a restricted scope shows in
-the status, such as "Searching the library docs: …".
+the status, such as "Searching the library docs: …". When a restricted search
+does not answer the question, the answer says so and suggests setting
+**Docs scope** to All.
 
 `bm25`, shown as **BM25 keyword search**, defaults to `true`. Embedding search
 finds sections by meaning and is weakest on exact names such as
@@ -145,25 +154,57 @@ messages the client sends.
 
 ## Evaluate The Graph
 
-`demo/api/tests/integration/test_lgos_rag_eval.py` runs 55 cases through
-the whole graph with the gateway's models and the published docs of the
-installed release. The cases cover questions in a user's words, exact names,
-follow-ups that need the conversation, multi-part questions, scoped searches,
-greetings, and unrelated requests. Code grades each case:
-
-- a message that needs no docs must not search, and every other message must;
-- each part of a question needs an answering page among the retrieved sections;
-- a scoped case must retrieve only sections in its scope;
-- every Markdown link in the answer must come from the retrieved sections, and
-  the answer must cite at least one of them.
+The evaluation runs as a Langfuse experiment, so every run keeps its traces and
+scores for comparison. `demo/api/experiments/lgos_rag.py` holds 57 cases:
+questions in a user's words, exact names, follow-ups that need the
+conversation, multi-part questions, scoped searches, greetings, unrelated
+requests, and the reply's shape after a restricted miss or a vague message.
 
 ```bash
-just demo/test-rag
+just demo/experiment-rag
 ```
 
-Model sampling flips a case or two between runs, so the check allows three
-failing cases and prints them. Add a case whenever a real question goes wrong,
-and rerun the check after changing prompts, chunking, ranking, or models.
+The script follows the Langfuse experiment runner convention: it exposes
+`experiment(context)` and raises `RegressionError` when the run fails, so the
+[Langfuse experiment action](https://github.com/langfuse/experiment-action) can
+run the same file in CI.
+
+Each run makes the hosted `lgos-rag` dataset's active items exactly these cases,
+runs the whole graph on every item with the gateway's models and the published
+docs, and records the graph's calls in the item's trace. The dataset's JSON
+schemas come from the script's item models, so Langfuse rejects a malformed
+item. Code then records each check that applies to a case as a `BOOLEAN` pass
+or fail score:
+
+| Score | Passes when |
+| --- | --- |
+| `route` | The graph searches exactly when the message needs the docs |
+| `retrieval` | Each part of the question has an answering page among the retrieved sections |
+| `scope` | A scoped case retrieves only sections in its scope |
+| `links` | Every Markdown link in the answer comes from the retrieved sections |
+| `citation` | The answer cites at least one retrieved section |
+| `reply` | A reply-shape case shows the scope hint, or asks a clarifying question without declining |
+| `passed` | The case has checks and passes all of them; a composite of the scores above |
+
+The run's `pass_rate` is the share of cases scored `passed`, and its metadata
+records the commit, LGOS version, models, and evaluator version. In
+Langfuse, compare runs of the dataset to see which cases a prompt, model, or
+retrieval change fixed or broke.
+
+Model sampling flips a case or two between runs, so a run fails only when more
+than three cases fail, and the error lists them. Add a case in the script
+whenever a real question goes wrong, not in the Langfuse dataset, which each
+run overwrites.
+
+The script records to Langfuse when `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
+and `LANGFUSE_BASE_URL` are set, as in `demo/.env`. Without them, as in CI, it
+runs the same cases and checks on local data with Langfuse disabled, records
+nothing, and still fails the run on too many failing cases. To run that way
+locally, also turn off the API's own tracing:
+
+```bash
+LGOS_ENABLE_LANGFUSE=false LANGFUSE_PUBLIC_KEY= just demo/experiment-rag
+```
 
 ## Try It
 
@@ -175,6 +216,8 @@ and rerun the check after changing prompts, chunking, ranking, or models.
 | Several queries | `How do I resume an interrupted run in the background, and what does LGOS_INTERRUPT_TTL_MINUTES do?` |
 | Follow-up | `How do I enable Langfuse tracing?`, then `How do I point it at a self-hosted instance?` |
 | Library scope | Set **Docs scope** to `library`, then ask `How do I put LGOS behind LiteLLM?` |
+| Scope hint | Set **Docs scope** to `library`, then ask `What does DEMO_GRAPH_GATEWAY_API_KEY set?` |
+| Vague message | `Why is it failing?` |
 
 ### Python SDK
 
