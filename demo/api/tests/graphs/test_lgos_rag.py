@@ -1,411 +1,360 @@
-from collections import deque
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+import io
+import json
+import re
+import tarfile
+from collections.abc import Awaitable, Callable, Iterator
+from typing import Any
 
+import httpx2
 import pytest
-from langchain_core.documents import Document
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.runnables import RunnableLambda
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphRegistry,
-    GraphRequest,
-    citation_slice,
-)
+from langchain_core.embeddings import DeterministicFakeEmbedding, Embeddings
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.outputs import ChatGenerationChunk
+from langgraph.graph.state import CompiledStateGraph
+from langgraph_openai_serve import GraphConfig, GraphError, GraphRegistry
 from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.events import status_description
 from langgraph_openai_serve.graph.runner import run_langgraph_stream
 
-from lgos_demo_api.graphs import lgos_rag as lgos_rag_module
-
-if TYPE_CHECKING:
-    from langgraph.types import CustomStreamPart
-
-ANSWER = (
-    "Use the [registered model](https://example.com/second) through the OpenAI "
-    "client. View the ![architecture diagram](https://example.com/diagram.png) "
-    "or follow the [audio link](https://example.com/overview.mp3)."
+from lgos_demo_api.graphs import lgos_rag
+from lgos_demo_api.graphs.lgos_rag import (
+    DocsIndex,
+    LgosRagSettings,
+    Scope,
+    SearchPlan,
+    create_lgos_rag_graph,
+    docs_release,
+    fetch_chunks,
+    load_chunks,
 )
-DECISION_PREAMBLE = "I will check the documentation. "
-HISTORY_ANSWER = 'You asked: "Who are you?"'
-REWRITTEN_QUESTION = "How do I call LGOS using an OpenAI client?"
+
+BASE_URL = "https://docs.example.com/lgos/1.0.0/"
+ARCHIVE_URL = "https://github.example.com/lgos/archive/refs/tags/v1.0.0.tar.gz"
+INSTALL_URL = f"{BASE_URL}getting-started/#install"
+EXPIRY_URL = f"{BASE_URL}how-to-guides/server/#expire-paused-runs"
+IDENTIFIER = "LGOS_INTERRUPT_TTL_MINUTES"
+INSTALL = """\
+| Python | Support |
+| --- | --- |
+| 3.11 | yes |
+
+```bash
+uv add langgraph-openai-serve
+# a comment, not a heading
+```"""
+DEMO_URL = f"{BASE_URL}demo/docker/#start"
+PAGES = {
+    "demo/docker.md": "# Docker Compose\n\n## Start\n\nRun `just demo/compose`.\n",
+    "getting-started.md": (
+        f"# Get Started\n\nBuild an application.\n\n## Install\n\n{INSTALL}\n"
+    ),
+    "how-to-guides/index.md": (
+        "# How-To Guides\n\n## Show `display_file`\n\nFirst.\n\n"
+        "## Show `display_file`\n\nSecond.\n"
+    ),
+    "how-to-guides/server.md": (
+        "# Run The Server\n\n## Expire Paused Runs\n\n"
+        f"`{IDENTIFIER}` deletes runs left paused longer than this.\n"
+        "See [settings](../reference.md#settings), [this section](#expire-paused-runs), "
+        "and ![a diagram](../static/runs.png).\n"
+    ),
+    "reference.md": "# Reference\n",
+}
 
 
-def _tool_call(
-    query: str,
-    call_id: str = "retrieve-1",
-    content: str = "",
-) -> AIMessage:
+class _StreamingToolModel(GenericFakeChatModel):
+    """Stream reply text token by token, then its tool calls, like a provider."""
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "_StreamingToolModel":  # ty: ignore[invalid-method-override]
+        return self
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        reply = next(self.messages)
+        assert isinstance(reply, AIMessage)
+        for token in filter(None, re.split(r"(\s)", reply.text)):
+            chunk = ChatGenerationChunk(message=AIMessageChunk(content=token))
+            if run_manager:
+                run_manager.on_llm_new_token(token, chunk=chunk)
+            yield chunk
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": call["name"],
+                        "args": json.dumps(call["args"]),
+                        "id": call["id"],
+                        "index": position,
+                        "type": "tool_call_chunk",
+                    }
+                    for position, call in enumerate(reply.tool_calls)
+                ],
+                chunk_position="last",
+            )
+        )
+
+
+async def _index() -> DocsIndex:
+    return await DocsIndex.build(
+        load_chunks(PAGES, BASE_URL),
+        DeterministicFakeEmbedding(size=32),
+    )
+
+
+def _returning(index: DocsIndex) -> Callable[[], Awaitable[DocsIndex]]:
+    async def docs_index() -> DocsIndex:
+        return index
+
+    return docs_index
+
+
+def test_markdown_sections_become_chunks_linked_to_the_docs_site() -> None:
+    chunks = load_chunks(PAGES, BASE_URL)
+
+    assert [(chunk.metadata["title"], chunk.metadata["url"]) for chunk in chunks] == [
+        ("Docker Compose > Start", DEMO_URL),
+        ("Get Started", f"{BASE_URL}getting-started/"),
+        ("Get Started > Install", INSTALL_URL),
+        # Repeated headings number their anchors as the docs site does.
+        (
+            "How-To Guides > Show `display_file`",
+            f"{BASE_URL}how-to-guides/#show-display_file",
+        ),
+        (
+            "How-To Guides > Show `display_file`",
+            f"{BASE_URL}how-to-guides/#show-display_file_1",
+        ),
+        ("Run The Server > Expire Paused Runs", EXPIRY_URL),
+    ]
+    assert chunks[2].page_content == f"Get Started > Install\n\n{INSTALL}"
+    # Relative links point at the docs site, so a copied link still works.
+    assert chunks[-1].page_content.endswith(
+        f"See [settings]({BASE_URL}reference/#settings), "
+        f"[this section]({EXPIRY_URL}), "
+        f"and ![a diagram]({BASE_URL}static/runs.png)."
+    )
+
+
+def _archive(files: dict[str, str]) -> bytes:
+    content = io.BytesIO()
+    with tarfile.open(fileobj=content, mode="w:gz") as tar:
+        for name, text in files.items():
+            data = text.encode()
+            member = tarfile.TarInfo(f"lgos-1.0.0/{name}")
+            member.size = len(data)
+            tar.addfile(member, io.BytesIO(data))
+    return content.getvalue()
+
+
+async def test_release_archive_supplies_only_its_docs_pages() -> None:
+    archive = _archive(
+        {
+            "docs/how-to-guides/server.md": PAGES["how-to-guides/server.md"],
+            "README.md": "# LGOS\n\nNot part of the documentation.\n",
+        }
+    )
+    transport = httpx2.MockTransport(
+        lambda _request: httpx2.Response(200, content=archive)
+    )
+
+    async with httpx2.AsyncClient(transport=transport) as client:
+        chunks = await fetch_chunks(client, ARCHIVE_URL, BASE_URL)
+
+    assert [chunk.metadata["url"] for chunk in chunks] == [EXPIRY_URL]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(httpx2.Response(404), id="no-tag"),
+        # The first LGOS tags predate the docs.
+        pytest.param(
+            httpx2.Response(200, content=_archive({"README.md": "# LGOS\n"})),
+            id="tag-without-docs",
+        ),
+    ],
+)
+async def test_version_without_released_docs_is_a_graph_error(
+    response: httpx2.Response,
+) -> None:
+    transport = httpx2.MockTransport(lambda _request: response)
+
+    async with httpx2.AsyncClient(transport=transport) as client:
+        with pytest.raises(GraphError, match="tagged LGOS release"):
+            await fetch_chunks(client, ARCHIVE_URL, BASE_URL)
+
+
+@pytest.mark.parametrize("bm25", [False, True])
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [
+        ("all", {"demo", "library"}),
+        ("library", {"library"}),
+        ("demo", {"demo"}),
+    ],
+)
+async def test_scope_limits_results_to_its_docs(
+    bm25: bool,
+    scope: Scope,
+    expected: set[str],
+) -> None:
+    index = await _index()
+
+    # The query matches both parts, so only the scope can exclude one.
+    results = await index.search(
+        "Run LGOS with just demo/compose", bm25=bm25, scope=scope
+    )
+
+    assert {
+        "demo" if result.metadata["url"].startswith(f"{BASE_URL}demo/") else "library"
+        for result in results
+    } == expected
+
+
+@pytest.mark.parametrize(
+    ("installed", "release"),
+    [
+        pytest.param("0.0.1", "2.0.0", id="checkout-uses-latest"),
+        pytest.param("1.9.0", "1.9.0", id="release-uses-itself"),
+    ],
+)
+async def test_docs_release_follows_the_installed_lgos(
+    monkeypatch: pytest.MonkeyPatch,
+    installed: str,
+    release: str,
+) -> None:
+    monkeypatch.setattr(lgos_rag, "version", lambda _name: installed)
+    versions = [
+        {"version": "2.0.0", "title": "2.0.0", "aliases": ["latest"]},
+        {"version": "1.9.0", "title": "1.9.0", "aliases": []},
+    ]
+    transport = httpx2.MockTransport(
+        lambda _request: httpx2.Response(200, json=versions)
+    )
+
+    async with httpx2.AsyncClient(transport=transport) as client:
+        assert await docs_release(client) == release
+
+
+class _IdentifierBlindEmbeddings(Embeddings):
+    """Rank the section naming the identifier last, as weak embeddings can."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 1.0] if IDENTIFIER in text else [1.0, 0.0] for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return [1.0, 0.0]
+
+
+async def test_bm25_puts_an_exact_identifier_match_first() -> None:
+    index = await DocsIndex.build(
+        load_chunks(PAGES, BASE_URL), _IdentifierBlindEmbeddings()
+    )
+
+    semantic = await index.search(IDENTIFIER, bm25=False)
+    fused = await index.search(IDENTIFIER, bm25=True)
+
+    assert semantic[-1].metadata["url"] == EXPIRY_URL
+    assert fused[0].metadata["url"] == EXPIRY_URL
+
+
+def _plan(*queries: str, needs_docs: bool = True, content: str = "") -> AIMessage:
     return AIMessage(
         content=content,
         tool_calls=[
             {
-                "name": "retrieve_lgos_rag",
-                "args": {"query": query},
-                "id": call_id,
+                "name": SearchPlan.__name__,
+                "args": {"needs_docs": needs_docs, "queries": list(queries)},
+                "id": "plan-1",
                 "type": "tool_call",
             }
         ],
     )
 
 
-def _stub_runnable(
-    monkeypatch: pytest.MonkeyPatch,
-    factory_name: str,
-    *responses: Any,
-) -> None:
-    remaining = deque(responses)
-
-    async def respond(_: Any) -> Any:
-        if not remaining:
-            msg = f"Unexpected call to {factory_name}"
-            raise AssertionError(msg)
-        return remaining.popleft()
-
-    runnable = RunnableLambda(respond)
-    monkeypatch.setattr(lgos_rag_module, factory_name, lambda: runnable)
-
-
-def _stub_chat_model(
-    monkeypatch: pytest.MonkeyPatch,
-    *responses: str,
-) -> None:
-    model = FakeListChatModel(responses=list(responses))
-    # Like ChatOpenAI, tag the model's runs so nostream calls stay private.
-    monkeypatch.setattr(
-        "lgos_demo_api.utils.models.ChatOpenAI",
-        lambda tags=None, **_: model.with_config(tags=tags or []),
-    )
-
-
-def _registry() -> GraphRegistry:
-    return GraphRegistry(
+async def _stream(
+    make_graph_input: Callable[..., Any],
+    graph: CompiledStateGraph,
+    question: str,
+) -> tuple[list[object], AIMessage]:
+    registry = GraphRegistry(
         graphs={
             "lgos-rag": GraphConfig(
-                graph=lgos_rag_module.lgos_rag,
+                graph=graph,
                 description="DUMMY",
+                client_settings=LgosRagSettings,
             )
         }
     )
-
-
-def _source_document(content: str, name: str) -> Document:
-    return Document(
-        page_content=content,
-        metadata={
-            "source": f"docs/{name.lower()}.md",
-            "title": name,
-            "url": f"https://example.com/{name.lower()}",
-        },
-    )
-
-
-async def _stream(
-    graph_request: GraphRequest,
-    messages: list[BaseMessage],
-) -> list[object]:
-    events: list[object] = [
-        event
-        async for event in run_langgraph_stream(graph_request, messages, _registry())
+    graph_request, messages = make_graph_input("lgos-rag", content=question)
+    events = [
+        event async for event in run_langgraph_stream(graph_request, messages, registry)
     ]
-    assert isinstance(events[-1], AIMessage)
-    return events
-
-
-def _status_timeline(stream: list[object]) -> list[str | None]:
-    return [
-        status_description(cast("CustomStreamPart", item)["data"])
-        for item in stream
-        if isinstance(item, dict)
+    answer = events[-1]
+    assert isinstance(answer, AIMessage)
+    timeline = [
+        status_description(event["data"]) if isinstance(event, dict) else event
+        for event in events[:-1]
     ]
+    return timeline, answer
 
 
-async def test_retrieval_tool_formats_source_metadata_and_markdown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    markdown = (
-        "Read the [guide](https://example.com/guide) and view "
-        "![Diagram](https://example.com/diagram.png)."
-    )
-    document = _source_document(markdown, "Reference")
-
-    async def retrieve_documents(query: str) -> list[Document]:
-        assert query == "How do I use LGOS?"
-        return [document]
-
-    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
-
-    context = await lgos_rag_module.retrieve_lgos_rag.ainvoke(
-        {"query": "How do I use LGOS?"}
-    )
-
-    assert context == (
-        f"Title: Reference\nSource URL: https://example.com/reference\n{markdown}"
-    )
-
-
-def test_loads_a_controlled_markdown_corpus(tmp_path: Path) -> None:
-    docs_root = tmp_path / "docs"
-    nested = docs_root / "nested"
-    nested.mkdir(parents=True)
-    (docs_root / "guide.md").write_text("# Guide\n\nBody.", encoding="utf-8")
-    (nested / "reference.md").write_text("No heading.", encoding="utf-8")
-
-    documents = lgos_rag_module.load_documents(
-        docs_root,
-        "https://example.com/lgos-docs",
-    )
-
-    assert [(document.page_content, document.metadata) for document in documents] == [
-        (
-            "# Guide\n\nBody.",
-            {
-                "source": "guide.md",
-                "title": "Guide (guide.md)",
-                "url": "https://example.com/lgos-docs/guide.md",
-            },
-        ),
-        (
-            "No heading.",
-            {
-                "source": "nested/reference.md",
-                "title": "nested/reference.md (nested/reference.md)",
-                "url": "https://example.com/lgos-docs/nested/reference.md",
-            },
-        ),
-    ]
-
-
-def test_missing_corpus_reports_the_missing_markdown(tmp_path: Path) -> None:
-    with pytest.raises(RuntimeError, match="No Markdown documentation"):
-        lgos_rag_module.load_documents(tmp_path / "missing")
-
-
-def test_default_corpus_is_bundled_with_the_api_package() -> None:
-    expected_sources = {
-        path.relative_to(lgos_rag_module.DOCS_ROOT).as_posix()
-        for path in lgos_rag_module.DOCS_ROOT.rglob("*.md")
-    }
-
-    documents = lgos_rag_module.load_documents()
-
-    assert expected_sources == {
-        "demo-models.md",
-        "openai-clients.md",
-        "overview.md",
-    }
-    assert {document.metadata["source"] for document in documents} == expected_sources
-
-
-def test_splits_documents_and_preserves_source_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chunk_size = 60
-    monkeypatch.setattr(lgos_rag_module, "CHUNK_SIZE", chunk_size)
-    monkeypatch.setattr(lgos_rag_module, "CHUNK_OVERLAP", 10)
-    document = _source_document("alpha beta gamma delta " * 12, "Reference")
-
-    chunks = lgos_rag_module.split_documents([document])
-
-    assert len(chunks) > 1
-    assert all(len(chunk.page_content) <= chunk_size for chunk in chunks)
-    assert all(chunk.metadata["source"] == "docs/reference.md" for chunk in chunks)
-    assert all(isinstance(chunk.metadata["start_index"], int) for chunk in chunks)
-
-
-async def test_retrieval_uses_rewritten_query_and_returns_streamed_cited_answer(
+async def test_only_the_cited_answer_streams_after_planned_searches(
     make_graph_input,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    documents = [
-        _source_document("First source", "First"),
-        _source_document(
-            "Second source\n\n"
-            "![Architecture diagram](https://example.com/diagram.png)\n\n"
-            "[Audio overview](https://example.com/overview.mp3)",
-            "Second",
-        ),
+    reply = (
+        f"Run `uv add langgraph-openai-serve` as [Install]({INSTALL_URL}) shows, "
+        "not as [another site](https://example.com/other) says."
+    )
+    model = _StreamingToolModel(
+        messages=iter(
+            [
+                # The plan's own text stays private, like every planning token.
+                _plan("install LGOS", content="Planning the search. "),
+                AIMessage(content=reply),
+            ]
+        )
+    )
+    graph = create_lgos_rag_graph(model, docs_index=_returning(await _index()))
+
+    timeline, answer = await _stream(make_graph_input, graph, "How do I install LGOS?")
+
+    assert timeline[:2] == [
+        "Understanding the question",
+        "Searching the docs: install LGOS",
     ]
-    queries: list[str] = []
+    assert "".join(str(event) for event in timeline[2:]) == answer.text == reply
+    assert [
+        (citation["url"], citation["title"])
+        for citation in citations_from_message(answer)
+    ] == [(INSTALL_URL, "Get Started > Install")]
 
-    async def retrieve_documents(query: str) -> list[Document]:
-        queries.append(query)
-        return documents
 
-    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
-    _stub_runnable(
-        monkeypatch,
-        "_retrieval_decider",
-        _tool_call(REWRITTEN_QUESTION, content=DECISION_PREAMBLE),
+async def test_messages_needing_no_docs_skip_the_search(make_graph_input) -> None:
+    async def unused_index() -> DocsIndex:
+        pytest.fail("A message that needs no docs must not load the index.")
+
+    model = _StreamingToolModel(
+        messages=iter(
+            [
+                _plan("capital of France", needs_docs=False),
+                AIMessage(content="I only answer questions about LGOS."),
+            ]
+        )
     )
-    _stub_runnable(
-        monkeypatch,
-        "_document_grader",
-        lgos_rag_module.GradeDocuments(binary_score="yes"),
-    )
-    _stub_chat_model(monkeypatch, ANSWER)
-    graph_request, messages = make_graph_input(
-        "lgos-rag",
-        messages=[
-            HumanMessage(content="What is LGOS?"),
-            AIMessage(content="It serves LangGraph over /v1."),
-            HumanMessage(content="How do I call it?"),
-        ],
+    graph = create_lgos_rag_graph(model, docs_index=unused_index)
+
+    timeline, answer = await _stream(
+        make_graph_input, graph, "What is the capital of France?"
     )
 
-    stream = await _stream(graph_request, messages)
-    streamed_answer = "".join(item for item in stream if isinstance(item, str))
-    final_message = cast("AIMessage", stream[-1])
-    citations = citations_from_message(final_message)
-
-    assert queries == [REWRITTEN_QUESTION]
-    assert streamed_answer == ANSWER
-    assert len(citations) == 1
-    citation = citations[0]
-    assert citation["url"] == "https://example.com/second"
-    assert citation["title"] == "Second"
-    assert (
-        ANSWER[citation_slice(citation["start_index"], citation["end_index"], ANSWER)]
-        == "registered model"
-    )
-    assert "cited_text" not in citation
-    assert DECISION_PREAMBLE not in streamed_answer
-    assert _status_timeline(stream) == [
-        "Understanding your question",
-        "Searching the LGOS documentation",
-        "Checking the retrieved sources",
-        "Writing the answer",
-        "Answer ready",
-    ]
-
-
-async def test_direct_response_skips_retrieval(
-    make_graph_input,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def unexpected_retrieval(query: str) -> list[Document]:
-        msg = f"Conversation unexpectedly retrieved: {query}"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", unexpected_retrieval)
-    _stub_runnable(
-        monkeypatch,
-        "_retrieval_decider",
-        AIMessage(content="respond_direct"),
-    )
-    _stub_chat_model(monkeypatch, HISTORY_ANSWER)
-    graph_request, messages = make_graph_input(
-        "lgos-rag",
-        messages=[
-            HumanMessage(content="Who are you?"),
-            AIMessage(content="I am the LGOS RAG assistant."),
-            HumanMessage(content="What did I ask you?"),
-        ],
-    )
-
-    stream = await _stream(graph_request, messages)
-
-    assert "".join(item for item in stream if isinstance(item, str)) == HISTORY_ANSWER
-    assert _status_timeline(stream) == [
-        "Understanding your question",
-        "Preparing the response",
-        "Answer ready",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("relevant", "refusal"),
-    [(True, False), (False, False), (True, True)],
-)
-async def test_retrieval_answer_preserves_provider_content_and_outcome(
-    monkeypatch: pytest.MonkeyPatch,
-    relevant: bool,
-    refusal: bool,
-) -> None:
-    async def retrieve_documents(_: str) -> list[Document]:
-        return [_source_document("Use the OpenAI client.", "Second")]
-
-    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
-    _stub_runnable(monkeypatch, "_retrieval_decider", _tool_call("LGOS client"))
-    _stub_runnable(
-        monkeypatch,
-        "_document_grader",
-        lgos_rag_module.GradeDocuments(binary_score="yes" if relevant else "no"),
-    )
-    answer = AIMessage(
-        content=(
-            [{"type": "refusal", "refusal": "I cannot provide that."}]
-            if refusal
-            else ANSWER
-        ),
-        response_metadata={"finish_reason": "stop" if refusal else "length"},
-        usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
-    )
-    monkeypatch.setattr(
-        "lgos_demo_api.utils.models.ChatOpenAI",
-        lambda **_: RunnableLambda(lambda _: answer),
-    )
-
-    result = await lgos_rag_module.lgos_rag.ainvoke(
-        {
-            "messages": [HumanMessage(content="How do I use LGOS?")],
-            "rewrite_count": lgos_rag_module.MAX_REWRITES,
-        }
-    )
-
-    final_message = result["messages"][-1]
-    assert final_message.response_metadata["finish_reason"] == (
-        "stop" if refusal else "length"
-    )
-    assert final_message.usage_metadata == answer.usage_metadata
-    if refusal:
-        assert final_message.content_blocks == answer.content_blocks
-    else:
-        assert final_message.text == ANSWER
-        assert len(citations_from_message(final_message)) == int(relevant)
-
-
-async def test_irrelevant_retrieval_rewrites_once_then_stops(
-    make_graph_input,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    queries: list[str] = []
-
-    async def retrieve_documents(query: str) -> list[Document]:
-        queries.append(query)
-        return [_source_document("Unrelated content", "Irrelevant")]
-
-    monkeypatch.setattr(lgos_rag_module, "_retrieve_documents", retrieve_documents)
-    _stub_runnable(
-        monkeypatch,
-        "_retrieval_decider",
-        _tool_call("weak query", "retrieve-1"),
-        _tool_call(REWRITTEN_QUESTION, "retrieve-2"),
-    )
-    _stub_runnable(
-        monkeypatch,
-        "_document_grader",
-        lgos_rag_module.GradeDocuments(binary_score="no"),
-        lgos_rag_module.GradeDocuments(binary_score="no"),
-    )
-    refusal = "I cannot answer that from the available LGOS documentation."
-    # The graph rewrites the query before it writes the final answer.
-    _stub_chat_model(monkeypatch, REWRITTEN_QUESTION, refusal)
-    graph_request, messages = make_graph_input("lgos-rag", content="How do I call it?")
-
-    stream = await _stream(graph_request, messages)
-    streamed_answer = "".join(item for item in stream if isinstance(item, str))
-
-    assert queries == ["weak query", REWRITTEN_QUESTION]
-    assert streamed_answer == refusal
-    assert _status_timeline(stream) == [
-        "Understanding your question",
-        "Searching the LGOS documentation",
-        "Checking the retrieved sources",
-        "Refining the search query",
-        "Searching the LGOS documentation",
-        "Checking the retrieved sources",
-        "No relevant sources found; preparing a response",
-        "Answer ready",
-    ]
+    assert timeline[0] == "Understanding the question"
+    assert "".join(str(event) for event in timeline[1:]) == answer.text
+    assert answer.text == "I only answer questions about LGOS."

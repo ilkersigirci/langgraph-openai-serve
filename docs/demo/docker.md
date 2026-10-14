@@ -26,7 +26,9 @@ app factory, which installs the Functions at startup.
 The two gateway fragments use pinned public images: upstream
 Bifrost and `homeserver-litellm`. There is no demo-wide `pyproject.toml`, uv
 workspace, shared Python environment, or shared lockfile.
-The API package includes the compact Markdown corpus used by `lgos-rag`.
+`lgos-rag` downloads the Markdown docs of the installed LGOS release from its
+GitHub source archive, so the API container needs outbound HTTPS access to
+GitHub.
 
 ## Compose Modes
 

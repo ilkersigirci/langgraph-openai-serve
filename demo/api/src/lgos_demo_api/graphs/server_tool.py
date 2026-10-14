@@ -23,7 +23,7 @@ from langgraph_openai_serve import (
 from pydantic import BaseModel
 
 from lgos_demo_api.core.settings import settings
-from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.citations import cite_sources
 from lgos_demo_api.utils.models import responses_model
 from lgos_demo_api.utils.web_search import search_web
 
@@ -193,7 +193,7 @@ def create_server_tool_graph() -> CompiledStateGraph[
                 *state.messages,
             ]
         )
-        return {"messages": [cite_markdown_links(response, _search_sources(state))]}
+        return {"messages": [cite_sources(response, _search_sources(state))]}
 
     workflow = StateGraph(ServerToolState, context_schema=GraphRequest)
     workflow.add_node("select_tools", select_tools)

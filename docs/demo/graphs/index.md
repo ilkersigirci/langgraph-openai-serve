@@ -26,7 +26,7 @@ demo model catalogs.
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`server-tool`](server-tool.md) | Installed package versions and OpenAI-compatible web search selected by the client | None | Upstream model plus SearXNG, Degoog, or upstream OpenAI search |
-| [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | None | Upstream chat and embedding models |
+| [`lgos-rag`](lgos-rag.md) | Cited answers from the published documentation of the installed LGOS release, using embedding and BM25 search | None | Upstream chat and embedding models, and GitHub release archives |
 
 Graphs reach every model dependency through the selected gateway; see
 [How Requests Flow](../architecture.md#how-requests-flow).
@@ -54,8 +54,6 @@ Most graph code is owned by the independent `demo/api` project:
   model names for `lgos serve` and `lgos worker`.
 - `demo/api/src/lgos_demo_api/graphs/` contains its graphs and adapters.
 - `demo/api-coding-agent/src/lgos_api_coding_agent/` owns the separately deployed coding-agent showcase, currently backed by Codex.
-- `demo/api/src/lgos_demo_api/corpus/` contains the Markdown packaged with the
-  `lgos-rag` example.
 
 Continue with [Run the Demo API](../api.md#call-a-graph) for request examples or
 [Chainlit](../chainlit.md) and [Open WebUI](../open-webui.md) for UI behavior.

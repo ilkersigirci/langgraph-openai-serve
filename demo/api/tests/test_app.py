@@ -139,6 +139,10 @@ async def test_app_lists_exactly_the_documented_models(
         delay_schema = settings["json_schema"]["properties"]["delay_seconds"]
         assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
 
+    rag_model = await openai_client.models.retrieve("lgos-rag")
+    rag_settings = (rag_model.model_extra or {})["lgos"]["client_settings"]
+    assert rag_settings["defaults"] == {"scope": "all", "bm25": True}
+
     plot_model = await openai_client.models.retrieve("persistent-plot-agent")
     plot_extension = (plot_model.model_extra or {})["lgos"]
     assert plot_extension["features"] == []

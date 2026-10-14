@@ -10,8 +10,10 @@ dependencies = [
     "langchain-openai>=1.6.6",
     "langchain-text-splitters>=1.1.0",
     "langgraph-openai-serve[server]>=0.30.0",
+    "markdown>=3.11",
     "numpy>=2.4.6",
     "plotly>=6,<7",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]

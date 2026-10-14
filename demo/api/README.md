@@ -34,9 +34,11 @@ The graph API does not expose Files routes or receive S3 credentials. Its
 through `DEMO_API_FILES_BASE_URL`, then sends inline file data to the configured
 OpenAI Responses API.
 
-The `lgos-rag` graph reads a compact Markdown corpus packaged under
-`src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
-external documentation checkout.
+The `lgos-rag` graph downloads the Markdown docs of the installed LGOS release
+from its GitHub source archive on its first question, so installs and images
+need no documentation checkout. An unreleased LGOS checkout, as in the `--dev`
+Compose stack, reports version `0.0.1`, so `lgos-rag` uses the latest published
+release's docs instead.
 
 `just demo/marimo --editable` opens the notebook workspace. For its AI assistant,
 copy `.marimo.toml.example` to `.marimo.toml`; the `gateway/` model prefix selects

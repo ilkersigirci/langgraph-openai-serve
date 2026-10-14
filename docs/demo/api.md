@@ -52,8 +52,9 @@ just demo/up lgos-db --wait
     via the selected gateway using `OPENAI_GATEWAY_BASE_URL` and
     `DEMO_GRAPH_GATEWAY_API_KEY`. Local API, worker, and notebook recipes set the
     root to `DEMO_GATEWAY_HOST_URL`; Compose uses the gateway's service URL. The
-    `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL`. Its corpus is
-    packaged with the API. The `server-tool` graph reads
+    `lgos-rag` graph also reads `DEMO_API_OPENAI_EMBEDDING_MODEL` and answers
+    from the docs of the installed LGOS release, or of the latest release for
+    an unreleased checkout. The `server-tool` graph reads
     `DEMO_API_WEB_SEARCH_BACKEND` and `DEMO_API_WEB_SEARCH_URL` to choose its
     web-search execution backend. These settings and dependencies belong to the
     API project and are not installed with the library.
@@ -111,8 +112,8 @@ output and
 [Citation ownership](../explanation/openai-compatibility.md#citation-ownership)
 for the normative transport boundary.
 
-Ask the RAG graph about the packaged LGOS overview and demo documentation with
-real-time token streaming:
+Ask the RAG graph about LGOS. It answers from the published documentation of
+the installed release, with real-time token streaming:
 
 ```python
 stream = client.responses.create(
@@ -127,8 +128,8 @@ for event in stream:
         print(event.delta, end="", flush=True)
 ```
 
-See [LGOS RAG](graphs/lgos-rag.md) for its retrieval flow, bounded rewrite, and
-process-local index lifetime.
+See [LGOS RAG](graphs/lgos-rag.md) for its plan, retrieve, and answer nodes,
+client settings, and process-local index lifetime.
 
 Start with the dependency-free MCP-shaped example:
 

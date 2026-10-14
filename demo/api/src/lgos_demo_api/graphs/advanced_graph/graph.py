@@ -38,7 +38,7 @@ from lgos_demo_api.graphs.advanced_graph.state import (
     terminal_message,
 )
 from lgos_demo_api.graphs.server_tool import web_search
-from lgos_demo_api.utils.citations import cite_markdown_links
+from lgos_demo_api.utils.citations import cite_sources
 from lgos_demo_api.utils.client_tools import chat_tool
 from lgos_demo_api.utils.file_inputs import resolve_file_inputs
 from lgos_demo_api.utils.models import responses_model
@@ -277,7 +277,7 @@ def create_advanced_graph(  # ruff: ignore[complex-structure, too-many-statement
         )
         return {
             "messages": [
-                cite_markdown_links(
+                cite_sources(
                     response,
                     web_sources(
                         state["messages"],

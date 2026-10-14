@@ -136,7 +136,6 @@ jobs:
           directory: ${{ runner.temp }}/lgos-demo/${{ matrix.directory }}
           editable-package: ${{ matrix.editable && github.workspace || '' }}
           cache-dependency-glob: demo/${{ matrix.directory }}/uv.lock
-          verify-api-corpus: ${{ matrix.name == 'API' }}
 
   postgres:
     name: Test PostgreSQL persistence

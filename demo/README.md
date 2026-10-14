@@ -20,8 +20,8 @@ directory, use `just` instead. `just --usage demo/up` shows recipe options and
 defaults. Local development checks can run without a `.env` file; configure it
 before starting services or running live integration tests.
 
-The API resolves `langgraph-openai-serve` from PyPI and packages the default
-`lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
+The API resolves `langgraph-openai-serve` from PyPI; its `lgos-rag` graph
+searches the published documentation of that release. The development Compose
 override builds a local API image and installs both the API and parent LGOS
 checkout as editable packages without changing the locked production dependency
 source. Every demo-owned Python environment targets OpenAI v3; the upstream

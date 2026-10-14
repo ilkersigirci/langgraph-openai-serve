@@ -13,10 +13,6 @@ inputs:
   cache-dependency-glob:
     description: Lockfile path used for the uv cache key.
     required: true
-  verify-api-corpus:
-    description: Whether to verify that the API wheel contains its demo corpus.
-    default: "false"
-    required: false
 
 runs:
   using: composite
@@ -51,13 +47,3 @@ runs:
       run: |
         uv run --directory "$PROJECT_DIR" --locked ruff check .
         uv run --directory "$PROJECT_DIR" --locked ruff format --check .
-
-    - name: Verify the packaged API corpus
-      if: inputs.verify-api-corpus == 'true'
-      shell: bash
-      env:
-        PROJECT_DIR: ${{ inputs.directory }}
-      run: |
-        uv build "$PROJECT_DIR" --wheel --out-dir "${{ runner.temp }}/dist"
-        wheel="$(find "${{ runner.temp }}/dist" -name '*.whl' -print -quit)"
-        unzip -Z1 "$wheel" | grep -qx 'lgos_demo_api/corpus/overview.md'
