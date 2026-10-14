@@ -69,6 +69,9 @@ sequenceDiagram
    OpenAI `url_citation` annotations, so a citation does not depend on the
    model's link formatting. Other links stay ordinary Markdown.
 
+Both calls run at temperature 0: sampling adds nothing to a documentation answer,
+and would vary the searches and answers for the same question.
+
 ## Why A Workflow
 
 A tool-calling agent could search too, but for one library's docs the
@@ -90,10 +93,11 @@ checkpoint a read-only answer for nothing to approve, and declaring
 ## Documentation Index
 
 The graph finds the installed release in the docs site's `versions.json`, which
-names each release as its tag does: an installed `1.0.0rc1` is release
-`1.0.0-rc1`. It indexes the Markdown under `docs/` in the GitHub source archive
-of tag `v<release>`, and links every section to the published docs of that
-release, `https://ilkersigirci.github.io/langgraph-openai-serve/<release>/`. The Markdown
+names each release as its tag does, so a pre-release finds its docs although
+Python normalizes its installed version. It indexes the Markdown under `docs/`
+in the GitHub source archive of tag `v<release>`, and links every section to the
+published docs of that release,
+`https://ilkersigirci.github.io/langgraph-openai-serve/<release>/`. The Markdown
 keeps tables, code blocks, and links as the docs authors wrote them; the API
 reference that the site generates from docstrings is not part of it.
 
@@ -131,15 +135,16 @@ does not answer the question, the answer says so and suggests setting
 
 `bm25`, shown as **BM25 keyword search**, defaults to `true`. Embedding search
 finds sections by meaning and is weakest on exact names such as
-`LGOS_INTERRUPT_TTL_MINUTES`, `RunBusyError`, or `GraphFeature.BACKGROUND`, so
-the graph can also rank sections with BM25 keyword search. Each ranking then
-contributes 20 candidates, and reciprocal rank fusion orders them before the
-top ten are returned.
+`LGOS_INTERRUPT_TTL_MINUTES`, `GraphError`, or `GraphFeature.BACKGROUND`, so the
+graph can also rank sections with BM25 keyword search. Each ranking contributes
+its top ten, and reciprocal rank fusion orders them before the top ten are
+returned. Only the strongest keyword matches take part: deeper down, pages that
+mention every word of a question, such as the docs home page, would outrank the
+sections that answer it.
 
-On the 0.30.0 docs, both modes put an answering page in the top ten for all 34
-single-part evaluation questions. BM25 moved exact names up, such as
-`LGOS_INTERRUPT_TTL_MINUTES` from second to first, and some plainly worded
-questions down a place or two.
+Replaying the queries the planner wrote for 799 evaluated questions in 17 runs,
+this put an answering page in the results for every part of every question. Twenty candidates per ranking missed 11, all for
+one plainly worded question, and embedding search alone missed 12.
 
 ## Lifetime And Failure
 

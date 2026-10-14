@@ -46,9 +46,8 @@ DOCS_REPO_URL = "https://github.com/ilkersigirci/langgraph-openai-serve"
 LOCAL_VERSION = "0.0.1"
 CHUNK_SIZE = 1_500
 CHUNK_OVERLAP = 200
+# Each ranking contributes its top results to fusion, which returns as many.
 SEARCH_LIMIT = 10
-# Each ranking contributes this many candidates to reciprocal rank fusion.
-FUSION_CANDIDATES = 20
 # The fusion constant from the original RRF paper; it limits how much a single
 # first place outweighs agreement between rankings.
 RRF_K = 60
@@ -76,10 +75,11 @@ they do not answer the question, say so instead of using prior knowledge.
 If the question could mean clearly different things that neither it nor the
 conversation settles, ask one short clarifying question instead of answering.
 
-Cite every section you use as a Markdown link, [short title](URL), with the
-section's exact URL; never write a bare URL, and never invent or modify one.
-Keep the answer concise, and include code from the documentation when it
-helps."""
+Link every section you use where you use it, as [short title](URL) with the
+section's exact URL, so an answer from the sections links at least one of them.
+Copy each URL character for character, anchor included; never write a bare URL,
+and never invent or change one. Keep the answer concise, and include code from
+the documentation when it helps."""
 
 DIRECT_PROMPT = """Reply briefly to greetings, thanks, and questions about
 yourself or this conversation. If a message is too vague to tell what it asks,
@@ -356,19 +356,20 @@ class DocsIndex:
         def in_scope(chunk: Document) -> bool:
             return scope == "all" or chunk.metadata["scope"] == scope
 
-        if not bm25:
-            return await self._vectors.asimilarity_search(
-                query, k=SEARCH_LIMIT, filter=in_scope
-            )
         semantic = await self._vectors.asimilarity_search(
-            query, k=FUSION_CANDIDATES, filter=in_scope
+            query, k=SEARCH_LIMIT, filter=in_scope
         )
+        if not bm25:
+            return semantic
         scores = self._bm25.get_scores(_terms(query))
+        # Only the strongest keyword matches, such as an exact name, take part:
+        # deeper down, pages that mention every word, such as the docs home
+        # page, would outrank the sections that answer.
         keyword = [
             self._chunks[position]
             for position in scores.argsort()[::-1]
             if scores[position] > 0 and in_scope(self._chunks[position])
-        ][:FUSION_CANDIDATES]
+        ][:SEARCH_LIMIT]
         return _fuse(semantic, keyword)[:SEARCH_LIMIT]
 
 
@@ -398,7 +399,9 @@ def create_lgos_rag_graph(
     docs_index: Callable[[], Awaitable[DocsIndex]] | None = None,
 ) -> CompiledStateGraph[LgosRagState, LgosRagSettings, Any, Any]:
     """Build the plan, retrieve, and answer workflow around one chat model."""
-    chat = model or chat_completions_model()
+    # Sampling adds nothing to documentation answers, and would vary the
+    # searches and answers for the same question.
+    chat = model or chat_completions_model(temperature=0)
     # Only the answer streams; the plan is internal, even text beside its call.
     planner = chat.with_structured_output(
         SearchPlan, method="function_calling"

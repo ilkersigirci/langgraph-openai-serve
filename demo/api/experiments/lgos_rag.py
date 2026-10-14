@@ -129,7 +129,10 @@ CASES = (
         "Why would resuming an interrupt return a run_busy 409 error?",
         _one(REFERENCE, COMPATIBILITY),
     ),
-    Case("When is RunBusyError raised?", _one(REFERENCE)),
+    Case(
+        "What does a client receive when a graph raises GraphError?",
+        _one(COMPATIBILITY),
+    ),
     Case("What does LGOS_BACKGROUND accept?", _one(SERVER, REFERENCE, BACKGROUND)),
     Case("What is GraphFeature.FILE_INPUTS for?", _one(REFERENCE, FILES)),
     Case("What does citation_slice do?", _one(REFERENCE)),
