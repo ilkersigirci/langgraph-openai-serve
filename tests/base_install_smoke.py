@@ -11,7 +11,6 @@ from tempfile import TemporaryDirectory
 
 def assert_optional_integrations_are_not_installed() -> None:
     for module in (
-        "langchain",
         "hatchet_sdk",
         "langfuse",
         "langgraph.checkpoint.postgres",

@@ -1419,6 +1419,7 @@ source = { editable = "." }
 default-groups = ["dev", "test"]
 dependencies = [
     { name = "httpx2" },
+    { name = "langchain" },
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
     { name = "langgraph-openai-serve", extra = ["server"] },
@@ -1450,6 +1451,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "httpx2", specifier = ">=2.13,<3" },
+    { name = "langchain", specifier = ">=1.4.3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
     { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.30.0" },
