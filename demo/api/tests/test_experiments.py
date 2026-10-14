@@ -77,6 +77,21 @@ def test_cases_whose_task_or_checks_raise_fail() -> None:
     assert "case 2: checks: KeyError: 'a check broke'" in str(error.value)
 
 
+def test_each_case_reports_its_outcome_as_it_finishes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _run(ITEMS, max_failures=2)
+
+    lines = capsys.readouterr().out.splitlines()
+    # Cases finish concurrently, so only the count, not the order, is fixed.
+    assert [line.partition("] ")[0] for line in lines] == ["[1/3", "[2/3", "[3/3"]
+    assert sorted(line.partition("] ")[2] for line in lines) == [
+        "✓ case 3",
+        "✗ case 1 (task raised RuntimeError: the gateway is down)",
+        "✗ case 2 (checks)",
+    ]
+
+
 def test_async_evaluators_score_cases() -> None:
     async def doubled(
         *, output: int, expected_output: Any, **_kwargs: Any

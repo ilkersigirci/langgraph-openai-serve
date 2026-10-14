@@ -17,7 +17,8 @@ just demo/experiment lgos-rag
 
 The recipe runs the script with the API's dependencies and the host gateway's
 models, so the gateway must be running. Add `--editable` to use the parent LGOS
-checkout.
+checkout. The script prints a line as each case finishes, naming the checks a
+failing case missed, then the run's summary.
 
 The script records to Langfuse when `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
 and `LANGFUSE_BASE_URL` are set, as in `demo/.env`. A fresh Langfuse project

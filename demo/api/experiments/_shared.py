@@ -116,14 +116,52 @@ def _failing_on_error(evaluator: EvaluatorFunction) -> EvaluatorFunction:
     return evaluate
 
 
-def _all_checks_passed(*, evaluations: list[Evaluation], **_kwargs: Any) -> Evaluation:
-    """Score a case as passed when it has checks and passed every one."""
-    failed = [check.name for check in evaluations if check.value != 1]
-    return score(
-        "passed",
-        passed=bool(evaluations) and not failed,
-        comment=f"failed: {failed}" if failed else None,
-    )
+class _Progress:
+    """Print a line per finished case; the runner reports only at the end."""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.done = 0
+
+    def _report(self, case_id: str, failure: str | None) -> None:
+        self.done += 1
+        outcome = f"✗ {case_id} ({failure})" if failure else f"✓ {case_id}"
+        print(f"[{self.done}/{self.total}] {outcome}", flush=True)
+
+    def task(self, task: TaskFunction) -> TaskFunction:
+        """Return the task, reporting its case when it raises."""
+
+        @functools.wraps(task)
+        async def run_case(*, item: ExperimentItem, **kwargs: Any) -> Any:
+            try:
+                output = task(item=item, **kwargs)
+                if inspect.isawaitable(output):
+                    output = await output
+            except Exception as error:
+                self._report(
+                    _case_id(item), f"task raised {type(error).__name__}: {error}"
+                )
+                raise
+            return output
+
+        return run_case
+
+    def passed(
+        self,
+        *,
+        evaluations: list[Evaluation],
+        metadata: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> Evaluation:
+        """Score a case as passed when it has checks and passed every one."""
+        # The runner calls this composite evaluator last for each scored case.
+        failed = [check.name for check in evaluations if check.value != 1]
+        self._report((metadata or {})["case_id"], ", ".join(failed))
+        return score(
+            "passed",
+            passed=bool(evaluations) and not failed,
+            comment=f"failed: {failed}" if failed else None,
+        )
 
 
 def _passed(result: ExperimentItemResult) -> bool:
@@ -188,13 +226,14 @@ def run(
             comment=f"{passed} of {len(data)} cases passed",
         )
 
+    progress = _Progress(len(data))
     result = context.run_experiment(
         name=name,
         description=description,
         data=data,
-        task=task,
+        task=progress.task(task),
         evaluators=[_failing_on_error(evaluator) for evaluator in evaluators],
-        composite_evaluator=_all_checks_passed,
+        composite_evaluator=progress.passed,
         run_evaluators=[pass_rate],
         max_concurrency=MAX_CONCURRENCY,
         metadata=metadata,
