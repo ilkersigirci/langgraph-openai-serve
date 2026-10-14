@@ -218,11 +218,26 @@ async def test_scope_limits_results_to_its_docs(
     } == expected
 
 
+DOCS_VERSIONS = [
+    {"version": "2.1.0-rc1", "title": "2.1.0-rc1", "aliases": []},
+    {"version": "2.0.0", "title": "2.0.0", "aliases": ["latest"]},
+    {"version": "1.9.0", "title": "1.9.0", "aliases": []},
+]
+
+
+def _docs_site() -> httpx2.MockTransport:
+    return httpx2.MockTransport(
+        lambda _request: httpx2.Response(200, json=DOCS_VERSIONS)
+    )
+
+
 @pytest.mark.parametrize(
     ("installed", "release"),
     [
         pytest.param("0.0.1", "2.0.0", id="checkout-uses-latest"),
         pytest.param("1.9.0", "1.9.0", id="release-uses-itself"),
+        # Installed versions are normalized, unlike the tag and the docs site.
+        pytest.param("2.1.0rc1", "2.1.0-rc1", id="prerelease-uses-its-tag-name"),
     ],
 )
 async def test_docs_release_follows_the_installed_lgos(
@@ -231,16 +246,19 @@ async def test_docs_release_follows_the_installed_lgos(
     release: str,
 ) -> None:
     monkeypatch.setattr(lgos_rag, "version", lambda _name: installed)
-    versions = [
-        {"version": "2.0.0", "title": "2.0.0", "aliases": ["latest"]},
-        {"version": "1.9.0", "title": "1.9.0", "aliases": []},
-    ]
-    transport = httpx2.MockTransport(
-        lambda _request: httpx2.Response(200, json=versions)
-    )
 
-    async with httpx2.AsyncClient(transport=transport) as client:
+    async with httpx2.AsyncClient(transport=_docs_site()) as client:
         assert await docs_release(client) == release
+
+
+async def test_release_without_published_docs_is_a_graph_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lgos_rag, "version", lambda _name: "2.2.0")
+
+    async with httpx2.AsyncClient(transport=_docs_site()) as client:
+        with pytest.raises(GraphError, match=r"no docs for LGOS 2\.2\.0"):
+            await docs_release(client)
 
 
 class _IdentifierBlindEmbeddings(Embeddings):

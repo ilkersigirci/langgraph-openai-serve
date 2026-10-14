@@ -32,6 +32,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph_openai_serve import ClientSettings, GraphConfig, GraphError, status_event
 from markdown.extensions.toc import slugify, strip_tags, unescape, unique
+from packaging.version import Version
 from pydantic import BaseModel, Field, TypeAdapter
 from rank_bm25 import BM25Okapi
 
@@ -147,20 +148,33 @@ class _DocsVersion(BaseModel):
 
 async def docs_release(client: httpx2.AsyncClient) -> str:
     """Return the installed release, or the latest one for an unreleased checkout."""
-    installed = version("langgraph-openai-serve")
-    if installed != LOCAL_VERSION:
-        return installed
-    # The docs site lists its published releases and marks the latest one.
+    # The docs site lists its published releases by tag name, such as 1.0.0-rc1,
+    # and marks the latest one.
     response = await client.get(f"{DOCS_SITE_URL}/versions.json")
     response.raise_for_status()
     releases = TypeAdapter(list[_DocsVersion]).validate_json(response.content)
-    latest = next(
-        (entry.version for entry in releases if "latest" in entry.aliases), None
-    )
-    if latest is None:
-        msg = f"{DOCS_SITE_URL}/versions.json names no latest LGOS release."
+    installed = version("langgraph-openai-serve")
+    if installed == LOCAL_VERSION:
+        release = next(
+            (entry.version for entry in releases if "latest" in entry.aliases), None
+        )
+    else:
+        # The installed version is normalized, as 1.0.0rc1 for that tag.
+        release = next(
+            (
+                entry.version
+                for entry in releases
+                if Version(entry.version) == Version(installed)
+            ),
+            None,
+        )
+    if release is None:
+        msg = (
+            f"{DOCS_SITE_URL}/versions.json has no docs for LGOS {installed}. "
+            "lgos-rag answers only from a tagged LGOS release's docs."
+        )
         raise GraphError(msg)
-    return latest
+    return release
 
 
 def docs_url(release: str) -> str:

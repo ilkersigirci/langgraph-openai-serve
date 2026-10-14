@@ -89,10 +89,11 @@ checkpoint a read-only answer for nothing to approve, and declaring
 
 ## Documentation Index
 
-The graph indexes the Markdown under `docs/` in the GitHub source archive of
-the installed release, tag `v<version>`, and links every section to the
-published docs of that version,
-`https://ilkersigirci.github.io/langgraph-openai-serve/<version>/`. The Markdown
+The graph finds the installed release in the docs site's `versions.json`, which
+names each release as its tag does: an installed `1.0.0rc1` is release
+`1.0.0-rc1`. It indexes the Markdown under `docs/` in the GitHub source archive
+of tag `v<release>`, and links every section to the published docs of that
+release, `https://ilkersigirci.github.io/langgraph-openai-serve/<release>/`. The Markdown
 keeps tables, code blocks, and links as the docs authors wrote them; the API
 reference that the site generates from docstrings is not part of it.
 
@@ -109,9 +110,9 @@ The graph answers only from a tagged release's docs. An unreleased LGOS
 checkout, such as the one the `--dev` Compose stack installs, reports the
 placeholder version `0.0.1`, because releases stamp their version from the tag.
 For it, the graph uses the release that the docs site's `versions.json` marks as
-`latest`, so its answers can trail docs changed in the checkout. Any other
-version without release docs fails the request with a server error, and the API
-log names the release archive it could not use.
+`latest`, so its answers can trail docs changed in the checkout. A release whose
+docs are not published yet, or whose archive has no docs, fails the request with
+a server error, and the API log says which.
 
 ## Client Settings
 
