@@ -32,6 +32,10 @@ runs:
       run: |
         uv_args=(--directory "$PROJECT_DIR" --locked)
         ty_args=(src)
+        # Experiment scripts import their `_shared` sibling module.
+        if [[ -d "$PROJECT_DIR/experiments" ]]; then
+          ty_args+=(experiments --extra-search-path experiments)
+        fi
         if [[ -n "$EDITABLE_PACKAGE" ]]; then
           # The server extra supplies `lgos serve` and its integrations.
           uv_args+=(--with-editable "$EDITABLE_PACKAGE[server]")

@@ -154,27 +154,18 @@ messages the client sends.
 
 ## Evaluate The Graph
 
-The evaluation runs as a Langfuse experiment, so every run keeps its traces and
-scores for comparison. `demo/api/experiments/lgos_rag.py` holds 57 cases:
-questions in a user's words, exact names, follow-ups that need the
-conversation, multi-part questions, scoped searches, greetings, unrelated
-requests, and the reply's shape after a restricted miss or a vague message.
+`demo/api/experiments/lgos_rag.py` evaluates the graph as a Langfuse
+[experiment](../experiments.md), with the gateway's models and the published
+docs:
 
 ```bash
-just demo/experiment-rag
+just demo/experiment lgos-rag
 ```
 
-The script follows the Langfuse experiment runner convention: it exposes
-`experiment(context)` and raises `RegressionError` when the run fails, so the
-[Langfuse experiment action](https://github.com/langfuse/experiment-action) can
-run the same file in CI.
-
-Each run makes the hosted `lgos-rag` dataset's active items exactly these cases,
-runs the whole graph on every item with the gateway's models and the published
-docs, and records the graph's calls in the item's trace. The dataset's JSON
-schemas come from the script's item models, so Langfuse rejects a malformed
-item. Code then records each check that applies to a case as a `BOOLEAN` pass
-or fail score:
+It holds 57 cases: questions in a user's words, exact names, follow-ups that
+need the conversation, multi-part questions, scoped searches, greetings,
+unrelated requests, and the reply's shape after a restricted miss or a vague
+message. Each check that applies to a case becomes a pass or fail score:
 
 | Score | Passes when |
 | --- | --- |
@@ -184,27 +175,10 @@ or fail score:
 | `links` | Every Markdown link in the answer comes from the retrieved sections |
 | `citation` | The answer cites at least one retrieved section |
 | `reply` | A reply-shape case shows the scope hint, or asks a clarifying question without declining |
-| `passed` | The case has checks and passes all of them; a composite of the scores above |
 
-The run's `pass_rate` is the share of cases scored `passed`, and its metadata
-records the commit, LGOS version, models, and evaluator version. In
-Langfuse, compare runs of the dataset to see which cases a prompt, model, or
-retrieval change fixed or broke.
-
-Model sampling flips a case or two between runs, so a run fails only when more
-than three cases fail, and the error lists them. Add a case in the script
-whenever a real question goes wrong, not in the Langfuse dataset, which each
-run overwrites.
-
-The script records to Langfuse when `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
-and `LANGFUSE_BASE_URL` are set, as in `demo/.env`. Without them, as in CI, it
-runs the same cases and checks on local data with Langfuse disabled, records
-nothing, and still fails the run on too many failing cases. To run that way
-locally, also turn off the API's own tracing:
-
-```bash
-LGOS_ENABLE_LANGFUSE=false LANGFUSE_PUBLIC_KEY= just demo/experiment-rag
-```
+A run fails when more than three cases fail. Add a case in the script whenever
+a real question goes wrong, and rerun the experiment after changing prompts,
+chunking, ranking, or models.
 
 ## Try It
 

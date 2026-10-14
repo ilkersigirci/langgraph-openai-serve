@@ -57,6 +57,8 @@ env = [
     "LGOS_ENABLE_LANGFUSE=False",
 ]
 testpaths = ["tests"]
+# Experiment scripts import their `_shared` sibling module.
+pythonpath = ["experiments"]
 markers = [
     "integration: requires explicitly started external demo services",
 ]
@@ -69,6 +71,7 @@ src = ["src", "tests"]
 "experiments/*.py" = [
     "print", # Experiment scripts report their run on stdout.
     "implicit-namespace-package", # Standalone scripts, not an importable package.
+    "import-private-name", # The Langfuse experiment action skips `_`-named helpers like `_shared`.
 ]
 "notebooks/*.py" = [
     "print", # Notebook cells display client responses on stdout.

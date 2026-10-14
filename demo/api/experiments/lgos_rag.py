@@ -1,43 +1,21 @@
 """
 lgos-rag's evaluation as a Langfuse experiment over the published docs.
 
-The cases below are the source of truth. With Langfuse configured, each run
-syncs them into the hosted Langfuse dataset, runs the graph on every item, and
-records one pass-or-fail score per check, so Langfuse compares runs case by
-case. Without Langfuse, the same cases and checks run on local data and record
-nothing, which suits CI. Either way, too many failing cases fail the run.
-
-The file follows the Langfuse experiment runner convention, so the
-langfuse/experiment-action GitHub Action can run it unchanged;
-`just demo/experiment-rag` runs it locally.
+Each case is a conversation with the pages that answer it, or the reply shape
+expected instead. The checks score routing, retrieval, scope, links, and
+citations, and `_shared` runs them in Langfuse or, without it, locally.
 """
 
-import hashlib
-import json
-import os
 import re
-import subprocess  # ruff: ignore[suspicious-subprocess-import] - reads the checkout's commit for run metadata.
 from importlib.metadata import version
 from typing import Any, Literal, NamedTuple
 
+from _shared import item_input, main, run, score
 from langchain_core.messages import convert_to_messages
-from langfuse import (
-    Evaluation,
-    Langfuse,
-    RegressionError,
-    RunnerContext,
-    get_client,
-)
-from langfuse.api import DatasetItem, DatasetStatus
-from langfuse.experiment import (
-    ExperimentData,
-    ExperimentItem,
-    ExperimentItemResult,
-    ExperimentResult,
-)
+from langfuse import Evaluation, RunnerContext
+from langfuse.experiment import ExperimentItem, ExperimentResult, LocalExperimentItem
 from langfuse.langchain import CallbackHandler
 from langgraph_openai_serve.graph.citations import citations_from_message
-from pydantic import BaseModel, ConfigDict, Field
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.lgos_rag import (
@@ -46,10 +24,6 @@ from lgos_demo_api.graphs.lgos_rag import (
     Scope,
     create_lgos_rag_graph,
 )
-
-DATASET = "lgos-rag"
-# Bump when a check changes, so runs graded differently are not compared.
-EVALUATOR_VERSION = "2"
 
 REFERENCE = "reference/"
 COMPATIBILITY = "explanation/openai-compatibility/"
@@ -62,9 +36,6 @@ CLIENTS = "tutorials/openai-clients/"
 INTERRUPTS = (COMPATIBILITY, CLIENTS, REFERENCE)
 # The demo's LiteLLM page shows registering LGOS models behind that proxy.
 PROXIES = ("how-to-guides/openai-proxies/", "demo/litellm-sync/")
-# Model sampling flips a case between runs, while a regression fails many;
-# three runs of the graph failed one case at most.
-MAX_FAILURES = 3
 
 
 class Case(NamedTuple):
@@ -308,82 +279,50 @@ REPLY_CHECKS = {
 }
 
 
-class Message(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1)
-
-
-class CaseInput(BaseModel):
-    """A dataset item's input: the conversation and the search scope."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    messages: list[Message] = Field(min_length=1)
-    scope: Scope
-
-
-class CaseExpectation(BaseModel):
-    """A dataset item's expected output: answering pages or a reply shape."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    parts: list[list[str]]
-    reply: Literal["scope_hint", "clarify"] | None
-
-
-def _item(case: Case) -> tuple[str, dict[str, Any], dict[str, Any]]:
-    """Return a case's dataset item ID, input, and expected output."""
-    turns = [*case.history, case.question]
-    item_input = CaseInput(
-        messages=[
-            Message(role="user" if position % 2 == 0 else "assistant", content=text)
-            for position, text in enumerate(turns)
-        ],
-        scope=case.scope,
-    ).model_dump()
-    expected = CaseExpectation(
-        parts=[sorted(pages) for pages in case.parts], reply=case.reply
-    ).model_dump()
-    digest = hashlib.sha256(json.dumps(item_input, sort_keys=True).encode())
-    # Langfuse item IDs are unique across a project's datasets.
-    return f"{DATASET}-{digest.hexdigest()[:16]}", item_input, expected
-
-
-def _sync_dataset(langfuse: Langfuse) -> None:
-    """Make the hosted dataset's active items exactly this file's cases."""
-    # Creating an existing dataset updates it, so its schemas follow the models.
-    langfuse.create_dataset(
-        name=DATASET,
-        description="Managed by demo/api/experiments/lgos_rag.py.",
-        input_schema=CaseInput.model_json_schema(),
-        expected_output_schema=CaseExpectation.model_json_schema(),
-    )
-    current = {item.id: item for item in langfuse.get_dataset(DATASET).items}
-    cases = {
-        item_id: (item_input, expected)
-        for item_id, item_input, expected in map(_item, CASES)
+def _item(case: Case) -> LocalExperimentItem:
+    turns = (*case.history, case.question)
+    messages = [
+        {"role": "user" if position % 2 == 0 else "assistant", "content": text}
+        for position, text in enumerate(turns)
+    ]
+    return {
+        "input": {"messages": messages, "scope": case.scope},
+        "expected_output": {
+            "parts": [sorted(pages) for pages in case.parts],
+            "reply": case.reply,
+        },
+        "metadata": {"case_id": case.question},
     }
-    # Rewriting an unchanged item would add a dataset version for nothing.
-    for item_id, (item_input, expected) in cases.items():
-        item = current.get(item_id)
-        if item is None or (item.input, item.expected_output) != (item_input, expected):
-            langfuse.create_dataset_item(
-                dataset_name=DATASET,
-                id=item_id,
-                input=item_input,
-                expected_output=expected,
-            )
-    for item_id, item in current.items():
-        if item_id not in cases and item.status == DatasetStatus.ACTIVE:
-            langfuse.create_dataset_item(
-                dataset_name=DATASET,
-                id=item_id,
-                input=item.input,
-                expected_output=item.expected_output,
-                status=DatasetStatus.ARCHIVED,
-            )
+
+
+ITEMS = [_item(case) for case in CASES]
+_GRAPH = create_lgos_rag_graph()
+
+
+async def _answer(*, item: ExperimentItem, **_kwargs: Any) -> dict[str, Any]:
+    case = item_input(item)
+    state = await _GRAPH.ainvoke(
+        {"messages": convert_to_messages(case["messages"])},
+        # The handler records the graph's calls in the case's trace.
+        config={"callbacks": [CallbackHandler()]},
+        context=LgosRagSettings(scope=case["scope"]),
+    )
+    # LangGraph omits fields that kept their defaults, such as an empty plan.
+    documents = state.get("documents", [])
+    message = state["messages"][-1]
+    return {
+        "answer": message.text,
+        "queries": state.get("queries", []),
+        "sources": [str(document.metadata["url"]) for document in documents],
+        "source_links": sorted(
+            {
+                match["url"]
+                for document in documents
+                for match in _LINK.finditer(document.page_content)
+            }
+        ),
+        "citations": [citation["url"] for citation in citations_from_message(message)],
+    }
 
 
 def _page(url: str) -> str:
@@ -391,13 +330,7 @@ def _page(url: str) -> str:
     return url.removeprefix(f"{DOCS_SITE_URL}/").partition("/")[2].partition("#")[0]
 
 
-def _score(name: str, *, passed: bool, comment: str | None = None) -> Evaluation:
-    return Evaluation(
-        name=name, value=float(passed), data_type="BOOLEAN", comment=comment
-    )
-
-
-def _checks(
+def checks(
     *,
     input: dict[str, Any],  # ruff: ignore[builtin-argument-shadowing] - Langfuse passes the item input by this name.
     output: dict[str, Any],
@@ -405,17 +338,16 @@ def _checks(
     **_kwargs: Any,
 ) -> list[Evaluation]:
     """Score each check that applies to the case as passed or failed."""
-    expected = CaseExpectation.model_validate(expected_output)
     answer = output["answer"]
-    if expected.reply:
-        return [
-            _score("reply", passed=REPLY_CHECKS[expected.reply](answer), comment=answer)
-        ]
-    parts = [set(pages) for pages in expected.parts]
+    if reply := expected_output["reply"]:
+        return [score("reply", passed=REPLY_CHECKS[reply](answer), comment=answer)]
+    parts = [set(pages) for pages in expected_output["parts"]]
     queries = output["queries"]
     scores = [
-        _score(
-            "route", passed=bool(queries) == bool(parts), comment=f"queries: {queries}"
+        score(
+            "route",
+            passed=bool(queries) == bool(parts),
+            comment=f"queries: {queries}",
         )
     ]
     if not parts or not queries:
@@ -423,18 +355,18 @@ def _checks(
     found = {_page(url) for url in output["sources"]}
     missing = [sorted(pages) for pages in parts if not pages & found]
     scores.append(
-        _score(
+        score(
             "retrieval",
             passed=not missing,
             comment=f"missing {missing} in {sorted(found)}" if missing else None,
         )
     )
-    if (scope := CaseInput.model_validate(input).scope) != "all":
+    if (scope := input["scope"]) != "all":
         outside = sorted(
             page for page in found if page.startswith("demo/") != (scope == "demo")
         )
         scores.append(
-            _score(
+            score(
                 "scope",
                 passed=not outside,
                 comment=f"outside: {outside}" if outside else None,
@@ -445,156 +377,38 @@ def _checks(
     invented = sorted(links - set(output["sources"]) - set(output["source_links"]))
     scores.extend(
         [
-            _score(
+            score(
                 "links",
                 passed=not invented,
                 comment=f"invented: {invented}" if invented else None,
             ),
-            _score("citation", passed=bool(output["citations"])),
+            score("citation", passed=bool(output["citations"])),
         ]
     )
     return scores
 
 
-def _all_checks_passed(*, evaluations: list[Evaluation], **_kwargs: Any) -> Evaluation:
-    """Score a case as passed when it has checks and passed every one."""
-    failed = [score.name for score in evaluations if score.value != 1]
-    return _score(
-        "passed",
-        passed=bool(evaluations) and not failed,
-        comment=f"failed: {failed}" if failed else None,
-    )
-
-
-def _input(item: ExperimentItem) -> CaseInput:
-    # Hosted dataset items are objects; local data items are dictionaries.
-    raw = item.input if isinstance(item, DatasetItem) else item["input"]
-    return CaseInput.model_validate(raw)
-
-
-def _passed(result: ExperimentItemResult) -> bool:
-    # A failed task or a crashed evaluator leaves no passed score.
-    return any(
-        score.name == "passed" and score.value == 1 for score in result.evaluations
-    )
-
-
-def _pass_rate(
-    *, item_results: list[ExperimentItemResult], **_kwargs: Any
-) -> Evaluation:
-    passed = sum(map(_passed, item_results))
-    return Evaluation(
-        name="pass_rate",
-        value=passed / len(item_results),
-        comment=f"{passed} of {len(item_results)} cases passed",
-    )
-
-
-def _metadata() -> dict[str, str]:
-    commit = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],  # ruff: ignore[start-process-with-partial-path] - git from PATH, fixed arguments.
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
-    return {
-        "commit": commit or "unknown",
-        "lgos": version("langgraph-openai-serve"),
-        "chat_model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,
-        "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
-        "evaluators": EVALUATOR_VERSION,
-    }
-
-
-def _run(context: RunnerContext, data: ExperimentData) -> ExperimentResult:
-    """Run the cases, score them, and fail when too many cases fail."""
-    graph = create_lgos_rag_graph()
-
-    async def answer(*, item: ExperimentItem, **_kwargs: Any) -> dict[str, Any]:
-        case_input = _input(item)
-        state = await graph.ainvoke(
-            {
-                "messages": convert_to_messages(
-                    [message.model_dump() for message in case_input.messages]
-                )
-            },
-            config={"callbacks": [CallbackHandler()]},
-            context=LgosRagSettings(scope=case_input.scope),
-        )
-        # LangGraph omits fields that kept their defaults, such as an empty plan.
-        documents = state.get("documents", [])
-        message = state["messages"][-1]
-        return {
-            "answer": message.text,
-            "queries": state.get("queries", []),
-            "sources": [str(document.metadata["url"]) for document in documents],
-            "source_links": sorted(
-                {
-                    match["url"]
-                    for document in documents
-                    for match in _LINK.finditer(document.page_content)
-                }
-            ),
-            "citations": [
-                citation["url"] for citation in citations_from_message(message)
-            ],
-        }
-
-    result = context.run_experiment(
+def experiment(context: RunnerContext) -> ExperimentResult:
+    """Run lgos-rag's cases; the entry point of the Langfuse experiment runner."""
+    return run(
+        context,
         name="lgos-rag",
         description="Routing, retrieval, scope, links, and citations per case.",
-        data=data,
-        task=answer,
-        evaluators=[_checks],
-        composite_evaluator=_all_checks_passed,
-        run_evaluators=[_pass_rate],
-        max_concurrency=8,
-        metadata=_metadata(),
+        items=ITEMS,
+        task=_answer,
+        evaluators=[checks],
+        # Three runs of the graph failed one case at most.
+        max_failures=3,
+        metadata={
+            # Change it with a check, so runs graded differently are not compared.
+            "evaluator_version": "2",
+            # lgos-rag answers from this release's docs.
+            "lgos": version("langgraph-openai-serve"),
+            "chat_model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,
+            "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+        },
     )
-    failed = {
-        _input(item_result.item).messages[-1].content: [
-            f"{score.name}: {score.comment}"
-            for score in item_result.evaluations
-            if score.name != "passed" and score.value != 1
-        ]
-        or ["no checks scored"]
-        for item_result in result.item_results
-        if not _passed(item_result)
-    }
-    if len(failed) > MAX_FAILURES:
-        raise RegressionError(
-            result=result,
-            metric="failed_cases",
-            value=len(failed),
-            threshold=MAX_FAILURES,
-            message=f"{len(failed)} cases failed: {failed}",
-        )
-    return result
-
-
-def experiment(context: RunnerContext) -> ExperimentResult:
-    """Sync the hosted dataset, then run, trace, and score its items in Langfuse."""
-    _sync_dataset(context.client)
-    return _run(context, context.client.get_dataset(DATASET).items)
 
 
 if __name__ == "__main__":
-    if os.getenv("LANGFUSE_PUBLIC_KEY"):
-        langfuse = get_client()
-        try:
-            outcome = experiment(RunnerContext(client=langfuse))
-        finally:
-            langfuse.flush()
-    else:
-        # Without Langfuse, the same cases and checks run on local data, and
-        # nothing is recorded; the gate still fails the run.
-        print("Langfuse is not configured; running the cases without recording.")
-        offline = RunnerContext(client=Langfuse(tracing_enabled=False))
-        outcome = _run(
-            offline,
-            [
-                {"input": item_input, "expected_output": expected}
-                for _, item_input, expected in map(_item, CASES)
-            ],
-        )
-    print(outcome.format())
+    main(experiment, ITEMS)

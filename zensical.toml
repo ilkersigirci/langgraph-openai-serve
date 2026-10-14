@@ -26,6 +26,7 @@ nav = [
     { "Design Choices" = "demo/design-choices.md" },
     { "Run the Demo API" = "demo/api.md" },
     { "Run the Files API" = "demo/files-api.md" },
+    { Experiments = "demo/experiments.md" },
     { "Example Graphs" = [
       "demo/graphs/index.md",
       { "Advanced Graph" = "demo/graphs/advanced-graph.md" },

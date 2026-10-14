@@ -51,7 +51,7 @@ integration commands:
 | `just demo/sync` | Synchronize every project from its lockfile |
 | `just demo/test [--editable]` | Test every project, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
-| `just demo/experiment-rag [--editable]` | Run the `lgos-rag` Langfuse experiment with the published docs and the host gateway's models |
+| `just demo/experiment <name> [--editable] [--no-langfuse]` | Run a [Langfuse experiment](experiments.md) from `demo/api/experiments`, such as `lgos-rag`, with the host gateway's models; `--no-langfuse` records nothing |
 | `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, idempotent replay, and polling-only validation through the selected gateway |
 | `just demo/lint` | Check every project with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in every project; accepts Ruff flags such as `--unsafe-fixes` |
