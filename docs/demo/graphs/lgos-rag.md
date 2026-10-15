@@ -186,6 +186,30 @@ A run fails when more than three cases fail. Add a case in the script whenever
 a real question goes wrong, and rerun the experiment after changing prompts,
 chunking, ranking, or models.
 
+Cases curated in Langfuse use the script's case format. The input is the
+conversation, ending with the user's message, and the graph's
+[client settings](#client-settings):
+
+```json title="Input"
+{
+  "messages": [{"role": "user", "content": "How do I put LGOS behind LiteLLM?"}],
+  "settings": {"scope": "library"}
+}
+```
+
+The expected output lists, for each part of the question, the docs pages that
+answer it, as paths after the release. The search must find one page of each
+part:
+
+```json title="Expected output"
+{"parts": [["how-to-guides/openai-proxies/"]], "reply": null}
+```
+
+Empty `parts` mean that no page in the scope answers the message, so the graph
+must not search. `reply` checks the reply's shape instead: `"clarify"` expects
+a clarifying question, and `"scope_hint"` expects a search of the restricted
+scope and a reply that suggests the **Docs scope** All.
+
 ## Try It
 
 | Path | Prompt |

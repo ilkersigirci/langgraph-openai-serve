@@ -3,10 +3,14 @@ Langfuse plumbing shared by the demo's experiments.
 
 An experiment script follows the Langfuse experiment runner convention: a task
 and evaluators with the runner's keyword arguments, and an `experiment(context)`
-entry point that returns `run(...)`. Its cases are local experiment items, each
-with a stable `case_id` in its metadata. In Langfuse, `run` syncs them into a
-hosted dataset named after the experiment and runs the items it synced; a
-context that brings data, such as the Langfuse action's dataset or `main`
+entry point that returns `run(...)`. Its Git-tracked cases are local experiment
+items, its `case_id` function names a case by its input, and its Pydantic models
+define the shape of a case's input and expected output.
+
+In Langfuse, `run` syncs the cases into the `<name>/regression` dataset and runs
+the items it synced. It also keeps a `<name>/curated` dataset, with the same
+case schemas, for cases that testers curate in the Langfuse UI. A context that
+brings data, such as the Langfuse action's dataset, `main --dataset`, or `main`
 without Langfuse, runs that data instead. `run` scores each case and the run,
 and raises `RegressionError` when too many cases fail.
 
@@ -15,6 +19,7 @@ the experiment's folder on `sys.path`, so experiments import this module as
 `_shared`, both there and when run as scripts.
 """
 
+import argparse
 import functools
 import hashlib
 import inspect
@@ -34,6 +39,7 @@ from langfuse.experiment import (
     LocalExperimentItem,
     TaskFunction,
 )
+from pydantic import BaseModel
 
 # Bounds the graph runs at once, so a run stays within model rate limits.
 MAX_CONCURRENCY = 8
@@ -65,26 +71,47 @@ def _local(item: ExperimentItem) -> LocalExperimentItem:
     return item
 
 
-def _case_id(item: ExperimentItem) -> str:
-    return (_local(item).get("metadata") or {})["case_id"]
-
-
-def _sync_dataset(
+def _sync_datasets(
     langfuse: Langfuse,
+    *,
     name: str,
     description: str,
     items: Sequence[LocalExperimentItem],
+    case_id: Callable[[Any], str],
+    input_schema: type[BaseModel],
+    expected_output_schema: type[BaseModel],
 ) -> list[DatasetItem]:
-    """Make the hosted dataset's items exactly `items`, and return the hosted ones."""
-    # Creating an existing dataset updates its description.
-    langfuse.create_dataset(name=name, description=description)
+    """Mirror `items` into the regression dataset, and return the hosted ones."""
+    regression = f"{name}/regression"
+    schemas = {
+        "input_schema": input_schema.model_json_schema(),
+        "expected_output_schema": expected_output_schema.model_json_schema(),
+    }
+    # Creating an existing dataset updates its description and schemas.
+    langfuse.create_dataset(
+        name=regression,
+        description=(
+            f"{description} Mirrors the Git-tracked cases of "
+            "demo/api/experiments; every run there overwrites edits made here."
+        ),
+        **schemas,
+    )
+    langfuse.create_dataset(
+        name=f"{name}/curated",
+        description=(
+            f"{description} Curated in Langfuse; run it with "
+            f"`just demo/experiment {name} --dataset {name}/curated`."
+        ),
+        **schemas,
+    )
     # Langfuse lists only active items; archived ones stay out of runs.
-    hosted = {item.id: item for item in langfuse.get_dataset(name).items}
+    hosted = {item.id: item for item in langfuse.get_dataset(regression).items}
     synced = {}
     for item in items:
-        # Item IDs are unique across a project's datasets, so each names it.
-        case_id = _case_id(item)
-        item_id = f"{name}-{hashlib.sha256(case_id.encode()).hexdigest()[:16]}"
+        # Item IDs are unique across a project's datasets, so each hashes its
+        # dataset's name too; the hash also keeps the name's slash out of URLs.
+        key = f"{regression}\n{case_id(item['input'])}"
+        item_id = hashlib.sha256(key.encode()).hexdigest()[:32]
         old = hosted.get(item_id)
         new = (item["input"], item.get("expected_output"), item.get("metadata"))
         # Rewriting an unchanged item would add a dataset version for nothing.
@@ -93,7 +120,7 @@ def _sync_dataset(
         else:
             # The active status restores a case archived earlier.
             synced[item_id] = langfuse.create_dataset_item(
-                dataset_name=name,
+                dataset_name=regression,
                 id=item_id,
                 input=item["input"],
                 expected_output=item.get("expected_output"),
@@ -103,7 +130,7 @@ def _sync_dataset(
     for item_id, old in hosted.items():
         if item_id not in synced:
             langfuse.create_dataset_item(
-                dataset_name=name,
+                dataset_name=regression,
                 id=item_id,
                 input=old.input,
                 expected_output=old.expected_output,
@@ -155,8 +182,9 @@ def _validated(evaluator: EvaluatorFunction) -> EvaluatorFunction:
 class _Progress:
     """Print a line per finished case; the runner reports only at the end."""
 
-    def __init__(self, total: int) -> None:
+    def __init__(self, total: int, case_id: Callable[[Any], str]) -> None:
         self.total = total
+        self.case_id = case_id
         self.done = 0
 
     def _report(self, case_id: str, failure: str | None) -> None:
@@ -175,7 +203,8 @@ class _Progress:
                     output = await output
             except Exception as error:
                 self._report(
-                    _case_id(item), f"task raised {type(error).__name__}: {error}"
+                    self.case_id(_local(item)["input"]),
+                    f"task raised {type(error).__name__}: {error}",
                 )
                 raise
             return output
@@ -185,14 +214,14 @@ class _Progress:
     def passed(
         self,
         *,
+        input: Any = None,  # ruff: ignore[builtin-argument-shadowing] - Langfuse passes the item input by this name.
         evaluations: list[Evaluation],
-        metadata: dict[str, Any] | None = None,
         **_kwargs: Any,
     ) -> Evaluation:
         """Score a case as passed when it has checks and passed every one."""
         # The runner calls this composite evaluator last for each scored case.
         failed = [check.name for check in evaluations if check.value != 1]
-        self._report((metadata or {})["case_id"], ", ".join(failed))
+        self._report(self.case_id(input), ", ".join(failed))
         return score(
             VERDICT,
             passed=bool(evaluations) and not failed,
@@ -221,12 +250,15 @@ def _failure(result: ExperimentItemResult | None) -> str | None:
     return "; ".join(failed) or "unscored; see its trace or the log"
 
 
-def run(
+def run(  # ruff: ignore[too-many-arguments] - Keyword-only parts of one experiment definition.
     context: RunnerContext,
     *,
     name: str,
     description: str,
     items: Sequence[LocalExperimentItem],
+    case_id: Callable[[Any], str],
+    input_schema: type[BaseModel],
+    expected_output_schema: type[BaseModel],
     task: Task,
     evaluators: list[EvaluatorFunction],
     max_failures: int,
@@ -235,13 +267,14 @@ def run(
     """
     Run the cases as a Langfuse experiment and gate the result.
 
-    Each evaluator returns one `score` per check that applies, or fails the case
-    under its own name when it raises or returns anything else, and the case is
-    scored `passed` when it passes them all. The run is scored with
-    `pass_rate`, and raises `RegressionError` when more than `max_failures`
-    cases fail.
+    `case_id` names a case by its input, and Langfuse validates every hosted
+    case against the schemas. Each evaluator returns one `score` per check that
+    applies, or fails the case under its own name when it raises or returns
+    anything else, and the case is scored `passed` when it passes them all. The
+    run is scored with `pass_rate`, and raises `RegressionError` when more than
+    `max_failures` cases fail.
     """
-    case_ids = [_case_id(item) for item in items]
+    case_ids = [case_id(item["input"]) for item in items]
     if not case_ids:
         msg = f"Experiment {name} has no cases."
         raise ValueError(msg)
@@ -249,7 +282,15 @@ def run(
         msg = f"Experiment {name} repeats case IDs: {repeated}"
         raise ValueError(msg)
     data: ExperimentData = (
-        _sync_dataset(context.client, name, description, items)
+        _sync_datasets(
+            context.client,
+            name=name,
+            description=description,
+            items=items,
+            case_id=case_id,
+            input_schema=input_schema,
+            expected_output_schema=expected_output_schema,
+        )
         if context.data is None
         else context.data
     )
@@ -269,7 +310,7 @@ def run(
             comment=f"{passed} of {len(data)} cases passed",
         )
 
-    progress = _Progress(len(data))
+    progress = _Progress(len(data), case_id)
     result = context.run_experiment(
         name=name,
         description=description,
@@ -283,7 +324,7 @@ def run(
     )
     results = {id(item_result.item): item_result for item_result in result.item_results}
     failures = [
-        f"{_case_id(item)}: {failure}"
+        f"{case_id(_local(item)['input'])}: {failure}"
         for item in data
         if (failure := _failure(results.get(id(item))))
     ]
@@ -305,8 +346,17 @@ def main(
     items: Sequence[LocalExperimentItem],
 ) -> None:
     """Run an experiment script in Langfuse when configured, otherwise locally."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dataset", help="run this Langfuse dataset instead of the Git-tracked cases"
+    )
+    dataset = parser.parse_args().dataset
     if os.getenv("LANGFUSE_PUBLIC_KEY"):
-        context = RunnerContext(client=get_client())
+        client = get_client()
+        data = client.get_dataset(dataset).items if dataset else None
+        context = RunnerContext(client=client, data=data)
+    elif dataset:
+        parser.error("--dataset needs the Langfuse keys")
     else:
         print("Langfuse is not configured; running the cases without recording.")
         # Placeholder keys register the disabled client, so each

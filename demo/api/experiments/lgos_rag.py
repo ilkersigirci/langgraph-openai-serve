@@ -2,8 +2,10 @@
 lgos-rag's evaluation as a Langfuse experiment over the published docs.
 
 Each case is a conversation with the pages that answer it, or the reply shape
-expected instead. The checks score routing, retrieval, scope, links, and
-citations, and `_shared` runs them in Langfuse or, without it, locally.
+expected instead. `CaseInput` and `CaseExpectation` define the case format for
+the Git-tracked cases below and for cases curated in Langfuse. The checks score
+routing, retrieval, scope, links, and citations, and `_shared` runs them in
+Langfuse or, without it, locally.
 """
 
 import re
@@ -16,6 +18,7 @@ from langfuse import Evaluation, RunnerContext
 from langfuse.experiment import ExperimentResult, LocalExperimentItem
 from langfuse.langchain import CallbackHandler
 from langgraph_openai_serve.graph.citations import citations_from_message
+from pydantic import BaseModel, ConfigDict, Field
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs.lgos_rag import (
@@ -283,20 +286,63 @@ REPLY_CHECKS = {
 }
 
 
+class Message(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class CaseInput(BaseModel):
+    """A conversation that ends with the user's message, and the graph settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    messages: list[Message] = Field(min_length=1)
+    settings: LgosRagSettings = LgosRagSettings()
+
+
+class CaseExpectation(BaseModel):
+    """What the graph's reply to the conversation must do."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    parts: list[list[str]] = Field(
+        description=(
+            "For each part of the question, the docs pages that answer it, as "
+            "paths such as how-to-guides/authentication/; the search must find "
+            "one page of each part. Empty when no page in the scope answers it."
+        )
+    )
+    reply: Literal["scope_hint", "clarify"] | None = Field(
+        default=None,
+        description=(
+            "scope_hint: the reply suggests the Docs scope All after a search of "
+            "a restricted scope. clarify: the reply asks a clarifying question."
+        ),
+    )
+
+
 def _item(case: Case) -> LocalExperimentItem:
     turns = (*case.history, case.question)
     messages = [
-        {"role": "user" if position % 2 == 0 else "assistant", "content": text}
+        Message(role="user" if position % 2 == 0 else "assistant", content=text)
         for position, text in enumerate(turns)
     ]
+    expectation = CaseExpectation(
+        parts=[sorted(pages) for pages in case.parts], reply=case.reply
+    )
     return {
-        "input": {"messages": messages, "scope": case.scope},
-        "expected_output": {
-            "parts": [sorted(pages) for pages in case.parts],
-            "reply": case.reply,
-        },
-        "metadata": {"case_id": case.question},
+        "input": CaseInput(
+            messages=messages, settings=LgosRagSettings(scope=case.scope)
+        ).model_dump(mode="json"),
+        "expected_output": expectation.model_dump(mode="json"),
     }
+
+
+def _question(case_input: dict[str, Any]) -> str:
+    """Name a case by its last message; the Git-tracked cases keep them unique."""
+    return case_input["messages"][-1]["content"]
 
 
 ITEMS = [_item(case) for case in CASES]
@@ -304,12 +350,16 @@ _GRAPH = create_lgos_rag_graph()
 
 
 async def _answer(*, item: LocalExperimentItem, **_kwargs: Any) -> dict[str, Any]:
-    case = item["input"]
+    case = CaseInput.model_validate(item["input"])
     state = await _GRAPH.ainvoke(
-        {"messages": convert_to_messages(case["messages"])},
+        {
+            "messages": convert_to_messages(
+                [(turn.role, turn.content) for turn in case.messages]
+            )
+        },
         # The handler records the graph's calls in the case's trace.
         config={"callbacks": [CallbackHandler()]},
-        context=LgosRagSettings(scope=case["scope"]),
+        context=case.settings,
     )
     # LangGraph omits fields that kept their defaults, such as an empty plan.
     documents = state.get("documents", [])
@@ -342,9 +392,11 @@ def checks(
     **_kwargs: Any,
 ) -> list[Evaluation]:
     """Score each check that applies to the case as passed or failed."""
+    case = CaseInput.model_validate(input)
+    expected = CaseExpectation.model_validate(expected_output)
     answer = output["answer"]
-    parts = [set(pages) for pages in expected_output["parts"]]
-    reply = expected_output["reply"]
+    parts = [set(pages) for pages in expected.parts]
+    reply = expected.reply
     queries = output["queries"]
     # A scope hint follows a search that found nothing in the selected scope.
     searches = bool(parts) or reply == "scope_hint"
@@ -370,7 +422,7 @@ def checks(
             comment=f"missing {missing} in {sorted(found)}" if missing else None,
         )
     )
-    if (scope := input["scope"]) != "all":
+    if (scope := case.settings.scope) != "all":
         outside = sorted(
             page for page in found if page.startswith("demo/") != (scope == "demo")
         )
@@ -404,13 +456,16 @@ def experiment(context: RunnerContext) -> ExperimentResult:
         name="lgos-rag",
         description="Routing, retrieval, scope, links, and citations per case.",
         items=ITEMS,
+        case_id=_question,
+        input_schema=CaseInput,
+        expected_output_schema=CaseExpectation,
         task=_answer,
         evaluators=[checks],
         # Three runs of the graph failed one case at most.
         max_failures=3,
         metadata={
             # Change it with a check, so runs graded differently are not compared.
-            "evaluator_version": "6",
+            "evaluator_version": "1",
             # lgos-rag answers from this release's docs.
             "lgos": version("langgraph-openai-serve"),
             "chat_model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,

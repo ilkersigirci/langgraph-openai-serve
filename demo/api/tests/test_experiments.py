@@ -12,15 +12,13 @@ from langfuse.experiment import (
     ExperimentResult,
     LocalExperimentItem,
 )
+from pydantic import RootModel
 
 ITEMS: list[LocalExperimentItem] = [
-    {
-        "input": value,
-        "expected_output": value * 2,
-        "metadata": {"case_id": f"case {value}"},
-    }
-    for value in (1, 2, 3)
+    {"input": value, "expected_output": value * 2} for value in (1, 2, 3)
 ]
+# Both the input and the expected output of a case are integers.
+SCHEMA = RootModel[int].model_json_schema()
 
 
 async def _double(*, item: LocalExperimentItem, **_kwargs: Any) -> int:
@@ -46,14 +44,19 @@ def checks(
 def _run(
     items: list[LocalExperimentItem],
     *,
-    max_failures: int,
+    max_failures: int = 0,
     evaluators: list[EvaluatorFunction] | None = None,
+    context: RunnerContext | None = None,
 ) -> ExperimentResult:
+    """Run the cases, by default as local data on a disabled client."""
     return run(
-        RunnerContext(client=Langfuse(tracing_enabled=False), data=items),
+        context or RunnerContext(client=Langfuse(tracing_enabled=False), data=items),
         name="unit",
         description="unit",
         items=items,
+        case_id=lambda value: f"case {value}",
+        input_schema=RootModel[int],
+        expected_output_schema=RootModel[int],
         task=_double,
         evaluators=evaluators or [checks],
         max_failures=max_failures,
@@ -130,10 +133,7 @@ def test_an_evaluator_that_returns_no_valid_checks_fails_its_case(
     assert f"case 3: {evaluator.__name__}: " in str(error.value)
 
 
-REPEATED: list[LocalExperimentItem] = [
-    ITEMS[2],
-    {**ITEMS[0], "metadata": ITEMS[2]["metadata"]},
-]
+REPEATED: list[LocalExperimentItem] = [ITEMS[2], {**ITEMS[0], "input": 3}]
 
 
 @pytest.mark.parametrize(
@@ -149,15 +149,9 @@ def test_a_run_needs_cases_with_unique_ids(
     items: list[LocalExperimentItem], data: list[LocalExperimentItem]
 ) -> None:
     with pytest.raises(ValueError, match=r"no cases|repeats case IDs"):
-        run(
-            RunnerContext(client=Langfuse(tracing_enabled=False), data=data),
-            name="unit",
-            description="unit",
-            items=items,
-            task=_double,
-            evaluators=[checks],
-            max_failures=0,
-            metadata={},
+        _run(
+            items,
+            context=RunnerContext(client=Langfuse(tracing_enabled=False), data=data),
         )
 
 
@@ -168,9 +162,10 @@ class _Datasets:
         self.items = {item.id: item for item in hosted}
         self.writes: list[tuple[str, DatasetStatus]] = []
         self.rival = rival
+        self.schemas: dict[str, tuple[Any, Any]] = {}
 
-    def create_dataset(self, **_kwargs: Any) -> None:
-        pass
+    def create_dataset(self, *, name: str, **fields: Any) -> None:
+        self.schemas[name] = (fields["input_schema"], fields["expected_output_schema"])
 
     def get_dataset(self, name: str) -> SimpleNamespace:
         active = [i for i in self.items.values() if i.status == DatasetStatus.ACTIVE]
@@ -196,10 +191,11 @@ def _hosted(**fields: Any) -> DatasetItem:
         {
             "status": DatasetStatus.ACTIVE,
             "dataset_id": "dataset",
-            "dataset_name": "unit",
+            "dataset_name": "unit/regression",
             "created_at": now,
             "updated_at": now,
             "media_references": [],
+            "metadata": None,
             **fields,
         }
     )
@@ -217,36 +213,35 @@ def _sync_and_run(
     )
     for method in ("create_dataset", "get_dataset", "create_dataset_item"):
         monkeypatch.setattr(client, method, getattr(datasets, method))
-    return run(
-        RunnerContext(client=client),
-        name="unit",
-        description="unit",
-        items=ITEMS[2:],
-        task=_double,
-        evaluators=[checks],
-        max_failures=0,
-        metadata={},
-    )
+    return _run(ITEMS[2:], context=RunnerContext(client=client))
 
 
 def test_a_run_evaluates_the_cases_it_synced(monkeypatch: pytest.MonkeyPatch) -> None:
-    rival = _hosted(
-        id="unit-rival", input=4, expected_output=8, metadata={"case_id": "rival"}
-    )
+    rival = _hosted(id="unit-rival", input=4, expected_output=8)
     result = _sync_and_run(_Datasets(rival=rival), monkeypatch)
 
     (item_result,) = result.item_results
     assert isinstance(item_result.item, DatasetItem)
-    assert item_result.item.metadata == {"case_id": "case 3"}
+    assert item_result.item.input == 3
     assert item_result.output == 6
+
+
+def test_a_sync_gives_the_curated_dataset_the_case_schemas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    datasets = _Datasets()
+    _sync_and_run(datasets, monkeypatch)
+
+    assert datasets.schemas == {
+        "unit/regression": (SCHEMA, SCHEMA),
+        "unit/curated": (SCHEMA, SCHEMA),
+    }
 
 
 def test_a_sync_writes_only_changed_and_removed_cases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    removed = _hosted(
-        id="unit-removed", input=5, expected_output=10, metadata={"case_id": "case 5"}
-    )
+    removed = _hosted(id="unit-removed", input=5, expected_output=10)
     datasets = _Datasets(removed)
     _sync_and_run(datasets, monkeypatch)
     (added,) = [item_id for item_id, _ in datasets.writes if item_id != removed.id]
@@ -274,7 +269,9 @@ def test_a_sync_writes_only_changed_and_removed_cases(
 def test_lgos_rag_scores_the_route_of_reply_shape_cases(
     question: str, queries: list[str]
 ) -> None:
-    (item,) = [i for i in lgos_rag.ITEMS if i["metadata"]["case_id"] == question]
+    (item,) = [
+        i for i in lgos_rag.ITEMS if i["input"]["messages"][-1]["content"] == question
+    ]
 
     scores = lgos_rag.checks(
         input=item["input"],
