@@ -188,9 +188,9 @@ still supply the input needed by each ordinary request. Omit the field when no
 conversation exists; LGOS does not generate a fallback ID. Application graphs
 may explicitly use it to scope their own stored data, but it is not authorization.
 Clients targeting Langfuse should use an ASCII value of at most 200 characters;
-Langfuse drops a longer session. The value is distinct from the end-user `safety_identifier` and
-`user` fields, the interrupt run ID, and per-request trace or request
-identifiers.
+Langfuse drops a longer session. The value is distinct from the end-user
+`safety_identifier` and `user` fields, the interrupt run ID, and per-request
+trace or request identifiers.
 
 ### Per-Request Resolution
 

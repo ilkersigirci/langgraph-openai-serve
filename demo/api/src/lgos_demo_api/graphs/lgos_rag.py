@@ -373,7 +373,7 @@ class DocsIndex:
         scores = self._bm25.get_scores(_terms(query))
         # Only the strongest keyword matches, such as an exact name, take part:
         # deeper down, pages that mention every word, such as the docs home
-        # page, would outrank the sections that answer.
+        # page, can outrank the sections that answer.
         keyword = [
             self._chunks[position]
             for position in scores.argsort()[::-1]

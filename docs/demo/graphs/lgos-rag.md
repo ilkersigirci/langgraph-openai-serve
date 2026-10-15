@@ -55,8 +55,8 @@ sequenceDiagram
    whether the documentation answers the message, then writes one standalone
    query per distinct part, at most three, resolving references to earlier
    turns. Greetings, thanks, questions about the conversation, unrelated
-   requests, and messages too vague to search get no queries. LangGraph's `nostream` tag keeps every planning
-   token out of the answer stream.
+   requests, and messages too vague to search get no queries. LangGraph's
+   `nostream` tag keeps every planning token out of the answer stream.
 2. `retrieve` is code only. It publishes a status per query, which streaming
    Responses shows as commentary, searches the queries in parallel, and merges
    the top ten sections of each. With no queries it does nothing, so a
@@ -80,8 +80,8 @@ structured call does that. The fixed graph has a hard limit of two model calls,
 a search-or-skip decision that tests can check, a status for each phase, and no
 text written beside a tool call to reconcile with the streamed answer.
 
-Three runs of the evaluation below, when it had 53 cases, failed at most one
-case each, with a median latency of about 3.4 seconds. Questions whose second
+Five runs of the 57-case evaluation below failed at most one case each, with a
+median latency of about 4 seconds per case. Questions whose second
 search depends on the first search's results are the case a workflow cannot
 handle; add a bounded, opt-in agent mode if evaluation shows them failing.
 
@@ -141,12 +141,13 @@ finds sections by meaning and is weakest on exact names such as
 graph can also rank sections with BM25 keyword search. Each ranking contributes
 its top ten, and reciprocal rank fusion orders them before the top ten are
 returned. Only the strongest keyword matches take part: deeper down, pages that
-mention every word of a question, such as the docs home page, would outrank the
+mention every word of a question, such as the docs home page, can outrank the
 sections that answer it.
 
-Replaying the queries the planner wrote for 799 evaluated questions in 17 runs,
-this put an answering page in the results for every part of every question. Twenty candidates per ranking missed 11, all for
-one plainly worded question, and embedding search alone missed 12.
+Replaying the 235 sets of queries that the planner wrote in five evaluation
+runs, this put an answering page in the results for every part of every
+question. Embedding search alone missed 6, five of them for "What does a client
+receive when a graph raises GraphError?".
 
 ## Lifetime And Failure
 
@@ -173,7 +174,8 @@ just demo/experiment lgos-rag
 It holds 57 cases: questions in a user's words, exact names, follow-ups that
 need the conversation, multi-part questions, scoped searches, greetings,
 unrelated requests, and the reply's shape after a restricted miss, a vague
-message, or small talk. Each check that applies to a case becomes a pass or fail score:
+message, or small talk. Each check that applies to a case becomes a pass or fail
+score:
 
 | Score | Passes when |
 | --- | --- |

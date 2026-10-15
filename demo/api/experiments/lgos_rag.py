@@ -46,10 +46,10 @@ Reply = Literal["scope_hint", "clarify", "small_talk"]
 
 
 class Case(NamedTuple):
+    """A Git-tracked case in brief; `_item` writes it in the case format."""
+
     question: str
-    # Pages that answer each part of the question; each part needs one of them
-    # in the results. No parts means the graph must not search, except before
-    # a scope hint.
+    # CaseExpectation.parts, with each part's pages as a set.
     parts: tuple[set[str], ...] = ()
     # Earlier user and assistant turns, alternating.
     history: tuple[str, ...] = ()

@@ -32,8 +32,8 @@ failing case missed, then the run's summary.
 The script records to Langfuse when `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
 and `LANGFUSE_BASE_URL` are set, as in `demo/.env`. A fresh Langfuse project
 needs nothing else: the first run creates both datasets and every score. Without
-the keys, as in CI, the script runs the same cases and checks on local data with
-Langfuse disabled, records nothing, and still fails on too many failing cases.
+the keys, the script runs the same cases and checks on local data with Langfuse
+disabled, records nothing, and still fails on too many failing cases.
 To run that way with `demo/.env`, add `--no-langfuse`, which also turns off the
 API's own tracing:
 
