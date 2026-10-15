@@ -82,10 +82,11 @@ and never invent or change one. Keep the answer concise, and include code from
 the documentation when it helps."""
 
 DIRECT_PROMPT = """Reply briefly to greetings, thanks, and questions about
-yourself or this conversation. If a message is too vague to tell what it asks,
+yourself or this conversation. Use the supplied history when asked about earlier
+turns; these requests are in scope. If a message is too vague to tell what it asks,
 reply with one short clarifying question and nothing else. Decline every other
 request, even a simple one, by saying that you only answer questions about
-LGOS. Do not state facts about LGOS."""
+LGOS. Do not introduce LGOS facts beyond those already in the conversation."""
 
 
 # The docs site's top-level split: the Demo Stack section, and everything else.

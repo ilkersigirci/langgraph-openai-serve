@@ -41,12 +41,13 @@ PROXIES = ("how-to-guides/openai-proxies/", "demo/litellm-sync/")
 class Case(NamedTuple):
     question: str
     # Pages that answer each part of the question; each part needs one of them
-    # in the results. No parts means the graph must not search.
+    # in the results. No parts means the graph must not search, except before
+    # a scope hint.
     parts: tuple[set[str], ...] = ()
     # Earlier user and assistant turns, alternating.
     history: tuple[str, ...] = ()
     scope: Scope = "all"
-    # A check on the reply instead of the search, named in REPLY_CHECKS.
+    # A check on the reply instead of the results, named in REPLY_CHECKS.
     reply: Literal["scope_hint", "clarify"] | None = None
 
 
@@ -342,17 +343,22 @@ def checks(
 ) -> list[Evaluation]:
     """Score each check that applies to the case as passed or failed."""
     answer = output["answer"]
-    if reply := expected_output["reply"]:
-        return [score("reply", passed=REPLY_CHECKS[reply](answer), comment=answer)]
     parts = [set(pages) for pages in expected_output["parts"]]
+    reply = expected_output["reply"]
     queries = output["queries"]
+    # A scope hint follows a search that found nothing in the selected scope.
+    searches = bool(parts) or reply == "scope_hint"
     scores = [
         score(
             "route",
-            passed=bool(queries) == bool(parts),
+            passed=bool(queries) == searches,
             comment=f"queries: {queries}",
         )
     ]
+    if reply:
+        scores.append(
+            score("reply", passed=REPLY_CHECKS[reply](answer), comment=answer)
+        )
     if not parts or not queries:
         return scores
     found = {_page(url) for url in output["sources"]}
@@ -404,7 +410,7 @@ def experiment(context: RunnerContext) -> ExperimentResult:
         max_failures=3,
         metadata={
             # Change it with a check, so runs graded differently are not compared.
-            "evaluator_version": "2",
+            "evaluator_version": "6",
             # lgos-rag answers from this release's docs.
             "lgos": version("langgraph-openai-serve"),
             "chat_model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,

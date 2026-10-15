@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import FunctionType, SimpleNamespace
 from typing import Any
 
+import lgos_rag
 import pytest
 from _shared import run, score
 from langfuse import Evaluation, Langfuse, RegressionError, RunnerContext
@@ -259,3 +260,36 @@ def test_a_sync_writes_only_changed_and_removed_cases(
         (removed.id, DatasetStatus.ARCHIVED),
     ]
     assert datasets.writes == writes
+
+
+@pytest.mark.parametrize(
+    ("question", "queries"),
+    [
+        # A vague message gets a clarifying question without a search.
+        ("Why is it failing?", ["LGOS failure causes"]),
+        # A scope hint follows a search of the selected scope.
+        ("What does DEMO_GRAPH_GATEWAY_API_KEY set?", []),
+    ],
+)
+def test_lgos_rag_scores_the_route_of_reply_shape_cases(
+    question: str, queries: list[str]
+) -> None:
+    (item,) = [i for i in lgos_rag.ITEMS if i["metadata"]["case_id"] == question]
+
+    scores = lgos_rag.checks(
+        input=item["input"],
+        expected_output=item["expected_output"],
+        output={
+            # The reply passes either reply check; only the route is wrong.
+            "answer": "What fails? Set Docs scope to All to search every page.",
+            "queries": queries,
+            "sources": [],
+            "source_links": [],
+            "citations": [],
+        },
+    )
+
+    assert {check.name: check.value for check in scores} == {
+        "route": 0.0,
+        "reply": 1.0,
+    }
