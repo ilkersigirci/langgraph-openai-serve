@@ -258,16 +258,28 @@ def test_a_sync_writes_only_changed_and_removed_cases(
 
 
 @pytest.mark.parametrize(
-    ("question", "queries"),
+    ("question", "answer", "queries", "expected"),
     [
         # A vague message gets a clarifying question without a search.
-        ("Why is it failing?", ["LGOS failure causes"]),
+        ("Why is it failing?", "What fails?", ["LGOS failure causes"], (0, 1)),
         # A scope hint follows a search of the selected scope.
-        ("What does DEMO_GRAPH_GATEWAY_API_KEY set?", []),
+        (
+            "What does DEMO_GRAPH_GATEWAY_API_KEY set?",
+            "Set Docs scope to All to search every page.",
+            [],
+            (0, 1),
+        ),
+        # Small talk about the conversation is answered, not refused.
+        (
+            "What did I ask you before?",
+            "I only answer questions about LGOS.",
+            [],
+            (1, 0),
+        ),
     ],
 )
-def test_lgos_rag_scores_the_route_of_reply_shape_cases(
-    question: str, queries: list[str]
+def test_lgos_rag_scores_the_route_and_shape_of_reply_cases(
+    question: str, answer: str, queries: list[str], expected: tuple[int, int]
 ) -> None:
     (item,) = [
         i for i in lgos_rag.ITEMS if i["input"]["messages"][-1]["content"] == question
@@ -277,8 +289,7 @@ def test_lgos_rag_scores_the_route_of_reply_shape_cases(
         input=item["input"],
         expected_output=item["expected_output"],
         output={
-            # The reply passes either reply check; only the route is wrong.
-            "answer": "What fails? Set Docs scope to All to search every page.",
+            "answer": answer,
             "queries": queries,
             "sources": [],
             "source_links": [],
@@ -286,7 +297,8 @@ def test_lgos_rag_scores_the_route_of_reply_shape_cases(
         },
     )
 
+    route, reply = expected
     assert {check.name: check.value for check in scores} == {
-        "route": 0.0,
-        "reply": 1.0,
+        "route": route,
+        "reply": reply,
     }

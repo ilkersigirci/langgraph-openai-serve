@@ -142,6 +142,25 @@ def test_markdown_sections_become_chunks_linked_to_the_docs_site() -> None:
     )
 
 
+def test_a_long_section_splits_after_its_code_example_not_inside_it() -> None:
+    # The example ends near the chunk size, so the next chunk's overlap could
+    # copy its usage without its class, and the model would invent the rest,
+    # such as an import of the class from LGOS.
+    methods = "\n\n".join(
+        f"    def step_{n}(self):\n        return {n}"
+        for n in range(10, 10 + (lgos_rag.CHUNK_SIZE - 200) // 42)
+    )
+    example = f"```python\nclass Middleware:\n{methods}\n\napp.add_middleware(Middleware)\n```"
+    notes = "\n\n".join(f"Note {n}: it runs before every route." for n in range(30))
+    page = f"# Authentication\n\n## Middleware\n\nAdd it.\n\n{example}\n\n{notes}\n"
+
+    chunks = load_chunks({"authentication.md": page}, BASE_URL)
+
+    (code,) = [chunk.page_content for chunk in chunks if "```" in chunk.page_content]
+    assert example in code
+    assert len(chunks) > 1
+
+
 def _archive(files: dict[str, str]) -> bytes:
     content = io.BytesIO()
     with tarfile.open(fileobj=content, mode="w:gz") as tar:

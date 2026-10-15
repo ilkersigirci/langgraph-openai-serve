@@ -41,6 +41,10 @@ INTERRUPTS = (COMPATIBILITY, CLIENTS, REFERENCE)
 PROXIES = ("how-to-guides/openai-proxies/", "demo/litellm-sync/")
 
 
+# The reply's shape, checked by REPLY_CHECKS instead of the results.
+Reply = Literal["scope_hint", "clarify", "small_talk"]
+
+
 class Case(NamedTuple):
     question: str
     # Pages that answer each part of the question; each part needs one of them
@@ -50,8 +54,7 @@ class Case(NamedTuple):
     # Earlier user and assistant turns, alternating.
     history: tuple[str, ...] = ()
     scope: Scope = "all"
-    # A check on the reply instead of the results, named in REPLY_CHECKS.
-    reply: Literal["scope_hint", "clarify"] | None = None
+    reply: Reply | None = None
 
 
 def _one(*pages: str) -> tuple[set[str]]:
@@ -262,17 +265,21 @@ CASES = (
         "Why is it failing?",
         reply="clarify",
     ),
-    # No search: greetings, the assistant, the conversation, unrelated topics.
-    Case("Hi!"),
-    Case("Who are you?"),
+    # No search, but no refusal either: greetings, the assistant, the
+    # conversation.
+    Case("Hi!", reply="small_talk"),
+    Case("Who are you?", reply="small_talk"),
     Case(
         "Thanks, that helped.",
         history=("How do I install LGOS?", "Run uv add langgraph-openai-serve."),
+        reply="small_talk",
     ),
     Case(
         "What did I ask you before?",
         history=("How do I install LGOS?", "Run uv add langgraph-openai-serve."),
+        reply="small_talk",
     ),
+    # No search: unrelated topics.
     Case("What is the capital of France?"),
     Case("Write a haiku about autumn."),
     Case("How do I center a div in CSS?"),
@@ -283,6 +290,8 @@ _LINK = re.compile(r"(?<!!)\[[^]\r\n]+\]\((?P<url>[^)\r\n]+)\)")
 REPLY_CHECKS = {
     "scope_hint": lambda text: "docs scope" in text.lower(),
     "clarify": lambda text: "?" in text and "only answer" not in text.lower(),
+    # The graph refuses other requests by saying it only answers LGOS questions.
+    "small_talk": lambda text: "only answer" not in text.lower(),
 }
 
 
@@ -314,11 +323,13 @@ class CaseExpectation(BaseModel):
             "one page of each part. Empty when no page in the scope answers it."
         )
     )
-    reply: Literal["scope_hint", "clarify"] | None = Field(
+    reply: Reply | None = Field(
         default=None,
         description=(
             "scope_hint: the reply suggests the Docs scope All after a search of "
-            "a restricted scope. clarify: the reply asks a clarifying question."
+            "a restricted scope. clarify: the reply asks a clarifying question. "
+            "small_talk: the reply answers a greeting, thanks, or a question "
+            "about the assistant or the conversation instead of refusing."
         ),
     )
 
@@ -465,7 +476,7 @@ def experiment(context: RunnerContext) -> ExperimentResult:
         max_failures=3,
         metadata={
             # Change it with a check, so runs graded differently are not compared.
-            "evaluator_version": "1",
+            "evaluator_version": "2",
             # lgos-rag answers from this release's docs.
             "lgos": version("langgraph-openai-serve"),
             "chat_model": settings.OPENAI_CHAT_COMPLETIONS_MODEL,

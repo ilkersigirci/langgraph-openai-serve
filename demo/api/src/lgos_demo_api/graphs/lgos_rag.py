@@ -44,7 +44,9 @@ DOCS_REPO_URL = "https://github.com/ilkersigirci/langgraph-openai-serve"
 # The placeholder version of an unreleased checkout; releases stamp their
 # version from the tag, so it never names a release with docs.
 LOCAL_VERSION = "0.0.1"
-CHUNK_SIZE = 1_500
+# Large enough for most sections to keep their code example with the prose
+# around it; a half example invites the model to invent the rest.
+CHUNK_SIZE = 2_000
 CHUNK_OVERLAP = 200
 # Each ranking contributes its top results to fusion, which returns as many.
 SEARCH_LIMIT = 10
@@ -262,7 +264,13 @@ def load_chunks(pages: Mapping[str, str], base_url: str) -> list[Document]:
         for headings, anchor, body in _sections(_absolute_links(page, path, base_url))
         if body
     ]
+    # A long section splits after a code block before it splits inside one,
+    # and each closing fence stays with its block. Sections already split at
+    # headings, and LangChain's Markdown heading separator would match the `#`
+    # comments in code blocks instead.
     splitter = RecursiveCharacterTextSplitter(
+        separators=["```\n", "\n\n", "\n", " ", ""],
+        keep_separator="end",
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
     )

@@ -63,6 +63,27 @@ filter items by their `passed` score, and annotate them with
 When a curated case exposes a bug, a developer adds it to the script with the
 fix, so the regression cases keep it.
 
+## Judge Answers In Langfuse
+
+Code checks cannot tell whether an answer's content is true. A Langfuse
+[LLM-as-a-Judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge)
+evaluator does that without code. Its evaluation rule picks the observations it
+scores, such as a graph's answer call in the experiment's datasets, and the
+Langfuse worker grades each one after the run. The score and its reasoning
+attach to the observation, so a judge never fails a run or counts toward
+`passed`. Its prompt lives in Langfuse, where testers can edit it or add
+evaluators. Each experiment's page describes its judges, such as
+[lgos-rag's](graphs/lgos-rag.md#judge-the-answers).
+
+!!! note "What a judge needs"
+
+    A judge calls its model through a Langfuse LLM connection, with function
+    tools for its structured score. A model that supports function tools only
+    through the Responses API, such as `gpt-6-luna`, needs the connection's
+    **Use Responses API**. The Langfuse worker makes the calls, so a
+    self-hosted Langfuse that reaches a private gateway needs the gateway's
+    host in the worker's `LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST`.
+
 ## What A Run Does
 
 ```mermaid

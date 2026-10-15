@@ -102,7 +102,9 @@ keeps tables, code blocks, and links as the docs authors wrote them; the API
 reference that the site generates from docstrings is not part of it.
 
 Each page splits at its headings, outside code blocks, and long sections split
-into chunks of at most 1,500 characters. A section links to its page and the
+into chunks of at most 2,000 characters, after a code block rather than inside
+one: a chunk with half an example invites the model to invent the rest, such as
+an import of a class the example defines. A section links to its page and the
 anchor Python-Markdown's table of contents gives its heading, which is how
 Zensical builds the published anchors, including the numbered anchors of
 repeated headings. Relative links become docs-site URLs, as they do on the
@@ -149,7 +151,7 @@ one plainly worded question, and embedding search alone missed 12.
 ## Lifetime And Failure
 
 The index lives in the API process. Its first search downloads the release
-archive, about 2 MB, and embeds about 540 chunks, a few seconds of work and well
+archive, about 2 MB, and embeds about 480 chunks, a few seconds of work and well
 under a cent with `text-embedding-3-small`. Later searches reuse it until the
 process restarts. If the download or embedding fails, the request fails instead
 of being answered from the model's prior knowledge, and the next search tries
@@ -170,8 +172,8 @@ just demo/experiment lgos-rag
 
 It holds 57 cases: questions in a user's words, exact names, follow-ups that
 need the conversation, multi-part questions, scoped searches, greetings,
-unrelated requests, and the reply's shape after a restricted miss or a vague
-message. Each check that applies to a case becomes a pass or fail score:
+unrelated requests, and the reply's shape after a restricted miss, a vague
+message, or small talk. Each check that applies to a case becomes a pass or fail score:
 
 | Score | Passes when |
 | --- | --- |
@@ -180,10 +182,12 @@ message. Each check that applies to a case becomes a pass or fail score:
 | `scope` | A scoped case retrieves only sections in its scope |
 | `links` | Every Markdown link in the answer comes from the retrieved sections |
 | `citation` | The answer cites at least one retrieved section |
-| `reply` | A reply-shape case shows the scope hint, or asks a clarifying question without declining |
+| `reply` | A reply-shape case shows the scope hint, asks a clarifying question, or answers small talk, without declining |
 
-A run fails when more than three cases fail. Add a case in the script whenever
-a real question goes wrong, and rerun the experiment after changing prompts,
+A run fails when more than three cases fail. The
+[`grounded` judge](#judge-the-answers) also scores each answer's content in
+Langfuse, without failing runs. Add a case in the script whenever a
+real question goes wrong, and rerun the experiment after changing prompts,
 chunking, ranking, or models.
 
 Cases curated in Langfuse use the script's case format. The input is the
@@ -207,8 +211,25 @@ part:
 
 Empty `parts` mean that no page in the scope answers the message, so the graph
 must not search. `reply` checks the reply's shape instead: `"clarify"` expects
-a clarifying question, and `"scope_hint"` expects a search of the restricted
-scope and a reply that suggests the **Docs scope** All.
+a clarifying question, `"small_talk"` expects an answer to a greeting, thanks,
+or a question about the assistant or the conversation instead of a refusal,
+and `"scope_hint"` expects a search of the restricted scope and a reply that
+suggests the **Docs scope** All.
+
+### Judge The Answers
+
+The `grounded` [LLM-as-a-Judge](../experiments.md#judge-answers-in-langfuse)
+evaluator fails an answer with a fabricated LGOS setting, command, symbol, or
+import path, or with a statement that the retrieved sections contradict. Its
+rule, `lgos-rag answers in experiments`, picks the `GENERATION` observations
+whose metadata `langgraph_node` is `answer` in experiments of
+`lgos-rag/regression` and `lgos-rag/curated`, so the judge sees the sections
+and the conversation that the answer call saw.
+
+It ignores overstatements and missing caveats: graded twice, the same answers
+flipped between verdicts, so a human review of them is more reliable. It uses
+`gpt-6-luna`, which failed an import of a class that the docs example defines
+and an invented setting, while `gpt-4.1-mini` passed the import.
 
 ## Try It
 
