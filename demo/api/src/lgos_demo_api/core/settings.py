@@ -51,7 +51,6 @@ class Settings(BaseSettings):
     )
     OPENAI_CHAT_COMPLETIONS_MODEL: str = "openai/gpt-4.1-mini"
     OPENAI_RESPONSES_MODEL: str = "openai/gpt-6-luna"
-    VECTOR_STORE_ID: str | None = None
     OPENAI_EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
     WEB_SEARCH_BACKEND: Literal["http", "openai"] = "http"
     WEB_SEARCH_URL: HttpUrlStr = "https://searxng.example.com/search"
@@ -61,11 +60,6 @@ class Settings(BaseSettings):
     def openai_base_url(self) -> str:
         """OpenAI model routes shared by the bundled gateways."""
         return f"{self.OPENAI_GATEWAY_BASE_URL}/v1"
-
-    @property
-    def vector_store_base_url(self) -> str:
-        """Keep knowledge Files and vector stores in the upstream account."""
-        return f"{self.OPENAI_GATEWAY_BASE_URL}/openai_passthrough/v1"
 
 
 settings = Settings()

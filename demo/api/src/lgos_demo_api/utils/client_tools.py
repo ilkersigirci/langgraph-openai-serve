@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from typing import Annotated, Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import (
@@ -43,9 +44,10 @@ async def invoke_client_tool_model(
     *,
     system_prompt: str,
     default_tool_choice: ClientToolChoice | None = None,
+    model: BaseChatModel | None = None,
 ) -> AIMessage:
-    """Invoke the shared chat model while leaving tool execution to the client."""
-    model = chat_completions_model()
+    """Invoke a chat model, by default the shared one, leaving tools to the client."""
+    model = model or chat_completions_model()
     conversation = [SystemMessage(content=system_prompt), *state.messages]
 
     if state.tools:

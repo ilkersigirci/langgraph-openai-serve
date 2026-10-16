@@ -41,7 +41,7 @@ from .gateway import (
 )
 from .interrupts import (
     _ask_user_to_resume,
-    _openwebui_interrupt_chunk,
+    _openwebui_interrupt_chunks,
     _openwebui_interrupt_completion,
 )
 from .metadata import _request_metadata
@@ -249,21 +249,21 @@ class Pipe:
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
                         finished = True
-                        yield (
-                            _openwebui_interrupt_chunk(
-                                prepared.model_id,
-                                response.id,
-                                calls,
-                                after_text=any(answer_parts),
-                            )
-                            if prepared.streaming
-                            else _openwebui_interrupt_completion(
+                        if not prepared.streaming:
+                            yield _openwebui_interrupt_completion(
                                 prepared.model_id,
                                 response.id,
                                 calls,
                                 content="".join(answer_parts),
                             )
-                        )
+                            return
+                        for chunk in _openwebui_interrupt_chunks(
+                            prepared.model_id,
+                            response.id,
+                            calls,
+                            after_text=any(answer_parts),
+                        ):
+                            yield chunk
                         return
                     if prepared.openwebui_mcp_names and all(
                         call.name in prepared.openwebui_mcp_names for call in calls

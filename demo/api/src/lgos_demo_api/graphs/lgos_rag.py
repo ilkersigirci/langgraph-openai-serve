@@ -25,6 +25,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langgraph.config import get_stream_writer
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -418,11 +419,8 @@ def create_lgos_rag_graph(
     load_index = docs_index or _LazyDocsIndex().get
     role = "You are the documentation assistant for langgraph-openai-serve (LGOS)."
 
-    async def plan(
-        state: LgosRagState,
-        runtime: Runtime[LgosRagSettings],
-    ) -> dict[str, list[str]]:
-        runtime.stream_writer(status_event("Understanding the question"))
+    async def plan(state: LgosRagState) -> dict[str, list[str]]:
+        get_stream_writer()(status_event("Understanding the question"))
         result = SearchPlan.model_validate(
             await planner.ainvoke([SystemMessage(content=PLAN_PROMPT), *state.messages])
         )
@@ -440,7 +438,7 @@ def create_lgos_rag_graph(
         options = runtime.context or LgosRagSettings()
         docs = "docs" if options.scope == "all" else f"{options.scope} docs"
         for query in state.queries:
-            runtime.stream_writer(status_event(f"Searching the {docs}: {query}"))
+            get_stream_writer()(status_event(f"Searching the {docs}: {query}"))
         index = await load_index()
         rankings = await asyncio.gather(
             *(

@@ -29,7 +29,7 @@ nav = [
     { Experiments = "demo/experiments.md" },
     { "Example Graphs" = [
       "demo/graphs/index.md",
-      { "Advanced Graph" = "demo/graphs/advanced-graph.md" },
+      { "Deep Research" = "demo/graphs/deep-research.md" },
       { "PostgreSQL Through Native MCP" = "demo/graphs/mcp-postgres.md" },
       { "Core Graph Patterns" = "demo/graphs/core-patterns.md" },
       { "Server Tool" = "demo/graphs/server-tool.md" },

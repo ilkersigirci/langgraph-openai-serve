@@ -97,7 +97,7 @@ matrix.
 Polling-only background execution is optional. Select LiteLLM or Bifrost,
 set `LGOS_BACKGROUND=hatchet`, add `background` to `COMPOSE_PROFILES`,
 configure `HATCHET_CLIENT_TOKEN`, and run `just demo/compose`. Both UIs can then
-run `advanced-graph`, the model-free `background-mock`, or the deterministic
+run `deep-research`, the model-free `background-mock`, or the deterministic
 [`background-interrupt`](../docs/demo/graphs/background-interrupt.md) review flow
 in the background. Run
 `just demo/test-background-gateway --editable` and see the

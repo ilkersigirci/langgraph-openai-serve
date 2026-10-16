@@ -18,12 +18,12 @@ from lgos_demo_api.registry import open_registry
 from lgos_demo_api.utils.web_search import WebSearchResult
 
 DOCUMENTED_MODEL_IDS = {
-    "advanced-graph",
     "background-interrupt",
     "background-mock",
     "mcp-postgres",
     "citation-events",
     "custom-input-output-context",
+    "deep-research",
     "file-input",
     "interruptible-approval",
     "lgos-rag",
@@ -96,15 +96,18 @@ async def test_app_lists_exactly_the_documented_models(
     assert features["file-input"] == ["file_inputs"]
     assert features["nested-subgraphs"] == ["background", "interrupts"]
 
-    advanced_model = await openai_client.models.retrieve("advanced-graph")
-    advanced_extension = (advanced_model.model_extra or {})["lgos"]
-    assert advanced_extension["features"] == [
+    deep_research_model = await openai_client.models.retrieve("deep-research")
+    deep_research_extension = (deep_research_model.model_extra or {})["lgos"]
+    assert deep_research_extension["features"] == [
         "background",
         "file_inputs",
         "interrupts",
         "mcp_tools",
     ]
-    assert "client_settings" not in advanced_extension
+    assert deep_research_extension["client_settings"]["defaults"] == {
+        "review_plan": True,
+        "research_rounds": 2,
+    }
 
     interrupt_model = await openai_client.models.retrieve("interruptible-approval")
     extension = (interrupt_model.model_extra or {})["lgos"]
@@ -122,7 +125,7 @@ async def test_app_lists_exactly_the_documented_models(
         for model in response.data
     }
     assert {model_id: names for model_id, names in tools.items() if any(names)} == {
-        "advanced-graph": (["web_search"], []),
+        "deep-research": (["web_search"], []),
         "persistent-plot-agent": ([], ["display_file"]),
         "server-tool": (["package_version", "web_search"], []),
     }

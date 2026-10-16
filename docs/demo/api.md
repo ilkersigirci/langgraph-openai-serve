@@ -152,7 +152,7 @@ The real `mcp-postgres` graph expects its OpenAI client to discover and execute
 tools through the selected gateway's MCP endpoint. Use the maintained Chainlit
 or Open WebUI client for the complete native tool loop; see
 [PostgreSQL Through Native MCP](graphs/mcp-postgres.md#try-it).
-`advanced-graph` uses the same client-owned loop for any tools authorized by the
+`deep-research` uses the same client-owned loop for any tools authorized by the
 gateway; `mcp-postgres` remains the narrower database-focused example.
 
 Try the deterministic status-event showcase:
@@ -205,7 +205,7 @@ must handle.
 For background Responses, set `LGOS_BACKGROUND=hatchet`, start the
 independent `just demo/background-worker` process, or run the complete UI path
 with the `background` Compose profile and `just demo/compose`.
-`advanced-graph`, `background-mock`, `background-interrupt`, and
+`deep-research`, `background-mock`, `background-interrupt`, and
 `nested-subgraphs` support it.
 Chainlit and Open WebUI expose polling through either bundled gateway. See
 [Background Mock](graphs/background-mock.md) for basic execution and

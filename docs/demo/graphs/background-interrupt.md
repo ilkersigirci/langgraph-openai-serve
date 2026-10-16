@@ -7,7 +7,7 @@ external action. Hatchet executes background requests; PostgreSQL preserves the
 paused graph and coordinates execution across the API and worker processes.
 
 Use [`background-mock`](background-mock.md) for basic polling and cancellation,
-or [`advanced-graph`](advanced-graph.md#background-execution) for a real agent
+or [`deep-research`](deep-research.md#background-execution) for a real agent
 that combines background execution with reviewed work.
 
 ## LangGraph Topology

@@ -31,12 +31,14 @@ def _(mo):
 def _():
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.store.memory import InMemoryStore
+    from openai import AsyncOpenAI
 
     from lgos_demo_api.graphs.background_interrupt import (
         create_background_interrupt_graph,
     )
     from lgos_demo_api.graphs.citations import citation_graph
     from lgos_demo_api.graphs.custom_io import custom_io_graph
+    from lgos_demo_api.graphs.deep_research import create_deep_research_graph
     from lgos_demo_api.graphs.interruptible import create_interruptible_graph
     from lgos_demo_api.graphs.lgos_rag import lgos_rag
     from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph
@@ -54,10 +56,12 @@ def _():
     from lgos_demo_api.graphs.streaming_long_mock import streaming_long_mock_graph
 
     return (
+        AsyncOpenAI,
         InMemorySaver,
         InMemoryStore,
         citation_graph,
         create_background_interrupt_graph,
+        create_deep_research_graph,
         create_interruptible_graph,
         create_nested_subgraphs_graph,
         create_persistent_plot_agent,
@@ -77,10 +81,12 @@ def _():
 
 @app.cell
 async def _(
+    AsyncOpenAI,
     InMemorySaver,
     InMemoryStore,
     citation_graph,
     create_background_interrupt_graph,
+    create_deep_research_graph,
     create_interruptible_graph,
     create_nested_subgraphs_graph,
     create_persistent_plot_agent,
@@ -99,6 +105,10 @@ async def _(
     graphs = {
         "custom-input-output-context": custom_io_graph,
         "citation-events": citation_graph,
+        # Drawing makes no request, so the Files client needs no real service.
+        "deep-research": create_deep_research_graph(
+            InMemorySaver(), AsyncOpenAI(api_key="unused")
+        ),
         "mcp-mock": await mcp_mock_graph(),
         "mcp-postgres": mcp_postgres_graph,
         "nested-subgraphs": create_nested_subgraphs_graph(InMemorySaver()),

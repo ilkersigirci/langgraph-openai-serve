@@ -28,22 +28,8 @@ def interrupt_review(call: ResponseFunctionToolCall) -> HumanReview:
         else ()
     )
     return HumanReview(
-        prompt=_prompt(payload),
+        # The question is the whole prompt; other payload fields are for programs.
+        prompt=str(payload.get("question") or "Human input required."),
         choices=choices,
         allow_other=payload.get("allow_other") is True,
     )
-
-
-def _prompt(payload: dict[str, object]) -> str:
-    lines = [str(payload.get("question") or "Human input required.")]
-    if payload.get("request"):
-        lines.append(f"Request: {payload['request']}")
-    else:
-        details = {
-            key: value
-            for key, value in payload.items()
-            if key not in {"question", "choices", "allow_other"}
-        }
-        if details:
-            lines.append(json.dumps(details, ensure_ascii=False, indent=2))
-    return "\n\n".join(lines)

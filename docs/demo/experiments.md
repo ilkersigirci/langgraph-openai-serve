@@ -125,7 +125,7 @@ to open the failures.
 
 ## Add An Experiment
 
-A new experiment, such as `experiments/advanced_graph.py`, is a Langfuse
+A new experiment, such as `experiments/deep_research.py`, is a Langfuse
 [experiment script](https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk)
 that leaves the dataset sync and the gate to `experiments/_shared.py`:
 
@@ -149,7 +149,7 @@ that leaves the dataset sync and the gate to `experiments/_shared.py`:
   Langfuse, it runs `ITEMS` locally.
 
 `run` rejects an experiment without cases or with a repeated case ID.
-`just demo/experiment advanced-graph` then runs the script.
+`just demo/experiment deep-research` then runs the script.
 
 ## Run In CI
 

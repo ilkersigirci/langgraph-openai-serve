@@ -244,7 +244,7 @@ not claim every field in the upstream OpenAI API.
 | `tools=[{"type":"web_search"}]` | Selects a registered graph-owned web search. Use `tool_choice="required"` with only this tool to force search. Named built-in choices, optional filters, and location fields are outside the current subset. |
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
-| `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
+| `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history, including answered `lgos_interrupt` calls. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user in at most 128 characters, OpenAI's documented limit, and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
@@ -754,6 +754,12 @@ a second `interrupt()` after it resumes, matching LangGraph's recommended
 The UI owns persistence of the paused Response ID and exact calls. It must store
 them before soliciting input so a reconnect can reproduce the same resume request.
 Persisting only rendered prompt text or only the user's response is insufficient.
+
+A later request replays an answered interrupt like any function call in a
+stateless transcript: the `lgos_interrupt` calls, then the outputs that answered
+them, in place. The graph then sees what was asked and answered. Only an input
+that ends with interrupt calls or outputs is a resume, which requires
+`previous_response_id`.
 
 ### Durable Validation And Recovery
 

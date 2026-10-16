@@ -26,15 +26,14 @@ settings as native Chat Variables, which Open WebUI renders as a per-chat form.
 Graph changes therefore appear on the next model-list load.
 Each server tool the model advertises in `lgos.server_tools` adds a Chat
 Variable checkbox labelled from its name, so `server-tool` shows
-**Package version** and **Web search**, and `advanced-graph` shows only
+**Package version** and **Web search**, and `deep-research` shows only
 **Web search**; its gateway MCP tools come from its `mcp_tools` feature. The
 Pipe maps an enabled box to `{"type":"web_search"}` for `web_search` and to a
 name-only `{"type":"custom","name":...}` declaration otherwise, and keeps it
 out of `metadata.lgos_settings`. It offers `display_file` only to models that
 list it in `lgos.client_tools`. The catalog publishes both lists in the model's
-info, where the Pipe reads them at chat time. Asking the advanced graph to
-remember or save something triggers its note-review flow without a
-graph-specific setting.
+info, where the Pipe reads them at chat time. A question that needs research
+triggers the deep-research plan review without a graph-specific setting.
 The Pipe executes only native `function_call` items. Server custom calls and
 searches have distinct native types and are already complete.
 When `lgos/simple-graph` has valid metadata, the Pipe also lists the UserValves
@@ -125,9 +124,8 @@ that existing SDK model to the affected response annotations at load time. The
 shim is feature-detected, changes no installed package files, and becomes a
 no-op when Open WebUI updates to an SDK containing the corrected union.
 
-For **lgos/advanced-graph**, the same control contains **Web search**.
-Search is sent as a standard Responses tool. Note saving is an intent expressed
-in the user's message.
+For **lgos/deep-research**, the same control contains **Web search**, which its
+research requires. Search is sent as a standard Responses tool.
 
 ## Simple Per-User Settings
 
@@ -494,13 +492,15 @@ payload restriction. Responses carries each resume value as a string: the
 chosen option's label or the free-form text. Open WebUI trims option labels and
 truncates them to 80 characters, so the Pipe rejects choices it would change.
 
-The [advanced graph](graphs/advanced-graph.md) includes exact note bytes in its
-review payload after the user explicitly asks to save something. Open WebUI
-truncates question text to 500 characters, so when the question and its details
-exceed that limit, the Pipe renders them in full above the question card.
-Knowledge citations remain ordinary answer text with filenames and
-provider file IDs. The Pipe does not add a knowledge-base selector or bridge the
-demo S3 Files namespace.
+The `question` is everything the reviewer reads: the graph writes its details
+into it, such as the [deep-research](graphs/deep-research.md) plan as a list.
+Other payload fields are data for API clients, and the Pipe does not display
+them. Open WebUI's card shows its text as one plain line and truncates it to 500
+characters. So, as a model using `ask_user` would, the card asks the question's
+first paragraph, and the rest goes above it as Markdown text. A first paragraph
+the card cannot show goes above it too. Once answered, the card folds into
+Open WebUI's **View Result from ask_user**, and the text stays in the
+conversation.
 
 After the user answers, the Pipe sends the Response ID from the card as
 `previous_response_id` with one `function_call_output` item per answered
@@ -509,6 +509,12 @@ interrupt set. One native `ask_user`
 call can contain one to three questions, matching Open WebUI's built-in limit.
 LGOS itself remains generic and can expose larger atomic batches to clients that
 support them.
+
+Later requests replay an answered card as a stateless Responses client replays
+any function call: the text above it as assistant text, then one
+`lgos_interrupt` call per question with the card's question and choices, then
+the answers, so the graph sees what was asked and answered. A cancelled card
+never resumed the graph, so only its text replays.
 
 !!! note "Saved chats restore pending input"
 

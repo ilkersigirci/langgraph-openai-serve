@@ -25,8 +25,7 @@ def _call(payload: object) -> ResponseFunctionToolCall:
     [
         (
             {
-                "question": "Approve refund?",
-                "request": "ORDER-123",
+                "question": "Approve refund?\n\nRequest: ORDER-123",
                 "choices": [" approve ", "reject"],
                 "allow_other": True,
             },
@@ -36,13 +35,14 @@ def _call(payload: object) -> ResponseFunctionToolCall:
                 allow_other=True,
             ),
         ),
+        # Fields besides the question are for programs, not the reviewer.
         (
             {"question": "Save note?", "filename": "note.md", "choices": [1, 2]},
-            HumanReview(prompt='Save note?\n\n{\n  "filename": "note.md"\n}'),
+            HumanReview(prompt="Save note?"),
         ),
         ({}, HumanReview(prompt="Human input required.")),
     ],
-    ids=["request", "details", "empty"],
+    ids=["question", "other-fields", "empty"],
 )
 def test_review_decodes_the_lgos_payload(
     payload: dict[str, object],

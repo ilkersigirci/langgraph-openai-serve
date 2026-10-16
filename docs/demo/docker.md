@@ -292,8 +292,7 @@ UI's settings.
     API, worker, and coding-agent containers, which call their models through
     it. Set `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL`,
     `DEMO_API_OPENAI_RESPONSES_MODEL`, `DEMO_API_OPENAI_EMBEDDING_MODEL`, and the
-    `DEMO_AUDIO_*` models to IDs that gateway registers. The advanced graph's
-    vector store also needs that gateway's `/openai_passthrough` route. On another host,
+    `DEMO_AUDIO_*` models to IDs that gateway registers. On another host,
     expose DBHub only on a private address reachable by that gateway.
 
     `just demo/compose` (or the same command with `--dev`) starts

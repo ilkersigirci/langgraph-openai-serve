@@ -2,10 +2,10 @@
 
 import json
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any
 
 from openai.types.responses import ResponseFunctionToolCall
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import JsonValue
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
@@ -15,26 +15,11 @@ from .contracts import (
     ASK_USER_QUESTION_MAX_LENGTH,
     ASK_USER_REJECTED_OUTPUT,
     ASK_USER_TOOL_NAME,
+    AskUserResult,
     InterruptCancelled,
     OpenWebUIMessage,
 )
 from .responses import _openwebui_chunk
-
-
-class AskUserAnswer(BaseModel):
-    """One browser answer: the chosen option's label or free-form text."""
-
-    type: Literal["option", "other"]
-    label: str = ""
-    text: str = ""
-
-
-class AskUserResult(BaseModel):
-    """The tool result Open WebUI stores when the user answers the card."""
-
-    status: Literal["answered", "cancelled"]
-    answers: dict[str, AskUserAnswer] = Field(default_factory=dict)
-
 
 ASK_USER_MIN_CHOICES = 2
 ASK_USER_MAX_CHOICES = 3
@@ -82,7 +67,7 @@ def _ask_user_to_resume(
         {
             "type": "function_call_output",
             "call_id": call_id,
-            "output": answer.label if answer.type == "option" else answer.text.strip(),
+            "output": answer.output(),
         }
         for call_id, answer in result.answers.items()
     ]
@@ -109,8 +94,8 @@ def _ask_user_card(
     """
     Present one LGOS interrupt batch as one native question card.
 
-    Returns the ``ask_user`` call and the complete text of questions too long
-    for the card, to show above it.
+    Returns the ``ask_user`` call and the question details the card cannot
+    show, to show above it.
     """
     if len(calls) > ASK_USER_MAX_QUESTIONS:
         msg = f"Open WebUI asks at most {ASK_USER_MAX_QUESTIONS} questions at once."
@@ -143,18 +128,29 @@ def _ask_user_card(
     return ask_user, "\n\n".join(reviews)
 
 
-def _openwebui_interrupt_chunk(
+def _openwebui_interrupt_chunks(
     model_id: str,
     response_id: str,
     calls: list[ResponseFunctionToolCall],
     *,
     after_text: bool = False,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     ask_user, review = _ask_user_card(response_id, calls)
-    delta: dict[str, Any] = {"tool_calls": [{"index": 0, **ask_user}]}
+    chunks = []
     if review:
-        delta["content"] = f"\n\n{review}" if after_text else review
-    return _openwebui_chunk(model_id, delta, finish_reason="tool_calls")
+        # Like a model, stream the text before the call: Open WebUI places a
+        # chunk's tool call ahead of its text, which would put the card above
+        # the details it asks about.
+        content = f"\n\n{review}" if after_text else review
+        chunks.append(_openwebui_chunk(model_id, {"content": content}))
+    chunks.append(
+        _openwebui_chunk(
+            model_id,
+            {"tool_calls": [{"index": 0, **ask_user}]},
+            finish_reason="tool_calls",
+        )
+    )
+    return chunks
 
 
 def _openwebui_interrupt_completion(
@@ -246,24 +242,18 @@ def _interrupt_question(call: ResponseFunctionToolCall) -> tuple[dict[str, Any],
         msg = "LangGraph API returned an interrupt call ID Open WebUI cannot keep."
         raise ValueError(msg)
 
+    # The question is the whole prompt; other payload fields are for programs.
+    # Open WebUI's card shows one plain-text line and truncates it, so, as a
+    # model would, the card asks the question's first paragraph and the
+    # details go above it as Markdown text.
     question = question.strip()
-    details = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"question", "choices", "allow_other"}
-    }
-    encoded = json.dumps(details, ensure_ascii=False, indent=2)
-    prompt = f"{question}\n\n{encoded}" if details else question
-    review = ""
-    if len(prompt) > ASK_USER_QUESTION_MAX_LENGTH:
-        # Open WebUI truncates the card text; keep the complete review visible.
-        review = f"{question}\n\n```json\n{encoded}\n```" if details else question
-        # The hint comes first so the card's truncation cannot cut it.
-        prompt = f"Review the full request above before choosing.\n\n{question}"
+    ask, _, review = question.partition("\n\n")
+    if "\n" in ask or len(ask) > ASK_USER_QUESTION_MAX_LENGTH:
+        ask, review = "Review the request above before choosing.", question
     return {
         "id": call.call_id,
         "header": "Human input",
-        "question": prompt,
+        "question": ask,
         "options": [
             {"label": choice, "description": f"Resume with {choice!r}."}
             for choice in choices

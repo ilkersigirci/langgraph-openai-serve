@@ -32,8 +32,7 @@ async def test_approved_refund_executes_and_notifies_customer(
     review = interrupts[0]
     assert review.value == {
         "action": "refund",
-        "question": "How should the refund be handled?",
-        "request": request,
+        "question": f"How should the refund be handled?\n\nRequest: {request}",
         "choices": ["approve", "reject"],
         "allow_other": True,
     }

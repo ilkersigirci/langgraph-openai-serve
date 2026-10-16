@@ -1,9 +1,9 @@
 """Add trusted URL citations to demo graph messages."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.messages.content import Citation, create_citation
 
 # Images are matched first so the URLs inside them are skipped, not cited.
@@ -38,6 +38,19 @@ def _citations(text: str, sources: Mapping[str, str]) -> list[Citation]:
     return citations
 
 
+def tool_sources(messages: Iterable[BaseMessage], tool_name: str) -> dict[str, str]:
+    """Collect the URL-to-title artifacts that a search tool's results carry."""
+    sources: dict[str, str] = {}
+    for message in messages:
+        if (
+            isinstance(message, ToolMessage)
+            and message.name == tool_name
+            and isinstance(message.artifact, dict)
+        ):
+            sources.update(message.artifact)
+    return sources
+
+
 def cite_sources(message: AIMessage, sources: Mapping[str, str]) -> AIMessage:
     """Annotate Markdown links and bare URLs that exactly match trusted sources."""
     blocks = []
@@ -61,4 +74,4 @@ def cite_sources(message: AIMessage, sources: Mapping[str, str]) -> AIMessage:
     )
 
 
-__all__ = ["cite_sources"]
+__all__ = ["cite_sources", "tool_sources"]

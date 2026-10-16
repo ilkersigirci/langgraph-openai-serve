@@ -6,6 +6,8 @@ streams fixed text, and the graph calls no provider. One request crosses two
 subgraph levels. The child subgraph emits a status and streams a draft, then
 its grandchild subgraph pauses for human review and streams the answer after
 resumption. The same graph runs in the foreground or in the background worker.
+[`deep-research`](deep-research.md#subgraphs) uses the same mechanisms with a
+real model, private subgraph state, and parallel subgraphs.
 
 All levels share one state schema whose `messages` channel uses
 `add_messages`, so each compiled subgraph runs directly as a node and its

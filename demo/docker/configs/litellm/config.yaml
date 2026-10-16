@@ -2,15 +2,13 @@
 # The graph, embedding, and speech models below forward to the configured
 # upstream, the OpenAI API by default, under the IDs Bifrost uses. Each sets
 # api_base and api_key because this container's OPENAI_* defaults target the
-# Files API. use_in_pass_through lends their key to /openai_passthrough, which
-# serves the advanced graph's vector store.
+# Files API.
 model_list:
   - model_name: openai/gpt-6-luna
     litellm_params: &openai_upstream
       model: openai/gpt-6-luna
       api_base: os.environ/OPENAI_UPSTREAM_API_BASE
       api_key: os.environ/OPENAI_UPSTREAM_API_KEY
-      use_in_pass_through: true
   - model_name: openai/gpt-4.1-mini
     litellm_params:
       <<: *openai_upstream

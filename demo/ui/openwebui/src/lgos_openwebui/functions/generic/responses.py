@@ -19,8 +19,12 @@ from openai.types.responses.response_output_text import AnnotationURLCitation
 from pydantic import JsonValue, TypeAdapter
 
 from .contracts import (
+    ASK_USER_CALL_ID_PREFIX,
     DISPLAY_FILE_TOOL_NAME,
+    INTERRUPT_TOOL_NAME,
     WEB_SEARCH_TOOL_NAME,
+    AskUserRequest,
+    AskUserResult,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
     OpenWebUIMessage,
@@ -179,14 +183,71 @@ def _responses_mcp_calls(
     return calls
 
 
+def _responses_interrupt_history(
+    card: OpenWebUIMessageToolCall, content: JsonValue
+) -> list[dict[str, Any]]:
+    """Replay an answered ask_user card as the interrupt calls and outputs it sent."""
+    try:
+        request = AskUserRequest.model_validate_json(
+            card.function.arguments if card.function and card.function.arguments else ""
+        )
+        result = AskUserResult.model_validate_json(str(content))
+    except ValueError:
+        return []
+    # A cancelled or failed card never resumed the graph.
+    if result.status != "answered":
+        return []
+    answered = [
+        (question, result.answers[question.id])
+        for question in request.questions
+        if question.id in result.answers
+    ]
+    return [
+        *(
+            {
+                "type": "function_call",
+                "call_id": question.id,
+                "name": INTERRUPT_TOOL_NAME,
+                # The card's question; the details it did not show precede it
+                # as assistant text.
+                "arguments": responses_json.dumps(
+                    {
+                        "question": question.question,
+                        "choices": [option.label for option in question.options],
+                        "allow_other": question.allow_other,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                "status": "completed",
+            }
+            for question, _ in answered
+        ),
+        *(
+            {
+                "type": "function_call_output",
+                "call_id": question.id,
+                "output": answer.output(),
+            }
+            for question, answer in answered
+        ),
+    ]
+
+
 def _responses_input(
     messages: Sequence[OpenWebUIMessage],
     *,
     mcp_tool_names: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Convert Open WebUI's text/file transcript into Responses items."""
+    """
+    Convert Open WebUI's transcript into Responses items.
+
+    Like a stateless Responses client, it replays MCP calls and answered
+    interrupts with their outputs.
+    """
     items = []
     mcp_call_ids: set[str] = set()
+    cards: dict[str, OpenWebUIMessageToolCall] = {}
     for message in messages:
         role = message.role
         content = message.content
@@ -199,6 +260,8 @@ def _responses_input(
                         "output": _tool_output(content),
                     }
                 )
+            elif card := cards.get(message.tool_call_id or ""):
+                items.extend(_responses_interrupt_history(card, content))
             continue
         if role not in {"user", "assistant", "system", "developer"}:
             continue
@@ -208,6 +271,12 @@ def _responses_input(
         if response_content := _responses_content(content):
             items.append({**message_fields, "content": response_content})
 
+        if role == "assistant":
+            cards.update(
+                (call.id, call)
+                for call in message.tool_calls
+                if call.id and call.id.startswith(ASK_USER_CALL_ID_PREFIX)
+            )
         if role == "assistant" and mcp_tool_names:
             calls = _responses_mcp_calls(message.tool_calls, mcp_tool_names)
             mcp_call_ids.update(call["call_id"] for call in calls)

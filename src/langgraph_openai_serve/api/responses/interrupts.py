@@ -51,7 +51,7 @@ def parse_responses_resume(
 ) -> InterruptResume | None:
     """Parse the sole supported interrupt continuation form."""
     if previous_response_id is None:
-        _reject_interrupt_items_without_response_id(input_value)
+        _reject_resume_without_response_id(input_value)
         return None
     if isinstance(input_value, str):
         msg = (
@@ -84,21 +84,20 @@ def parse_responses_resume(
     )
 
 
-def _reject_interrupt_items_without_response_id(
+def _reject_resume_without_response_id(
     input_value: str | list[ResponseInputItem],
 ) -> None:
+    # As in any stateless Responses transcript, answered interrupts earlier in
+    # the input are history; an input that ends with an interrupt resumes it.
     if isinstance(input_value, str):
         return
-    if any(
-        (
-            isinstance(item, ResponseFunctionCallInput)
-            and item.name == _INTERRUPT_TOOL_NAME
-        )
-        or (
-            isinstance(item, ResponseFunctionCallOutputInput)
-            and item.call_id.startswith(_INTERRUPT_CALL_PREFIX)
-        )
-        for item in input_value
+    last = input_value[-1]
+    if (
+        isinstance(last, ResponseFunctionCallInput)
+        and last.name == _INTERRUPT_TOOL_NAME
+    ) or (
+        isinstance(last, ResponseFunctionCallOutputInput)
+        and last.call_id.startswith(_INTERRUPT_CALL_PREFIX)
     ):
         msg = "Interrupt resumes require previous_response_id."
         raise InvalidRequestError(msg, param="input")

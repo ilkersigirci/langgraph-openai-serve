@@ -33,8 +33,9 @@ def review_refund(state: ReviewState) -> dict[str, str]:
     response = interrupt(
         {
             "action": "refund",
-            "question": "How should the refund be handled?",
-            "request": state["request"],
+            "question": (
+                f"How should the refund be handled?\n\nRequest: {state['request']}"
+            ),
             "choices": ["approve", "reject"],
             "allow_other": True,
         }

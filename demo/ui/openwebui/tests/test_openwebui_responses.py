@@ -39,12 +39,13 @@ from lgos_openwebui.functions.generic import (
     responses as generic_responses,
 )
 from lgos_openwebui.functions.generic.contracts import (
+    ASK_USER_REJECTED_OUTPUT,
     OpenWebUIBody,
     OpenWebUIMessage,
 )
 from lgos_openwebui.functions.generic.interrupts import (
     _ask_user_to_resume,
-    _openwebui_interrupt_chunk,
+    _openwebui_interrupt_chunks,
     _openwebui_interrupt_completion,
 )
 from lgos_openwebui.functions.generic.responses import (
@@ -89,58 +90,80 @@ def final_response(text: str) -> Response:
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-def test_large_note_is_visible_before_the_native_approval_question(streaming) -> None:
-    note = "Exact note contents. " * 100
+def test_question_details_are_text_above_the_native_question_card(
+    streaming: bool,
+) -> None:
+    plan = [f"What does source {number} say about interrupts?" for number in range(20)]
+    bullets = "\n".join(f"- {question}" for question in plan)
     call = function_call(
         "lgos_interrupt",
         {
-            "question": "Save this exact note?",
-            "content": note,
-            "filename": "note.md",
-            "vector_store_id": "vs_docs",
-            "choices": ["approve", "reject"],
+            "question": f"Start deep research?\n\nResearch plan:\n{bullets}",
+            # Fields besides the question are for programs, not the reviewer.
+            "trace": "internal-trace-value",
+            "choices": ["Start research", "Answer now"],
             "allow_other": True,
         },
     )
-    result = (
-        _openwebui_interrupt_chunk if streaming else _openwebui_interrupt_completion
-    )("advanced-graph", RESPONSE_ID, [call])
-    message = result["choices"][0]["delta" if streaming else "message"]
-    assert note in message["content"]
-    ask_user = message["tool_calls"][0]
+    if streaming:
+        text, card = (
+            chunk["choices"][0]["delta"]
+            for chunk in _openwebui_interrupt_chunks(
+                "deep-research", RESPONSE_ID, [call]
+            )
+        )
+        # Open WebUI places a chunk's tool call ahead of its text, so the text
+        # streams first and the answered card stays below its question.
+        assert "tool_calls" not in text
+        assert "content" not in card
+        content, ask_user = text["content"], card["tool_calls"][0]
+    else:
+        message = _openwebui_interrupt_completion("deep-research", RESPONSE_ID, [call])[
+            "choices"
+        ][0]["message"]
+        content, ask_user = message["content"], message["tool_calls"][0]
+    # The card shows one plain-text line; the details render above it.
+    assert content == f"Research plan:\n{bullets}"
     question = json.loads(ask_user["function"]["arguments"])["questions"][0]["question"]
-    assert len(question) <= 500
-    assert "above" in question
+    assert question == "Start deep research?"
+    assert "internal-trace-value" not in content + question
     resumed = _ask_user_to_resume(
-        host_messages(ask_user_exchange(ask_user, {call.call_id: option("approve")}))
+        host_messages(
+            ask_user_exchange(ask_user, {call.call_id: option("Start research")})
+        )
     )
     assert resumed == (
         [
             {
                 "type": "function_call_output",
                 "call_id": call.call_id,
-                "output": "approve",
+                "output": "Start research",
             }
         ],
         RESPONSE_ID,
     )
 
 
-def test_review_hint_survives_open_webui_question_truncation() -> None:
+def test_a_question_the_card_would_truncate_stays_whole_above_it() -> None:
     call = function_call(
         "lgos_interrupt",
         {
-            "question": "Save this note? " * 31,
-            "content": "Exact note contents.",
+            "question": "Save this note? " * 40,
             "choices": ["approve", "reject"],
         },
     )
 
-    ask_user = ask_user_card(call)
+    message = _openwebui_interrupt_completion("note", RESPONSE_ID, [call])["choices"][
+        0
+    ]["message"]
 
-    question = json.loads(ask_user["function"]["arguments"])["questions"][0]["question"]
+    assert message["content"] == ("Save this note? " * 40).strip()
+    question = json.loads(message["tool_calls"][0]["function"]["arguments"])[
+        "questions"
+    ][0]["question"]
     # Open WebUI keeps the first 500 characters of a card question.
-    assert "above" in question[:500]
+    assert len(question) <= 500
+    assert "above" in question
 
 
 async def test_streamed_text_and_the_full_review_stay_separate(
@@ -149,8 +172,7 @@ async def test_streamed_text_and_the_full_review_stay_separate(
     call = function_call(
         "lgos_interrupt",
         {
-            "question": "Save this note?",
-            "content": "Exact note contents. " * 30,
+            "question": "Save this note?\n\n" + "Exact note contents. " * 30,
             "choices": ["approve", "reject"],
         },
     )
@@ -181,7 +203,7 @@ async def test_streamed_text_and_the_full_review_stay_separate(
     content = "".join(
         chunk["choices"][0]["delta"].get("content", "") for chunk in chunks
     )
-    assert content.startswith("I drafted the note.\n\nSave this note?")
+    assert content.startswith("I drafted the note.\n\nExact note contents.")
 
 
 def function_call(name: str, arguments: dict[str, object]) -> ResponseFunctionToolCall:
@@ -759,7 +781,7 @@ async def test_chat_variables_of_previously_selected_models_are_not_sent(
     }
 
     result = await generic_pipe.Pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
+        {**body(stream=False), "model": "generic.lgos/deep-research"},
         __metadata__=metadata,
     )
 
@@ -883,7 +905,7 @@ async def test_chat_variables_reach_responses_with_their_declared_types(
     ]
 
     await generic_pipe.Pipe().pipe(
-        {**body(stream=False), "model": "generic.lgos/advanced-graph"},
+        {**body(stream=False), "model": "generic.lgos/deep-research"},
         __metadata__={
             "chat_id": "thread-123",
             "chat_variables": chat_variables,
@@ -1297,8 +1319,29 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
     else:
         assert requests[0]["input"] == transcript
     assert "previous_response_id" not in requests[1]
+    # The client tool continues the UI's transcript, which replays the
+    # answered interrupt as a function call and its output.
+    replayed_interrupt = (
+        [
+            {
+                "type": "function_call",
+                "call_id": paused.call_id,
+                "name": "lgos_interrupt",
+                "arguments": paused.arguments,
+                "status": "completed",
+            },
+            {
+                "type": "function_call_output",
+                "call_id": paused.call_id,
+                "output": "approve",
+            },
+        ]
+        if resume_interrupt
+        else []
+    )
     assert requests[1]["input"] == [
         *transcript,
+        *replayed_interrupt,
         *expected_output,
         output,
     ]
@@ -1602,6 +1645,55 @@ async def test_unanswered_interrupt_card_ends_the_turn_without_resuming(
     create.assert_not_awaited()
 
 
+@pytest.mark.parametrize("answered", [True, False], ids=["answered", "cancelled"])
+async def test_later_turn_replays_the_answered_interrupt_in_place(
+    monkeypatch: pytest.MonkeyPatch, answered: bool
+) -> None:
+    call = interrupt_call()
+    card, result = ask_user_exchange(
+        ask_user_card(call), {call.call_id: option("approve")}
+    )
+    card["content"] = "Request: ORDER-123"
+    if not answered:
+        result["content"] = ASK_USER_REJECTED_OUTPUT
+    request = body(stream=False)
+    request["messages"].extend(
+        [
+            card,
+            result,
+            {"role": "assistant", "content": "Refund approved."},
+            {"role": "user", "content": "What did I decide?"},
+        ]
+    )
+    create = AsyncMock(return_value=final_response("You approved it."))
+    install_client(monkeypatch, create=create)
+
+    await generic_pipe.Pipe().pipe(request)
+
+    # Like a stateless Responses transcript, the card's text, the interrupt
+    # call, and its answer replay where they happened. A cancelled card never
+    # resumed the graph, so only its text remains.
+    exchange = [
+        {
+            "type": "function_call",
+            "call_id": call.call_id,
+            "name": "lgos_interrupt",
+            # A question that fits the card replays as the graph sent it.
+            "arguments": call.arguments,
+            "status": "completed",
+        },
+        {"type": "function_call_output", "call_id": call.call_id, "output": "approve"},
+    ]
+    assert create.await_args.kwargs["input"] == [
+        {"role": "user", "content": "Refund ORDER-123"},
+        {"role": "assistant", "phase": "final_answer", "content": "Request: ORDER-123"},
+        *(exchange if answered else []),
+        {"role": "assistant", "phase": "final_answer", "content": "Refund approved."},
+        {"role": "user", "content": "What did I decide?"},
+    ]
+    assert "previous_response_id" not in create.await_args.kwargs
+
+
 async def test_parallel_interrupt_batch_uses_one_prompt_and_resumes_every_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1709,6 +1801,10 @@ async def test_interrupt_response_becomes_native_ask_user_call(
 
     tool_call = result["choices"][0]["message"]["tool_calls"][0]
     assert tool_call["function"]["name"] == "ask_user"
+    # A one-line question fits the card, so nothing renders above it.
+    card = json.loads(tool_call["function"]["arguments"])["questions"][0]
+    assert card["question"] == "Approve refund?"
+    assert result["choices"][0]["message"]["content"] is None
     assert result["choices"][0]["finish_reason"] == "tool_calls"
     assert result["output"][0]["type"] == "function_call"
     assert result["output"][0]["name"] == "ask_user"
