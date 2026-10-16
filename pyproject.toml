@@ -103,7 +103,8 @@ test = [
 ]
 [tool.uv]
 default-groups = ["dev", "doc", "test"]
-required-version = "==0.12.23"
+# The oldest supported uv; CI installs exactly this version.
+required-version = ">=0.13.1"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -270,4 +271,4 @@ exclude_lines = [
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]

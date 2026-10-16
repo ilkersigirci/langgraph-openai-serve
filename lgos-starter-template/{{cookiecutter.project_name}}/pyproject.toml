@@ -39,6 +39,8 @@ doc = ["zensical>=0.0.68,<0.1"]
 
 [tool.uv]
 default-groups = ["dev", "test", "doc"]
+# The oldest supported uv.
+required-version = ">=0.13.1"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -48,7 +50,7 @@ addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
 env = ["APP_OPENAI_API_KEY=test", "LGOS_ENABLE_LANGFUSE=False"]
 
 [build-system]
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

@@ -37,7 +37,6 @@ test = [
 
 [tool.uv]
 default-groups = ["dev", "test"]
-required-version = "==0.12.23"
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"
@@ -56,4 +55,4 @@ src = ["src", "tests"]
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]

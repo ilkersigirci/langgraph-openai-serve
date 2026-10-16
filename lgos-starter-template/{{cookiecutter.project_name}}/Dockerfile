@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG PYTHON_IMAGE=python:{{ cookiecutter.python_version }}-slim-trixie
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.23
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.1
 
 FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE} AS build

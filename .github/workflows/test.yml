@@ -22,10 +22,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          resolution-strategy: lowest
           python-version: "3.13"
-          enable-cache: true
 
       - name: Build and test the base installation
         run: |
@@ -52,10 +52,10 @@ jobs:
           just-version: "1.58.0"
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          resolution-strategy: lowest
           python-version: ${{ matrix.python-version }}
-          enable-cache: true
 
       - name: Install the project with test dependencies
         run: uv sync --frozen --only-group test
@@ -78,10 +78,10 @@ jobs:
           just-version: "1.58.0"
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          resolution-strategy: lowest
           python-version: "3.11"
-          enable-cache: true
 
       # Resolve each direct dependency, extras included, to its declared floor.
       - name: Test against the dependency floors

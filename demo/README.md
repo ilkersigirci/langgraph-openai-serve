@@ -246,8 +246,10 @@ is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
 also runs the API against the current LGOS source.
 
-Each workflow layout lets `setup-uv` discover the version requirement at its
-repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
+Each workflow layout reads the oldest supported uv from `required-version` at
+its repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
+`setup-uv` installs exactly that version with `resolution-strategy: lowest`, so
+CI stays reproducible while developers can use any newer uv.
 
 Pull requests validate changed image contexts without publishing. Creating a
 GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for all three
