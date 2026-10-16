@@ -284,6 +284,11 @@ Each replayed function or custom call requires one matching output of the same
 type. Missing, duplicate, mismatched, or unmatched results fail validation
 before graph execution, including when the client requests streaming.
 
+Answered interrupts replay the same way: a later request carries the
+`lgos_interrupt` calls, then the outputs that answered them, so the graph sees
+what was asked and answered. Only an input that ends with interrupt calls or
+outputs is a resume.
+
 An interrupt continuation uses a narrower stateful path. The client sends the
 paused Response ID as `previous_response_id` and sends only matching
 `function_call_output` items. LGOS uses those opaque IDs to locate and validate
@@ -755,12 +760,6 @@ The UI owns persistence of the paused Response ID and exact calls. It must store
 them before soliciting input so a reconnect can reproduce the same resume request.
 Persisting only rendered prompt text or only the user's response is insufficient.
 
-A later request replays an answered interrupt like any function call in a
-stateless transcript: the `lgos_interrupt` calls, then the outputs that answered
-them, in place. The graph then sees what was asked and answered. Only an input
-that ends with interrupt calls or outputs is a resume, which requires
-`previous_response_id`.
-
 ### Durable Validation And Recovery
 
 For an interrupt-enabled run, LGOS uses LangGraph exit durability and holds a
@@ -820,7 +819,9 @@ for the underlying checkpoint model.
   Arbitrary client-defined custom tools and formats, built-in tools beyond the
   documented `web_search` subset, structured output, and unconsumed generation
   controls are rejected.
-  `previous_response_id` is reserved for interrupt continuation.
+  `previous_response_id` is reserved for interrupt continuation, the only way
+  to resume one: unlike an ordinary function call, a pause cannot continue
+  from a replayed transcript.
 - Registered custom tools use standard Responses declarations and items but run
   inside LGOS; OpenAI's ordinary custom-tool flow delegates execution to caller
   code between model requests.

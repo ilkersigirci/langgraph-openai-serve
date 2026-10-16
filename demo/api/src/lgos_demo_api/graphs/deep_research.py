@@ -12,10 +12,10 @@ request that needs research without it gets a reply asking to turn it on.
 Runtime settings let a client skip the plan review or change the number of
 research rounds.
 
-Both phases before the report are subgraphs added as nodes. ``scope`` shares the
-parent's state and pauses inside itself for the review. Each ``researcher``
-receives only its question, keeps its round count private, and returns only its
-searches.
+Both phases before the report are subgraphs added as nodes. ``scope`` reads and
+writes the parent's state, keeps its plan edits private, and pauses inside itself
+for the review. Each ``researcher`` receives only its question, keeps its round
+count private, and returns only its searches.
 """
 
 from collections.abc import Sequence
@@ -149,7 +149,7 @@ class ScopeState(DeepResearchState):
     """The scope's own state; its plan edits never reach the conversation."""
 
     # Each reviewed plan and the user's edit, which triage revises from. The
-    # answer and the report read only the conversation.
+    # parent has no such key, so the answer and the report never see them.
     plan_edits: Annotated[list[AnyMessage], add_messages] = Field(default_factory=list)
 
 
@@ -176,9 +176,7 @@ class ResearcherState(BaseModel):
 DeepResearchGraph = CompiledStateGraph[
     DeepResearchState, DeepResearchContext, DeepResearchState, DeepResearchState
 ]
-ScopeGraph = CompiledStateGraph[
-    ScopeState, DeepResearchContext, DeepResearchState, DeepResearchState
-]
+ScopeGraph = CompiledStateGraph[ScopeState, DeepResearchContext, ScopeState, ScopeState]
 ResearcherGraph = CompiledStateGraph[
     ResearcherState, DeepResearchContext, ResearcherInput, ResearcherOutput
 ]
@@ -266,12 +264,7 @@ def _scope_graph(chat: ChatOpenAI, files: AsyncOpenAI) -> ScopeGraph:
         )
 
     # Nodes that route with Command name their destinations for the diagram.
-    scope = StateGraph(
-        ScopeState,
-        input_schema=DeepResearchState,
-        output_schema=DeepResearchState,
-        context_schema=DeepResearchContext,
-    )
+    scope = StateGraph(ScopeState, context_schema=DeepResearchContext)
     scope.add_node("triage", triage, destinations=("review", END))
     scope.add_node("review", review, destinations=("triage", "review", END))
     scope.add_edge(START, "triage")
@@ -373,10 +366,11 @@ def create_deep_research_graph(
         return {"messages": [response]}
 
     graph = StateGraph(DeepResearchState, context_schema=DeepResearchContext)
-    # The compiled subgraphs run directly as nodes: scope through the shared
-    # state, each researcher through its own input and output schemas. They
-    # compile without a checkpointer and inherit the parent's, which keeps a
-    # paused review under the scope's checkpoint namespace.
+    # The compiled subgraphs run directly as nodes and exchange only the keys the
+    # parent has: scope the conversation and plan, each researcher one question
+    # in and its searches out. They compile without a checkpointer and inherit
+    # the parent's, which keeps a paused review under the scope's checkpoint
+    # namespace.
     graph.add_node("scope", _scope_graph(chat, files))
     graph.add_node("researcher", _researcher_graph(chat, web_search_tool))
     graph.add_node("report", report)

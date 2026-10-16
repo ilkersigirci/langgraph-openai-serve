@@ -104,7 +104,7 @@ to use a subgraph that shares state keys with its parent:
 
 | Subgraph | Added as a node with | Receives | Returns | Keeps private |
 | --- | --- | --- | --- | --- |
-| `scope` | The parent's state schema as its input and output schemas | The conversation | The plan, empty for a direct answer | Its plan edits |
+| `scope` | A state that adds private plan edits to the parent's | The conversation | The plan, empty for a direct answer | Its plan edits |
 | `researcher` | Its own input and output schemas, once per question through `Send` | One question | Its searches and findings | Its round count |
 
 Each researcher works in a clean context: it receives only its question, never
@@ -291,7 +291,7 @@ the background services, use either maintained UI:
 | Plan review | `Compare how LangGraph and the OpenAI Agents SDK pause for human approval.` | A review with the plan, **Start research**, and **Answer now** |
 | Plan edit | Reply `Only cover resuming after approval.` | A revised plan and another review |
 | Background research | Enable **Run in background**, then choose **Start research** | Polling status, then the cited report |
-| Review history | Ask `What change did I ask for to the research plan, and what did I choose then?` | A direct answer naming your edit and **Start research**: later requests replay each answered review as its [interrupt call and answer](../../explanation/openai-compatibility.md#resuming-an-interrupt) |
+| Review history | Ask `What change did I ask for to the research plan, and what did I choose then?` | A direct answer naming your edit and **Start research**: later requests replay each answered review as its [interrupt call and answer](../../explanation/openai-compatibility.md#stateless-item-continuation) |
 | Settings | Turn off **Review plan**, set **Research rounds** to `1`, and ask the plan-review prompt | Research starts at once and runs one round of searches |
 
 Without **Run in background**, **Start research** streams each search query as

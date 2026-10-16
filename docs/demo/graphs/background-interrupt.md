@@ -104,8 +104,8 @@ shared cancellation and completion-race details.
 
 At review, choose **Reject** to resume and finish the workflow without approving
 the report. Dismissing or cancelling a review without sending an answer leaves
-the checkpoint pending. Open WebUI's review-card **Cancel** has this behavior;
-see [Open WebUI human review](../open-webui.md#interrupt-input) and
+the checkpoint pending; the review's **Cancel** does this in both UIs. See
+[Open WebUI human review](../open-webui.md#interrupt-input) and
 [Chainlit human review](../chainlit.md#interrupt-demo) for each UI's controls
 and saved-review recovery.
 

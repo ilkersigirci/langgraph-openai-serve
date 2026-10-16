@@ -168,7 +168,7 @@ async def _continue_interrupt_response(
 ) -> Response:
     # The resumed run finishes on LGOS, so client tool results continue the
     # conversation as a new stateless request, which replays this review too.
-    turn = _Turn(model_id, interrupt_workflow.response_input(answers=input_items))
+    turn = _Turn(model_id, interrupt_workflow.response_input())
     _current_turn.set(turn)
     return await turn.request(input_items, previous_response_id=previous_response_id)
 
