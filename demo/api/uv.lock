@@ -1322,7 +1322,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.31.0rc2"
+version = "0.31.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1335,9 +1335,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/16/5a98b80408f69a7d3bf0c02979eb39f0fe63ce49884495b666e9d16314c6/langgraph_openai_serve-0.31.0rc2.tar.gz", hash = "sha256:9f4b4a4b21d7fd559d58d9ad40d70c9f3bdb2631730ed5a3a2097b3686e023db", size = 66859, upload-time = "2026-10-16T14:38:07.02Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/dc/8ed30855f0fda7ad6e5704342cf22e00120b352ee8a573b04f772ffb4089/langgraph_openai_serve-0.31.0.tar.gz", hash = "sha256:0015e565f94966d6838b034db4986e14ef58110e10dd05016d76b02c48814a2d", size = 66851, upload-time = "2026-10-16T19:01:27.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/c7/f17f49392583951b195611539cb35fc4b930fe63f830a40b2e99624a7f66/langgraph_openai_serve-0.31.0rc2-py3-none-any.whl", hash = "sha256:dd5995194a703259c4c1bb51d77d71270940573dc787c2b2854c0ca9994a6067", size = 88528, upload-time = "2026-10-16T14:38:05.58Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/99/8ed7c7311a5b3e42f1ec6c88c99fc1c23a1f9b306c410ec2d642ae02f356/langgraph_openai_serve-0.31.0-py3-none-any.whl", hash = "sha256:5eaff3878905d02ae205986b2f65cefe984cf8f3e1cd66ba4e539c8a9e99ea1d", size = 88479, upload-time = "2026-10-16T19:01:26.187Z" },
 ]
 
 [package.optional-dependencies]
@@ -1454,7 +1454,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.4.3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.31.0rc2" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.31.0" },
     { name = "markdown", specifier = ">=3.11" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "packaging", specifier = ">=26.3" },
