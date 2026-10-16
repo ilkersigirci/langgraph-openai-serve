@@ -51,6 +51,7 @@ integration commands:
 | `just demo/sync` | Synchronize every project from its lockfile |
 | `just demo/test [--editable]` | Test every project, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
+| `just demo/experiment <name> [--editable] [--no-langfuse] [--dataset <dataset>]` | Run a [Langfuse experiment](experiments.md) from `demo/api/experiments`, such as `lgos-rag`, with the host gateway's models; `--no-langfuse` records nothing, and `--dataset` runs a Langfuse dataset, such as `lgos-rag/curated`, instead of the Git-tracked cases |
 | `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, idempotent replay, and polling-only validation through the selected gateway |
 | `just demo/lint` | Check every project with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in every project; accepts Ruff flags such as `--unsafe-fixes` |
@@ -109,12 +110,12 @@ after [catalog sync](bifrost.md#declarative-model-metadata).
 | `COMPOSE_PROFILES` | Native Compose profiles; `.env.example` selects the bundled gateway via `${OPENAI_GATEWAY_TYPE}`. Leave empty to use an existing gateway |
 | `OPENAI_GATEWAY_BASE_URL` | Required gateway root without `/v1`; the example uses the selected service's Compose DNS name |
 | `OPENAI_GATEWAY_API_KEY` | Shared static credential used by both UIs for model discovery, Responses, Files, speech, and MCP unless the [SSO overlay](docker.md#sso-overlay) sends each user's token; the bundled LiteLLM configuration uses it as its demo master key and Bifrost loads it as its scoped demo virtual key |
-| `DEMO_GRAPH_GATEWAY_API_KEY` | Gateway credential the graph and coding-agent APIs use for their model and vector-store calls. Defaults to `OPENAI_GATEWAY_API_KEY`; with the [SSO overlay](docker.md#sso-overlay) or in production, create a dedicated non-admin key in the gateway so the APIs never hold its admin key |
+| `DEMO_GRAPH_GATEWAY_API_KEY` | Gateway credential the graph and coding-agent APIs use for their model calls. Defaults to `OPENAI_GATEWAY_API_KEY`; with the [SSO overlay](docker.md#sso-overlay) or in production, create a dedicated non-admin key in the gateway so the APIs never hold its admin key |
 | `DEMO_AUDIO_STT_MODEL` | Gateway model ID both UIs use to transcribe microphone input through `/v1/audio/transcriptions`; Chainlit hides its microphone when empty |
 | `DEMO_AUDIO_TTS_MODEL` | Gateway model ID both UIs use to speak answers through `/v1/audio/speech`; Chainlit hides its read-aloud button when empty |
 | `DEMO_AUDIO_TTS_VOICE` | OpenAI voice for spoken answers; Chainlit defaults to `alloy` |
-| `OPENAI_UPSTREAM_BASE_URL` | Root, without `/v1`, of the OpenAI-compatible upstream behind the bundled LiteLLM's `openai/*` models and OpenAI passthrough; defaults to the OpenAI API. Bifrost reads its upstream from `DEMO_BIFROST_CONFIG` |
-| `OPENAI_UPSTREAM_API_KEY` | Upstream API key the bundled gateways use for their `openai/*` graph, embedding, and speech models and for vector-store passthrough. It must keep files and vector stores in one upstream account |
+| `OPENAI_UPSTREAM_BASE_URL` | Root, without `/v1`, of the OpenAI-compatible upstream behind the bundled LiteLLM's `openai/*` models; defaults to the OpenAI API. Bifrost reads its upstream from `DEMO_BIFROST_CONFIG` |
+| `OPENAI_UPSTREAM_API_KEY` | Upstream API key the bundled gateways use for their `openai/*` graph, embedding, and speech models |
 | `DEMO_BIFROST_CONFIG` | Bifrost configuration file, relative to `demo/docker/apps/`. Point it at a gitignored `config.local.json` copy to change the upstream URL, which Bifrost cannot read from the environment |
 | `LGOS_MCP_DB_PASSWORD` | Password for the dedicated read-only `lgos_mcp` PostgreSQL login; DBHub receives it through an interpolated individual connection field, so URL encoding is not required |
 | `LGOS_MCP_AUTH_TOKEN` | Internal bearer token used by LiteLLM or Bifrost when it connects to DBHub |
@@ -176,9 +177,8 @@ settings, including `LGOS_POSTGRES_URI`, `LGOS_INTERRUPT_TTL_MINUTES`,
 `LGOS_BACKGROUND`, `LGOS_HATCHET_WORKER_SLOTS`, and `LGOS_CORS_ORIGINS`, are
 described in [Run The LGOS Server](../how-to-guides/server.md#settings). The
 graphs share `OPENAI_GATEWAY_BASE_URL` with the UIs and call it with
-`DEMO_GRAPH_GATEWAY_API_KEY`, which defaults to the UIs' key. Model calls use `/v1`; the advanced graph's
-knowledge Files and vector stores use `/openai_passthrough/v1` with that same
-credential. The local API, worker, and notebook recipes set the gateway root to
+`DEMO_GRAPH_GATEWAY_API_KEY`, which defaults to the UIs' key. Model calls use
+`/v1`. The local API, worker, and notebook recipes set the gateway root to
 `DEMO_GATEWAY_HOST_URL` and the key to `DEMO_GRAPH_GATEWAY_API_KEY`.
 
 Graph-specific settings use the `DEMO_API_` prefix:
@@ -186,12 +186,11 @@ Graph-specific settings use the `DEMO_API_` prefix:
 | Setting | Purpose |
 | --- | --- |
 | `DEMO_API_OPENAI_CHAT_COMPLETIONS_MODEL` | Gateway model ID for the Chat Completions graphs and the default of `simple-graph`'s `model` setting; it must call tools without reasoning-specific parameters |
-| `DEMO_API_OPENAI_RESPONSES_MODEL` | Gateway model ID for the Responses graphs: `advanced-graph`, `file-input`, and `server-tool`. `simple-graph` also offers it through Chat Completions |
-| `DEMO_API_VECTOR_STORE_ID` | Shared knowledge-base ID searched by `advanced-graph`; required for document search and saved notes |
+| `DEMO_API_OPENAI_RESPONSES_MODEL` | Gateway model ID for the Responses graphs: `deep-research`, `file-input`, and `server-tool`. `simple-graph` also offers it through Chat Completions |
 | `DEMO_API_OPENAI_EMBEDDING_MODEL` | Gateway embedding model ID used by `lgos-rag` |
 | `DEMO_API_WEB_SEARCH_BACKEND` | `http` for self-hosted search or `openai` for the upstream Responses tool |
 | `DEMO_API_WEB_SEARCH_URL` | SearXNG or Degoog JSON search endpoint used by the `http` backend |
-| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `advanced-graph` graphs. |
+| `DEMO_API_FILES_BASE_URL` | Central Files API read by the `file-input` and `deep-research` graphs. |
 | `HATCHET_CLIENT_TOKEN` | Hatchet's native client credential shared by the demo API and worker; leave it out of committed files outside this local template. |
 | `HATCHET_CLIENT_NAMESPACE` | Native Hatchet resource prefix shared by the demo API and worker. |
 | `HATCHET_CLIENT_OPENTELEMETRY_EXCLUDED_ATTRIBUTES` | Native SDK JSON list of span attributes to omit. The demo defaults to `["payload","additional_metadata"]`; trace propagation is preserved. |

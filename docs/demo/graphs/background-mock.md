@@ -7,7 +7,7 @@ Response move from queued to in progress and to cancel it. For deterministic
 human review and background resumption, use
 [`background-interrupt`](background-interrupt.md). For a real agent
 running in the background, use
-[`advanced-graph`](advanced-graph.md#background-execution).
+[`deep-research`](deep-research.md#background-execution).
 
 The graph declares `GraphFeature.BACKGROUND`. The API submits the request to
 Hatchet; an independently deployed worker executes the graph, and Hatchet

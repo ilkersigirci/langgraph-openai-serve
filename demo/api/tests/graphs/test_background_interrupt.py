@@ -32,8 +32,7 @@ async def test_report_requires_an_offered_review_decision(
     )
     (review,) = paused["__interrupt__"]
     assert review.value == {
-        "question": "Approve this report?",
-        "report": "Background report for: Quarterly risks",
+        "question": "Approve this report?\n\nBackground report for: Quarterly risks",
         "choices": ["approve", "reject"],
         "allow_other": False,
     }

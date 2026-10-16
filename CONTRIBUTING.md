@@ -45,7 +45,8 @@ If you are proposing a new feature:
 # Get Started!
 
 Ready to contribute? Here's how to set up `langgraph-openai-serve` for local development.
-This documentation assumes you already have `uv`, `Git`, Bash, and
+This documentation assumes you already have `uv` (any release that meets
+`required-version` in `pyproject.toml`), `Git`, Bash, and
 [`just` 1.58.0 or newer](https://just.systems/) installed and ready to go.
 
 1. Fork the `langgraph-openai-serve` repo on GitHub.

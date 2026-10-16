@@ -7,11 +7,15 @@ license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "httpx2>=2.13,<3",
+    "langchain>=1.4.3",
     "langchain-openai>=1.6.6",
     "langchain-text-splitters>=1.1.0",
-    "langgraph-openai-serve[server]>=0.30.0",
-    "numpy>=2.4.6",
+    "langgraph-openai-serve[server]>=0.31.0rc2",
+    "markdown>=3.11",
+    "numpy>=2.4.6", # NOTE: LangChain's InMemoryVectorStore needs it, but langchain-core does not install it.
+    "packaging>=26.3",
     "plotly>=6,<7",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]
@@ -55,6 +59,8 @@ env = [
     "LGOS_ENABLE_LANGFUSE=False",
 ]
 testpaths = ["tests"]
+# Experiment scripts import their `_shared` sibling module.
+pythonpath = ["experiments"]
 markers = [
     "integration: requires explicitly started external demo services",
 ]
@@ -64,6 +70,11 @@ extend = "../ruff.toml"
 src = ["src", "tests"]
 
 [tool.ruff.lint.extend-per-file-ignores]
+"experiments/*.py" = [
+    "print", # Experiment scripts report their run on stdout.
+    "implicit-namespace-package", # Standalone scripts, not an importable package.
+    "import-private-name", # The Langfuse experiment action skips `_`-named helpers like `_shared`.
+]
 "notebooks/*.py" = [
     "print", # Notebook cells display client responses on stdout.
     # Marimo generates cell signatures, names, and explicit returns from its DAG.
@@ -169,4 +180,4 @@ include_default_snippets = true
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]

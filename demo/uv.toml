@@ -1,1 +1,2 @@
-required-version = "==0.12.23"
+# The oldest supported uv; a copied demo's CI installs exactly this version.
+required-version = ">=0.13.1"

@@ -187,10 +187,10 @@ not select checkpoint state or cause LGOS to retain conversation history; client
 still supply the input needed by each ordinary request. Omit the field when no
 conversation exists; LGOS does not generate a fallback ID. Application graphs
 may explicitly use it to scope their own stored data, but it is not authorization.
-Clients targeting Langfuse should use an ASCII value shorter than 200
-characters. The value is distinct from the end-user `safety_identifier` and
-`user` fields, the interrupt run ID, and per-request trace or request
-identifiers.
+Clients targeting Langfuse should use an ASCII value of at most 200 characters;
+Langfuse drops a longer session. The value is distinct from the end-user
+`safety_identifier` and `user` fields, the interrupt run ID, and per-request
+trace or request identifiers.
 
 ### Per-Request Resolution
 
@@ -244,7 +244,7 @@ not claim every field in the upstream OpenAI API.
 | `tools=[{"type":"web_search"}]` | Selects a registered graph-owned web search. Use `tool_choice="required"` with only this tool to force search. Named built-in choices, optional filters, and location fields are outside the current subset. |
 | `web_search_call` | Returned after the graph executes search and may be replayed as history. Final text carries standard URL citations. |
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
-| `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
+| `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history, including answered `lgos_interrupt` calls. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user in at most 128 characters, OpenAI's documented limit, and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
 | `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
@@ -283,6 +283,11 @@ keeping storage in the client.
 Each replayed function or custom call requires one matching output of the same
 type. Missing, duplicate, mismatched, or unmatched results fail validation
 before graph execution, including when the client requests streaming.
+
+Answered interrupts replay the same way: a later request carries the
+`lgos_interrupt` calls, then the outputs that answered them, so the graph sees
+what was asked and answered. Only an input that ends with interrupt calls or
+outputs is a resume.
 
 An interrupt continuation uses a narrower stateful path. The client sends the
 paused Response ID as `previous_response_id` and sends only matching
@@ -814,7 +819,9 @@ for the underlying checkpoint model.
   Arbitrary client-defined custom tools and formats, built-in tools beyond the
   documented `web_search` subset, structured output, and unconsumed generation
   controls are rejected.
-  `previous_response_id` is reserved for interrupt continuation.
+  `previous_response_id` is reserved for interrupt continuation, the only way
+  to resume one: unlike an ordinary function call, a pause cannot continue
+  from a replayed transcript.
 - Registered custom tools use standard Responses declarations and items but run
   inside LGOS; OpenAI's ordinary custom-tool flow delegates execution to caller
   code between model requests.

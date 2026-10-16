@@ -7,7 +7,7 @@ demo model catalogs.
 
 | Model | Demonstrates | Graph feature | Graph-specific dependency |
 | --- | --- | --- | --- |
-| [`advanced-graph`](advanced-graph.md) | General chat, gateway tools, uploaded-file Q&A, routed cited research, and approval before saving a searchable note, in the foreground or background | `background`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, upstream vector store, and PostgreSQL |
+| [`deep-research`](deep-research.md) | Direct answers with attachments and gateway tools, or reviewed web research by parallel researcher subgraphs ending in a cited report, in the foreground or background | `background`, `file_inputs`, `interrupts`, `mcp_tools` | Responses model, selected gateway, web search, and PostgreSQL |
 | [`background-interrupt`](background-interrupt.md) | Deterministic background report preparation, human approval, and background resumption | `background`, `interrupts` | Hatchet and PostgreSQL checkpointer and run coordinator |
 | [`background-mock`](background-mock.md) | Deterministic background execution in an independently deployed worker, with no model call | `background` | Hatchet |
 | [`custom-input-output-context`](core-patterns.md#custom-input-output-context) | Request, output, and typed runtime-context adapters | None | None |
@@ -16,7 +16,7 @@ demo model catalogs.
 | [`file-input`](file-input.md) | Central Files API IDs resolved into OpenAI Responses file inputs | `file_inputs` | Central Files API and upstream Responses model |
 | [`mcp-mock`](core-patterns.md#mcp-mock) | Async MCP-style tool discovery and an agent tool loop | None | None |
 | [`mcp-postgres`](mcp-postgres.md) | Read-only database questions with MCP discovery and execution owned by the native UI client | `mcp_tools` | Upstream model, selected gateway, DBHub, and PostgreSQL |
-| [`complex-subgraphs`](complex-subgraphs.md) | Router-selected subgraphs, status, and nested streamed output | None | None |
+| [`nested-subgraphs`](nested-subgraphs.md) | Streaming, status, human review, and background runs inside nested subgraphs, with no model call | `background`, `interrupts` | PostgreSQL checkpointer and run coordinator; Hatchet for background runs |
 | [`multi-node-streaming`](core-patterns.md#multi-node-streaming) | Two sequential fake-model nodes contributing ordered text to one assistant message | None | None |
 | [`response-outcomes`](core-patterns.md#response-outcomes) | Native refusal content and incomplete terminal responses | None | None |
 | [`status-events`](events-and-citations.md) | Portable status updates for native client UI | None | None |
@@ -26,7 +26,7 @@ demo model catalogs.
 | [`simple-graph`](core-patterns.md#simple-graph) | Streamed model output and discoverable runtime settings | None | Upstream chat model |
 | [`simple-graph-external-tools`](core-patterns.md#simple-graph-external-tools) | Client-provided function tools returned as model tool calls | None | Upstream chat model |
 | [`server-tool`](server-tool.md) | Installed package versions and OpenAI-compatible web search selected by the client | None | Upstream model plus SearXNG, Degoog, or upstream OpenAI search |
-| [`lgos-rag`](lgos-rag.md) | Agentic retrieval with structured URL citations over the packaged demo corpus | None | Upstream chat and embedding models |
+| [`lgos-rag`](lgos-rag.md) | Cited answers from the published documentation of the installed LGOS release, using embedding and BM25 search | None | Upstream chat and embedding models, and GitHub release archives |
 
 Graphs reach every model dependency through the selected gateway; see
 [How Requests Flow](../architecture.md#how-requests-flow).
@@ -36,15 +36,13 @@ PostgreSQL must be available even when you call a provider-free graph. Start it
 with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 
 `persistent-plot-agent` stores application data with a LangGraph Store.
-`interruptible-approval` and `background-interrupt` checkpoint graph execution.
-`advanced-graph` uses both:
-checkpoints for human review and Store receipts for vector-service uploads. None
-makes LGOS the owner of UI conversation history.
+`deep-research`, `interruptible-approval`, `background-interrupt`, and
+`nested-subgraphs` checkpoint graph execution. None makes LGOS the owner of UI
+conversation history.
 
-Background Responses from `advanced-graph`, `background-mock`, and
-`background-interrupt` are
-polling-only and stored by Hatchet. They still do not persist a UI conversation
-or expose event replay.
+Background Responses from `deep-research`, `background-mock`,
+`background-interrupt`, and `nested-subgraphs` are polling-only and stored by
+Hatchet. They still do not persist a UI conversation or expose event replay.
 
 ## Source Map
 
@@ -54,8 +52,6 @@ Most graph code is owned by the independent `demo/api` project:
   model names for `lgos serve` and `lgos worker`.
 - `demo/api/src/lgos_demo_api/graphs/` contains its graphs and adapters.
 - `demo/api-coding-agent/src/lgos_api_coding_agent/` owns the separately deployed coding-agent showcase, currently backed by Codex.
-- `demo/api/src/lgos_demo_api/corpus/` contains the Markdown packaged with the
-  `lgos-rag` example.
 
 Continue with [Run the Demo API](../api.md#call-a-graph) for request examples or
 [Chainlit](../chainlit.md) and [Open WebUI](../open-webui.md) for UI behavior.

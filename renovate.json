@@ -1,0 +1,45 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "enabledManagers": ["docker-compose", "dockerfile", "github-actions"],
+  "timezone": "Europe/Istanbul",
+  "schedule": ["* 10-16 * * 1-5"],
+  "prHourlyLimit": 1,
+  "prConcurrentLimit": 10,
+  "docker-compose": {
+    "managerFilePatterns": ["/^demo\\/docker\\/(?:apps|compose)\\/.*\\.ya?ml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "Skip demo images that Compose builds locally",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["lgos-*"],
+      "enabled": false
+    },
+    {
+      "description": "Keep renovate-version a plain version, which Renovate can update",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["ghcr.io/renovatebot/renovate"],
+      "pinDigests": false
+    },
+    {
+      "description": "Keep Python base images on the version in .python-version",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["python"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
+    },
+    {
+      "description": "Upgrade the Bifrost gateway with the gateway-upgrade skill",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["maximhq/bifrost"],
+      "prBodyNotes": [
+        "Follow demo/.agents/skills/gateway-upgrade/SKILL.md before merging."
+      ]
+    }
+  ],
+  "major": {
+    "dependencyDashboardApproval": true
+  },
+  "labels": ["dependencies", "renovate"]
+}

@@ -1221,20 +1221,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langchain"
-version = "1.4.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "langgraph" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/aa/0fcaf5d7dbebcf7d0eb74293dca5aee6f0558242731f4dee4a800cc2431d/langchain-1.4.3.tar.gz", hash = "sha256:aed5c1a7cd581f70ddc076b75fdbcbae8031b8373983f86efd287aa70798abc2", size = 738607, upload-time = "2026-09-28T20:17:24.38Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/03/8cc027f9d297473de94f134546dae2bfca255161ebbda988522fc509e1d5/langchain-1.4.3-py3-none-any.whl", hash = "sha256:0334066939dd1c7551889727ed2d09a72dea7a6aed2193ffb61817fb658d8921", size = 164708, upload-time = "2026-09-28T20:17:22.978Z" },
-]
-
-[[package]]
 name = "langchain-core"
 version = "1.6.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1269,7 +1255,7 @@ wheels = [
 
 [[package]]
 name = "langfuse"
-version = "4.17.0"
+version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -1282,9 +1268,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/96/93/30c97995ad3b24c8dfd45ff02d80f491bd5e103fae432a1872db32e16823/langfuse-4.17.0.tar.gz", hash = "sha256:f8cccfc49d9839969e962ffb88ce49cf531a8cbf31507eb99e43668fb5b3b5da", size = 394423, upload-time = "2026-10-05T08:53:34.777Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/51/86561c2059fb9d81c72100f6b446bc8c3b863624051ee934169e2d56073f/langfuse-5.0.1.tar.gz", hash = "sha256:8435dc7728cb3439326ccbb59938eb5709407331b59470f10bfd00557bac2fa0", size = 364998, upload-time = "2026-10-14T10:58:16.206Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/e0/1eb38746bb1fbb925eb90a1a501abb15c9eaa5ecf1818c94943360fa563e/langfuse-4.17.0-py3-none-any.whl", hash = "sha256:02560e12d715dd24f239c240886ee197b9e62f4a808f06de77193356c56bf57a", size = 708167, upload-time = "2026-10-05T08:53:35.989Z" },
+    { url = "https://files.pythonhosted.org/packages/61/bc/20746ca06afd14f731a73c4edc4a7be5cb5824d5f432d93132e931e318e6/langfuse-5.0.1-py3-none-any.whl", hash = "sha256:2c7aeb95fec7915da3bc005cf4dfc251a1c9d4eb28384161bbbf9447aacf4c44", size = 635262, upload-time = "2026-10-14T10:58:14.643Z" },
 ]
 
 [[package]]
@@ -1375,7 +1361,6 @@ postgres = [
 server = [
     { name = "fastapi" },
     { name = "hatchet-sdk", extra = ["otel"] },
-    { name = "langchain" },
     { name = "langfuse" },
     { name = "langgraph-checkpoint-postgres" },
     { name = "opentelemetry-distro" },
@@ -1389,7 +1374,6 @@ server = [
     { name = "structlog" },
 ]
 tracing = [
-    { name = "langchain" },
     { name = "langfuse" },
     { name = "opentelemetry-sdk" },
 ]
@@ -1426,8 +1410,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.142.2" },
     { name = "hatchet-sdk", marker = "extra == 'hatchet'", specifier = ">=1.40.3,<2" },
     { name = "hatchet-sdk", extras = ["otel"], marker = "extra == 'server'", specifier = ">=1.40.3,<2" },
-    { name = "langchain", marker = "extra == 'tracing'", specifier = ">=1.2.11" },
-    { name = "langfuse", marker = "extra == 'tracing'", specifier = ">=4.0.0,<5.0.0" },
+    { name = "langfuse", marker = "extra == 'tracing'", specifier = ">=5.0.1,<6.0.0" },
     { name = "langgraph", specifier = ">=1.2.6,<2.0.0" },
     { name = "langgraph-checkpoint-postgres", marker = "extra == 'postgres'", specifier = ">=3.1.0,<4" },
     { name = "langgraph-openai-serve", extras = ["hatchet", "postgres", "tracing"], marker = "extra == 'server'" },

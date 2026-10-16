@@ -836,20 +836,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langchain"
-version = "1.4.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "langgraph" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/aa/0fcaf5d7dbebcf7d0eb74293dca5aee6f0558242731f4dee4a800cc2431d/langchain-1.4.3.tar.gz", hash = "sha256:aed5c1a7cd581f70ddc076b75fdbcbae8031b8373983f86efd287aa70798abc2", size = 738607, upload-time = "2026-09-28T20:17:24.38Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/03/8cc027f9d297473de94f134546dae2bfca255161ebbda988522fc509e1d5/langchain-1.4.3-py3-none-any.whl", hash = "sha256:0334066939dd1c7551889727ed2d09a72dea7a6aed2193ffb61817fb658d8921", size = 164708, upload-time = "2026-09-28T20:17:22.978Z" },
-]
-
-[[package]]
 name = "langchain-core"
 version = "1.6.6"
 source = { registry = "https://pypi.org/simple" }
@@ -884,7 +870,7 @@ wheels = [
 
 [[package]]
 name = "langfuse"
-version = "4.17.0"
+version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -897,9 +883,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/96/93/30c97995ad3b24c8dfd45ff02d80f491bd5e103fae432a1872db32e16823/langfuse-4.17.0.tar.gz", hash = "sha256:f8cccfc49d9839969e962ffb88ce49cf531a8cbf31507eb99e43668fb5b3b5da", size = 394423, upload-time = "2026-10-05T08:53:34.777Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/51/86561c2059fb9d81c72100f6b446bc8c3b863624051ee934169e2d56073f/langfuse-5.0.1.tar.gz", hash = "sha256:8435dc7728cb3439326ccbb59938eb5709407331b59470f10bfd00557bac2fa0", size = 364998, upload-time = "2026-10-14T10:58:16.206Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/e0/1eb38746bb1fbb925eb90a1a501abb15c9eaa5ecf1818c94943360fa563e/langfuse-4.17.0-py3-none-any.whl", hash = "sha256:02560e12d715dd24f239c240886ee197b9e62f4a808f06de77193356c56bf57a", size = 708167, upload-time = "2026-10-05T08:53:35.989Z" },
+    { url = "https://files.pythonhosted.org/packages/61/bc/20746ca06afd14f731a73c4edc4a7be5cb5824d5f432d93132e931e318e6/langfuse-5.0.1-py3-none-any.whl", hash = "sha256:2c7aeb95fec7915da3bc005cf4dfc251a1c9d4eb28384161bbbf9447aacf4c44", size = 635262, upload-time = "2026-10-14T10:58:14.643Z" },
 ]
 
 [[package]]
@@ -949,7 +935,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.30.0"
+version = "0.31.0rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -962,16 +948,15 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/2a/b379db25d1b2b24ea1857349ae09b8c762d9158ea147bbe3c3a3383143fe/langgraph_openai_serve-0.30.0.tar.gz", hash = "sha256:4fa44e364ae09806902e41b23b8cce632e350b8674af535c869e0b10e9d2067b", size = 62891, upload-time = "2026-10-13T19:17:47.231Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/16/5a98b80408f69a7d3bf0c02979eb39f0fe63ce49884495b666e9d16314c6/langgraph_openai_serve-0.31.0rc2.tar.gz", hash = "sha256:9f4b4a4b21d7fd559d58d9ad40d70c9f3bdb2631730ed5a3a2097b3686e023db", size = 66859, upload-time = "2026-10-16T14:38:07.02Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/60/100fe010a27798e142bba03a6cce636d44634ea5440e659ab5a6934d65cf/langgraph_openai_serve-0.30.0-py3-none-any.whl", hash = "sha256:2a8d22f9e6916695f71ff28d59adad9e7bcb8b2919702e5ad1aed0fc506ec453", size = 88407, upload-time = "2026-10-13T19:17:45.647Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/c7/f17f49392583951b195611539cb35fc4b930fe63f830a40b2e99624a7f66/langgraph_openai_serve-0.31.0rc2-py3-none-any.whl", hash = "sha256:dd5995194a703259c4c1bb51d77d71270940573dc787c2b2854c0ca9994a6067", size = 88528, upload-time = "2026-10-16T14:38:05.58Z" },
 ]
 
 [package.optional-dependencies]
 server = [
     { name = "fastapi" },
     { name = "hatchet-sdk", extra = ["otel"] },
-    { name = "langchain" },
     { name = "langfuse" },
     { name = "langgraph-checkpoint-postgres" },
     { name = "opentelemetry-distro" },
@@ -1064,7 +1049,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.30.0" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.31.0rc2" },
     { name = "openai-codex", specifier = ">=0.159.0" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
 ]

@@ -91,7 +91,7 @@ format *args:
 [arg('editable', long, value='true')]
 [group('local')]
 type-check editable='false':
-    {{ if editable == "true" { editable_api_run } else { api_run } }} ty check src {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
+    {{ if editable == "true" { editable_api_run } else { api_run } }} ty check src experiments --extra-search-path experiments {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
     {{ files_run }} ty check src
     {{ if editable == "true" { editable_coding_agent_run } else { coding_agent_run } }} ty check src {{ if editable == "true" { "--extra-search-path ../../src" } else { "" } }}
     {{ chainlit_run }} ty check src
@@ -154,6 +154,19 @@ files $DEMO_API_FILES_PORT=env("LGOS_FILES_PORT"):
 [group('local')]
 chainlit $LGOS_CHAINLIT_PORT=env("LGOS_CHAINLIT_PORT"):
     {{ chainlit_run }} uvicorn lgos_chainlit.main:app --host 0.0.0.0 --port "$LGOS_CHAINLIT_PORT"
+
+# Run an API experiment, such as lgos-rag, through the host gateway.
+# `--dataset` runs a Langfuse dataset, such as lgos-rag/curated, instead of the
+# Git-tracked cases; `--no-langfuse` clears the Langfuse keys, so the run
+# records nothing.
+[arg('dataset', long)]
+[arg('editable', long, value='true')]
+[arg('langfuse', long='no-langfuse', value='false')]
+[env('OPENAI_GATEWAY_API_KEY', env('DEMO_GRAPH_GATEWAY_API_KEY'))]
+[env('OPENAI_GATEWAY_BASE_URL', env('DEMO_GATEWAY_HOST_URL'))]
+[group('integration')]
+experiment name editable='false' langfuse='true' dataset='':
+    {{ if langfuse == "false" { "LGOS_ENABLE_LANGFUSE=false LANGFUSE_PUBLIC_KEY=" } else { "" } }} {{ if editable == "true" { editable_api_run } else { api_run } }} python "experiments/${1//-/_}.py" {{ if dataset != "" { "--dataset " + quote(dataset) } else { "" } }}
 
 # Run optional live direct Responses integration tests.
 [arg('DEMO_TEST_DIRECT_BASE_URL', long='base-url')]

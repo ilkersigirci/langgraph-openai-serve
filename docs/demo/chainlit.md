@@ -10,15 +10,15 @@ model metadata and link to their authoritative source files.
 
 Each server tool a profile advertises in `lgos.server_tools` becomes an opt-in
 Chat Settings switch labelled from its name: `server-tool` gets
-**Package version** and **Web search**, while `advanced-graph` gets only
+**Package version** and **Web search**, while `deep-research` gets only
 **Web search** and receives gateway MCP tools separately through its advertised
 capability. Chainlit includes only selected tools in the native Responses
 `tools` array, and offers `display_file` only to profiles that list it in
 `lgos.client_tools`. A custom tool uses a name-only declaration, while search
 uses `{"type":"web_search"}`. LGOS completes selected server tools inside
-the same Response, so Chainlit executes only returned `function_call` items. The
-advanced graph enters note review when the user asks to remember or save
-something, not through a UI setting.
+the same Response, so Chainlit executes only returned `function_call` items.
+`deep-research` pauses for plan review when a question needs research, not
+through a UI setting.
 Native URL-citation annotations become
 clickable Chainlit source elements containing Markdown links, without changing
 the replayed answer text.
@@ -282,8 +282,9 @@ and the [`chainlit-utils` repository](https://github.com/ilkersigirci/chainlit-u
 for its reusable integration suite.
 
 Chainlit's PostgreSQL data layer stores users, threads, steps, and feedback.
-Opening a stored thread restores its role/content transcript and continues with
-the same login identity. The adapter also sends Chainlit's stable thread ID as
+Opening a stored thread restores its transcript, with answered reviews as their
+function calls and outputs, and continues with the same login identity. The
+adapter also sends Chainlit's stable thread ID as
 `metadata.conversation_id` on every Responses request, allowing Langfuse to group the
 thread's per-request traces into one session. The `persistent-plot-agent` demo also
 combines that value with the authenticated `safety_identifier` to scope its LangGraph
@@ -453,45 +454,54 @@ See [Authentication](../how-to-guides/authentication.md).
 
 Select `lgos/interruptible-approval` in the normal Chainlit profile menu, then
 send `Refund order ORDER-123 for the customer.` The same UI also handles
-interrupts returned by other profiles, including `advanced-graph`.
+interrupts returned by other profiles, including `deep-research`.
 
 Initial requests need no interrupt metadata. The client implements the
 [Responses interrupt continuation](../explanation/openai-compatibility.md#resuming-an-interrupt):
 it stores the paused Response ID, asks for every call in the batch, submits only
 matching `function_call_output` items, and repeats when the graph pauses again.
-The `chainlit-utils` `HitlWorkflow` owns ledger validation, Chainlit persistence,
+The `chainlit-utils` `HitlWorkflow` owns the review ledger, Chainlit persistence,
 pending-request protection, and batch continuation, and its `HumanReview`
 element renders the form. The demo keeps only the LGOS `lgos_interrupt` name,
 the Responses request callback, and the conversion of each interrupt payload
-into a review prompt with its choices.
-Answer text the graph produced before a pause stays in the conversation above
-the form. The exception is a resumed run that pauses again directly: that pause
-updates the existing form, so its text follows it. The workflow publishes a
-normal Chainlit message with one persisted
-custom element and immediately returns. The element collects one answer for every
-interrupt call in the current batch, then invokes a native Chainlit action
-callback through `callAction`. The callback reads the trusted model ID,
-Response ID, exact function calls, and expected element ID from message
-metadata; the browser sends only opaque step, element, and revision references
-plus the answers. One accepted action advances one Responses transition. A later
-interrupt updates the same form, while any other response marks the ledger
-complete and removes it. The demo then finishes the turn like any other: it
-runs client function calls such as MCP tools or `display_file` and requests the
-answer with their results. The resumed run has already finished, so those
-requests start from the conversation text, and files attached to the reviewed
-turn are not sent again. The client therefore depends only on the standard
-tool-call batch, not the graph topology.
+into a review prompt with its choices. The prompt is the payload's `question`;
+graphs write their details into it, and other payload fields are data for API
+clients that the form does not display.
+
+Each pause posts a normal Chainlit message, below any answer text the graph
+produced first, with one persisted custom element, and returns. The element
+collects one answer for every call in the batch and invokes a native Chainlit
+action callback through `callAction`. The browser sends only opaque step,
+element, and revision references plus the answers; the callback reads the
+model ID, Response ID, and exact calls from the message's ledger. It records
+the answers and replies at once, and the resumed graph then runs like a chat
+message, with Chainlit's running state and Stop. Like Open WebUI's answered
+card, an answered review stays in the conversation without its form and records
+the decision, such as `Answered: approve`. A later pause asks in a new message.
+
+**Cancel** closes the review without resuming the graph, as Open WebUI's does:
+the message records `Cancelled.`, later requests replay nothing of it, and the
+paused run waits for the demo API's
+[expiry](graphs/interruptible-approval.md#postgresql-runtime). Until a review is
+answered or cancelled, a new message asks the user to do one or the other.
+
+Any other response finishes the turn like any other: the demo runs client
+function calls such as MCP tools or `display_file` and requests the answer with
+their results. The resumed run has already finished, so those requests start
+from the conversation, and files attached to the reviewed turn are not sent
+again. Like any stateless Responses transcript, later requests replay each
+answered review in place as its exact `lgos_interrupt` calls and answers; the
+review message's own text stays out, because the calls carry it. The client
+therefore depends only on the standard tool-call batch, not the graph topology.
 See the shared
 [interrupt walkthrough](graphs/interruptible-approval.md) and the concise
 [design rationale](design-choices.md#chainlit).
 
-The [advanced graph](graphs/advanced-graph.md) uses the same review UI for real
-note uploads after an explicit natural-language save request. The payload
-displays the exact note content and destination before approval. Knowledge
-citations stay in the answer as filenames and provider file IDs; the default S3
-Files connection is not a bridge to the graph's configured vector service.
+The [deep-research graph](graphs/deep-research.md) uses the same review UI for
+its research plan. The review message shows the plan, the form offers
+**Start research** and **Answer now**, and a custom response edits the plan.
 
-![Chainlit human review form with approve, reject, and custom-response controls](../static/hitl_chainlit.png)
+![Chainlit human review form with approve, reject, custom-response, and cancel controls](../static/hitl_chainlit.png)
 
 *Chainlit renders the LangGraph interrupt as native choices with an optional
 custom response field.*
@@ -504,18 +514,16 @@ custom response field.*
     to the thread; there is no live ask prompt to recreate and no socket-owned task
     waiting for input. Switching threads, refreshing, or reconnecting therefore
     neither duplicates the persisted message nor rejects or resumes the graph.
-    A per-step lock and the persisted revision reject stale or concurrent duplicate
-    submissions before another continuation request is sent.
     Chainlit queues data-layer writes asynchronously, with no public flush API,
     so a process crash can still occur before that message reaches PostgreSQL.
-    Once stored, cancellation, reload, or worker loss before the resume request
-    does not require API-side chat history.
 
+    A submission records the answers before the resume request, so the
+    persisted revision and the answered ledger reject stale or duplicate
+    submissions. If the resume fails, is stopped, or the worker is lost, the
+    review stays answered and the next message continues from the conversation.
     The demo does not durably cache a terminal response or a later interrupt
-    response that has not yet reached Chainlit. If the API accepts a resume but
-    the worker loses the following response, resubmitting the older continuation fails
-    safely as stale; the completed output or newer batch cannot be reconstructed
-    from that old ledger. Applications requiring recovery across that window
+    response that has not yet reached Chainlit; neither can be reconstructed
+    from the answered ledger. Applications requiring recovery across that window
     need a durable result/pending-response handoff in their UI boundary. See
     [Interruptible Human Review](graphs/interruptible-approval.md#postgresql-runtime)
     for server-side checkpoint retention.

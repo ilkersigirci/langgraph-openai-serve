@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import (
     AliasPath,
@@ -171,6 +171,44 @@ class OpenWebUIToolSpec(BaseModel):
 
 class InterruptCancelled(Exception):  # ruff: ignore[error-suffix-on-exception-name] - Cancellation is control flow, not an application error.
     """The user cancelled Open WebUI's native interrupt prompt."""
+
+
+class AskUserOption(BaseModel):
+    label: str
+
+
+class AskUserQuestion(BaseModel):
+    """One question of a stored ask_user call, as its card showed it."""
+
+    id: str
+    question: str
+    options: list[AskUserOption]
+    allow_other: bool = False
+
+
+class AskUserRequest(BaseModel):
+    """The ask_user call arguments Open WebUI stores with the chat."""
+
+    questions: list[AskUserQuestion]
+
+
+class AskUserAnswer(BaseModel):
+    """One browser answer: the chosen option's label or free-form text."""
+
+    type: Literal["option", "other"]
+    label: str = ""
+    text: str = ""
+
+    def output(self) -> str:
+        """Return the interrupt output this answer resumes the graph with."""
+        return self.label if self.type == "option" else self.text.strip()
+
+
+class AskUserResult(BaseModel):
+    """The tool result Open WebUI stores when the user answers the card."""
+
+    status: Literal["answered", "cancelled"]
+    answers: dict[str, AskUserAnswer] = Field(default_factory=dict)
 
 
 class DisplayFileArguments(BaseModel):

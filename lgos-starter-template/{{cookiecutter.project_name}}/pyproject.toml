@@ -13,11 +13,8 @@ classifiers = ["Private :: Do Not Upload"]
 {% endif %}
 authors = [{ name = {{ cookiecutter.author | tojson }}, email = {{ cookiecutter.email | tojson }} }]
 dependencies = [
-    "langchain-core>=1.6.6,<2",
     "langchain-openai>=1.6.6",
-    "langgraph>=1.2.6,<2",
     "langgraph-openai-serve[server]>=0.30.0,<0.31",
-    "pydantic>=2.11,<3",
     "pydantic-settings>=2.9,<3",
 ]
 
@@ -42,6 +39,8 @@ doc = ["zensical>=0.0.68,<0.1"]
 
 [tool.uv]
 default-groups = ["dev", "test", "doc"]
+# The oldest supported uv.
+required-version = ">=0.13.1"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -51,7 +50,7 @@ addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
 env = ["APP_OPENAI_API_KEY=test", "LGOS_ENABLE_LANGFUSE=False"]
 
 [build-system]
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

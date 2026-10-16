@@ -16,7 +16,6 @@ from chainlit_utils.chat.history import (
     mark_model_context_excluded,
     mark_persisted_errors_excluded,
     send_ui_message,
-    text_only_chat_messages,
 )
 from chainlit_utils.chat.hitl import HitlWorkflow
 from chainlit_utils.chat.human_review import HUMAN_REVIEW_ELEMENT_NAME, HumanReviewForm
@@ -33,7 +32,6 @@ from chainlit_utils.openai.responses import (
     citation_elements,
     final_answer,
     raise_for_response,
-    response_input,
 )
 from chainlit_utils.openai.tools import continuation_input, function_calls
 from openai import Omit, omit
@@ -169,8 +167,8 @@ async def _continue_interrupt_response(
     previous_response_id: str,
 ) -> Response:
     # The resumed run finishes on LGOS, so client tool results continue the
-    # conversation as a new stateless request.
-    turn = _Turn(model_id, response_input(text_only_chat_messages()))
+    # conversation as a new stateless request, which replays this review too.
+    turn = _Turn(model_id, interrupt_workflow.response_input())
     _current_turn.set(turn)
     return await turn.request(input_items, previous_response_id=previous_response_id)
 
@@ -193,6 +191,7 @@ interrupt_workflow = HitlWorkflow(
     element_name=HUMAN_REVIEW_ELEMENT_NAME,
     prompt=interrupt_form.prompt,
     publish_final=_publish_final,
+    receipt=interrupt_form.receipt,
     review=interrupt_form.props,
     validate_outputs=interrupt_form.validate_outputs,
 )
@@ -298,7 +297,7 @@ async def _reply(message: cl.Message) -> None:
         return
     try:
         input_items = await with_response_file_parts(
-            response_input(text_only_chat_messages()),
+            interrupt_workflow.response_input(),
             message,
             client=v1_client,
             extra_query={"provider": gateway.files_provider},

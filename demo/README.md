@@ -20,8 +20,8 @@ directory, use `just` instead. `just --usage demo/up` shows recipe options and
 defaults. Local development checks can run without a `.env` file; configure it
 before starting services or running live integration tests.
 
-The API resolves `langgraph-openai-serve` from PyPI and packages the default
-`lgos-rag` Markdown corpus inside `lgos_demo_api`. The development Compose
+The API resolves `langgraph-openai-serve` from PyPI; its `lgos-rag` graph
+searches the published documentation of that release. The development Compose
 override builds a local API image and installs both the API and parent LGOS
 checkout as editable packages without changing the locked production dependency
 source. Every demo-owned Python environment targets OpenAI v3; the upstream
@@ -97,7 +97,7 @@ matrix.
 Polling-only background execution is optional. Select LiteLLM or Bifrost,
 set `LGOS_BACKGROUND=hatchet`, add `background` to `COMPOSE_PROFILES`,
 configure `HATCHET_CLIENT_TOKEN`, and run `just demo/compose`. Both UIs can then
-run `advanced-graph`, the model-free `background-mock`, or the deterministic
+run `deep-research`, the model-free `background-mock`, or the deterministic
 [`background-interrupt`](../docs/demo/graphs/background-interrupt.md) review flow
 in the background. Run
 `just demo/test-background-gateway --editable` and see the
@@ -246,8 +246,10 @@ is kept in-tree. Both sets of workflows use the composite actions owned by this
 directory; the root test wrapper checks a copy outside the package checkout and
 also runs the API against the current LGOS source.
 
-Each workflow layout lets `setup-uv` discover the version requirement at its
-repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
+Each workflow layout reads the oldest supported uv from `required-version` at
+its repository root: `pyproject.toml` for LGOS and `uv.toml` for a copied demo.
+`setup-uv` installs exactly that version with `resolution-strategy: lowest`, so
+CI stays reproducible while developers can use any newer uv.
 
 Pull requests validate changed image contexts without publishing. Creating a
 GitHub release such as `v0.8.0` publishes `0.8.0` and `latest` for all three

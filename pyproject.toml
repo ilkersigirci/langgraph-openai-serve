@@ -56,8 +56,7 @@ postgres = [
     "psycopg-pool>=3.3.0,<4",
 ]
 tracing = [
-    "langchain>=1.2.11",
-    "langfuse>=4.0.0,<5.0.0",
+    "langfuse>=5.0.1,<6.0.0",
     "opentelemetry-sdk>=1.35.0,<2", # NOTE: Langfuse gets a tracer provider of its own.
 ]
 # The `lgos` command: every integration, JSON logging, and OpenTelemetry export.
@@ -104,7 +103,8 @@ test = [
 ]
 [tool.uv]
 default-groups = ["dev", "doc", "test"]
-required-version = "==0.12.23"
+# The oldest supported uv; CI installs exactly this version.
+required-version = ">=0.13.1"
 
 [tool.pytest.ini_options]
 anyio_mode = "auto"
@@ -271,4 +271,4 @@ exclude_lines = [
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]

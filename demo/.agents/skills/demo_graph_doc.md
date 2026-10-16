@@ -13,9 +13,9 @@ minimal catalog entry.
 Use `docs/demo/graphs/persistent-plot-agent.md` as a quality reference, not a
 fixed template. Include only sections that explain the graph at hand.
 
-Treat `advanced-graph.md` as an exception: it documents LGOS API's all-in-one
-production showcase. Preserve its broader integration view, but do not copy its
-scope or structure into focused graph pages.
+Treat `deep-research.md` as an exception: it documents the demo's all-in-one
+showcase of LGOS features. Preserve its broader integration view, but do not
+copy its scope or structure into focused graph pages.
 
 ## Establish the Facts
 

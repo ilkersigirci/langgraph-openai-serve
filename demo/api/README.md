@@ -26,17 +26,18 @@ model call made during a graph run names that run's end user, which LGOS
 records as the run's `lgos.user` metadata, in LiteLLM's `x-litellm-end-user-id`
 header.
 Start either bundled gateway from `demo/`; the standalone example connects to
-its host port. Model calls use `/v1`, and the advanced graph's shared knowledge
-uses `/openai_passthrough/v1` with the same credential.
+its host port. Model calls use `/v1`.
 
 The graph API does not expose Files routes or receive S3 credentials. Its
 `file-input` graph reads the independent [`files_api`](../files_api/) service
 through `DEMO_API_FILES_BASE_URL`, then sends inline file data to the configured
 OpenAI Responses API.
 
-The `lgos-rag` graph reads a compact Markdown corpus packaged under
-`src/lgos_demo_api/corpus`, so source installs, wheels, and images need no
-external documentation checkout.
+The `lgos-rag` graph downloads the Markdown docs of the installed LGOS release
+from its GitHub source archive on its first question, so installs and images
+need no documentation checkout. An unreleased LGOS checkout, as in the `--dev`
+Compose stack, reports version `0.0.1`, so `lgos-rag` uses the latest published
+release's docs instead.
 
 `just demo/marimo --editable` opens the notebook workspace. For its AI assistant,
 copy `.marimo.toml.example` to `.marimo.toml`; the `gateway/` model prefix selects

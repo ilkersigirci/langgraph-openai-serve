@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "langgraph-openai-serve[server]>=0.30.0",
+    "langgraph-openai-serve[server]>=0.31.0rc2",
     "openai-codex>=0.159.0",
     "pydantic-settings>=2.9.0",
 ]
@@ -31,4 +31,4 @@ src = ["src", "tests"]
 
 [build-system]
 build-backend = "uv_build"
-requires = ["uv_build>=0.12.23,<0.13"]
+requires = ["uv_build>=0.13.1,<0.14"]

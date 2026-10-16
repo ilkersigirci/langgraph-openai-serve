@@ -46,8 +46,9 @@ importing the package never initializes Langfuse.
 The package contains the OpenAI-compatible server integration, not a built-in
 LLM graph. Applications register their own graphs. The `demo/` checkout keeps
 each deployable application in an independent uv project with its own lockfile.
-Its `lgos-rag` example indexes a small corpus packaged with the demo API, so the
-entire directory can be copied and run without files from this repository.
+The entire directory can be copied and run without files from this repository;
+its `lgos-rag` example searches the published documentation of the installed
+LGOS release.
 
 Repository tasks require Bash and [Just 1.58.0 or newer](https://just.systems/).
 Run `just` for package recipes and `just demo/` for independent demo workflows.

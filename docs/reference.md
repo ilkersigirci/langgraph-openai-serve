@@ -239,11 +239,14 @@ export LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
 `LANGFUSE_BASE_URL` is optional; Langfuse Cloud is the default. Set it only for
-a different cloud region or a self-hosted instance. Langfuse's `CallbackHandler`
-owns its standard SDK configuration and error behavior. LGOS constructs it on
-the first graph run that needs runnable configuration, then reuses that
-process-wide handler. Before that, LGOS creates the Langfuse client with a
-tracer provider of its own, as Langfuse
+a different cloud region or a self-hosted instance. A self-hosted Langfuse must
+be a release that Langfuse's
+[compatibility matrix](https://langfuse.com/self-hosting/upgrade/versioning#sdk-server)
+lists for the Python SDK version that the extra installs. Langfuse's
+`CallbackHandler` owns its standard SDK configuration and error behavior. LGOS
+constructs it on the first graph run that needs runnable configuration, then
+reuses that process-wide handler. Before that, LGOS creates the Langfuse
+client with a tracer provider of its own, as Langfuse
 [recommends](https://langfuse.com/faq/all/existing-otel-setup) beside another
 tracing backend. Langfuse's observations, which carry prompts and outputs, then
 never reach the application's [OpenTelemetry](#opentelemetry) exporters, and the

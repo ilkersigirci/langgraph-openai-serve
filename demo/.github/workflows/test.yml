@@ -70,4 +70,3 @@ jobs:
         with:
           directory: ${{ matrix.directory }}
           cache-dependency-glob: ${{ matrix.directory }}/uv.lock
-          verify-api-corpus: ${{ matrix.name == 'API' }}

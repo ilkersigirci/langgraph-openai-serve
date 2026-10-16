@@ -46,8 +46,7 @@ def review_report(
     # Resumption restarts this node; preparation belongs in the previous node.
     answer = interrupt(
         {
-            "question": "Approve this report?",
-            "report": state.report,
+            "question": f"Approve this report?\n\n{state.report}",
             "choices": ["approve", "reject"],
             "allow_other": False,
         }

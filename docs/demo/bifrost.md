@@ -32,14 +32,14 @@ before the LGOS services and synchronize metadata once the graph APIs are
 healthy; no dashboard edits are required.
 
 Bifrost exposes the graph and Files services as custom providers and uses its
-built-in `openai` provider for upstream model and vector-store requests:
+built-in `openai` provider for upstream model requests:
 
 | Provider | Upstream | Example UI model ID |
 | --- | --- | --- |
 | `lgos` | `lgos-demo-api:8000` | `lgos/simple-graph` |
 | `coding-agent` (routing target) | `lgos-api-coding-agent:8000` | `lgos/coding-agent` |
 | `lgos-files` | `lgos-files-api:8000` | Files only |
-| `openai` | `api.openai.com` | `openai/gpt-4.1-mini` and `openai/gpt-6-luna`; graph, embedding, and speech models, plus vector-store passthrough |
+| `openai` | `api.openai.com` | `openai/gpt-4.1-mini` and `openai/gpt-6-luna`; graph, embedding, and speech models |
 
 The coding-agent provider raises Bifrost's request timeout, which bounds a
 whole non-streaming response; a
@@ -206,12 +206,11 @@ private-network access.
 Enable `responses`, `responses_stream`, `responses_retrieve`, and
 `responses_cancel` explicitly under each custom graph provider's
 `allowed_requests`. The upstream is Bifrost's built-in `openai` provider with
-`OPENAI_UPSTREAM_API_KEY`; graphs and Codex reach it through `/v1`, and the
-advanced graph's vector store through `/openai_passthrough/v1`, which targets
-that provider by default. A built-in provider accepts every request type, so
-passthrough and normalized requests without a `provider` parameter, such as
-Files, Batches, and vector stores, reach the upstream account. The virtual
-key's model allowlist still applies to requests that name a model. Bifrost resolves no
+`OPENAI_UPSTREAM_API_KEY`; graphs and Codex reach it through `/v1`. A built-in
+provider accepts every request type, so normalized requests without a
+`provider` parameter, such as Files and Batches, reach the upstream account. The
+virtual key's model allowlist still applies to requests that name a model.
+Bifrost resolves no
 environment reference in `base_url`, so the upstream URL is literal in
 `config.json`. To use another OpenAI-compatible upstream, copy the file to the
 gitignored `config.local.json` beside it, change `base_url`, and set

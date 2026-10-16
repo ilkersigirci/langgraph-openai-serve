@@ -17,7 +17,4 @@ def test_settings_read_demo_prefixed_environment(
     assert files_base_url == settings.FILES_BASE_URL
     assert settings.WEB_SEARCH_BACKEND == "openai"
     assert settings.openai_base_url == "https://gateway.example/demo/v1"
-    assert settings.vector_store_base_url == (
-        "https://gateway.example/demo/openai_passthrough/v1"
-    )
     assert settings.OPENAI_GATEWAY_API_KEY == "gateway-key"

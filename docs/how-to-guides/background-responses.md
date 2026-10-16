@@ -126,11 +126,15 @@ a foreground turn. Answer it with `previous_response_id` and
 
 ```python
 answer = await client.responses.create(
-    model="advanced-graph",
+    model="deep-research",
     background=True,
     previous_response_id=paused.id,
     input=[
-        {"type": "function_call_output", "call_id": call.call_id, "output": "approve"}
+        {
+            "type": "function_call_output",
+            "call_id": call.call_id,
+            "output": "Start research",
+        }
         for call in paused.output
         if call.type == "function_call" and call.name == "lgos_interrupt"
     ],
