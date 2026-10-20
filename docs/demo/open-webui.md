@@ -279,8 +279,10 @@ provider from its prefix.
     The image keeps the `info` of each `pipes()` entry as the model's info, a
     per-model equivalent of
     [`DEFAULT_MODEL_METADATA`](https://docs.openwebui.com/reference/env-configuration/#default_model_metadata),
-    and the Generic Pipe returns each graph's info there. A model saved in Open
-    WebUI's model editor replaces that info. The Pipe's models have no
+    and the Generic Pipe returns each graph's info there. Hiding, switching
+    off, or editing a graph in Admin Settings > Models saves a model record
+    that replaces that info until **Reset** in the model's menu deletes the
+    record; limit graphs in the gateway instead. The Pipe's models have no
     stored records, which Open WebUI's per-model access control needs, so
     Compose sets
     [`BYPASS_MODEL_ACCESS_CONTROL`](https://docs.openwebui.com/reference/env-configuration/#bypass_model_access_control);
