@@ -103,7 +103,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | Background worker | Runs Hatchet background tasks outside the API process with a fixed slot count | Optional `background` Compose profile using the demo API image and Hatchet |
 | Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, HITL UI, dictation, and read-aloud | Independent uv project and `lgos-chainlit` image |
-| Open WebUI | Responses manifold, runtime model info and settings forms, native MCP tools, and native voice | The pinned `homeserver-open-webui` image with a mounted app factory that installs the Functions at startup |
+| Open WebUI | Responses manifold, runtime model info and settings forms, native MCP tools, and native voice | The pinned `homeserver-open-webui` image, with the Functions installed through its API |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
 | LiteLLM | Managed UI inference and native `/model/info` metadata | Pinned public `homeserver-litellm` image and Compose configuration |
 | DBHub | Six fixed read-only reports over curated live-data PostgreSQL views | Pinned official image and demo-owned TOML configuration |

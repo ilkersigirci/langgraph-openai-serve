@@ -120,6 +120,14 @@ compose-config:
 test-coding-agent editable='false' *args:
     {{ if editable == "true" { editable_coding_agent_run } else { coding_agent_run } }} pytest -m integration tests/test_live.py "${@:2}"
 
+# Check the Open WebUI sync and Pipe against the running stack after image changes.
+[env('OPENWEBUI_ADMIN_EMAIL', env('DEMO_OPENWEBUI_ADMIN_EMAIL'))]
+[env('OPENWEBUI_ADMIN_PASSWORD', env('DEMO_OPENWEBUI_ADMIN_PASSWORD'))]
+[env('OPENWEBUI_API_KEY', env('DEMO_OPENWEBUI_SYNC_API_KEY', ''))]
+[group('integration')]
+test-openwebui *args:
+    {{ openwebui_run }} pytest -m integration tests/test_live.py "$@"
+
 # Run every demo check; add --editable inside the package checkout.
 [arg('editable', long, value='true')]
 [group('checks')]
@@ -230,6 +238,15 @@ up service dev='false' wait='false' *args:
 reset-litellm-db:
     @{{ compose_command }} exec -T lgos-db psql -U lgos -d lgos -v ON_ERROR_STOP=1 -c 'BEGIN; DROP SCHEMA IF EXISTS litellm CASCADE; CREATE SCHEMA litellm AUTHORIZATION lgos; COMMIT;'
 
+# Install the Open WebUI Functions through its API after Function or gateway changes.
+[env('OPENWEBUI_ADMIN_EMAIL', env('DEMO_OPENWEBUI_ADMIN_EMAIL'))]
+[env('OPENWEBUI_ADMIN_PASSWORD', env('DEMO_OPENWEBUI_ADMIN_PASSWORD'))]
+[env('OPENWEBUI_API_KEY', env('DEMO_OPENWEBUI_SYNC_API_KEY', ''))]
+[group('docker dev')]
+[group('docker prod')]
+sync-openwebui *args:
+    {{ openwebui_run }} lgos-openwebui-sync --url "$DEMO_OPENWEBUI_HOST_URL" --gateway-type "$OPENAI_GATEWAY_TYPE" --gateway-url "$OPENAI_GATEWAY_BASE_URL" --include-demo-functions "$@"
+
 # Reconcile every LGOS catalog in one LiteLLM namespace; add --dev for the checkout image.
 [arg('dev', long, value='true')]
 [group('docker dev')]
@@ -291,6 +308,7 @@ compose dev='false' otel='false' sso='false' chainlit_utils='false' *up_args:
     fi
 
     "${compose[@]}" up --wait --no-deps "${up_args[@]}" lgos-openwebui
+    just sync-openwebui
 
 # Stop and remove every demo stack variant.
 [group('docker dev')]

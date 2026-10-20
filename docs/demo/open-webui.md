@@ -19,7 +19,8 @@ The demo includes two Open WebUI Functions:
   settings, and the standard Files API, and adapts LGOS
   interrupts to Open WebUI's native question UI.
 
-Each time Open WebUI loads its model list, the Pipe lists every LGOS model in
+Each time Open WebUI loads its model list, the Pipe lists every model in its
+model namespace (`lgos/` in the demo) in
 the gateway catalog together with what Open WebUI shows for it: the graph's
 description, its file-upload capability, its gateway MCP tools, and its LGOS
 settings as native Chat Variables, which Open WebUI renders as a per-chat form.
@@ -36,26 +37,33 @@ info, where the Pipe reads them at chat time. A question that needs research
 triggers the deep-research plan review without a graph-specific setting.
 The Pipe executes only native `function_call` items. Server custom calls and
 searches have distinct native types and are already complete.
-When `lgos/simple-graph` has valid metadata, the Pipe also lists the UserValves
-example, which runs the same graph.
+When the sync installs the UserValves example and `lgos/simple-graph` has valid
+metadata, the Pipe also lists the example, which runs the same graph.
 
 ## Other Gateway Models
 
 Open WebUI's own OpenAI connection points at the same gateway root, with the
 Pipe's [credential](#gateway-credentials), so every other model the gateway
 serves, such as `openai/gpt-4.1-mini`, appears automatically and uses Open
-WebUI's built-in chat. That connection also lists the `lgos/` graphs, so the
-app factory hides every `lgos/` model it lists, and each graph appears once,
-through the Pipe, even while the Pipe is disabled or its listing fails. Open WebUI shows every model the gateway lists
-for the credential, including the embedding and speech models; an admin can
-hide them in Open WebUI's model settings.
+WebUI's built-in chat. The connection would also list the graphs, as plain
+`lgos/<graph>` models without the Pipe's settings form, interrupt cards, and
+file handling. Stock Open WebUI hides a connection's models only through stored
+model records or a fixed model ID allowlist, which also hides the models the
+gateway adds later. The image adds `exclude_model_ids` to a connection's entry
+in `OPENAI_API_CONFIGS`: glob patterns matched against the gateway's model IDs
+whenever Open WebUI lists models. Compose sets `["lgos/*"]`, so each graph
+appears once, as the Pipe's model. Open WebUI also shows the embedding and
+speech models the gateway lists for the credential; an admin can switch any of
+these models off in Open WebUI's model settings.
 
 ## Gateway Credentials
 
 Open WebUI's own OpenAI connection to `${OPENAI_GATEWAY_BASE_URL}/v1` decides
 the credential. Its `auth_type` in `OPENAI_API_CONFIGS` applies to its own
-model list and chats, and the Pipe's model catalog, chats, and file uploads and
-[voice](#voice) follow it, because they use the same gateway URL.
+model list and chats. The Pipe reads that connection on every request, so its
+model catalog, chats, and file uploads send what the connection sends, and
+[voice](#voice) follows it because it uses the same gateway URL. Without a
+connection to that URL, the Pipe lists no graphs.
 
 | Connection `auth_type` | Browser login | Gateway credential |
 | --- | --- | --- |
@@ -101,7 +109,10 @@ indicators.
 
 The SSO overlay also switches the `lgos-gateway` MCP connection to
 `system_oauth`, so the gateway decides each user's MCP tools as it does their
-models, and no Open WebUI setting holds the shared key.
+models, and no Open WebUI setting holds the shared key. With password sign-in
+off, the sync needs an admin's API key. On a new deployment, `just demo/compose --sso`
+stops at the sync; sign in as an SSO admin, create an API key in Open WebUI,
+set `DEMO_OPENWEBUI_SYNC_API_KEY`, and run `just demo/sync-openwebui`.
 
 !!! note "One model registry for all users"
 
@@ -183,13 +194,14 @@ for its native server administration and access controls.
 ## Setup
 
 Start the pinned [`homeserver-open-webui`](https://github.com/ilkersigirci/homeserver-docker/tree/main/Dockerfiles/OpenWebUI) image, the official Open
-WebUI slim image with the patches described in the pinned contract note
-below. Compose reads its tag and digest from `DEMO_OPENWEBUI_IMAGE` in
+WebUI slim image with small patches for the upstream gaps this page notes.
+Compose reads its tag and digest from `DEMO_OPENWEBUI_IMAGE` in
 `demo/.env`:
 
 ```bash
 cp demo/.env.example demo/.env
 just demo/up lgos-openwebui --wait
+just demo/sync-openwebui
 ```
 
 !!! info "Slim image"
@@ -203,29 +215,37 @@ just demo/up lgos-openwebui --wait
     configured. Deleting a stored Open WebUI file therefore removes it but
     reports an error while cleaning up the absent vector index.
 
-Compose runs the image's own code with one change: Uvicorn loads
-`lgos_openwebui.app:create_app` from the read-only source mount. When Open WebUI
-starts, the app factory installs the two Functions under
-`demo/ui/openwebui/src/lgos_openwebui/functions/`, `generic` and
-`uservalves_simple`. It calls Open WebUI's own Functions API in-process with a
-short-lived token for an existing admin, built with the claims Open WebUI's own
-automations use, so it needs no password or API key. In an empty database, that
-admin is the one `WEBUI_ADMIN_EMAIL` and `WEBUI_ADMIN_PASSWORD` bootstrap; an
-instance whose users sign in with SSO uses an admin it already has.
-A missing Function is created and enabled, and changed source is updated; the
-metadata, enabled state, and valves of existing Functions are kept, as are
-unrelated Functions. Open WebUI stores each Function in its database, so restart
-the container after changing one. The Generic Function's `function.py` holds its
-frontmatter, and its modules are flattened into one executable source string at
-install time.
+Compose runs the image unchanged, with a data volume that keeps users, chats,
+uploads, and the installed Functions. `just demo/sync-openwebui` installs the
+two Functions under `demo/ui/openwebui/src/lgos_openwebui/functions/`, `generic`
+and the `uservalves_simple` example, through Open WebUI's API, and
+`just demo/compose` runs it once Open WebUI is up. Rerun it after changing a
+Function or the gateway settings; Open WebUI needs no restart. The Generic
+Function's `function.py` holds its frontmatter, and its modules are flattened
+into one executable source string at sync time.
 
-The Generic Pipe reads `OPENAI_GATEWAY_TYPE`, `OPENAI_GATEWAY_BASE_URL`, and
-`OPENAI_GATEWAY_API_KEY` from the Open WebUI container's environment.
-`OPENAI_GATEWAY_BASE_URL` must be the root Open WebUI reaches, and the key,
-which only a `bearer` connection uses, must be issued by the selected gateway.
-Open WebUI's connection to the gateway selects the
-[gateway credential](#gateway-credentials). The Pipe's `OPENAI_API_TIMEOUT`
-valve remains editable in Open WebUI.
+The sync reaches Open WebUI at `DEMO_OPENWEBUI_HOST_URL` and signs in as the
+bootstrap admin, or uses `DEMO_OPENWEBUI_SYNC_API_KEY` when it is set. A missing
+Function is created and enabled, and changed source is updated; the metadata,
+enabled state, and other valves of existing Functions are kept, as are
+unrelated Functions. An unchanged sync writes nothing.
+
+The Pipe reads its deployment from valves the sync sets: `OPENAI_GATEWAY_TYPE`
+and the root Open WebUI reaches the gateway at, `OPENAI_GATEWAY_BASE_URL`, from
+the stack settings; the `lgos` model namespace; and the MCP connection ID. No
+valve holds a key: the [credential](#gateway-credentials) comes from Open
+WebUI's own connection to that root. The Pipe's `OPENAI_API_TIMEOUT` valve
+remains editable in Open WebUI.
+
+### Remote Deployments
+
+The same command installs the Pipe into any Open WebUI that runs a compatible
+patched image, such as one on another machine that serves graphs under another
+model namespace. The
+[standalone project README](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/demo/ui/openwebui/README.md#sync-a-deployment)
+describes its options, credentials, and the Open WebUI settings it expects.
+
+### Gateway Catalog
 
 The gateway catalog must contain the LGOS metadata before it can be shown. For
 independently started components, first [sync LGOS model
@@ -259,13 +279,19 @@ provider from its prefix.
     The image keeps the `info` of each `pipes()` entry as the model's info, a
     per-model equivalent of
     [`DEFAULT_MODEL_METADATA`](https://docs.openwebui.com/reference/env-configuration/#default_model_metadata),
-    and the Generic Pipe returns each graph's info there. A model saved in Open
-    WebUI's model editor replaces that info. The app factory wraps the pinned
-    release's `fetch_openai_models` to hide the connection's `lgos/` models, as
-    described under [Other Gateway Models](#other-gateway-models). LGOS models have no stored records, which Open WebUI's
-    per-model access control needs, so Compose sets
+    and the Generic Pipe returns each graph's info there. Hiding, switching
+    off, or editing a graph in Admin Settings > Models saves a model record
+    that replaces that info until **Reset** in the model's menu deletes the
+    record; limit graphs in the gateway instead. The Pipe's models have no
+    stored records, which Open WebUI's per-model access control needs, so
+    Compose sets
     [`BYPASS_MODEL_ACCESS_CONTROL`](https://docs.openwebui.com/reference/env-configuration/#bypass_model_access_control);
-    the gateway's model list for each credential decides instead.
+    the gateway's model list for each credential decides instead. The Pipe
+    reads the OpenAI connection settings through `get_openai_runtime_config` in
+    `open_webui.routers.openai`, an Open WebUI internal without a public
+    equivalent. The sync calls the Functions endpoints that Open WebUI's admin
+    UI uses, which Open WebUI does not document. After an image change,
+    `just demo/test-openwebui` checks both against the running stack.
 
     Two upstream gaps would otherwise keep the shared key in SSO mode, and the
     [`homeserver-open-webui`](https://github.com/ilkersigirci/homeserver-docker/tree/main/Dockerfiles/OpenWebUI) image closes each with a small patch:
@@ -369,8 +395,8 @@ transcript.
 
 ## Limited Functionality
 
-Every LGOS model remains visible when its gateway metadata lacks a valid `lgos`
-extension. Its name and description say **Limited functionality**. Standard assistant text may still work; runtime
+Every model in the Pipe's namespace remains visible when its gateway metadata
+lacks a valid `lgos` extension. Its name and description say **Limited functionality**. Standard assistant text may still work; runtime
 settings, file-upload controls, and gateway tools are not assumed.
 
 ## Runtime Settings

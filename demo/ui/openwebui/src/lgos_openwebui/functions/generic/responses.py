@@ -32,7 +32,6 @@ from .contracts import (
     OpenWebUIMetadata,
     OpenWebUIToolSpec,
 )
-from .gateway import MCP_GATEWAY_ID
 
 
 def _patch_legacy_custom_tool_output() -> None:
@@ -91,14 +90,14 @@ def _responses_tools(metadata: OpenWebUIMetadata) -> list[ToolParam]:
 
 
 def _openwebui_mcp_tools(
-    tools: Mapping[str, Mapping[str, Any]],
+    tools: Mapping[str, Mapping[str, Any]], mcp_gateway_connection_id: str
 ) -> tuple[list[FunctionToolParam], dict[str, str]]:
     """Translate gateway MCP tools from Open WebUI's ``__tools__`` map."""
     translated = []
     openwebui_names = {}
     for name, tool in tools.items():
         # Open WebUI prefixes each MCP tool with its connection ID.
-        gateway_name = name.removeprefix(f"{MCP_GATEWAY_ID}_")
+        gateway_name = name.removeprefix(f"{mcp_gateway_connection_id}_")
         if gateway_name == name or not gateway_name:
             continue
         spec = OpenWebUIToolSpec.model_validate(tool["spec"])

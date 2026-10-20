@@ -79,8 +79,9 @@ and provide that variable to the job through Compose's `environment` or
   and native streaming enabled. LiteLLM forwards the end-user `safety_identifier`
   to them; new deployments also forward Chat's deprecated `user` alias via
   [`allowed_openai_params: [user]`](https://docs.litellm.ai/docs/completion/drop_params#set-allowed_openai_params-on-configyaml).
-  Both are caller-supplied context, not authentication. Models without
-  `model_info.lgos` are not shown by the UI integrations.
+  Both are caller-supplied context, not authentication. Chainlit does not show
+  models without `model_info.lgos`; Open WebUI marks those under its model
+  namespace as **Limited functionality**.
 - Updates only changed LGOS and streaming metadata. Existing routing,
   credentials, pricing, and rate limits are preserved.
 - Deletes database-backed models under the requested prefix when they are no

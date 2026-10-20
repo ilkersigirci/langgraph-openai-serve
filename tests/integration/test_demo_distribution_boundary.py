@@ -13,9 +13,7 @@ from typing import Any
 import anyio
 import pytest
 import yaml
-from demo.ui.openwebui.src.lgos_openwebui.functions.generic.gateway import (
-    MCP_GATEWAY_ID,
-)
+from demo.ui.openwebui.src.lgos_openwebui.functions.generic.pipe import Pipe
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEMO_ROOT = REPOSITORY_ROOT / "demo"
@@ -64,7 +62,7 @@ def test_openwebui_mcp_connection_is_the_one_mcp_models_attach() -> None:
 
     assert (base["url"], base["info"]["id"]) == (
         "http://gateway:4000/mcp",
-        MCP_GATEWAY_ID,
+        Pipe.Valves().MCP_GATEWAY_CONNECTION_ID,
     )
     assert (base["auth_type"], base["key"]) == ("bearer", "sk-demo")
     # The overlay restates the whole entry; only its credential and wording differ.
@@ -91,6 +89,8 @@ def task_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "    log.write(json.dumps({'args': sys.argv[1:], "
         "'cwd': os.getcwd(), "
         "'gateway_url': os.environ.get('OPENAI_GATEWAY_BASE_URL'), "
+        "'webui_key': os.environ.get('OPENWEBUI_API_KEY'), "
+        "'webui_password': os.environ.get('OPENWEBUI_ADMIN_PASSWORD'), "
         "'gateway_key': os.environ.get('OPENAI_GATEWAY_API_KEY')}) + '\\n')\n"
     )
     uv.chmod(0o755)
@@ -179,6 +179,50 @@ async def test_local_graph_tasks_use_the_host_gateway(
     assert command["gateway_url"] == "http://localhost:4321"
     # Graphs call the gateway with DEMO_GRAPH_GATEWAY_API_KEY, not the UIs' key.
     assert command["gateway_key"] == "test-graph-key"
+
+
+async def test_openwebui_sync_task_passes_host_and_container_urls(
+    task_log: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEMO_OPENWEBUI_HOST_URL", "https://webui.example")
+    monkeypatch.setenv("DEMO_OPENWEBUI_SYNC_API_KEY", "admin-test-key")
+    monkeypatch.setenv("DEMO_OPENWEBUI_ADMIN_PASSWORD", "test-password")
+    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "litellm")
+    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", "http://gateway.internal:4000")
+
+    result = await anyio.run_process(
+        [
+            "just",
+            "--dotenv-path",
+            str(DEMO_ROOT / ".env.example"),
+            str(DEMO_ROOT / "sync-openwebui"),
+            "--model-prefix",
+            "acme",
+        ],
+        env=os.environ,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode()
+    command = json.loads(await anyio.Path(task_log).read_text(encoding="utf-8"))
+    assert command["args"] == [
+        "run",
+        "--directory",
+        "ui/openwebui",
+        "--locked",
+        "lgos-openwebui-sync",
+        "--url",
+        "https://webui.example",
+        "--gateway-type",
+        "litellm",
+        "--gateway-url",
+        "http://gateway.internal:4000",
+        "--include-demo-functions",
+        "--model-prefix",
+        "acme",
+    ]
+    assert command["webui_key"] == "admin-test-key"
+    assert command["webui_password"] == "test-password"
 
 
 def test_demo_api_lock_resolves_lgos_from_the_registry() -> None:
@@ -418,18 +462,24 @@ def test_sso_overlay_switches_both_uis_to_each_users_token() -> None:
         )
         for mode, (chainlit, openwebui) in modes.items()
     } == {
-        "base": ("mock", "false", {"0": {"auth_type": "bearer"}}),
-        "sso": ("oauth", "true", {"0": {"auth_type": "system_oauth"}}),
+        "base": (
+            "mock",
+            "false",
+            {"0": {"auth_type": "bearer", "exclude_model_ids": ["lgos/*"]}},
+        ),
+        "sso": (
+            "oauth",
+            "true",
+            {"0": {"auth_type": "system_oauth", "exclude_model_ids": ["lgos/*"]}},
+        ),
     }
 
     def resolved(value: str) -> str:
         return Template(value).substitute(OPENAI_GATEWAY_BASE_URL="http://gateway")
 
-    # The Generic Pipe and speech authenticate like the OpenAI connection with
-    # their base URL, so the gateway decides every Open WebUI call.
+    # Speech authenticates like the OpenAI connection with its base URL.
     base = modes["base"][1]
     assert {
-        f"{resolved(base['OPENAI_GATEWAY_BASE_URL'])}/v1",
         resolved(base["AUDIO_STT_OPENAI_API_BASE_URL"]),
         resolved(base["AUDIO_TTS_OPENAI_API_BASE_URL"]),
     } == {resolved(base["OPENAI_API_BASE_URL"])}

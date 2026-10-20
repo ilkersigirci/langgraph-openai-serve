@@ -21,22 +21,6 @@ services:
       nofile:
         soft: 4096
         hard: 8192
-    command:
-      - python
-      - -m
-      - uvicorn
-      - lgos_openwebui.app:create_app
-      - --factory
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --forwarded-allow-ips
-      - "*"
-      - --workers
-      - "1"
-      - --ws-per-message-deflate
-      - "true"
     ports:
       - "$LGOS_OPENWEBUI_PORT:8080"
     volumes:
@@ -45,18 +29,10 @@ services:
         target: /app/backend/data
         bind:
           create_host_path: false
-      - type: bind
-        source: ../../ui/openwebui/src/lgos_openwebui
-        target: /app/backend/lgos_openwebui
-        read_only: true
     environment:
       ENABLE_PERSISTENT_CONFIG: false
       WEBUI_NAME: LGOS-OpenWebUI
       WEBUI_SECRET_KEY: $DEMO_OPENWEBUI_SECRET_KEY
-      # Read by the Generic Pipe, not by Open WebUI.
-      OPENAI_GATEWAY_TYPE: $OPENAI_GATEWAY_TYPE
-      OPENAI_GATEWAY_BASE_URL: $OPENAI_GATEWAY_BASE_URL
-      OPENAI_GATEWAY_API_KEY: $OPENAI_GATEWAY_API_KEY
       # Per-model access control needs stored model records, which LGOS models
       # lack; the gateway's model list for each credential decides instead.
       BYPASS_MODEL_ACCESS_CONTROL: true
@@ -66,11 +42,12 @@ services:
       ENABLE_TAGS_GENERATION: false
       ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS: false
       OFFLINE_MODE: true
-      # Open WebUI creates this admin only in an empty database. The startup
-      # installs the LGOS Functions as an admin with a short-lived token.
+      # Open WebUI creates this admin only in an empty database. The sync signs
+      # in with it, or with an admin's API key where password sign-in is off.
       WEBUI_ADMIN_EMAIL: $DEMO_OPENWEBUI_ADMIN_EMAIL
       WEBUI_ADMIN_PASSWORD: $DEMO_OPENWEBUI_ADMIN_PASSWORD
       WEBUI_ADMIN_NAME: LGOS
+      ENABLE_API_KEYS: true
       # Read at every start; with persistent config disabled, admin edits last
       # only until restart. Models advertising mcp_tools attach this connection ID.
       TOOL_SERVER_CONNECTIONS: >-
@@ -80,13 +57,14 @@ services:
         "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]},
         "info": {"id": "lgos-gateway", "name": "LGOS Gateway",
         "description": "MCP tools authorized by the configured gateway key."}}]
-      # Serves every other gateway model; the app factory hides its lgos/ ones,
-      # which the Generic Pipe serves. The Pipe and speech authenticate like
-      # this connection, which the SSO overlay switches to system_oauth.
+      # Serves every other gateway model; the image's exclude_model_ids leaves
+      # out the lgos/ ones, which the Generic Pipe serves. The Pipe and speech
+      # authenticate like this connection, which the SSO overlay switches to
+      # system_oauth.
       ENABLE_OPENAI_API: true
       OPENAI_API_BASE_URL: ${OPENAI_GATEWAY_BASE_URL}/v1
       OPENAI_API_KEY: $OPENAI_GATEWAY_API_KEY
-      OPENAI_API_CONFIGS: '{"0": {"auth_type": "bearer"}}'
+      OPENAI_API_CONFIGS: '{"0": {"auth_type": "bearer", "exclude_model_ids": ["lgos/*"]}}'
       ENABLE_IMAGE_GENERATION: false
       # The image keeps chat uploads raw; the central Files API processes them.
       ENABLE_FILE_UPLOAD_PROCESSING: false

@@ -11,14 +11,14 @@ from openai import AsyncOpenAI
 from openai.types import Model
 from pydantic import JsonValue
 
-from lgos_openwebui.connection import without_lgos_models
 from lgos_openwebui.functions.generic import pipe as generic_pipe
 from lgos_openwebui.functions.generic.catalog import (
     LIMITED_FUNCTIONALITY_DESCRIPTION,
     openwebui_models,
 )
+from tests.support import configured_pipe
 
-pytestmark = pytest.mark.usefixtures("gateway_environment")
+pytestmark = pytest.mark.usefixtures("openwebui_connection")
 
 SETTINGS_FEATURES = ["background", "file_inputs", "mcp_tools"]
 
@@ -64,7 +64,11 @@ def serve_catalog(
 
 
 def meta(model: Model) -> dict[str, Any]:
-    (listed,) = [item for item in openwebui_models([model]) if item["id"] == model.id]
+    (listed,) = openwebui_models(
+        [model],
+        mcp_gateway_connection_id="lgos-gateway",
+        uservalves_graph_model_id=None,
+    )
     return listed["info"]["meta"]
 
 
@@ -73,13 +77,16 @@ def meta(model: Model) -> dict[str, Any]:
     [("bearer", "test-api-key"), ("system_oauth", "user-access-token")],
 )
 @pytest.mark.parametrize("gateway_type", ["bifrost", "litellm"])
+@pytest.mark.parametrize("model_prefix", ["lgos", "acme"])
 async def test_pipe_lists_gateway_graphs_with_their_openwebui_model_info(
     monkeypatch: pytest.MonkeyPatch,
     openwebui_connection: Callable[..., None],
     gateway_type: str,
+    model_prefix: str,
     auth_type: str,
     credential: str,
 ) -> None:
+    model_id = f"{model_prefix}/simple-graph"
     extension = {
         "description": "  Simple graph  ",
         "features": SETTINGS_FEATURES,
@@ -95,21 +102,30 @@ async def test_pipe_lists_gateway_graphs_with_their_openwebui_model_info(
             "object": "list",
             "data": [
                 {
-                    "id": "lgos/simple-graph",
+                    "id": model_id,
                     "object": "model",
                     "created": 1,
                     "owned_by": "langgraph-openai-serve",
                     "additional_attributes": {"lgos": json.dumps(extension)},
                 },
                 {"id": "openai/gpt-5", "object": "model", "owned_by": "openai"},
+                {
+                    "id": f"{model_prefix}-other/graph",
+                    "object": "model",
+                    "owned_by": "langgraph-openai-serve",
+                },
             ],
         }
     else:
         path = "/model/info"
         catalog = {
             "data": [
-                {"model_name": "lgos/simple-graph", "model_info": {"lgos": extension}},
+                {"model_name": model_id, "model_info": {"lgos": extension}},
                 {"model_name": "openai/gpt-5", "model_info": {}},
+                {
+                    "model_name": f"{model_prefix}-other/graph",
+                    "model_info": {"lgos": extension},
+                },
             ]
         }
 
@@ -118,22 +134,25 @@ async def test_pipe_lists_gateway_graphs_with_their_openwebui_model_info(
         assert request.headers["Authorization"] == f"Bearer {credential}"
         return httpx.Response(200, json=catalog)
 
-    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", gateway_type)
-    openwebui_connection(auth_type)
     serve_catalog(monkeypatch, handle)
+    openwebui_connection(auth_type)
     shared_meta = {
         "capabilities": {"file_upload": True, "file_context": False},
         "builtinTools": {"files": False},
-        "toolIds": ["server:mcp:lgos-gateway"],
+        "toolIds": ["server:mcp:acme-tools"],
         "lgos": {"server_tools": [], "client_tools": []},
     }
 
-    assert await generic_pipe.Pipe().pipes(
-        __oauth_token__={"access_token": "user-access-token"}
-    ) == [
+    pipe = configured_pipe(
+        OPENAI_GATEWAY_TYPE=gateway_type,
+        MODEL_PREFIX=model_prefix,
+        MCP_GATEWAY_CONNECTION_ID="acme-tools",
+        USERVALVES_GRAPH_MODEL_ID=model_id,
+    )
+    assert await pipe.pipes(__oauth_token__={"access_token": "user-access-token"}) == [
         {
-            "id": "lgos/simple-graph",
-            "name": "lgos/simple-graph",
+            "id": model_id,
+            "name": model_id,
             "info": {
                 "meta": {
                     **shared_meta,
@@ -185,7 +204,7 @@ async def test_sso_catalog_reads_without_an_access_token_never_use_the_shared_ke
     openwebui_connection("system_oauth")
 
     with pytest.raises(RuntimeError, match="Sign in again with SSO"):
-        await generic_pipe.Pipe().pipes(__oauth_token__=oauth_token)
+        await configured_pipe().pipes(__oauth_token__=oauth_token)
 
 
 def test_settings_become_typed_chat_variables() -> None:
@@ -326,7 +345,11 @@ def test_models_without_lgos_metadata_stay_visible_with_limited_functionality() 
         }
     )
 
-    assert openwebui_models([model]) == [
+    assert openwebui_models(
+        [model],
+        mcp_gateway_connection_id="lgos-gateway",
+        uservalves_graph_model_id=None,
+    ) == [
         {
             "id": "lgos/simple-graph",
             "name": "lgos/simple-graph (Limited functionality)",
@@ -341,20 +364,47 @@ def test_models_without_lgos_metadata_stay_visible_with_limited_functionality() 
     ]
 
 
-async def test_the_gateway_connection_never_lists_lgos_models() -> None:
-    # The Generic Pipe serves every lgos/ model, even while it is disabled or
-    # its listing fails.
-    async def fetch_openai_models(
-        request: object, user: object = None
-    ) -> list[dict[str, Any]]:
-        assert (request, user) == ("request", "user")
-        return [
-            {"id": "lgos/simple-graph", "name": "lgos/simple-graph"},
-            {"id": "openai/gpt-4.1-mini", "name": "openai/gpt-4.1-mini"},
-        ]
+async def test_reusable_pipe_omits_the_demo_example_by_default(monkeypatch) -> None:
+    serve_catalog(
+        monkeypatch,
+        lambda _: httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "model_name": "acme/simple-graph",
+                        "model_info": {
+                            "lgos": {
+                                "description": "Simple graph",
+                                "features": [],
+                                "server_tools": [],
+                                "client_tools": [],
+                            }
+                        },
+                    }
+                ],
+            },
+        ),
+    )
 
-    fetch = without_lgos_models(fetch_openai_models)
+    models = await configured_pipe(MODEL_PREFIX="acme").pipes()
 
-    assert await fetch("request", "user") == [
-        {"id": "openai/gpt-4.1-mini", "name": "openai/gpt-4.1-mini"}
-    ]
+    assert [model["id"] for model in models] == ["acme/simple-graph"]
+
+
+async def test_namespaced_litellm_models_with_missing_metadata_remain_visible(
+    monkeypatch,
+) -> None:
+    serve_catalog(
+        monkeypatch,
+        lambda _: httpx.Response(
+            200,
+            json={
+                "data": [{"model_name": "acme/graph", "model_info": {}}],
+            },
+        ),
+    )
+
+    models = await configured_pipe(MODEL_PREFIX="acme").pipes()
+
+    assert models[0]["name"] == "acme/graph (Limited functionality)"

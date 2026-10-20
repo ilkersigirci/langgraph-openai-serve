@@ -11,10 +11,14 @@ OpenWebUIConnection = Callable[..., None]
 
 @pytest.fixture
 def openwebui_connection(monkeypatch: pytest.MonkeyPatch) -> OpenWebUIConnection:
-    """Set Open WebUI's own OpenAI connection, whose auth type the Pipe follows."""
+    """Set Open WebUI's own OpenAI connection, which the Pipe authenticates like."""
 
-    def connect(auth_type: str, url: str = f"{GATEWAY_ROOT}/v1") -> None:
-        runtime_config = (True, [url], [""], {"0": {"auth_type": auth_type}})
+    def connect(
+        auth_type: str | None,
+        url: str = f"{GATEWAY_ROOT}/v1",
+        key: str = "test-api-key",
+    ) -> None:
+        runtime_config = (True, [url], [key], {"0": {"auth_type": auth_type}})
         openai_router = SimpleNamespace(
             get_openai_runtime_config=AsyncMock(return_value=runtime_config)
         )
@@ -22,16 +26,6 @@ def openwebui_connection(monkeypatch: pytest.MonkeyPatch) -> OpenWebUIConnection
 
     connect("bearer")
     return connect
-
-
-@pytest.fixture
-def gateway_environment(
-    monkeypatch: pytest.MonkeyPatch, openwebui_connection: OpenWebUIConnection
-) -> None:
-    """Supply valid gateway settings without using the developer's environment."""
-    monkeypatch.setenv("OPENAI_GATEWAY_TYPE", "litellm")
-    monkeypatch.setenv("OPENAI_GATEWAY_BASE_URL", GATEWAY_ROOT)
-    monkeypatch.setenv("OPENAI_GATEWAY_API_KEY", "test-api-key")
 
 
 @pytest.fixture

@@ -11,8 +11,10 @@ dependencies = [
     "httpx==0.28.1",
     "openai==2.29.0",
     "pydantic==2.13.4",
-    "starlette==1.7.0",
 ]
+
+[project.scripts]
+lgos-openwebui-sync = "lgos_openwebui.sync:main"
 
 [dependency-groups]
 dev = [
@@ -23,6 +25,8 @@ test = [
     "anyio>=4.14,<5",
     "pytest>=8.3.3",
     "pytest-xdist>=3.6.1",
+    # Serves the in-process Open WebUI API that the sync tests call.
+    "starlette>=1.7.0",
 ]
 
 [tool.uv]
@@ -36,8 +40,11 @@ addopts = [
     "--color=yes",
     "--strict-config",
     "--strict-markers",
+    "-m",
+    "not integration",
 ]
 testpaths = ["tests"]
+markers = ["integration: requires the running demo Open WebUI and its gateway"]
 
 [tool.ruff]
 extend = "../../ruff.toml"

@@ -21,8 +21,8 @@ Playwright to a demo project or change its lockfile for an agent-run check.
 - Inspect the running stack and ports with `docker compose ls` and `docker ps`.
   The default URLs are Chainlit `http://localhost:3002` and Open WebUI
   `http://localhost:3003`; honor deployment overrides.
-- After an Open WebUI Function change, restart `lgos-openwebui`; its startup
-  installs the changed Function. After a
+- After an Open WebUI Function change, run `just demo/sync-openwebui`; Open
+  WebUI picks up the installed Function without a restart. After a
   Chainlit source change, rebuild and recreate only `lgos-chainlit` with the
   running stack's Compose files and development overlay; its source is baked
   into the image even during development.
@@ -109,9 +109,11 @@ resets the session. Native Plotly elements render in the main page.
 - Open WebUI `Model not found` or missing LGOS models require checking that
   the `generic` Function is active and that the Open WebUI log shows no
   Function install or `pipes()` error. A failed Function import can disable
-  it; the startup install keeps that state, so re-enable it after repairing the
-  import. Missing or invalid `OPENAI_GATEWAY_*` variables in the Open WebUI
-  container also hide every LGOS model.
+  it; the sync keeps that state, so re-enable it after repairing the import.
+  Missing or invalid gateway valves in the `generic` Function also hide every
+  LGOS model; rerun `just demo/sync-openwebui`. So does an Open WebUI OpenAI
+  connection whose URL is not the valves' `OPENAI_GATEWAY_BASE_URL` plus `/v1`,
+  because the Pipe authenticates like that connection.
 - A clipped Open WebUI chart requires the native `iframe:height` notification
   used by Open WebUI's `FullHeightIframe` component.
 

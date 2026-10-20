@@ -1,65 +1,95 @@
 # LGOS Open WebUI integration
 
-Standalone Open WebUI Function sources and the app factory that runs them.
-Compose runs the pinned `homeserver-open-webui` image and starts its Uvicorn
-server with `lgos_openwebui.app:create_app` from a read-only mount of
-`src/lgos_openwebui`. When Open WebUI starts, the factory installs the bundled
-Functions; restart the container after changing one. The
-[integration guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/open-webui.md#setup)
-describes the install and the image's patches.
+The Generic Pipe serves the LGOS graphs of an OpenAI-compatible gateway in Open
+WebUI. `lgos-openwebui-sync` installs it into a running Open WebUI through its
+API, from this checkout, a deployment machine, or CI. The demo uses the same
+command, so Open WebUI runs its image unchanged: no source mount, package
+installation, or restart.
 
-The Functions and the app factory run on the image's Python packages, so this
-project pins its dependencies to the versions the image ships and its tests run
-the same versions; change them with the image pin. The image's
-OpenAI SDK omits custom-tool output from one generated response union; the
-Function applies a narrow compatibility shim for that type until Open WebUI
-updates its SDK. Both `web_search` and the demo's `package_version` custom tool remain
-available without replacing packages in the official image.
+## Sync a deployment
 
-Start with **UserValves Simple / simple-graph**. The small
-[`uservalves_simple.py`](src/lgos_openwebui/functions/uservalves_simple.py)
-Filter declares `use_history` and `audience` as native Open WebUI UserValves.
-Open **Controls → Valves → Functions → UserValves Simple** to change your
-preferences across chats. The example has no Chat Variables form and reuses the
-Generic Pipe for Responses transport, which attaches the Filter only to this
-example.
+Open WebUI must run a compatible
+[`homeserver-open-webui`](https://github.com/ilkersigirci/homeserver-docker/tree/main/Dockerfiles/OpenWebUI)
+image. Its patches give the Pipe per-model info, the user's OAuth token, and raw
+uploads, and let a connection leave out the Pipe's models. The command needs
+only an Open WebUI admin; keep its API key in a
+private environment file, for example `/absolute/path/openwebui-sync.env`:
 
-The Function uses Responses exclusively and never connects directly to LGOS.
-It reads `OPENAI_GATEWAY_TYPE=litellm|bifrost`, `OPENAI_GATEWAY_BASE_URL`,
-and `OPENAI_GATEWAY_API_KEY` from Open WebUI's environment. Its model list,
-inference, and Files send what Open WebUI's own OpenAI connection to
-`${OPENAI_GATEWAY_BASE_URL}/v1` sends: the key with `bearer`, or the signed-in
-user's SSO access token with `system_oauth`. LiteLLM uses managed Responses
-routing; Bifrost uses its
-native Responses route. LiteLLM metadata comes from native `/model/info`;
-Bifrost uses native `/v1/models` with complete metadata encoded in
-`additional_attributes.lgos`. Before using independently started LiteLLM
-components, [sync the LGOS metadata](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md).
-The full-stack `just demo/compose [--dev] [--otel]` variants do this.
+```dotenv
+OPENWEBUI_API_KEY=YOUR_OPENWEBUI_ADMIN_API_KEY
+```
 
-Each time Open WebUI lists models, the Generic Pipe lists every LGOS model with
-its description, file-upload capability, gateway MCP tools, and current LGOS
-runtime settings as native per-chat Chat Variables. The image keeps that info
-from the Pipe's list, so graph changes appear on Open WebUI's next model-list
-load. Open WebUI's own OpenAI connection uses the same gateway and credential
-for every other model, and the app factory hides its `lgos/` models. See the
-[integration guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/open-webui.md#setup)
-for the pinned-release contract and its access-control setting.
+Run it with uvx, which needs no checkout; `COMMIT` selects the Function source
+to install:
 
-Compose declares one native `lgos-gateway` MCP connection through Open WebUI's
-`TOOL_SERVER_CONNECTIONS`, and models that advertise the `mcp_tools` feature
-select it by default. The connection uses `OPENAI_GATEWAY_BASE_URL` and
-`OPENAI_GATEWAY_API_KEY`; the gateway decides which tools that credential may
-discover.
+```bash
+uvx --env-file /absolute/path/openwebui-sync.env \
+  --from "git+https://github.com/ilkersigirci/langgraph-openai-serve@COMMIT#subdirectory=demo/ui/openwebui" \
+  lgos-openwebui-sync \
+  --url https://chat.example.com \
+  --gateway-type litellm \
+  --gateway-url https://gateway.example.com \
+  --model-prefix acme
+```
 
-The Generic Function uploads chat attachments through the selected gateway's
-normal OpenAI Files API and adds the returned `file_id` to the current user
-message. LiteLLM assigns the operation to `litellm_proxy`; Bifrost assigns it
-to `lgos-files`. Compose sets the image's `ENABLE_FILE_UPLOAD_PROCESSING=false`,
-so Open WebUI stores the original bytes without extracting or embedding their
-content. This is a temporary workaround until Open WebUI can keep chat uploads
-raw natively; the detailed removal condition and upstream links are in the
-[integration guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/open-webui.md#file-input).
+From a checkout, `uv run --directory demo/ui/openwebui --locked lgos-openwebui-sync`
+runs the same command with the locked dependencies.
 
-The demo's [`.env.example`](../../.env.example) file is the source of truth for
-configured values.
+`OPENWEBUI_API_KEY` is an admin's API key, which needs `ENABLE_API_KEYS=true`.
+Where password sign-in is on, `OPENWEBUI_ADMIN_EMAIL` and
+`OPENWEBUI_ADMIN_PASSWORD` work instead. `--gateway-url` is the gateway root
+without `/v1`, as Open WebUI's own OpenAI connection reaches it. Run
+`lgos-openwebui-sync --help` for every option.
+
+The command creates the Generic Function and enables it, or updates its source;
+an existing Function keeps its enabled state, metadata, and other valves. It
+sets the Pipe's valves to the gateway, the `acme` model namespace, and the MCP
+connection ID (`--mcp-connection-id`, default `lgos-gateway`). An unchanged run
+writes nothing. Rerun the command after changing the Function source or these
+settings; it never deletes, so after a `--function-id` change, delete the old
+Function, which still lists the graphs.
+
+The Pipe sends what Open WebUI's OpenAI connection to `<gateway-url>/v1` sends:
+its API key with `bearer`, or each user's token with `system_oauth`. It reads
+that connection on every request, so its valves hold no credential; without the
+connection, it lists no graphs.
+
+The gateway must already publish the graphs as `acme/<graph>`, for example
+through the [LiteLLM sync](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/litellm-sync.md)
+with `--prefix acme`. The Pipe lists them as `generic.acme/<graph>`, with the
+descriptions, settings, and tools it reads from the gateway on every model-list
+load; chats refer to that ID, so keep the prefix and `--function-id` stable.
+
+The command does not configure Open WebUI itself. Set up the deployment as the
+demo's Compose does: the OpenAI connection to the gateway, with
+`"exclude_model_ids": ["acme/*"]` in its `OPENAI_API_CONFIGS` entry so that it
+does not list the graphs again as plain `acme/<graph>` models without the Pipe's
+features; an MCP connection to its `/mcp` route with the `--mcp-connection-id`
+ID; `BYPASS_MODEL_ACCESS_CONTROL=true`; `ENABLE_BASE_MODELS_CACHE=false`; and
+`ENABLE_FILE_UPLOAD_PROCESSING=false`. The
+[integration guide](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/open-webui.md)
+explains each setting and the image's patches.
+
+## Demo
+
+`just demo/compose` runs `just demo/sync-openwebui` once Open WebUI is up; rerun
+it after editing a Function. The demo also installs the **UserValves Simple /
+simple-graph** example with `--include-demo-functions`. The SSO overlay turns
+password sign-in off, so set `DEMO_OPENWEBUI_SYNC_API_KEY` to an SSO admin's API
+key.
+
+## Development
+
+The Pipe runs on the image's Python packages, so the dependency pins equal the
+versions the image ships, and the tests run them. From this directory:
+
+```bash
+uv run --locked pytest
+uv run --locked ruff check .
+uv run --locked ty check src
+```
+
+After changing the demo's Open WebUI image, run `just demo/test-openwebui`
+against the running stack. The sync calls Open WebUI's undocumented Functions
+endpoints, and the Pipe reads its connection settings through an Open WebUI
+internal; the live checks catch an upgrade that changes either.

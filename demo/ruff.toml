@@ -103,6 +103,7 @@ unfixable = [
 # Operator-facing synchronization commands report their results on stdout.
 "**/sync_bifrost.py" = ["print"]
 "**/sync_litellm.py" = ["print"]
+"**/lgos_openwebui/sync.py" = ["print"]
 "**/tests/**/*.py" = [
     # Fixtures and test doubles follow the interfaces they inject or replace.
     "ANN",

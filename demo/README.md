@@ -6,8 +6,8 @@ application or integration tool has its own `pyproject.toml`, `.venv`, and
 `uv.lock`. Locked installs, tests, published Docker builds, and the published
 Compose stack need no files outside this directory.
 
-Commands below run from the repository root and require Bash and Just 1.58.0
-or newer:
+Commands below run from the repository root and require Bash, Just 1.58.0 or
+newer, and uv:
 
 ```bash
 cp demo/.env.example demo/.env
@@ -33,7 +33,7 @@ Open WebUI runtime owns its dependencies.
 | `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `api-coding-agent` | Coding-agent showcase with a persistent workspace (currently Codex) | Local image build during Compose startup |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
-| `ui/openwebui` | Open WebUI Functions, their startup install, and runtime model info | Mounted into the pinned `homeserver-open-webui` image |
+| `ui/openwebui` | Open WebUI Functions, remote sync CLI, and runtime model info | Synced through the pinned `homeserver-open-webui` image's API |
 
 Compose service fragments live under `docker/apps/`, with entrypoints and
 overlays under `docker/compose/`. Bifrost and LiteLLM gateway configurations
@@ -67,7 +67,8 @@ This mode starts no gateway container.
 
 The `just demo/compose [--dev] [--otel]` variants start the selected gateway
 first, then the LGOS services, including Chainlit, which assume it is running.
-They sync all graph catalogs into the gateway, then start Open WebUI. Bifrost's
+They sync all graph catalogs into the gateway, then start Open WebUI and sync
+its Functions through the API. Bifrost's
 sync writes zero-priced graph rows and publishes complete LGOS metadata through
 its native catalog API. Run `just demo/sync-bifrost [--dev]` after graph
 metadata changes or a Bifrost restart. See
@@ -152,16 +153,20 @@ just demo/up lgos-chainlit
 Run Open WebUI on port 3003:
 
 ```bash
-just demo/up lgos-openwebui
+just demo/up lgos-openwebui --wait
+just demo/sync-openwebui
 ```
 
-Open WebUI installs its Functions when it starts and reads each graph's
-description and settings from the gateway whenever it lists models. Its own
-OpenAI connection lists the gateway's other models. Compose
-mounts the integration's app factory into the pinned `homeserver-open-webui`
-image and configures the Generic Pipe and the
-gateway MCP connection from `OPENAI_GATEWAY_BASE_URL` and
-`OPENAI_GATEWAY_API_KEY`.
+Compose runs the pinned `homeserver-open-webui` image unchanged, and the sync
+installs the Functions through its API; rerun it after changing a Function or
+the gateway settings. Open WebUI reads each graph's description and settings
+from the gateway whenever it lists models, and its own OpenAI connection lists
+the gateway's other models. With the SSO overlay, set
+`DEMO_OPENWEBUI_SYNC_API_KEY` to an admin's API key.
+
+To install the Pipe into an Open WebUI on another machine, run the same
+[`lgos-openwebui-sync` command](ui/openwebui/README.md#sync-a-deployment)
+against it; its gateway and model namespace are options.
 
 Compose starts each selected service's dependencies. The APIs, background
 worker, and Chainlit apply pending database migrations when they start.
@@ -203,7 +208,7 @@ just demo/compose
 
 The command leaves a healthy stack running in the background. It starts the
 selected gateway, then the LGOS services, including Chainlit, syncs the graph
-catalogs into the gateway, then starts Open WebUI. The stack publishes the gateway on
+catalogs into the gateway, then starts Open WebUI and syncs its Functions. The stack publishes the gateway on
 port 3000, PostgreSQL on 3001, Chainlit on 3002, Open WebUI on 3003,
 `lgos-demo-api` on 3004, and the Files API on 3006. `OPENAI_GATEWAY_TYPE` selects
 the UI gateway.
