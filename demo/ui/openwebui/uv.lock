@@ -214,7 +214,6 @@ dependencies = [
     { name = "httpx" },
     { name = "openai" },
     { name = "pydantic" },
-    { name = "starlette" },
 ]
 
 [package.dev-dependencies]
@@ -226,6 +225,7 @@ test = [
     { name = "anyio" },
     { name = "pytest" },
     { name = "pytest-xdist" },
+    { name = "starlette" },
 ]
 
 [package.metadata]
@@ -233,7 +233,6 @@ requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "openai", specifier = "==2.29.0" },
     { name = "pydantic", specifier = "==2.13.4" },
-    { name = "starlette", specifier = "==1.7.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -245,6 +244,7 @@ test = [
     { name = "anyio", specifier = ">=4.14,<5" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-xdist", specifier = ">=3.6.1" },
+    { name = "starlette", specifier = ">=1.7.0" },
 ]
 
 [[package]]

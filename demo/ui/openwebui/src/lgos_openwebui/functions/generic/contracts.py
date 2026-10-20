@@ -39,8 +39,6 @@ OPENAI_METADATA_VALUE_MAX_LENGTH = 512
 CONVERSATION_METADATA_KEY = "conversation_id"
 SETTINGS_METADATA_KEY = "lgos_settings"
 LGOS_MODEL_OWNER = "langgraph-openai-serve"
-# Both gateways publish every LGOS model under this public namespace.
-LGOS_MODEL_NAMESPACE = "lgos/"
 # OpenAI's built-in tool; every other advertised server tool is a custom tool.
 WEB_SEARCH_TOOL_NAME = "web_search"
 BACKGROUND_SETTING_NAME = "lgos_background"

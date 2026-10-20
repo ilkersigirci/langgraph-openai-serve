@@ -51,8 +51,7 @@ services:
 
   lgos-openwebui:
     environment:
-      OPENAI_GATEWAY_API_KEY: ""
-      OPENAI_API_CONFIGS: '{"0": {"auth_type": "system_oauth"}}'
+      OPENAI_API_CONFIGS: '{"0": {"auth_type": "system_oauth", "exclude_model_ids": ["lgos/*"]}}'
       OPENAI_API_KEY: ""
       AUDIO_STT_OPENAI_API_KEY: ""
       AUDIO_TTS_OPENAI_API_KEY: ""
@@ -72,7 +71,7 @@ services:
       OAUTH_SCOPES: $DEMO_OPENWEBUI_OAUTH_SCOPES
       OAUTH_AUTHORIZE_PARAMS: $DEMO_OPENWEBUI_OAUTH_AUTHORIZE_PARAMS
       # Only SSO users sign in: the form is hidden and the sign-in API rejects
-      # passwords. The startup installs the Functions without signing in.
+      # passwords. The sync uses an admin's API key instead.
       ENABLE_OAUTH_SIGNUP: true
       ENABLE_SIGNUP: false
       ENABLE_LOGIN_FORM: false

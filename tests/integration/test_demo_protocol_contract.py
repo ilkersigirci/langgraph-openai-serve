@@ -64,7 +64,11 @@ def _model_payload() -> dict[str, Any]:
 
 
 def _openwebui_settings_fields(payload: dict[str, Any]) -> object:
-    (model, *_) = openwebui_models([OpenAIModel.model_validate(payload)])
+    (model, *_) = openwebui_models(
+        [OpenAIModel.model_validate(payload)],
+        mcp_gateway_connection_id="lgos-gateway",
+        uservalves_graph_model_id=None,
+    )
     return model["info"]["meta"]["chat_variables_schema"]["fields"]
 
 

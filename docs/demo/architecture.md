@@ -55,7 +55,7 @@ optional background worker and Hatchet are shown in
 | Component | Compose service | Responsibility | Details |
 | --- | --- | --- | --- |
 | Chainlit | `lgos-chainlit` | Chat UI built on `chainlit-utils`. | [Chainlit Client](chainlit.md) |
-| Open WebUI | `lgos-openwebui` | Chat UI whose Generic Function, installed at startup, sends each graph chat to the gateway and lists each graph with its description and settings form. Its own OpenAI connection lists the gateway's other models. | [Open WebUI Functions](open-webui.md) |
+| Open WebUI | `lgos-openwebui` | Chat UI whose Generic Function, installed through the Functions API, sends each graph chat to the gateway and lists each graph with its description and settings form. Its own OpenAI connection lists the gateway's other models. | [Open WebUI Functions](open-webui.md) |
 | AI gateway | `lgos-litellm` or `lgos-bifrost` | Authenticates callers, routes graph models to their API, serves the catalog with LGOS metadata, routes Files and MCP, and forwards model and speech calls upstream. | [Bifrost Gateway](bifrost.md), [LiteLLM Model Sync](litellm-sync.md) |
 | Demo API | `lgos-demo-api` | One image running `lgos serve` with the demo graph registry. It runs alongside the independent coding-agent API behind one gateway. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
 | Coding-agent API | `lgos-api-coding-agent` | An LGOS app that serves Codex as one graph and edits a shared workspace directory. | [Coding Agent](graphs/coding-agent.md) |

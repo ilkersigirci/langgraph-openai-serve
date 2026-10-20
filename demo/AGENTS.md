@@ -49,11 +49,16 @@ a direct user request to update the file is approval.
 - Keep behavior in its responsibility module: `contracts`, `api`, `metadata`,
   `gateway`, `catalog`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
   together when adding a module.
-- Generic Open WebUI fixes belong to the `homeserver-open-webui` image. The
-  mounted app factory only adds LGOS-specific startup and namespace behavior:
-  the Function install and hiding the connection's `lgos/` models.
+- Generic Open WebUI fixes belong to the `homeserver-open-webui` image, which
+  Compose runs unchanged. `lgos_openwebui.sync` adds the LGOS-specific parts
+  through Open WebUI's API only: the Functions and the Pipe's valves. The Pipe
+  takes its gateway credential from Open WebUI's own OpenAI connection, so no
+  valve holds a key and the sync stores no model records.
 - The dependency pins in `ui/openwebui/pyproject.toml` equal the versions the
-  image ships; change them with `DEMO_OPENWEBUI_IMAGE`.
+  image ships; change them with `DEMO_OPENWEBUI_IMAGE`. After that change, run
+  `just demo/test-openwebui` against the running stack: the sync relies on
+  Open WebUI's undocumented Functions endpoints and the Pipe on its
+  `get_openai_runtime_config` internal.
 - Validate OpenWebUI changes from `ui/openwebui/` with:
   `uv run --locked pytest`, `uv run --locked ruff check .`, and
   `uv run --locked ty check src`.

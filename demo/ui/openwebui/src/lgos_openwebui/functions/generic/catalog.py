@@ -20,14 +20,11 @@ from .contracts import (
     LGOS_EXTENSION_KEY,
     MCP_TOOLS_FEATURE,
 )
-from .gateway import MCP_GATEWAY_ID
 
 # Open WebUI's rule for Chat Variable keys.
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
-MCP_GATEWAY_TOOL_ID = f"server:mcp:{MCP_GATEWAY_ID}"
 # The UserValves example reuses this graph with the uservalves_simple Filter.
 USERVALVES_MODEL_ID = "uservalves_simple"
-USERVALVES_GRAPH_MODEL_ID = "lgos/simple-graph"
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured gateway did not return valid lgos "
     "model metadata. Runtime settings, file inputs, and gateway tools may be "
@@ -73,17 +70,22 @@ class OpenWebUIModel(TypedDict):
     info: dict[str, JsonValue]
 
 
-def openwebui_models(models: Sequence[Model]) -> list[OpenWebUIModel]:
-    """Describe each gateway model, plus the UserValves example."""
+def openwebui_models(
+    models: Sequence[Model],
+    *,
+    mcp_gateway_connection_id: str,
+    uservalves_graph_model_id: str | None,
+) -> list[OpenWebUIModel]:
+    """Describe gateway models, plus an explicitly configured demo example."""
     result: list[OpenWebUIModel] = []
     for model in sorted(models, key=lambda item: item.id):
         extension = _model_extension(model)
-        meta = _model_meta(extension)
+        meta = _model_meta(extension, mcp_gateway_connection_id)
         suffix = "" if extension is not None else " (Limited functionality)"
         result.append(
             {"id": model.id, "name": f"{model.id}{suffix}", "info": {"meta": meta}}
         )
-        if model.id == USERVALVES_GRAPH_MODEL_ID and extension is not None:
+        if model.id == uservalves_graph_model_id and extension is not None:
             # Its Filter supplies the settings instead of Chat Variables.
             uservalves_meta = {
                 key: value
@@ -104,7 +106,9 @@ def openwebui_models(models: Sequence[Model]) -> list[OpenWebUIModel]:
     return result
 
 
-def _model_meta(extension: _ModelExtension | None) -> dict[str, JsonValue]:
+def _model_meta(
+    extension: _ModelExtension | None, mcp_gateway_connection_id: str
+) -> dict[str, JsonValue]:
     features = extension.features if extension is not None else []
     server_tools = extension.server_tools if extension is not None else []
     fields: list[JsonValue] = [
@@ -130,7 +134,7 @@ def _model_meta(extension: _ModelExtension | None) -> dict[str, JsonValue]:
         "builtinTools": {"files": False},
     }
     if MCP_TOOLS_FEATURE in features:
-        meta["toolIds"] = [MCP_GATEWAY_TOOL_ID]
+        meta["toolIds"] = [f"server:mcp:{mcp_gateway_connection_id}"]
     if extension is not None:
         # The Pipe reads these back from the selected model at chat time.
         meta[LGOS_EXTENSION_KEY] = {

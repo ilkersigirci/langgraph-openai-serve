@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from .api import _client
 from .catalog import (
-    USERVALVES_GRAPH_MODEL_ID,
     USERVALVES_MODEL_ID,
     OpenWebUIModel,
     openwebui_models,
@@ -32,12 +31,11 @@ from .contracts import (
 from .files import _handle_display_file, _with_response_file_parts
 from .gateway import (
     GatewayConfig,
-    GatewaySettings,
-    bifrost_models,
-    connection_sends_user_token,
+    GatewayRoot,
+    GatewayType,
     gateway_config,
-    gateway_settings,
-    litellm_models,
+    gateway_connection,
+    gateway_models,
 )
 from .interrupts import (
     _ask_user_to_resume,
@@ -79,6 +77,31 @@ class Pipe:
     class Valves(BaseModel):
         """Tune the Pipe's gateway requests."""
 
+        OPENAI_GATEWAY_TYPE: GatewayType = Field(
+            default="litellm",
+            description="Gateway implementation: litellm or bifrost.",
+        )
+        OPENAI_GATEWAY_BASE_URL: GatewayRoot = Field(
+            default="",
+            description=(
+                "Gateway root URL reachable from Open WebUI. The Pipe sends what "
+                "Open WebUI's OpenAI connection to its /v1 sends."
+            ),
+        )
+        MODEL_PREFIX: str = Field(
+            default="lgos",
+            pattern=r"^[^\s/*]+$",
+            description="Gateway model namespace served by this Function.",
+        )
+        MCP_GATEWAY_CONNECTION_ID: str = Field(
+            default="lgos-gateway",
+            min_length=1,
+            description="Open WebUI MCP connection used for gateway tools.",
+        )
+        USERVALVES_GRAPH_MODEL_ID: str = Field(
+            default="",
+            description="Optional graph model used by the UserValves demo Filter.",
+        )
         OPENAI_API_TIMEOUT: float = Field(
             default=30,
             gt=0,
@@ -92,21 +115,19 @@ class Pipe:
         self, __oauth_token__: Mapping[str, Any] | None = None
     ) -> list[OpenWebUIModel]:
         """List the user's gateway graphs with the model info Open WebUI shows."""
-        gateway, settings = _gateway()
+        settings = self.valves
+        gateway = _gateway(settings)
         async with _client(
             base_url=f"{gateway.root_url}/v1",
-            api_key=await _user_credential(gateway, settings, __oauth_token__),
+            api_key=await _user_credential(gateway, __oauth_token__),
             timeout=self.valves.OPENAI_API_TIMEOUT,
         ) as client:
-            if gateway.provider_routing:
-                catalog = await client.models.list()
-                models = bifrost_models(catalog.data)
-            else:
-                payload = await client.get(
-                    f"{gateway.root_url}/model/info", cast_to=object
-                )
-                models = litellm_models(payload)
-        return openwebui_models(models)
+            models = await gateway_models(client, gateway, settings.MODEL_PREFIX)
+        return openwebui_models(
+            models,
+            mcp_gateway_connection_id=settings.MCP_GATEWAY_CONNECTION_ID,
+            uservalves_graph_model_id=settings.USERVALVES_GRAPH_MODEL_ID or None,
+        )
 
     async def pipe(
         self,
@@ -320,14 +341,15 @@ class Pipe:
         host_request: OpenWebUIRequest | None,
         oauth_token: Mapping[str, Any] | None,
     ) -> PreparedResponsesRequest:
-        gateway, settings = _gateway()
-        api_key = await _user_credential(gateway, settings, oauth_token)
-        model_id = (
-            USERVALVES_GRAPH_MODEL_ID
-            if body.model_id == USERVALVES_MODEL_ID
-            else body.model_id
+        settings = self.valves
+        gateway = _gateway(settings)
+        api_key = await _user_credential(gateway, oauth_token)
+        model_id = body.model_id
+        if body.model_id == USERVALVES_MODEL_ID and settings.USERVALVES_GRAPH_MODEL_ID:
+            model_id = settings.USERVALVES_GRAPH_MODEL_ID
+        mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(
+            tools, settings.MCP_GATEWAY_CONNECTION_ID
         )
-        mcp_tools, openwebui_mcp_names = _openwebui_mcp_tools(tools)
         # Open WebUI enters its native tool loop only for streams.
         if mcp_tools and not streaming:
             msg = "Open WebUI MCP tool execution requires streaming."
@@ -382,12 +404,13 @@ class Pipe:
         )
 
 
-def _gateway() -> tuple[GatewayConfig, GatewaySettings]:
-    settings = gateway_settings()
-    gateway = gateway_config(
-        settings.OPENAI_GATEWAY_TYPE, settings.OPENAI_GATEWAY_BASE_URL
-    )
-    return gateway, settings
+def _gateway(valves: Pipe.Valves) -> GatewayConfig:
+    # Open WebUI constructs the Pipe before assigning its stored valves. Only
+    # the initial empty URL needs a runtime check; Valves validates saved input.
+    if not valves.OPENAI_GATEWAY_BASE_URL:
+        msg = "Set OPENAI_GATEWAY_BASE_URL in the Generic Function valves."
+        raise RuntimeError(msg)
+    return gateway_config(valves.OPENAI_GATEWAY_TYPE, valves.OPENAI_GATEWAY_BASE_URL)
 
 
 def _gateway_user_id(user: Mapping[str, Any]) -> str | None:
@@ -403,15 +426,18 @@ def _gateway_user_id(user: Mapping[str, Any]) -> str | None:
 
 async def _user_credential(
     gateway: GatewayConfig,
-    settings: GatewaySettings,
     oauth_token: Mapping[str, Any] | None,
 ) -> str:
     """Send what Open WebUI's own connection to the gateway sends."""
-    if not await connection_sends_user_token(gateway.root_url):
-        if settings.OPENAI_GATEWAY_API_KEY is None:
-            msg = "Set OPENAI_GATEWAY_API_KEY in Open WebUI's environment."
-            raise RuntimeError(msg)
-        return settings.OPENAI_GATEWAY_API_KEY
+    auth_type, key = await gateway_connection(gateway.root_url)
+    if auth_type == "bearer" and key:
+        return key
+    if auth_type != "system_oauth":
+        msg = (
+            "Set bearer with an API key, or system_oauth, on Open WebUI's "
+            "connection to the gateway."
+        )
+        raise RuntimeError(msg)
     # Falling back to the shared key would bypass the user's gateway permissions.
     access_token = (oauth_token or {}).get("access_token")
     if not isinstance(access_token, str) or not access_token:

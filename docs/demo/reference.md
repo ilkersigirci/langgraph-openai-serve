@@ -19,7 +19,7 @@ run without it. This reference explains settings without duplicating their defau
 | `demo/files_api` | OpenAI-compatible Files service and S3 adapter | No |
 | `demo/api-coding-agent` | Coding-agent showcase and persistent workspace (currently Codex) | Yes, from PyPI by default |
 | `demo/ui/chainlit_ui` | Persistent OpenAI-protocol client | No |
-| `demo/ui/openwebui` | Open WebUI Function sources and the app factory that installs them | No |
+| `demo/ui/openwebui` | Open WebUI Function sources and the command that installs them | No |
 | `demo/docker` | Compose gateway configuration and service data directories | No |
 
 Each Python project has its own `pyproject.toml`, virtual environment, and
@@ -37,10 +37,12 @@ integration commands:
 | `just demo/background-worker [--editable]` | Run the independently deployed Hatchet worker for polling-only background Responses |
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
 | `just demo/test-coding-agent [--editable]` | Check coding-agent shell execution, persisted edits, streaming, usage, and history through the running gateway |
+| `just demo/test-openwebui` | Check the Open WebUI sync and the Generic Pipe against the running stack after an Open WebUI image change |
 | `just demo/chainlit [--port <port>]` | Apply Chainlit migrations and run the local UI process |
 | `just demo/marimo [--editable]` | Open the API notebook workspace |
 | `just demo/sync-litellm [--dev] -- <arguments>` | Run the one-shot container to reconcile all LGOS catalogs in one LiteLLM namespace; see [model sync](litellm-sync.md) |
 | `just demo/sync-bifrost [--dev]` | Regenerate pricing and synchronize all LGOS graph catalogs into Bifrost |
+| `just demo/sync-openwebui [<arguments>]` | Install the Open WebUI Functions through its API and set the Pipe's gateway valves; see [Open WebUI setup](open-webui.md#setup) |
 | `just demo/compose` | Start the default stack in dependency order, run its gateway-specific syncs, and leave it healthy in the background |
 | `just demo/compose --dev` | Build this checkout and run the same ordered startup and sync |
 | `just demo/compose --otel` | Run the ordered default stack with the OTEL overlay |
@@ -239,14 +241,16 @@ These settings belong only to the independent `demo/files_api` project.
 
 ## Open WebUI Settings
 
-These settings configure the Open WebUI container. Its Generic Pipe also reads
-the shared gateway values under [Stack Settings](#stack-settings) from its
-environment.
+These settings configure the Open WebUI container and `just demo/sync-openwebui`,
+which also gives the Generic Pipe `OPENAI_GATEWAY_TYPE` and
+`OPENAI_GATEWAY_BASE_URL` from [Stack Settings](#stack-settings).
 
 | Setting | Purpose |
 | --- | --- |
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI's bootstrap admin, created only in an empty database |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Password of that admin; the SSO overlay disables password sign-in |
+| `DEMO_OPENWEBUI_HOST_URL` | Open WebUI's URL from the host, where the sync runs |
+| `DEMO_OPENWEBUI_SYNC_API_KEY` | An admin's API key for the sync, required by the SSO overlay; without it, the sync signs in as the bootstrap admin |
 | `DEMO_OPENWEBUI_URL` | Public Open WebUI URL for the [SSO overlay](docker.md#sso-overlay); sets `WEBUI_URL` and the OIDC callback |
 | `DEMO_OPENWEBUI_OAUTH_CLIENT_ID`, `DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET` | The registered OIDC client for the SSO overlay |
 | `DEMO_OPENWEBUI_OAUTH_SCOPES` | Scopes requested at SSO login, including the gateway's permission and `offline_access` |

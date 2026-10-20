@@ -1,67 +1,13 @@
 """Bundled Functions and their installation through Open WebUI's API."""
 
 import ast
-from typing import Any
 
+import httpx
 import pytest
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
 from lgos_openwebui.bundle import GENERIC_BUNDLE, bundle_function
 from lgos_openwebui.install import FUNCTIONS_DIR, function_specs, install_functions
-
-ADMIN_TOKEN = "admin-token"
-
-
-class FakeOpenWebUI(Starlette):
-    """Open WebUI's Functions routes, served in-process."""
-
-    def __init__(
-        self, functions: list[dict[str, Any]], *, rejection: str | None = None
-    ) -> None:
-        self.functions = {function["id"]: function for function in functions}
-        self.rejection = rejection
-        self.writes: list[str] = []
-        super().__init__(
-            routes=[
-                Route("/api/v1/functions/export", self.export),
-                Route("/api/v1/functions/{action:path}", self.write, methods=["POST"]),
-            ]
-        )
-
-    async def export(self, request: Request) -> JSONResponse:
-        if unauthorized := self.unauthorized(request):
-            return unauthorized
-        return JSONResponse(list(self.functions.values()))
-
-    async def write(self, request: Request) -> JSONResponse:
-        if unauthorized := self.unauthorized(request):
-            return unauthorized
-        self.writes.append(request.url.path)
-        if self.rejection is not None:
-            return JSONResponse({"detail": self.rejection}, status_code=400)
-        action = request.path_params["action"]
-        if action == "create":
-            payload = await request.json()
-            # Open WebUI creates Functions disabled.
-            self.functions[payload["id"]] = {**payload, "is_active": False}
-        elif action.endswith("/toggle"):
-            function = self.functions[action.split("/")[-2]]
-            function["is_active"] = not function["is_active"]
-        elif action.endswith("/update"):
-            payload = await request.json()
-            self.functions[payload["id"]].update(
-                name=payload["name"], content=payload["content"], meta=payload["meta"]
-            )
-        return JSONResponse({})
-
-    @staticmethod
-    def unauthorized(request: Request) -> JSONResponse | None:
-        if request.headers.get("authorization") == f"Bearer {ADMIN_TOKEN}":
-            return None
-        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+from tests.support import FakeOpenWebUI
 
 
 def test_bundle_function_is_frontmatter_first_and_executable() -> None:
@@ -106,7 +52,7 @@ def test_generic_bundle_modules_have_unique_top_level_definitions() -> None:
 
 
 def test_function_names_match_their_frontmatter_titles() -> None:
-    for spec in function_specs():
+    for spec in function_specs("generic", include_demo_functions=True):
         assert spec.content.startswith(f'"""\ntitle: {spec.name}\n')
 
 
@@ -120,45 +66,81 @@ async def test_install_creates_missing_and_updates_outdated_functions() -> None:
     }
     unrelated = {"id": "unrelated", "name": "Keep", "content": "external"}
     openwebui = FakeOpenWebUI([generic, unrelated])
+    specs = function_specs("generic", include_demo_functions=True)
 
-    results = await install_functions(openwebui, ADMIN_TOKEN)
+    async with openwebui.client() as client:
+        results = await install_functions(client, specs)
 
-    specs = {spec.id: spec for spec in function_specs()}
+    contents = {spec.id: spec.content for spec in specs}
     assert results == {"generic": "updated", "uservalves_simple": "created"}
     assert openwebui.functions == {
         # An update keeps the admin's metadata and disabled state.
-        "generic": {
-            **generic,
-            "name": "Generic",
-            "content": specs["generic"].content,
-        },
+        "generic": {**generic, "name": "Generic", "content": contents["generic"]},
         "unrelated": unrelated,
         "uservalves_simple": {
             "id": "uservalves_simple",
             "name": "UserValves Simple",
-            "content": specs["uservalves_simple"].content,
+            "content": contents["uservalves_simple"],
             "meta": {},
             "is_active": True,
         },
     }
 
 
-async def test_install_writes_nothing_when_functions_are_current() -> None:
+async def test_install_merges_its_valves_and_writes_nothing_when_current() -> None:
+    (spec,) = function_specs("generic", valves={"MODEL_PREFIX": "acme"})
     openwebui = FakeOpenWebUI(
         [
-            {"id": spec.id, "name": spec.name, "content": spec.content, "meta": {}}
-            for spec in function_specs()
+            {
+                "id": "generic",
+                "name": spec.name,
+                "content": spec.content,
+                "meta": {},
+                "is_active": True,
+                "valves": {"OPENAI_API_TIMEOUT": 73, "MODEL_PREFIX": "lgos"},
+            }
         ]
     )
 
-    results = await install_functions(openwebui, ADMIN_TOKEN)
+    async with openwebui.client() as client:
+        assert await install_functions(client, (spec,)) == {"generic": "updated"}
+        openwebui.writes.clear()
+        assert await install_functions(client, (spec,)) == {"generic": "unchanged"}
 
-    assert results == {"generic": "unchanged", "uservalves_simple": "unchanged"}
     assert openwebui.writes == []
+    # An admin's own valve settings stay.
+    assert openwebui.functions["generic"]["valves"] == {
+        "OPENAI_API_TIMEOUT": 73,
+        "MODEL_PREFIX": "acme",
+    }
 
 
-async def test_install_reports_why_open_webui_rejected_a_function() -> None:
-    openwebui = FakeOpenWebUI([], rejection="No module named 'plotly'")
+async def test_rerun_completes_an_interrupted_first_install() -> None:
+    openwebui = FakeOpenWebUI([])
+    specs = function_specs("generic", valves={"MODEL_PREFIX": "acme"})
 
-    with pytest.raises(RuntimeError, match="No module named 'plotly'"):
-        await install_functions(openwebui, ADMIN_TOKEN)
+    async def disconnect(request: httpx.Request) -> None:
+        if request.url.path.endswith("/valves/update"):
+            message = "Connection lost"
+            raise httpx.ConnectError(message, request=request)
+
+    async with openwebui.client() as client:
+        client.event_hooks["request"].append(disconnect)
+        with pytest.raises(httpx.ConnectError):
+            await install_functions(client, specs)
+        client.event_hooks["request"].clear()
+        assert await install_functions(client, specs) == {"generic": "updated"}
+
+    assert openwebui.functions["generic"]["is_active"] is True
+    assert openwebui.functions["generic"]["valves"] == {"MODEL_PREFIX": "acme"}
+
+
+async def test_install_uses_the_lowercase_id_open_webui_stores() -> None:
+    openwebui = FakeOpenWebUI([])
+    specs = function_specs("Acme_Pipe", valves={"MODEL_PREFIX": "acme"})
+
+    async with openwebui.client() as client:
+        assert await install_functions(client, specs) == {"acme_pipe": "created"}
+        assert await install_functions(client, specs) == {"acme_pipe": "unchanged"}
+
+    assert openwebui.functions["acme_pipe"]["is_active"] is True
