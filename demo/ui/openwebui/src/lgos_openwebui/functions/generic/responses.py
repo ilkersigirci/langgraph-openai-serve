@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 import openai.types.responses as response_types
+from openai import AsyncOpenAI
 from openai.types.responses import (
     FunctionToolParam,
     Response,
@@ -341,7 +342,7 @@ def _responses_request(
 
 
 async def _background_response(
-    client: Any,
+    client: AsyncOpenAI,
     request: dict[str, Any],
     on_status: Callable[[str], Awaitable[None]],
     *,
@@ -363,14 +364,10 @@ async def _background_response(
             "extra_headers": {"Idempotency-Key": idempotency_key}
         }
     response = await client.responses.create(**background_request)
-    previous_status = None
-    try:  # ruff: ignore[too-many-statements-in-try-clause] - Cancellation must cancel the remote response throughout polling.
-        while response.status in ACTIVE_BACKGROUND_STATUSES:
-            if response.status != previous_status:
-                await on_status(response.status)
-                previous_status = response.status
-            await asyncio.sleep(1)
-            response = await client.responses.retrieve(response.id, **lifecycle_options)
+    try:
+        return await _poll_background_response(
+            client, response, on_status, lifecycle_options
+        )
     except asyncio.CancelledError:
         try:
             await asyncio.shield(
@@ -383,6 +380,21 @@ async def _background_response(
                 exc_info=True,
             )
         raise
+
+
+async def _poll_background_response(
+    client: AsyncOpenAI,
+    response: Response,
+    on_status: Callable[[str], Awaitable[None]],
+    lifecycle_options: Mapping[str, Any],
+) -> Response:
+    previous_status = None
+    while response.status in ACTIVE_BACKGROUND_STATUSES:
+        if response.status != previous_status:
+            await on_status(response.status)
+            previous_status = response.status
+        await asyncio.sleep(1)
+        response = await client.responses.retrieve(response.id, **lifecycle_options)
     return response
 
 

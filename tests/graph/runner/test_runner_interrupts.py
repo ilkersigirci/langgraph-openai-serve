@@ -149,6 +149,47 @@ async def test_cancelled_preparation_finishes_lease_release(
     assert cancellation_propagated.is_set()
 
 
+async def test_failed_preparation_keeps_its_error_when_its_lease_release_fails(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    released = Event()
+
+    def failing_input(_request, _messages):
+        msg = "input failed"
+        raise ValueError(msg)
+
+    @asynccontextmanager
+    async def coordinator(_key: str):
+        try:
+            yield
+        finally:
+            released.set()
+            msg = "lease release failed"
+            raise RuntimeError(msg)
+
+    registry = GraphRegistry(
+        graphs={
+            "interruptible": GraphConfig(
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                request_to_input=failing_input,
+            )
+        },
+        run_coordinator=coordinator,
+    )
+
+    with pytest.raises(ValueError, match="input failed"):
+        await prepare_run(
+            make_request("interruptible"),
+            [HumanMessage(content="question")],
+            registry,
+        )
+
+    assert released.is_set()
+
+
 async def test_interrupt_result_is_returned_before_output_rendering(
     make_request,
     sqlite_checkpointer: AsyncSqliteSaver,

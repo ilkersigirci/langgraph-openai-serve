@@ -53,7 +53,7 @@ def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
     return {"error": error.model_dump(mode="json")}
 
 
-async def _openai_error_response(  # ruff: ignore[unused-async]
+async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
