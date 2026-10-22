@@ -1,7 +1,7 @@
 """OpenAI-compatible Files routes and error responses."""
 
 import logging
-from typing import TYPE_CHECKING, Annotated, Literal, NoReturn, cast
+from typing import Annotated, Literal, NoReturn, cast
 
 from fastapi import (
     APIRouter,
@@ -32,9 +32,6 @@ from lgos_files_api.contracts import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["openai"])
 
-if TYPE_CHECKING:
-    from starlette.types import HTTPExceptionHandler
-
 
 class FileListResponse(BaseModel):
     """Cursor page returned by `GET /v1/files`."""
@@ -56,19 +53,8 @@ class OpenAIHTTPException(HTTPException):
 
 def configure_openai_error_handlers(app: FastAPI) -> None:
     """Install OpenAI-compatible error handlers."""
-    # Starlette dispatches each handler only for its registered exception class.
-    http_handler = cast("HTTPExceptionHandler", openai_http_exception_handler)
-    validation_handler = cast(
-        "HTTPExceptionHandler",
-        openai_request_validation_exception_handler,
-    )
-    app.add_exception_handler(OpenAIHTTPException, http_handler)
-    app.add_exception_handler(StarletteHTTPException, http_handler)
-    app.add_exception_handler(
-        RequestValidationError,
-        validation_handler,
-    )
-    app.add_exception_handler(Exception, openai_unhandled_exception_handler)
+    for exc_class in (StarletteHTTPException, RequestValidationError, Exception):
+        app.add_exception_handler(exc_class, _openai_error_response)
 
 
 def _get_file_repository(request: Request) -> FileRepository:
@@ -196,33 +182,44 @@ def retrieve_file_content(
     )
 
 
-async def openai_http_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
-    _request: Request,
-    exc: StarletteHTTPException,
+async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
+    request: Request,
+    exc: Exception,
 ) -> JSONResponse:
-    """Render HTTP failures in the OpenAI error envelope."""
-    if isinstance(exc, OpenAIHTTPException):
-        error = exc.error
-    else:
-        error = ErrorObject(
-            message=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
-            type=(
-                "server_error"
-                if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
-                else "invalid_request_error"
-            ),
-        )
+    """Render HTTP, validation, and unhandled failures in the OpenAI error envelope."""
+    match exc:
+        case OpenAIHTTPException():
+            status_code = exc.status_code
+            error = exc.error
+        case StarletteHTTPException():
+            status_code = exc.status_code
+            error = ErrorObject(
+                message=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+                type=(
+                    "server_error"
+                    if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
+                    else "invalid_request_error"
+                ),
+            )
+        case RequestValidationError():
+            status_code = status.HTTP_400_BAD_REQUEST
+            error = _validation_error(exc)
+        case _:
+            logger.error(
+                "Unhandled Files API error for %s %s",
+                request.method,
+                request.url.path,
+                exc_info=exc,
+            )
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            error = ErrorObject(message="Internal server error", type="server_error")
     return JSONResponse(
-        status_code=exc.status_code,
+        status_code=status_code,
         content={"error": error.model_dump(mode="json")},
     )
 
 
-async def openai_request_validation_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
-    _request: Request,
-    exc: RequestValidationError,
-) -> JSONResponse:
-    """Render request validation failures as OpenAI bad requests."""
+def _validation_error(exc: RequestValidationError) -> ErrorObject:
     first_error = exc.errors()[0] if exc.errors() else {}
     location = first_error.get("loc", ())
     if not isinstance(location, (tuple, list)):
@@ -230,32 +227,8 @@ async def openai_request_validation_exception_handler(  # ruff: ignore[unused-as
     parts = [str(part) for part in location if part not in {"body", "query", "path"}]
     param = ".".join(parts) or None
     message = str(first_error.get("msg") or "Invalid request")
-    if param:
-        message = f"{param}: {message}"
-    error = ErrorObject(
-        message=message,
+    return ErrorObject(
+        message=f"{param}: {message}" if param else message,
         type="invalid_request_error",
         param=param,
-    )
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": error.model_dump(mode="json")},
-    )
-
-
-async def openai_unhandled_exception_handler(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
-    request: Request,
-    exc: Exception,
-) -> JSONResponse:
-    """Hide internal exception details behind a stable error response."""
-    logger.error(
-        "Unhandled Files API error for %s %s",
-        request.method,
-        request.url.path,
-        exc_info=exc,
-    )
-    error = ErrorObject(message="Internal server error", type="server_error")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": error.model_dump(mode="json")},
     )

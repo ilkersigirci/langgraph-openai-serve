@@ -16,7 +16,6 @@ from langgraph_openai_serve.background import (
     BackgroundRun,
 )
 from langgraph_openai_serve.core.errors import InvalidRequestError
-from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 # Stripe and the IETF Idempotency-Key draft both bound keys; 255 matches Stripe.
@@ -98,10 +97,9 @@ def _job(
 ) -> BackgroundJob:
     """Validate the request as the worker will decode it."""
     graph_config = graph_registry.get_graph(request.model)
-    if not graph_config.supports(GraphFeature.BACKGROUND):
-        message = f"Model '{request.model}' does not support background execution."
-        raise InvalidRequestError(message, param="background")
     graph_request, _messages, resume = decode_graph_request(request, graph_config)
+    # The worker validates settings only while it builds the run's context, so
+    # check them here to reject the request instead of queuing a failing job.
     if graph_config.client_settings is not None:
         graph_config.client_settings.validate_request(graph_request)
     return BackgroundJob(

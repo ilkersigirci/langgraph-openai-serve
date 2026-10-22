@@ -2,10 +2,18 @@
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Annotated, Any
 
 from openai.types.responses import ResponseFunctionToolCall
-from pydantic import JsonValue
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    ValidationError,
+    field_validator,
+)
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
@@ -23,6 +31,31 @@ from .responses import _openwebui_chunk
 
 ASK_USER_MIN_CHOICES = 2
 ASK_USER_MAX_CHOICES = 3
+
+
+class _InterruptPayload(BaseModel):
+    """The interrupt arguments Open WebUI's native ask-user card can represent."""
+
+    model_config = ConfigDict(strict=True)
+
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    choices: list[str] = Field(
+        min_length=ASK_USER_MIN_CHOICES,
+        max_length=ASK_USER_MAX_CHOICES,
+    )
+    allow_other: bool = False
+
+    @field_validator("choices")
+    @classmethod
+    def valid_choices(cls, choices: list[str]) -> list[str]:
+        # Answers carry the option label, which Open WebUI strips and truncates.
+        if len(set(choices)) != len(choices) or any(
+            not choice or choice.strip()[:ASK_USER_LABEL_MAX_LENGTH] != choice
+            for choice in choices
+        ):
+            msg = "Choices must be unique labels that Open WebUI keeps unchanged."
+            raise ValueError(msg)
+        return choices
 
 
 def _ask_user_to_resume(
@@ -204,59 +237,34 @@ def _openwebui_interrupt_completion(
 
 
 def _interrupt_question(call: ResponseFunctionToolCall) -> tuple[dict[str, Any], str]:
-    try:
-        payload = json.loads(call.arguments)
-    except ValueError as exc:
-        msg = "LangGraph API returned invalid interrupt tool arguments."
-        raise ValueError(msg) from exc
-    if not isinstance(payload, dict):
-        msg = "Open WebUI requires an object interrupt payload."
-        raise ValueError(msg)  # ruff: ignore[type-check-without-type-error] - Malformed decoded payloads use the existing ValueError validation contract.
-    question = payload.get("question")
-    choices = payload.get("choices")
-    allow_other = payload.get("allow_other", False)
-    if not isinstance(question, str) or not question.strip():
-        msg = "Open WebUI interrupt payload requires a question."
-        raise ValueError(msg)
-    # Answers carry the option label, which Open WebUI strips and truncates.
-    if (
-        not isinstance(choices, list)
-        or not ASK_USER_MIN_CHOICES <= len(choices) <= ASK_USER_MAX_CHOICES
-        or any(
-            not isinstance(choice, str)
-            or not choice
-            or choice.strip()[:ASK_USER_LABEL_MAX_LENGTH] != choice
-            for choice in choices
-        )
-        or len(set(choices)) != len(choices)
-        or not isinstance(allow_other, bool)
-    ):
-        msg = (
-            "Open WebUI interrupts require "
-            f"{ASK_USER_MIN_CHOICES}-{ASK_USER_MAX_CHOICES} unique choices of at "
-            f"most {ASK_USER_LABEL_MAX_LENGTH} characters without surrounding spaces."
-        )
-        raise ValueError(msg)
     # Answers are keyed by question ID, which Open WebUI truncates.
     if len(call.call_id) > ASK_USER_QUESTION_ID_MAX_LENGTH:
         msg = "LangGraph API returned an interrupt call ID Open WebUI cannot keep."
         raise ValueError(msg)
+    try:
+        payload = _InterruptPayload.model_validate_json(call.arguments)
+    except ValidationError as exc:
+        msg = (
+            "Open WebUI interrupts require a question and "
+            f"{ASK_USER_MIN_CHOICES}-{ASK_USER_MAX_CHOICES} unique choices of at "
+            f"most {ASK_USER_LABEL_MAX_LENGTH} characters without surrounding spaces."
+        )
+        raise ValueError(msg) from exc
 
     # The question is the whole prompt; other payload fields are for programs.
     # Open WebUI's card shows one plain-text line and truncates it, so, as a
     # model would, the card asks the question's first paragraph and the
     # details go above it as Markdown text.
-    question = question.strip()
-    ask, _, review = question.partition("\n\n")
+    ask, _, review = payload.question.partition("\n\n")
     if "\n" in ask or len(ask) > ASK_USER_QUESTION_MAX_LENGTH:
-        ask, review = "Review the request above before choosing.", question
+        ask, review = "Review the request above before choosing.", payload.question
     return {
         "id": call.call_id,
         "header": "Human input",
         "question": ask,
         "options": [
             {"label": choice, "description": f"Resume with {choice!r}."}
-            for choice in choices
+            for choice in payload.choices
         ],
-        "allow_other": allow_other,
+        "allow_other": payload.allow_other,
     }, review

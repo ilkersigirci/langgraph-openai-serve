@@ -156,7 +156,11 @@ class ResponsesEventBuilder:
             Typed terminal events for a successful Response.
 
         """
-        calls, item_status, incomplete_details = self._completion(message)
+        calls = self._server_tool_tracker.client_function_calls(message)
+        incomplete_details = response_incomplete_details(message)
+        item_status: Literal["completed", "incomplete"] = (
+            "incomplete" if incomplete_details is not None else "completed"
+        )
         yield from self._finish_answer(message, status=item_status)
         for call in calls:
             yield from self._tool_item(call.model_copy(update={"status": item_status}))
@@ -177,18 +181,6 @@ class ResponsesEventBuilder:
                 sequence_number=self._sequence(),
                 response=response,
             )
-
-    def _completion(
-        self, message: AIMessage
-    ) -> tuple[
-        list[ResponseFunctionToolCall],
-        Literal["completed", "incomplete"],
-        IncompleteDetails | None,
-    ]:
-        calls = self._server_tool_tracker.client_function_calls(message)
-        incomplete_details = response_incomplete_details(message)
-        status = "incomplete" if incomplete_details is not None else "completed"
-        return calls, status, incomplete_details
 
     def _finish_answer(
         self, message: AIMessage, *, status: Literal["completed", "incomplete"]
@@ -473,11 +465,45 @@ class ResponsesEventBuilder:
             item=pending,
         )
         if isinstance(completed, ResponseFunctionToolCall):
-            yield from self._function_call_events(completed, output_index, item_id)
+            yield ResponseFunctionCallArgumentsDeltaEvent(
+                type="response.function_call_arguments.delta",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=item_id,
+                delta=completed.arguments,
+            )
+            yield ResponseFunctionCallArgumentsDoneEvent(
+                type="response.function_call_arguments.done",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=item_id,
+                arguments=completed.arguments,
+            )
         elif isinstance(completed, ResponseCustomToolCall):
-            yield from self._custom_tool_call_events(completed, output_index, item_id)
-        elif isinstance(completed, ResponseFunctionWebSearch):
-            yield from self._web_search_events(completed, output_index, item_id)
+            yield ResponseCustomToolCallInputDeltaEvent(
+                type="response.custom_tool_call_input.delta",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=item_id,
+                delta=completed.input,
+            )
+            yield ResponseCustomToolCallInputDoneEvent(
+                type="response.custom_tool_call_input.done",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=item_id,
+                input=completed.input,
+            )
+        elif (
+            isinstance(completed, ResponseFunctionWebSearch)
+            and completed.status == "completed"
+        ):
+            yield ResponseWebSearchCallCompletedEvent(
+                type="response.web_search_call.completed",
+                sequence_number=self._sequence(),
+                output_index=output_index,
+                item_id=item_id,
+            )
         self._output[output_index] = completed
         yield ResponseOutputItemDoneEvent(
             type="response.output_item.done",
@@ -485,62 +511,6 @@ class ResponsesEventBuilder:
             output_index=output_index,
             item=completed,
         )
-
-    def _function_call_events(
-        self,
-        completed: ResponseFunctionToolCall,
-        output_index: int,
-        item_id: str,
-    ) -> Iterator[ResponseStreamEvent]:
-        yield ResponseFunctionCallArgumentsDeltaEvent(
-            type="response.function_call_arguments.delta",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=item_id,
-            delta=completed.arguments,
-        )
-        yield ResponseFunctionCallArgumentsDoneEvent(
-            type="response.function_call_arguments.done",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=item_id,
-            arguments=completed.arguments,
-        )
-
-    def _custom_tool_call_events(
-        self,
-        completed: ResponseCustomToolCall,
-        output_index: int,
-        item_id: str,
-    ) -> Iterator[ResponseStreamEvent]:
-        yield ResponseCustomToolCallInputDeltaEvent(
-            type="response.custom_tool_call_input.delta",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=item_id,
-            delta=completed.input,
-        )
-        yield ResponseCustomToolCallInputDoneEvent(
-            type="response.custom_tool_call_input.done",
-            sequence_number=self._sequence(),
-            output_index=output_index,
-            item_id=item_id,
-            input=completed.input,
-        )
-
-    def _web_search_events(
-        self,
-        completed: ResponseFunctionWebSearch,
-        output_index: int,
-        item_id: str,
-    ) -> Iterator[ResponseStreamEvent]:
-        if completed.status == "completed":
-            yield ResponseWebSearchCallCompletedEvent(
-                type="response.web_search_call.completed",
-                sequence_number=self._sequence(),
-                output_index=output_index,
-                item_id=item_id,
-            )
 
     def server_tools(self, event: UpdatesStreamPart) -> Iterator[ResponseStreamEvent]:
         """

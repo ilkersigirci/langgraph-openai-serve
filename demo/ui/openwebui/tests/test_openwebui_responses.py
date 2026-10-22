@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, Mock, call
 from uuid import UUID
 
 import pytest
+from anyio import Event, fail_after, sleep_forever
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
@@ -669,11 +670,13 @@ BACKGROUND_GATEWAYS = pytest.mark.parametrize(
 
 
 @BACKGROUND_GATEWAYS
+@pytest.mark.parametrize("streaming", [False, True])
 async def test_background_response_uses_polling_and_native_statuses(
     monkeypatch: pytest.MonkeyPatch,
     gateway_type: str,
     model: str,
     lifecycle_options: dict[str, object],
+    streaming: bool,
 ) -> None:
     response_id = "resp_background"
     queued = Response.model_construct(id=response_id, status="queued", output=[])
@@ -703,13 +706,15 @@ async def test_background_response_uses_polling_and_native_statuses(
     pipe = configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type)
     result = await collect(
         pipe.pipe(
-            {**body(stream=True), "model": f"generic.{model}"},
+            {**body(stream=streaming), "model": f"generic.{model}"},
             __metadata__=chat_metadata(lgos_background=True),
             __event_emitter__=emit,
         )
     )
 
-    assert result[0]["choices"][0]["delta"]["content"] == "Report ready."
+    assert (
+        result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
+    ) == "Report ready."
     request = create.await_args.kwargs
     assert request["background"] is True
     assert request["store"] is True
@@ -1130,6 +1135,35 @@ async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
         {"description": "Stopped: Making chart", "done": True},
     ]
     display.assert_not_awaited()
+
+
+async def test_closing_a_streamed_answer_closes_its_gateway_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed = Event()
+
+    async def events() -> AsyncIterator[object]:
+        yield SimpleNamespace(
+            type="response.output_text.delta", output_index=0, delta="Partial"
+        )
+        await sleep_forever()
+
+    @asynccontextmanager
+    async def endless_stream(**_):
+        try:
+            yield events()
+        finally:
+            closed.set()
+
+    install_client(monkeypatch, stream=endless_stream)
+    chunks = await configured_pipe().pipe(body(stream=True))
+    first = await anext(chunks)
+    # A stop that lands between chunks closes the generator at its yield.
+    with fail_after(1):
+        await chunks.aclose()
+
+    assert first["choices"][0]["delta"]["content"] == "Partial"
+    assert closed.is_set()
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -1652,19 +1686,28 @@ async def test_sso_requests_without_an_access_token_never_use_the_shared_key(
     create.assert_not_awaited()
 
 
-@pytest.mark.parametrize("choice", ["x" * 81, " approve"], ids=["long", "padded"])
-async def test_interrupt_choices_that_open_webui_would_alter_are_rejected(
-    monkeypatch: pytest.MonkeyPatch, choice: str
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"question": "Approve refund?", "choices": ["x" * 81, "reject"]},
+        {"question": "Approve refund?", "choices": [" approve", "reject"]},
+        {"question": "Approve refund?", "choices": ["approve"]},
+        {"question": " ", "choices": ["approve", "reject"]},
+    ],
+    ids=["long-choice", "padded-choice", "one-choice", "blank-question"],
+)
+async def test_interrupts_open_webui_cannot_show_are_rejected(
+    monkeypatch: pytest.MonkeyPatch, payload: dict[str, object]
 ) -> None:
-    call = function_call(
-        "lgos_interrupt",
-        {"question": "Approve refund?", "choices": [choice, "reject"]},
-    )
+    call = function_call("lgos_interrupt", payload)
     install_client(monkeypatch, create=AsyncMock(return_value=response(call)))
 
     result = await configured_pipe().pipe(body(stream=False))
 
-    assert "80 characters" in result["error"]["detail"]
+    assert result["error"]["detail"] == (
+        "Responses request failed: Open WebUI interrupts require a question and "
+        "2-3 unique choices of at most 80 characters without surrounding spaces."
+    )
 
 
 async def test_interrupt_call_ids_that_open_webui_would_truncate_are_rejected(

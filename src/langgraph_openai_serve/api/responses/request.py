@@ -77,6 +77,9 @@ def decode_graph_request(
     graph_config: GraphConfig,
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
     """Validate and normalize one Responses request for its registered graph."""
+    if request.background and not graph_config.supports(GraphFeature.BACKGROUND):
+        message = f"Model '{request.model}' does not support background execution."
+        raise InvalidRequestError(message, param="background")
     _validate_tools(request, graph_config.server_tools)
     if request.previous_response_id is not None and not graph_config.supports(
         GraphFeature.INTERRUPTS
