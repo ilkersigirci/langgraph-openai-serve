@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 ARG PYTHON_IMAGE=python:{{ cookiecutter.python_version }}-slim-trixie
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.1
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336
 
 FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE} AS build
