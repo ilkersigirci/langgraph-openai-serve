@@ -2,7 +2,7 @@
 # checkout as the "chainlit_utils" named build context.
 FROM scratch AS chainlit_utils
 
-FROM ghcr.io/astral-sh/uv:0.13.1-python3.13-trixie-slim@sha256:7dd72af08bdef012fdf433082190d2b5133a96b6a43aca0bb71c2aa793e47e20 AS base
+FROM ghcr.io/astral-sh/uv:0.13.6-python3.13-trixie-slim@sha256:e586c1c65b7071aec78f02c5587c76c5011159cd76b3d6f1255f40e48e850abc AS base
 
 ARG PUID=1000
 ARG PGID=1000
