@@ -1,6 +1,5 @@
 """A persistent chart managed by a LangChain agent."""
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Annotated, Any, Literal
@@ -144,9 +143,6 @@ def _runtime_dependencies(
     if runtime.store is None:
         msg = "The persistent plot agent requires a LangGraph store."
         raise RuntimeError(msg)
-    if runtime.context is None:
-        msg = "The persistent plot agent requires runtime context."
-        raise RuntimeError(msg)
     return runtime.store, runtime.context
 
 
@@ -260,6 +256,8 @@ def create_persistent_plot_agent(
             # Keep every agent turn out of the stream; LGOS sends the final
             # answer from the graph's state.
             private=True,
+            # Parallel updates would each load the same chart and overwrite
+            # each other.
             model_kwargs={"parallel_tool_calls": False},
         )
     return create_agent(
@@ -273,18 +271,13 @@ def create_persistent_plot_agent(
 
 def context_factory(
     request: GraphRequest,
-    client_settings: ClientSettings | None,
+    client_settings: PersistentPlotAgentSettings,
 ) -> PersistentPlotAgentContext:
     user_id, conversation_id = _persistence_scope(request)
-    plot_settings = (
-        client_settings
-        if isinstance(client_settings, PersistentPlotAgentSettings)
-        else PersistentPlotAgentSettings()
-    )
     return PersistentPlotAgentContext(
         user_id=user_id,
         conversation_id=conversation_id,
-        settings=plot_settings,
+        settings=client_settings,
         display_file_available=_display_file_available(request),
     )
 
@@ -297,18 +290,10 @@ def _display_file_available(request: GraphRequest) -> bool:
     return any(tool.name == DISPLAY_FILE_TOOL_NAME for tool in request.tools)
 
 
-def output_to_message(output: Any) -> AIMessage:
+def output_to_message(output: dict[str, Any]) -> AIMessage:
     """Prefer the latest deterministic display request over agent prose."""
-    raw_messages = (
-        output.get("messages")
-        if isinstance(output, Mapping)
-        else getattr(output, "messages", None)
-    )
-    if not isinstance(raw_messages, Sequence) or not raw_messages:
-        msg = "Persistent plot output must contain messages."
-        raise TypeError(msg)
-
-    for message in reversed(raw_messages):
+    messages = output["messages"]
+    for message in reversed(messages):
         if not isinstance(message, ToolMessage) or not isinstance(
             message.artifact, DisplayFile
         ):
@@ -325,11 +310,8 @@ def output_to_message(output: Any) -> AIMessage:
             ],
         )
 
-    final = raw_messages[-1]
-    if not isinstance(final, AIMessage):
-        msg = "Persistent plot output must end with an AIMessage."
-        raise TypeError(msg)
-    return final
+    # The agent's loop ends with the model's answer.
+    return messages[-1]
 
 
 def _persistence_scope(request: GraphRequest) -> tuple[str, str]:
@@ -362,17 +344,3 @@ def create_persistent_plot_agent_config(
         client_tools={DISPLAY_FILE_TOOL_NAME},
         output_to_message=output_to_message,
     )
-
-
-__all__ = [
-    "ARTIFACT_KEY",
-    "DISPLAY_FILE_TOOL_NAME",
-    "DisplayFile",
-    "PersistentPlotAgentContext",
-    "PersistentPlotAgentSettings",
-    "PlotDocument",
-    "RevenueUpdate",
-    "create_persistent_plot_agent",
-    "create_persistent_plot_agent_config",
-    "output_to_message",
-]

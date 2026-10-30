@@ -3,7 +3,6 @@
 import itertools
 import json
 from base64 import b64encode
-from collections import deque
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
@@ -24,6 +23,7 @@ from langgraph_openai_serve import (
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from openai import AsyncOpenAI
 from openai.types.responses import Response
+from tests.support import ModelProvider, model_response
 
 from lgos_demo_api.graphs.deep_research import (
     ANSWER_NOW,
@@ -40,42 +40,8 @@ SOURCE_URL = "https://docs.langchain.com/oss/python/langgraph/interrupts"
 # One question means one researcher, so the model replies keep their order.
 PLAN = ["How does a LangGraph interrupt pause and resume a run?"]
 QUESTION = "How do LangGraph interrupts work?"
-# Provider IDs are unique, and add_messages replaces a message with a known ID.
-_ids = itertools.count()
-
-
-def model_response(
-    text: str = "",
-    *,
-    calls: Sequence[dict[str, Any]] = (),
-    refusal: str | None = None,
-) -> dict[str, Any]:
-    """Build a completed Responses result."""
-    number = next(_ids)
-    content = (
-        {"type": "refusal", "refusal": refusal}
-        if refusal
-        else {"type": "output_text", "text": text, "annotations": []}
-    )
-    return {
-        "id": f"resp_{number}",
-        "object": "response",
-        "created_at": 1,
-        "model": "gpt-6-luna",
-        "status": "completed",
-        "error": None,
-        "incomplete_details": None,
-        "output": [
-            *calls,
-            {
-                "id": f"msg_{number}",
-                "type": "message",
-                "role": "assistant",
-                "status": "completed",
-                "content": [content],
-            },
-        ],
-    }
+# Call IDs are unique within a test run.
+_call_ids = itertools.count()
 
 
 def triage_response(*, deep: bool, plan: Sequence[str] = PLAN) -> dict[str, Any]:
@@ -88,7 +54,7 @@ def search_calls(*queries: str) -> dict[str, Any]:
     """Build a researcher turn that searches every query in parallel."""
     calls = []
     for query in queries:
-        call_id = next(_ids)
+        call_id = next(_call_ids)
         calls.append(
             {
                 "type": "function_call",
@@ -100,78 +66,6 @@ def search_calls(*queries: str) -> dict[str, Any]:
             }
         )
     return model_response(calls=calls)
-
-
-def response_events(response: dict[str, Any]) -> bytes:
-    """Encode a Responses result as the SSE events of a streamed call."""
-    events: list[dict[str, Any]] = [
-        {
-            "type": "response.created",
-            "response": {**response, "status": "in_progress", "output": []},
-        }
-    ]
-    for index, item in enumerate(response["output"]):
-        if item["type"] == "function_call":
-            added = {**item, "arguments": ""}
-            delta = {
-                "type": "response.function_call_arguments.delta",
-                "item_id": item["id"],
-                "delta": item["arguments"],
-            }
-        elif (part := item["content"][0])["type"] == "refusal":
-            added = {**item, "content": []}
-            delta = {
-                "type": "response.refusal.done",
-                "item_id": item["id"],
-                "content_index": 0,
-                "refusal": part["refusal"],
-            }
-        else:
-            added = {**item, "content": []}
-            delta = {
-                "type": "response.output_text.delta",
-                "item_id": item["id"],
-                "content_index": 0,
-                "delta": part["text"],
-                "logprobs": [],
-            }
-        events += [
-            {
-                "type": "response.output_item.added",
-                "output_index": index,
-                "item": added,
-            },
-            {**delta, "output_index": index},
-            {"type": "response.output_item.done", "output_index": index, "item": item},
-        ]
-    events.append({"type": "response.completed", "response": response})
-    return "".join(
-        f"event: {event['type']}\n"
-        f"data: {json.dumps({**event, 'sequence_number': number})}\n\n"
-        for number, event in enumerate(events)
-    ).encode()
-
-
-class ModelProvider:
-    """Serve queued Responses results and record every request payload."""
-
-    def __init__(self, *responses: dict[str, Any]) -> None:
-        self.responses = deque(responses)
-        self.requests: list[dict[str, Any]] = []
-
-    async def handle(self, request: httpx2.Request) -> httpx2.Response:
-        payload = json.loads(request.content)
-        self.requests.append(payload)
-        # Like OpenAI, echo the text format; LangChain parses streamed
-        # structured output only when the response declares its JSON schema.
-        response = {**self.responses.popleft(), "text": payload.get("text")}
-        if not payload.get("stream"):
-            return httpx2.Response(200, json=response)
-        return httpx2.Response(
-            200,
-            headers={"content-type": "text/event-stream"},
-            content=response_events(response),
-        )
 
 
 @tool("web_search", response_format="content_and_artifact")

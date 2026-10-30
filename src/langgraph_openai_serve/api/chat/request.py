@@ -51,6 +51,3 @@ def _decode_tool_choice(
     if tool_choice is None or isinstance(tool_choice, str):
         return tool_choice
     return NamedFunctionToolChoice(name=tool_choice.function.name)
-
-
-__all__ = ["decode_chat_request"]

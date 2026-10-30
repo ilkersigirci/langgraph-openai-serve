@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from anyio import sleep
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -14,7 +15,6 @@ from lgos_demo_api.graphs.background_report import (
     BackgroundReportSettings,
     BackgroundReportState,
     prepare_report,
-    wait_for_report,
 )
 
 
@@ -51,12 +51,10 @@ def review_report(
             "allow_other": False,
         }
     )
-    if isinstance(answer, str):
-        decision = answer.strip().lower()
-        if decision in {"approve", "reject"}:
-            return {"decision": decision}
-    msg = "Report review response must be approve or reject."
-    raise ValueError(msg)
+    if (decision := answer.strip().lower()) not in {"approve", "reject"}:
+        msg = "Report review response must be approve or reject."
+        raise ValueError(msg)
+    return {"decision": decision}
 
 
 async def finish_report(
@@ -64,7 +62,7 @@ async def finish_report(
     runtime: Runtime[BackgroundReportSettings],
 ) -> dict[str, list[AIMessage]]:
     if state.decision == "approve":
-        await wait_for_report(runtime.context)
+        await sleep(runtime.context.delay_seconds)
         content = state.report
     else:
         content = "Report rejected; no report finalized."
@@ -99,9 +97,3 @@ def create_background_interrupt_graph_config(
         features={GraphFeature.BACKGROUND, GraphFeature.INTERRUPTS},
         client_settings=BackgroundReportSettings,
     )
-
-
-__all__ = [
-    "create_background_interrupt_graph",
-    "create_background_interrupt_graph_config",
-]

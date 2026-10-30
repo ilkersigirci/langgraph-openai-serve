@@ -12,51 +12,114 @@ from starlette import status
 from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
 from tests.graph.support.schemas import MessageState
 
+USER_MESSAGES = [{"role": "user", "content": "Hello"}]
 
-async def test_validation_error_returns_openai_error(
+
+@pytest.mark.parametrize(
+    ("body", "param", "message"),
+    [
+        pytest.param({}, "messages", "messages: Field required", id="no-messages"),
+        pytest.param(
+            {"messages": []}, "messages", "at least 1 item", id="empty-messages"
+        ),
+        pytest.param(
+            {"messages": [{"role": "tool", "content": "Tool result"}]},
+            "messages",
+            "Tool messages require the 'tool_call_id' field.",
+            id="tool-message-without-call-id",
+        ),
+        pytest.param(
+            {"messages": USER_MESSAGES, "functions": []},
+            "functions",
+            "Extra inputs are not permitted",
+            id="deprecated-functions",
+        ),
+        pytest.param(
+            {"messages": [{"role": "function", "name": "lookup", "content": "x"}]},
+            "messages.0.role",
+            "Input should be 'system', 'user', 'assistant' or 'tool'",
+            id="function-role",
+        ),
+        pytest.param(
+            {"messages": [{"role": "user", "content": "Hello", "message_extra": 1}]},
+            "messages.0.message_extra",
+            "Extra inputs are not permitted",
+            id="unknown-message-field",
+        ),
+        pytest.param(
+            {"messages": USER_MESSAGES, "temperature": 0.2},
+            "temperature",
+            "Extra inputs are not permitted",
+            id="generation-control",
+        ),
+        pytest.param(
+            {"messages": USER_MESSAGES, "stream_options": {"include_usage": True}},
+            None,
+            "stream_options may only be set when stream is true",
+            id="stream-options-without-stream",
+        ),
+        pytest.param(
+            {
+                "messages": USER_MESSAGES,
+                "metadata": {f"key-{index}": "value" for index in range(17)},
+            },
+            "metadata",
+            "at most 16 items",
+            id="too-many-metadata-pairs",
+        ),
+    ],
+)
+async def test_unsupported_chat_requests_return_openai_errors(
     openai_client: AsyncOpenAI,
+    body: dict[str, object],
+    param: str | None,
+    message: str,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.post(
-            "/chat/completions",
-            cast_to=object,
-            body={"model": "test"},
+            "/chat/completions", cast_to=object, body={"model": "test", **body}
         )
 
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {
-        "error": {
-            "message": "messages: Field required",
-            "type": "invalid_request_error",
-            "param": "messages",
-            "code": None,
-            "misalignment": None,
-        }
-    }
+    error = exc_info.value.response.json()["error"]
+    assert (error["type"], error["param"], error["code"]) == (
+        "invalid_request_error",
+        param,
+        None,
+    )
+    assert message in error["message"]
 
 
-async def test_empty_messages_returns_openai_error(
+# The param names the rejected part, or its unsupported field.
+@pytest.mark.parametrize(
+    ("content_part", "param_end"),
+    [
+        pytest.param(
+            {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+            ".0",
+            id="image",
+        ),
+        pytest.param(
+            {"type": "input_audio", "input_audio": {"data": "AA==", "format": "wav"}},
+            ".0",
+            id="audio",
+        ),
+        pytest.param(
+            {
+                "type": "file",
+                "file": {
+                    "file_id": "file-test",
+                    "file_data": "data:application/pdf;base64,AA==",
+                },
+            },
+            ".file_data",
+            id="inline-file-data",
+        ),
+    ],
+)
+async def test_unsupported_chat_content_parts_are_rejected(
     openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.post(
-            "/chat/completions",
-            cast_to=object,
-            body={"model": "test", "messages": []},
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"] == "messages"
-    assert error["code"] is None
-    assert error["message"].startswith("messages: ")
-
-
-async def test_missing_tool_call_id_returns_openai_error(
-    openai_client: AsyncOpenAI,
+    content_part: dict[str, object],
+    param_end: str,
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.post(
@@ -64,198 +127,14 @@ async def test_missing_tool_call_id_returns_openai_error(
             cast_to=object,
             body={
                 "model": "test",
-                "messages": [{"role": "tool", "content": "Tool result"}],
+                "messages": [{"role": "user", "content": [content_part]}],
             },
         )
 
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {
-        "error": {
-            "message": "Tool messages require the 'tool_call_id' field.",
-            "type": "invalid_request_error",
-            "param": "messages",
-            "code": None,
-            "misalignment": None,
-        }
-    }
-
-
-@pytest.mark.parametrize(
-    ("body", "expected_param", "expected_message"),
-    [
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "Hello"}],
-                "functions": [],
-            },
-            "functions",
-            "Extra inputs are not permitted",
-            id="functions",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {"role": "function", "name": "lookup", "content": "result"}
-                ],
-            },
-            "messages.0.role",
-            "Input should be 'system', 'user', 'assistant' or 'tool'",
-            id="function-role",
-        ),
-    ],
-)
-async def test_unsupported_chat_fields_are_rejected(
-    openai_client: AsyncOpenAI,
-    body: dict[str, object],
-    expected_param: str | None,
-    expected_message: str,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.post(
-            "/chat/completions",
-            cast_to=object,
-            body=body,
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
+    error = exc_info.value.response.json()["error"]
     assert error["type"] == "invalid_request_error"
-    assert error["param"] == expected_param
-    assert expected_message in error["message"]
-
-
-@pytest.mark.parametrize(
-    ("body", "unknown_field"),
-    [
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {"role": "user", "content": "Hello", "message_extra": True}
-                ],
-            },
-            "message_extra",
-            id="message",
-        ),
-        pytest.param(
-            {
-                "model": "test",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "file",
-                                "file": {
-                                    "file_id": "file-test",
-                                    "file_data": "data:application/pdf;base64,AA==",
-                                },
-                            }
-                        ],
-                    }
-                ],
-            },
-            "file_data",
-            id="file-reference",
-        ),
-    ],
-)
-async def test_chat_nested_unknown_fields_return_openai_errors(
-    openai_client: AsyncOpenAI,
-    body: dict[str, object],
-    unknown_field: str,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.post(
-            "/chat/completions",
-            cast_to=object,
-            body=body,
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"].endswith(unknown_field)
-    assert error["code"] is None
-
-
-@pytest.mark.parametrize(
-    ("body", "unknown_field"),
-    [
-        pytest.param(
-            {
-                "model": "test",
-                "input": [
-                    {
-                        "id": "msg-test",
-                        "type": "message",
-                        "role": "assistant",
-                        "status": "completed",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": "Docs",
-                                "annotations": [
-                                    {
-                                        "type": "url_citation",
-                                        "start_index": 0,
-                                        "end_index": 3,
-                                        "title": "Docs",
-                                        "url": "https://example.com/docs",
-                                        "annotation_extra": True,
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ],
-            },
-            "annotation_extra",
-            id="url-citation",
-        ),
-    ],
-)
-async def test_responses_nested_unknown_fields_return_openai_errors(
-    openai_client: AsyncOpenAI,
-    body: dict[str, object],
-    unknown_field: str,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.post(
-            "/responses",
-            cast_to=object,
-            body=body,
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"].endswith(unknown_field)
-    assert error["code"] is None
-
-
-async def test_metadata_pair_limit_returns_openai_error(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.chat.completions.create(
-            model="test",
-            messages=[{"role": "user", "content": "Hello"}],
-            metadata={f"key-{index}": "value" for index in range(17)},
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"] == "metadata"
-    assert error["message"].startswith("metadata: ")
+    assert error["param"].startswith("messages.0.content")
+    assert error["param"].endswith(param_end)
 
 
 @pytest.mark.parametrize(

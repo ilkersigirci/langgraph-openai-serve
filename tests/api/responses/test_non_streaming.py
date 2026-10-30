@@ -2,7 +2,6 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import (
     AIMessage,
-    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
@@ -29,7 +28,10 @@ from langgraph_openai_serve import (
     GraphRequest,
 )
 from tests.graph.support.message import make_message_graph
-from tests.graph.support.registration import replace_graph_config
+from tests.graph.support.registration import (
+    capture_graph_inputs,
+    replace_graph_config,
+)
 from tests.graph.support.schemas import MessageState
 
 
@@ -87,22 +89,13 @@ async def test_safety_identifier_names_the_end_user_and_user_remains_its_alias(
     identity: dict[str, str],
     end_user: str,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture_input(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
+    inputs = capture_graph_inputs(graph_registry)
 
     response = await openai_client.responses.create(
         model="test", input="hello", store=False, **identity
     )
 
-    assert [request.user for request in received] == [end_user]
+    assert [request.user for request in inputs.requests] == [end_user]
     # A Response echoes the identity fields as the request sent them.
     assert (response.safety_identifier, response.user) == (
         identity.get("safety_identifier"),
@@ -114,18 +107,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received_requests: list[GraphRequest] = []
-    received_messages: list[list[BaseMessage]] = []
-
-    def capture_input(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received_requests.append(request)
-        received_messages.append(messages)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
+    inputs = capture_graph_inputs(graph_registry)
 
     response = await openai_client.responses.create(
         model="test",
@@ -169,7 +151,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
     assert response.instructions == "Follow the instruction."
     assert response.metadata == {"conversation_id": "session-1"}
     assert response.user == "alice"
-    assert received_requests == [
+    assert inputs.requests == [
         GraphRequest(
             model="test",
             metadata={"conversation_id": "session-1"},
@@ -180,7 +162,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
         )
     ]
 
-    messages = received_messages[0]
+    (messages,) = inputs.messages
     assert [type(message) for message in messages] == [
         SystemMessage,
         HumanMessage,
@@ -207,16 +189,7 @@ async def test_file_id_input_uses_the_protocol_neutral_graph_shape(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received_messages: list[list[BaseMessage]] = []
-
-    def capture_input(
-        _request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received_messages.append(messages)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture_input)
+    inputs = capture_graph_inputs(graph_registry)
 
     await openai_client.responses.create(
         model="test",
@@ -231,7 +204,7 @@ async def test_file_id_input_uses_the_protocol_neutral_graph_shape(
         ],
     )
 
-    assert received_messages[0][0].content == [
+    assert inputs.messages[0][0].content == [
         {"type": "text", "text": "Summarize this."},
         {"type": "file", "file": {"file_id": "file_report"}},
     ]
@@ -330,18 +303,10 @@ async def test_refusal_survives_response_stream_and_sdk_item_replay(
         "type": "refusal",
         "refusal": "I cannot help with that.",
     }
-    received: list[BaseMessage] = []
-
-    def capture(
-        _request: GraphRequest, messages: list[BaseMessage]
-    ) -> dict[str, list[BaseMessage]]:
-        received.extend(messages)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture)
+    inputs = capture_graph_inputs(graph_registry)
     await openai_client.responses.create(model="test", input=response.output)
-    assert received[0].content[0]["refusal"] == "I cannot help with that."
-    assert received[0].content[0]["phase"] == "final_answer"
+    assert inputs.messages[0][0].content[0]["refusal"] == "I cannot help with that."
+    assert inputs.messages[0][0].content[0]["phase"] == "final_answer"
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -429,23 +394,12 @@ async def test_replayed_citations_and_phase_reach_langchain_content(
         output_to_message=lambda _output: message,
     )
     first = await openai_client.responses.create(model="test", input="Hi")
-    received: list[BaseMessage] = []
-
-    def capture(
-        _request: GraphRequest, messages: list[BaseMessage]
-    ) -> dict[str, list[BaseMessage]]:
-        received.extend(messages)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        request_to_input=capture,
-        output_to_message=lambda _output: received[0],
+    inputs = capture_graph_inputs(
+        graph_registry, output_to_message=lambda _output: inputs.messages[0][0]
     )
     replay = await openai_client.responses.create(model="test", input=first.output)
-    assert received[0].content[0]["id"] == first.output[0].id
-    assert received[0].content[0]["phase"] == "final_answer"
+    assert inputs.messages[0][0].content[0]["id"] == first.output[0].id
+    assert inputs.messages[0][0].content[0]["phase"] == "final_answer"
     assert (
         replay.output[0].content[0].annotations
         == first.output[0].content[0].annotations
@@ -456,15 +410,7 @@ async def test_locked_sdk_output_objects_can_be_replayed_unchanged(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[BaseMessage] = []
-
-    def capture(
-        _request: GraphRequest, messages: list[BaseMessage]
-    ) -> dict[str, list[BaseMessage]]:
-        received.extend(messages)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture)
+    inputs = capture_graph_inputs(graph_registry)
     output_text = ResponseOutputText.model_validate(
         {
             "type": "output_text",
@@ -535,6 +481,7 @@ async def test_locked_sdk_output_objects_can_be_replayed_unchanged(
         ],
     )
 
+    (received,) = inputs.messages
     assert [type(message) for message in received] == [
         AIMessage,
         AIMessage,
@@ -643,12 +590,6 @@ async def test_provider_usage_maps_to_responses_details(
             id="stored-response",
         ),
         pytest.param(
-            {"background": True},
-            "background",
-            "Background Responses",
-            id="background",
-        ),
-        pytest.param(
             {"conversation": "conv_test"},
             "conversation",
             "Responses conversations",
@@ -660,9 +601,35 @@ async def test_provider_usage_maps_to_responses_details(
             "Previous response state",
             id="previous-response",
         ),
+        pytest.param(
+            {"temperature": 0.2},
+            "temperature",
+            "Extra inputs are not permitted",
+            id="generation-control",
+        ),
+        pytest.param(
+            {
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "answer",
+                        "schema": {"type": "object"},
+                    }
+                }
+            },
+            "text.format.type",
+            "Input should be 'text'",
+            id="structured-output",
+        ),
+        pytest.param(
+            {"metadata": {f"key-{index}": "value" for index in range(17)}},
+            "metadata",
+            "at most 16 items",
+            id="too-many-metadata-pairs",
+        ),
     ],
 )
-async def test_stateful_options_are_rejected(
+async def test_unsupported_response_options_are_rejected(
     openai_client: AsyncOpenAI,
     options: dict[str, object],
     expected_param: str,
@@ -681,39 +648,6 @@ async def test_stateful_options_are_rejected(
     assert error["param"] == expected_param
     assert error["code"] is None
     assert message_part in error["message"]
-
-
-@pytest.mark.parametrize(
-    ("options", "expected_param"),
-    [
-        pytest.param({"temperature": 0.2}, "temperature", id="generation"),
-        pytest.param(
-            {
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "answer",
-                        "schema": {"type": "object"},
-                    }
-                }
-            },
-            "text.format.type",
-            id="structured-output",
-        ),
-    ],
-)
-async def test_unimplemented_response_options_are_explicit_errors(
-    openai_client: AsyncOpenAI,
-    options: dict[str, object],
-    expected_param: str,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(model="test", input="Hi", **options)
-
-    error = exc_info.value.response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"] == expected_param
-    assert error["code"] is None
 
 
 @pytest.mark.parametrize(
@@ -807,6 +741,32 @@ async def test_unimplemented_response_options_are_explicit_errors(
             "sources",
             id="search-sources",
         ),
+        pytest.param(
+            {
+                "id": "msg-test",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Docs",
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "start_index": 0,
+                                "end_index": 3,
+                                "title": "Docs",
+                                "url": "https://example.com/docs",
+                                "annotation_extra": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "annotation_extra",
+            id="unknown-citation-field",
+        ),
     ],
 )
 async def test_non_null_sdk_fields_outside_the_replay_subset_are_rejected(
@@ -827,21 +787,6 @@ async def test_non_null_sdk_fields_outside_the_replay_subset_are_rejected(
     assert error["type"] == "invalid_request_error"
     assert error["param"].endswith(expected_param)
     assert error["code"] is None
-
-
-async def test_metadata_limits_apply_to_responses(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.responses.create(
-            model="test",
-            input="Hi",
-            metadata={f"key-{index}": "value" for index in range(17)},
-        )
-
-    error = exc_info.value.response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"] == "metadata"
 
 
 async def test_duplicate_replayed_message_ids_are_rejected(

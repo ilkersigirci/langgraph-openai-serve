@@ -1,6 +1,4 @@
-"""langgraph-openai-serve package."""
-
-from importlib.metadata import version
+"""Serve LangGraph graphs through an OpenAI-compatible API."""
 
 from langgraph_openai_serve.background import (
     BackgroundBackend,
@@ -11,6 +9,7 @@ from langgraph_openai_serve.background import (
 )
 from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
 from langgraph_openai_serve.core.logging import RequestContextFilter
+from langgraph_openai_serve.core.version import VERSION
 from langgraph_openai_serve.graph.citations import citation_slice
 from langgraph_openai_serve.graph.client_settings import ClientSettings
 from langgraph_openai_serve.graph.events import status_event
@@ -28,7 +27,7 @@ from langgraph_openai_serve.graph.request import (
 )
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
 
-__version__ = version("langgraph_openai_serve")
+__version__ = VERSION
 
 __all__ = [
     "BackgroundBackend",

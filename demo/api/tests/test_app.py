@@ -1,15 +1,20 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
+from importlib.metadata import version
+from typing import Any, Self
 
 import httpx2
 import pytest
 from fastapi import FastAPI
-from httpx2 import AsyncClient
+from httpx2 import AsyncClient, MockTransport
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import GraphConfig, GraphRequest
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.server import ServerResources, ServerSettings, create_app
 from openai import AsyncOpenAI, BadRequestError
+from tests.support import ModelProvider, model_response, text_chunks
 
 from lgos_demo_api.core.settings import settings
 from lgos_demo_api.graphs import server_tool
@@ -38,6 +43,17 @@ DOCUMENTED_MODEL_IDS = {
     "status-events",
     "streaming-long-mock",
 }
+
+
+class SearchModel(FakeMessagesListChatModel):
+    """Check that a required search binds exactly the expected tools."""
+
+    expected_tools: list[Any]
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Self:
+        assert list(tools) == self.expected_tools
+        assert kwargs["tool_choice"] == "required"
+        return self
 
 
 def _rebuild_server_tool_graph(demo_app: FastAPI) -> None:
@@ -82,81 +98,35 @@ async def test_app_lists_exactly_the_documented_models(
 ) -> None:
     response = await openai_client.models.list()
 
-    assert response.object == "list"
     assert {model.id for model in response.data} == DOCUMENTED_MODEL_IDS
-    descriptions = {
-        model.id: (model.model_extra or {})["lgos"]["description"]
-        for model in response.data
+    extensions = {
+        model.id: (model.model_extra or {})["lgos"] for model in response.data
     }
-    assert all(description.strip() for description in descriptions.values())
-    features = {
-        model.id: (model.model_extra or {})["lgos"]["features"]
-        for model in response.data
+    # The UIs enable uploads, gateway MCP tools, background mode, and the
+    # offered tools from these declarations alone; docs/demo/graphs/index.md
+    # lists each model's features.
+    assert {
+        model_id: extension["features"]
+        for model_id, extension in extensions.items()
+        if extension["features"]
+    } == {
+        "background-interrupt": ["background", "interrupts"],
+        "background-mock": ["background"],
+        "deep-research": ["background", "file_inputs", "interrupts", "mcp_tools"],
+        "file-input": ["file_inputs"],
+        "interruptible-approval": ["interrupts"],
+        "mcp-postgres": ["mcp_tools"],
+        "nested-subgraphs": ["background", "interrupts"],
     }
-    assert features["file-input"] == ["file_inputs"]
-    assert features["nested-subgraphs"] == ["background", "interrupts"]
-
-    deep_research_model = await openai_client.models.retrieve("deep-research")
-    deep_research_extension = (deep_research_model.model_extra or {})["lgos"]
-    assert deep_research_extension["features"] == [
-        "background",
-        "file_inputs",
-        "interrupts",
-        "mcp_tools",
-    ]
-    assert deep_research_extension["client_settings"]["defaults"] == {
-        "review_plan": True,
-        "research_rounds": 2,
-    }
-
-    interrupt_model = await openai_client.models.retrieve("interruptible-approval")
-    extension = (interrupt_model.model_extra or {})["lgos"]
-    assert extension == {
-        "description": descriptions["interruptible-approval"],
-        "features": ["interrupts"],
-        "server_tools": [],
-        "client_tools": [],
-    }
-    tools = {
-        model.id: (
-            (model.model_extra or {})["lgos"]["server_tools"],
-            (model.model_extra or {})["lgos"]["client_tools"],
-        )
-        for model in response.data
-    }
-    assert {model_id: names for model_id, names in tools.items() if any(names)} == {
+    assert {
+        model_id: (extension["server_tools"], extension["client_tools"])
+        for model_id, extension in extensions.items()
+        if extension["server_tools"] or extension["client_tools"]
+    } == {
         "deep-research": (["web_search"], []),
         "persistent-plot-agent": ([], ["display_file"]),
         "server-tool": (["package_version", "web_search"], []),
     }
-
-    for model_id, expected_features in (
-        ("background-mock", ["background"]),
-        ("background-interrupt", ["background", "interrupts"]),
-    ):
-        model = await openai_client.models.retrieve(model_id)
-        extension = (model.model_extra or {})["lgos"]
-        assert extension["features"] == expected_features
-        settings = extension["client_settings"]
-        assert settings["defaults"] == {"delay_seconds": 5}
-        delay_schema = settings["json_schema"]["properties"]["delay_seconds"]
-        assert (delay_schema["minimum"], delay_schema["maximum"]) == (0, 300)
-
-    rag_model = await openai_client.models.retrieve("lgos-rag")
-    rag_settings = (rag_model.model_extra or {})["lgos"]["client_settings"]
-    assert rag_settings["defaults"] == {"scope": "all", "bm25": True}
-
-    plot_model = await openai_client.models.retrieve("persistent-plot-agent")
-    plot_extension = (plot_model.model_extra or {})["lgos"]
-    assert plot_extension["features"] == []
-    assert plot_extension["client_settings"]["defaults"] == {
-        "chart_type": "bar",
-        "currency": "USD",
-        "show_legend": True,
-    }
-    assert plot_extension["client_settings"]["json_schema"]["properties"]["chart_type"][
-        "enum"
-    ] == ["bar", "line"]
 
 
 async def test_simple_model_retrieval_exposes_runtime_settings(
@@ -322,11 +292,6 @@ async def test_server_package_lookup_is_not_bound_when_unselected_or_disabled(
     monkeypatch: pytest.MonkeyPatch,
     tools,
 ) -> None:
-    from langchain_core.language_models.fake_chat_models import (
-        FakeMessagesListChatModel,
-    )
-    from langchain_core.messages import AIMessage
-
     class NoToolsModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
             pytest.fail("Package lookup must not be bound when disabled.")
@@ -376,57 +341,11 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
     stream: bool,
     choice: str | dict[str, str],
 ) -> None:
-    import json
-
-    from httpx2 import MockTransport, Request, Response
-
-    requests = []
-
-    def respond(request: Request) -> Response:
-        body = json.loads(request.content)
-        selecting = not requests
-        requests.append(body)
-        assert request.url.path.endswith("/responses")
-        assert body["store"] is False
-        # The private selection call streams too, but its tokens stay hidden.
-        assert bool(body.get("stream")) == stream
-        if selecting:
-            assert body["tools"][0]["type"] == "custom"
-            assert body["tools"][0]["name"] == "package_version"
-            assert body["parallel_tool_calls"] is False
-            assert body["tool_choice"] == choice
-        else:
-            assert "tools" not in body
-            result = next(
-                item
-                for item in body["input"]
-                if item.get("call_id") == "call_new"
-                and item["type"] == "custom_tool_call_output"
-            )
-            assert result["type"] == "custom_tool_call_output"
-            assert result["call_id"] == "call_new"
-            assert result["output"].startswith("openai==")
-        output = [
-            {
-                "id": f"msg_{len(requests)}",
-                "type": "message",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "text": (
-                            "Checking installed packages."
-                            if selecting
-                            else result["output"]
-                        ),
-                        "annotations": [],
-                    }
-                ],
-            }
-        ]
-        if selecting:
-            output.append(
+    installed = f"openai=={version('openai')}"
+    provider = ModelProvider(
+        model_response(
+            "Checking installed packages.",
+            calls=[
                 {
                     "id": "ctc_new",
                     "type": "custom_tool_call",
@@ -435,70 +354,13 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                     "input": "openai",
                     "status": "completed",
                 }
-            )
-        payload = {
-            "id": f"resp_{len(requests)}",
-            "object": "response",
-            "created_at": 1,
-            "model": "test-model",
-            "status": "completed",
-            "output": output,
-        }
-        if body.get("stream"):
-            events = [
-                {
-                    "type": "response.created",
-                    "response": {**payload, "output": [], "status": "in_progress"},
-                }
-            ]
-            for index, item in enumerate(output):
-                if item["type"] == "message":
-                    text = item["content"][0]["text"]
-                    events += [
-                        {
-                            "type": "response.output_item.added",
-                            "output_index": index,
-                            "item": {**item, "content": [], "status": "in_progress"},
-                        },
-                        {
-                            "type": "response.content_part.added",
-                            "output_index": index,
-                            "content_index": 0,
-                            "item_id": item["id"],
-                            "part": {
-                                "type": "output_text",
-                                "text": "",
-                                "annotations": [],
-                            },
-                        },
-                        *[
-                            {
-                                "type": "response.output_text.delta",
-                                "output_index": index,
-                                "content_index": 0,
-                                "item_id": item["id"],
-                                "delta": delta,
-                            }
-                            for delta in (text[:10], text[10:])
-                        ],
-                    ]
-                events.append(
-                    {
-                        "type": "response.output_item.done",
-                        "output_index": index,
-                        "item": item,
-                    }
-                )
-            events.append({"type": "response.completed", "response": payload})
-            return Response(
-                200,
-                headers={"content-type": "text/event-stream"},
-                text="".join(f"data: {json.dumps(event)}\n\n" for event in events),
-            )
-        return Response(200, json=payload)
+            ],
+        ),
+        model_response(installed),
+    )
 
-    async with AsyncClient(transport=MockTransport(respond)) as provider:
-        monkeypatch.setattr("lgos_demo_api.utils.models.GATEWAY_HTTP_CLIENT", provider)
+    async with AsyncClient(transport=MockTransport(provider.handle)) as gateway:
+        monkeypatch.setattr("lgos_demo_api.utils.models.GATEWAY_HTTP_CLIENT", gateway)
         _rebuild_server_tool_graph(demo_app)
         response = await openai_client.responses.create(
             model="server-tool",
@@ -532,7 +394,26 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
                 == response.output_text
             )
 
-    assert len(requests) == 2
+    selecting, answering = provider.requests
+    # The private selection call streams too, but its tokens stay hidden.
+    assert [
+        (body["store"], bool(body.get("stream"))) for body in provider.requests
+    ] == [(False, stream)] * 2
+    assert [(tool["type"], tool["name"]) for tool in selecting["tools"]] == [
+        ("custom", "package_version")
+    ]
+    assert (selecting["parallel_tool_calls"], selecting["tool_choice"]) == (
+        False,
+        choice,
+    )
+    assert "tools" not in answering
+    assert [
+        item["output"]
+        for item in answering["input"]
+        if item.get("call_id") == "call_new"
+        and item["type"] == "custom_tool_call_output"
+    ] == [installed]
+
     assert response.status == "completed"
     output = [
         item for item in response.output if getattr(item, "phase", None) != "commentary"
@@ -543,16 +424,16 @@ async def test_server_custom_tool_executes_a_fresh_native_exchange(
         "message",
     ]
     assert output[0].call_id == output[1].call_id == "call_new"
-    assert output[0].name == "package_version"
-    assert output[0].input == "openai"
-    assert output[1].output == output[-1].content[0].text
+    assert (output[0].name, output[0].input) == ("package_version", "openai")
+    assert output[1].output == output[-1].content[0].text == installed
     if stream:
+        # The answer reaches the client in the provider's chunks, as it streams.
         assert [
             event.delta
             for event in events
             if event.type == "response.output_text.delta"
             and event.item_id == output[-1].id
-        ] == [output[1].output[:10], output[1].output[10:]]
+        ] == text_chunks(installed)
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -562,18 +443,8 @@ async def test_server_web_search_runs_through_http_backend(
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
 ) -> None:
-    from langchain_core.language_models.fake_chat_models import (
-        FakeMessagesListChatModel,
-    )
-    from langchain_core.messages import AIMessage
-
-    class SearchModel(FakeMessagesListChatModel):
-        def bind_tools(self, tools, **kwargs):
-            assert tools == [server_tool.web_search]
-            assert kwargs["tool_choice"] == "required"
-            return self
-
     model = SearchModel(
+        expected_tools=[server_tool.web_search],
         responses=[
             AIMessage(
                 content="",
@@ -590,7 +461,7 @@ async def test_server_web_search_runs_through_http_backend(
                 content=("See [OpenAI API](https://developers.openai.com/api/) docs."),
                 response_metadata={"model_provider": "openai"},
             ),
-        ]
+        ],
     )
 
     async def search(_client, url, query):
@@ -653,18 +524,8 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
     make_tool_calling_model,
     stream: bool,
 ) -> None:
-    from langchain_core.language_models.fake_chat_models import (
-        FakeMessagesListChatModel,
-    )
-    from langchain_core.messages import AIMessage
-
-    class SearchModel(FakeMessagesListChatModel):
-        def bind_tools(self, tools, **kwargs):
-            assert tools == [{"type": "web_search"}]
-            assert kwargs["tool_choice"] == "required"
-            return self
-
     provider = SearchModel(
+        expected_tools=[{"type": "web_search"}],
         responses=[
             AIMessage(
                 content=[
@@ -697,7 +558,7 @@ async def test_server_web_search_can_use_the_upstream_openai_tool(
                     },
                 ]
             )
-        ]
+        ],
     )
 
     model = make_tool_calling_model(

@@ -56,7 +56,7 @@ async def answer_with_citation(
     """Stream Markdown content and return its citations on the final message."""
     answer = await stream_fake_chat_response(
         ANSWER,
-        prompt=str(state.messages[-1].content or ""),
+        prompt=state.messages[-1].text,
     )
     citations = []
     for title, url in CITATIONS:
@@ -92,5 +92,3 @@ citation_graph_config = GraphConfig(
         "Demonstrates structured OpenAI URL citations with portable Markdown content."
     ),
 )
-
-__all__ = ["citation_graph", "citation_graph_config"]

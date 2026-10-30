@@ -1,32 +1,4 @@
-"""
-LangGraph OpenAI API Serve.
-
-This module provides a server class that connects LangGraph instances to an
-OpenAI-compatible API. It allows users to register their LangGraph instances
-and expose them through a mounted FastAPI sub-application.
-
-Examples:
-    >>> from langgraph_openai_serve import GraphConfig, GraphRegistry, LanggraphOpenaiServe
-    >>> from fastapi import FastAPI
-    >>> from your_graphs import simple_graph_1, simple_graph_2
-    >>>
-    >>> app = FastAPI(title="LangGraph OpenAI API")
-    >>> registry = GraphRegistry(
-    ...     graphs={
-    ...         "simple_graph_1": GraphConfig(
-    ...             graph=simple_graph_1,
-    ...             description="First simple graph.",
-    ...         ),
-    ...         "simple_graph_2": GraphConfig(
-    ...             graph=simple_graph_2,
-    ...             description="Second simple graph.",
-    ...         ),
-    ...     }
-    ... )
-    >>> graph_serve = LanggraphOpenaiServe(registry=registry, app=app)
-    >>> graph_serve.bind_openai_api()
-
-"""
+"""Mount a graph registry's OpenAI-compatible API on a FastAPI application."""
 
 from collections.abc import Awaitable, Callable
 
@@ -43,26 +15,14 @@ from langgraph_openai_serve.background import BackgroundBackend
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.core.settings import normalize_openai_api_prefix, settings
-from langgraph_openai_serve.core.version import get_version
+from langgraph_openai_serve.core.version import VERSION
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = get_logger(__name__)
 
 
 class LanggraphOpenaiServe:
-    """
-    Server class to connect LangGraph instances with an OpenAI-compatible API.
-
-    This class serves as a bridge between LangGraph instances and an OpenAI-compatible API.
-    It allows users to register their LangGraph instances and expose them
-    through an OpenAI-compatible sub-application mounted on a FastAPI host app.
-
-    Attributes:
-        app: The host FastAPI application to mount the OpenAI API on.
-        graph_registry: The graphs to serve and their interrupt run coordinator.
-        openai_app: The mounted OpenAI-compatible FastAPI application.
-
-    """
+    """Mount a graph registry's OpenAI-compatible API on a FastAPI host app."""
 
     def __init__(
         self,
@@ -87,7 +47,7 @@ class LanggraphOpenaiServe:
             app = FastAPI(
                 title="LangGraph OpenAI Compatible API",
                 description="An OpenAI-compatible API for LangGraph",
-                version=get_version(),
+                version=VERSION,
             )
         self.app: FastAPI = app
         self._openai_app: FastAPI | None = None
@@ -114,8 +74,8 @@ class LanggraphOpenaiServe:
         Mount OpenAI-compatible endpoints on the host FastAPI app.
 
         Args:
-            prefix: Optional; The URL prefix for the OpenAI-compatible endpoints.
-                Defaults to settings.OPENAI_API_PREFIX.
+            prefix: URL prefix for the OpenAI routes; defaults to the
+                ``LGOS_OPENAI_API_PREFIX`` setting.
 
         """
         prefix = (
@@ -127,11 +87,12 @@ class LanggraphOpenaiServe:
         openai_app = FastAPI(
             title="LangGraph OpenAI Compatible API",
             description="An OpenAI-compatible API for LangGraph",
-            version=get_version(),
+            version=VERSION,
             # FastAPI's native telemetry belongs to the host app, so the host's
             # settings, including turning it off, also cover the mounted routes.
             telemetry={"tracing": False, "metrics": False, "logs": False},
-            **settings.fastapi_docs_kwargs,
+            # Without an OpenAPI URL, FastAPI serves no /docs or /redoc either.
+            openapi_url="/openapi.json" if settings.OPENAI_API_DOCS_ENABLED else None,
         )
         # Dependencies in mounted routes resolve against the mounted app.
         openai_app.state.graph_registry = self.graph_registry

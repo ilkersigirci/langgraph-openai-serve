@@ -6,7 +6,7 @@ import httpx2
 import pytest
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
-    ModelDetails,
+    Model,
     ModelList,
 )
 
@@ -18,8 +18,8 @@ from lgos_demo_api.utils.sync_bifrost import (
 
 
 @pytest.fixture
-def model() -> ModelDetails:
-    return ModelDetails.model_validate(
+def model() -> Model:
+    return Model.model_validate(
         {
             "id": "graph",
             "created": 0,
@@ -38,7 +38,7 @@ def model() -> ModelDetails:
     )
 
 
-def _source(model: ModelDetails, *, available: bool = True) -> httpx2.Client:
+def _source(model: Model, *, available: bool = True) -> httpx2.Client:
     def respond(request: httpx2.Request) -> httpx2.Response:
         if not available:
             return httpx2.Response(503)
@@ -55,7 +55,7 @@ def _source(model: ModelDetails, *, available: bool = True) -> httpx2.Client:
 
 
 @pytest.fixture
-def sources(model: ModelDetails) -> Iterator[dict[str, httpx2.Client]]:
+def sources(model: Model) -> Iterator[dict[str, httpx2.Client]]:
     with (
         _source(model) as team_a,
         _source(model.model_copy(update={"id": "coding-agent"})) as team_b,
@@ -64,7 +64,7 @@ def sources(model: ModelDetails) -> Iterator[dict[str, httpx2.Client]]:
 
 
 def test_datasheet_has_zero_priced_rows_for_complete_metadata(
-    sources: dict[str, httpx2.Client], model: ModelDetails, tmp_path: Path
+    sources: dict[str, httpx2.Client], model: Model, tmp_path: Path
 ) -> None:
     attributes = write_datasheet(sources, tmp_path)
 
@@ -90,9 +90,7 @@ def test_datasheet_has_zero_priced_rows_for_complete_metadata(
         )
 
 
-def test_datasheet_is_kept_when_a_source_fails(
-    model: ModelDetails, tmp_path: Path
-) -> None:
+def test_datasheet_is_kept_when_a_source_fails(model: Model, tmp_path: Path) -> None:
     (tmp_path / "pricing.json").write_text("previous")
 
     with (
@@ -106,7 +104,7 @@ def test_datasheet_is_kept_when_a_source_fails(
 
 
 def test_colliding_sources_leave_the_previous_datasheet_intact(
-    model: ModelDetails, tmp_path: Path
+    model: Model, tmp_path: Path
 ) -> None:
     (tmp_path / "pricing.json").write_text("previous")
     with (

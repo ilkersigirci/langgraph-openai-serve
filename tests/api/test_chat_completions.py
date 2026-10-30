@@ -2,8 +2,8 @@ import json
 
 import pytest
 from httpx2 import AsyncClient
-from langchain_core.messages import BaseMessage
-from openai import AsyncOpenAI, BadRequestError, NotFoundError
+from langchain_core.messages import AIMessage
+from openai import AsyncOpenAI, InternalServerError, NotFoundError
 from starlette import status
 
 from langgraph_openai_serve import (
@@ -11,7 +11,16 @@ from langgraph_openai_serve import (
     GraphRegistry,
     GraphRequest,
 )
-from tests.graph.support.registration import replace_graph_config
+from tests.graph.support.message import make_message_graph
+from tests.graph.support.registration import (
+    capture_graph_inputs,
+    replace_graph_config,
+)
+
+TOOL_CALLS = [
+    {"name": "weather", "args": {"city": "Istanbul"}, "id": "call_weather"},
+    {"name": "translate", "args": {"text": "hello"}, "id": "call_translate"},
+]
 
 
 async def test_non_streaming_completion_matches_openai_contract(
@@ -48,47 +57,6 @@ async def test_message_content_parts_are_accepted(
     assert response.choices[0].message.content == "hello"
 
 
-@pytest.mark.parametrize(
-    "content_part",
-    [
-        pytest.param(
-            {
-                "type": "image_url",
-                "image_url": {"url": "https://example.com/image.png"},
-            },
-            id="image",
-        ),
-        pytest.param(
-            {
-                "type": "input_audio",
-                "input_audio": {"data": "AA==", "format": "wav"},
-            },
-            id="audio",
-        ),
-    ],
-)
-async def test_undocumented_chat_content_parts_are_rejected(
-    openai_client: AsyncOpenAI,
-    content_part: dict[str, object],
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.post(
-            "/chat/completions",
-            cast_to=object,
-            body={
-                "model": "test",
-                "messages": [{"role": "user", "content": [content_part]}],
-            },
-        )
-
-    response = exc_info.value.response
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    error = response.json()["error"]
-    assert error["type"] == "invalid_request_error"
-    assert error["param"].startswith("messages.0.content")
-    assert error["code"] is None
-
-
 async def test_sdk_assistant_message_can_be_replayed_unchanged(
     openai_client: AsyncOpenAI,
 ) -> None:
@@ -112,20 +80,7 @@ async def test_modern_function_tools_remain_supported(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture_request(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        request_to_input=capture_request,
-    )
+    inputs = capture_graph_inputs(graph_registry)
 
     response = await openai_client.chat.completions.create(
         model="test",
@@ -150,7 +105,7 @@ async def test_modern_function_tools_remain_supported(
     )
 
     assert response.choices[0].message.content == "hello"
-    assert received == [
+    assert inputs.requests == [
         GraphRequest(
             model="test",
             metadata={},
@@ -173,6 +128,96 @@ async def test_modern_function_tools_remain_supported(
     ]
 
 
+@pytest.mark.parametrize("stream", [False, True])
+async def test_final_tool_calls_end_the_completion(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    stream: bool,
+) -> None:
+    replace_graph_config(
+        graph_registry,
+        "test",
+        graph=make_message_graph(disable_streaming=True),
+        output_to_message=lambda _output: AIMessage(content="", tool_calls=TOOL_CALLS),
+    )
+    request = {"model": "test", "messages": [{"role": "user", "content": "Hi"}]}
+
+    if stream:
+        chunks = [
+            chunk
+            async for chunk in await openai_client.chat.completions.create(
+                **request, stream=True
+            )
+        ]
+        tool_calls = [
+            call for chunk in chunks for call in chunk.choices[0].delta.tool_calls or ()
+        ]
+        finish_reason = chunks[-1].choices[0].finish_reason
+    else:
+        completion = await openai_client.chat.completions.create(**request)
+        tool_calls = completion.choices[0].message.tool_calls or []
+        finish_reason = completion.choices[0].finish_reason
+
+    assert finish_reason == "tool_calls"
+    assert [
+        (call.id, call.function.name, json.loads(call.function.arguments))
+        for call in tool_calls
+    ] == [(call["id"], call["name"], call["args"]) for call in TOOL_CALLS]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        pytest.param(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "weather", "args": {"day": float("nan")}, "id": "call_1"}
+                ],
+            ),
+            id="non-json-arguments",
+        ),
+        pytest.param(
+            AIMessage(
+                content="",
+                invalid_tool_calls=[
+                    {"name": "weather", "args": "{", "id": "call_1", "error": None}
+                ],
+            ),
+            id="invalid-call",
+        ),
+        pytest.param(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "weather", "args": {}, "id": "call_1"},
+                    {"name": "translate", "args": {}, "id": "call_1"},
+                ],
+            ),
+            id="repeated-call-id",
+        ),
+    ],
+)
+async def test_unservable_tool_calls_fail_on_both_apis(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+    message: AIMessage,
+) -> None:
+    replace_graph_config(
+        graph_registry,
+        "test",
+        graph=make_message_graph(disable_streaming=True),
+        output_to_message=lambda _output: message,
+    )
+
+    with pytest.raises(InternalServerError):
+        await openai_client.chat.completions.create(
+            model="test", messages=[{"role": "user", "content": "Hi"}]
+        )
+    with pytest.raises(InternalServerError):
+        await openai_client.responses.create(model="test", input="Hi")
+
+
 @pytest.mark.parametrize(
     ("identity", "end_user"),
     [
@@ -188,22 +233,13 @@ async def test_chat_safety_identifier_names_the_end_user(
     identity: dict[str, str],
     end_user: str,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture_request(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture_request)
+    inputs = capture_graph_inputs(graph_registry)
 
     await openai_client.chat.completions.create(
         model="test", messages=[{"role": "user", "content": "hello"}], **identity
     )
 
-    assert [request.user for request in received] == [end_user]
+    assert [request.user for request in inputs.requests] == [end_user]
 
 
 async def test_streaming_completion_forwards_llm_chunks(
@@ -223,30 +259,6 @@ async def test_streaming_completion_forwards_llm_chunks(
     streamed_content = "".join(chunk.choices[0].delta.content or "" for chunk in chunks)
     assert streamed_content == "hello"
     assert chunks[-1].choices[0].finish_reason == "stop"
-
-
-async def test_stream_options_require_streaming(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError, match="stream_options"):
-        await openai_client.chat.completions.create(
-            model="test",
-            messages=[{"role": "user", "content": "Hi"}],
-            stream_options={"include_usage": True},
-        )
-
-
-async def test_unsupported_generation_controls_are_rejected(
-    openai_client: AsyncOpenAI,
-) -> None:
-    with pytest.raises(BadRequestError) as exc_info:
-        await openai_client.chat.completions.create(
-            model="test",
-            messages=[{"role": "user", "content": "Hi"}],
-            temperature=0.2,
-        )
-
-    assert exc_info.value.body["param"] == "temperature"
 
 
 async def test_streaming_completion_uses_sse_wire_format(

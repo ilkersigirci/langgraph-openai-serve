@@ -15,6 +15,7 @@ deployment's ASGI server or ingress proxy.
 | `POST` | `/v1/responses/{response_id}/cancel` | Cancel an active background Response or return a finished one. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
+| `GET` | `/v1/version` | The installed LGOS version, as `{"version": "..."}`. |
 
 FastAPI docs for the mounted OpenAI app are disabled by default. Set
 `LGOS_OPENAI_API_DOCS_ENABLED=True` to expose `{prefix}/docs`, `{prefix}/redoc`,
@@ -143,9 +144,6 @@ belong to an external OpenAI Files API, not the LGOS package. See
   `display_file`, advertised as `lgos.client_tools` so clients offer only the
   functions a graph uses. LGOS does not enforce the list, and a name cannot
   also be a server tool.
-- `runtime_callbacks`: callbacks included in the LangGraph `RunnableConfig`.
-  When Langfuse tracing is enabled, LGOS adds its callback without mutating this
-  collection or manager.
 - `request_to_input(request, messages)`: custom normalized request and LangChain
   messages to graph input.
 - `context_factory(request, client_settings)`: compose the final typed LangGraph
@@ -155,9 +153,11 @@ belong to an external OpenAI Files API, not the LGOS package. See
 
 `GraphConfig` is immutable after construction. Pydantic snapshots `features`,
 `server_tools`, and `client_tools` as frozen sets, so later mutations of the
-input collections cannot change a registered model. Freezing the declaration
-does not make a caller-owned callback handler or callback manager internally
-immutable.
+input collections cannot change a registered model.
+
+To run LangChain callbacks on every run of a graph, bind them with LangGraph's
+`graph.with_config(callbacks=[...])`. LangGraph merges them with the callbacks
+LGOS adds to each run, without changing the bound graph.
 
 Streaming forwards non-empty text from every `AIMessageChunk` emitted by the
 graph's `messages` stream. To keep a private model call out of the stream, tag
@@ -219,7 +219,7 @@ Runtime context is separate from `RunnableConfig`:
 | Runnable config | `config=` | Callbacks, tags, tracing, and other execution controls. |
 | Interrupt run | server scope + model + server-generated run UUID → internal checkpoint key | Isolate, interrupt, and resume one operation. |
 
-LGOS assembles runnable config from `runtime_callbacks` and, for an
+LGOS's runnable config carries its callbacks, run metadata, and, for an
 interrupt-enabled run, a fixed-length SHA-256 checkpoint key derived from the
 server-trusted scope, registered model, and run UUID. This is deliberately
 not a UI chat or thread ID. There is intentionally no adapter for placing
@@ -252,14 +252,12 @@ tracing backend. Langfuse's observations, which carry prompts and outputs, then
 never reach the application's [OpenTelemetry](#opentelemetry) exporters, and the
 application's spans never reach Langfuse; both share each trace ID. An
 application that creates its own Langfuse client first keeps its own tracing
-setup. When enabled, the deployment-level toggle is authoritative: LGOS adds Langfuse
-alongside empty, list, or manager callbacks without altering the registered
-`GraphConfig` or caller-owned collection. To provide a custom Langfuse handler,
-leave the toggle off and pass that handler through `runtime_callbacks`.
-
-For explicit construction, import
-`langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` or pass an
-application-created vendor handler through `runtime_callbacks`.
+setup. When enabled, LGOS adds the Langfuse handler to every run, alongside
+callbacks bound with `graph.with_config()`. To provide a custom Langfuse
+handler, leave the toggle off and bind it with
+`graph.with_config(callbacks=[handler])`;
+`langgraph_openai_serve.integrations.langfuse.get_langfuse_callback` returns
+LGOS's own handler for explicit use.
 
 LGOS gives every graph run the stable name
 `lgos.graph_run` for both endpoints and adds `RunnableConfig.metadata` fields for the
@@ -378,9 +376,9 @@ Interrupt-enabled graphs have additional registration requirements:
 - use a durable checkpointer and cross-process coordinator in production.
 
 The coordinator provides single-flight leases for interrupt runs: it returns an
-async context manager and rejects an occupied checkpoint key instead of
-queueing it. Exiting that context manager must release the lease even when the
-exit is cancelled.
+async context manager and rejects an occupied checkpoint key with `RunBusyError`
+instead of queueing it, which clients receive as HTTP 409 `run_busy`. Exiting
+that context manager must release the lease even when the exit is cancelled.
 
 The initial request does not require metadata. LGOS generates a UUID run ID for
 every new run and embeds it in the paused Response ID. `InMemoryRunCoordinator`
@@ -455,7 +453,8 @@ engine that runs `BackgroundJob`s and stores their status and result.
 | `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
 | `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
 
-The engine's worker calls `execute_background_job(job, run_id, registry)`. It
+The engine's worker calls `execute_background_job(job, engine_run_id, registry)`
+with its own run ID, not `job.run_id`, which identifies the graph run. It
 runs the job through the foreground Responses path and returns the Response
 JSON the engine stores. Run IDs must be UUIDs because the public Response ID
 embeds the run ID, so reading a Response needs no lookup table.
@@ -567,7 +566,7 @@ from annotation indices.
 
 LangChain citation indices refer to their containing text block. LGOS offsets
 them into the final response text and preserves OpenAI's inclusive `end_index`.
-Use `citation_slice(start_index, end_index, text)` to validate them and create a
+Use `citation_slice(start_index, end_index, content)` to validate them and create a
 Python slice. Responses maps citations to `output_text.annotations` and emits
 the typed annotation event while streaming. Chat maps them to completed
 `message.annotations`; its final streaming delta uses the compatibility
@@ -580,4 +579,23 @@ The streaming graph runner preserves LangGraph's native `CustomStreamPart`
 values, including their execution namespace. Non-streaming invocation does not
 subscribe to or replay custom events.
 
+## Python API
+
+The package root exports the API most applications use; these modules complete
+the public API.
+
 ::: langgraph_openai_serve
+
+::: langgraph_openai_serve.graph.runner
+
+::: langgraph_openai_serve.graph.interrupt
+
+::: langgraph_openai_serve.server
+
+::: langgraph_openai_serve.integrations.hatchet
+
+::: langgraph_openai_serve.integrations.postgres
+
+::: langgraph_openai_serve.integrations.langfuse
+
+::: langgraph_openai_serve.protocol

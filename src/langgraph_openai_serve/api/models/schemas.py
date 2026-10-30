@@ -14,8 +14,8 @@ class ModelClientSettings(BaseModel):
     defaults: dict[str, JsonValue]
 
 
-class LangGraphModelSummaryExtension(BaseModel):
-    """LGOS fields safe to include in a model list."""
+class LangGraphModelExtension(BaseModel):
+    """LGOS model metadata; only model retrieval includes client settings."""
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
@@ -26,11 +26,6 @@ class LangGraphModelSummaryExtension(BaseModel):
     features: list[GraphFeature]
     server_tools: list[str]
     client_tools: list[str]
-
-
-class LangGraphModelExtension(LangGraphModelSummaryExtension):
-    """LangGraph OpenAI Serve model-detail extension."""
-
     client_settings: ModelClientSettings | None = None
 
 
@@ -43,12 +38,6 @@ class Model(BaseModel):
     object: Literal["model"] = "model"
     created: int
     owned_by: str
-    lgos: LangGraphModelSummaryExtension
-
-
-class ModelDetails(Model):
-    """Retrieved model with required LGOS capability metadata."""
-
     lgos: LangGraphModelExtension
 
 

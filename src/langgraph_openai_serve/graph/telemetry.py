@@ -7,13 +7,13 @@ application configures an SDK.
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from importlib.metadata import version
 from time import perf_counter
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Span, StatusCode
 
 from langgraph_openai_serve.core.logging import exception_type_name
+from langgraph_openai_serve.core.version import VERSION
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.protocol import CONVERSATION_METADATA_KEY
 
@@ -21,8 +21,8 @@ _INSTRUMENTATION_SCOPE = "langgraph_openai_serve"
 # The histogram boundaries the conventions specify for workflow durations.
 _WORKFLOW_BUCKETS = (1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200)
 
-_tracer = trace.get_tracer(_INSTRUMENTATION_SCOPE, version(_INSTRUMENTATION_SCOPE))
-_meter = metrics.get_meter(_INSTRUMENTATION_SCOPE, version(_INSTRUMENTATION_SCOPE))
+_tracer = trace.get_tracer(_INSTRUMENTATION_SCOPE, VERSION)
+_meter = metrics.get_meter(_INSTRUMENTATION_SCOPE, VERSION)
 _duration = _meter.create_histogram(
     "gen_ai.invoke_workflow.duration",
     unit="s",
@@ -41,7 +41,8 @@ def invoke_workflow(request: GraphRequest) -> Generator[Span, None, None]:
     request, or a consumer closing the stream mid-run.
 
     Yields:
-        The run's span, which callers make current only around graph work.
+        The run's span; callers run graph work under its context, not the
+        span itself.
 
     """
     attributes = {
@@ -73,6 +74,3 @@ def invoke_workflow(request: GraphRequest) -> Generator[Span, None, None]:
             context=trace.set_span_in_context(span),
         )
         span.end()
-
-
-__all__ = ["invoke_workflow"]

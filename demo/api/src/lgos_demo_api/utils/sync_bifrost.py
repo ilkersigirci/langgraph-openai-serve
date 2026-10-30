@@ -83,6 +83,32 @@ def sync_catalog(gateway: httpx2.Client, attributes: list[ModelAttributes]) -> N
     ).raise_for_status()
 
 
+def _publish(
+    directory: Path, gateway_url: str, source_urls: list[str]
+) -> list[ModelAttributes]:
+    admin = (
+        os.environ["BIFROST_ADMIN_USERNAME"],
+        os.environ["BIFROST_ADMIN_PASSWORD"],
+    )
+    with ExitStack() as stack:
+        sources = {
+            url: stack.enter_context(
+                httpx2.Client(base_url=f"{url.rstrip('/')}/", timeout=30)
+            )
+            for url in source_urls
+        }
+        attributes = write_datasheet(sources, directory)
+        gateway = stack.enter_context(
+            httpx2.Client(
+                base_url=f"{gateway_url.rstrip('/')}/",
+                auth=admin,
+                timeout=120,
+            )
+        )
+        sync_catalog(gateway, attributes)
+    return attributes
+
+
 def main() -> None:
     """Run one catalog publication."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -100,27 +126,8 @@ def main() -> None:
         help="LGOS /v1 base URL; repeat for every API in the namespace",
     )
     args = parser.parse_args()
-    try:  # ruff: ignore[too-many-statements-in-try-clause] - The CLI reports failures from the whole sync operation consistently.
-        admin = (
-            os.environ["BIFROST_ADMIN_USERNAME"],
-            os.environ["BIFROST_ADMIN_PASSWORD"],
-        )
-        with ExitStack() as stack:
-            sources = {
-                url: stack.enter_context(
-                    httpx2.Client(base_url=f"{url.rstrip('/')}/", timeout=30)
-                )
-                for url in args.source_url
-            }
-            attributes = write_datasheet(sources, args.directory)
-            gateway = stack.enter_context(
-                httpx2.Client(
-                    base_url=f"{args.gateway_url.rstrip('/')}/",
-                    auth=admin,
-                    timeout=120,
-                )
-            )
-            sync_catalog(gateway, attributes)
+    try:
+        attributes = _publish(args.directory, args.gateway_url, args.source_url)
         print(f"Published metadata for {len(attributes)} LGOS models to Bifrost")
     except ValidationError:
         # Validation errors quote their input, which can hold complete settings.

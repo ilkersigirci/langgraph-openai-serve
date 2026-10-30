@@ -31,6 +31,22 @@ def create_registry(resources: ServerResources) -> GraphRegistry:
     )
 
 
+def create_failing_registry(_resources: ServerResources) -> GraphRegistry:
+    def fail(_request: object, _settings: object) -> None:
+        msg = "context failed"
+        raise RuntimeError(msg)
+
+    return GraphRegistry(
+        graphs={
+            "failing": GraphConfig(
+                graph=make_message_graph(),
+                description="Fail while preparing every run.",
+                context_factory=fail,
+            )
+        }
+    )
+
+
 def server_settings(**overrides: object) -> ServerSettings:
     # Explicit values win over any LGOS_* variables in the test environment.
     return ServerSettings(

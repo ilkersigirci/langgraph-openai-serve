@@ -20,6 +20,7 @@ def make_interrupt_graph(
     payload: dict[str, Any] | None = None,
     *,
     checkpointer: BaseCheckpointSaver,
+    context_schema: type[Any] | None = None,
     response_prefix: str = "resumed",
 ) -> Any:
     interrupt_payload = DEFAULT_INTERRUPT_PAYLOAD if payload is None else payload
@@ -29,7 +30,7 @@ def make_interrupt_graph(
         return {"messages": [AIMessage(content=f"{response_prefix}:{answer}")]}
 
     return (
-        StateGraph(MessageState)
+        StateGraph(MessageState, context_schema=context_schema)
         .add_node("ask", ask)
         .set_entry_point("ask")
         .set_finish_point("ask")

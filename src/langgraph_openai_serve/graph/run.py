@@ -12,8 +12,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from anyio import fail_after
-from langchain_core.callbacks import UsageMetadataCallbackHandler
-from langchain_core.callbacks.base import BaseCallbackHandler, Callbacks
+from langchain_core.callbacks import BaseCallbackHandler, UsageMetadataCallbackHandler
 from langchain_core.messages import BaseMessage, UsageMetadata
 from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
@@ -191,12 +190,7 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
         )
 
     usage_callback = UsageMetadataCallbackHandler()
-    runnable_config = _runnable_config(
-        request,
-        config.runtime_callbacks,
-        usage_callback,
-        interrupt_run,
-    )
+    runnable_config = _runnable_config(request, usage_callback, interrupt_run)
     run = GraphRun(
         request=request,
         config=config,
@@ -243,24 +237,13 @@ async def _prepare_inputs(
 
 def _runnable_config(
     request: GraphRequest,
-    callbacks: Callbacks,
     usage_callback: UsageMetadataCallbackHandler,
     interrupt_run: InterruptRun | None,
 ) -> RunnableConfig:
-    # GraphConfig is shared across requests; add request handlers without
-    # mutating its callback collection or manager.
-    handlers: list[BaseCallbackHandler] = [usage_callback]
+    # LangGraph merges these with callbacks bound by graph.with_config().
+    callbacks: list[BaseCallbackHandler] = [usage_callback]
     if settings.ENABLE_LANGFUSE:
-        handlers.append(get_langfuse_callback())
-    if callbacks is None:
-        run_callbacks: Callbacks = handlers
-    elif isinstance(callbacks, list):
-        run_callbacks = [*callbacks, *handlers]
-    else:
-        run_callbacks = callbacks.copy()
-        for handler in handlers:
-            run_callbacks.add_handler(handler)
-
+        callbacks.append(get_langfuse_callback())
     metadata = {"lgos.model": request.model}
     if request.user:
         metadata["lgos.user"] = request.user
@@ -268,12 +251,12 @@ def _runnable_config(
         metadata["lgos.request_id"] = request_id
     if interrupt_run is None:
         return RunnableConfig(
-            callbacks=run_callbacks, run_name=_RUN_NAME, metadata=metadata
+            callbacks=callbacks, run_name=_RUN_NAME, metadata=metadata
         )
 
     metadata[OPERATION_ID_METADATA_KEY] = interrupt_run.run_id
     return RunnableConfig(
-        callbacks=run_callbacks,
+        callbacks=callbacks,
         run_name=_RUN_NAME,
         metadata=metadata,
         configurable={"thread_id": interrupt_run.thread_id},

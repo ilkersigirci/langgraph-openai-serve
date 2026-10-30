@@ -16,17 +16,16 @@ from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from langgraph_openai_serve import LanggraphOpenaiServe
-from langgraph_openai_serve.core.settings import settings
 
+API_PREFIX = "/v1"
 API_KEYS = {"sk-valid-key-1", "sk-valid-key-2"}
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        api_prefix = settings.OPENAI_API_PREFIX
-        if request.url.path in {"/health", f"{api_prefix}/health"}:  # (1)!
+        if request.url.path in {"/health", f"{API_PREFIX}/health"}:  # (1)!
             return await call_next(request)
-        if not request.url.path.startswith(api_prefix):  # (2)!
+        if not request.url.path.startswith(API_PREFIX):  # (2)!
             return await call_next(request)
 
         scheme, _, api_key = request.headers.get("Authorization", "").partition(" ")  # (3)!
@@ -41,11 +40,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI()
 app.add_middleware(APIKeyMiddleware)
-LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api()
+LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api(prefix=API_PREFIX)
 ```
 
 1.  Leave health endpoints public when the deployment platform needs probes.
-2.  Apply this middleware only to the configured OpenAI API prefix.
+2.  Apply this middleware only to the OpenAI API prefix it binds.
 3.  Read the standard bearer token used by OpenAI-compatible clients.
 4.  Return `401` with a standard authentication challenge when validation fails.
 

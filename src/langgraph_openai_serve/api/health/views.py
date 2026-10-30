@@ -1,20 +1,16 @@
 from fastapi import APIRouter
 
-from langgraph_openai_serve.core.version import get_version
+from langgraph_openai_serve.core.version import VERSION
 
 router = APIRouter()
 
 
 @router.get("/health")
 def health_check() -> None:
-    """
-    Check the health of a project.
-
-    It returns 200 if the project is healthy.
-    """
+    """Return 200 while the app is serving requests."""
 
 
 @router.get("/version")
 def version() -> dict[str, str]:
     """Return API version."""
-    return {"version": get_version()}
+    return {"version": VERSION}

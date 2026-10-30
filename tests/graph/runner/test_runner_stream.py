@@ -4,48 +4,20 @@ from contextlib import aclosing
 
 import pytest
 from anyio import Event, create_task_group, fail_after, sleep_forever
-from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.config import get_stream_writer
 from langgraph.errors import NodeCancelledError
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import (
-    CustomStreamPart,
-    MessagesStreamPart,
-    UpdatesStreamPart,
-    ValuesStreamPart,
-)
 
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
-from langgraph_openai_serve.graph.run import GraphRun
-from langgraph_openai_serve.graph.runner import (
-    run_langgraph,
-    run_langgraph_stream,
-    stream_run,
-)
-from tests.graph.support.request import graph_request
+from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.schemas import (
     AnswerOutput,
     MessageState,
     QuestionInput,
     QuestionState,
 )
-
-
-def fake_run(graph, *, output_to_message) -> GraphRun:
-    return GraphRun(
-        request=graph_request("DUMMY"),
-        config=GraphConfig(
-            graph=lambda: graph,
-            description="DUMMY",
-            output_to_message=output_to_message,
-        ),
-        graph=graph,
-        inputs={},
-        context=None,
-        runnable_config={},
-        usage_callback=UsageMetadataCallbackHandler(),
-    )
 
 
 async def stream_text(name: str, graph_registry: GraphRegistry, make_request) -> str:
@@ -142,88 +114,46 @@ async def test_stream_excludes_disabled_model_streams_and_non_ai_messages(
     assert await stream_text("filtered", graph_registry, make_request) == "draftvisible"
 
 
-async def test_stream_run_preserves_generic_event_order() -> None:
+async def test_stream_preserves_custom_events_with_their_namespace(
+    make_request,
+) -> None:
     payload = {"type": "progress", "data": {"completed": 2, "total": 5}}
+    model = FakeListChatModel(responses=["ok"])
 
-    async def graph_events():
-        yield MessagesStreamPart(
-            type="messages",
-            ns=(),
-            data=(AIMessageChunk(content="token"), {}),
-        )
-        yield CustomStreamPart(
-            type="custom",
-            ns=("research:task-id",),
-            data=payload,
-        )
-        yield UpdatesStreamPart(
-            type="updates",
-            ns=(),
-            data={"answer": "done"},
-        )
-        yield ValuesStreamPart(
-            type="values",
-            ns=(),
-            data={"messages": []},
-            interrupts=(),
-        )
+    async def research(state: MessageState):
+        get_stream_writer()(payload)
+        return {"messages": [await model.ainvoke(state["messages"])]}
 
-    class Graph:
-        output_channels = ()
-
-        def astream(self, *args, **kwargs):
-            return graph_events()
-
-    graph = Graph()
-    run = fake_run(graph, output_to_message=lambda _output: AIMessage(content=""))
-
-    async with run:
-        assert [event async for event in stream_run(run, stream_updates=True)] == [
-            "token",
-            CustomStreamPart(
-                type="custom",
-                ns=("research:task-id",),
-                data=payload,
-            ),
-            UpdatesStreamPart(
-                type="updates",
-                ns=(),
-                data={"answer": "done"},
-            ),
-            AIMessage(content=""),
-        ]
-
-
-async def test_stream_uses_final_root_value_with_subgraph_values_present() -> None:
-    async def graph_events():
-        yield ValuesStreamPart(
-            type="values",
-            ns=(),
-            data={"answer": "root"},
-            interrupts=(),
-        )
-        yield ValuesStreamPart(
-            type="values",
-            ns=("nested:task-id",),
-            data={"answer": "nested"},
-            interrupts=(),
-        )
-
-    class Graph:
-        output_channels = ("answer",)
-
-        def astream(self, *args, **kwargs):
-            return graph_events()
-
-    graph = Graph()
-    run = fake_run(
-        graph, output_to_message=lambda output: AIMessage(content=output["answer"])
+    subgraph = (
+        StateGraph(MessageState)
+        .add_node("research", research)
+        .set_entry_point("research")
+        .set_finish_point("research")
+        .compile()
+    )
+    graph = (
+        StateGraph(MessageState)
+        .add_node("subgraph", subgraph)
+        .set_entry_point("subgraph")
+        .set_finish_point("subgraph")
+        .compile()
+    )
+    graph_registry = GraphRegistry(
+        graphs={"events": GraphConfig(graph=graph, description="DUMMY")}
     )
 
-    async with run:
-        events = [event async for event in stream_run(run)]
+    events = [
+        event
+        async for event in run_langgraph_stream(
+            make_request("events"), [HumanMessage(content="hi")], graph_registry
+        )
+    ]
 
-    assert events == [AIMessage(content="root")]
+    custom, *text, final = events
+    assert custom["type"] == "custom"
+    assert custom["data"] == payload
+    assert custom["ns"][0].startswith("subgraph:")
+    assert "".join(text) == final.text == "ok"
 
 
 async def stream_events(request, graph_registry: GraphRegistry) -> None:

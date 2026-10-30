@@ -433,6 +433,7 @@ async def test_stopped_turn_cancels_its_background_response(
     lifecycle_query: dict[str, str],
 ) -> None:
     responses_path = _use_gateway(monkeypatch, gateway_type)
+    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
     await _select_background_profile(fake_gateway, "lgos/background-report")
     polling = asyncio.Event()
 

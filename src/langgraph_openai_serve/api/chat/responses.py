@@ -22,7 +22,8 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 )
 from openai.types.shared import ErrorObject
 
-from langgraph_openai_serve.core.errors import GraphError, openai_error_payload
+from langgraph_openai_serve.api.tools import FunctionCall, encode_function_calls
+from langgraph_openai_serve.core.errors import openai_error_payload
 from langgraph_openai_serve.graph.citations import citations_from_message
 
 
@@ -32,7 +33,14 @@ def chat_completion_response(
     message: AIMessage,
 ) -> ChatCompletion:
     """Build a non-streaming OpenAI-compatible chat completion response."""
-    resp_message, finish_reason = response_message(message)
+    tool_calls = [
+        ChatCompletionMessageFunctionToolCall(
+            id=call.call_id,
+            type="function",
+            function=Function(name=call.name, arguments=call.arguments),
+        )
+        for call in encode_function_calls(message)
+    ]
     return ChatCompletion(
         id=f"chatcmpl-{uuid.uuid4()}",
         object="chat.completion",
@@ -41,51 +49,17 @@ def chat_completion_response(
         choices=[
             ChatChoice(
                 index=0,
-                message=resp_message,
-                finish_reason=finish_reason,
+                message=ChatCompletionMessage(
+                    role="assistant",
+                    content=message.text or None,
+                    annotations=annotations_from_message(message) or None,
+                    tool_calls=tool_calls or None,
+                ),
+                finish_reason="tool_calls" if tool_calls else "stop",
             )
         ],
         usage=usage_info(message.usage_metadata),
     )
-
-
-def response_message(
-    message: AIMessage,
-) -> tuple[ChatCompletionMessage, Literal["stop", "tool_calls"]]:
-    """Format response message."""
-    tool_calls = tool_calls_from_message(message)
-    return (
-        ChatCompletionMessage(
-            role="assistant",
-            content=message.text or None,
-            annotations=annotations_from_message(message) or None,
-            tool_calls=tool_calls or None,
-        ),
-        "tool_calls" if tool_calls else "stop",
-    )
-
-
-def tool_calls_from_message(
-    message: AIMessage,
-) -> list[ChatCompletionMessageFunctionToolCall]:
-    """Convert native LangChain tool calls to Chat Completions tool calls."""
-    tool_calls = []
-    for tool_call in message.tool_calls:
-        tool_call_id = tool_call.get("id")
-        if not tool_call_id:
-            msg = "Final AIMessage tool calls must have an id."
-            raise GraphError(msg)
-        tool_calls.append(
-            ChatCompletionMessageFunctionToolCall(
-                id=tool_call_id,
-                type="function",
-                function=Function(
-                    name=tool_call["name"],
-                    arguments=json.dumps(tool_call["args"]),
-                ),
-            )
-        )
-    return tool_calls
 
 
 def annotations_from_message(message: AIMessage) -> list[Annotation]:
@@ -125,28 +99,27 @@ class ChatCompletionStreamResponseBuilder:
         self.include_usage = include_usage
 
     def role(self) -> str:
-        """Stream role."""
+        """Encode the opening assistant-role chunk."""
         return self._chunk(ChoiceDelta(role="assistant"))
 
     def text(self, content: str) -> str:
-        """Stream text content."""
+        """Encode one text-delta chunk."""
         return self._chunk(ChoiceDelta(content=content))
 
-    def tool_calls(self, message: AIMessage) -> str:
+    def tool_calls(self, calls: list[FunctionCall]) -> str:
         """Stream complete final-message tool calls as one delta."""
         return self._chunk(
             ChoiceDelta(
                 tool_calls=[
                     ChoiceDeltaToolCall(
                         index=index,
-                        id=tool_call.id,
-                        type=tool_call.type,
+                        id=call.call_id,
+                        type="function",
                         function=ChoiceDeltaToolCallFunction(
-                            name=tool_call.function.name,
-                            arguments=tool_call.function.arguments,
+                            name=call.name, arguments=call.arguments
                         ),
                     )
-                    for index, tool_call in enumerate(tool_calls_from_message(message))
+                    for index, call in enumerate(calls)
                 ]
             )
         )
@@ -157,7 +130,7 @@ class ChatCompletionStreamResponseBuilder:
         *,
         annotations: list[Annotation] | None = None,
     ) -> str:
-        """Stream finish."""
+        """Encode the finish chunk, with any citations on its delta."""
         return self._chunk(
             ChoiceDelta(),
             finish_reason=finish_reason,
@@ -165,14 +138,14 @@ class ChatCompletionStreamResponseBuilder:
         )
 
     def error(self, message: str) -> str:
-        """Stream error."""
+        """Encode an OpenAI error payload as one data frame."""
         return self._format_data(
             openai_error_payload(ErrorObject(message=message, type="server_error"))
         )
 
     @staticmethod
     def done() -> str:
-        """Stream done."""
+        """Encode the terminating [DONE] frame."""
         return "data: [DONE]\n\n"
 
     def usage(self, usage: UsageMetadata) -> str:
@@ -207,8 +180,10 @@ class ChatCompletionStreamResponseBuilder:
             ],
         )
         data = response.model_dump(mode="json", exclude_none=True)
+        # OpenAI sends "usage": null on every chunk but the final usage chunk.
         if self.include_usage:
             data["usage"] = None
+        # ChoiceDelta declares no annotations; LGOS adds them as an extension.
         if annotations:
             data["choices"][0]["delta"]["annotations"] = [
                 annotation.model_dump(mode="json", exclude_none=True)
@@ -219,13 +194,3 @@ class ChatCompletionStreamResponseBuilder:
     @staticmethod
     def _format_data(data: dict) -> str:
         return f"data: {json.dumps(data)}\n\n"
-
-
-__all__ = [
-    "ChatCompletionStreamResponseBuilder",
-    "annotations_from_message",
-    "chat_completion_response",
-    "response_message",
-    "tool_calls_from_message",
-    "usage_info",
-]

@@ -1,11 +1,11 @@
 """Functions for building OpenAI model information."""
 
+from itertools import starmap
+
 from langgraph_openai_serve.api.models.schemas import (
     LangGraphModelExtension,
-    LangGraphModelSummaryExtension,
     Model,
     ModelClientSettings,
-    ModelDetails,
     ModelList,
 )
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
@@ -15,55 +15,42 @@ MODEL_OWNER = "langgraph-openai-serve"
 
 
 def get_models(graph_registry: GraphRegistry) -> ModelList:
-    """
-    Get a list of available models.
-
-    Args:
-        graph_registry: The GraphRegistry containing registered graphs.
-
-    Returns:
-        A list of models in OpenAI compatible format.
-
-    """
-    models = [
-        Model(
-            id=name,
-            created=MODEL_CREATED,
-            owned_by=MODEL_OWNER,
-            lgos=_summary_extension(graph_config),
-        )
-        for name, graph_config in graph_registry.graphs.items()
-    ]
-
-    return ModelList(data=models)
+    """List every registered graph as an OpenAI model."""
+    return ModelList(data=list(starmap(_model, graph_registry.graphs.items())))
 
 
-def get_model(model: str, graph_registry: GraphRegistry) -> ModelDetails:
-    """Get one registered graph as an OpenAI model with LGOS metadata."""
+def get_model(model: str, graph_registry: GraphRegistry) -> Model:
+    """Get one registered graph as an OpenAI model with its client settings."""
     graph_config = graph_registry.get_graph(model)
-    client_settings = graph_config.client_settings
-    client_settings_details = None
-    if client_settings is not None:
-        client_settings_details = ModelClientSettings(
-            json_schema=client_settings.json_schema(),
-            defaults=client_settings.default_values(),
-        )
-
-    return ModelDetails(
-        id=model,
-        created=MODEL_CREATED,
-        owned_by=MODEL_OWNER,
-        lgos=LangGraphModelExtension(
-            **dict(_summary_extension(graph_config)),
-            client_settings=client_settings_details,
+    settings = graph_config.client_settings
+    return _model(
+        model,
+        graph_config,
+        client_settings=(
+            ModelClientSettings(
+                json_schema=settings.json_schema(),
+                defaults=settings.default_values(),
+            )
+            if settings is not None
+            else None
         ),
     )
 
 
-def _summary_extension(graph_config: GraphConfig) -> LangGraphModelSummaryExtension:
-    return LangGraphModelSummaryExtension(
-        description=graph_config.description,
-        features=sorted(graph_config.features, key=lambda feature: feature.value),
-        server_tools=sorted(graph_config.server_tools),
-        client_tools=sorted(graph_config.client_tools),
+def _model(
+    name: str,
+    graph_config: GraphConfig,
+    client_settings: ModelClientSettings | None = None,
+) -> Model:
+    return Model(
+        id=name,
+        created=MODEL_CREATED,
+        owned_by=MODEL_OWNER,
+        lgos=LangGraphModelExtension(
+            description=graph_config.description,
+            features=sorted(graph_config.features),
+            server_tools=sorted(graph_config.server_tools),
+            client_tools=sorted(graph_config.client_tools),
+            client_settings=client_settings,
+        ),
     )

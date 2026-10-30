@@ -28,102 +28,25 @@ def _(mo):
 
 
 @app.cell
-def _():
+async def _():
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.store.memory import InMemoryStore
-    from openai import AsyncOpenAI
+    from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
+    from langgraph_openai_serve.server import ServerResources
 
-    from lgos_demo_api.graphs.background_interrupt import (
-        create_background_interrupt_graph,
+    from lgos_demo_api.registry import open_registry
+
+    # The served registry, over in-memory persistence; drawing sends no request.
+    resources = ServerResources(
+        checkpointer=InMemorySaver(),
+        store=InMemoryStore(),
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    from lgos_demo_api.graphs.citations import citation_graph
-    from lgos_demo_api.graphs.custom_io import custom_io_graph
-    from lgos_demo_api.graphs.deep_research import create_deep_research_graph
-    from lgos_demo_api.graphs.interruptible import create_interruptible_graph
-    from lgos_demo_api.graphs.lgos_rag import lgos_rag
-    from lgos_demo_api.graphs.mcp_mock import mcp_mock_graph
-    from lgos_demo_api.graphs.mcp_postgres import mcp_postgres_graph
-    from lgos_demo_api.graphs.multi_node_streaming import multi_node_streaming_graph
-    from lgos_demo_api.graphs.nested_subgraphs import create_nested_subgraphs_graph
-    from lgos_demo_api.graphs.persistent_plot_agent import (
-        create_persistent_plot_agent,
-    )
-    from lgos_demo_api.graphs.response_outcomes import response_outcome_graph
-    from lgos_demo_api.graphs.server_tool import server_tool_graph
-    from lgos_demo_api.graphs.simple import simple_graph
-    from lgos_demo_api.graphs.simple_external_tools import simple_external_tools_graph
-    from lgos_demo_api.graphs.status_events import status_event_graph
-    from lgos_demo_api.graphs.streaming_long_mock import streaming_long_mock_graph
-
-    return (
-        AsyncOpenAI,
-        InMemorySaver,
-        InMemoryStore,
-        citation_graph,
-        create_background_interrupt_graph,
-        create_deep_research_graph,
-        create_interruptible_graph,
-        create_nested_subgraphs_graph,
-        create_persistent_plot_agent,
-        custom_io_graph,
-        lgos_rag,
-        multi_node_streaming_graph,
-        mcp_mock_graph,
-        mcp_postgres_graph,
-        response_outcome_graph,
-        server_tool_graph,
-        simple_graph,
-        simple_external_tools_graph,
-        status_event_graph,
-        streaming_long_mock_graph,
-    )
-
-
-@app.cell
-async def _(
-    AsyncOpenAI,
-    InMemorySaver,
-    InMemoryStore,
-    citation_graph,
-    create_background_interrupt_graph,
-    create_deep_research_graph,
-    create_interruptible_graph,
-    create_nested_subgraphs_graph,
-    create_persistent_plot_agent,
-    custom_io_graph,
-    lgos_rag,
-    multi_node_streaming_graph,
-    mcp_mock_graph,
-    mcp_postgres_graph,
-    response_outcome_graph,
-    server_tool_graph,
-    simple_graph,
-    simple_external_tools_graph,
-    status_event_graph,
-    streaming_long_mock_graph,
-):
-    graphs = {
-        "custom-input-output-context": custom_io_graph,
-        "citation-events": citation_graph,
-        # Drawing makes no request, so the Files client needs no real service.
-        "deep-research": create_deep_research_graph(
-            InMemorySaver(), AsyncOpenAI(api_key="unused")
-        ),
-        "mcp-mock": await mcp_mock_graph(),
-        "mcp-postgres": mcp_postgres_graph,
-        "nested-subgraphs": create_nested_subgraphs_graph(InMemorySaver()),
-        "status-events": status_event_graph,
-        "multi-node-streaming": multi_node_streaming_graph,
-        "streaming-long-mock": streaming_long_mock_graph,
-        "response-outcomes": response_outcome_graph,
-        "persistent-plot-agent": create_persistent_plot_agent(InMemoryStore()),
-        "interruptible-approval": create_interruptible_graph(InMemorySaver()),
-        "background-interrupt": create_background_interrupt_graph(InMemorySaver()),
-        "server-tool": server_tool_graph,
-        "simple-graph": simple_graph,
-        "simple-graph-external-tools": simple_external_tools_graph,
-        "lgos-rag": lgos_rag,
-    }
+    async with open_registry(resources) as registry:
+        graphs = {
+            name: await config.resolve_graph()
+            for name, config in registry.graphs.items()
+        }
     return (graphs,)
 
 

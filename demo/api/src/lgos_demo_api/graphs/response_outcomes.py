@@ -63,5 +63,3 @@ response_outcome_graph_config = GraphConfig(
     graph=response_outcome_graph,
     description="Demonstrates native refusal and incomplete Responses outcomes.",
 )
-
-__all__ = ["response_outcome_graph", "response_outcome_graph_config"]

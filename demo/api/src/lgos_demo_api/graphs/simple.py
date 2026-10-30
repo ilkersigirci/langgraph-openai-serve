@@ -33,8 +33,6 @@ def _offered_model(model: str) -> str:
 
 
 class AgentState(BaseModel):
-    """State passed through the simple message graph."""
-
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
@@ -64,7 +62,7 @@ async def generate(
     runtime: Runtime[SimpleContext],
 ) -> dict[str, list[AIMessage]]:
     """Generate a response to the latest message in the graph state."""
-    context = runtime.context or SimpleContext()
+    context = runtime.context
     model = chat_completions_model(context.model)
     messages = state.messages if context.use_history else state.messages[-1:]
     conversation = [
@@ -95,5 +93,3 @@ simple_graph_config = GraphConfig(
     ),
     client_settings=SimpleContext,
 )
-
-__all__ = ["simple_graph", "simple_graph_config"]

@@ -8,6 +8,7 @@ from openai import AsyncOpenAI, ConflictError
 from langgraph_openai_serve.api.responses.interrupts import interrupt_tool_call_id
 
 from .support import (
+    CONCURRENT_MODEL,
     MODEL,
     MULTI_TURN_MODEL,
     NESTED_MULTI_TURN_MODEL,
@@ -122,22 +123,19 @@ async def test_streaming_state_conflict_returns_409_before_sse(
 async def test_repeated_resume_does_not_execute_completed_run_again(
     openai_client: AsyncOpenAI,
     fastapi_app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first_response = await create_response(openai_client)
-    await resume_response(openai_client, first_response, "approve")
+    fastapi_app.state.resume_release.set()
+    first_response = await create_response(openai_client, model=CONCURRENT_MODEL)
+    await resume_response(
+        openai_client, first_response, "approve", model=CONCURRENT_MODEL
+    )
 
-    graph_config = fastapi_app.state.graph_registry.get_graph(MODEL)
-    graph = await graph_config.resolve_graph()
+    with pytest.raises(ConflictError):
+        await resume_response(
+            openai_client, first_response, "approve", model=CONCURRENT_MODEL
+        )
 
-    def fail_execution(*_args, **_kwargs):
-        msg = "a repeated resume must not execute the graph"
-        raise AssertionError(msg)
-
-    with monkeypatch.context() as retry_patch:
-        retry_patch.setattr(graph, "astream", fail_execution)
-        with pytest.raises(ConflictError):
-            await resume_response(openai_client, first_response, "approve")
+    assert fastapi_app.state.side_effects == {"count": 1}
 
 
 async def test_terminal_run_deletes_its_checkpoint_lineage(

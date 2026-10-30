@@ -58,7 +58,6 @@ def logging_config(application: str, *, root_level: int) -> dict[str, Any]:
         "root": {"handlers": ["stdout"], "level": root_level},
         "loggers": {
             application: {**info},
-            "hatchet": {**info, "handlers": []},
             "langgraph_openai_serve": {**info},
             # Uvicorn records reach the root handler, so OpenTelemetry's root
             # LoggingHandler exports them too when the launcher is used.

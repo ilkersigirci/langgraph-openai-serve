@@ -51,6 +51,8 @@ def request_to_input(
     """Keep only this demo's database tools at the graph boundary."""
     state = client_tools.request_to_input(request, messages)
     tools = tuple(tool for tool in state.tools if tool.name in _TOOL_NAMES)
+    # A choice naming a dropped tool cannot be honored; answer without tools
+    # rather than force a database call.
     if isinstance(state.tool_choice, NamedFunctionToolChoice) and not any(
         tool.name == state.tool_choice.name for tool in tools
     ):
@@ -110,5 +112,3 @@ mcp_postgres_graph_config = GraphConfig(
     features={GraphFeature.MCP_TOOLS},
     request_to_input=request_to_input,
 )
-
-__all__ = ["mcp_postgres_graph", "mcp_postgres_graph_config"]
