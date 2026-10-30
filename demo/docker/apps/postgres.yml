@@ -1,7 +1,7 @@
 services:
   lgos-db:
     container_name: lgos-db
-    image: postgres:18.6@sha256:ae6c78831cbc35fa3a4aaf4d763ddacf6183d6004774cc2dc28b3920410d1d1a
+    image: postgres:18.6@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
@@ -40,7 +40,7 @@ services:
 
   lgos-mcp-db-setup:
     container_name: lgos-mcp-db-setup
-    image: postgres:18.6@sha256:ae6c78831cbc35fa3a4aaf4d763ddacf6183d6004774cc2dc28b3920410d1d1a
+    image: postgres:18.6@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
@@ -78,7 +78,7 @@ services:
 
   lgos-postgres-mcp:
     container_name: lgos-postgres-mcp
-    image: bytebase/dbhub:1.2.3@sha256:8fbdf3f579b7eb2701c32d895447e35f61b24e6c2505b0fcfd34e314bdf9f5db
+    image: bytebase/dbhub:1.5.0@sha256:aa04093100a15911c7ee326e870fa11480e1466342e8433fdd67b45c9af52ccf
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
