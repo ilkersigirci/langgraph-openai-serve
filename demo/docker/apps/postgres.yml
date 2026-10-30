@@ -78,7 +78,7 @@ services:
 
   lgos-postgres-mcp:
     container_name: lgos-postgres-mcp
-    image: bytebase/dbhub:1.2.3@sha256:8fbdf3f579b7eb2701c32d895447e35f61b24e6c2505b0fcfd34e314bdf9f5db
+    image: bytebase/dbhub:1.5.0@sha256:aa04093100a15911c7ee326e870fa11480e1466342e8433fdd67b45c9af52ccf
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true
