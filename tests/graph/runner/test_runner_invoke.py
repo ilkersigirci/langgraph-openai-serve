@@ -8,12 +8,9 @@ from langgraph_openai_serve.core.logging import (
     get_log_context,
     reset_log_context,
 )
-from langgraph_openai_serve.core.settings import Settings
-from langgraph_openai_serve.graph import run as graph_run
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.run import prepare_run
 from langgraph_openai_serve.graph.runner import run_langgraph
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
@@ -22,11 +19,7 @@ from tests.graph.support.message import make_message_graph
 class RecordingCallback(BaseCallbackHandler):
     def __init__(self) -> None:
         super().__init__()
-        self.starts = 0
         self.root_metadata: list[dict[str, object]] = []
-
-    def on_chat_model_start(self, *args, **kwargs) -> None:
-        self.starts += 1
 
     def on_chain_start(
         self,
@@ -39,68 +32,17 @@ class RecordingCallback(BaseCallbackHandler):
             self.root_metadata.append(dict(metadata or {}))
 
 
-@pytest.fixture
-def mock_langfuse_callback(monkeypatch: pytest.MonkeyPatch) -> RecordingCallback:
-    callback = RecordingCallback()
-    monkeypatch.setattr(
-        graph_run, "settings", Settings.model_construct(ENABLE_LANGFUSE=True)
-    )
-    monkeypatch.setattr(
-        graph_run,
-        "get_langfuse_callback",
-        lambda: callback,
-    )
-    return callback
-
-
-@pytest.mark.parametrize(
-    "has_explicit_callbacks",
-    [True, False],
-)
-async def test_enabled_langfuse_is_added_to_graph_run(
-    make_request,
-    mock_langfuse_callback: RecordingCallback,
-    has_explicit_callbacks: bool,
-) -> None:
-    recording_callback = RecordingCallback() if has_explicit_callbacks else None
-    runtime_callbacks = [recording_callback] if recording_callback else None
-
-    graph_config = GraphConfig(
-        graph=make_message_graph("hello"),
-        description="DUMMY",
-        runtime_callbacks=runtime_callbacks,
-    )
-    graph_registry = GraphRegistry(
-        graphs={
-            "messages": graph_config,
-        },
-    )
-    request = make_request("messages")
-
-    message = await run_langgraph(
-        request, [HumanMessage(content="question")], graph_registry
-    )
-
-    assert message.text == "hello"
-    assert mock_langfuse_callback.starts == 1
-
-    if recording_callback:
-        assert recording_callback.starts == 1
-        assert graph_config.runtime_callbacks == [recording_callback]
-    else:
-        assert graph_config.runtime_callbacks is None
-
-
 async def test_interrupt_callback_observes_native_checkpoint_metadata(
     make_request,
     sqlite_checkpointer,
 ) -> None:
     recording_callback = RecordingCallback()
     graph_config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer).with_config(
+            callbacks=[recording_callback]
+        ),
         description="DUMMY",
         features={GraphFeature.INTERRUPTS},
-        runtime_callbacks=[recording_callback],
     )
     graph_registry = GraphRegistry(
         graphs={"interruptible": graph_config},
@@ -125,9 +67,8 @@ async def test_callbacks_observe_request_correlation_metadata(
 ) -> None:
     recording_callback = RecordingCallback()
     graph_config = GraphConfig(
-        graph=make_message_graph("hello"),
+        graph=make_message_graph("hello").with_config(callbacks=[recording_callback]),
         description="DUMMY",
-        runtime_callbacks=[recording_callback],
     )
     graph_registry = GraphRegistry(graphs={"messages": graph_config})
     request = make_request(
@@ -153,41 +94,6 @@ async def test_callbacks_observe_request_correlation_metadata(
     # conversation as its native session instead.
     assert "conversation-123" not in metadata.values()
     assert "unrelated" not in metadata
-
-
-async def test_operation_id_is_bound_before_interrupt_preparation_fails(
-    make_request,
-    sqlite_checkpointer,
-) -> None:
-    error_message = "context failed"
-
-    def fail_context(_request, _settings):
-        raise RuntimeError(error_message)
-
-    graph_config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-        context_factory=fail_context,
-    )
-    graph_registry = GraphRegistry(
-        graphs={"interruptible": graph_config},
-        run_coordinator=InMemoryRunCoordinator(),
-    )
-    request = make_request("interruptible")
-    token = begin_log_context("request-123")
-
-    try:
-        with pytest.raises(RuntimeError, match=error_message):
-            await prepare_run(
-                request,
-                [HumanMessage(content="question")],
-                graph_registry,
-            )
-
-        assert get_log_context()["operation_id"]
-    finally:
-        reset_log_context(token)
 
 
 async def test_unknown_model_raises_model_not_found(make_request) -> None:

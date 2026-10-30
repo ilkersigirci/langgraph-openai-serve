@@ -62,9 +62,6 @@ def _ask_user_to_resume(
     messages: Sequence[OpenWebUIMessage],
 ) -> tuple[list[dict[str, str]], str] | None:
     """Restore a Responses continuation from Open WebUI's persisted answer."""
-    if not messages:
-        return None
-
     assistant_index = len(messages) - 1
     while assistant_index >= 0 and messages[assistant_index].role == "tool":
         assistant_index -= 1
@@ -75,21 +72,15 @@ def _ask_user_to_resume(
         return None
 
     tool_calls = assistant.tool_calls
-    if not any(
-        call.id is not None and call.id.startswith(ASK_USER_CALL_ID_PREFIX)
-        for call in tool_calls
-    ):
+    if not any(call.id.startswith(ASK_USER_CALL_ID_PREFIX) for call in tool_calls):
         return None
     # An incomplete exchange must fail rather than start a new graph run.
-    function = tool_calls[0].function
-    card_id = tool_calls[0].id
+    card = tool_calls[0]
     if (
-        len(tool_calls) != 1  # ruff: ignore[too-many-boolean-expressions] - Validate the complete interrupt exchange before resuming any work.
+        len(tool_calls) != 1
         or assistant_index != len(messages) - 2
-        or function is None
-        or function.name != ASK_USER_TOOL_NAME
-        or card_id is None
-        or messages[-1].tool_call_id != card_id
+        or card.function.name != ASK_USER_TOOL_NAME
+        or messages[-1].tool_call_id != card.id
     ):
         msg = "Open WebUI returned an incomplete interrupt batch."
         raise ValueError(msg)
@@ -104,7 +95,7 @@ def _ask_user_to_resume(
         }
         for call_id, answer in result.answers.items()
     ]
-    return outputs, card_id.removeprefix(ASK_USER_CALL_ID_PREFIX)
+    return outputs, card.id.removeprefix(ASK_USER_CALL_ID_PREFIX)
 
 
 def _ask_user_result(content: JsonValue) -> AskUserResult:
@@ -141,20 +132,14 @@ def _ask_user_card(
         if review:
             reviews.append(review)
     ask_user = {
-        # Open WebUI keeps this ID with the answer, keyed by question ID.
+        # The call ID carries the paused Response ID, which
+        # _ask_user_to_resume reads back from the stored answer.
         "id": f"{ASK_USER_CALL_ID_PREFIX}{response_id}",
         "type": "function",
         "function": {
             "name": ASK_USER_TOOL_NAME,
             "arguments": json.dumps(
-                {
-                    "questions": questions,
-                    "allow_other": any(
-                        question["allow_other"] for question in questions
-                    ),
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
+                {"questions": questions}, ensure_ascii=False, separators=(",", ":")
             ),
         },
     }

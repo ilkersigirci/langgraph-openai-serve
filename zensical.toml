@@ -117,8 +117,10 @@ toggle.name = "Switch to light mode"
 paths = ["src"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
-show_root_heading = false
-show_submodules = true
+show_root_heading = true
+heading_level = 3
+# Only __all__ or names without a leading underscore are public API.
+filters = "public"
 docstring_style = "google"
 docstring_section_style = "table"
 line_length = 88

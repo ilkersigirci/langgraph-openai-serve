@@ -31,9 +31,22 @@ from langgraph_openai_serve.graph.request import (
 
 def decode_responses_request(
     request: ResponseCreateRequest,
-    server_tools: AbstractSet[str],
+    graph_config: GraphConfig,
 ) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
-    """Normalize one supported, stateless Responses request."""
+    """Validate and normalize one stateless Responses request for its graph."""
+    if request.background and not graph_config.supports(GraphFeature.BACKGROUND):
+        message = f"Model '{request.model}' does not support background execution."
+        raise InvalidRequestError(message, param="background")
+    _validate_tools(request, graph_config.server_tools)
+    if request.previous_response_id is not None and not graph_config.supports(
+        GraphFeature.INTERRUPTS
+    ):
+        message = (
+            "Previous response state is not supported for model "
+            f"'{request.model}'; only interruptible graphs support "
+            "'previous_response_id'."
+        )
+        raise InvalidRequestError(message, param="previous_response_id")
     _validate_supported_semantics(request)
     resume = parse_responses_resume(
         request.input,
@@ -56,7 +69,7 @@ def decode_responses_request(
                 for tool in request.tools or ()
                 if isinstance(tool, ResponseFunctionTool)
             ),
-            server_tools=selected_server_tools(request, server_tools),
+            server_tools=_selected_server_tools(request, graph_config.server_tools),
             tool_choice=_decode_tool_choice(request.tool_choice),
             parallel_tool_calls=request.parallel_tool_calls,
         ),
@@ -72,27 +85,6 @@ def decode_responses_request(
     )
 
 
-def decode_graph_request(
-    request: ResponseCreateRequest,
-    graph_config: GraphConfig,
-) -> tuple[GraphRequest, list[BaseMessage], InterruptResume | None]:
-    """Validate and normalize one Responses request for its registered graph."""
-    if request.background and not graph_config.supports(GraphFeature.BACKGROUND):
-        message = f"Model '{request.model}' does not support background execution."
-        raise InvalidRequestError(message, param="background")
-    _validate_tools(request, graph_config.server_tools)
-    if request.previous_response_id is not None and not graph_config.supports(
-        GraphFeature.INTERRUPTS
-    ):
-        message = (
-            "Previous response state is not supported for model "
-            f"'{request.model}'; only interruptible graphs support "
-            "'previous_response_id'."
-        )
-        raise InvalidRequestError(message, param="previous_response_id")
-    return decode_responses_request(request, graph_config.server_tools)
-
-
 def _decode_tool_choice(
     tool_choice: ResponseToolChoice | None,
 ) -> ClientToolChoice | None:
@@ -103,7 +95,7 @@ def _decode_tool_choice(
     return NamedFunctionToolChoice(name=tool_choice.name)
 
 
-def selected_server_tools(
+def _selected_server_tools(
     request: ResponseCreateRequest, server_tools: AbstractSet[str]
 ) -> tuple[str, ...]:
     """Return the registered server tools selected for this response."""
@@ -121,7 +113,7 @@ def _validate_tools(
     request: ResponseCreateRequest,
     server_tools: AbstractSet[str],
 ) -> None:
-    """Reject unknown server-tool selectors before execution or SSE starts."""
+    """Reject invalid tools and tool_choice before execution or SSE starts."""
     declarations: dict[str, str] = {}
     for index, tool in enumerate(request.tools or ()):
         name = _tool_name(tool)
@@ -217,10 +209,3 @@ def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:
                     message,
                     param=f"input.{index}.async",
                 )
-
-
-__all__ = [
-    "decode_graph_request",
-    "decode_responses_request",
-    "selected_server_tools",
-]

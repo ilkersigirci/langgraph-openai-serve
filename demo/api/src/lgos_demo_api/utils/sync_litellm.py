@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx2
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from lgos_demo_api.utils.model_catalog import read_model_catalogs, validate_namespace
+from lgos_demo_api.utils.model_catalog import read_model_catalogs
 
 
 class ModelInfo(BaseModel):
@@ -28,6 +28,12 @@ class Deployment(BaseModel):
 
 class Deployments(BaseModel):
     data: list[Deployment]
+
+
+def _validate_namespace(prefix: str) -> None:
+    if not prefix or any(char.isspace() or char in "/*" for char in prefix):
+        msg = "Model namespace must be non-empty, without whitespace, / or *"
+        raise ValueError(msg)
 
 
 def _is_owned(deployment: Deployment, *, prefix: str) -> bool:
@@ -62,7 +68,7 @@ def sync_models(
     dry_run: bool = False,
 ) -> dict[str, str]:
     """Reconcile all catalogs in a namespace; source keys are upstream API bases."""
-    validate_namespace(prefix)
+    _validate_namespace(prefix)
     desired = {
         f"{prefix}/{name}": entry
         for name, entry in read_model_catalogs(sources).items()

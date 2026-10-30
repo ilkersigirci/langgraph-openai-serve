@@ -9,7 +9,11 @@ from langchain_core.exceptions import ContextOverflowError
 from openai.types.shared import ErrorObject
 from starlette.exceptions import HTTPException
 
-from langgraph_openai_serve.core.logging import exception_type_name, get_logger
+from langgraph_openai_serve.core.logging import (
+    exception_type_name,
+    get_log_context,
+    get_logger,
+)
 
 logger = get_logger(__name__)
 
@@ -53,7 +57,7 @@ def openai_error_payload(error: ErrorObject) -> dict[str, Any]:
     return {"error": error.model_dump(mode="json")}
 
 
-async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
+async def _openai_error_response(  # ruff: ignore[unused-async] - Starlette runs sync exception handlers in a threadpool.
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
@@ -95,11 +99,14 @@ async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits
 
 
 def _validation_error(exc: RequestValidationError) -> ErrorObject:
-    first_error = exc.errors()[0] if exc.errors() else {}
-    location = first_error.get("loc", ())
-    parts = [str(part) for part in location if part not in {"body", "query", "path"}]
+    first_error = exc.errors()[0]
+    parts = [
+        str(part)
+        for part in first_error["loc"]
+        if part not in {"body", "query", "path"}
+    ]
     param = ".".join(parts) or None
-    message = str(first_error.get("msg") or "Invalid request")
+    message = first_error["msg"]
     return ErrorObject(
         message=f"{param}: {message}" if param else message,
         type="invalid_request_error",
@@ -112,6 +119,12 @@ def _log_server_error(
     status_code: int,
     exc: BaseException,
 ) -> None:
+    # Starlette re-raises what only its catch-all handler catches, so the ASGI
+    # server logs that traceback; the note ties it to this record. GraphError and
+    # HTTPException stop here, so this record carries their traceback.
+    reraised = not isinstance(exc, (GraphError, HTTPException))
+    if reraised:
+        exc.add_note(f"request_id: {get_log_context().get('request_id')}")
     logger.error(
         "http.request.failed",
         extra={
@@ -120,5 +133,5 @@ def _log_server_error(
             "http.response.status_code": status_code,
             "error.type": exception_type_name(exc),
         },
-        exc_info=(type(exc), exc, exc.__traceback__),
+        exc_info=None if reraised else exc,
     )

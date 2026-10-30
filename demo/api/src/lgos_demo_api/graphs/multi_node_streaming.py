@@ -30,7 +30,7 @@ async def _contribute(
 ) -> dict[str, list[str]]:
     contribution = await stream_fake_chat_response(
         response,
-        prompt=str(state.messages[-1].content or ""),
+        prompt=state.messages[-1].text,
     )
     return {"answer_parts": [contribution]}
 
@@ -74,5 +74,3 @@ multi_node_streaming_graph_config = GraphConfig(
         "Combines streamed output from multiple nodes into one assistant message."
     ),
 )
-
-__all__ = ["multi_node_streaming_graph_config"]

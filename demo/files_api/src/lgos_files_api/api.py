@@ -182,7 +182,7 @@ def retrieve_file_content(
     )
 
 
-async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits exception handlers on the request loop.
+async def _openai_error_response(  # ruff: ignore[unused-async] - Starlette runs sync exception handlers in a threadpool.
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
@@ -205,11 +205,11 @@ async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits
             status_code = status.HTTP_400_BAD_REQUEST
             error = _validation_error(exc)
         case _:
+            # Starlette re-raises this for the ASGI server to log its traceback.
             logger.error(
                 "Unhandled Files API error for %s %s",
                 request.method,
                 request.url.path,
-                exc_info=exc,
             )
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             error = ErrorObject(message="Internal server error", type="server_error")
@@ -220,13 +220,14 @@ async def _openai_error_response(  # ruff: ignore[unused-async] - FastAPI awaits
 
 
 def _validation_error(exc: RequestValidationError) -> ErrorObject:
-    first_error = exc.errors()[0] if exc.errors() else {}
-    location = first_error.get("loc", ())
-    if not isinstance(location, (tuple, list)):
-        location = ()
-    parts = [str(part) for part in location if part not in {"body", "query", "path"}]
+    first_error = exc.errors()[0]
+    parts = [
+        str(part)
+        for part in first_error["loc"]
+        if part not in {"body", "query", "path"}
+    ]
     param = ".".join(parts) or None
-    message = str(first_error.get("msg") or "Invalid request")
+    message = first_error["msg"]
     return ErrorObject(
         message=f"{param}: {message}" if param else message,
         type="invalid_request_error",

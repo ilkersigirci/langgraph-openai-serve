@@ -16,6 +16,11 @@ For HTTP requests handled by the mounted OpenAI-compatible application, LGOS:
 - logs unexpected request failures and application-level server errors with
   the request context.
 
+Starlette re-raises an unexpected failure for the ASGI server to log, so its
+traceback appears only in the server's record, with the request ID as an
+exception note. LGOS's `http.request.failed` record names the failure. It holds
+the traceback itself only for errors that stop at LGOS, such as `GraphError`.
+
 LGOS does not emit one generic log record for every successful or client-error
 request. The ASGI server or ingress proxy owns access logs, including method,
 path, status, and request duration. This prevents duplicate access records and

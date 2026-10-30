@@ -1,1 +1,1 @@
-"""Core demo application configuration and observability."""
+"""Configuration of the demo API."""

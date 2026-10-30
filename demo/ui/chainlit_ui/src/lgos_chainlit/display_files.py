@@ -49,7 +49,7 @@ async def display_file(call: ResponseFunctionToolCall) -> dict[str, object]:
     if arguments.media_type == PLOTLY_MEDIA_TYPE:
         element = cl.Plotly(
             name=arguments.filename,
-            figure=pio.from_json(content.decode()),
+            figure=pio.from_json(content),
             display="inline",
         )
     else:

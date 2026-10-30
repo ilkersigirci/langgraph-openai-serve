@@ -1,5 +1,6 @@
 """Hatchet background execution for the server and its worker process."""
 
+import logging
 import os
 from collections.abc import AsyncGenerator
 
@@ -20,6 +21,13 @@ from langgraph_openai_serve.server.settings import ServerSettings
 
 def create_hatchet() -> Hatchet:
     """Create a client configured by the environment and traced when exporting."""
+    # Importing hatchet_sdk gives its logger a stdout handler of its own and
+    # stops propagation. Undo both so its records follow the process's logging
+    # configuration, which `lgos serve` installs before the import.
+    logger = logging.getLogger("hatchet")
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    logger.propagate = True
     # The SDK reads its token, namespace, endpoints, and TLS from HATCHET_CLIENT_*.
     hatchet = Hatchet()
     if os.getenv("OTEL_TRACES_EXPORTER", "").strip().lower() not in {"", "none"}:

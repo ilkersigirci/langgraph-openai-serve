@@ -217,7 +217,7 @@ registry = GraphRegistry(
     }
 )
 
-LanggraphOpenaiServe(registry=registry).bind_openai_api()
+app = LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 ```
 
 `registry.graphs` is a plain dict. `GraphConfig` declarations are immutable;

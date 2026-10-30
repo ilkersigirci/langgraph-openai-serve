@@ -1,7 +1,7 @@
 """Responses API helpers for Open WebUI models."""
 
 import asyncio
-import json as responses_json
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -21,8 +21,12 @@ from pydantic import JsonValue, TypeAdapter
 
 from .contracts import (
     ASK_USER_CALL_ID_PREFIX,
+    BACKGROUND_SETTING_NAME,
+    CONVERSATION_METADATA_KEY,
     DISPLAY_FILE_TOOL_NAME,
     INTERRUPT_TOOL_NAME,
+    OPENAI_METADATA_VALUE_MAX_LENGTH,
+    SETTINGS_METADATA_KEY,
     WEB_SEARCH_TOOL_NAME,
     AskUserRequest,
     AskUserResult,
@@ -102,16 +106,11 @@ def _openwebui_mcp_tools(
         if gateway_name == name or not gateway_name:
             continue
         spec = OpenWebUIToolSpec.model_validate(tool["spec"])
-        parameters: dict[str, object] = (
-            dict(spec.parameters)
-            if spec.parameters is not None
-            else {"type": "object", "properties": {}}
-        )
         translated_tool: FunctionToolParam = {
             "type": "function",
             "name": gateway_name,
-            "parameters": parameters,
-            "strict": spec.strict,
+            "parameters": dict(spec.parameters),
+            "strict": False,
         }
         if spec.description is not None:
             translated_tool["description"] = spec.description
@@ -162,12 +161,6 @@ def _responses_mcp_calls(
     """Translate only calls owned by the configured MCP gateway."""
     calls = []
     for tool_call in tool_calls:
-        if (
-            not tool_call.id
-            or tool_call.function is None
-            or tool_call.function.name is None
-        ):
-            continue
         gateway_name = tool_names.get(tool_call.function.name)
         if gateway_name is None:
             continue
@@ -176,7 +169,7 @@ def _responses_mcp_calls(
                 "type": "function_call",
                 "call_id": tool_call.id,
                 "name": gateway_name,
-                "arguments": tool_call.function.arguments or "{}",
+                "arguments": tool_call.function.arguments,
                 "status": "completed",
             }
         )
@@ -188,9 +181,7 @@ def _responses_interrupt_history(
 ) -> list[dict[str, Any]]:
     """Replay an answered ask_user card as the interrupt calls and outputs it sent."""
     try:
-        request = AskUserRequest.model_validate_json(
-            card.function.arguments if card.function and card.function.arguments else ""
-        )
+        request = AskUserRequest.model_validate_json(card.function.arguments)
         result = AskUserResult.model_validate_json(str(content))
     except ValueError:
         return []
@@ -210,7 +201,7 @@ def _responses_interrupt_history(
                 "name": INTERRUPT_TOOL_NAME,
                 # The card's question; the details it did not show precede it
                 # as assistant text.
-                "arguments": responses_json.dumps(
+                "arguments": json.dumps(
                     {
                         "question": question.question,
                         "choices": [option.label for option in question.options],
@@ -275,7 +266,7 @@ def _responses_input(
             cards.update(
                 (call.id, call)
                 for call in message.tool_calls
-                if call.id and call.id.startswith(ASK_USER_CALL_ID_PREFIX)
+                if call.id.startswith(ASK_USER_CALL_ID_PREFIX)
             )
         if role == "assistant" and mcp_tool_names:
             calls = _responses_mcp_calls(message.tool_calls, mcp_tool_names)
@@ -287,7 +278,7 @@ def _responses_input(
 def _tool_output(content: object) -> str:
     if isinstance(content, str):
         return content
-    return responses_json.dumps(content, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(content, ensure_ascii=False, separators=(",", ":"))
 
 
 def _openwebui_tool_chunk(
@@ -311,6 +302,37 @@ def _openwebui_tool_chunk(
     return _openwebui_chunk(
         model_id, {"tool_calls": tool_calls}, finish_reason="tool_calls"
     )
+
+
+def _request_metadata(metadata: OpenWebUIMetadata) -> dict[str, str]:
+    request_metadata = {}
+    # The Pipe consumes these Chat Variables itself; they are not graph settings.
+    pipe_variables = {BACKGROUND_SETTING_NAME, *metadata.server_tools}
+    settings = (
+        metadata.lgos_settings
+        if metadata.lgos_settings is not None
+        else {
+            name: value
+            for name, value in metadata.chat_variables.items()
+            if name not in pipe_variables
+        }
+    )
+    if settings:
+        encoded = json.dumps(
+            settings,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if len(encoded) > OPENAI_METADATA_VALUE_MAX_LENGTH:
+            msg = (
+                "The selected runtime settings exceed the OpenAI metadata value limit."
+            )
+            raise ValueError(msg)
+        request_metadata[SETTINGS_METADATA_KEY] = encoded
+    if metadata.chat_id:
+        request_metadata[CONVERSATION_METADATA_KEY] = metadata.chat_id
+    return request_metadata
 
 
 def _responses_request(
@@ -360,6 +382,8 @@ async def _background_response(
         provider = request["model"].partition("/")[0]
         lifecycle_options["extra_query"] = {"provider": provider}
     else:
+        # LiteLLM drops a client Idempotency-Key header but forwards body
+        # extra_headers upstream.
         background_request["extra_body"] = {
             "extra_headers": {"Idempotency-Key": idempotency_key}
         }
@@ -435,6 +459,8 @@ def _responses_continuation(
     response: Response,
     outputs: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
+    # The SDK's output-item adapter drops stream-parsed fields such as
+    # parsed_arguments; custom_tool_call_output is outside its union.
     return [
         *(
             item.model_dump(mode="json", exclude_none=True)
@@ -464,21 +490,16 @@ async def _emit_response_sources(
                 continue
             for annotation in part.annotations:
                 if annotation.type == "url_citation":
-                    event = _openwebui_source_event(annotation, part.text)
-                    if event is not None:
-                        await event_emitter(event)
+                    await event_emitter(_openwebui_source_event(annotation, part.text))
 
 
 def _openwebui_source_event(
     annotation: AnnotationURLCitation,
     text: str,
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """Translate one Responses URL annotation into a persistent UI source."""
-    stop = annotation.end_index + 1
-    if not 0 <= annotation.start_index < stop <= len(text):
-        return None
-
-    cited_text = text[annotation.start_index : stop]
+    # LGOS rejects spans outside the final text, and end_index is inclusive.
+    cited_text = text[annotation.start_index : annotation.end_index + 1]
     return {
         "type": "source",
         "data": {

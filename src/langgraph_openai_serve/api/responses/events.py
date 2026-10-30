@@ -50,11 +50,11 @@ from langgraph_openai_serve.api.responses.output import (
     response_refusals,
     response_usage,
 )
-from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.server_tools import (
     ServerToolItem,
     ServerToolTracker,
 )
+from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
 _MessagePhase: TypeAlias = Literal["commentary", "final_answer"]
@@ -75,25 +75,11 @@ class _TextItem:
 class ResponsesEventBuilder:
     """Own stable state for one Responses event lifecycle."""
 
-    def __init__(
-        self,
-        request: ResponseCreateRequest,
-        *,
-        run_id: str | None = None,
-        response_id: str | None = None,
-        created_at: int | None = None,
-        server_tools: Collection[str] = (),
-    ) -> None:
-        self._context = ResponseContext.for_run(
-            request,
-            run_id=run_id,
-            response_id=response_id,
-            created_at=created_at,
-        )
+    def __init__(self, context: ResponseContext, server_tools: Collection[str]) -> None:
+        self._context = context
         self._sequence_number = 0
         self._output: list[ResponseOutputItem] = []
-        self.selected_server_tools = frozenset(server_tools)
-        self._server_tool_tracker = ServerToolTracker(self.selected_server_tools)
+        self._server_tool_tracker = ServerToolTracker(server_tools)
         self._final_item: _TextItem | None = None
 
     def created(self) -> ResponseCreatedEvent:
@@ -124,13 +110,7 @@ class ResponsesEventBuilder:
         yield from self._start_text_item(item)
         item.text_parts.append(text)
         yield self._text_delta(item, text)
-        part = ResponseOutputText(
-            annotations=[],
-            logprobs=[],
-            text=item.text,
-            type="output_text",
-        )
-        yield from self._finish_text_item(item, part)
+        yield from self._finish_text_item(item, _output_text(item.text))
 
     def final_delta(self, delta: str) -> Iterator[ResponseStreamEvent]:
         """
@@ -201,7 +181,7 @@ class ResponsesEventBuilder:
                 yield self._text_delta(item, text)
         elif item is not None and item.text != str(message.text):
             msg = "Streamed assistant text did not match the final assistant message."
-            raise RuntimeError(msg)
+            raise GraphError(msg)
 
         if item is not None:
             yield from self._finish_text_item(
@@ -227,8 +207,7 @@ class ResponsesEventBuilder:
         self._server_tool_tracker.ensure_complete()
         if self._final_item is not None:
             yield from self._finish_text_item(
-                self._final_item,
-                response_output_text(AIMessage(content=self._final_item.text)),
+                self._final_item, _output_text(self._final_item.text)
             )
         for call in interrupt_output_items(batch):
             yield from self._tool_item(call)
@@ -246,8 +225,8 @@ class ResponsesEventBuilder:
             The error and failed Response events.
 
         """
-        # Keep the items already exposed to the client in the terminal snapshot.
-        # The SDK replaces its accumulated Response with response.failed.
+        # The terminal snapshot keeps the items already exposed to the client,
+        # with unfinished ones marked incomplete.
         item = self._final_item
         if (
             item is not None
@@ -256,9 +235,7 @@ class ResponsesEventBuilder:
         ):
             self._output[item.output_index] = self._output[
                 item.output_index
-            ].model_copy(
-                update={"content": [response_output_text(AIMessage(content=item.text))]}
-            )
+            ].model_copy(update={"content": [_output_text(item.text)]})
         self._output = [
             item.model_copy(update={"status": "incomplete"})
             if getattr(item, "status", None) == "in_progress"
@@ -314,12 +291,7 @@ class ResponsesEventBuilder:
             output_index=item.output_index,
             item_id=item.id,
             content_index=0,
-            part=ResponseOutputText(
-                annotations=[],
-                logprobs=[],
-                text="",
-                type="output_text",
-            ),
+            part=_output_text(""),
         )
 
     def _text_delta(self, item: _TextItem, delta: str) -> ResponseTextDeltaEvent:
@@ -545,12 +517,13 @@ class ResponsesEventBuilder:
         return sequence_number
 
 
+def _output_text(text: str) -> ResponseOutputText:
+    """Plain output text, for text that carries no citations."""
+    return ResponseOutputText(
+        annotations=[], logprobs=[], text=text, type="output_text"
+    )
+
+
 def encode_event(event: ResponseStreamEvent) -> str:
     """Encode one Responses event using the official named SSE framing."""
     return f"event: {event.type}\ndata: {event.model_dump_json(by_alias=True)}\n\n"
-
-
-__all__ = [
-    "ResponsesEventBuilder",
-    "encode_event",
-]

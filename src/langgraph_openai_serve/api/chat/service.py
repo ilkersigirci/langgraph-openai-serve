@@ -13,7 +13,8 @@ from langgraph_openai_serve.api.chat.responses import (
     chat_completion_response,
 )
 from langgraph_openai_serve.api.chat.schemas import ChatCompletionRequest
-from langgraph_openai_serve.core.errors import InvalidRequestError
+from langgraph_openai_serve.api.tools import encode_function_calls
+from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
@@ -47,7 +48,7 @@ async def generate_completion(
         output = await collect_run(run)
     if not isinstance(output, AIMessage):
         msg = "The graph returned an unsupported Chat Completions output."
-        raise TypeError(msg)
+        raise GraphError(msg)
     return chat_completion_response(model=chat_request.model, message=output)
 
 
@@ -61,15 +62,13 @@ async def stream_completion(
         String chunks representing Server-Sent Events.
 
     """
-    include_usage = bool(
-        chat_request.stream_options is not None
-        and chat_request.stream_options.include_usage
-    )
     response_builder = ChatCompletionStreamResponseBuilder(
         chat_request.model,
-        include_usage=include_usage,
+        include_usage=bool(
+            chat_request.stream_options and chat_request.stream_options.include_usage
+        ),
     )
-    chunks = _generate_stream_chunks(response_builder, run, include_usage=include_usage)
+    chunks = _generate_stream_chunks(response_builder, run)
     try:
         async with aclosing(chunks):
             async for chunk in chunks:
@@ -83,8 +82,6 @@ async def stream_completion(
 async def _generate_stream_chunks(
     response_builder: ChatCompletionStreamResponseBuilder,
     run: GraphRun,
-    *,
-    include_usage: bool,
 ) -> AsyncGenerator[str, None]:
     async with run:
         yield response_builder.role()
@@ -102,12 +99,11 @@ async def _generate_stream_chunks(
 
     if final_message is None:
         msg = "The graph returned an unsupported Chat Completions output."
-        raise TypeError(msg)
+        raise GraphError(msg)
     for chunk in _final_chunks(
         response_builder,
         final_message,
         streamed_text="".join(text_parts) if text_parts else None,
-        include_usage=include_usage,
     ):
         yield chunk
 
@@ -117,7 +113,6 @@ def _final_chunks(
     message: AIMessage,
     *,
     streamed_text: str | None,
-    include_usage: bool,
 ) -> Iterator[str]:
     message_text = str(message.text)
     if streamed_text is None:
@@ -125,14 +120,14 @@ def _final_chunks(
             yield response_builder.text(message_text)
     elif streamed_text != message_text:
         msg = "Streamed assistant text did not match the final assistant message."
-        raise RuntimeError(msg)
-    finish_reason = "tool_calls" if message.tool_calls else "stop"
-    if message.tool_calls:
-        yield response_builder.tool_calls(message)
+        raise GraphError(msg)
+    calls = encode_function_calls(message)
+    if calls:
+        yield response_builder.tool_calls(calls)
     yield response_builder.finish(
-        finish_reason,
+        "tool_calls" if calls else "stop",
         annotations=annotations_from_message(message),
     )
-    if include_usage and message.usage_metadata is not None:
+    if response_builder.include_usage and message.usage_metadata is not None:
         yield response_builder.usage(message.usage_metadata)
     yield response_builder.done()

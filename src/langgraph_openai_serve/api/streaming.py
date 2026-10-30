@@ -72,6 +72,3 @@ class StreamOwner:
             finally:
                 if self._run is not None:
                     await self._run.aclose()
-
-
-__all__ = ["StreamOwner"]

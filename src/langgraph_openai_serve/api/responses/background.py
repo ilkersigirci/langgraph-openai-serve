@@ -8,7 +8,7 @@ import uuid
 from openai.types.responses import Response
 
 from langgraph_openai_serve.api.responses.interrupts import interrupt_response_nonce
-from langgraph_openai_serve.api.responses.request import decode_graph_request
+from langgraph_openai_serve.api.responses.request import decode_responses_request
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.background import (
     BackgroundBackend,
@@ -18,7 +18,7 @@ from langgraph_openai_serve.background import (
 from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
-# Stripe and the IETF Idempotency-Key draft both bound keys; 255 matches Stripe.
+# 255 matches Stripe's Idempotency-Key limit.
 _MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
@@ -97,13 +97,13 @@ def _job(
 ) -> BackgroundJob:
     """Validate the request as the worker will decode it."""
     graph_config = graph_registry.get_graph(request.model)
-    graph_request, _messages, resume = decode_graph_request(request, graph_config)
+    graph_request, _messages, resume = decode_responses_request(request, graph_config)
     # The worker validates settings only while it builds the run's context, so
     # check them here to reject the request instead of queuing a failing job.
     if graph_config.client_settings is not None:
         graph_config.client_settings.validate_request(graph_request)
     return BackgroundJob(
-        request=request.model_dump(mode="json", by_alias=True),
+        request=request,
         owner_scope=owner_scope,
         # An answer continues its paused run's checkpoint thread.
         run_id=resume.run_id if resume is not None else str(uuid.uuid4()),
@@ -152,10 +152,3 @@ async def _visible_run(
             status_code=404,
         )
     return run
-
-
-__all__ = [
-    "cancel_background_response",
-    "create_background_response",
-    "retrieve_background_response",
-]

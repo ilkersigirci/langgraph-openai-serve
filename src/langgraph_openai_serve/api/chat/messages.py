@@ -38,19 +38,7 @@ def _langchain_content(
 def convert_to_lc_messages(
     messages: list[ChatCompletionRequestMessage],
 ) -> list[BaseMessage]:
-    """
-    Convert OpenAI messages to LangChain messages.
-
-    This function converts a list of OpenAI-compatible message objects to their
-    LangChain equivalents for use with LangGraph.
-
-    Args:
-        messages: A list of OpenAI chat completion request messages to convert.
-
-    Returns:
-        A list of LangChain message objects.
-
-    """
+    """Convert Chat Completions request messages to LangChain messages."""
     lc_messages: list[BaseMessage] = []
     for m in messages:
         match m.role:
@@ -93,7 +81,7 @@ def _assistant_message(message: ChatCompletionRequestMessage) -> AIMessage:
         for call in message.tool_calls:
             parsed = decode_function_call(
                 name=call.function.name,
-                arguments=call.function.arguments or "{}",
+                arguments=call.function.arguments,
                 call_id=call.id,
             )
             if parsed["type"] == "tool_call":

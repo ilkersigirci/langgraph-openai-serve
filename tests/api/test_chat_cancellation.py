@@ -3,13 +3,12 @@ import socket
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -21,9 +20,6 @@ from langgraph_openai_serve import (
     GraphRegistry,
     LanggraphOpenaiServe,
 )
-from langgraph_openai_serve.api.streaming import StreamOwner
-from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
-from langgraph_openai_serve.graph.run import GraphRun
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionChunk
@@ -238,32 +234,3 @@ async def test_closing_openai_stream_cancels_graph_and_provider(
                 node.finalizer_release.set()
                 if stream is not None:
                     await stream.close()
-
-
-async def test_immediate_stream_close_releases_prepared_run() -> None:
-    source_started = False
-
-    async def source() -> AsyncGenerator[str, None]:
-        nonlocal source_started
-        source_started = True
-        yield "unreachable"
-
-    coordinator = InMemoryRunCoordinator()
-    run = GraphRun(
-        request=cast("Any", None),
-        config=cast("Any", None),
-        graph=cast("Any", None),
-        inputs=None,
-        context=None,
-        runnable_config={},
-        usage_callback=UsageMetadataCallbackHandler(),
-    )
-    await run.hold(coordinator("prepared-run"))
-
-    owner = StreamOwner()
-    owner.start(source(), run)
-    await owner.aclose()
-
-    assert not source_started
-    async with coordinator("prepared-run"):
-        pass

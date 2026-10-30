@@ -46,11 +46,13 @@ def serve(registry: str, log_config: str | None, **options: Any) -> None:
         from langgraph_openai_serve.server.settings import ServerSettings
     except ModuleNotFoundError as exc:
         raise _missing_server_extra(exc) from exc
-    # Uvicorn's worker count: the option, else WEB_CONCURRENCY, else one.
-    workers = options["workers"] or int(os.getenv("WEB_CONCURRENCY", "1"))
-    # Uvicorn loads --env-file only once it starts, so read it here as well.
-    settings = ServerSettings(_env_file=options["env_file"])
-    if workers > 1 and settings.BACKGROUND == "memory":
+    app = f"{__name__}:{_create_app.__name__}"
+    # Building Uvicorn's config loads --env-file into the environment and resolves
+    # the worker count, so this check sees what Uvicorn will run.
+    config = uvicorn.Config(
+        app, workers=options["workers"], env_file=options["env_file"], log_config=None
+    )
+    if config.workers > 1 and ServerSettings().BACKGROUND == "memory":
         msg = (
             "LGOS_BACKGROUND=memory keeps background Responses in one process; "
             "run one worker or set LGOS_BACKGROUND=hatchet."
@@ -61,7 +63,7 @@ def serve(registry: str, log_config: str | None, **options: Any) -> None:
     os.environ["LGOS_REGISTRY"] = registry
     click.get_current_context().invoke(
         uvicorn.main,
-        app=f"{__name__}:{_create_app.__name__}",
+        app=app,
         factory=True,
         log_config=log_config
         or logging_config(_application(registry), root_level=logging.WARNING),

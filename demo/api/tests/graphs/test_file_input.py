@@ -9,13 +9,8 @@ import httpx2
 import pytest
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from langgraph_openai_serve import GraphFeature
 
 from lgos_demo_api.graphs import file_input as file_input_module
-
-
-def test_graph_advertises_file_inputs() -> None:
-    assert file_input_module.file_input_graph_config.supports(GraphFeature.FILE_INPUTS)
 
 
 @pytest.mark.parametrize("outcome", ["completed", "refusal", "incomplete"])

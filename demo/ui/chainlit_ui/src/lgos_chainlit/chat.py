@@ -47,7 +47,6 @@ from lgos_chainlit.chat_settings import (
     streaming_enabled,
 )
 from lgos_chainlit.clients import (
-    bifrost_model,
     gateway,
     list_models,
     responses_client,
@@ -355,9 +354,11 @@ async def _background_response(
         # Retrieve and cancel carry no model; without this query parameter
         # Bifrost routes them to its built-in openai provider.
         lifecycle_options["extra_query"] = {
-            "provider": bifrost_model(request["model"])[0]
+            "provider": request["model"].partition("/")[0]
         }
     else:
+        # LiteLLM drops a client Idempotency-Key header but forwards body
+        # extra_headers upstream.
         create_options["extra_body"] = {"extra_headers": idempotency_headers}
     response = await client.responses.create(
         **request,
@@ -423,11 +424,7 @@ async def _stream_response(
                 final_text_streamed = True
         completed = await stream.get_final_response()
 
-    if (
-        completed.status == "completed"
-        and not final_text_streamed
-        and (text := final_answer(completed))
-    ):
+    if not final_text_streamed and (text := final_answer(completed)):
         await assistant_message.stream_token(text)
     return completed
 

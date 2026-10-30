@@ -37,9 +37,8 @@ async def _start(codex: AsyncCodex) -> Exception | asyncio.CancelledError | None
 async def _close(
     codex: AsyncCodex, startup: asyncio.Task[Exception | asyncio.CancelledError | None]
 ) -> None:
-    # AsyncCodex initializes in worker threads. Cancelling context entry does
-    # not stop Popen or its RPC waiter. Keep entry owned until it settles, and
-    # close again if Popen raced the first close before publishing its process.
+    # Keep entry owned until it settles, and close again if Popen raced the
+    # first close before publishing its process.
     while not startup.done():
         await codex.close()
         await asyncio.wait({startup}, timeout=0.05)
@@ -110,7 +109,7 @@ def runtime_events(
             'model_providers.demo.env_key="DEMO_CODING_AGENT_API_KEY"',
             'web_search="disabled"',
             'history.persistence="none"',
-            # Codex otherwise reports anonymous usage data to OpenAI.
+            # Already off for app-server; explicit in case the default changes.
             "analytics.enabled=false",
         ),
     )

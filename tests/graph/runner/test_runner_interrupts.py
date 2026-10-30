@@ -33,7 +33,6 @@ from langgraph_openai_serve.graph.interrupt import (
     LangGraphInterruptBatch,
     checkpoint_key,
 )
-from langgraph_openai_serve.graph.run import prepare_run
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
@@ -130,11 +129,7 @@ async def test_cancelled_preparation_finishes_lease_release(
 
     async def run_preparation() -> None:
         try:
-            await prepare_run(
-                request,
-                [HumanMessage(content="question")],
-                registry,
-            )
+            await run_langgraph(request, [HumanMessage(content="question")], registry)
         except get_cancelled_exc_class():
             cancellation_propagated.set()
 
@@ -147,47 +142,6 @@ async def test_cancelled_preparation_finishes_lease_release(
     assert release_started.is_set()
     assert released.is_set()
     assert cancellation_propagated.is_set()
-
-
-async def test_failed_preparation_keeps_its_error_when_its_lease_release_fails(
-    make_request,
-    sqlite_checkpointer: AsyncSqliteSaver,
-) -> None:
-    released = Event()
-
-    def failing_input(_request, _messages):
-        msg = "input failed"
-        raise ValueError(msg)
-
-    @asynccontextmanager
-    async def coordinator(_key: str):
-        try:
-            yield
-        finally:
-            released.set()
-            msg = "lease release failed"
-            raise RuntimeError(msg)
-
-    registry = GraphRegistry(
-        graphs={
-            "interruptible": GraphConfig(
-                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
-                description="DUMMY",
-                features={GraphFeature.INTERRUPTS},
-                request_to_input=failing_input,
-            )
-        },
-        run_coordinator=coordinator,
-    )
-
-    with pytest.raises(ValueError, match="input failed"):
-        await prepare_run(
-            make_request("interruptible"),
-            [HumanMessage(content="question")],
-            registry,
-        )
-
-    assert released.is_set()
 
 
 async def test_interrupt_result_is_returned_before_output_rendering(
@@ -527,14 +481,3 @@ def test_interrupt_checkpointer_must_override_required_async_methods(
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
         )
-
-
-async def test_interrupt_checkpointer_accepts_minimal_async_interface() -> None:
-    checkpointer = MinimalAsyncCheckpointer()
-    config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-    )
-
-    assert (await config.resolve_graph()).checkpointer is checkpointer

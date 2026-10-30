@@ -1,1 +1,1 @@
-"""Service package for the LangGraph OpenAI compatible API."""
+"""Graph registration, runs, and interrupts, independent of the OpenAI protocol."""

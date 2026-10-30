@@ -4,16 +4,21 @@ import socket
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Test-only subprocess with explicit arguments and no shell.
 import sys
 import time
+from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any, TypeVar
 
 import click
 import httpx2
 import pytest
+from fastapi import status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = "tests.server.support:create_registry"
 LGOS = str(Path(sys.executable).with_name("lgos"))
+
+_Result = TypeVar("_Result")
 
 
 def _free_port() -> int:
@@ -30,6 +35,40 @@ def _environment(**variables: str) -> dict[str, str]:
         if not key.startswith(("LGOS_", "UVICORN_", "WEB_CONCURRENCY"))
     }
     return {**environment, "LGOS_ENABLE_LANGFUSE": "False", **variables}
+
+
+def _serve(
+    arguments: list[str],
+    variables: dict[str, str],
+    call: Callable[[str], _Result],
+) -> tuple[_Result, list[dict[str, Any]]]:
+    """Return what ``call`` gets from a running ``lgos serve``, and its log records."""
+    port = _free_port()
+    base_url = f"http://127.0.0.1:{port}/v1"
+    process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
+        [LGOS, "serve", *arguments],
+        cwd=PROJECT_ROOT,
+        env=_environment(UVICORN_PORT=str(port), **variables),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        # Wait for an external process; there is no in-process event to await.
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                httpx2.get(f"{base_url}/health").raise_for_status()
+                break
+            except httpx2.TransportError:
+                assert process.poll() is None, process.communicate()
+                assert time.monotonic() < deadline, "lgos serve did not start"
+                time.sleep(0.1)
+        result = call(base_url)
+    finally:
+        process.terminate()
+        stdout, _ = process.communicate(timeout=10)
+    return result, [json.loads(line) for line in stdout.splitlines()]
 
 
 def test_lgos_reports_the_installed_package_version() -> None:
@@ -64,34 +103,32 @@ def test_server_without_hatchet_background_skips_the_hatchet_sdk() -> None:
 def test_lgos_serve_runs_a_registry_from_the_working_directory(
     arguments: list[str], variables: dict[str, str]
 ) -> None:
-    port = _free_port()
-    process = subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true] - Arguments come only from this test module.
-        [LGOS, "serve", *arguments],
-        cwd=PROJECT_ROOT,
-        env=_environment(UVICORN_PORT=str(port), **variables),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    models, records = _serve(
+        arguments, variables, lambda base_url: httpx2.get(f"{base_url}/models").json()
     )
-    try:
-        # Wait for an external process; there is no in-process event to await.
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                httpx2.get(f"http://127.0.0.1:{port}/v1/health").raise_for_status()
-                break
-            except httpx2.TransportError:
-                assert process.poll() is None, process.communicate()
-                assert time.monotonic() < deadline, "lgos serve did not start"
-                time.sleep(0.1)
-        models = httpx2.get(f"http://127.0.0.1:{port}/v1/models").json()
-    finally:
-        process.terminate()
-        stdout, _ = process.communicate(timeout=10)
 
     assert {model["id"] for model in models["data"]} == {"chat", "approval"}
-    messages = {json.loads(line)["message"] for line in stdout.splitlines()}
+    messages = {record["message"] for record in records}
     assert {"server.persistence.in_memory", "Application startup complete."} <= messages
+
+
+def test_lgos_serve_logs_one_traceback_for_an_unexpected_error() -> None:
+    response, records = _serve(
+        ["tests.server.support:create_failing_registry"],
+        {},
+        lambda base_url: httpx2.post(
+            f"{base_url}/chat/completions",
+            headers={"X-Request-ID": "failed-request"},
+            json={"model": "failing", "messages": [{"role": "user", "content": "Hi"}]},
+        ),
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    (summary,) = [r for r in records if r["message"] == "http.request.failed"]
+    assert summary["request_id"] == "failed-request"
+    (traceback,) = [r for r in records if "exception" in r]
+    assert traceback["logger"] == "uvicorn.error"
+    assert "failed-request" in traceback["exception"]
 
 
 @pytest.mark.parametrize(
@@ -104,6 +141,9 @@ def test_lgos_serve_runs_a_registry_from_the_working_directory(
             id="environment",
         ),
         pytest.param(["--workers", "2"], {}, "LGOS_BACKGROUND=memory\n", id="options"),
+        pytest.param(
+            [], {}, "LGOS_BACKGROUND=memory\nWEB_CONCURRENCY=2\n", id="env-file"
+        ),
     ],
 )
 def test_lgos_serve_rejects_memory_background_across_workers(

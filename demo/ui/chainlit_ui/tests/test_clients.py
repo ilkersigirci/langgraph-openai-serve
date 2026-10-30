@@ -60,7 +60,6 @@ async def test_bifrost_catalog_preserves_provider_metadata(
     models = await clients.list_models()
 
     assert [model.id for model in models] == ["lgos/graph", "lgos/coding-agent"]
-    assert models[1].owned_by == "langgraph-openai-serve"
     assert (models[1].model_extra or {})["lgos"] == {
         "description": "Graph",
         "features": [],

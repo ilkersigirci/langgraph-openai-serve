@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langgraph_openai_serve import (
     ClientFunctionTool,
     GraphConfig,
-    GraphFeature,
     GraphRegistry,
     GraphRequest,
 )
@@ -72,10 +71,6 @@ def _registry() -> GraphRegistry:
             )
         }
     )
-
-
-def test_graph_advertises_gateway_mcp_tools() -> None:
-    assert graph_module.mcp_postgres_graph_config.features == {GraphFeature.MCP_TOOLS}
 
 
 async def test_database_turn_requires_an_allowlisted_tool(

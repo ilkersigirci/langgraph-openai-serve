@@ -115,8 +115,8 @@ class CodexChatModel(BaseChatModel):
         completed = False
 
         def answer(item_id: str, text: str) -> ChatGenerationChunk:
-            # An upstream without message phases sends every message as an answer.
             streamed = answers.get(item_id, "")
+            # Phase-less upstreams send every message as an answer, so separate them.
             separator = "\n\n" if any(answers.values()) and not streamed else ""
             answers[item_id] = streamed + text
             return ChatGenerationChunk(message=AIMessageChunk(content=separator + text))

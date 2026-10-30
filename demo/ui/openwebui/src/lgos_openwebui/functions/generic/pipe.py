@@ -3,13 +3,12 @@
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from openai import OpenAIError
-from openai.types.responses import Response, ResponseFunctionToolCall
+from openai.types.responses import ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 
-from .api import _client
 from .catalog import (
     USERVALVES_MODEL_ID,
     OpenWebUIModel,
@@ -33,6 +32,7 @@ from .gateway import (
     GatewayConfig,
     GatewayRoot,
     GatewayType,
+    _client,
     gateway_config,
     gateway_connection,
     gateway_models,
@@ -42,7 +42,6 @@ from .interrupts import (
     _openwebui_interrupt_chunks,
     _openwebui_interrupt_completion,
 )
-from .metadata import _request_metadata
 from .responses import (
     _background_response,
     _emit_response_sources,
@@ -50,6 +49,7 @@ from .responses import (
     _openwebui_mcp_tools,
     _openwebui_tool_chunk,
     _raise_for_response,
+    _request_metadata,
     _responses_continuation,
     _responses_final_text,
     _responses_function_calls,
@@ -65,7 +65,6 @@ class PreparedResponsesRequest:
 
     model_id: str
     background: bool
-    streaming: bool
     gateway: GatewayConfig
     api_key: str
     openwebui_mcp_names: dict[str, str]
@@ -216,7 +215,7 @@ class Pipe:
                         latest_status = (
                             f"Background response {status.replace('_', ' ')}."
                         )
-                    elif prepared.streaming:
+                    elif streaming:
                         async with client.responses.stream(
                             **prepared.request
                         ) as stream:
@@ -246,18 +245,14 @@ class Pipe:
                                     await _emit_status(
                                         event_emitter, latest_status, done=False
                                     )
-                            response = cast(
-                                "Response", await stream.get_final_response()
-                            )
+                            response = await stream.get_final_response()
                     else:
                         response = await client.responses.create(**prepared.request)
 
-                    # Classify the typed terminal result before selecting one
-                    # Open WebUI rendering path.
                     _raise_for_response(response)
                     await _emit_response_sources(response, event_emitter)
                     final_text = _responses_final_text(response)
-                    if prepared.streaming and not final_text_streamed and final_text:
+                    if streaming and not final_text_streamed and final_text:
                         yield _openwebui_chunk(
                             prepared.model_id, {"content": final_text}
                         )
@@ -265,12 +260,12 @@ class Pipe:
                     calls = _responses_function_calls(response)
                     if not calls:
                         finished = True
-                        if not prepared.streaming:
+                        if not streaming:
                             yield "".join(answer_parts)
                         return
                     if _all_calls(calls, INTERRUPT_TOOL_NAME):
                         finished = True
-                        if not prepared.streaming:
+                        if not streaming:
                             yield _openwebui_interrupt_completion(
                                 prepared.model_id,
                                 response.id,
@@ -286,9 +281,7 @@ class Pipe:
                         ):
                             yield chunk
                         return
-                    if prepared.openwebui_mcp_names and all(
-                        call.name in prepared.openwebui_mcp_names for call in calls
-                    ):
+                    if all(call.name in prepared.openwebui_mcp_names for call in calls):
                         finished = True
                         yield _openwebui_tool_chunk(
                             prepared.model_id,
@@ -358,14 +351,12 @@ class Pipe:
             openwebui_name: gateway_name
             for gateway_name, openwebui_name in openwebui_mcp_names.items()
         }
-        replay_input = _responses_input(
-            body.messages,
-            mcp_tool_names=transcript_mcp_names,
-        )
-        if resume := _ask_user_to_resume(body.messages):
-            input_items, previous_response_id = resume
-        else:
-            messages = await _with_response_file_parts(
+        # A resume sends only interrupt answers, so it uploads no files.
+        resume = _ask_user_to_resume(body.messages)
+        messages = (
+            body.messages
+            if resume
+            else await _with_response_file_parts(
                 body.messages,
                 metadata,
                 host_request,
@@ -374,17 +365,14 @@ class Pipe:
                 timeout=self.valves.OPENAI_API_TIMEOUT,
                 provider=gateway.files_provider,
             )
-            input_items = _responses_input(
-                messages,
-                mcp_tool_names=transcript_mcp_names,
-            )
-            previous_response_id = None
+        )
+        replay_input = _responses_input(messages, mcp_tool_names=transcript_mcp_names)
+        input_items, previous_response_id = resume or (list(replay_input), None)
 
         background = metadata.chat_variables.get(BACKGROUND_SETTING_NAME) is True
         return PreparedResponsesRequest(
             model_id=model_id,
             background=background,
-            streaming=streaming,
             gateway=gateway,
             api_key=api_key,
             openwebui_mcp_names=openwebui_mcp_names,

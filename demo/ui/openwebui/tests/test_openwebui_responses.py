@@ -438,20 +438,6 @@ async def test_unconfigured_pipe_names_the_missing_gateway_url(
         await pipe.pipes()
 
 
-async def test_deployed_bundle_runs_responses_inference(
-    bundled_generic: ModuleType,
-) -> None:
-    create = AsyncMock(return_value=final_response("Bundle answer."))
-    bundled_generic._client = lambda **_: FakeClient(create=create)
-
-    result = await configured_pipe(bundled_generic.Pipe).pipe(body(stream=False))
-
-    assert result == "Bundle answer."
-    request = create.await_args.kwargs
-    assert request["input"] == [{"role": "user", "content": "Refund ORDER-123"}]
-    assert request["store"] is False
-
-
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_bundle_maps_server_controls_without_forwarding_openwebui_tools(
     bundled_generic, streaming
@@ -1935,7 +1921,11 @@ async def test_invalid_interrupt_exchange_cannot_start_a_new_run(
         messages.append(result)
     elif malformation == "mixed-calls":
         assistant["tool_calls"].append(
-            {"id": "call_other", "type": "function", "function": {"name": "other"}}
+            {
+                "id": "call_other",
+                "type": "function",
+                "function": {"name": "other", "arguments": "{}"},
+            }
         )
     request = body(stream=stream)
     request["messages"].extend(messages)

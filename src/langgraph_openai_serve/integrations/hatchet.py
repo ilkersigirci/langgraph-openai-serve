@@ -35,6 +35,7 @@ _STATUSES: dict[RunStatus, BackgroundStatus] = {
 }
 
 HatchetBackgroundTask = Standalone[BackgroundJob, dict[str, JsonValue]]
+"""The Hatchet task that ``create_hatchet_task`` registers."""
 
 
 def create_hatchet_task(

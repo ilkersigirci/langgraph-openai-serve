@@ -3,7 +3,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Self
 
-from langchain_core.callbacks.base import Callbacks
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
@@ -45,7 +44,7 @@ _INTERRUPT_CHECKPOINTER_METHODS = (
 
 
 class GraphConfig(BaseModel):
-    """Graph configuration."""
+    """One graph served as an OpenAI model, with its features and adapters."""
 
     graph: GraphResolver
     description: Annotated[
@@ -56,7 +55,6 @@ class GraphConfig(BaseModel):
     client_settings: type[ClientSettings] | None = None
     server_tools: frozenset[ToolName] = frozenset()
     client_tools: frozenset[ToolName] = frozenset()
-    runtime_callbacks: Callbacks = None
     request_to_input: RequestToInput | None = None
     context_factory: ContextFactory | None = None
     output_to_message: OutputToMessage | None = None
@@ -136,7 +134,7 @@ class GraphConfig(BaseModel):
         return context
 
     async def render_output(self, output: Any) -> AIMessage:
-        """Convert native graph output into the durable assistant message."""
+        """Convert native graph output into the final assistant message."""
         if self.output_to_message is not None:
             return await _maybe_await(self.output_to_message(output))
 

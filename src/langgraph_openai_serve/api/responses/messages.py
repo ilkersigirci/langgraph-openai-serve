@@ -102,11 +102,18 @@ def _validate_replay_ids(
         raise InvalidRequestError(msg, param="input")
 
 
-def _message_from_item(item: ResponseInputItem) -> BaseMessage:
+def _message_from_item(
+    item: ResponseInputMessage
+    | ResponseOutputMessageInput
+    | ResponseFunctionCallOutputInput
+    | ResponseCustomToolCallOutputInput
+    | ResponseWebSearchCallInput,
+) -> BaseMessage:
     if isinstance(item, ResponseWebSearchCallInput):
         return AIMessage(
             id=item.id,
             content=[item.model_dump(mode="json", exclude_none=True)],
+            # Selects LangChain's OpenAI translator for content_blocks.
             response_metadata={"model_provider": "openai"},
         )
     if isinstance(item, ResponseOutputMessageInput):
@@ -121,6 +128,7 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
     ):
         return ToolMessage(
             id=item.id,
+            # langchain-openai's custom_tool returns its output in this block.
             content=(
                 [{"type": "custom_tool_call_output", "output": item.output}]
                 if isinstance(item, ResponseCustomToolCallOutputInput)
@@ -128,9 +136,6 @@ def _message_from_item(item: ResponseInputItem) -> BaseMessage:
             ),
             tool_call_id=item.call_id,
         )
-    if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
-        msg = "Tool calls must be grouped before message conversion."
-        raise TypeError(msg)
     return _input_message(item)
 
 
@@ -168,6 +173,7 @@ def _tool_call_message(
     invalid_tool_calls: list[InvalidToolCall] = []
     for call in calls:
         if isinstance(call, ResponseCustomToolCallInput):
+            # langchain-openai passes a custom tool's freeform input as __arg1.
             tool_calls.append(
                 ToolCall(
                     name=call.name,
@@ -228,6 +234,3 @@ def _output_content(
             for part in item.content
         ],
     )
-
-
-__all__ = ["convert_responses_input"]

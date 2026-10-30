@@ -18,8 +18,8 @@ from langgraph_openai_serve.core.errors import (
     InvalidRequestError,
 )
 
-# LangGraph copies run metadata into each checkpoint, which marks LGOS runs.
 OPERATION_ID_METADATA_KEY = "lgos.operation_id"
+"""The run metadata key that LangGraph copies into checkpoints, marking LGOS runs."""
 
 
 class RunBusyError(InvalidRequestError):

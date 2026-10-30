@@ -276,7 +276,8 @@ def load_chunks(pages: Mapping[str, str], base_url: str) -> list[Document]:
         chunk_overlap=CHUNK_OVERLAP,
     )
     # The title prefix lets embeddings, BM25, and the model see each chunk's
-    # place in the documentation.
+    # place in the documentation. The ID matches a chunk across both rankings:
+    # the vector store returns copies.
     return [
         Document(
             id=str(position),
@@ -435,7 +436,7 @@ def create_lgos_rag_graph(
     ) -> dict[str, list[Document]]:
         if not state.queries:
             return {}
-        options = runtime.context or LgosRagSettings()
+        options = runtime.context
         docs = "docs" if options.scope == "all" else f"{options.scope} docs"
         for query in state.queries:
             get_stream_writer()(status_event(f"Searching the {docs}: {query}"))
@@ -454,7 +455,7 @@ def create_lgos_rag_graph(
         state: LgosRagState,
         runtime: Runtime[LgosRagSettings],
     ) -> dict[str, list[AIMessage]]:
-        options = runtime.context or LgosRagSettings()
+        options = runtime.context
         if not state.documents:
             instructions = f"{role}\n\n{DIRECT_PROMPT}"
         else:
@@ -505,18 +506,3 @@ lgos_rag_graph_config = GraphConfig(
     ),
     client_settings=LgosRagSettings,
 )
-
-__all__ = [
-    "DocsIndex",
-    "LgosRagSettings",
-    "LgosRagState",
-    "Scope",
-    "SearchPlan",
-    "create_lgos_rag_graph",
-    "docs_release",
-    "docs_url",
-    "fetch_chunks",
-    "lgos_rag",
-    "lgos_rag_graph_config",
-    "load_chunks",
-]

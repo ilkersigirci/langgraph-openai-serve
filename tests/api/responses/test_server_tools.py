@@ -12,18 +12,18 @@ from langgraph.graph import END, MessagesState, StateGraph
 from openai import AsyncOpenAI, InternalServerError
 from openai.types.responses import Response, ResponseStreamEvent
 
-from langgraph_openai_serve import (
-    GraphConfig,
-    GraphRegistry,
-    GraphRequest,
-)
-from langgraph_openai_serve.api.responses.request import decode_responses_request
+from langgraph_openai_serve import GraphConfig, GraphRegistry
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.server_tools import ServerToolTracker
-from langgraph_openai_serve.api.responses.service import stream_response
+from langgraph_openai_serve.api.responses.service import (
+    prepare_response_run,
+    stream_response,
+)
 from langgraph_openai_serve.graph.events import status_event
-from langgraph_openai_serve.graph.run import prepare_run
-from tests.graph.support.registration import replace_graph_config
+from tests.graph.support.registration import (
+    capture_graph_inputs,
+    replace_graph_config,
+)
 
 CALL = {
     "id": "call_package",
@@ -177,18 +177,7 @@ async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(request: GraphRequest, messages: list[BaseMessage]):
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        server_tools={"package_version"},
-        request_to_input=capture,
-    )
+    inputs = capture_graph_inputs(graph_registry, server_tools={"package_version"})
 
     await openai_client.responses.create(
         model="test",
@@ -197,7 +186,7 @@ async def test_tool_choice_none_exposes_no_server_tools_to_the_graph(
         tool_choice="none",
     )
 
-    assert received[0].server_tools == ()
+    assert inputs.requests[0].server_tools == ()
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -642,8 +631,9 @@ async def test_server_answer_streams_before_graph_finishes_and_retains_partial_o
     request = ResponseCreateRequest(
         model="live-search", input="Find docs", tools=SEARCH_TOOLS
     )
-    decoded, messages, _ = decode_responses_request(request, {"web_search"})
-    run = await prepare_run(decoded, messages, graph_registry)
+    run = await prepare_response_run(
+        request, graph_registry, checkpoint_scope="default"
+    )
     events = []
     with fail_after(5):
         async for frame in stream_response(request, run):

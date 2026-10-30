@@ -66,8 +66,9 @@ UVICORN_HOST=0.0.0.0 UVICORN_WORKERS=4 lgos serve my_app.registry:create_registr
 
 LGOS changes two defaults: it writes [structured logs](#logs-and-telemetry),
 which `--log-config` replaces, and turns off access logs, which `--access-log`
-enables. `--env-file` loads `LGOS_*` settings, but as with `UVICORN_*`
-variables, name the registry on the command line or in the process environment.
+enables. `--env-file` loads `LGOS_*` settings and `WEB_CONCURRENCY`, but as with
+`UVICORN_*` variables, name the registry on the command line or in the process
+environment.
 
 Each Uvicorn worker is a separate process, like a replica. Workers need a shared
 `LGOS_POSTGRES_URI` for interrupts and `LGOS_BACKGROUND=hatchet` for background

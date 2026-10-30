@@ -1,10 +1,11 @@
 """
 Deep research assistant that combines the LGOS features in one workflow.
 
-A private triage call answers simple requests directly, with attached files and
-the client's own functions, such as gateway MCP tools. For a request that needs
-web research, it proposes a plan and pauses: the user starts the research, asks
-for a direct answer instead, or edits the plan. The client decides whether the
+A private triage call routes each request. A simple one gets a streamed direct
+answer that can use attached files and the client's own functions, such as
+gateway MCP tools. For a request that needs web research, triage proposes a plan
+and pauses: the user starts the research, asks for a direct answer instead, or
+edits the plan. The client decides whether the
 research resumes in the background. One researcher per plan question then
 searches the web in rounds of parallel queries, and a streamed report cites the
 results. Research searches the web only when the client selects web_search; a
@@ -366,11 +367,8 @@ def create_deep_research_graph(
         return {"messages": [response]}
 
     graph = StateGraph(DeepResearchState, context_schema=DeepResearchContext)
-    # The compiled subgraphs run directly as nodes and exchange only the keys the
-    # parent has: scope the conversation and plan, each researcher one question
-    # in and its searches out. They compile without a checkpointer and inherit
-    # the parent's, which keeps a paused review under the scope's checkpoint
-    # namespace.
+    # The subgraphs compile without a checkpointer and inherit the parent's,
+    # which keeps a paused review under the scope's checkpoint namespace.
     graph.add_node("scope", _scope_graph(chat, files))
     graph.add_node("researcher", _researcher_graph(chat, web_search_tool))
     graph.add_node("report", report)
@@ -410,19 +408,3 @@ def create_deep_research_graph_config(graph: DeepResearchGraph) -> GraphConfig:
         client_settings=DeepResearchSettings,
         context_factory=context,
     )
-
-
-__all__ = [
-    "ANSWER_NOW",
-    "START_RESEARCH",
-    "WEB_SEARCH_NEEDED",
-    "DeepResearchContext",
-    "DeepResearchSettings",
-    "DeepResearchState",
-    "ResearcherInput",
-    "ResearcherOutput",
-    "ResearcherState",
-    "Triage",
-    "create_deep_research_graph",
-    "create_deep_research_graph_config",
-]

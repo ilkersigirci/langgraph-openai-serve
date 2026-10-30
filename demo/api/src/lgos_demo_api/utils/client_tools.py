@@ -1,10 +1,10 @@
 """Shared state, conversion, and model invocation for client-owned tools."""
 
 from collections.abc import Sequence
-from typing import Annotated, Any
+from typing import Annotated
 
-from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from langgraph.graph.message import add_messages
 from langgraph_openai_serve import (
     ClientFunctionTool,
@@ -44,24 +44,20 @@ async def invoke_client_tool_model(
     *,
     system_prompt: str,
     default_tool_choice: ClientToolChoice | None = None,
-    model: BaseChatModel | None = None,
+    model: ChatOpenAI | None = None,
 ) -> AIMessage:
     """Invoke a chat model, by default the shared one, leaving tools to the client."""
     model = model or chat_completions_model()
     conversation = [SystemMessage(content=system_prompt), *state.messages]
-
-    if state.tools:
-        binding_options: dict[str, Any] = {}
-        tool_choice = state.tool_choice or default_tool_choice
-        if tool_choice is not None:
-            binding_options["tool_choice"] = _chat_tool_choice(tool_choice)
-        if state.parallel_tool_calls is not None:
-            binding_options["parallel_tool_calls"] = state.parallel_tool_calls
-        return await model.bind_tools(
-            [chat_tool(tool) for tool in state.tools],
-            **binding_options,
-        ).ainvoke(conversation)
-    return await model.ainvoke(conversation)
+    if not state.tools:
+        return await model.ainvoke(conversation)
+    tool_choice = state.tool_choice or default_tool_choice
+    # ChatOpenAI leaves out a None tool choice or parallel_tool_calls.
+    return await model.bind_tools(
+        [chat_tool(tool) for tool in state.tools],
+        tool_choice=_chat_tool_choice(tool_choice) if tool_choice else None,
+        parallel_tool_calls=state.parallel_tool_calls,
+    ).ainvoke(conversation)
 
 
 def chat_tool(tool: ClientFunctionTool) -> dict[str, object]:

@@ -110,6 +110,20 @@ async def test_file_routes_translate_sdk_requests_and_repository_results(
     ]
 
 
+async def test_unexpected_error_leaves_its_traceback_to_the_server(
+    file_repository: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    file_repository.retrieve.side_effect = RuntimeError("storage down")
+    transport = ASGITransport(app=create_files_app(file_repository))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with pytest.raises(RuntimeError, match="storage down"):
+            await client.get("/v1/files/file-1")
+
+    (record,) = [r for r in caplog.records if r.name == "lgos_files_api.api"]
+    assert record.exc_info is None
+
+
 async def test_file_expiration_is_rejected_instead_of_ignored(
     files_client: AsyncOpenAI,
     file_repository: Mock,

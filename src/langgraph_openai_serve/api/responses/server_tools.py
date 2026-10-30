@@ -70,12 +70,11 @@ class ServerToolTracker:
 
     def _tool_calls(self, message: AIMessage) -> Iterator[ResponseCustomToolCall]:
         for tool_call in message.tool_calls:
-            name = tool_call.get("name")
+            name = tool_call["name"]
             if name not in self._selected:
                 continue
-            call_id = tool_call.get("id")
-            arguments = tool_call.get("args")
-            if not isinstance(call_id, str) or not call_id:
+            call_id, arguments = tool_call["id"], tool_call["args"]
+            if not call_id:
                 msg = "Server tool calls must include a non-empty id."
                 raise GraphError(msg)
             # A repeated call would emit duplicate Response item IDs.
@@ -84,7 +83,7 @@ class ServerToolTracker:
                 raise GraphError(msg)
             self._call_ids.add(call_id)
             if name == "web_search":
-                query = arguments.get("query") if isinstance(arguments, dict) else None
+                query = arguments.get("query")
                 if not isinstance(query, str) or not query.strip():
                     msg = "Server web_search calls must include a non-empty query."
                     raise GraphError(msg)
@@ -95,9 +94,8 @@ class ServerToolTracker:
                     status="in_progress",
                 )
             else:
-                tool_input = (
-                    arguments.get("__arg1") if isinstance(arguments, dict) else None
-                )
+                # langchain-openai passes a custom tool's freeform input as __arg1.
+                tool_input = arguments.get("__arg1")
                 if not isinstance(tool_input, str):
                     msg = "Server custom tool calls must include string input."
                     raise GraphError(msg)
@@ -146,6 +144,7 @@ def _update_messages(update: object) -> Iterator[BaseMessage]:
 
 def _custom_output(message: ToolMessage) -> str:
     output = message.content
+    # langchain-openai's custom_tool wraps its output in one such block.
     if isinstance(output, list) and len(output) == 1:
         block = output[0]
         if isinstance(block, dict) and block.get("type") == "custom_tool_call_output":
@@ -154,6 +153,3 @@ def _custom_output(message: ToolMessage) -> str:
         msg = "Server custom tool output must be a string."
         raise GraphError(msg)
     return output
-
-
-__all__ = ["ServerToolItem", "ServerToolTracker"]
