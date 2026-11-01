@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
@@ -23,8 +24,10 @@ class UserContext:
     user_id: str
 
 
+@pytest.mark.parametrize("stream", [False, True])
 async def test_typed_dict_schemas_and_native_context(
     make_request,
+    stream: bool,
 ) -> None:
     model = FakeListChatModel(responses=["answer"])
     output_keys = []
@@ -74,10 +77,15 @@ async def test_typed_dict_schemas_and_native_context(
         },
     )
     request = make_request("typed", user="alice")
+    messages = [HumanMessage(content="question")]
 
-    message = await run_langgraph(
-        request, [HumanMessage(content="question")], graph_registry
-    )
+    if stream:
+        *_, message = [
+            event
+            async for event in run_langgraph_stream(request, messages, graph_registry)
+        ]
+    else:
+        message = await run_langgraph(request, messages, graph_registry)
 
     assert message.text == "alice:answer"
     assert output_keys == [{"answer"}]
@@ -131,55 +139,3 @@ async def test_async_graph_factory_and_async_adapters(
     )
 
     assert message.text == "question"
-
-
-async def test_stream_and_invoke_render_the_same_output_shape(make_request) -> None:
-    output_keys = []
-
-    async def generate(state: QuestionState):
-        return {"answer": state["question"], "internal": "filtered"}
-
-    graph = (
-        StateGraph(
-            QuestionState,
-            input_schema=QuestionInput,
-            output_schema=AnswerOutput,
-        )
-        .add_node("generate", generate)
-        .set_entry_point("generate")
-        .set_finish_point("generate")
-        .compile()
-    )
-
-    async def output_to_message(output):
-        output_keys.append(set(output))
-        return AIMessage(content=output["answer"])
-
-    graph_registry = GraphRegistry(
-        graphs={
-            "typed": GraphConfig(
-                graph=graph,
-                description="DUMMY",
-                request_to_input=lambda _request, messages: {
-                    "question": messages[-1].content
-                },
-                output_to_message=output_to_message,
-            )
-        },
-    )
-    request = make_request("typed")
-
-    message = await run_langgraph(
-        request, [HumanMessage(content="question")], graph_registry
-    )
-    events = [
-        event
-        async for event in run_langgraph_stream(
-            request, [HumanMessage(content="question")], graph_registry
-        )
-    ]
-
-    assert message.text == "question"
-    assert isinstance(events[-1], AIMessage)
-    assert events[-1].text == "question"
-    assert output_keys == [{"answer"}, {"answer"}]

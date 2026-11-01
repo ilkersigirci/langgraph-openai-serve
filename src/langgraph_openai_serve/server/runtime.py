@@ -30,6 +30,12 @@ from langgraph_openai_serve.server.settings import ServerSettings
 logger = get_logger(__name__)
 
 _SCHEMA_LOCK_ID = 0x4C474F535343484D
+# LangGraph's PostgreSQL saver and store require these connection settings.
+_CONNECTION_KWARGS: dict[str, Any] = {
+    "autocommit": True,
+    "prepare_threshold": 0,
+    "row_factory": dict_row,
+}
 
 PostgresPool = AsyncConnectionPool[AsyncConnection[dict[str, Any]]]
 
@@ -76,11 +82,7 @@ async def open_resources(
         "PostgresPool",
         AsyncConnectionPool(
             conninfo=postgres_uri,
-            kwargs={
-                "autocommit": True,
-                "prepare_threshold": 0,
-                "row_factory": dict_row,
-            },
+            kwargs=_CONNECTION_KWARGS,
             min_size=1,
             max_size=settings.POSTGRES_POOL_SIZE,
             open=False,
@@ -140,7 +142,7 @@ async def expire_paused_runs(
 async def _setup_schema(postgres_uri: str) -> None:
     """Apply pending LangGraph migrations before this process serves work."""
     async with await AsyncConnection[dict[str, Any]].connect(
-        postgres_uri, autocommit=True, prepare_threshold=0, row_factory=dict_row
+        postgres_uri, **_CONNECTION_KWARGS
     ) as connection:
         # A blocking advisory-lock query holds a snapshot that can deadlock with
         # LangGraph's CREATE INDEX CONCURRENTLY across replicas. Poll in

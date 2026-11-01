@@ -38,9 +38,6 @@ def interrupt_response_nonce(response_id: str) -> str | None:
 
 def interrupt_tool_call_id(interrupt_id: str) -> str:
     """Expose one native LangGraph interrupt ID as an OpenAI call ID."""
-    if not interrupt_id:
-        msg = "LangGraph interrupt IDs must be non-empty strings."
-        raise ValueError(msg)
     return f"{_INTERRUPT_CALL_PREFIX}{interrupt_id}"
 
 
@@ -75,9 +72,6 @@ def parse_responses_resume(
             raise InvalidRequestError(msg, param="input")
         values[interrupt_id] = item.output
 
-    if not values:  # Response input lists are non-empty by schema.
-        msg = "Interrupt resumes require at least one function_call_output item."
-        raise InvalidRequestError(msg, param="input")
     return InterruptResume(
         run_id=run_id,
         values=values,
@@ -106,7 +100,7 @@ def _reject_resume_without_response_id(
 def interrupt_run_id(response_id: str) -> str:
     """Return the run UUID carried by an interrupt-style Response ID."""
     match = _RESPONSE_ID_PATTERN.fullmatch(response_id)
-    if match is None or uuid.UUID(hex=match.group("run")).int == 0:
+    if match is None:
         msg = "previous_response_id is not an LGOS interrupt Response ID."
         raise InvalidRequestError(msg, param="previous_response_id")
     return str(uuid.UUID(hex=match.group("run")))
@@ -118,12 +112,3 @@ def _parse_interrupt_tool_call_id(call_id: str) -> str:
         msg = "Interrupt function_call_output call_id is invalid."
         raise InvalidRequestError(msg, param="input")
     return interrupt_id
-
-
-__all__ = [
-    "interrupt_response_id",
-    "interrupt_response_nonce",
-    "interrupt_run_id",
-    "interrupt_tool_call_id",
-    "parse_responses_resume",
-]

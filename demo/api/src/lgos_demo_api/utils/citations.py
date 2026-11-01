@@ -32,6 +32,7 @@ def _citations(text: str, sources: Mapping[str, str]) -> list[Citation]:
                     url=url,
                     title=sources[url],
                     start_index=start,
+                    # Inclusive, as LGOS's citation_slice reads it.
                     end_index=end - 1,
                 )
             )
@@ -72,6 +73,3 @@ def cite_sources(message: AIMessage, sources: Mapping[str, str]) -> AIMessage:
             },
         }
     )
-
-
-__all__ = ["cite_sources", "tool_sources"]

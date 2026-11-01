@@ -8,7 +8,7 @@ to the package's SettingsConfigDict).
 """
 
 import os
-import subprocess  # ruff: ignore[suspicious-subprocess-import]
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Test-only subprocess with explicit arguments and no shell.
 import sys
 from pathlib import Path
 

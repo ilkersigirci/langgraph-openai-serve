@@ -9,9 +9,7 @@ import httpx2
 import pytest
 from httpx2 import ASGITransport, AsyncClient
 from langchain_core.language_models import BaseChatModel
-from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import BaseTool
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.store.memory import InMemoryStore
 from langgraph_openai_serve import (
@@ -27,6 +25,7 @@ from openai.types.responses import ResponseCompletedEvent
 from plotly import io as pio
 
 from lgos_demo_api.graphs import persistent_plot_agent as plot_module
+from lgos_demo_api.graphs.mcp_mock import MockToolCallingChatModel
 from lgos_demo_api.graphs.persistent_plot_agent import (
     DISPLAY_FILE_TOOL_NAME,
     PersistentPlotAgentContext,
@@ -46,15 +45,6 @@ def _tool_call(name: str, args: dict[str, Any], call_id: str) -> AIMessage:
 
 def _state(prompt: str) -> dict[str, list[HumanMessage]]:
     return {"messages": [HumanMessage(content=prompt)]}
-
-
-class ToolCallingChatModel(FakeMessagesListChatModel):
-    """Deterministic model with the tool-binding surface used by the agent."""
-
-    def bind_tools(
-        self, tools: list[BaseTool], **_kwargs: Any
-    ) -> "ToolCallingChatModel":  # ty: ignore[invalid-method-override]
-        return self
 
 
 def _registry(model: BaseChatModel) -> GraphRegistry:
@@ -96,7 +86,7 @@ def test_plot_requires_a_complete_persistence_scope(
     )
 
     with pytest.raises(InvalidRequestError) as exc_info:
-        context_factory(request, None)
+        context_factory(request, PersistentPlotAgentSettings())
 
     assert exc_info.value.param == param
     assert exc_info.value.code == "missing_persistence_scope"
@@ -248,7 +238,7 @@ async def test_streaming_response_completes_with_display_file_call(
 
     monkeypatch.setattr(plot_module, "AsyncOpenAI", FakeOpenAI)
     registry = _registry(
-        ToolCallingChatModel(
+        MockToolCallingChatModel(
             responses=[
                 _tool_call("show_quarterly_revenue", {}, "show-1"),
                 AIMessage(content="Q4 is highest at $230k."),

@@ -23,20 +23,18 @@ from lgos_files_api.contracts import (
 )
 
 _CHUNK_SIZE = 64 * 1024
+# HEAD errors have no body, so botocore uses the HTTP status as their code.
 _NOT_FOUND_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
 
 
 class _StreamingBody(Protocol):
-    def iter_chunks(self, chunk_size: int) -> Iterator[bytes]:
-        """Iterate response bytes."""
+    def iter_chunks(self, chunk_size: int) -> Iterator[bytes]: ...
 
-    def close(self) -> None:
-        """Close the response body."""
+    def close(self) -> None: ...
 
 
 class _Paginator(Protocol):
-    def paginate(self, **kwargs: str) -> Iterable[Mapping[str, object]]:
-        """Iterate S3 list pages."""
+    def paginate(self, **kwargs: str) -> Iterable[Mapping[str, object]]: ...
 
 
 class _S3Client(Protocol):
@@ -46,20 +44,15 @@ class _S3Client(Protocol):
         bucket: str,
         key: str,
         extra_args: Mapping[str, object],
-    ) -> None:
-        """Upload a file-like object."""
+    ) -> None: ...
 
-    def head_object(self, **kwargs: str) -> Mapping[str, object]:
-        """Return object metadata."""
+    def head_object(self, **kwargs: str) -> Mapping[str, object]: ...
 
-    def get_object(self, **kwargs: str) -> Mapping[str, object]:
-        """Return an object body and metadata."""
+    def get_object(self, **kwargs: str) -> Mapping[str, object]: ...
 
-    def delete_object(self, **kwargs: str) -> Mapping[str, object]:
-        """Delete an object."""
+    def delete_object(self, **kwargs: str) -> Mapping[str, object]: ...
 
-    def get_paginator(self, operation_name: str) -> _Paginator:
-        """Create an operation paginator."""
+    def get_paginator(self, operation_name: str) -> _Paginator: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +83,7 @@ class S3FileRepository:
         file_id = f"file-{uuid4().hex}"
         created_at = int(time())
         size = self._upload_size(upload)
+        # Measuring an unknown size leaves the stream at its end.
         upload.body.seek(0)
         self._client.upload_fileobj(
             upload.body,
@@ -120,7 +114,7 @@ class S3FileRepository:
         order: Literal["asc", "desc"],
         purpose: str | None,
     ) -> FilePage:
-        """List files using S3's native paginator."""
+        """Scan the prefix and sort in memory; S3 cannot list keys by creation time."""
         if purpose not in {None, "user_data"}:
             return FilePage(data=[], has_more=False)
 
@@ -168,13 +162,14 @@ class S3FileRepository:
         return self._file_object(
             file_id=file_id,
             size=size,
-            created_at=self._created_at(response, metadata),
+            created_at=int(metadata["created-at"]),
             filename=self._decode_filename(metadata["filename"]),
             purpose=cast("FilePurpose", metadata["purpose"]),
         )
 
     def delete(self, file_id: str) -> FileDeleted:
         """Delete one S3 object."""
+        # S3 deletes succeed for missing keys; check first so unknown IDs 404.
         self.retrieve(file_id)
         self._client.delete_object(Bucket=self._bucket, Key=self._key(file_id))
         return FileDeleted(id=file_id, deleted=True, object="file")
@@ -249,26 +244,16 @@ class S3FileRepository:
         if not isinstance(metadata, Mapping):
             msg = "S3 object is missing OpenAI file metadata."
             raise TypeError(msg)
+        # AWS lowercases metadata keys; botocore keeps other servers' header case.
         values = {
             key.lower(): value
             for key, value in metadata.items()
             if isinstance(key, str) and isinstance(value, str)
         }
-        if "filename" not in values or "purpose" not in values:
+        if not {"created-at", "filename", "purpose"} <= values.keys():
             msg = "S3 object is missing OpenAI file metadata."
             raise RuntimeError(msg)
         return values
-
-    @staticmethod
-    def _created_at(response: Mapping[str, object], metadata: Mapping[str, str]) -> int:
-        created_at = metadata.get("created-at")
-        if created_at is not None:
-            return int(created_at)
-        last_modified = response.get("LastModified")
-        if isinstance(last_modified, datetime):
-            return int(last_modified.timestamp())
-        msg = "S3 object is missing its creation time."
-        raise RuntimeError(msg)
 
     @staticmethod
     def _file_object(
@@ -298,6 +283,7 @@ class S3FileRepository:
 
     @staticmethod
     def _encode_filename(filename: str) -> str:
+        # Filenames may be Unicode, but botocore accepts only ASCII S3 metadata.
         return urlsafe_b64encode(filename.encode()).decode()
 
     @staticmethod

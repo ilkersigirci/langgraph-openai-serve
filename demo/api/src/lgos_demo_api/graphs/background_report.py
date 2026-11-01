@@ -24,12 +24,6 @@ class BackgroundReportSettings(ClientSettings):
     )
 
 
-async def wait_for_report(settings: BackgroundReportSettings | None) -> None:
-    await sleep((settings or BackgroundReportSettings()).delay_seconds)
-
-
-async def prepare_report(
-    request: str, settings: BackgroundReportSettings | None
-) -> str:
-    await wait_for_report(settings)
+async def prepare_report(request: str, settings: BackgroundReportSettings) -> str:
+    await sleep(settings.delay_seconds)
     return f"Background report for: {request}"

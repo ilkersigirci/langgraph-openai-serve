@@ -27,7 +27,7 @@ responses_client = v1_client.with_options(base_url=gateway.responses_base_url)
 
 
 async def retrieve_model(model_id: str) -> Model:
-    """Retrieve LGOS model metadata through the configured endpoint."""
+    """Find one LGOS model in the gateway catalog."""
     for model in await list_models():
         if model.id == model_id:
             return model
@@ -36,19 +36,10 @@ async def retrieve_model(model_id: str) -> Model:
 
 
 async def list_models() -> list[Model]:
-    """List models through the configured OpenAI endpoint."""
+    """List the gateway's LGOS models from its native metadata catalog."""
     if gateway.type == "litellm":
         payload = await v1_client.get(f"{gateway.root_url}/model/info", cast_to=object)
         return litellm_models(payload)
 
     catalog = await v1_client.models.list()
     return bifrost_models(catalog.data)
-
-
-def bifrost_model(model_id: str) -> tuple[str, str]:
-    """Split a Bifrost catalog ID into its provider and upstream model."""
-    provider, separator, upstream_model = model_id.partition("/")
-    if not provider or not separator or not upstream_model:
-        msg = f"Bifrost model ID must use the provider/model format: {model_id!r}."
-        raise ValueError(msg)
-    return provider, upstream_model

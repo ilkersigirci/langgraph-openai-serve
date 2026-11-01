@@ -33,7 +33,10 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.api.interrupt.support import resume_outputs
-from tests.graph.support.interrupt import make_multi_interrupt_graph
+from tests.graph.support.interrupt import (
+    make_interrupt_graph,
+    make_multi_interrupt_graph,
+)
 from tests.graph.support.schemas import MessageState
 
 if TYPE_CHECKING:
@@ -197,6 +200,39 @@ async def test_invalid_background_requests_are_rejected_before_execution(
 
     assert error.value.param == param
     assert graph.inputs == []
+
+
+async def test_invalid_background_resume_is_rejected_before_execution(
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    class Settings(ClientSettings):
+        count: int = 1
+
+    registry = GraphRegistry(
+        graphs={
+            "review": GraphConfig(
+                graph=make_interrupt_graph(
+                    checkpointer=sqlite_checkpointer, context_schema=Settings
+                ),
+                description="One question",
+                features={GraphFeature.INTERRUPTS, GraphFeature.BACKGROUND},
+                client_settings=Settings,
+            )
+        },
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    async with _client(registry) as client:
+        paused = await client.responses.create(model="review", input="Hi")
+        with pytest.raises(BadRequestError) as error:
+            await client.responses.create(
+                model="review",
+                previous_response_id=paused.id,
+                input=resume_outputs(paused, ["approve"]),
+                background=True,
+                metadata={"lgos_settings": '{"count":"invalid"}'},
+            )
+
+    assert error.value.param == "metadata.lgos_settings"
 
 
 async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:

@@ -23,8 +23,6 @@ INSTRUCTIONS = "Answer the user's request using the attached files."
 
 
 class FileInputState(BaseModel):
-    """Conversation state consumed by the file-input graph."""
-
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
@@ -99,5 +97,3 @@ file_input_graph_config = GraphConfig(
     description="Analyzes attached files with the OpenAI Responses API.",
     features={GraphFeature.FILE_INPUTS},
 )
-
-__all__ = ["file_input_graph", "file_input_graph_config"]

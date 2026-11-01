@@ -5,12 +5,10 @@ from pathlib import Path
 
 GENERIC_BUNDLE = (
     "contracts.py",
-    "api.py",
     "gateway.py",
     "catalog.py",
     "files.py",
     "responses.py",
-    "metadata.py",
     "interrupts.py",
     "pipe.py",
 )

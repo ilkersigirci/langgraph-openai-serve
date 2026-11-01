@@ -42,8 +42,3 @@ background_mock_graph_config = GraphConfig(
     features={GraphFeature.BACKGROUND},
     client_settings=BackgroundReportSettings,
 )
-
-__all__ = [
-    "background_mock_graph",
-    "background_mock_graph_config",
-]

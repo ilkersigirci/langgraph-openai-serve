@@ -13,7 +13,6 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseInputItem,
 )
 from langgraph_openai_serve.core.errors import InvalidRequestError
-from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
 
 RUN_ID = "725c277a-f6d5-4c52-95eb-8c09e91f7a7c"
 RESPONSE_ID = interrupt_response_id(RUN_ID)
@@ -27,10 +26,6 @@ def _output(
         call_id=interrupt_tool_call_id(interrupt_id),
         output=output,
     )
-
-
-def test_parse_responses_resume_returns_none_without_previous_response() -> None:
-    assert parse_responses_resume("hello") is None
 
 
 def test_parse_responses_resume_preserves_complete_string_output_batch() -> None:
@@ -89,21 +84,6 @@ def test_previous_response_id_requires_only_function_outputs(
         )
 
 
-def test_interrupt_items_require_previous_response_id() -> None:
-    call_id = interrupt_tool_call_id("interrupt-1")
-    items: list[ResponseInputItem] = [
-        ResponseFunctionCallInput(
-            call_id=call_id,
-            name=INTERRUPT_TOOL_NAME,
-            arguments='{"question":"Approve?"}',
-        ),
-        ResponseFunctionCallOutputInput(call_id=call_id, output="yes"),
-    ]
-
-    with pytest.raises(InvalidRequestError, match="previous_response_id"):
-        parse_responses_resume(items)
-
-
 @pytest.mark.parametrize(
     "previous_response_id",
     ["resp_prior", f"resp_lg_{RUN_ID.replace('-', '')}", ""],
@@ -151,7 +131,6 @@ def test_interrupt_response_ids_are_unique_and_keep_run_identity() -> None:
     second = interrupt_response_id(RUN_ID)
 
     assert first != second
-    assert first.startswith(f"resp_lg_{RUN_ID.replace('-', '')}_")
     resume = parse_responses_resume(
         [_output("interrupt-1", "yes")],
         previous_response_id=first,

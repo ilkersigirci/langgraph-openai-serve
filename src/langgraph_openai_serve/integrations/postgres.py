@@ -22,8 +22,8 @@ class PostgresRunCoordinator:
     """
     Coordinate interrupt runs with PostgreSQL session advisory locks.
 
-    The pool must return mapping rows, as required by ``AsyncPostgresSaver``
-    when both components share one pool (for example, ``row_factory=dict_row``).
+    The pool must return mapping rows (``row_factory=dict_row``), which
+    ``AsyncPostgresSaver`` also requires when it shares the pool.
     ``max_concurrent_leases`` limits how many pool connections coordination may
     hold at once. When the checkpointer shares this pool, reserve at least one
     connection for checkpoint I/O to avoid exhausting the pool with leases.

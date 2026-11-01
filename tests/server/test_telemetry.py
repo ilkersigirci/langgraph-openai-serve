@@ -1,7 +1,7 @@
 """OpenTelemetry boundary of the ``lgos serve`` and ``lgos worker`` processes."""
 
 import logging
-from logging.config import DictConfigurator
+import sys
 from unittest.mock import Mock
 
 import pytest
@@ -12,7 +12,6 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
 from langgraph_openai_serve.server import create_app, hatchet as server_hatchet
-from langgraph_openai_serve.server.logging import logging_config
 from tests.graph.support.telemetry import Telemetry, TraceContextHandler
 from tests.server.support import create_registry, server_settings
 
@@ -68,12 +67,14 @@ def test_hatchet_logs_reach_root_handlers_with_trace_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     logger = logging.getLogger("hatchet")
-    monkeypatch.setattr(logger, "handlers", logger.handlers.copy())
-    for attribute in ("level", "propagate", "disabled"):
-        monkeypatch.setattr(logger, attribute, getattr(logger, attribute))
-    config = logging_config("my_app", root_level=logging.INFO)
-    # Apply only this logger's configuration without replacing pytest's handlers.
-    DictConfigurator(config).configure_logger("hatchet", config["loggers"]["hatchet"])
+    # Importing hatchet_sdk leaves this state, even after `lgos serve` has
+    # configured logging.
+    monkeypatch.setattr(logger, "handlers", [logging.StreamHandler(sys.stdout)])
+    monkeypatch.setattr(logger, "level", logging.INFO)
+    monkeypatch.setattr(logger, "propagate", False)
+    monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)
+    monkeypatch.setattr(server_hatchet, "Hatchet", Mock(spec=Hatchet))
+    server_hatchet.create_hatchet()
     handler = TraceContextHandler()
     root = logging.getLogger()
     root.addHandler(handler)

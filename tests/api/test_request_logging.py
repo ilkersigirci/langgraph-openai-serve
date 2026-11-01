@@ -19,9 +19,10 @@ from langgraph_openai_serve import (
 )
 from langgraph_openai_serve.api.middleware import RequestContextMiddleware
 from langgraph_openai_serve.core.errors import configure_openai_error_handlers
-from langgraph_openai_serve.core.logging import bind_log_context, get_logger
+from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.openai_server import LanggraphOpenaiServe
+from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.schemas import MessageState
 from tests.graph.support.telemetry import TraceContextHandler
 
@@ -69,50 +70,38 @@ async def test_request_id_is_preserved_or_generated(
         assert request_id == expected
 
 
-async def test_request_context_is_added_to_lgos_logs(caplog) -> None:
-    caplog.set_level(logging.INFO, logger="langgraph_openai_serve")
+async def test_failed_interrupt_preparation_logs_its_operation_id(
+    sqlite_checkpointer,
+    caplog,
+) -> None:
+    caplog.set_level(logging.ERROR, logger="langgraph_openai_serve")
 
-    async def app(scope, _receive, send) -> None:
-        bind_log_context(
-            model="test",
-            stream=False,
-            operation_id="operation-123",
-        )
-        _TEST_LOGGER.info("test.request")
-        await send(
-            {
-                "type": "http.response.start",
-                "status": status.HTTP_200_OK,
-                "headers": [],
-            }
-        )
-        await send(
-            {
-                "type": "http.response.body",
-                "body": b"ok",
-                "more_body": False,
-            }
-        )
+    def fail_context(_request, _settings):
+        msg = "context failed"
+        raise RuntimeError(msg)
 
-    scope = {
-        "type": "http",
-        "method": "GET",
-        "path": "/models",
-        "headers": [(b"x-request-id", b"request-123")],
-    }
-
-    async def send(_message) -> None:
-        return None
-
-    await RequestContextMiddleware(app)(scope, dict, send)
-
-    record = next(
-        record for record in caplog.records if record.getMessage() == "test.request"
+    registry = GraphRegistry(
+        graphs={
+            "interruptible": GraphConfig(
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="DUMMY",
+                features={GraphFeature.INTERRUPTS},
+                context_factory=fail_context,
+            )
+        },
+        run_coordinator=InMemoryRunCoordinator(),
     )
-    assert record.request_id == "request-123"
-    assert record.model == "test"
-    assert record.stream is False
-    assert record.operation_id == "operation-123"
+    app = LanggraphOpenaiServe(registry=registry).bind_openai_api(prefix="/v1").app
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/v1/responses", json={"model": "interruptible", "input": "Hello"}
+        )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    (record,) = _records(caplog, "http.request.failed")
+    assert uuid.UUID(record.operation_id).version == _UUID4_VERSION
 
 
 async def test_escaping_exception_is_reraised_and_context_is_reset(caplog) -> None:

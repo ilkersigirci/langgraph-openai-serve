@@ -1,5 +1,9 @@
 from typing import Literal
 
+import pytest
+from langchain_core.messages import AIMessage
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
 from openai import AsyncOpenAI
 from pydantic import Field
 
@@ -8,11 +12,11 @@ from langgraph_openai_serve import (
     GraphConfig,
     GraphFeature,
     GraphRegistry,
-    GraphRequest,
 )
 from langgraph_openai_serve.protocol import JSON_SCHEMA_DIALECT, SETTINGS_METADATA_KEY
 from tests.graph.support.interrupt import make_interrupt_graph
 from tests.graph.support.message import make_message_graph
+from tests.graph.support.schemas import MessageState
 
 
 class PublicSettings(ClientSettings):
@@ -48,7 +52,12 @@ async def test_retrieved_model_exposes_public_schema_and_defaults(
     bind_public_settings(graph_registry)
 
     response = await openai_client.models.retrieve("test")
+    listed = await openai_client.models.list()
 
+    # Only retrieval carries the settings descriptor.
+    assert [
+        "client_settings" in (model.model_extra or {})["lgos"] for model in listed.data
+    ] == [False]
     extension = (response.model_extra or {})["lgos"]
     client_settings = extension["client_settings"]
     assert client_settings["json_schema"]["$schema"] == JSON_SCHEMA_DIALECT
@@ -95,25 +104,42 @@ async def test_models_advertise_sorted_features_and_tool_names(
     assert (listed.data[0].model_extra or {})["lgos"] == (expected_extension)
 
 
-async def test_bound_client_settings_builds_validated_runtime_context(
+@pytest.mark.parametrize("api", ["responses", "chat"])
+async def test_request_settings_become_the_runtime_context(
+    openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
+    api: str,
 ) -> None:
-    graph_config = bind_public_settings(graph_registry)
-    request = GraphRequest(
-        model="test",
-        metadata={SETTINGS_METADATA_KEY: '{"enabled":false,"mode":"detailed"}'},
-        user=None,
-        tools=(),
-        tool_choice=None,
-        parallel_tool_calls=None,
-    )
+    def echo_context(
+        _state: MessageState, runtime: Runtime[PublicSettings]
+    ) -> dict[str, list[AIMessage]]:
+        return {"messages": [AIMessage(content=runtime.context.model_dump_json())]}
 
-    context = await graph_config.build_context(
-        request,
-        await graph_config.resolve_graph(),
+    graph_registry.graphs["test"] = GraphConfig(
+        graph=StateGraph(MessageState, context_schema=PublicSettings)
+        .add_node("echo", echo_context)
+        .set_entry_point("echo")
+        .set_finish_point("echo")
+        .compile(),
+        description="DUMMY",
+        client_settings=PublicSettings,
     )
+    metadata = {SETTINGS_METADATA_KEY: '{"enabled":false}'}
 
-    assert context == PublicSettings(
-        enabled=False,
-        mode="detailed",
+    if api == "responses":
+        response = await openai_client.responses.create(
+            model="test", input="Hi", metadata=metadata
+        )
+        context = response.output_text
+    else:
+        completion = await openai_client.chat.completions.create(
+            model="test",
+            messages=[{"role": "user", "content": "Hi"}],
+            metadata=metadata,
+        )
+        context = completion.choices[0].message.content or ""
+
+    # Omitted settings keep their advertised defaults.
+    assert PublicSettings.model_validate_json(context) == PublicSettings(
+        enabled=False, mode="brief"
     )

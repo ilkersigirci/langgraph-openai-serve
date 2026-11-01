@@ -4,8 +4,8 @@ lgos-rag's evaluation as a Langfuse experiment over the published docs.
 Each case is a conversation with the pages that answer it, or the reply shape
 expected instead. `CaseInput` and `CaseExpectation` define the case format for
 the Git-tracked cases below and for cases curated in Langfuse. The checks score
-routing, retrieval, scope, links, and citations, and `_shared` runs them in
-Langfuse or, without it, locally.
+routing, reply shape, retrieval, scope, links, and citations, and `_shared` runs
+them in Langfuse or, without it, locally.
 """
 
 import re
@@ -372,7 +372,8 @@ async def _answer(*, item: LocalExperimentItem, **_kwargs: Any) -> dict[str, Any
         config={"callbacks": [CallbackHandler()]},
         context=case.settings,
     )
-    # LangGraph omits fields that kept their defaults, such as an empty plan.
+    # LangGraph omits fields no node wrote, such as documents when the plan has
+    # no queries.
     documents = state.get("documents", [])
     message = state["messages"][-1]
     return {

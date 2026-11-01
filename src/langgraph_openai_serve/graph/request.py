@@ -36,6 +36,7 @@ ClientToolChoice: TypeAlias = (
     | NamedFunctionToolChoice
     | NamedCustomToolChoice
 )
+"""A normalized ``tool_choice``: a mode, or one named tool the model must call."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,12 +51,3 @@ class GraphRequest:
     tool_choice: ClientToolChoice | None
     parallel_tool_calls: bool | None
     server_tools: tuple[str, ...] = ()
-
-
-__all__ = [
-    "ClientFunctionTool",
-    "ClientToolChoice",
-    "GraphRequest",
-    "NamedCustomToolChoice",
-    "NamedFunctionToolChoice",
-]

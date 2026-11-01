@@ -35,5 +35,3 @@ simple_external_tools_graph_config = GraphConfig(
     ),
     request_to_input=request_to_input,
 )
-
-__all__ = ["simple_external_tools_graph", "simple_external_tools_graph_config"]

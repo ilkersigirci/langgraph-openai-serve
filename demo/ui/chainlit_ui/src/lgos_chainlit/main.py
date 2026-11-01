@@ -19,6 +19,8 @@ from lgos_chainlit.clients import gateway, gateway_http_client
 from lgos_chainlit.mcp import mcp_gateway_config
 from lgos_chainlit.settings import get_chainlit_settings, settings
 
+# Chainlit builds its S3 client without a botocore Config, so this file selects
+# path-style SigV4 requests for the DEV_AWS_ENDPOINT server.
 os.environ.setdefault(
     "AWS_CONFIG_FILE",
     Path(__file__).with_name("aws_config").as_posix(),

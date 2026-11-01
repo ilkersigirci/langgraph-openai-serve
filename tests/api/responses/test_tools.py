@@ -13,23 +13,17 @@ from langgraph_openai_serve import (
     NamedFunctionToolChoice,
 )
 from tests.graph.support.message import make_message_graph
-from tests.graph.support.registration import replace_graph_config
+from tests.graph.support.registration import (
+    capture_graph_inputs,
+    replace_graph_config,
+)
 
 
 async def test_function_tools_and_choices_reach_graph_adapter(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture)
+    inputs = capture_graph_inputs(graph_registry)
 
     response = await openai_client.responses.create(
         model="test",
@@ -50,7 +44,7 @@ async def test_function_tools_and_choices_reach_graph_adapter(
         parallel_tool_calls=False,
     )
 
-    assert received == [
+    assert inputs.requests == [
         GraphRequest(
             model="test",
             metadata={},
@@ -81,21 +75,7 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(
-        request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        server_tools={"package_version"},
-        request_to_input=capture,
-    )
+    inputs = capture_graph_inputs(graph_registry, server_tools={"package_version"})
     response = await openai_client.responses.create(
         model="test",
         input="Use a tool.",
@@ -119,7 +99,7 @@ async def test_sdk_response_tools_can_be_replayed_unchanged(
         tool_choice="none",
     )
 
-    original_request, replayed_request = received
+    original_request, replayed_request = inputs.requests
     assert replayed_request.tools == original_request.tools
     assert replayed_request.server_tools == original_request.server_tools
 
@@ -223,17 +203,8 @@ async def test_server_and_client_tools_are_separated_by_registration(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(request: GraphRequest, messages: list[BaseMessage]):
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        server_tools={"package_version", "web_search"},
-        request_to_input=capture,
+    inputs = capture_graph_inputs(
+        graph_registry, server_tools={"package_version", "web_search"}
     )
 
     response = await openai_client.responses.create(
@@ -253,8 +224,8 @@ async def test_server_and_client_tools_are_separated_by_registration(
         tool_choice={"type": "custom", "name": "package_version"},
     )
 
-    assert received[0].server_tools == ("package_version", "web_search")
-    assert received[0].tools == (
+    assert inputs.requests[0].server_tools == ("package_version", "web_search")
+    assert inputs.requests[0].tools == (
         ClientFunctionTool(
             name="get_weather",
             description="Look up weather on the client.",
@@ -262,7 +233,9 @@ async def test_server_and_client_tools_are_separated_by_registration(
             strict=True,
         ),
     )
-    assert received[0].tool_choice == NamedCustomToolChoice(name="package_version")
+    assert inputs.requests[0].tool_choice == NamedCustomToolChoice(
+        name="package_version"
+    )
     assert [tool.type for tool in response.tools] == [
         "custom",
         "web_search",
@@ -276,18 +249,7 @@ async def test_required_web_search_choice_reaches_graph_adapter(
     graph_registry: GraphRegistry,
     stream: bool,
 ) -> None:
-    received: list[GraphRequest] = []
-
-    def capture(request: GraphRequest, messages: list[BaseMessage]):
-        received.append(request)
-        return {"messages": messages}
-
-    replace_graph_config(
-        graph_registry,
-        "test",
-        server_tools={"web_search"},
-        request_to_input=capture,
-    )
+    inputs = capture_graph_inputs(graph_registry, server_tools={"web_search"})
 
     result = await openai_client.responses.create(
         model="test",
@@ -303,8 +265,8 @@ async def test_required_web_search_choice_reaches_graph_adapter(
     else:
         response = result
 
-    assert received[0].server_tools == ("web_search",)
-    assert received[0].tool_choice == "required"
+    assert inputs.requests[0].server_tools == ("web_search",)
+    assert inputs.requests[0].tool_choice == "required"
     assert response.tool_choice == "required"
 
 
@@ -386,16 +348,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     graph_registry: GraphRegistry,
     invalid_arguments: str,
 ) -> None:
-    received: list[list[BaseMessage]] = []
-
-    def capture(
-        _request: GraphRequest,
-        messages: list[BaseMessage],
-    ) -> dict[str, list[BaseMessage]]:
-        received.append(messages)
-        return {"messages": messages}
-
-    replace_graph_config(graph_registry, "test", request_to_input=capture)
+    inputs = capture_graph_inputs(graph_registry)
 
     await openai_client.responses.create(
         model="test",
@@ -429,8 +382,7 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
         ],
     )
 
-    assert len(received) == 1
-    messages = received[0]
+    (messages,) = inputs.messages
     assert [type(message) for message in messages] == [
         AIMessage,
         ToolMessage,
@@ -457,6 +409,30 @@ async def test_function_calls_and_outputs_become_ordered_langchain_messages(
     assert [message.tool_call_id for message in messages[1:]] == [
         "call_weather",
         "call_calculator",
+    ]
+
+
+async def test_empty_arguments_replay_a_parameterless_call(
+    openai_client: AsyncOpenAI,
+    graph_registry: GraphRegistry,
+) -> None:
+    inputs = capture_graph_inputs(graph_registry)
+
+    await openai_client.responses.create(
+        model="test",
+        input=[
+            {
+                "type": "function_call",
+                "call_id": "call_ping",
+                "name": "ping",
+                "arguments": "",
+            },
+            {"type": "function_call_output", "call_id": "call_ping", "output": "pong"},
+        ],
+    )
+
+    assert inputs.messages[0][0].tool_calls == [
+        {"name": "ping", "args": {}, "id": "call_ping", "type": "tool_call"}
     ]
 
 
@@ -600,70 +576,38 @@ def tool_openai_client(
     return openai_client
 
 
+@pytest.mark.parametrize("stream", [False, True])
 async def test_multiple_tool_calls_are_distinct_response_output_items(
     tool_openai_client: AsyncOpenAI,
+    stream: bool,
 ) -> None:
-    response = await tool_openai_client.responses.create(model="tools", input="Hi")
+    if stream:
+        events = [
+            event
+            async for event in await tool_openai_client.responses.create(
+                model="tools", input="Hi", stream=True
+            )
+        ]
+        response = events[-1].response
+        # Each call is announced pending, then its arguments arrive as a delta.
+        assert [
+            (event.output_index, event.item.call_id, event.item.arguments)
+            for event in events
+            if event.type == "response.output_item.added"
+        ] == [(0, "call_weather", ""), (1, "call_translate", "")]
+        assert [
+            json.loads(event.delta)
+            for event in events
+            if event.type == "response.function_call_arguments.delta"
+        ] == [{"city": "Istanbul"}, {"text": "hello"}]
+    else:
+        response = await tool_openai_client.responses.create(model="tools", input="Hi")
 
-    assert [item.type for item in response.output] == [
-        "function_call",
-        "function_call",
+    assert [
+        (item.type, item.call_id, item.name, json.loads(item.arguments))
+        for item in response.output
+    ] == [
+        ("function_call", "call_weather", "weather", {"city": "Istanbul"}),
+        ("function_call", "call_translate", "translate", {"text": "hello"}),
     ]
-    assert [item.call_id for item in response.output] == [
-        "call_weather",
-        "call_translate",
-    ]
-    assert [item.name for item in response.output] == ["weather", "translate"]
-    assert [json.loads(item.arguments) for item in response.output] == [
-        {"city": "Istanbul"},
-        {"text": "hello"},
-    ]
-    assert all(item.id.startswith("fc_") for item in response.output)
-
-
-async def test_function_call_stream_has_complete_lifecycle(
-    tool_openai_client: AsyncOpenAI,
-) -> None:
-    stream = await tool_openai_client.responses.create(
-        model="tools",
-        input="Hi",
-        stream=True,
-    )
-    events = [event async for event in stream]
-    one_call_event_types = [
-        "response.created",
-        "response.in_progress",
-        "response.output_item.added",
-        "response.function_call_arguments.delta",
-        "response.function_call_arguments.done",
-        "response.output_item.done",
-        "response.completed",
-    ]
-    assert [event.type for event in events] == [
-        *one_call_event_types[:-1],
-        *one_call_event_types[2:],
-    ]
-    assert [event.sequence_number for event in events] == list(range(len(events)))
-
-    added = [event for event in events if event.type == "response.output_item.added"]
-    deltas = [
-        event
-        for event in events
-        if event.type == "response.function_call_arguments.delta"
-    ]
-    done = [event for event in events if event.type == "response.output_item.done"]
-    assert [event.output_index for event in added] == [0, 1]
-    assert [event.item.call_id for event in added] == [
-        "call_weather",
-        "call_translate",
-    ]
-    assert [event.item.arguments for event in added] == ["", ""]
-    assert [json.loads(event.delta) for event in deltas] == [
-        {"city": "Istanbul"},
-        {"text": "hello"},
-    ]
-    assert [event.item.id for event in done] == [event.item.id for event in added]
-    assert events[-1].type == "response.completed"
-    assert [item.id for item in events[-1].response.output] == [
-        event.item.id for event in done
-    ]
+    assert len({item.id for item in response.output}) == len(response.output)

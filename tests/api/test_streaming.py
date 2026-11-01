@@ -5,6 +5,7 @@ from anyio import Event, fail_after
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from langgraph_openai_serve.api.streaming import StreamOwner
+from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from langgraph_openai_serve.graph.run import GraphRun
 
 KEEPALIVE = ": ping\n\n"
@@ -49,3 +50,24 @@ async def test_idle_stream_sends_keepalive_comments_through_proxies() -> None:
     assert response.headers["cache-control"] == "no-cache"
     # Nginx would otherwise buffer the stream and hold back the keepalives.
     assert response.headers["x-accel-buffering"] == "no"
+
+
+async def test_immediate_stream_close_releases_prepared_run() -> None:
+    source_started = False
+
+    async def source() -> AsyncGenerator[str, None]:
+        nonlocal source_started
+        source_started = True
+        yield "unreachable"
+
+    coordinator = InMemoryRunCoordinator()
+    run = unprepared_run()
+    await run.hold(coordinator("prepared-run"))
+
+    owner = StreamOwner()
+    owner.start(source(), run)
+    await owner.aclose()
+
+    assert not source_started
+    async with coordinator("prepared-run"):
+        pass

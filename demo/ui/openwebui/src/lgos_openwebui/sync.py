@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> None:
         # Open WebUI explains a rejected Function, such as a failed import.
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"
         raise SystemExit(msg) from None
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         msg = f"Open WebUI sync failed: {exc}"
         raise SystemExit(msg) from None
     for function_id, action in results.items():

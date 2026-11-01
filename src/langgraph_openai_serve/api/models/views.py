@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends
 
 from langgraph_openai_serve.api.deps import get_graph_registry
 from langgraph_openai_serve.api.models import service as models_service
-from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
+from langgraph_openai_serve.api.models.schemas import Model, ModelList
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 router = APIRouter(prefix="/models", tags=["openai"])
 
 
-@router.get("")
+@router.get("", response_model_exclude_none=True)
 def list_models(
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry)],
 ) -> ModelList:
@@ -24,6 +24,6 @@ def list_models(
 def retrieve_model(
     model: str,
     graph_registry: Annotated[GraphRegistry, Depends(get_graph_registry)],
-) -> ModelDetails:
+) -> Model:
     """Retrieve one registered graph as an OpenAI model."""
     return models_service.get_model(model, graph_registry)

@@ -66,6 +66,3 @@ async def resolve_file_inputs(
             message.model_copy(update={"content": content}) if changed else message
         )
     return resolved
-
-
-__all__ = ["load_file_block", "resolve_file_inputs"]

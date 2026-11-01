@@ -146,11 +146,7 @@ def create_server_tool_graph() -> CompiledStateGraph[
         response = await internal_model.bind_tools(
             _selected_tools(request),
             tool_choice=choice,
-            **(
-                {"parallel_tool_calls": request.parallel_tool_calls}
-                if request.parallel_tool_calls is not None
-                else {}
-            ),
+            parallel_tool_calls=request.parallel_tool_calls,
         ).ainvoke(
             [
                 SystemMessage(
@@ -208,12 +204,3 @@ server_tool_graph_config = GraphConfig(
     server_tools={package_version.name, web_search.name},
     context_factory=context_factory,
 )
-
-
-__all__ = [
-    "create_server_tool_graph",
-    "package_version",
-    "server_tool_graph",
-    "server_tool_graph_config",
-    "web_search",
-]

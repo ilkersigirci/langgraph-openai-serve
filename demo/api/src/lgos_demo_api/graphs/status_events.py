@@ -48,5 +48,3 @@ status_event_graph_config = GraphConfig(
     graph=status_event_graph,
     description="Streams portable status updates for native client rendering.",
 )
-
-__all__ = ["status_event_graph_config"]

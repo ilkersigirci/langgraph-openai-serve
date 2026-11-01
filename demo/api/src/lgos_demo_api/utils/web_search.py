@@ -39,6 +39,3 @@ async def search_web(
         if len(results) == _RESULT_LIMIT:
             break
     return results
-
-
-__all__ = ["WebSearchResult", "search_web"]

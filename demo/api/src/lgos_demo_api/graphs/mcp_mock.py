@@ -1,6 +1,6 @@
 """Small, dependency-free example of loading MCP-style tools."""
 
-from typing import Any
+from typing import Self
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -13,11 +13,7 @@ from langgraph_openai_serve import GraphConfig
 class MockToolCallingChatModel(FakeMessagesListChatModel):
     """Fake chat model that supports tool binding for the deterministic demo."""
 
-    def bind_tools(
-        self,
-        tools: list[BaseTool],  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
-        **kwargs: Any,  # ruff: ignore[unused-method-argument] - Preserve the LangChain override signature.
-    ) -> "MockToolCallingChatModel":  # ty: ignore[invalid-method-override]
+    def bind_tools(self, *_args: object, **_kwargs: object) -> Self:
         return self
 
 
@@ -66,5 +62,3 @@ mcp_mock_graph_config = GraphConfig(
         "Demonstrates async MCP-style tool discovery with no network or credentials."
     ),
 )
-
-__all__ = ["mcp_mock_graph", "mcp_mock_graph_config"]

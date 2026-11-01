@@ -7,9 +7,7 @@ from urllib.parse import quote
 import httpx
 from openai.types.responses import ResponseFunctionToolCall
 
-from .api import _client
 from .contracts import (
-    DISPLAY_FILE_TOOL_NAME,
     PLOTLY_MEDIA_TYPE,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
@@ -18,6 +16,7 @@ from .contracts import (
     OpenWebUIRequest,
     PlotlyFigure,
 )
+from .gateway import _client
 
 
 async def _with_response_file_parts(
@@ -117,9 +116,6 @@ async def _handle_display_file(
     provider: str,
 ) -> dict[str, str]:
     """Persist a generated image or interactive chart through native UI events."""
-    if call.name != DISPLAY_FILE_TOOL_NAME:
-        msg = f"Unsupported client function: {call.name}"
-        raise ValueError(msg)
     if event_emitter is None:
         msg = "Open WebUI did not provide an event emitter for display_file."
         raise ValueError(msg)

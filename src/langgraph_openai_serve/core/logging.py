@@ -65,13 +65,9 @@ class RequestContextFilter(logging.Filter):
     also enriches records from graph nodes, dependencies, and its own code.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._log_context = _log_context
-
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:  # ruff: ignore[no-self-use] - Overrides logging.Filter.filter.
         """Enrich a record while preserving fields supplied by the caller."""
-        for name, value in (self._log_context.get() or {}).items():
+        for name, value in (_log_context.get() or {}).items():
             if name not in record.__dict__:
                 setattr(record, name, value)
         return True

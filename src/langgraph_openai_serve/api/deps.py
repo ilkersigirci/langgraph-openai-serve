@@ -26,6 +26,3 @@ async def get_stream_owner() -> AsyncIterator[StreamOwner]:
         yield owner
     finally:
         await owner.aclose()
-
-
-__all__ = ["get_graph_registry", "get_stream_owner"]

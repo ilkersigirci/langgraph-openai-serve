@@ -30,10 +30,10 @@ def review(state: ApprovalState) -> dict[str, str]:
             "allow_other": False,
         }
     )
-    if isinstance(answer, str) and answer.strip().lower() in {"approve", "reject"}:
-        return {"decision": answer.strip().lower()}
-    msg = "Approval response must be approve or reject."
-    raise InvalidRequestError(msg, param="input", code="invalid_approval_decision")
+    if (decision := answer.strip().lower()) not in {"approve", "reject"}:
+        msg = "Approval response must be approve or reject."
+        raise InvalidRequestError(msg, param="input", code="invalid_approval_decision")
+    return {"decision": decision}
 
 
 def finish(state: ApprovalState) -> dict[str, list[AIMessage]]:

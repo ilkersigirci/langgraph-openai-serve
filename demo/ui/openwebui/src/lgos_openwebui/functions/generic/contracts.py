@@ -14,8 +14,8 @@ from pydantic import (
     field_validator,
 )
 
-# These values mirror the public LGOS wire contract. This standalone Open WebUI
-# Function must not import the server package:
+# The LGOS values here mirror the public LGOS wire contract. This standalone
+# Open WebUI Function must not import the server package:
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/protocol.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/models/schemas.py
 # https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/src/langgraph_openai_serve/api/responses/interrupts.py
@@ -68,13 +68,13 @@ class OpenWebUIFile(BaseModel):
 
 
 class OpenWebUIMessageFunction(BaseModel):
-    name: str | None = None
-    arguments: str | None = None
+    name: str
+    arguments: str
 
 
 class OpenWebUIMessageToolCall(BaseModel):
-    id: str | None = None
-    function: OpenWebUIMessageFunction | None = None
+    id: str
+    function: OpenWebUIMessageFunction
 
 
 class OpenWebUIMessage(BaseModel):
@@ -163,8 +163,7 @@ class OpenWebUIMetadata(BaseModel):
 
 class OpenWebUIToolSpec(BaseModel):
     description: str | None = None
-    parameters: dict[str, JsonValue] | None = None
-    strict: bool = False
+    parameters: dict[str, JsonValue]
 
 
 class InterruptCancelled(Exception):  # ruff: ignore[error-suffix-on-exception-name] - Cancellation is control flow, not an application error.

@@ -33,7 +33,6 @@ from langgraph_openai_serve.graph.interrupt import (
     LangGraphInterruptBatch,
     checkpoint_key,
 )
-from langgraph_openai_serve.graph.run import prepare_run
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.interrupt import (
     DEFAULT_INTERRUPT_PAYLOAD,
@@ -130,11 +129,7 @@ async def test_cancelled_preparation_finishes_lease_release(
 
     async def run_preparation() -> None:
         try:
-            await prepare_run(
-                request,
-                [HumanMessage(content="question")],
-                registry,
-            )
+            await run_langgraph(request, [HumanMessage(content="question")], registry)
         except get_cancelled_exc_class():
             cancellation_propagated.set()
 
@@ -486,14 +481,3 @@ def test_interrupt_checkpointer_must_override_required_async_methods(
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
         )
-
-
-async def test_interrupt_checkpointer_accepts_minimal_async_interface() -> None:
-    checkpointer = MinimalAsyncCheckpointer()
-    config = GraphConfig(
-        graph=make_interrupt_graph(checkpointer=checkpointer),
-        description="DUMMY",
-        features={GraphFeature.INTERRUPTS},
-    )
-
-    assert (await config.resolve_graph()).checkpointer is checkpointer

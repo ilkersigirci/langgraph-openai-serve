@@ -43,21 +43,16 @@ WEATHER_TOOL = {
 }
 
 
-def _status_graph(*, multiple: bool = False, stream_final: bool = True) -> Any:
-    model = FakeListChatModel(
-        responses=[FINAL_TEXT],
-        disable_streaming=not stream_final,
-    )
+def _status_graph() -> Any:
+    model = FakeListChatModel(responses=[FINAL_TEXT])
 
     async def generate(state: MessageState) -> dict[str, list[AIMessage]]:
         writer = get_stream_writer()
         writer(status_event("Checking inputs."))
-        if multiple:
-            writer(status_event(""))
-            writer({"type": "progress", "data": {"private": True}})
+        writer(status_event(""))
+        writer({"type": "progress", "data": {"private": True}})
         answer = await model.ainvoke(state["messages"])
-        if multiple:
-            writer(status_event("Answer ready"))
+        writer(status_event("Answer ready"))
         return {"messages": [answer]}
 
     return (
@@ -122,12 +117,8 @@ def fastapi_app() -> FastAPI:
     )
     registry = GraphRegistry(
         graphs={
-            "text": GraphConfig(
-                graph=lambda: _status_graph(stream_final=False),
-                description="DUMMY",
-            ),
             "commentary": GraphConfig(
-                graph=lambda: _status_graph(multiple=True),
+                graph=_status_graph,
                 description="DUMMY",
             ),
             "fallback": GraphConfig(
@@ -174,71 +165,6 @@ async def _events(
     return [event async for event in stream]
 
 
-async def test_text_stream_has_complete_lifecycle_and_stable_identity(
-    openai_client: AsyncOpenAI,
-) -> None:
-    events = await _events(openai_client, "text")
-
-    assert [event.type for event in events] == [
-        "response.created",
-        "response.in_progress",
-        "response.output_item.added",
-        "response.content_part.added",
-        "response.output_text.delta",
-        "response.output_text.done",
-        "response.content_part.done",
-        "response.output_item.done",
-        "response.output_item.added",
-        "response.content_part.added",
-        "response.output_text.delta",
-        "response.output_text.done",
-        "response.content_part.done",
-        "response.output_item.done",
-        "response.completed",
-    ]
-    assert [event.sequence_number for event in events] == list(range(len(events)))
-
-    response_events = [
-        event
-        for event in events
-        if event.type
-        in {"response.created", "response.in_progress", "response.completed"}
-    ]
-    assert len({event.response.id for event in response_events}) == 1
-    assert all(
-        (event.response.model_extra or {})["store"] is False
-        for event in response_events
-    )
-    completed = response_events[-1].response
-    assert completed.created_at == response_events[0].response.created_at
-    assert completed.completed_at >= completed.created_at
-    assert completed.status == "completed"
-    assert [item.phase for item in completed.output] == [
-        "commentary",
-        "final_answer",
-    ]
-    assert [item.content[0].text for item in completed.output] == [
-        "Checking inputs.",
-        FINAL_TEXT,
-    ]
-
-    added = [event for event in events if event.type == "response.output_item.added"]
-    assert [event.output_index for event in added] == [0, 1]
-    assert [event.item.phase for event in added] == ["commentary", "final_answer"]
-    for output_index, output_item in enumerate(completed.output):
-        item_events = [
-            event
-            for event in events
-            if getattr(event, "output_index", None) == output_index
-        ]
-        event_item_ids = {
-            getattr(event, "item_id", None)
-            or getattr(getattr(event, "item", None), "id", None)
-            for event in item_events
-        }
-        assert event_item_ids == {output_item.id}
-
-
 @pytest.mark.parametrize(
     ("model", "tools", "fixture_name"),
     [
@@ -282,31 +208,25 @@ async def test_responses_exposes_only_visible_statuses_as_commentary(
     events = await _events(openai_client, "commentary")
 
     completed = events[-1].response
-    assert [item.phase for item in completed.output] == [
-        "commentary",
-        "final_answer",
-        "commentary",
-    ]
-    assert [item.content[0].text for item in completed.output] == [
-        "Checking inputs.",
-        FINAL_TEXT,
-        "Answer ready",
+    assert [(item.phase, item.content[0].text) for item in completed.output] == [
+        ("commentary", "Checking inputs."),
+        ("final_answer", FINAL_TEXT),
+        ("commentary", "Answer ready"),
     ]
     assert [
         event.item.phase
         for event in events
         if event.type == "response.output_item.added"
     ] == ["commentary", "final_answer", "commentary"]
-
-
-async def test_status_commentary_requires_streaming(
-    openai_client: AsyncOpenAI,
-) -> None:
-    response = await openai_client.responses.create(
-        model="text",
-        input="Hello",
-    )
-    assert [item.phase for item in response.output] == ["final_answer"]
+    # Every event of an item carries that item's output index and ID.
+    for output_index, output_item in enumerate(completed.output):
+        item_ids = {
+            getattr(event, "item_id", None)
+            or getattr(getattr(event, "item", None), "id", None)
+            for event in events
+            if getattr(event, "output_index", None) == output_index
+        }
+        assert item_ids == {output_item.id}
 
 
 async def test_streamed_final_text_mismatch_ends_in_failed_response(

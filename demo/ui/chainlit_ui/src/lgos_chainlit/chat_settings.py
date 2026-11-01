@@ -58,17 +58,27 @@ async def configure_chat_settings() -> None:
             initial=saved.get(STREAMING_SETTING_ID) is not False,
         )
     ]
-    if extension is not None:
-        widgets.extend(
-            Switch(
-                id=name,
-                label=name.replace("_", " ").capitalize(),
-                description="Let the graph run this server tool.",
-                initial=saved.get(name) is True,
+    if extension is None:
+        # Without trusted metadata, refresh() shows the form but keeps every
+        # saved selection, so they return intact once the metadata does.
+        await cl.ChatSettings(widgets).refresh()
+        if model_id:
+            await cl.context.emitter.send_toast(
+                LIMITED_FUNCTIONALITY_MESSAGE,
+                type="warning",
             )
-            for name in extension.server_tools
+        return
+
+    widgets.extend(
+        Switch(
+            id=name,
+            label=name.replace("_", " ").capitalize(),
+            description="Let the graph run this server tool.",
+            initial=saved.get(name) is True,
         )
-    if extension is not None and BACKGROUND_FEATURE in extension.features:
+        for name in extension.server_tools
+    )
+    if BACKGROUND_FEATURE in extension.features:
         widgets.append(
             Switch(
                 id=BACKGROUND_SETTING_ID,
@@ -77,7 +87,7 @@ async def configure_chat_settings() -> None:
                 initial=saved.get(BACKGROUND_SETTING_ID) is True,
             )
         )
-    if extension is not None and extension.client_settings is not None:
+    if extension.client_settings is not None:
         widgets.extend(
             settings_widgets(
                 extension.client_settings.json_schema,
@@ -85,20 +95,8 @@ async def configure_chat_settings() -> None:
                 saved,
             )
         )
-
-    chat_settings = cl.ChatSettings(widgets)
-    if extension is not None:
-        # send() makes the session match the form, dropping stale settings.
-        await chat_settings.send()
-        return
-    # Without trusted metadata, refresh() shows the form but keeps every saved
-    # selection, so they return intact once the metadata does.
-    await chat_settings.refresh()
-    if model_id:
-        await cl.context.emitter.send_toast(
-            LIMITED_FUNCTIONALITY_MESSAGE,
-            type="warning",
-        )
+    # send() makes the session match the form, dropping stale settings.
+    await cl.ChatSettings(widgets).send()
 
 
 def response_tools() -> list[ToolParam]:
@@ -129,8 +127,10 @@ def streaming_enabled() -> bool:
 
 def background_enabled() -> bool:
     """Return whether this turn should use background execution."""
+    extension = _model_extension()
     return (
-        _model_supports(BACKGROUND_FEATURE)
+        extension is not None
+        and BACKGROUND_FEATURE in extension.features
         and cl.user_session.get("chat_settings").get(BACKGROUND_SETTING_ID) is True
     )
 
@@ -149,8 +149,3 @@ def chat_settings_metadata() -> dict[str, str]:
 
 def _model_extension() -> LangGraphModelExtension | None:
     return cl.user_session.get(MODEL_EXTENSION_SESSION_KEY)
-
-
-def _model_supports(feature: str) -> bool:
-    extension = _model_extension()
-    return extension is not None and feature in extension.features

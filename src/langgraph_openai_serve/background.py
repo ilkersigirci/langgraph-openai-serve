@@ -1,8 +1,7 @@
 """Polling-only background Responses executed by a pluggable engine."""
 
-from __future__ import annotations
-
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -19,13 +18,10 @@ from langgraph_openai_serve.api.responses.service import (
 )
 from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import get_logger
+from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
     from anyio.abc import TaskGroup
-
-    from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
 logger = get_logger(__name__)
 
@@ -35,7 +31,7 @@ BackgroundStatus = Literal["queued", "in_progress", "completed", "failed", "canc
 class BackgroundJob(BaseModel):
     """A validated request and the server-owned context that executes it."""
 
-    request: dict[str, JsonValue]
+    request: ResponseCreateRequest
     owner_scope: str
     # Interrupt identity shared by every Response that continues one run.
     run_id: str
@@ -67,7 +63,8 @@ class BackgroundRun(BaseModel):
         """Return the public Response for the run's current state."""
         if self.response is not None:
             return Response.model_validate(self.response)
-        response = _queued_response(self.job, self.response_id)
+        response = _context(self.job, self.id).response(status="queued", output=[])
+        # A finished run without a stored Response has no result to return.
         if self.status in {"completed", "failed"}:
             return _failed_response(response, "The background response failed.")
         return response.model_copy(update={"status": self.status})
@@ -95,27 +92,22 @@ async def execute_background_job(
     registry: GraphRegistry,
 ) -> dict[str, JsonValue]:
     """Execute one job through the foreground Responses path."""
-    request = ResponseCreateRequest.model_validate(job.request)
-    response_id = interrupt_response_id(job.run_id, engine_run_id)
+    context = _context(job, engine_run_id)
     try:
         run = await prepare_response_run(
-            request,
+            job.request,
             registry,
             checkpoint_scope=job.owner_scope,
             run_id=job.run_id,
         )
-        response = await collect_response(
-            request,
-            run,
-            response_id=response_id,
-            created_at=job.created_at,
-        )
+        response = await collect_response(job.request, run, context)
     except InvalidRequestError as exc:
         # The foreground path reports these as 4xx; a background Response
         # reports them as its own failure. An interrupt answer, for example,
         # is validated only once its run holds the lease, so a stale answer
         # fails here.
-        response = _failed_response(_queued_response(job, response_id), str(exc))
+        queued = context.response(status="queued", output=[])
+        response = _failed_response(queued, str(exc))
     return response.model_dump(mode="json", by_alias=True)
 
 
@@ -202,12 +194,13 @@ class InMemoryBackgroundBackend:
             )
 
 
-def _queued_response(job: BackgroundJob, response_id: str) -> Response:
-    return ResponseContext.for_run(
-        ResponseCreateRequest.model_validate(job.request),
-        response_id=response_id,
+def _context(job: BackgroundJob, engine_run_id: str) -> ResponseContext:
+    """Return the identity that every snapshot of one background Response keeps."""
+    return ResponseContext(
+        request=job.request,
+        id=interrupt_response_id(job.run_id, engine_run_id),
         created_at=job.created_at,
-    ).response(status="queued", output=[])
+    )
 
 
 def _failed_response(response: Response, message: str) -> Response:
@@ -220,13 +213,3 @@ def _failed_response(response: Response, message: str) -> Response:
             "error": ResponseError(code="server_error", message=message),
         }
     )
-
-
-__all__ = [
-    "BackgroundBackend",
-    "BackgroundJob",
-    "BackgroundRun",
-    "BackgroundStatus",
-    "InMemoryBackgroundBackend",
-    "execute_background_job",
-]

@@ -34,8 +34,8 @@ from chainlit_utils.openai.responses import (
     raise_for_response,
 )
 from chainlit_utils.openai.tools import continuation_input, function_calls
-from openai import Omit, omit
-from openai.types.responses import Response
+from openai import AsyncOpenAI, Omit, omit
+from openai.types.responses import Response, ResponseStreamEvent
 
 from lgos_chainlit.audio import end_dictation, read_aloud, send_speech_button
 from lgos_chainlit.chat_settings import (
@@ -47,7 +47,6 @@ from lgos_chainlit.chat_settings import (
     streaming_enabled,
 )
 from lgos_chainlit.clients import (
-    bifrost_model,
     gateway,
     list_models,
     responses_client,
@@ -355,9 +354,11 @@ async def _background_response(
         # Retrieve and cancel carry no model; without this query parameter
         # Bifrost routes them to its built-in openai provider.
         lifecycle_options["extra_query"] = {
-            "provider": bifrost_model(request["model"])[0]
+            "provider": request["model"].partition("/")[0]
         }
     else:
+        # LiteLLM drops a client Idempotency-Key header but forwards body
+        # extra_headers upstream.
         create_options["extra_body"] = {"extra_headers": idempotency_headers}
     response = await client.responses.create(
         **request,
@@ -365,16 +366,13 @@ async def _background_response(
         background=True,
         store=True,
     )
-    previous_status = None
-    try:  # ruff: ignore[too-many-statements-in-try-clause] - Cancellation must cancel the remote response throughout polling.
-        while response.status in {"queued", "in_progress"}:
-            if response.status != previous_status:
-                await commentary.add(
-                    f"Background response {response.status.replace('_', ' ')}"
-                )
-                previous_status = response.status
-            await asyncio.sleep(BACKGROUND_POLL_SECONDS)
-            response = await client.responses.retrieve(response.id, **lifecycle_options)
+    try:
+        return await _poll_background_response(
+            client,
+            response,
+            commentary,
+            lifecycle_options,
+        )
     except asyncio.CancelledError:
         try:
             await asyncio.shield(
@@ -387,10 +385,27 @@ async def _background_response(
                 exc_info=True,
             )
         raise
+
+
+async def _poll_background_response(
+    client: AsyncOpenAI,
+    response: Response,
+    commentary: CommentarySteps | CommentaryTaskList,
+    lifecycle_options: dict[str, Any],
+) -> Response:
+    previous_status = None
+    while response.status in {"queued", "in_progress"}:
+        if response.status != previous_status:
+            await commentary.add(
+                f"Background response {response.status.replace('_', ' ')}"
+            )
+            previous_status = response.status
+        await asyncio.sleep(BACKGROUND_POLL_SECONDS)
+        response = await client.responses.retrieve(response.id, **lifecycle_options)
     return response
 
 
-async def _stream_response(  # ruff: ignore[complex-structure] - Handle stream event variants within the message lifetime.
+async def _stream_response(
     request: dict[str, Any],
     assistant_message: cl.Message,
     commentary: CommentarySteps | CommentaryTaskList,
@@ -405,37 +420,41 @@ async def _stream_response(  # ruff: ignore[complex-structure] - Handle stream e
         responses_client.responses.stream(**request, store=False) as stream,
     ):
         async for event in stream:
-            if event.type == "response.output_item.added":
-                item = event.item
-                if item.type == "message":
-                    phases[event.output_index] = item.phase
-                continue
-            if (
-                event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-                or event.type == "response.refusal.delta"
-            ):
-                phase = phases.get(event.output_index)
-                if phase != "commentary":
-                    final_text_streamed = True
-                    await message_stream.stream_token(event.delta)
-                continue
-            if event.type == "response.incomplete" or event.type == "response.failed":  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-                raise_for_response(event.response)
-            if event.type == "response.output_text.done":
-                if phases.get(event.output_index) == "commentary":
-                    await commentary.add(event.text)
-                else:
-                    await message_stream.flush()
-                continue
-            if event.type == "response.refusal.done":
-                await message_stream.flush()
-                continue
+            if await _handle_stream_event(event, phases, message_stream, commentary):
+                final_text_streamed = True
         completed = await stream.get_final_response()
 
-    if (
-        completed.status == "completed"
-        and not final_text_streamed
-        and (text := final_answer(completed))
-    ):
+    if not final_text_streamed and (text := final_answer(completed)):
         await assistant_message.stream_token(text)
     return completed
+
+
+async def _handle_stream_event(
+    event: ResponseStreamEvent,
+    phases: dict[int, str | None],
+    message_stream: MessageStream,
+    commentary: CommentarySteps | CommentaryTaskList,
+) -> bool:
+    """Render one stream event; return whether it streamed final-answer text."""
+    if event.type == "response.output_item.added":
+        if event.item.type == "message":
+            phases[event.output_index] = event.item.phase
+        return False
+    if (
+        event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+        or event.type == "response.refusal.delta"
+    ):
+        if phases.get(event.output_index) != "commentary":
+            await message_stream.stream_token(event.delta)
+            return True
+        return False
+    if event.type == "response.incomplete" or event.type == "response.failed":  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+        raise_for_response(event.response)
+    if event.type == "response.output_text.done":
+        if phases.get(event.output_index) == "commentary":
+            await commentary.add(event.text)
+        else:
+            await message_stream.flush()
+    elif event.type == "response.refusal.done":
+        await message_stream.flush()
+    return False

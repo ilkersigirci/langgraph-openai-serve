@@ -5,14 +5,14 @@ from typing import Any
 
 import httpx2
 import pytest
-from langgraph_openai_serve.api.models.schemas import ModelDetails, ModelList
+from langgraph_openai_serve.api.models.schemas import Model, ModelList
 
 from lgos_demo_api.utils.sync_litellm import sync_models
 
 
 @pytest.fixture
-def model() -> ModelDetails:
-    return ModelDetails.model_validate(
+def model() -> Model:
+    return Model.model_validate(
         {
             "id": "graph",
             "created": 0,
@@ -32,12 +32,12 @@ def model() -> ModelDetails:
 
 
 @pytest.fixture
-def source(model: ModelDetails) -> Iterator[httpx2.Client]:
+def source(model: Model) -> Iterator[httpx2.Client]:
     with _source(model) as client:
         yield client
 
 
-def _source(model: ModelDetails) -> httpx2.Client:
+def _source(model: Model) -> httpx2.Client:
     def respond(request: httpx2.Request) -> httpx2.Response:
         assert request.headers["Authorization"] == "Bearer source-key"
         if request.url.path == "/v1/models":
@@ -55,7 +55,7 @@ def _source(model: ModelDetails) -> httpx2.Client:
 
 
 def test_sync_combines_distinct_apis_without_pruning_their_models(
-    model: ModelDetails,
+    model: Model,
 ) -> None:
     deployments: list[dict[str, Any]] = []
 
@@ -108,7 +108,7 @@ def test_colliding_sources_fail_before_touching_the_gateway(
 
 
 def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
-    source: httpx2.Client, model: ModelDetails
+    source: httpx2.Client, model: Model
 ) -> None:
     deployments: list[dict[str, Any]] = []
     writes: list[dict[str, Any]] = []
@@ -178,7 +178,7 @@ def test_sync_preserves_operator_settings_and_skips_unchanged_metadata(
 
 
 def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
-    source: httpx2.Client, model: ModelDetails
+    source: httpx2.Client, model: Model
 ) -> None:
     extension = model.lgos.model_dump(mode="json")
     deployments: list[dict[str, Any]] = [
@@ -261,7 +261,7 @@ def test_sync_deletes_only_stale_lgos_models_for_the_prefix(
 
 
 def test_dry_run_and_failed_discovery_never_write(
-    source: httpx2.Client, model: ModelDetails
+    source: httpx2.Client, model: Model
 ) -> None:
     def read_only_gateway(request: httpx2.Request) -> httpx2.Response:
         assert (request.method, request.url.path) == ("GET", "/model/info")

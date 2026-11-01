@@ -14,12 +14,11 @@ from lgos_demo_api.graphs.background_report import BackgroundReportSettings
         ("reject", "Report rejected; no report finalized."),
         ("", None),
         ("revise this", None),
-        (True, None),
     ],
 )
 async def test_report_requires_an_offered_review_decision(
     sqlite_checkpointer: AsyncSqliteSaver,
-    answer: str | bool,
+    answer: str,
     expected: str | None,
 ) -> None:
     graph = create_background_interrupt_graph(sqlite_checkpointer)

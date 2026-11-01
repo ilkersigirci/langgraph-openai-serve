@@ -1,21 +1,11 @@
 from collections.abc import AsyncIterator, Callable
-from typing import Any
 
 import pytest
-from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph_openai_serve import GraphRequest
 
-
-class MockToolCallingChatModel(FakeMessagesListChatModel):
-    """Deterministic model with the tool-binding surface used by demo graphs."""
-
-    def bind_tools(
-        self, tools: list[BaseTool], **kwargs: Any
-    ) -> "MockToolCallingChatModel":  # ty: ignore[invalid-method-override]
-        return self
+from lgos_demo_api.graphs.mcp_mock import MockToolCallingChatModel
 
 
 @pytest.fixture

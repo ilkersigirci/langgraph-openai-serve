@@ -18,8 +18,6 @@ CHARACTER_DELAY_SECONDS = 0.005
 
 
 class StreamingLongMockState(BaseModel):
-    """Messages the client supplied for this request."""
-
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
@@ -59,5 +57,3 @@ streaming_long_mock_graph_config = GraphConfig(
         "first quoting the end of the previous answer it received."
     ),
 )
-
-__all__ = ["streaming_long_mock_graph", "streaming_long_mock_graph_config"]

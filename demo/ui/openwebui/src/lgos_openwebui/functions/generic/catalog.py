@@ -23,7 +23,8 @@ from .contracts import (
 
 # Open WebUI's rule for Chat Variable keys.
 CHAT_VARIABLE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
-# The UserValves example reuses this graph with the uservalves_simple Filter.
+# The UserValves example's model ID, which is also its Filter's Function ID
+# (install.py).
 USERVALVES_MODEL_ID = "uservalves_simple"
 LIMITED_FUNCTIONALITY_DESCRIPTION = (
     "Limited functionality: the configured gateway did not return valid lgos "
@@ -127,6 +128,9 @@ def _model_meta(
             if extension is not None
             else LIMITED_FUNCTIONALITY_DESCRIPTION
         ),
+        # Graphs read attachments as native file parts. Without file_context,
+        # Open WebUI does not paste their text into the prompt, and turning off
+        # builtinTools.files stops it adding its own file tools in that mode.
         "capabilities": {
             "file_upload": FILE_INPUTS_FEATURE in features,
             "file_context": False,

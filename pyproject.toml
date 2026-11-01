@@ -70,6 +70,7 @@ server = [
     "opentelemetry-instrumentation-logging>=0.66b0,<0.67",
     "opentelemetry-instrumentation-psycopg>=0.66b0,<0.67",
     "psycopg[binary]>=3.3.4,<4", # Container images need the bundled libpq.
+    "python-dotenv>=0.21.0", # NOTE: Uvicorn's --env-file needs it, but only uvicorn[standard] installs it.
     "structlog>=26.1.0,<27",
 ]
 

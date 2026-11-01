@@ -17,7 +17,7 @@ def test_bundle_function_is_frontmatter_first_and_executable() -> None:
     exec(compile(content, "<generic>", "exec"), namespace)  # ruff: ignore[exec-builtin] - Execute the repository-owned bundle to test deployed behavior.
 
     assert content.startswith('"""\ntitle: Generic\n')
-    assert "from .api import" not in content
+    assert "from .gateway import" not in content
     assert "# ===== BEGIN contracts.py =====" in content
     assert "# ===== BEGIN catalog.py =====" in content
     assert "# ===== BEGIN pipe.py =====" in content

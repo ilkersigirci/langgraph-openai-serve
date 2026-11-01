@@ -36,9 +36,7 @@ def bifrost_models(models: list[Model]) -> list[Model]:
             extension = _BifrostAttributes.model_validate(attributes).lgos
         except ValidationError:
             extension = None
-        result.append(
-            model.model_copy(update={"owned_by": LGOS_MODEL_OWNER, "lgos": extension})
-        )
+        result.append(model.model_copy(update={"lgos": extension}))
     return result
 
 

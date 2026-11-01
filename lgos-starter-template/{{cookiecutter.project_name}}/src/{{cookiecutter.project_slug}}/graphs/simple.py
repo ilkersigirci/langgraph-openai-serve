@@ -35,7 +35,7 @@ def create_simple_graph(
     async def generate(
         state: AgentState, runtime: Runtime[SimpleContext]
     ) -> dict[str, list[BaseMessage]]:
-        context = runtime.context or SimpleContext()
+        context = runtime.context
         history = state.messages if context.use_history else state.messages[-1:]
         response = await model.ainvoke(
             [

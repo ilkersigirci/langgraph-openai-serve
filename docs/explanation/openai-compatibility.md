@@ -554,6 +554,12 @@ choice, returned `function_call` items, and matching string-valued
 `function_call`, and `function` message role are rejected rather than silently
 ignored.
 
+Both APIs serve a graph's final tool calls only when each has an ID, a name,
+and JSON-object arguments, and no ID repeats; otherwise the request fails as a
+server error. A truncated Responses message is the exception: it keeps its
+incomplete calls with their raw arguments. Like LangChain, both APIs read
+replayed empty `arguments` as a call without parameters.
+
 Chat request fields outside the supported schema are rejected by
 normal request validation, including generation controls such as `temperature`,
 `max_tokens`, and `n`. Graphs own their model configuration; LGOS cannot apply

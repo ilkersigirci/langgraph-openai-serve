@@ -46,9 +46,9 @@ a direct user request to update the file is approval.
   across modules; later definitions or imports can overwrite earlier ones.
   Avoid `from __future__` imports, dynamic/local package imports, `__file__`,
   and other module-boundary assumptions in bundled modules.
-- Keep behavior in its responsibility module: `contracts`, `api`, `metadata`,
-  `gateway`, `catalog`, `files`, `responses`, `interrupts`, or `pipe`. Update `GENERIC_BUNDLE` and bundling tests
-  together when adding a module.
+- Keep behavior in its responsibility module: `contracts`, `gateway`,
+  `catalog`, `files`, `responses`, `interrupts`, or `pipe`. Update
+  `GENERIC_BUNDLE` and bundling tests together when adding a module.
 - Generic Open WebUI fixes belong to the `homeserver-open-webui` image, which
   Compose runs unchanged. `lgos_openwebui.sync` adds the LGOS-specific parts
   through Open WebUI's API only: the Functions and the Pipe's valves. The Pipe

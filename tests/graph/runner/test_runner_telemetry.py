@@ -63,11 +63,16 @@ async def test_workflow_is_reported_when_its_final_output_arrives(
         [HumanMessage(content="hi")],
         registry(make_message_graph()),
     )
+    reported_with_output = None
     async with aclosing(events):
         async for event in events:
             if isinstance(event, AIMessage):
-                assert len(telemetry.workflow_spans()) == 1
-                assert len(telemetry.workflow_durations()) == 1
+                reported_with_output = (
+                    len(telemetry.workflow_spans()),
+                    len(telemetry.workflow_durations()),
+                )
+
+    assert reported_with_output == (1, 1)
 
 
 async def test_workflow_span_parents_graph_work_but_not_the_stream_consumer(

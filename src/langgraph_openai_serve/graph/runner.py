@@ -26,7 +26,10 @@ from langgraph_openai_serve.graph.run import GraphRun, prepare_run
 from langgraph_openai_serve.graph.telemetry import invoke_workflow
 
 LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
+"""A run's result: its final message, or the interrupts that paused it."""
+
 LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
+"""One streamed item: a text delta, a native LangGraph part, or the run's result."""
 
 _MISSING = object()
 _Item = TypeVar("_Item")
@@ -184,6 +187,8 @@ async def stream_run(
                 context=run.context,
                 stream_mode=stream_mode,
                 subgraphs=streaming,
+                # Like ainvoke(), return the output schema's channels; astream
+                # defaults to every state channel.
                 output_keys=run.graph.output_channels,
                 # Persist interrupt runs only when they pause or exit.
                 durability="exit" if run.interrupt is not None else None,
@@ -260,3 +265,11 @@ def _interrupt_batch(
     batch = interrupt.interrupt_batch(interrupts, run.interrupt.run_id)
     run.keep_checkpoint()
     return batch
+
+
+__all__ = [
+    "LangGraphOutput",
+    "LangGraphStreamEvent",
+    "run_langgraph",
+    "run_langgraph_stream",
+]

@@ -31,3 +31,6 @@ def trace_attributes(
     return propagate_attributes(
         user_id=user_id, session_id=session_id, trace_name=trace_name
     )
+
+
+__all__ = ["get_langfuse_callback"]

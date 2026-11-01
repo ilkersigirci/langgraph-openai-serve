@@ -5,10 +5,9 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
-from langchain_core.messages import AIMessage, InvalidToolCall, UsageMetadata
-from langchain_core.messages.tool import ToolCall
+from langchain_core.messages import AIMessage, UsageMetadata
 from openai.types.responses import (
     Response,
     ResponseError,
@@ -30,7 +29,7 @@ from langgraph_openai_serve.api.responses.interrupts import (
     interrupt_tool_call_id,
 )
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
-from langgraph_openai_serve.core.errors import GraphError
+from langgraph_openai_serve.api.tools import encode_function_calls
 from langgraph_openai_serve.graph.citations import citations_from_message
 from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 from langgraph_openai_serve.protocol import INTERRUPT_TOOL_NAME
@@ -46,30 +45,18 @@ class ResponseContext:
 
     @classmethod
     def for_run(
-        cls,
-        request: ResponseCreateRequest,
-        *,
-        run_id: str | None = None,
-        response_id: str | None = None,
-        created_at: int | None = None,
+        cls, request: ResponseCreateRequest, run_id: str | None
     ) -> "ResponseContext":
-        """
-        Build context, binding an interrupt response ID when run_id is present.
-
-        A background Response passes the ``response_id`` and ``created_at`` it
-        was accepted with, so every snapshot keeps one identity.
-        """
-        if response_id is None:
-            response_id = (
+        """Identify a new Response, binding it to its interrupt run, if any."""
+        return cls(
+            request=request,
+            id=(
                 interrupt_response_id(run_id)
                 if run_id is not None
                 else f"resp_{uuid.uuid4().hex}"
-            )
-        return cls(
-            request=request,
-            id=response_id,
+            ),
             # OpenAI sends whole Unix seconds; strict clients reject fractions.
-            created_at=int(time.time()) if created_at is None else created_at,
+            created_at=int(time.time()),
         )
 
     def response(
@@ -126,49 +113,17 @@ class ResponseContext:
 
 
 def response_function_calls(message: AIMessage) -> list[ResponseFunctionToolCall]:
-    """Serialize and validate all client tool calls from an assistant message."""
-    if message.invalid_tool_calls and response_incomplete_details(message) is None:
-        msg = "The final assistant message contains invalid tool calls."
-        raise GraphError(msg)
-
-    calls = [response_function_call(call) for call in message.tool_calls]
-    calls.extend(_incomplete_function_call(call) for call in message.invalid_tool_calls)
-    seen_call_ids: set[str] = set()
-    for output in calls:
-        if output.call_id in seen_call_ids:
-            msg = f"The final assistant message repeats call id '{output.call_id}'."
-            raise GraphError(msg)
-        seen_call_ids.add(output.call_id)
-    return calls
-
-
-def _incomplete_function_call(call: InvalidToolCall) -> ResponseFunctionToolCall:
-    call_id, name, arguments = call.get("id"), call.get("name"), call.get("args")
-    if not call_id or not name or arguments is None:
-        msg = "The incomplete tool call must include an id, name, and arguments."
-        raise GraphError(msg)
-    return _function_call_item(call_id=call_id, name=name, arguments=arguments)
-
-
-def response_function_call(call: ToolCall) -> ResponseFunctionToolCall:
-    """Serialize one LangChain client tool call."""
-    call_id = call.get("id")
-    name = call.get("name")
-    arguments = call.get("args")
-    if not isinstance(call_id, str) or not call_id:
-        msg = "The final assistant tool call must include a non-empty id."
-        raise GraphError(msg)
-    if not isinstance(name, str) or not name:
-        msg = "The final assistant tool call must include a non-empty name."
-        raise GraphError(msg)
-    if not isinstance(arguments, dict):
-        msg = "The final assistant tool call arguments must be a JSON object."
-        raise GraphError(msg)
-    return _function_call_item(
-        call_id=call_id,
-        name=name,
-        arguments=_dump_arguments(arguments),
-    )
+    """Serialize the client tool calls of the final assistant message."""
+    # A truncated message keeps its incomplete calls, as OpenAI returns them.
+    return [
+        _function_call_item(
+            call_id=call.call_id, name=call.name, arguments=call.arguments
+        )
+        for call in encode_function_calls(
+            message,
+            include_invalid=response_incomplete_details(message) is not None,
+        )
+    ]
 
 
 def interrupt_output_items(
@@ -179,7 +134,7 @@ def interrupt_output_items(
         _function_call_item(
             call_id=interrupt_tool_call_id(interrupt.id),
             name=INTERRUPT_TOOL_NAME,
-            arguments=_dump_arguments(interrupt.value),
+            arguments=json.dumps(interrupt.value, separators=(",", ":")),
         )
         for interrupt in batch.interrupts
     ]
@@ -199,14 +154,6 @@ def _function_call_item(
         status="completed",
         type="function_call",
     )
-
-
-def _dump_arguments(arguments: dict[str, Any]) -> str:
-    try:
-        return json.dumps(arguments, allow_nan=False, separators=(",", ":"))
-    except (TypeError, ValueError) as exc:
-        msg = "The final assistant tool call arguments must be valid JSON values."
-        raise GraphError(msg) from exc
 
 
 def response_output_text(message: AIMessage) -> ResponseOutputText:
@@ -238,6 +185,7 @@ def response_refusals(message: AIMessage) -> list[ResponseOutputRefusal]:
         refusal = value.get("refusal")
         if value.get("type") == "refusal" and isinstance(refusal, str):
             refusals.append(ResponseOutputRefusal(type="refusal", refusal=refusal))
+    # langchain-openai's Chat Completions path keeps refusals only here.
     fallback = message.additional_kwargs.get("refusal")
     if not refusals and isinstance(fallback, str):
         refusals.append(ResponseOutputRefusal(type="refusal", refusal=fallback))
@@ -277,15 +225,3 @@ def response_usage(usage: UsageMetadata | None) -> ResponseUsage | None:
         ),
         total_tokens=usage["total_tokens"],
     )
-
-
-__all__ = [
-    "ResponseContext",
-    "interrupt_output_items",
-    "response_function_call",
-    "response_function_calls",
-    "response_incomplete_details",
-    "response_output_text",
-    "response_refusals",
-    "response_usage",
-]

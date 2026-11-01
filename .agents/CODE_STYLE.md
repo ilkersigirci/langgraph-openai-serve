@@ -43,6 +43,9 @@ Write the minimum code that fully solves the stated problem.
   genuinely shared.
 - Prefer standard protocols, official SDKs, and established libraries over
   hand-rolled equivalents.
+- Define `__all__` only in public modules: a project's entry points and the
+  modules its API reference renders. There it names the supported API. Internal
+  modules omit it, because it would promise an API they do not offer.
 
 ## API Package Layout
 

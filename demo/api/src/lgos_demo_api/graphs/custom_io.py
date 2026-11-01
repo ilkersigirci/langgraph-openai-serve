@@ -35,9 +35,9 @@ def generate(state: State, runtime: Runtime[AppContext]) -> Output:
 
 custom_io_graph = (
     StateGraph(
-        State,  # ty: ignore[invalid-argument-type]
-        input_schema=Input,  # ty: ignore[invalid-argument-type]
-        output_schema=Output,  # ty: ignore[invalid-argument-type]
+        State,  # ty: ignore[invalid-argument-type] - ty does not match TypedDict classes to LangGraph's StateLike bound.
+        input_schema=Input,  # ty: ignore[invalid-argument-type] - ty does not match TypedDict classes to LangGraph's StateLike bound.
+        output_schema=Output,  # ty: ignore[invalid-argument-type] - ty does not match TypedDict classes to LangGraph's StateLike bound.
         context_schema=AppContext,
     )
     .add_node("generate", generate)
@@ -51,8 +51,7 @@ def request_to_input(
     _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> Input:
-    last_message = messages[-1]
-    return {"question": str(last_message.content or "")}
+    return {"question": messages[-1].text}
 
 
 def context_factory(

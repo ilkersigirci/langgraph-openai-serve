@@ -40,16 +40,13 @@ def review_refund(state: ReviewState) -> dict[str, str]:
             "allow_other": True,
         }
     )
-    if not isinstance(response, str) or not (normalized := response.strip()):
-        msg = "Refund review response must be a non-empty string."
+    # LGOS resumes an interrupt with the answer's text.
+    if not (answer := response.strip()):
+        msg = "Refund review response must not be empty."
         raise ValueError(msg)
-    decision = normalized.lower()
-    if decision in {"approve", "reject"}:
+    if (decision := answer.lower()) in {"approve", "reject"}:
         return {"review_outcome": decision}
-    return {
-        "review_outcome": "feedback",
-        "reviewer_feedback": normalized,
-    }
+    return {"review_outcome": "feedback", "reviewer_feedback": answer}
 
 
 def route_after_refund(
@@ -71,7 +68,7 @@ def notify_customer(state: ReviewState) -> dict[str, bool]:
 def create_interruptible_graph(
     checkpointer: BaseCheckpointSaver,
 ) -> CompiledStateGraph:
-    graph = StateGraph(ReviewState)  # ty: ignore[invalid-argument-type]
+    graph = StateGraph(ReviewState)  # ty: ignore[invalid-argument-type] - ty does not match TypedDict classes to LangGraph's StateLike bound.
     graph.add_node("announce_review", announce_review)
     graph.add_node("review_refund", review_refund)
     graph.add_node("execute_refund", execute_refund)
@@ -88,7 +85,7 @@ def request_to_input(
     _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> ReviewState:
-    return {"request": str(messages[-1].content or "")}
+    return {"request": messages[-1].text}
 
 
 def output_to_message(output: ReviewState) -> AIMessage:
@@ -124,12 +121,3 @@ def create_interruptible_graph_config(
         output_to_message=output_to_message,
         features={GraphFeature.INTERRUPTS},
     )
-
-
-__all__ = [
-    "REVIEW_NOTICE",
-    "ReviewState",
-    "create_interruptible_graph",
-    "create_interruptible_graph_config",
-    "output_to_message",
-]

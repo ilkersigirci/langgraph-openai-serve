@@ -58,7 +58,7 @@ def chat_completions_model(
     )
 
 
-def responses_model(*, private: bool = False, **options: Any) -> ChatOpenAI:
+def responses_model(*, private: bool = False) -> ChatOpenAI:
     """
     Call the Responses model through the gateway without stored responses.
 
@@ -72,7 +72,6 @@ def responses_model(*, private: bool = False, **options: Any) -> ChatOpenAI:
         store=False,
         tags=[TAG_NOSTREAM] if private else None,
         http_async_client=GATEWAY_HTTP_CLIENT,
-        **options,
     )
 
 
