@@ -25,7 +25,7 @@ cross-worker interrupt coordination, install the optional integration:
 uv add "langgraph-openai-serve[postgres]"
 ```
 
-For polling-only background Responses executed by Hatchet, install its
+For background Responses executed by Hatchet, install its
 integration. `InMemoryBackgroundBackend` needs no extra for local trials; see
 [Run Responses In The Background](docs/how-to-guides/background-responses.md).
 

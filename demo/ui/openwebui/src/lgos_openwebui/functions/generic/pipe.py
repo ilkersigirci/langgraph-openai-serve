@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAIError
-from openai.types.responses import ResponseFunctionToolCall
+from openai.types.responses import Response, ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 
 from .catalog import (
@@ -43,8 +43,9 @@ from .interrupts import (
     _openwebui_interrupt_completion,
 )
 from .responses import (
-    _background_response,
+    _background_events,
     _emit_response_sources,
+    _foreground_events,
     _openwebui_chunk,
     _openwebui_mcp_tools,
     _openwebui_tool_chunk,
@@ -56,6 +57,7 @@ from .responses import (
     _responses_input,
     _responses_request,
     _responses_tools,
+    _unstreamed_text,
 )
 
 
@@ -202,35 +204,38 @@ class Pipe:
                 while True:
                     # Execute one SDK-owned Responses turn. Text deltas remain
                     # live while the SDK assembles the typed final Response.
-                    final_text_streamed = False
+                    streamed_text = ""
                     phases: dict[int, str | None] = {}
+                    response: Response | None = None
                     if prepared.background:
-                        response = await _background_response(
+                        events = _background_events(
                             client,
                             prepared.request,
                             publish_background_status,
                             provider_routing=prepared.gateway.provider_routing,
                         )
-                        status = response.status or "unknown"
-                        latest_status = (
-                            f"Background response {status.replace('_', ' ')}."
-                        )
                     elif streaming:
-                        async with client.responses.stream(
-                            **prepared.request
-                        ) as stream:
-                            async for event in stream:
-                                if event.type == "response.output_item.added":
+                        events = _foreground_events(client, prepared.request)
+                    else:
+                        events = None
+                        response = await client.responses.create(**prepared.request)
+                    if events is not None:
+                        async with aclosing(events):
+                            async for event in events:
+                                if isinstance(event, Response):
+                                    response = event
+                                elif event.type == "response.output_item.added":
                                     if event.item.type == "message":
                                         phases[event.output_index] = event.item.phase
                                 elif (
                                     event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
                                     or event.type == "response.refusal.delta"
                                 ) and phases.get(event.output_index) != "commentary":
-                                    final_text_streamed = True
-                                    yield _openwebui_chunk(
-                                        prepared.model_id, {"content": event.delta}
-                                    )
+                                    if streaming:
+                                        streamed_text += event.delta
+                                        yield _openwebui_chunk(
+                                            prepared.model_id, {"content": event.delta}
+                                        )
                                 elif (
                                     event.type == "response.incomplete"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
                                     or event.type == "response.failed"
@@ -245,16 +250,22 @@ class Pipe:
                                     await _emit_status(
                                         event_emitter, latest_status, done=False
                                     )
-                            response = await stream.get_final_response()
-                    else:
-                        response = await client.responses.create(**prepared.request)
+                    if response is None:
+                        msg = "The Responses stream ended without a Response."
+                        raise RuntimeError(msg)  # ruff: ignore[raise-within-try] - Local validation uses the same error reporting as remote failures.
+                    if prepared.background:
+                        status = response.status or "unknown"
+                        latest_status = (
+                            f"Background response {status.replace('_', ' ')}."
+                        )
 
                     _raise_for_response(response)
                     await _emit_response_sources(response, event_emitter)
                     final_text = _responses_final_text(response)
-                    if streaming and not final_text_streamed and final_text:
+                    if streaming and final_text and final_text != streamed_text:
                         yield _openwebui_chunk(
-                            prepared.model_id, {"content": final_text}
+                            prepared.model_id,
+                            {"content": _unstreamed_text(streamed_text, final_text)},
                         )
                     answer_parts.append(final_text)
                     calls = _responses_function_calls(response)

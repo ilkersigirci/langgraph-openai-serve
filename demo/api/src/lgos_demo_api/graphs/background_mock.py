@@ -1,8 +1,8 @@
 """
 Deterministic graph that shows background execution working.
 
-It calls no model, so the demo needs no provider to exercise queueing,
-polling, and cancellation.
+It calls no model, so the demo needs no provider to exercise queueing, status
+events, polling, and cancellation.
 """
 
 from langchain_core.messages import AIMessage

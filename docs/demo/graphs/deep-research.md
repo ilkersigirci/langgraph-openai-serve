@@ -30,7 +30,7 @@ upstream model calls also use the Responses API with `store=false`.
 | `file_inputs` | Attachments reach triage, the direct answer, and the report |
 | `mcp_tools` | UIs attach their gateway MCP tools, which the direct answer can call as client functions |
 | `web_search` server tool | Research runs every search as a native `web_search_call` |
-| Status | Each search query and the report writing appear as commentary while streaming |
+| Status | The triage decision, each search query, and the report writing appear as commentary while streaming |
 | Citations | Report links to search results become `url_citation` annotations |
 | Client settings | **Review plan** and **Research rounds** appear in both UIs' settings |
 | Subgraphs | The review pauses inside `scope`, and parallel `researcher` subgraphs stream their progress and return their searches |
@@ -164,8 +164,8 @@ sequenceDiagram
   else Request that needs research
     API-->>UI: R1 completes with lgos_interrupt and the plan
     User->>UI: Start research, with Run in background on
-    UI->>API: previous_response_id=R1, background=true (R2)
-    API-->>UI: R2 is queued
+    UI->>API: previous_response_id=R1, background=true, stream=true (R2)
+    API-->>UI: R2 is queued, then streams what the worker publishes
     par Researcher for question 1, each round
       Worker->>Model: Choose searches, privately
       Worker->>Search: Run them in parallel
@@ -174,8 +174,7 @@ sequenceDiagram
       Worker->>Search: Run them in parallel
     end
     Worker->>Model: Write the report
-    UI->>API: Poll R2 until it completes
-    API-->>UI: Searches and the cited report
+    API-->>UI: R2 completes with the searches and the cited report
   end
 ```
 
@@ -190,17 +189,18 @@ OpenAI's API makes `background` a request field, so the client, not the graph,
 chooses where each request runs. Both maintained UIs apply **Run in background**
 to every request, including review answers: enable it before choosing
 **Start research**, and the research runs in the independently deployed worker
-while the UI polls the Response. With **Review plan** off, the first request
+while the UI streams the Response. With **Review plan** off, the first request
 researches in the worker without a pause. The worker builds the same graph with
 the API's PostgreSQL checkpointer, so either process can resume a pause.
 
-A background Response carries no commentary and no streamed text. The
-completed Response holds the searches and the report. A plan review that a
-background request reaches completes with the same `lgos_interrupt` call as a
-foreground one. Stop cancels the Response being polled; nothing runs while a
-plan waits for review. The
+A background stream carries the same commentary and report text as a foreground
+one, because the worker publishes them as they happen; a client that polls
+instead gets neither, only the completed Response, which holds the searches and
+the report. A plan review that a background request reaches completes with the
+same `lgos_interrupt` call as a foreground one. Stop cancels the Response being
+followed; nothing runs while a plan waits for review. The
 [background interrupt diagram](background-interrupt.md#request-flow) shows the
-polling lifecycle, and [Cancellation](background-interrupt.md#cancellation)
+lifecycle, and [Cancellation](background-interrupt.md#cancellation)
 covers each stage.
 
 ## Output And Failure Behavior
@@ -209,8 +209,8 @@ covers each stage.
 | --- | --- |
 | Plan review | Completed Response with one `lgos_interrupt` function call |
 | Each search | `web_search_call` with its query, added when its researcher finishes; `failed` when the search raised |
-| Search query and report progress | `phase="commentary"` messages while streaming |
-| Report or direct answer | `phase="final_answer"` message; tokens stream in the foreground |
+| Triage, search query, and report progress | `phase="commentary"` messages while streaming |
+| Report or direct answer | `phase="final_answer"` message; tokens stream when the request streams |
 | Research needed with web search off | `phase="final_answer"` message asking to turn on Web search |
 | Report link to a search result | `url_citation` annotation |
 | Client function, such as an MCP tool | `function_call` for the client to run |
@@ -290,12 +290,12 @@ the background services, use either maintained UI:
 | Attachment | Attach a text file, then ask `Summarize this file.` | A direct answer from the attachment |
 | Plan review | `Compare how LangGraph and the OpenAI Agents SDK pause for human approval.` | A review with the plan, **Start research**, and **Answer now** |
 | Plan edit | Reply `Only cover resuming after approval.` | A revised plan and another review |
-| Background research | Enable **Run in background**, then choose **Start research** | Polling status, then the cited report |
+| Background research | Enable **Run in background**, then choose **Start research** | Each search query as status, then the streamed, cited report |
 | Review history | Ask `What change did I ask for to the research plan, and what did I choose then?` | A direct answer naming your edit and **Start research**: later requests replay each answered review as its [interrupt call and answer](../../explanation/openai-compatibility.md#stateless-item-continuation) |
 | Settings | Turn off **Review plan**, set **Research rounds** to `1`, and ask the plan-review prompt | Research starts at once and runs one round of searches |
 
-Without **Run in background**, **Start research** streams each search query as
-commentary before the report.
+With or without **Run in background**, **Start research** streams each search
+query as commentary before the report.
 
 ### Python SDK
 

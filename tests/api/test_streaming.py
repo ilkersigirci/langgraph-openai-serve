@@ -52,6 +52,31 @@ async def test_idle_stream_sends_keepalive_comments_through_proxies() -> None:
     assert response.headers["x-accel-buffering"] == "no"
 
 
+async def test_idle_background_stream_sends_numbered_openai_keepalive_events() -> None:
+    resumed = Event()
+
+    async def source() -> AsyncGenerator[str, None]:
+        await resumed.wait()
+        yield "data: last\n\n"
+
+    owner = StreamOwner(keepalive_interval=0.01)
+    response = owner.follow(source())
+    chunks: list[str] = []
+    try:
+        with fail_after(1):
+            async for chunk in response.body_iterator:
+                chunks.append(cast("str", chunk))
+                if chunks[1:]:
+                    resumed.set()
+    finally:
+        await owner.aclose()
+
+    assert chunks[:2] == [
+        'event: keepalive\ndata: {"type": "keepalive", "sequence_number": 0}\n\n',
+        'event: keepalive\ndata: {"type": "keepalive", "sequence_number": 1}\n\n',
+    ]
+
+
 async def test_immediate_stream_close_releases_prepared_run() -> None:
     source_started = False
 

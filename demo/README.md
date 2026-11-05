@@ -95,7 +95,7 @@ Run `just demo/test-bifrost --editable` and
 `just demo/test-litellm --editable` for the current compatibility
 matrix.
 
-Polling-only background execution is optional. Select LiteLLM or Bifrost,
+Background execution is optional. Select LiteLLM or Bifrost,
 set `LGOS_BACKGROUND=hatchet`, add `background` to `COMPOSE_PROFILES`,
 configure `HATCHET_CLIENT_TOKEN`, and run `just demo/compose`. Both UIs can then
 run `deep-research`, the model-free `background-mock`, or the deterministic

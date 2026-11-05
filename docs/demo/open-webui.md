@@ -431,9 +431,10 @@ and LGOS performs the authoritative runtime validation.
 
 Models advertising `background` also receive an opt-in **Run in
 background** checkbox. The Pipe keeps this client-owned value out of
-`lgos_settings`, polls the non-streaming Response, and publishes native status
-events until the normal answer renderer takes over. Interrupt answers follow
-the same checkbox.
+`lgos_settings`. The Pipe follows the background Response's stream, so statuses
+appear live, and answer text too in a streaming chat. When the stream breaks it
+checks the Response and, while the run is active, resumes after the last event.
+Interrupt answers follow the same checkbox.
 
 The shared Pipe maps Open WebUI's stable `chat_id` to
 `metadata.conversation_id` on every Responses request, including the UserValves example.

@@ -179,8 +179,10 @@ def response_refusals(message: AIMessage) -> list[ResponseOutputRefusal]:
     """Read refusals through LangChain's normalized content boundary."""
     refusals = []
     for block in message.content_blocks:
-        value = block.get("value")
-        if block["type"] != "non_standard" or not isinstance(value, dict):
+        # langchain-core 1.7.5 added a standard refusal block; earlier releases
+        # wrap refusals in non_standard blocks.
+        value = block.get("value") if block["type"] == "non_standard" else block
+        if not isinstance(value, dict):
             continue
         refusal = value.get("refusal")
         if value.get("type") == "refusal" and isinstance(refusal, str):

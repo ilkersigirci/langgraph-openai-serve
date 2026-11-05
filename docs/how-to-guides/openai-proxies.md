@@ -20,7 +20,7 @@ Configure a standard `/v1` OpenAI base URL and verify the proxy preserves:
   LGOS-executed custom tools;
 - `previous_response_id` plus matching `function_call_output` items for
   interrupt continuation;
-- polling-only background creation, `GET /v1/responses/{response_id}`, and
+- background creation, `GET /v1/responses/{response_id}`, and
   `POST /v1/responses/{response_id}/cancel`, with the opaque ID sufficient for
   lifecycle routing after both client and gateway restarts;
 - standard OpenAI error `type`, `param`, and `code` values;
@@ -73,14 +73,15 @@ field.
 ### Background Lifecycle Matrix
 
 The background path is tested separately because create-only routing is not
-enough. Retrieval and cancellation carry only the saved Response ID; a gateway
-must route that ID to any LGOS API replica using the same background engine.
+enough. Retrieval, resuming, and cancellation carry only the saved Response ID;
+a gateway must route that ID to any LGOS API replica using the same background
+engine. See [how each gateway reports a stream's end](background-responses.md#gateway-compatibility).
 
-| Pinned path | Background create, poll, cancel | Constraint |
-| --- | --- | --- |
-| Direct LGOS | Pass | Replicas must use the same background engine. |
-| LiteLLM managed `/v1` | Pass | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for LiteLLM parser compatibility. |
-| Bifrost `/openai/v1` | Pass | Send the create model's provider prefix, such as `lgos`, as the `provider` query parameter on retrieve and cancel; without it, Bifrost uses its built-in `openai` provider. |
+| Pinned path | Background create, poll, cancel | Background stream and resume | Constraint |
+| --- | --- | --- | --- |
+| Direct LGOS | Pass | Pass | Replicas must use the same background engine. |
+| LiteLLM managed `/v1` | Pass | Pass with the `homeserver-litellm` image; upstream LiteLLM cannot resume | Preserve LiteLLM's opaque client-visible ID; LGOS emits whole-second `created_at` values for LiteLLM parser compatibility. |
+| Bifrost `/openai/v1` | Pass | Pass | Send the create model's provider prefix, such as `lgos`, as the `provider` query parameter on retrieve, resume, and cancel; without it, Bifrost uses its built-in `openai` provider. |
 
 These are results for the pinned demo images and configurations, not promises
 about other gateway releases. Run

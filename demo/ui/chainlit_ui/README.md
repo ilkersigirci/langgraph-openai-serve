@@ -44,7 +44,7 @@ unprefixed. Native Chainlit elements use `BUCKET_NAME`, `APP_AWS_*`, and
 `DEMO_CHAINLIT_STATUS_DISPLAY=steps` shows one native Chainlit step per turn.
 Its label updates with the latest status; click it to expand the status history.
 Set it to `tasklist` for the task-list display. Both mark the active status as
-failed on Stop or error. The same setting controls background polling statuses.
+failed on Stop or error. The same setting controls background statuses.
 Restart Chainlit after changing it. Native steps are enabled by the bundled
 `[UI] cot = "tool_call"` configuration.
 

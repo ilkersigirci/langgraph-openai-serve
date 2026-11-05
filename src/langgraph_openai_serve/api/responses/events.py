@@ -32,6 +32,7 @@ from openai.types.responses import (
     ResponseOutputRefusal,
     ResponseOutputText,
     ResponseOutputTextAnnotationAddedEvent,
+    ResponseQueuedEvent,
     ResponseRefusalDeltaEvent,
     ResponseRefusalDoneEvent,
     ResponseStreamEvent,
@@ -59,6 +60,9 @@ from langgraph_openai_serve.graph.interrupt import LangGraphInterruptBatch
 
 _MessagePhase: TypeAlias = Literal["commentary", "final_answer"]
 
+BACKGROUND_ACCEPTED_EVENTS = 2
+"""How many events ``background_accepted_events`` returns; a worker numbers on."""
+
 
 @dataclass
 class _TextItem:
@@ -77,22 +81,29 @@ class ResponsesEventBuilder:
 
     def __init__(self, context: ResponseContext, server_tools: Collection[str]) -> None:
         self._context = context
-        self._sequence_number = 0
+        self._sequence_number = (
+            BACKGROUND_ACCEPTED_EVENTS if context.request.background else 0
+        )
         self._output: list[ResponseOutputItem] = []
         self._server_tool_tracker = ServerToolTracker(server_tools)
         self._final_item: _TextItem | None = None
 
-    def created(self) -> ResponseCreatedEvent:
-        """Create the initial response event."""
-        return ResponseCreatedEvent(
-            type="response.created",
-            sequence_number=self._sequence(),
-            response=self._response(status="in_progress"),
-        )
+    def opening(self) -> Iterator[ResponseStreamEvent]:
+        """
+        Emit the events that start a Response.
 
-    def in_progress(self) -> ResponseInProgressEvent:
-        """Create the response in-progress event."""
-        return ResponseInProgressEvent(
+        Yields:
+            The created event, unless the API already accepted a background
+            Response, then the in-progress event.
+
+        """
+        if not self._context.request.background:
+            yield ResponseCreatedEvent(
+                type="response.created",
+                sequence_number=self._sequence(),
+                response=self._response(status="in_progress"),
+            )
+        yield ResponseInProgressEvent(
             type="response.in_progress",
             sequence_number=self._sequence(),
             response=self._response(status="in_progress"),
@@ -521,6 +532,20 @@ def _output_text(text: str) -> ResponseOutputText:
     """Plain output text, for text that carries no citations."""
     return ResponseOutputText(
         annotations=[], logprobs=[], text=text, type="output_text"
+    )
+
+
+def background_accepted_events(
+    response: Response,
+) -> tuple[ResponseCreatedEvent, ResponseQueuedEvent]:
+    """Return the events that open a background Response, before a worker starts it."""
+    return (
+        ResponseCreatedEvent(
+            type="response.created", sequence_number=0, response=response
+        ),
+        ResponseQueuedEvent(
+            type="response.queued", sequence_number=1, response=response
+        ),
     )
 
 

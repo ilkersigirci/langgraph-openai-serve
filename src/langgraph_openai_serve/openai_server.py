@@ -40,7 +40,7 @@ class LanggraphOpenaiServe:
                 a new FastAPI app will be created.
             checkpoint_scope: Optional server-trusted resolver used to isolate
                 interrupt checkpoints by deployment or authenticated principal.
-            background: Optional polling-only background backend.
+            background: Optional background backend.
 
         """
         if app is None:

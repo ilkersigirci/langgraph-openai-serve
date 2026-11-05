@@ -51,7 +51,13 @@ def request_to_input(
     _request: GraphRequest,
     messages: list[BaseMessage],
 ) -> Input:
-    return {"question": messages[-1].text}
+    message = messages[-1]
+    files = [
+        f"[file: {block['file_id']}]"
+        for block in message.content_blocks
+        if block["type"] == "file" and "file_id" in block
+    ]
+    return {"question": " ".join(filter(None, [message.text, *files]))}
 
 
 def context_factory(

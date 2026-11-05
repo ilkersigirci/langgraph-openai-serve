@@ -97,7 +97,7 @@ def request_to_input(
     request: GraphRequest,
     messages: list[BaseMessage],
 ) -> State:
-    return {"question": str(messages[-1].content or "")}
+    return {"question": messages[-1].text}
 
 
 def context_factory(

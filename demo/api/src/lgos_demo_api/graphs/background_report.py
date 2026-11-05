@@ -5,8 +5,9 @@ from typing import Annotated
 
 from anyio import sleep
 from langchain_core.messages import BaseMessage
+from langgraph.config import get_stream_writer
 from langgraph.graph.message import add_messages
-from langgraph_openai_serve import ClientSettings
+from langgraph_openai_serve import ClientSettings, status_event
 from pydantic import BaseModel, Field
 
 
@@ -20,10 +21,11 @@ class BackgroundReportSettings(ClientSettings):
         ge=0,
         le=300,
         title="Delay (seconds)",
-        description="Time each report step takes, leaving room to poll or cancel it.",
+        description="Time each report step takes, leaving room to watch or cancel it.",
     )
 
 
 async def prepare_report(request: str, settings: BackgroundReportSettings) -> str:
+    get_stream_writer()(status_event("Writing the report"))
     await sleep(settings.delay_seconds)
     return f"Background report for: {request}"

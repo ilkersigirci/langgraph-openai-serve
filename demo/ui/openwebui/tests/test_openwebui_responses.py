@@ -18,8 +18,10 @@ from typing import Any, Self
 from unittest.mock import AsyncMock, Mock, call
 from uuid import UUID
 
+import httpx
 import pytest
 from anyio import Event, fail_after, sleep_forever
+from openai import APIError
 from openai.types.chat import ChatCompletionChunk
 from openai.types.responses import (
     Response,
@@ -655,55 +657,415 @@ BACKGROUND_GATEWAYS = pytest.mark.parametrize(
 )
 
 
+class FakeSdkStream:
+    """The SDK's ``AsyncStream``; ``error`` is raised after the last event."""
+
+    def __init__(
+        self, *events: object, error: Exception | None = None, wait: bool = False
+    ) -> None:
+        self.events = events
+        self.error = error
+        self.wait = wait
+        self.closed = False
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        self.closed = True
+
+    async def __aiter__(self) -> AsyncIterator[object]:
+        for event in self.events:
+            yield event
+        if self.wait:
+            await sleep_forever()
+        if self.error is not None:
+            raise self.error
+
+
+def _text_events(*deltas: str) -> list[object]:
+    """Start one answer message and stream these deltas into it."""
+    return [
+        SimpleNamespace(
+            type="response.output_item.added",
+            output_index=0,
+            item=SimpleNamespace(type="message", phase="final_answer"),
+        ),
+        *(
+            SimpleNamespace(
+                type="response.output_text.delta", output_index=0, delta=delta
+            )
+            for delta in deltas
+        ),
+    ]
+
+
+def _lifecycle(response_id: str, status: str) -> object:
+    return SimpleNamespace(
+        type="response.created" if status == "queued" else "response.in_progress",
+        response=Response.model_construct(id=response_id, status=status, output=[]),
+    )
+
+
+def _numbered(*events: object) -> tuple[object, ...]:
+    """Give each event its place in the stream, as the resume cursor reads it."""
+    for number, event in enumerate(events):
+        event.sequence_number = number
+    return events
+
+
+def _active(response_id: str) -> Response:
+    """Return what retrieving a background Response gives while it runs."""
+    return Response.model_construct(id=response_id, status="in_progress", output=[])
+
+
+def _answer(chunks: list[object]) -> str:
+    return "".join(chunk["choices"][0]["delta"]["content"] for chunk in chunks)
+
+
 @BACKGROUND_GATEWAYS
-@pytest.mark.parametrize("streaming", [False, True])
-async def test_background_response_uses_polling_and_native_statuses(
+async def test_background_stream_shows_commentary_and_its_answer_live(
     monkeypatch: pytest.MonkeyPatch,
     gateway_type: str,
     model: str,
     lifecycle_options: dict[str, object],
-    streaming: bool,
 ) -> None:
     response_id = "resp_background"
-    queued = Response.model_construct(id=response_id, status="queued", output=[])
-    in_progress = Response.model_construct(
-        id=response_id,
-        status="in_progress",
-        output=[],
-    )
     completed = final_response("Report ready.").model_copy(update={"id": response_id})
-    create = AsyncMock(return_value=queued)
-    retrieve = AsyncMock(side_effect=[in_progress, completed])
-    cancel = AsyncMock()
-    stream = Mock()
-    client = install_client(
-        monkeypatch,
-        create=create,
-        retrieve=retrieve,
-        cancel=cancel,
-        stream=stream,
+    commentary = [
+        SimpleNamespace(
+            type="response.output_item.added",
+            output_index=0,
+            item=SimpleNamespace(type="message", phase="commentary"),
+        ),
+        SimpleNamespace(
+            type="response.output_text.delta",
+            output_index=0,
+            delta="Searching the web",
+        ),
+        SimpleNamespace(
+            type="response.output_text.done",
+            output_index=0,
+            text="Searching the web",
+        ),
+    ]
+    answer = [
+        SimpleNamespace(
+            type="response.output_item.added",
+            output_index=1,
+            item=SimpleNamespace(type="message", phase="final_answer"),
+        ),
+        SimpleNamespace(
+            type="response.output_text.delta", output_index=1, delta="Report "
+        ),
+        SimpleNamespace(
+            type="response.output_text.delta", output_index=1, delta="ready."
+        ),
+    ]
+    create = AsyncMock(
+        return_value=FakeSdkStream(
+            *_numbered(
+                _lifecycle(response_id, "queued"),
+                _lifecycle(response_id, "in_progress"),
+                *commentary,
+                *answer,
+                SimpleNamespace(type="response.completed", response=completed),
+            )
+        )
     )
-    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
+    retrieve = AsyncMock()
+    cancel = AsyncMock()
+    client = install_client(
+        monkeypatch, create=create, retrieve=retrieve, cancel=cancel
+    )
     events = []
 
     async def emit(event: dict[str, Any]) -> None:
         events.append(event)
 
     pipe = configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type)
-    result = await collect(
+    chunks = await collect(
         pipe.pipe(
-            {**body(stream=streaming), "model": f"generic.{model}"},
+            {**body(stream=True), "model": f"generic.{model}"},
             __metadata__=chat_metadata(lgos_background=True),
             __event_emitter__=emit,
         )
     )
 
-    assert (
-        result[0]["choices"][0]["delta"]["content"] if streaming else result[0]
-    ) == "Report ready."
+    assert [chunk["choices"][0]["delta"]["content"] for chunk in chunks] == [
+        "Report ",
+        "ready.",
+    ]
     request = create.await_args.kwargs
-    assert request["background"] is True
-    assert request["store"] is True
+    assert (request["background"], request["store"], request["stream"]) == (
+        True,
+        True,
+        True,
+    )
+    assert [event["data"]["description"] for event in events] == [
+        "Background response queued.",
+        "Background response in progress.",
+        "Searching the web",
+        "Background response completed.",
+    ]
+    assert events[-1]["data"]["done"] is True
+    retrieve.assert_not_awaited()
+    cancel.assert_not_awaited()
+    assert client.max_retries == generic_responses.BACKGROUND_MAX_RETRIES
+
+
+async def test_background_stream_that_drops_resumes_after_its_last_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    completed = final_response("Partial answer").model_copy(update={"id": response_id})
+    events = _numbered(
+        _lifecycle(response_id, "queued"),
+        *_text_events("Partial ", "answer"),
+        SimpleNamespace(type="response.completed", response=completed),
+    )
+    retrieve = AsyncMock(
+        side_effect=[_active(response_id), FakeSdkStream(events[-2], events[-1])]
+    )
+    cancel = AsyncMock()
+    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
+    install_client(
+        monkeypatch,
+        create=AsyncMock(
+            return_value=FakeSdkStream(
+                *events[:-2],
+                error=httpx.RemoteProtocolError("peer closed connection"),
+            )
+        ),
+        retrieve=retrieve,
+        cancel=cancel,
+    )
+
+    chunks = await collect(
+        configured_pipe().pipe(
+            {**body(stream=True), "model": "generic.lgos/background-mock"},
+            __metadata__=chat_metadata(lgos_background=True),
+        )
+    )
+
+    assert _answer(chunks) == "Partial answer"
+    assert retrieve.await_args_list == [
+        call(response_id),
+        call(response_id, stream=True, starting_after=events[-3].sequence_number),
+    ]
+    cancel.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("final", "expected"),
+    [
+        pytest.param(
+            "Partial answer, completed.",
+            "Partial answer, completed.",
+            id="dropped",
+        ),
+        # A Pipe's stream can only append to what the user already saw.
+        pytest.param(
+            "Another answer.", "Partial answer\n\nAnother answer.", id="rerun"
+        ),
+        pytest.param("", "Partial answer", id="rerun-without-text"),
+    ],
+)
+async def test_background_stream_that_cannot_resume_polls_for_its_result(
+    monkeypatch: pytest.MonkeyPatch,
+    final: str,
+    expected: str,
+) -> None:
+    response_id = "resp_background"
+    completed = final_response(final).model_copy(update={"id": response_id})
+    create = AsyncMock(
+        return_value=FakeSdkStream(
+            *_numbered(
+                _lifecycle(response_id, "queued"),
+                *_text_events("Partial ", "answer"),
+            ),
+            error=httpx.RemoteProtocolError("peer closed connection"),
+        )
+    )
+    # A gateway that drops the retrieve parameters answers with no events.
+    retrieve = AsyncMock(side_effect=[_active(response_id), FakeSdkStream(), completed])
+    cancel = AsyncMock()
+    install_client(monkeypatch, create=create, retrieve=retrieve, cancel=cancel)
+    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
+
+    chunks = await collect(
+        configured_pipe().pipe(
+            {**body(stream=True), "model": "generic.lgos/background-mock"},
+            __metadata__=chat_metadata(lgos_background=True),
+        )
+    )
+
+    assert _answer(chunks) == expected
+    assert retrieve.await_args_list[-1] == call(response_id)
+    cancel.assert_not_awaited()
+
+
+async def test_background_stream_a_gateway_reports_broken_ends_with_its_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    completed = final_response("Report ready.").model_copy(update={"id": response_id})
+    retrieve = AsyncMock(return_value=completed)
+    install_client(
+        monkeypatch,
+        create=AsyncMock(
+            return_value=FakeSdkStream(
+                *_numbered(_lifecycle(response_id, "queued")),
+                error=APIError(
+                    "provider closed the stream",
+                    request=httpx.Request("POST", "https://gateway.example"),
+                    body=None,
+                ),
+            )
+        ),
+        retrieve=retrieve,
+    )
+
+    chunks = await collect(
+        configured_pipe().pipe(
+            {**body(stream=True), "model": "generic.lgos/background-mock"},
+            __metadata__=chat_metadata(lgos_background=True),
+        )
+    )
+
+    assert _answer(chunks) == "Report ready."
+    retrieve.assert_awaited_once_with(response_id)
+
+
+async def test_background_stream_of_a_cancelled_run_reports_the_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    cancelled = Response.model_construct(
+        id=response_id, status="cancelled", output=[], error=None
+    )
+    install_client(
+        monkeypatch,
+        create=AsyncMock(
+            return_value=FakeSdkStream(
+                *_numbered(
+                    _lifecycle(response_id, "queued"),
+                    SimpleNamespace(type="response.failed", response=cancelled),
+                )
+            )
+        ),
+    )
+
+    result = await collect(
+        configured_pipe().pipe(
+            {**body(stream=True), "model": "generic.lgos/background-mock"},
+            __metadata__=chat_metadata(lgos_background=True),
+        )
+    )
+
+    assert result == [
+        {"error": {"detail": "Responses request failed: Response failed."}}
+    ]
+
+
+@BACKGROUND_GATEWAYS
+async def test_closing_a_background_stream_cancels_its_response(
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    model: str,
+    lifecycle_options: dict[str, object],
+) -> None:
+    response_id = "resp_background"
+    stream = FakeSdkStream(
+        *_numbered(_lifecycle(response_id, "queued"), *_text_events("Partial ")),
+        wait=True,
+    )
+    cancel = AsyncMock()
+    install_client(monkeypatch, create=AsyncMock(return_value=stream), cancel=cancel)
+    results = await configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type).pipe(
+        {**body(stream=True), "model": f"generic.{model}"},
+        __metadata__=chat_metadata(lgos_background=True),
+    )
+
+    await anext(results)
+    await results.aclose()
+
+    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
+    assert stream.closed
+
+
+@BACKGROUND_GATEWAYS
+async def test_stopping_a_background_turn_cancels_its_response(
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    model: str,
+    lifecycle_options: dict[str, object],
+) -> None:
+    response_id = "resp_background"
+    stream = FakeSdkStream(*_numbered(_lifecycle(response_id, "queued")), wait=True)
+    cancel = AsyncMock()
+    install_client(monkeypatch, create=AsyncMock(return_value=stream), cancel=cancel)
+    statuses = Event()
+
+    async def emit(_event: dict[str, Any]) -> None:
+        statuses.set()
+
+    turn = asyncio.create_task(
+        collect(
+            configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type).pipe(
+                {**body(stream=True), "model": f"generic.{model}"},
+                __metadata__=chat_metadata(lgos_background=True),
+                __event_emitter__=emit,
+            )
+        )
+    )
+    with fail_after(2):
+        await statuses.wait()
+    turn.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+
+    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
+    assert stream.closed
+
+
+@BACKGROUND_GATEWAYS
+async def test_background_response_without_streaming_returns_its_final_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_type: str,
+    model: str,
+    lifecycle_options: dict[str, object],
+) -> None:
+    response_id = "resp_background"
+    completed = final_response("Report ready.").model_copy(update={"id": response_id})
+    create = AsyncMock(
+        return_value=FakeSdkStream(
+            *_numbered(
+                _lifecycle(response_id, "queued"),
+                *_text_events("Report ready."),
+                SimpleNamespace(type="response.completed", response=completed),
+            )
+        )
+    )
+    install_client(monkeypatch, create=create)
+    events = []
+
+    async def emit(event: dict[str, Any]) -> None:
+        events.append(event)
+
+    result = await configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type).pipe(
+        {**body(stream=False), "model": f"generic.{model}"},
+        __metadata__=chat_metadata(lgos_background=True),
+        __event_emitter__=emit,
+    )
+
+    assert result == "Report ready."
+    request = create.await_args.kwargs
+    assert (request["background"], request["store"], request["stream"]) == (
+        True,
+        True,
+        True,
+    )
     assert request["metadata"] == {"conversation_id": "thread-123"}
     # Bifrost reads request headers natively; LiteLLM forwards them from the body.
     headers = (
@@ -712,36 +1074,63 @@ async def test_background_response_uses_polling_and_native_statuses(
         else request["extra_body"]["extra_headers"]
     )
     UUID(headers["Idempotency-Key"])
-    assert retrieve.await_args_list == [call(response_id, **lifecycle_options)] * 2
-    assert events == [
-        {
-            "type": "status",
-            "data": {"description": "Background response queued.", "done": False},
-        },
-        {
-            "type": "status",
-            "data": {
-                "description": "Background response in progress.",
-                "done": False,
-            },
-        },
-        {
-            "type": "status",
-            "data": {
-                "description": "Background response completed.",
-                "done": True,
-            },
-        },
+    assert [event["data"]["description"] for event in events] == [
+        "Background response queued.",
+        "Background response completed.",
     ]
-    stream.assert_not_called()
-    cancel.assert_not_awaited()
-    assert client.max_retries == 2
+
+
+async def test_background_stream_ignores_keepalives_for_its_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_id = "resp_background"
+    completed = final_response("Partial answer").model_copy(update={"id": response_id})
+    events = _numbered(
+        _lifecycle(response_id, "queued"),
+        *_text_events("Partial answer"),
+        SimpleNamespace(type="response.completed", response=completed),
+    )
+    # OpenAI numbers its keepalives apart from the events.
+    keepalive = SimpleNamespace(type="keepalive", sequence_number=0)
+    retrieve = AsyncMock(side_effect=[_active(response_id), FakeSdkStream(events[-1])])
+    monkeypatch.setattr(generic_responses.asyncio, "sleep", AsyncMock())
+    install_client(
+        monkeypatch,
+        create=AsyncMock(
+            return_value=FakeSdkStream(
+                *events[:-1],
+                keepalive,
+                error=httpx.RemoteProtocolError("peer closed connection"),
+            )
+        ),
+        retrieve=retrieve,
+    )
+
+    chunks = await collect(
+        configured_pipe().pipe(
+            {**body(stream=True), "model": "generic.lgos/background-mock"},
+            __metadata__=chat_metadata(lgos_background=True),
+        )
+    )
+
+    assert _answer(chunks) == "Partial answer"
+    assert retrieve.await_args_list[-1] == call(
+        response_id, stream=True, starting_after=events[-2].sequence_number
+    )
 
 
 async def test_interrupt_answers_follow_the_background_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    create = AsyncMock(return_value=final_response("Approved."))
+    create = AsyncMock(
+        return_value=FakeSdkStream(
+            *_numbered(
+                SimpleNamespace(
+                    type="response.completed", response=final_response("Approved.")
+                ),
+            )
+        )
+    )
     install_client(monkeypatch, create=create)
     call = interrupt_call()
     request_body = body(stream=False)
@@ -782,44 +1171,6 @@ async def test_chat_variables_of_previously_selected_models_are_not_sent(
     assert "background" not in request
     assert request["metadata"] == {"conversation_id": "thread-123"}
     assert request["tools"] == [{"type": "web_search"}]
-
-
-@BACKGROUND_GATEWAYS
-async def test_background_response_is_cancelled_when_request_stops(
-    monkeypatch: pytest.MonkeyPatch,
-    gateway_type: str,
-    model: str,
-    lifecycle_options: dict[str, object],
-) -> None:
-    response_id = "resp_background"
-    cancel = AsyncMock()
-    install_client(
-        monkeypatch,
-        create=AsyncMock(
-            return_value=Response.model_construct(
-                id=response_id,
-                status="queued",
-                output=[],
-            )
-        ),
-        cancel=cancel,
-    )
-    monkeypatch.setattr(
-        generic_responses.asyncio,
-        "sleep",
-        AsyncMock(side_effect=asyncio.CancelledError),
-    )
-    pipe = configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type)
-
-    with pytest.raises(asyncio.CancelledError):
-        await collect(
-            pipe.pipe(
-                {**body(stream=True), "model": f"generic.{model}"},
-                __metadata__=chat_metadata(lgos_background=True),
-            )
-        )
-
-    cancel.assert_awaited_once_with(response_id, **lifecycle_options)
 
 
 @pytest.mark.parametrize(

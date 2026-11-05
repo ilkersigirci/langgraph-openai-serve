@@ -213,6 +213,9 @@ def _scope_graph(chat: ChatOpenAI, files: AsyncOpenAI) -> ScopeGraph:
         request = runtime.context.request
         plan: list[str] = []
         if _allows_tools(request):
+            # The decision is a private model call, so without this status the
+            # client sees nothing until the answer or the plan.
+            get_stream_writer()(status_event("Deciding whether to research"))
             result = await triager.ainvoke(
                 [
                     SystemMessage(content=TRIAGE_PROMPT),

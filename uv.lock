@@ -7,7 +7,7 @@ resolution-markers = [
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 
 [[package]]
@@ -886,7 +886,7 @@ wheels = [
 
 [[package]]
 name = "hatchet-sdk"
-version = "1.41.1"
+version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -902,9 +902,9 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/f7/4c2563e7f450b4d533c35ccb646a185b3d2cf2f8ab03acc2c1a34dabfb2f/hatchet_sdk-1.41.1.tar.gz", hash = "sha256:2b67f0499e90b384724c8fd16fce8a1b55585f259c6b65f2c9c86339c89ed587", size = 5357, upload-time = "2026-09-24T16:40:05.336Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/8e/fadb1b6c5029f8c52e95183911dca87ad0323f6269d5ba4a5914a87bd256/hatchet_sdk-1.44.0.tar.gz", hash = "sha256:940d3b5324dc6eb763969bc1c24ab82b6f813c0eda3029153d40a7fcc9b784aa", size = 5381, upload-time = "2026-10-29T19:10:17.986Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/dc/5bd3f93d8f9d95e18cec9eea5c95bdd9a78fbc446f14bcb1a1e5db70f9ba/hatchet_sdk-1.41.1-py3-none-any.whl", hash = "sha256:2128eefb4189f6d4c05676140f408fec982f1b62e0cf9412a32c4f9c901a125e", size = 665915, upload-time = "2026-09-24T16:40:06.994Z" },
+    { url = "https://files.pythonhosted.org/packages/13/04/70be19fb3a132a02c91eeb62cf870afe7670407aa4220f671d61917a8dcb/hatchet_sdk-1.44.0-py3-none-any.whl", hash = "sha256:38042463281300c397df90d5eb841a56d0cea2cb71dd7bb6e81d0a6288168143", size = 726049, upload-time = "2026-10-29T19:10:19.634Z" },
 ]
 
 [package.optional-dependencies]
@@ -1409,8 +1409,8 @@ requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "fastapi", specifier = ">=0.121.0" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.142.2" },
-    { name = "hatchet-sdk", marker = "extra == 'hatchet'", specifier = ">=1.40.3,<2" },
-    { name = "hatchet-sdk", extras = ["otel"], marker = "extra == 'server'", specifier = ">=1.40.3,<2" },
+    { name = "hatchet-sdk", marker = "extra == 'hatchet'", specifier = ">=1.44.0,<2" },
+    { name = "hatchet-sdk", extras = ["otel"], marker = "extra == 'server'", specifier = ">=1.44.0,<2" },
     { name = "langfuse", marker = "extra == 'tracing'", specifier = ">=5.0.1,<6.0.0" },
     { name = "langgraph", specifier = ">=1.2.6,<2.0.0" },
     { name = "langgraph-checkpoint-postgres", marker = "extra == 'postgres'", specifier = ">=3.1.0,<4" },

@@ -6,7 +6,7 @@ approval, and finishes only after approval. It calls no model and performs no
 external action. Hatchet executes background requests; PostgreSQL preserves the
 paused graph and coordinates execution across the API and worker processes.
 
-Use [`background-mock`](background-mock.md) for basic polling and cancellation,
+Use [`background-mock`](background-mock.md) for basic execution and cancellation,
 or [`deep-research`](deep-research.md#background-execution) for a real agent
 that combines background execution with reviewed work.
 
@@ -39,26 +39,23 @@ sequenceDiagram
   participant DB as PostgreSQL
 
   Note over UI: User enables background<br/>and sends a prompt
-  UI->>API: responses.create<br/>background=true
+  UI->>API: responses.create<br/>background=true, stream=true
   API->>Jobs: Queue preparation
-  API-->>UI: queued Response R1
+  API-->>UI: response.created (queued) R1
   par Worker prepares and pauses
     Jobs->>Jobs: Delay, then prepare report
     Jobs->>DB: Checkpoint at review
     Jobs->>Jobs: Store completed R1<br/>with lgos_interrupt
-  and UI polls R1 until terminal
-    loop Until R1 completes
-      UI->>API: responses.retrieve(R1)
-      API->>Jobs: Read status and output
-      API-->>UI: queued / in_progress,<br/>then completed with review call
-    end
+  and UI follows R1 until terminal
+    API->>Jobs: Follow R1's events and status
+    API-->>UI: Status events, then<br/>response.completed with review call
   end
   UI->>UI: Show report and<br/>Approve / Reject choices
   Note over Jobs,DB: Graph paused in PostgreSQL<br/>no worker waits for the answer
   Note over UI: User approves or rejects
-  UI->>API: responses.create<br/>background=true<br/>previous_response_id=R1<br/>function_call_output with answer
+  UI->>API: responses.create<br/>background=true, stream=true<br/>previous_response_id=R1<br/>function_call_output with answer
   API->>Jobs: Queue continuation
-  API-->>UI: queued Response R2
+  API-->>UI: response.created (queued) R2
   Jobs->>DB: Acquire lease and<br/>load pending checkpoint
   Jobs->>Jobs: Resume review_report<br/>with the answer
   alt Approve
@@ -68,16 +65,13 @@ sequenceDiagram
   end
   Jobs->>DB: Clean up terminal checkpoint
   Jobs->>Jobs: Store completed R2<br/>with final answer
-  loop Poll R2 until terminal
-    UI->>API: responses.retrieve(R2)
-    API->>Jobs: Read status and output
-    API-->>UI: queued / in_progress,<br/>then completed with answer
-  end
+  API->>Jobs: Follow R2's events and status
+  API-->>UI: Status events, then<br/>response.completed with answer
   UI->>UI: Show final report or rejection
 ```
 
 At review, **R1 is completed while the graph is paused**. Resuming creates R2;
-polling R1 again continues to return the original review call. There is no
+retrieving R1 again continues to return the original review call. There is no
 separate paused Response status. The answer uses the exact `call_id` from R1
 in a `function_call_output` item. For the exact SDK fields, see
 [Python SDK example](#python-sdk).
@@ -91,13 +85,13 @@ flowchart TD
   cancel["User requests cancellation"] --> stage{"When?"}
   stage -->|"Preparing R1 or finishing R2"| active["UI requests cancellation of the current Response ID"]
   active --> stopped["Request Hatchet cancellation; result is cancelled unless already terminal"]
-  stage -->|"Waiting for review"| review["R1 is already completed; cancelling R1 returns it unchanged"]
+  stage -->|"Waiting for review"| review["R1 is already completed; cancelling R1 is refused"]
   review --> pending["No answer is submitted; graph checkpoint stays pending"]
   stage -->|"Workflow already finished"| done["Completed result is unchanged"]
 ```
 
 For active work, Stop sends a best-effort `responses.cancel` request for the ID
-currently being polled: R1 during preparation or R2 during continuation.
+currently being followed: R1 during preparation or R2 during continuation.
 Cancelling R1 after R2 has started cannot stop R2. The
 [Background Mock cancellation flow](background-mock.md#cancellation) owns the
 shared cancellation and completion-race details.
@@ -165,7 +159,7 @@ The live gateway suite covers background approval and resumption:
 just demo/test-background-gateway --editable
 ```
 
-General polling, cancellation, deployment wiring, and gateway requirements
+General streaming, polling, cancellation, deployment wiring, and gateway requirements
 remain in [Run Responses In The Background](../../how-to-guides/background-responses.md).
 
 The implementation is in

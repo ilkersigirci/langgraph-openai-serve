@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 import pytest
-from openai import APIStatusError, AsyncOpenAI, BadRequestError
+from openai import APIStatusError, AsyncOpenAI
 from openai.types.responses import Response
 
 GATEWAY_BASE_URL = os.getenv("DEMO_TEST_BACKGROUND_GATEWAY_BASE_URL")
@@ -145,16 +145,60 @@ async def test_gateway_cancels_with_only_the_saved_response_id() -> None:
     assert cancelled.status == retrieved.status == "cancelled"
 
 
-async def test_gateway_rejects_streaming_background_create() -> None:
+async def test_gateway_streams_background_status_and_result() -> None:
     async with _client() as client:
-        with pytest.raises(BadRequestError) as create_error:
-            await client.responses.create(
-                model=MODEL,
-                input="Streaming is unsupported.",
-                background=True,
-                stream=True,
-            )
-        assert create_error.value.status_code == 400
+        stream = await client.responses.create(
+            model=MODEL,
+            input="Quarterly migration risks.",
+            background=True,
+            stream=True,
+            store=True,
+            metadata={"lgos_settings": '{"delay_seconds": 1}'},
+            **_idempotency_options(str(uuid.uuid4())),
+        )
+        events = [event async for event in stream]
+        retrieved = await client.responses.retrieve(
+            events[0].response.id, **LIFECYCLE_OPTIONS
+        )
+
+    assert (events[0].type, events[0].response.status) == (
+        "response.created",
+        "queued",
+    )
+    assert any(
+        event.type == "response.output_text.done" and event.text == "Writing the report"
+        for event in events
+    )
+    assert events[-1].type == "response.completed"
+    assert events[-1].response.id == retrieved.id
+    assert retrieved.status == "completed"
+
+
+async def test_gateway_resumes_a_background_stream_after_its_last_event() -> None:
+    async with _client() as client:
+        stream = await client.responses.create(
+            model=MODEL,
+            input="Quarterly migration risks.",
+            background=True,
+            stream=True,
+            store=True,
+            metadata={"lgos_settings": '{"delay_seconds": 1}'},
+            **_idempotency_options(str(uuid.uuid4())),
+        )
+        created = await anext(aiter(stream))
+        await stream.close()
+
+    async with _client() as restarted_client:
+        resumed = await restarted_client.responses.retrieve(
+            created.response.id,
+            stream=True,
+            starting_after=created.sequence_number,
+            **LIFECYCLE_OPTIONS,
+        )
+        events = [event async for event in resumed]
+
+    assert events[0].sequence_number == created.sequence_number + 1
+    assert events[-1].type == "response.completed"
 
 
 async def test_gateway_forwards_background_idempotency_key() -> None:

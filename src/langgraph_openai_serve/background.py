@@ -1,18 +1,20 @@
-"""Polling-only background Responses executed by a pluggable engine."""
+"""Background Responses executed by a pluggable engine."""
 
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from anyio import CancelScope, create_task_group
-from openai.types.responses import Response, ResponseError
+from anyio import CancelScope, Event, create_task_group
+from openai.types.responses import Response, ResponseError, ResponseStreamEvent
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from langgraph_openai_serve.api.responses.interrupts import interrupt_response_id
 from langgraph_openai_serve.api.responses.output import ResponseContext
 from langgraph_openai_serve.api.responses.schemas import ResponseCreateRequest
 from langgraph_openai_serve.api.responses.service import (
+    EventPublisher,
     collect_response,
     prepare_response_run,
 )
@@ -59,11 +61,15 @@ class BackgroundRun(BaseModel):
         """Public ID that locates this run and continues its interrupts."""
         return interrupt_response_id(self.job.run_id, self.id)
 
+    def queued_snapshot(self) -> Response:
+        """Return the public Response as it was accepted."""
+        return _context(self.job, self.id).response(status="queued", output=[])
+
     def snapshot(self) -> Response:
         """Return the public Response for the run's current state."""
         if self.response is not None:
             return Response.model_validate(self.response)
-        response = _context(self.job, self.id).response(status="queued", output=[])
+        response = self.queued_snapshot()
         # A finished run without a stored Response has no result to return.
         if self.status in {"completed", "failed"}:
             return _failed_response(response, "The background response failed.")
@@ -85,13 +91,28 @@ class BackgroundBackend(Protocol):
         """Stop one run; a finished run keeps its outcome."""
         ...
 
+    def events(self, run_id: str) -> AsyncGenerator[str, None]:
+        """
+        Yield a run's published events from the first, then those that follow.
+
+        Ending early is allowed: readers take the outcome from the run's status.
+        """
+        ...
+
 
 async def execute_background_job(
     job: BackgroundJob,
     engine_run_id: str,
     registry: GraphRegistry,
+    publish: EventPublisher | None = None,
 ) -> dict[str, JsonValue]:
-    """Execute one job through the foreground Responses path."""
+    """
+    Execute one job through the foreground Responses path.
+
+    With ``publish``, which an engine passes for a job created with ``stream=true``,
+    the job runs like a foreground stream and hands each event to it. Without, it
+    produces only its final Response.
+    """
     context = _context(job, engine_run_id)
     try:
         run = await prepare_response_run(
@@ -100,7 +121,7 @@ async def execute_background_job(
             checkpoint_scope=job.owner_scope,
             run_id=job.run_id,
         )
-        response = await collect_response(job.request, run, context)
+        response = await collect_response(job.request, run, context, publish=publish)
     except InvalidRequestError as exc:
         # The foreground path reports these as 4xx; a background Response
         # reports them as its own failure. An interrupt answer, for example,
@@ -123,6 +144,8 @@ class InMemoryBackgroundBackend:
         self._runs: dict[str, BackgroundRun] = {}
         self._keys: dict[str, str] = {}
         self._scopes: dict[str, CancelScope] = {}
+        self._events: dict[str, list[str]] = {}
+        self._published = Event()
         self._tasks: TaskGroup | None = None
 
     @asynccontextmanager
@@ -147,6 +170,7 @@ class InMemoryBackgroundBackend:
         self._runs[run.id] = run
         self._keys[job.idempotency_key] = run.id
         self._scopes[run.id] = CancelScope()
+        self._events[run.id] = []
         self._tasks.start_soon(self._execute, run)
         return run
 
@@ -161,13 +185,39 @@ class InMemoryBackgroundBackend:
         if (scope := self._scopes.get(run_id)) is not None:
             scope.cancel()
 
+    async def events(self, run_id: str) -> AsyncGenerator[str, None]:
+        """
+        Yield the run's published events, waiting for new ones.
+
+        Yields:
+            Each encoded event, from the first.
+
+        """
+        events = self._events[run_id]
+        position = 0
+        while True:
+            while position < len(events):
+                yield events[position]
+                position += 1
+            await self._published.wait()
+
+    async def _publish(self, run_id: str, event: ResponseStreamEvent) -> None:
+        self._events[run_id].append(event.model_dump_json(by_alias=True))
+        self._published.set()
+        self._published = Event()
+
     async def _execute(self, run: BackgroundRun) -> None:
         try:
             with self._scopes[run.id]:
                 self._transition(run.id, "in_progress")
                 try:
                     response = await execute_background_job(
-                        run.job, run.id, self._registry
+                        run.job,
+                        run.id,
+                        self._registry,
+                        partial(self._publish, run.id)
+                        if run.job.request.stream
+                        else None,
                     )
                 except Exception:
                     logger.exception(

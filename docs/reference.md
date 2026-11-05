@@ -10,9 +10,9 @@ deployment's ASGI server or ingress proxy.
 | --- | --- | --- |
 | `GET` | `/v1/models` | List registered graph models with LGOS descriptions, features, and tool names. |
 | `GET` | `/v1/models/{model}` | Retrieve one model with the required LGOS metadata extension. |
-| `POST` | `/v1/responses` | Run a graph now or accept an opted-in polling-only background Response. |
-| `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response. |
-| `POST` | `/v1/responses/{response_id}/cancel` | Cancel an active background Response or return a finished one. |
+| `POST` | `/v1/responses` | Run a graph now or accept an opted-in background Response. |
+| `GET` | `/v1/responses/{response_id}` | Retrieve an authorized background Response, or stream its events with `stream=true` and `starting_after`. |
+| `POST` | `/v1/responses/{response_id}/cancel` | Cancel an active background Response; a finished one returns `400`. |
 | `POST` | `/v1/chat/completions` | Run a graph through OpenAI chat completions. |
 | `GET` | `/v1/health` | Health check. |
 | `GET` | `/v1/version` | The installed LGOS version, as `{"version": "..."}`. |
@@ -48,11 +48,13 @@ Foreground LGOS Responses are not persisted for retrieval or deletion. Omitted,
 null, and false `store` values are accepted, and the returned foreground
 Response reports `store=false`; foreground `store=true` is rejected.
 For a model declaring `GraphFeature.BACKGROUND`, `background=true` selects the
-polling-only path and permits either `store=false` or `store=true`; the
+background path and permits either `store=false` or `store=true`; the
 background engine keeps the result either way, and Hatchet keeps it for its
 [data retention](https://docs.hatchet.run/self-hosting/data-retention) period
-(30 days by default when self-hosted). Background streaming and
-cursor/event replay are rejected. `conversation` is unsupported in both modes.
+(30 days by default when self-hosted). With `stream=true` the request returns
+the Response's event stream, which retrieval can replay and resume;
+retrieving a Response created without `stream=true` as a stream returns `400`.
+`conversation` is unsupported in both modes.
 `previous_response_id` is supported for interruptible graphs to resume execution
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
 those resumes. The route also rejects unregistered custom tools, client-supplied
@@ -282,7 +284,7 @@ access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
 resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
-advertises polling-only background Responses.
+advertises background Responses.
 
 ### OpenTelemetry
 
@@ -452,12 +454,15 @@ engine that runs `BackgroundJob`s and stores their status and result.
 | `submit(job)` | Start the job, or return the run already holding `job.idempotency_key`. |
 | `get(run_id)` | Return the run's job, status, and executed Response, or `None`. |
 | `cancel(run_id)` | Stop the run; a finished run keeps its outcome. |
+| `events(run_id)` | Yield the run's published events from the first, then those that follow. It may end early. |
 
-The engine's worker calls `execute_background_job(job, engine_run_id, registry)`
-with its own run ID, not `job.run_id`, which identifies the graph run. It
-runs the job through the foreground Responses path and returns the Response
-JSON the engine stores. Run IDs must be UUIDs because the public Response ID
-embeds the run ID, so reading a Response needs no lookup table.
+The engine's worker calls
+`execute_background_job(job, engine_run_id, registry, publish)` with its own run
+ID, not `job.run_id`, which identifies the graph run. It runs the job through the
+foreground Responses path and returns the Response JSON the engine stores. With
+`publish`, which an engine passes for a job created with `stream=true`, the job also
+hands it each event. Run IDs must be UUIDs because the public Response ID embeds
+the run ID, so reading a Response needs no lookup table.
 `InMemoryBackgroundBackend(registry)` runs jobs as tasks of one process for
 development and tests; enter its `lifespan` in the application's lifespan.
 
@@ -465,11 +470,11 @@ Install `langgraph-openai-serve[hatchet]` for
 `langgraph_openai_serve.integrations.hatchet`. `create_hatchet_task(hatchet)`
 registers the task in the API and worker processes, with a 30-minute
 `schedule_timeout` and a one-hour `execution_timeout` by default.
-`HatchetBackgroundBackend(task, hatchet.runs)` submits, reads, and cancels its
-runs. The worker's Hatchet lifespan yields the `GraphRegistry`, including its
-`run_coordinator`, that the task executes. The task has no retries, and its
-24-hour Hatchet idempotency key is the scoped `Idempotency-Key` digest. The
-adapter is never imported by the core package.
+`HatchetBackgroundBackend(task, hatchet.runs, hatchet.streams)` submits, reads,
+cancels, and follows its runs. The worker's Hatchet lifespan yields the
+`GraphRegistry`, including its `run_coordinator`, that the task executes. The
+task has no retries, and its 24-hour Hatchet idempotency key is the scoped
+`Idempotency-Key` digest. The adapter is never imported by the core package.
 
 Background create accepts an optional `Idempotency-Key` header of 1 to 255
 characters. A retry returns the original Response without starting a second
@@ -523,8 +528,15 @@ Status text is deliberately authored by the graph; LGOS does not infer it from
 internal node names or state. Graphs need no feature declaration to publish
 status.
 
-Status is streaming-only. Streaming Responses needs no metadata opt-in and emits
-each non-empty description as a standard `phase="commentary"` message.
+Publish a status before slow work that streams nothing, such as a model call
+whose output stays private: until a graph's first event, a client sees no
+progress. Upstream LiteLLM and Bifrost also hold a stream's opening events,
+such as `response.created`, until its first output, so a client behind them
+receives nothing at all until then.
+
+Status is streaming-only. Streaming Responses, in the foreground or in the
+background, needs no metadata opt-in and emits each non-empty description as a
+standard `phase="commentary"` message.
 Non-streaming Responses and Chat Completions ignore statuses. Both APIs ignore
 any other custom stream data. Use standard Responses function calls plus the
 Files API for portable durable rich output.

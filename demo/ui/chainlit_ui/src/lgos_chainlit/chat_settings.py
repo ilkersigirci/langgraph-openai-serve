@@ -83,7 +83,7 @@ async def configure_chat_settings() -> None:
             Switch(
                 id=BACKGROUND_SETTING_ID,
                 label="Run in background",
-                description="Submit this response to the background worker and poll it.",
+                description="Submit this response to the background worker.",
                 initial=saved.get(BACKGROUND_SETTING_ID) is True,
             )
         )

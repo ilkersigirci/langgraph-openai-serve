@@ -1,4 +1,5 @@
 import pytest
+from langchain_core.messages import HumanMessage
 from langgraph_openai_serve import GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph
 
@@ -29,3 +30,25 @@ async def test_adapts_request_input_context_and_output(
     result = await run_langgraph(graph_request, messages, registry)
 
     assert result.text == f"{expected_user} asked: Show me custom schemas."
+
+
+async def test_question_keeps_attached_file_ids(make_graph_input) -> None:
+    graph_request, messages = make_graph_input(
+        "custom-input-output-context",
+        user="demo-user",
+        messages=[
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "Use this file."},
+                    {"type": "file", "file": {"file_id": "file-report"}},
+                ]
+            )
+        ],
+    )
+    registry = GraphRegistry(
+        graphs={"custom-input-output-context": custom_io_graph_config}
+    )
+
+    result = await run_langgraph(graph_request, messages, registry)
+
+    assert result.text == "demo-user asked: Use this file. [file: file-report]"

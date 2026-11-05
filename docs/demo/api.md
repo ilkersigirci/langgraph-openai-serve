@@ -207,7 +207,7 @@ independent `just demo/background-worker` process, or run the complete UI path
 with the `background` Compose profile and `just demo/compose`.
 `deep-research`, `background-mock`, `background-interrupt`, and
 `nested-subgraphs` support it.
-Chainlit and Open WebUI expose polling through either bundled gateway. See
+Chainlit and Open WebUI stream them through either bundled gateway. See
 [Background Mock](graphs/background-mock.md) for basic execution and
 [Background Interrupt](graphs/background-interrupt.md) for approval and resumption.
 

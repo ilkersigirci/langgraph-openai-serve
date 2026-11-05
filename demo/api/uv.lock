@@ -896,7 +896,7 @@ wheels = [
 
 [[package]]
 name = "hatchet-sdk"
-version = "1.41.1"
+version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -912,9 +912,9 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/f7/4c2563e7f450b4d533c35ccb646a185b3d2cf2f8ab03acc2c1a34dabfb2f/hatchet_sdk-1.41.1.tar.gz", hash = "sha256:2b67f0499e90b384724c8fd16fce8a1b55585f259c6b65f2c9c86339c89ed587", size = 5357, upload-time = "2026-09-24T16:40:05.336Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/8e/fadb1b6c5029f8c52e95183911dca87ad0323f6269d5ba4a5914a87bd256/hatchet_sdk-1.44.0.tar.gz", hash = "sha256:940d3b5324dc6eb763969bc1c24ab82b6f813c0eda3029153d40a7fcc9b784aa", size = 5381, upload-time = "2026-10-29T19:10:17.986Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/dc/5bd3f93d8f9d95e18cec9eea5c95bdd9a78fbc446f14bcb1a1e5db70f9ba/hatchet_sdk-1.41.1-py3-none-any.whl", hash = "sha256:2128eefb4189f6d4c05676140f408fec982f1b62e0cf9412a32c4f9c901a125e", size = 665915, upload-time = "2026-09-24T16:40:06.994Z" },
+    { url = "https://files.pythonhosted.org/packages/13/04/70be19fb3a132a02c91eeb62cf870afe7670407aa4220f671d61917a8dcb/hatchet_sdk-1.44.0-py3-none-any.whl", hash = "sha256:38042463281300c397df90d5eb841a56d0cea2cb71dd7bb6e81d0a6288168143", size = 726049, upload-time = "2026-10-29T19:10:19.634Z" },
 ]
 
 [package.optional-dependencies]
@@ -1322,7 +1322,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.32.0rc1"
+version = "0.33.0rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1335,9 +1335,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/b8/9211888711abafdf5a43b58d72d2f0c5d69e7b586ce4c4c588dd56121b2c/langgraph_openai_serve-0.32.0rc1.tar.gz", hash = "sha256:ee6ec80c3a3d8e8f1d4425439e65e0b9bca82d4eced65a5944ce1acf2b301c3b", size = 66239, upload-time = "2026-10-30T22:35:07.518Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/70/f4b513aaf6acb7151737839860061bfe858e1f97c6b5c123363e488bba5b/langgraph_openai_serve-0.33.0rc1.tar.gz", hash = "sha256:977f1d54f7f4d5255b95269297a524ef58e8d1324cbe3af6517bca790bcb8787", size = 70366, upload-time = "2026-11-05T17:53:22.721Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/ee/ecb0541ed818e377519c2d234af49f1af1d19c17508a94326de7f9fe8924/langgraph_openai_serve-0.32.0rc1-py3-none-any.whl", hash = "sha256:c3efb438d2bbcdef6f6f6e394543c2febfd39592ad1e2222f87460a0375870f3", size = 87714, upload-time = "2026-10-30T22:35:06.027Z" },
+    { url = "https://files.pythonhosted.org/packages/97/fb/1e78856b678264f2be85ecb8efd93743e0ee9208d594ded299a89f9586bd/langgraph_openai_serve-0.33.0rc1-py3-none-any.whl", hash = "sha256:b59d26d9f9ea7833f255a41986e6a2f29c3e600beb107f67bcccb3daf228fcbc", size = 92241, upload-time = "2026-11-05T17:53:21.223Z" },
 ]
 
 [package.optional-dependencies]
@@ -1455,7 +1455,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.4.3" },
     { name = "langchain-openai", specifier = ">=1.6.6" },
     { name = "langchain-text-splitters", specifier = ">=1.1.0" },
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.32.0rc1" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.33.0rc1" },
     { name = "markdown", specifier = ">=3.11" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "packaging", specifier = ">=26.3" },

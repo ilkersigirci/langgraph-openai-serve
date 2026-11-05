@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -10,7 +11,9 @@ from anyio import Event, fail_after, get_cancelled_exc_class
 from anyio.lowlevel import checkpoint
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
+from langgraph.config import get_stream_writer
 from langgraph.graph import StateGraph
 from langgraph.types import interrupt
 from openai import (
@@ -23,6 +26,7 @@ from openai.types.responses import Response
 
 from langgraph_openai_serve import (
     BackgroundJob,
+    BackgroundRun,
     ClientSettings,
     GraphConfig,
     GraphFeature,
@@ -30,7 +34,9 @@ from langgraph_openai_serve import (
     InMemoryBackgroundBackend,
     LanggraphOpenaiServe,
     execute_background_job,
+    status_event,
 )
+from langgraph_openai_serve.api.responses.background import follow_background_response
 from langgraph_openai_serve.graph.interrupt import InMemoryRunCoordinator
 from tests.api.interrupt.support import resume_outputs
 from tests.graph.support.interrupt import (
@@ -46,6 +52,7 @@ if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 MODEL = "background"
+LOST_EVENT = 5
 
 
 @dataclass
@@ -56,6 +63,7 @@ class _Graph:
     stopped: Event = field(default_factory=Event)
     release: Event | None = None
     error: Exception | None = None
+    finish_reason: str | None = None
     inputs: list[str] = field(default_factory=list)
 
     async def reply(self, state: MessageState):
@@ -69,7 +77,11 @@ class _Graph:
                 raise
         if self.error is not None:
             raise self.error
-        return {"messages": [AIMessage(content=f"done:{self.inputs[-1]}")]}
+        answer = AIMessage(
+            content=f"done:{self.inputs[-1]}",
+            response_metadata={"finish_reason": self.finish_reason},
+        )
+        return {"messages": [answer]}
 
     def config(self, **options) -> GraphConfig:
         graph = (
@@ -91,8 +103,9 @@ async def _client(
     registry: GraphRegistry,
     *,
     configured: bool = True,
+    backend: InMemoryBackgroundBackend | None = None,
 ) -> AsyncGenerator[AsyncOpenAI, None]:
-    backend = InMemoryBackgroundBackend(registry)
+    backend = backend or InMemoryBackgroundBackend(registry)
     app = FastAPI(lifespan=backend.lifespan)
 
     def checkpoint_scope(request: Request) -> str:
@@ -173,20 +186,7 @@ async def test_background_create_requires_a_backend_and_an_opted_in_model() -> N
     assert foreground.output_text == "done:Hi"
 
 
-@pytest.mark.parametrize(
-    ("options", "param"),
-    [
-        pytest.param({"stream": True}, "stream", id="stream"),
-        pytest.param(
-            {"metadata": {"lgos_settings": '{"count":"invalid"}'}},
-            "metadata.lgos_settings",
-            id="client-settings",
-        ),
-    ],
-)
-async def test_invalid_background_requests_are_rejected_before_execution(
-    options, param
-) -> None:
+async def test_invalid_background_requests_are_rejected_before_execution() -> None:
     class Settings(ClientSettings):
         count: int = 1
 
@@ -195,10 +195,13 @@ async def test_invalid_background_requests_are_rejected_before_execution(
     async with _client(registry) as client:
         with pytest.raises(BadRequestError) as error:
             await client.responses.create(
-                model=MODEL, input="Hello", background=True, **options
+                model=MODEL,
+                input="Hello",
+                background=True,
+                metadata={"lgos_settings": '{"count":"invalid"}'},
             )
 
-    assert error.value.param == param
+    assert error.value.param == "metadata.lgos_settings"
     assert graph.inputs == []
 
 
@@ -235,7 +238,7 @@ async def test_invalid_background_resume_is_rejected_before_execution(
     assert error.value.param == "metadata.lgos_settings"
 
 
-async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
+async def test_retrieval_is_owner_scoped_and_streams_only_streamed_responses() -> None:
     async with _client(GraphRegistry(graphs={MODEL: _Graph().config()})) as client:
         created = await client.responses.create(
             model=MODEL, input="Hello", background=True
@@ -245,6 +248,10 @@ async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
         with pytest.raises(NotFoundError):
             await client.responses.retrieve(created.id, extra_headers=other_owner)
         with pytest.raises(NotFoundError):
+            await client.responses.retrieve(
+                created.id, stream=True, extra_headers=other_owner
+            )
+        with pytest.raises(NotFoundError):
             await client.responses.cancel(created.id, extra_headers=other_owner)
         with pytest.raises(NotFoundError) as unknown:
             await client.responses.retrieve(
@@ -252,13 +259,292 @@ async def test_retrieval_is_owner_scoped_and_rejects_streaming() -> None:
             )
         with pytest.raises(BadRequestError) as streaming:
             await client.responses.retrieve(created.id, stream=True)
+        # As in OpenAI, a cursor without a stream changes nothing.
+        with_cursor = await client.responses.retrieve(created.id, starting_after=1)
 
     assert unknown.value.code == "response_not_found"
     assert streaming.value.param == "stream"
+    assert with_cursor.id == created.id
 
 
-async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> None:
+def _streaming_config() -> GraphConfig:
+    """Return a graph that reports a status and streams a model's answer."""
+    model = FakeListChatModel(responses=["Report ready."])
+
+    async def generate(state: MessageState):
+        get_stream_writer()(status_event("Searching the web"))
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    return GraphConfig(
+        graph=(
+            StateGraph(MessageState)
+            .add_node("generate", generate)
+            .set_entry_point("generate")
+            .set_finish_point("generate")
+            .compile()
+        ),
+        description="Streams in the background",
+        features={GraphFeature.BACKGROUND},
+    )
+
+
+async def test_background_stream_delivers_and_replays_the_whole_lifecycle() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    async with _client(registry) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+        replayed = await client.responses.retrieve(events[0].response.id, stream=True)
+        replayed_events = [event async for event in replayed]
+        resumed = await client.responses.retrieve(
+            events[0].response.id, stream=True, starting_after=3
+        )
+        resumed_events = [event async for event in resumed]
+        retrieved = await client.responses.retrieve(events[0].response.id)
+
+    assert [event.sequence_number for event in events] == list(range(len(events)))
+    assert [(event.type, event.response.status) for event in events[:3]] == [
+        ("response.created", "queued"),
+        ("response.queued", "queued"),
+        ("response.in_progress", "in_progress"),
+    ]
+    commentary = [
+        event.text
+        for event in events
+        if event.type == "response.output_text.done"
+        and event.text == "Searching the web"
+    ]
+    assert commentary == ["Searching the web"]
+    answer = [
+        event.delta
+        for event in events
+        if event.type == "response.output_text.delta"
+        and event.delta != "Searching the web"
+    ]
+    # The fake model streams one character at a time.
+    assert len(answer) > 1
+    assert "".join(answer) == "Report ready."
+    assert events[-1].type == "response.completed"
+    assert events[-1].response == retrieved
+    assert replayed_events == events
+    assert resumed_events == events[4:]
+
+
+async def test_background_stream_ends_with_the_failed_response() -> None:
+    graph = _Graph(error=OSError("disk full"))
+    async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+        retrieved = await client.responses.retrieve(events[0].response.id)
+
+    terminal = events[-1]
+    assert terminal.type == "response.failed"
+    assert terminal.response == retrieved
+    assert terminal.sequence_number == events[-2].sequence_number + 1
+    # Internal exception text never reaches the client.
+    assert "disk full" not in retrieved.error.message
+
+
+class _EventsUnavailable(InMemoryBackgroundBackend):
+    """An engine whose event store refuses reads, as without durable streams."""
+
+    async def events(self, run_id: str) -> AsyncGenerator[str, None]:
+        for _ in ():
+            yield run_id
+
+
+async def test_background_stream_delivers_the_result_without_stored_events() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    async with _client(registry, backend=_EventsUnavailable(registry)) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+
+    assert [event.type for event in events] == [
+        "response.created",
+        "response.queued",
+        "response.completed",
+    ]
+    assert events[-1].sequence_number == len(events) - 1
+    assert events[-1].response.output[-1].content[0].text == "Report ready."
+
+
+@asynccontextmanager
+async def _held_stream(
+    graph: _Graph,
+) -> AsyncGenerator[tuple[InMemoryBackgroundBackend, BackgroundRun], None]:
+    """
+    Yield a backend and its streaming run, held inside its graph.
+
+    Yields:
+        The backend and the run it is executing.
+
+    """
+    registry = GraphRegistry(graphs={MODEL: graph.config()})
+    backend = InMemoryBackgroundBackend(registry)
+    async with backend.lifespan(None):
+        run = await backend.submit(
+            BackgroundJob(
+                request={
+                    "model": MODEL,
+                    "input": "Hello",
+                    "background": True,
+                    "stream": True,
+                },
+                owner_scope="tenant-a",
+                run_id=str(uuid.uuid4()),
+                created_at=0,
+                idempotency_key="job",
+            )
+        )
+        with fail_after(2):
+            await graph.started.wait()
+        yield backend, run
+
+
+async def test_cancelling_a_run_ends_its_stream_with_the_cancelled_response() -> None:
     graph = _Graph(release=Event())
+    async with _held_stream(graph) as (backend, run):
+        frames = follow_background_response(run, backend)
+        first = await anext(frames)
+        await backend.cancel(run.id)
+        with fail_after(3):
+            rest = [frame async for frame in frames]
+
+    assert first.startswith("event: response.created\n")
+    assert rest[-1].startswith("event: response.failed\n")
+    assert json.loads(rest[-1].partition("data: ")[2])["response"]["status"] == (
+        "cancelled"
+    )
+    assert graph.stopped.is_set()
+
+
+async def test_leaving_a_stream_leaves_its_run_running() -> None:
+    graph = _Graph(release=Event())
+    async with _held_stream(graph) as (backend, run):
+        frames = follow_background_response(run, backend)
+        await anext(frames)
+        await frames.aclose()
+
+        graph.release.set()
+        with fail_after(2):
+            while (current := await backend.get(run.id)).status == "in_progress":
+                await checkpoint()
+
+    assert current.status == "completed"
+    assert current.snapshot().output_text == "done:Hello"
+
+
+class _LaggingEvents(InMemoryBackgroundBackend):
+    """An engine whose events reach a reader only after the run reads as finished."""
+
+    def __init__(self, registry: GraphRegistry) -> None:
+        super().__init__(registry)
+        self.finished_read = Event()
+
+    async def get(self, run_id: str) -> BackgroundRun | None:
+        run = await super().get(run_id)
+        if run is not None and run.status == "completed":
+            self.finished_read.set()
+        return run
+
+    async def events(self, run_id: str) -> AsyncGenerator[str, None]:
+        await self.finished_read.wait()
+        async for event in super().events(run_id):
+            yield event
+
+
+async def test_background_stream_delivers_events_that_outlast_their_run() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    async with _client(registry, backend=_LaggingEvents(registry)) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+        replayed = await client.responses.retrieve(events[0].response.id, stream=True)
+        replayed_events = [event async for event in replayed]
+
+    assert [event.sequence_number for event in events] == list(range(len(events)))
+    assert "".join(
+        event.delta
+        for event in events
+        if event.type == "response.output_text.delta"
+        and event.delta != "Searching the web"
+    ) == ("Report ready.")
+    # Live and replayed streams number the same log the same way.
+    assert replayed_events == events
+
+
+class _LostEvent(InMemoryBackgroundBackend):
+    """An engine whose log misses one event of each run."""
+
+    async def events(self, run_id: str) -> AsyncGenerator[str, None]:
+        async for event in super().events(run_id):
+            if json.loads(event)["sequence_number"] != LOST_EVENT:
+                yield event
+
+
+async def test_background_stream_never_delivers_an_event_past_a_gap() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    async with _client(registry, backend=_LostEvent(registry)) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+
+    # Clients assemble items from these events, so the stream stops at the gap and
+    # ends with the whole Response.
+    assert [event.sequence_number for event in events] == list(range(LOST_EVENT + 1))
+    assert events[-1].type == "response.completed"
+    assert events[-1].response.output[-1].content[0].text == "Report ready."
+
+
+class _StatusBlip(_EventsUnavailable):
+    """An engine whose status read fails once while its events are unavailable."""
+
+    def __init__(self, registry: GraphRegistry) -> None:
+        super().__init__(registry)
+        self.blipped = False
+
+    async def get(self, run_id: str) -> BackgroundRun | None:
+        if not self.blipped:
+            self.blipped = True
+            message = "engine blip"
+            raise ConnectionError(message)
+        return await super().get(run_id)
+
+
+async def test_background_stream_outlasts_a_failed_status_check() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    backend = _StatusBlip(registry)
+    async with _client(registry, backend=backend) as client:
+        stream = await client.responses.create(
+            model=MODEL, input="Hello", background=True, stream=True
+        )
+        events = [event async for event in stream]
+
+    assert backend.blipped
+    assert events[-1].type == "response.completed"
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "refusal"),
+    [
+        pytest.param(None, "Cannot cancel a completed response.", id="completed"),
+        pytest.param(
+            "length", "Cannot cancel an incomplete response.", id="incomplete"
+        ),
+    ],
+)
+async def test_cancellation_stops_an_active_run_and_refuses_a_finished_one(
+    finish_reason: str | None,
+    refusal: str,
+) -> None:
+    graph = _Graph(release=Event(), finish_reason=finish_reason)
     async with _client(GraphRegistry(graphs={MODEL: graph.config()})) as client:
         active = await client.responses.create(
             model=MODEL, input="Hello", background=True
@@ -269,15 +555,21 @@ async def test_cancellation_stops_an_active_run_and_keeps_a_finished_one() -> No
         with fail_after(2):
             await graph.stopped.wait()
         after_cancel = await client.responses.retrieve(active.id)
+        cancelled_again = await client.responses.cancel(active.id)
         graph.release.set()
         finished = await client.responses.create(
             model=MODEL, input="Again", background=True
         )
         completed = await _finished(client, finished.id)
-        cancelled_again = await client.responses.cancel(finished.id)
+        with pytest.raises(BadRequestError) as refused:
+            await client.responses.cancel(finished.id)
+        after_refusal = await client.responses.retrieve(finished.id)
 
-    assert cancelled.status == after_cancel.status == "cancelled"
-    assert cancelled_again == completed
+    assert cancelled.status == after_cancel.status == cancelled_again.status
+    assert cancelled.status == "cancelled"
+    # OpenAI's own words for a Response that already finished.
+    assert refused.value.body["message"] == refusal
+    assert after_refusal == completed
 
 
 async def test_unexpected_graph_failure_fails_the_response() -> None:

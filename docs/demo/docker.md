@@ -233,6 +233,10 @@ UI's settings.
     HATCHET_CLIENT_TOKEN=...
     ```
 
+    The token's Hatchet tenant needs
+    [durable streams](../how-to-guides/background-responses.md#enable-durable-streams)
+    for the UIs to show a run's progress.
+
     Then start the ordered UI stack or only the worker and PostgreSQL:
 
     ```bash
@@ -404,7 +408,7 @@ UI's settings.
     New deployments set `model_info.supports_native_streaming: true`.
     The default public
     [`homeserver-litellm` image](https://github.com/ilkersigirci/homeserver-docker/pkgs/container/homeserver-litellm)
-    preserves native Responses streaming and polling-only background
+    preserves native Responses streaming and background
     lifecycles. Compose
     reads its tag and digest from `DEMO_LITELLM_IMAGE` in `demo/.env`. Normal
     demo commands use this image without a local build or an image override.

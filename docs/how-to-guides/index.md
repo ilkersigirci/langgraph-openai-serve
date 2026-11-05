@@ -48,7 +48,8 @@ application.
 
 -   :material-progress-clock:{ .lg .middle } __Run background work__
 
-    Run a graph in a separate worker and poll its standard Response resource.
+    Run a graph in a separate worker, then stream or poll its standard Response
+    resource.
 
     [:octicons-arrow-right-24: Configure background Responses](background-responses.md)
 

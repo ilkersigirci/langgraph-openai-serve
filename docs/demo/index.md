@@ -46,7 +46,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 -   :material-graph-outline:{ .lg .middle } __Explore the graphs__
 
     Compare schema adapters, RAG, citations, stream-event filtering, file output,
-    subgraphs, HITL, and polling-only background execution.
+    subgraphs, HITL, and background execution.
 
     [:octicons-arrow-right-24: Example graphs](graphs/index.md)
 
@@ -130,8 +130,8 @@ Bifrost uses native `/v1/models` after [catalog sync](bifrost.md#declarative-mod
     documented limitations; see [Docker Compose](docker.md) and [Bifrost
     Gateway](bifrost.md) for the precise boundaries.
 
-    Both bundled gateways support polling-only background work through their
-    normal Responses paths. Hatchet stores each run's status and Response. See
+    Both bundled gateways support background work through their normal Responses
+    paths. Hatchet stores each run's status and Response. See
     the
     [background guide](../how-to-guides/background-responses.md).
 
@@ -139,8 +139,8 @@ Bifrost uses native `/v1/models` after [catalog sync](bifrost.md#declarative-mod
 
 | Demo client | File input | MCP | Runtime settings | Interrupts | Background | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and polling | Native status and persisted image elements | Markdown content |
-| Open WebUI | Uploads attachments to the central Files API | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and polling | Native status and persisted file events | Native source events and Markdown |
+| Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and streaming | Native status and persisted image elements | Markdown content |
+| Open WebUI | Uploads attachments to the central Files API | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and streaming | Native status and persisted file events | Native source events and Markdown |
 
 Both clients still expose limited-functionality models when LGOS metadata is
 missing; see their client-specific guides for that behavior.
