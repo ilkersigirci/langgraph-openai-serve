@@ -935,7 +935,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-openai-serve"
-version = "0.32.0rc1"
+version = "0.33.0rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -948,9 +948,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/b8/9211888711abafdf5a43b58d72d2f0c5d69e7b586ce4c4c588dd56121b2c/langgraph_openai_serve-0.32.0rc1.tar.gz", hash = "sha256:ee6ec80c3a3d8e8f1d4425439e65e0b9bca82d4eced65a5944ce1acf2b301c3b", size = 66239, upload-time = "2026-10-30T22:35:07.518Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/70/f4b513aaf6acb7151737839860061bfe858e1f97c6b5c123363e488bba5b/langgraph_openai_serve-0.33.0rc1.tar.gz", hash = "sha256:977f1d54f7f4d5255b95269297a524ef58e8d1324cbe3af6517bca790bcb8787", size = 70366, upload-time = "2026-11-05T17:53:22.721Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/ee/ecb0541ed818e377519c2d234af49f1af1d19c17508a94326de7f9fe8924/langgraph_openai_serve-0.32.0rc1-py3-none-any.whl", hash = "sha256:c3efb438d2bbcdef6f6f6e394543c2febfd39592ad1e2222f87460a0375870f3", size = 87714, upload-time = "2026-10-30T22:35:06.027Z" },
+    { url = "https://files.pythonhosted.org/packages/97/fb/1e78856b678264f2be85ecb8efd93743e0ee9208d594ded299a89f9586bd/langgraph_openai_serve-0.33.0rc1-py3-none-any.whl", hash = "sha256:b59d26d9f9ea7833f255a41986e6a2f29c3e600beb107f67bcccb3daf228fcbc", size = 92241, upload-time = "2026-11-05T17:53:21.223Z" },
 ]
 
 [package.optional-dependencies]
@@ -1050,7 +1050,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.32.0rc1" },
+    { name = "langgraph-openai-serve", extras = ["server"], specifier = ">=0.33.0rc1" },
     { name = "openai-codex", specifier = ">=0.159.0" },
     { name = "pydantic-settings", specifier = ">=2.9.0" },
 ]
