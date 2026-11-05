@@ -305,8 +305,8 @@ Hatchet engine release that supports them.
 Streaming stores each event in a
 [Hatchet durable stream](https://docs.hatchet.run/reference/python/feature-clients/streams)
 topic named after the run. This needs a Hatchet engine release with durable
-streams; LGOS is tested against v0.116.5. A self-hosted engine leaves them off for
-each tenant until you turn them on:
+streams. A self-hosted engine leaves them off for each tenant until you turn them
+on:
 
 === "New tenants"
 
