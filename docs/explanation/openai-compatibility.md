@@ -84,7 +84,7 @@ fields and feature values.
 | Feature | Enabled behavior |
 | --- | --- |
 | `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
-| `background` | The graph can run through the configured background backend and be polled through the standard Response lifecycle. |
+| `background` | The graph can run through the configured background backend and be streamed or polled through the standard Response lifecycle. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
 
@@ -230,7 +230,7 @@ interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
 
 `POST /v1/responses` implements ordinary stateless text, files, client functions,
 Responses-compatible server-executed custom tools, OpenAI-shaped web search,
-streaming, and an opt-in polling-only background path. It intentionally does
+streaming, and an opt-in background path. It intentionally does
 not claim every field in the upstream OpenAI API.
 
 | Request field or item | LGOS behavior |
@@ -246,7 +246,7 @@ not claim every field in the upstream OpenAI API.
 | `custom_tool_call` and string-valued `custom_tool_call_output` | Returned together after LGOS executes a registered custom tool and accepted as history. |
 | `function_call` and string-valued `function_call_output` | Supported for client-function continuation and accepted as history, including answered `lgos_interrupt` calls. Interrupt resumes accept only `function_call_output` items with `previous_response_id`. |
 | `metadata`, `safety_identifier`, `user` | Supported and passed through the protocol-neutral graph request boundary. `safety_identifier` names the end user in at most 128 characters, OpenAI's documented limit, and replaces OpenAI's deprecated `user`, which remains its alias; when both are sent, `safety_identifier` wins and a Response echoes each as sent. They are not authentication. |
-| `stream` | Supported with typed Responses SSE events for foreground work. `background=true` requires `stream=false`. |
+| `stream` | Supported with typed Responses SSE events, in the foreground and with `background=true`. |
 | `store` | Omitted, null, and false mean false. Foreground `store=true` is rejected. Background requests accept either value; the background engine keeps the result either way. |
 | `text.format.type="text"` | Supported. |
 | `previous_response_id` | Supported for interruptible graphs to answer pending interrupts, in the foreground or with `background=true`. Rejected for non-interruptible graphs. |
@@ -305,21 +305,32 @@ LangGraph checkpoint and Store persistence are separate. A checkpointer keeps
 only paused workflow execution; a graph Store keeps explicit application data.
 Neither makes a Response ID retrievable or lets LGOS reconstruct a conversation.
 
-### Polling-Only Background Lifecycle
+### Background Lifecycle
 
 For an opted-in graph, `background=true` submits the validated request to the
-configured `BackgroundBackend` and returns the queued Response. The caller
-keeps the opaque Response ID and uses:
+configured `BackgroundBackend` and returns the queued Response, or, with
+`stream=true`, a stream that starts with it. The caller keeps the opaque Response
+ID and uses:
 
-- `GET /v1/responses/{response_id}` for a current JSON snapshot; and
+- `GET /v1/responses/{response_id}` for a current JSON snapshot;
+- `GET /v1/responses/{response_id}?stream=true&starting_after=N` to replay and
+  follow the events of a Response created with `stream=true`; and
 - `POST /v1/responses/{response_id}/cancel` for idempotent cancellation.
 
 The public states are `queued`, `in_progress`, `completed`, `incomplete`,
 `failed`, and `cancelled`. LGOS configures no retries, so a run that raises
-fails its Response; create a new Response to try again. Retrieval has no
-streaming or cursor mode, and LGOS does not replay
-background events. Unknown, unauthorized, and wrong-scope IDs share the same
-non-revealing not-found behavior.
+fails its Response; create a new Response to try again. Unknown, unauthorized,
+and wrong-scope IDs share the same non-revealing not-found behavior.
+
+A background stream opens with `response.created` and `response.queued`, then
+carries the same events as a foreground one, including commentary and answer
+deltas. `sequence_number` is the resume cursor, and an idle stream sends OpenAI's
+`keepalive` event. Disconnecting does not stop the run. These behaviors were
+compared with the OpenAI API, and two differ on purpose: a stream over a cancelled
+run ends with `response.failed`, whose Response has status `cancelled`, where
+OpenAI defines no such event and can leave the stream open; and streaming a
+Response created without `stream=true` returns `400`, as OpenAI documents, where
+its API leaves that stream open.
 
 Background create also accepts an
 [IETF `Idempotency-Key`](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header)
@@ -426,8 +437,9 @@ non-empty status description to its own completed assistant message with
 `phase="commentary"` and maps the durable answer to a message with
 `phase="final_answer"`.
 
-Commentary is transient and streaming-only. Non-streaming execution calls the
-graph once for its durable result and does not collect status history. The
+Commentary is transient and streaming-only, whether the stream comes from a
+foreground or a background Response. Non-streaming execution calls the graph
+once for its durable result and does not collect status history. The
 OpenAI Python SDK's `Response.output_text` convenience property concatenates
 text across both phases, so UIs must select `final_answer` messages for
 the transcript and render commentary separately. The maintained Chainlit and
@@ -819,9 +831,8 @@ for the underlying checkpoint model.
 - `model` selects a registered LangGraph graph, not an OpenAI-hosted model.
 - Responses implements the explicit subset above. It has no general foreground
   response storage, Conversations, or general previous-response chaining.
-  Background Responses exist only for opted-in polling-only runs, and the
-  background engine keeps them; there are no event replay, delete, input-item,
-  or compact routes.
+  Background Responses exist only for opted-in runs, and the background engine
+  keeps them; there are no delete, input-item, or compact routes.
   Arbitrary client-defined custom tools and formats, built-in tools beyond the
   documented `web_search` subset, structured output, and unconsumed generation
   controls are rejected.

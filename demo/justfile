@@ -193,7 +193,7 @@ test-direct $DEMO_TEST_DIRECT_BASE_URL=env("DEMO_TEST_DIRECT_BASE_URL") $DEMO_TE
 test-bifrost $DEMO_TEST_BIFROST_BASE_URL=env("DEMO_TEST_BIFROST_BASE_URL") $DEMO_TEST_BIFROST_CATALOG_BASE_URL=env("DEMO_TEST_BIFROST_CATALOG_BASE_URL") editable='false' *args:
     {{ if editable == "true" { editable_api_run } else { api_run } }} pytest -m integration tests/integration/test_bifrost_proxy.py "${@:4}"
 
-# Exercise polling-only background lifecycle through the selected gateway.
+# Exercise the background lifecycle through the selected gateway.
 [arg('base_url', long='base-url')]
 [arg('editable', long, value='true')]
 [arg('model', long)]

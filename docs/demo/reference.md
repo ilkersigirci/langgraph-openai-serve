@@ -34,7 +34,7 @@ integration commands:
 | --- | --- |
 | `just demo/up <service>` | Start one Compose service and its dependencies; add `--dev` for checkout images or `--wait` to detach |
 | `just demo/api [--editable] [--port <port>]` | Set up checkpoints and run one local graph API process |
-| `just demo/background-worker [--editable]` | Run the independently deployed Hatchet worker for polling-only background Responses |
+| `just demo/background-worker [--editable]` | Run the independently deployed Hatchet worker for background Responses |
 | `just demo/files [--port <port>]` | Run the independently locked local Files API process |
 | `just demo/test-coding-agent [--editable]` | Check coding-agent shell execution, persisted edits, streaming, usage, and history through the running gateway |
 | `just demo/test-openwebui` | Check the Open WebUI sync and the Generic Pipe against the running stack after an Open WebUI image change |
@@ -54,7 +54,7 @@ integration commands:
 | `just demo/test [--editable]` | Test every project, optionally overlaying the parent LGOS checkout |
 | `just demo/test-postgres [--editable]` | Run API interrupt/Store persistence tests against PostgreSQL on port 3001 |
 | `just demo/experiment <name> [--editable] [--no-langfuse] [--dataset <dataset>]` | Run a [Langfuse experiment](experiments.md) from `demo/api/experiments`, such as `lgos-rag`, with the host gateway's models; `--no-langfuse` records nothing, and `--dataset` runs a Langfuse dataset, such as `lgos-rag/curated`, instead of the Git-tracked cases |
-| `just demo/test-background-gateway [--editable]` | Exercise create, new-client polling, cancellation, idempotent replay, and polling-only validation through the selected gateway |
+| `just demo/test-background-gateway [--editable]` | Exercise create, streaming, new-client polling, cancellation, and idempotent replay through the selected gateway |
 | `just demo/lint` | Check every project with Ruff |
 | `just demo/format` | Format the Justfile and fix Python style in every project; accepts Ruff flags such as `--unsafe-fixes` |
 | `just demo/type-check [--editable]` | Type-check every project |
@@ -202,7 +202,10 @@ schedule and one-hour execution timeouts with no retries. Hatchet's data
 retention decides how long Responses stay retrievable. Self-hosted deployments
 should inject
 any additional native `HATCHET_CLIENT_*` connection settings into both the API
-and worker processes.
+and worker processes. The UIs show a background run's status and answer text as
+they happen only on a tenant with
+[durable streams](../how-to-guides/background-responses.md#enable-durable-streams);
+without them, the final answer still arrives when the run ends.
 
 The API serves the OpenAI routes at the package's default `/v1` prefix, which
 the gateway wiring assumes. It also reads the package-owned

@@ -201,15 +201,15 @@ def unfinished_answer(*deltas: str) -> list[dict[str, Any]]:
     ]
 
 
-def sse(*events: dict[str, Any]) -> httpx2.Response:
-    """Reply with these Responses stream events."""
+def sse(*events: dict[str, Any], start: int = 0) -> httpx2.Response:
+    """Reply with these Responses stream events, numbered from ``start``."""
     return httpx2.Response(
         200,
         headers={"content-type": "text/event-stream"},
         text="".join(
             f"event: {event['type']}\n"
             f"data: {json.dumps({**event, 'sequence_number': number})}\n\n"
-            for number, event in enumerate(events)
+            for number, event in enumerate(events, start)
         ),
     )
 

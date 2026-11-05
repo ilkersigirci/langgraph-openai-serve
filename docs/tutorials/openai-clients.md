@@ -194,9 +194,9 @@ user, system, or developer item that the next turn needs. This is application
 conversation state; LangGraph checkpoints remain a separate temporary store for
 paused interrupts.
 
-An opted-in `background=True` request has a different, polling-only lifecycle:
-the background engine keeps that single Response, and LGOS supports retrieve
-and cancel by ID. It still does not retain a conversation or support
+An opted-in `background=True` request has a different lifecycle: the background
+engine keeps that single Response, and LGOS supports stream, retrieve, and
+cancel by ID. It still does not retain a conversation or support
 `previous_response_id` chaining beyond interrupt answers. See [Run Responses In
 The Background](../how-to-guides/background-responses.md).
 

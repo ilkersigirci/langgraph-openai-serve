@@ -5,10 +5,7 @@ import inspect
 from fastapi import Request
 
 from langgraph_openai_serve.background import BackgroundBackend
-from langgraph_openai_serve.core.errors import (
-    GraphError,
-    InvalidRequestError,
-)
+from langgraph_openai_serve.core.errors import GraphError
 
 
 async def get_checkpoint_scope(request: Request) -> str:
@@ -25,15 +22,3 @@ async def get_checkpoint_scope(request: Request) -> str:
 def get_background_backend(request: Request) -> BackgroundBackend | None:
     """Return the optional server-injected background backend."""
     return request.app.state.background_backend
-
-
-def validate_background_retrieval(
-    *,
-    stream: bool | None = None,
-    starting_after: str | None = None,
-) -> None:
-    """Reject streaming and cursors before reading the background engine."""
-    for param, value in (("stream", stream), ("starting_after", starting_after)):
-        if value:
-            msg = f"Background response retrieval does not support {param}."
-            raise InvalidRequestError(msg, param=param)

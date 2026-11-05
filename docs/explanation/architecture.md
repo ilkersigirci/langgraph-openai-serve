@@ -38,11 +38,12 @@ The package owns the `/v1` transport and adaptation boundary. The host
 application owns graph behavior and every model, tool, store, or data source
 used by that graph.
 
-Polling-only background requests branch after validation. The API submits the
-validated request to a background engine and returns a queued Response. An
-independently deployed worker runs the same foreground Responses path, and the
-engine stores the resulting Response. Polling reads the engine; it never
-executes the graph in an HTTP request.
+Background requests branch after validation. The API submits the validated
+request to a background engine and returns a queued Response, or a stream that
+starts with it. An independently deployed worker runs the same foreground
+Responses path. It publishes each event to the engine when the request asked to
+stream, and the engine stores the resulting Response. Retrieving and streaming
+read the engine; they never execute the graph in an HTTP request.
 
 ```mermaid
 flowchart TB

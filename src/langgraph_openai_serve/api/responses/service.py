@@ -1,6 +1,6 @@
 """Prepare and execute graph runs for OpenAI Responses."""
 
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 from contextlib import aclosing
 
 from langchain_core.messages import AIMessage
@@ -27,6 +27,9 @@ from langgraph_openai_serve.graph.run import GraphRun, prepare_run
 from langgraph_openai_serve.graph.runner import stream_run
 
 logger = get_logger(__name__)
+
+EventPublisher = Callable[[ResponseStreamEvent], Awaitable[None]]
+"""Stores one Responses event of a run for its readers."""
 
 
 async def prepare_response_run(
@@ -59,16 +62,24 @@ async def collect_response(
     request: ResponseCreateRequest,
     run: GraphRun,
     context: ResponseContext | None = None,
+    *,
+    publish: EventPublisher | None = None,
 ) -> Response:
     """
-    Build one non-streaming Response from the graph's durable output.
+    Build one Response from the graph's durable output.
 
-    A background Response passes the identity it was accepted with.
+    A background Response passes the identity it was accepted with. With
+    ``publish``, the run streams and each event is handed to it, so a client can
+    follow the run from another process.
     """
     async with run:
-        events = _response_events(_builder(request, run, context), run, streaming=False)
+        events = _response_events(
+            _builder(request, run, context), run, streaming=publish is not None
+        )
         async with aclosing(events):
             async for event in events:
+                if publish is not None:
+                    await publish(event)
                 if isinstance(event, (ResponseCompletedEvent, ResponseIncompleteEvent)):
                     return event.response
     msg = "Graph execution completed without a final Response."
@@ -127,8 +138,8 @@ async def _response_events(
     """
     final_output: AIMessage | LangGraphInterruptBatch | None = None
     async with run:
-        yield builder.created()
-        yield builder.in_progress()
+        for event in builder.opening():
+            yield event
 
         run_events = stream_run(
             run,

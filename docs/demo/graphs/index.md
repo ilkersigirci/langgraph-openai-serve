@@ -41,8 +41,8 @@ with the [demo API instructions](../api.md#start-postgresql-and-the-api).
 conversation history.
 
 Background Responses from `deep-research`, `background-mock`,
-`background-interrupt`, and `nested-subgraphs` are polling-only and stored by
-Hatchet. They still do not persist a UI conversation or expose event replay.
+`background-interrupt`, and `nested-subgraphs` are stored by Hatchet. They still
+do not persist a UI conversation.
 
 ## Source Map
 

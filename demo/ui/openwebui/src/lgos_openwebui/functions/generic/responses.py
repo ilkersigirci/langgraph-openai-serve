@@ -4,16 +4,19 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from contextlib import aclosing
 from typing import Any
 
+import httpx
 import openai.types.responses as response_types
-from openai import AsyncOpenAI
+from openai import APIError, AsyncOpenAI, AsyncStream
 from openai.types.responses import (
     FunctionToolParam,
     Response,
     ResponseFunctionToolCall,
     ResponseOutputItem,
+    ResponseStreamEvent,
     ToolParam,
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
@@ -76,6 +79,9 @@ DISPLAY_FILE_TOOL: FunctionToolParam = {
     "parameters": DisplayFileArguments.model_json_schema(),
 }
 ACTIVE_BACKGROUND_STATUSES = {"queued", "in_progress"}
+BACKGROUND_RESUME_SECONDS = 1
+# The SDK's backoff then outlasts a gateway restart, which a background run survives.
+BACKGROUND_MAX_RETRIES = 7
 logger = logging.getLogger(__name__)
 
 
@@ -363,15 +369,39 @@ def _responses_request(
     return request
 
 
-async def _background_response(
+async def _foreground_events(
+    client: AsyncOpenAI,
+    request: dict[str, Any],
+) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
+    """
+    Yield one foreground stream's events, then its final Response.
+
+    Yields:
+        Each event, then the SDK's assembled Response.
+
+    """
+    async with client.responses.stream(**request) as stream:
+        async for event in stream:
+            yield event
+        yield await stream.get_final_response()
+
+
+async def _background_events(
     client: AsyncOpenAI,
     request: dict[str, Any],
     on_status: Callable[[str], Awaitable[None]],
     *,
     provider_routing: bool,
-) -> Response:
-    """Create and poll one background Response with best-effort cancellation."""
-    client = client.with_options(max_retries=2)
+) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
+    """
+    Create one background Response and report its lifecycle.
+
+    Yields:
+        The events that report progress, then the final Response, unless the stream
+        closed before it named one.
+
+    """
+    client = client.with_options(max_retries=BACKGROUND_MAX_RETRIES)
     background_request = dict(request)
     idempotency_key = str(uuid.uuid4())
     lifecycle_options: dict[str, Any] = {}
@@ -387,39 +417,126 @@ async def _background_response(
         background_request["extra_body"] = {
             "extra_headers": {"Idempotency-Key": idempotency_key}
         }
-    response = await client.responses.create(**background_request)
-    try:
-        return await _poll_background_response(
-            client, response, on_status, lifecycle_options
-        )
-    except asyncio.CancelledError:
-        try:
-            await asyncio.shield(
-                client.responses.cancel(response.id, **lifecycle_options)
-            )
-        except Exception:
-            logger.warning(
-                "Background response cancellation failed for %s",
-                response.id,
-                exc_info=True,
-            )
-        raise
+    events = _followed_events(client, background_request, lifecycle_options)
+    async with aclosing(events):
+        async for event in events:
+            if not isinstance(event, Response) and (
+                event.type == "response.created"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+                or event.type == "response.in_progress"
+            ):
+                await on_status(event.response.status or "unknown")
+            else:
+                yield event
 
 
-async def _poll_background_response(
+async def _followed_events(
     client: AsyncOpenAI,
-    response: Response,
-    on_status: Callable[[str], Awaitable[None]],
+    request: dict[str, Any],
     lifecycle_options: Mapping[str, Any],
-) -> Response:
-    previous_status = None
-    while response.status in ACTIVE_BACKGROUND_STATUSES:
-        if response.status != previous_status:
-            await on_status(response.status)
-            previous_status = response.status
-        await asyncio.sleep(1)
-        response = await client.responses.retrieve(response.id, **lifecycle_options)
-    return response
+) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
+    """
+    Follow one background Response from its creation.
+
+    A broken stream says nothing about its run, which continues, so the Response
+    decides: a finished one ends this, and an active one resumes after the last
+    event. A gateway that cannot resume delivers nothing, which makes this poll.
+    Leaving early, as Stop does, cancels the run.
+
+    Yields:
+        The events that report progress, then the final Response, unless the stream
+        closed before it named one.
+
+    """
+    stream = await client.responses.create(**request, stream=True)
+    response_id: str | None = None
+    cursor = -1
+    response: Response | None = None
+    try:  # ruff: ignore[too-many-statements-in-try-clause] - The whole lifecycle shares best-effort cancellation.
+        while response is None:
+            events = _until_broken(stream)
+            async with aclosing(events):
+                async for event in events:
+                    cursor = event.sequence_number
+                    if event.type == "response.created":
+                        response_id = event.response.id
+                    response = _terminal_response(event)
+                    if response is not None:
+                        break
+                    yield event
+            if response is None:
+                if response_id is None:
+                    return
+                retrieved = await client.responses.retrieve(
+                    response_id, **lifecycle_options
+                )
+                if retrieved.status in ACTIVE_BACKGROUND_STATUSES:
+                    await asyncio.sleep(BACKGROUND_RESUME_SECONDS)
+                    stream = await client.responses.retrieve(
+                        response_id,
+                        stream=True,
+                        starting_after=cursor,
+                        **lifecycle_options,
+                    )
+                else:
+                    response = retrieved
+    except (asyncio.CancelledError, GeneratorExit):
+        if response_id is not None:
+            await _cancel_background_response(client, response_id, lifecycle_options)
+        raise
+    yield response
+
+
+async def _until_broken(
+    stream: AsyncStream[ResponseStreamEvent],
+) -> AsyncGenerator[ResponseStreamEvent, None]:
+    """
+    Yield a stream's events until it closes or breaks.
+
+    Yields:
+        Each event but keepalives, which are numbered apart from the events.
+
+    """
+    try:
+        async with stream:
+            async for event in stream:
+                if event.type != "keepalive":
+                    yield event
+    # The pinned SDK does not wrap errors raised while it reads a stream.
+    except (APIError, httpx.TransportError):
+        logger.warning("Background stream broke", exc_info=True)
+
+
+def _terminal_response(event: ResponseStreamEvent) -> Response | None:
+    if (
+        event.type == "response.completed"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+        or event.type == "response.failed"
+        or event.type == "response.incomplete"
+    ):
+        return event.response
+    return None
+
+
+async def _cancel_background_response(
+    client: AsyncOpenAI,
+    response_id: str,
+    lifecycle_options: Mapping[str, Any],
+) -> None:
+    try:
+        await asyncio.shield(client.responses.cancel(response_id, **lifecycle_options))
+    except Exception:
+        logger.warning(
+            "Background response cancellation failed for %s",
+            response_id,
+            exc_info=True,
+        )
+
+
+def _unstreamed_text(streamed: str, final: str) -> str:
+    """Return what completes a stream that was cut short or superseded by a rerun."""
+    if final.startswith(streamed):
+        return final[len(streamed) :]
+    # A Pipe's stream can only append, so a rerun's answer follows the old text.
+    return f"\n\n{final}"
 
 
 def _responses_final_text(response: Response) -> str:

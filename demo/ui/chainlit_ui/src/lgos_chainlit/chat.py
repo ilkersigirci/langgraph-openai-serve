@@ -4,7 +4,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -34,7 +34,7 @@ from chainlit_utils.openai.responses import (
     raise_for_response,
 )
 from chainlit_utils.openai.tools import continuation_input, function_calls
-from openai import AsyncOpenAI, Omit, omit
+from openai import APIError, AsyncOpenAI, AsyncStream, Omit, omit
 from openai.types.responses import Response, ResponseStreamEvent
 
 from lgos_chainlit.audio import end_dictation, read_aloud, send_speech_button
@@ -64,7 +64,9 @@ from lgos_chainlit.mcp import mcp_tools
 from lgos_chainlit.settings import settings
 
 logger = logging.getLogger(__name__)
-BACKGROUND_POLL_SECONDS = 1
+BACKGROUND_RESUME_SECONDS = 1
+# The SDK's backoff then outlasts a gateway restart, which a background run survives.
+BACKGROUND_MAX_RETRIES = 7
 
 
 @dataclass
@@ -74,9 +76,7 @@ class _Turn:
     model: str
     # The stateless transcript that client tool results continue.
     input_items: list[dict[str, Any]]
-    streaming: bool = field(
-        default_factory=lambda: not background_enabled() and streaming_enabled()
-    )
+    streaming: bool = field(default_factory=streaming_enabled)
     answer: cl.Message = field(default_factory=lambda: cl.Message(content=""))
     commentary: CommentarySteps | CommentaryTaskList = field(
         default_factory=lambda: (
@@ -333,21 +333,22 @@ async def _request_response(
             CONVERSATION_METADATA_KEY: cl.context.session.thread_id,
         },
     }
+    if background_enabled():
+        return await _background_response(request, commentary, stream_to)
     if stream_to is not None:
         return await _stream_response(request, stream_to, commentary)
-    if background_enabled():
-        return await _background_response(request, commentary)
     return await responses_client.responses.create(**request, store=False)
 
 
 async def _background_response(
     request: dict[str, Any],
     commentary: CommentarySteps | CommentaryTaskList,
+    stream_to: cl.Message | None,
 ) -> Response:
-    """Create and poll one background Response with best-effort cancellation."""
-    client = responses_client.with_options(max_retries=2)
+    """Create one background Response and render it as it runs."""
+    client = responses_client.with_options(max_retries=BACKGROUND_MAX_RETRIES)
     idempotency_headers = {"Idempotency-Key": str(uuid.uuid4())}
-    create_options: dict[str, Any] = {}
+    create_options: dict[str, Any] = {"background": True, "store": True}
     lifecycle_options: dict[str, Any] = {}
     if gateway.type == "bifrost":
         create_options["extra_headers"] = idempotency_headers
@@ -360,49 +361,146 @@ async def _background_response(
         # LiteLLM drops a client Idempotency-Key header but forwards body
         # extra_headers upstream.
         create_options["extra_body"] = {"extra_headers": idempotency_headers}
-    response = await client.responses.create(
-        **request,
-        **create_options,
-        background=True,
-        store=True,
+    events = _background_events(
+        client, {**request, **create_options}, lifecycle_options
     )
-    try:
-        return await _poll_background_response(
-            client,
-            response,
-            commentary,
-            lifecycle_options,
-        )
-    except asyncio.CancelledError:
-        try:
-            await asyncio.shield(
-                client.responses.cancel(response.id, **lifecycle_options)
-            )
-        except Exception:
-            logger.warning(
-                "Background response cancellation failed for %s",
-                response.id,
-                exc_info=True,
-            )
-        raise
-
-
-async def _poll_background_response(
-    client: AsyncOpenAI,
-    response: Response,
-    commentary: CommentarySteps | CommentaryTaskList,
-    lifecycle_options: dict[str, Any],
-) -> Response:
-    previous_status = None
-    while response.status in {"queued", "in_progress"}:
-        if response.status != previous_status:
-            await commentary.add(
-                f"Background response {response.status.replace('_', ' ')}"
-            )
-            previous_status = response.status
-        await asyncio.sleep(BACKGROUND_POLL_SECONDS)
-        response = await client.responses.retrieve(response.id, **lifecycle_options)
+    response: Response | None = None
+    answer_start = len(stream_to.content) if stream_to is not None else 0
+    phases: dict[int, str | None] = {}
+    async with (
+        aclosing(events),
+        (
+            MessageStream(stream_to) if stream_to is not None else nullcontext()
+        ) as message_stream,
+    ):
+        async for event in events:
+            if isinstance(event, Response):
+                response = event
+            elif (
+                event.type == "response.created"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+                or event.type == "response.in_progress"
+            ):
+                status = (event.response.status or "unknown").replace("_", " ")
+                await commentary.add(f"Background response {status}")
+            else:
+                await _handle_stream_event(event, phases, message_stream, commentary)
+    if response is None:
+        msg = "The background stream closed before it returned a Response."
+        raise RuntimeError(msg)
+    if stream_to is not None:
+        await _complete_streamed_answer(stream_to, answer_start, response)
     return response
+
+
+async def _background_events(
+    client: AsyncOpenAI,
+    request: dict[str, Any],
+    lifecycle_options: dict[str, Any],
+) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
+    """
+    Follow one background Response from its creation.
+
+    A broken stream says nothing about its run, which continues, so the Response
+    decides: a finished one ends this, and an active one resumes after the last
+    event. A gateway that cannot resume delivers nothing, which makes this poll.
+    Leaving early, as Stop does, cancels the run.
+
+    Yields:
+        The events that report progress, then the final Response, unless the stream
+        closed before it named one.
+
+    """
+    stream = await client.responses.create(**request, stream=True)
+    response_id: str | None = None
+    cursor = -1
+    response: Response | None = None
+    try:  # ruff: ignore[too-many-statements-in-try-clause] - The whole lifecycle shares best-effort cancellation.
+        while response is None:
+            events = _until_broken(stream)
+            async with aclosing(events):
+                async for event in events:
+                    cursor = event.sequence_number
+                    if event.type == "response.created":
+                        response_id = event.response.id
+                    response = _terminal_response(event)
+                    if response is not None:
+                        break
+                    yield event
+            if response is None:
+                if response_id is None:
+                    return
+                retrieved = await client.responses.retrieve(
+                    response_id, **lifecycle_options
+                )
+                if retrieved.status in {"queued", "in_progress"}:
+                    await asyncio.sleep(BACKGROUND_RESUME_SECONDS)
+                    stream = await client.responses.retrieve(
+                        response_id,
+                        stream=True,
+                        starting_after=cursor,
+                        **lifecycle_options,
+                    )
+                else:
+                    response = retrieved
+    except (asyncio.CancelledError, GeneratorExit):
+        if response_id is not None:
+            await _cancel_background_response(client, response_id, lifecycle_options)
+        raise
+    yield response
+
+
+async def _until_broken(
+    stream: AsyncStream[ResponseStreamEvent],
+) -> AsyncGenerator[ResponseStreamEvent, None]:
+    """
+    Yield a stream's events until it closes or breaks.
+
+    Yields:
+        Each event but keepalives, which are numbered apart from the events.
+
+    """
+    try:
+        async with stream:
+            async for event in stream:
+                if event.type != "keepalive":
+                    yield event
+    except APIError:
+        logger.warning("Background stream broke", exc_info=True)
+
+
+def _terminal_response(event: ResponseStreamEvent) -> Response | None:
+    if (
+        event.type == "response.completed"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
+        or event.type == "response.failed"
+        or event.type == "response.incomplete"
+    ):
+        return event.response
+    return None
+
+
+async def _complete_streamed_answer(
+    message: cl.Message, answer_start: int, response: Response
+) -> None:
+    """Show the final answer of a stream that was cut short or superseded by a rerun."""
+    answer = final_answer(response)
+    if answer and message.content[answer_start:] != answer:
+        content = message.content[:answer_start] + answer
+        await message.stream_token(content, is_sequence=True)
+
+
+async def _cancel_background_response(
+    client: AsyncOpenAI,
+    response_id: str,
+    lifecycle_options: dict[str, Any],
+) -> None:
+    try:
+        await asyncio.shield(client.responses.cancel(response_id, **lifecycle_options))
+    except Exception:
+        logger.warning(
+            "Background response cancellation failed for %s",
+            response_id,
+            exc_info=True,
+        )
 
 
 async def _stream_response(
@@ -432,10 +530,14 @@ async def _stream_response(
 async def _handle_stream_event(
     event: ResponseStreamEvent,
     phases: dict[int, str | None],
-    message_stream: MessageStream,
+    message_stream: MessageStream | None,
     commentary: CommentarySteps | CommentaryTaskList,
 ) -> bool:
-    """Render one stream event; return whether it streamed final-answer text."""
+    """
+    Render one stream event; return whether it streamed final-answer text.
+
+    Without a message stream, only commentary and failures are rendered.
+    """
     if event.type == "response.output_item.added":
         if event.item.type == "message":
             phases[event.output_index] = event.item.phase
@@ -444,7 +546,10 @@ async def _handle_stream_event(
         event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
         or event.type == "response.refusal.delta"
     ):
-        if phases.get(event.output_index) != "commentary":
+        if (
+            message_stream is not None
+            and phases.get(event.output_index) != "commentary"
+        ):
             await message_stream.stream_token(event.delta)
             return True
         return False
@@ -453,8 +558,8 @@ async def _handle_stream_event(
     if event.type == "response.output_text.done":
         if phases.get(event.output_index) == "commentary":
             await commentary.add(event.text)
-        else:
+        elif message_stream is not None:
             await message_stream.flush()
-    elif event.type == "response.refusal.done":
+    elif event.type == "response.refusal.done" and message_stream is not None:
         await message_stream.flush()
     return False

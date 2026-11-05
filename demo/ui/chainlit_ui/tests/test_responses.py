@@ -100,30 +100,27 @@ async def test_status_steps_finish_and_stay_out_of_later_model_context(
     chainlit_context,
     fake_gateway,
     status_steps,
-    monkeypatch: pytest.MonkeyPatch,
     background: bool,
 ) -> None:
     if background:
         await _select_background_profile(fake_gateway, "lgos/background-report")
-        monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
-        fake_gateway.replies += [
-            reply(response(id="resp_bg", status="queued")),
-            reply(response(id="resp_bg", status="in_progress")),
-            reply(response(message("Ready."), id="resp_bg")),
-        ]
-        expected = ["Background response queued", "Background response in progress"]
+        cl.user_session.get("chat_settings")[STREAMING_SETTING_ID] = False
     else:
         chainlit_context.session.chat_profile = "lgos/status-events"
-        fake_gateway.replies.append(
-            streamed(
-                response(
-                    message("Preparing media", id="msg_prepare", phase="commentary"),
-                    message("Generating audio", id="msg_audio", phase="commentary"),
-                    message("Ready."),
-                )
+    fake_gateway.replies.append(
+        streamed(
+            response(
+                message("Preparing media", id="msg_prepare", phase="commentary"),
+                message("Generating audio", id="msg_audio", phase="commentary"),
+                message("Ready."),
             )
         )
-        expected = ["Preparing media", "Generating audio"]
+    )
+    expected = [
+        *(["Background response in progress"] if background else []),
+        "Preparing media",
+        "Generating audio",
+    ]
 
     await chat.on_message(user_message("Make audio."))
 
@@ -136,6 +133,7 @@ async def test_status_steps_finish_and_stay_out_of_later_model_context(
     assert transcript() == ["Make audio.", "Ready."]
 
     chainlit_context.session.chat_settings[BACKGROUND_SETTING_ID] = False
+    chainlit_context.session.chat_settings[STREAMING_SETTING_ID] = True
     fake_gateway.replies.append(streamed(response(message("You asked for audio."))))
     await chat.on_message(user_message("What did I ask?"))
 
@@ -357,6 +355,46 @@ async def _select_background_profile(fake_gateway, model_id: str) -> None:
     cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = True
 
 
+class _BrokenStream(httpx2.AsyncByteStream):
+    """Deliver these bytes, then lose the connection as a dropped proxy does."""
+
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self.content
+        message = "peer closed connection"
+        raise httpx2.RemoteProtocolError(message)
+
+
+def _stream_reply(stream: httpx2.AsyncByteStream) -> httpx2.Response:
+    return httpx2.Response(
+        200, headers={"content-type": "text/event-stream"}, stream=stream
+    )
+
+
+def _background_answer(*deltas: str) -> list[dict[str, object]]:
+    """Accept a background Response and start its answer with these deltas."""
+    created, *rest = unfinished_answer(*deltas)
+    payload = created["response"]
+    return [
+        {
+            "type": "response.created",
+            "response": {**payload, "id": "resp_bg", "status": "queued"},
+        },
+        {
+            "type": "response.in_progress",
+            "response": {**payload, "id": "resp_bg"},
+        },
+        *rest,
+    ]
+
+
+def _active_reply() -> httpx2.Response:
+    """Reply to a retrieve of a background Response that still runs."""
+    return reply(response(id="resp_bg", status="in_progress"))
+
+
 def _use_gateway(monkeypatch: pytest.MonkeyPatch, gateway_type: str) -> str:
     """Send Responses through ``gateway_type``'s route and return its path."""
     config = gateway_config(gateway_type, "https://gateway.example")
@@ -376,27 +414,31 @@ BACKGROUND_GATEWAYS = pytest.mark.parametrize(
 
 
 @BACKGROUND_GATEWAYS
-async def test_background_response_is_polled_until_complete(
+async def test_background_response_uses_the_gateways_lifecycle_routes(
     chainlit_context,
     fake_gateway,
-    task_lists,
     monkeypatch: pytest.MonkeyPatch,
     gateway_type: str,
     lifecycle_query: dict[str, str],
 ) -> None:
     responses_path = _use_gateway(monkeypatch, gateway_type)
-    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
+    monkeypatch.setattr(chat, "BACKGROUND_RESUME_SECONDS", 0)
     await _select_background_profile(fake_gateway, "lgos/background-report")
     fake_gateway.replies += [
-        reply(response(id="resp_bg", status="queued")),
-        reply(response(id="resp_bg", status="in_progress")),
+        _stream_reply(_BrokenStream(sse(*_background_answer("Partial ")).content)),
+        _active_reply(),
+        sse(),
         reply(response(message("Report ready."), id="resp_bg")),
     ]
 
     await chat.on_message(user_message("Build the report."))
 
     [create] = fake_gateway.bodies(responses_path)
-    assert (create["background"], create["store"]) == (True, True)
+    assert (create["background"], create["store"], create["stream"]) == (
+        True,
+        True,
+        True,
+    )
     assert create["metadata"] == {"conversation_id": chainlit_context.session.thread_id}
     create_request = fake_gateway.requests[1]
     idempotency_key = (
@@ -405,26 +447,24 @@ async def test_background_response_is_polled_until_complete(
         else create["extra_headers"]["Idempotency-Key"]
     )
     UUID(idempotency_key)
+    resume_query = {
+        **lifecycle_query,
+        "stream": "true",
+        "starting_after": str(len(_background_answer("Partial ")) - 1),
+    }
     assert [
         (request.method, request.url.path, dict(request.url.params))
         for request in fake_gateway.requests[2:]
-    ] == [("GET", f"{responses_path}/resp_bg", lifecycle_query)] * 2
-    assert task_lists[-1] == {
-        "status": "Done",
-        "tasks": [
-            {"title": "Background response queued", "status": "done", "forId": None},
-            {
-                "title": "Background response in progress",
-                "status": "done",
-                "forId": None,
-            },
-        ],
-    }
+    ] == [
+        ("GET", f"{responses_path}/resp_bg", lifecycle_query),
+        ("GET", f"{responses_path}/resp_bg", resume_query),
+        ("GET", f"{responses_path}/resp_bg", lifecycle_query),
+    ]
     assert transcript()[-1] == "Report ready."
 
 
 @BACKGROUND_GATEWAYS
-async def test_stopped_turn_cancels_its_background_response(
+async def test_stopped_background_stream_cancels_its_response(
     chainlit_context,
     fake_gateway,
     status_steps,
@@ -433,23 +473,23 @@ async def test_stopped_turn_cancels_its_background_response(
     lifecycle_query: dict[str, str],
 ) -> None:
     responses_path = _use_gateway(monkeypatch, gateway_type)
-    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
     await _select_background_profile(fake_gateway, "lgos/background-report")
-    polling = asyncio.Event()
+    waiting = asyncio.Event()
 
-    def in_progress(_request: httpx2.Request) -> httpx2.Response:
-        polling.set()
-        return reply(response(id="resp_bg", status="in_progress"))
+    class PausedStream(httpx2.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield sse(*_background_answer("Partial ")).content
+            waiting.set()
+            await anyio.sleep_forever()
 
     fake_gateway.replies += [
-        reply(response(id="resp_bg", status="queued")),
-        in_progress,
+        _stream_reply(PausedStream()),
         reply(response(id="resp_bg", status="cancelled")),
     ]
 
     turn = asyncio.create_task(chat.on_message(user_message("Build the report.")))
     with anyio.fail_after(5):
-        await polling.wait()
+        await waiting.wait()
     turn.cancel()
     with pytest.raises(asyncio.CancelledError):
         await turn
@@ -463,6 +503,209 @@ async def test_stopped_turn_cancels_its_background_response(
     assert status_steps[-1]["end"] is not None
     assert status_steps[-1]["isError"] is True
     assert status_steps[-1]["output"].endswith("\n- Stopped")
+
+
+async def test_background_response_without_streaming_shows_only_its_final_answer(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+) -> None:
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    cl.user_session.get("chat_settings")[STREAMING_SETTING_ID] = False
+    fake_gateway.replies.append(
+        streamed(
+            response(
+                message("Searching the web", id="msg_status", phase="commentary"),
+                message("Report ready."),
+                id="resp_bg",
+            )
+        )
+    )
+
+    await chat.on_message(user_message("Build the report."))
+
+    assert fake_gateway.bodies("/v1/responses")[0]["stream"] is True
+    assert [task["title"] for task in task_lists[-1]["tasks"]] == [
+        "Background response in progress",
+        "Searching the web",
+    ]
+    assert transcript()[-1] == "Report ready."
+
+
+async def test_background_stream_ignores_keepalives_for_its_cursor(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(chat, "BACKGROUND_RESUME_SECONDS", 0)
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    events = _background_answer("Partial ")
+    # OpenAI numbers its keepalives apart from the events.
+    keepalive = 'event: keepalive\ndata: {"type":"keepalive","sequence_number":0}\n\n'
+    completed = response(message("Partial "), id="resp_bg")
+    fake_gateway.replies += [
+        _stream_reply(_BrokenStream((sse(*events).text + keepalive).encode())),
+        _active_reply(),
+        sse(
+            {
+                "type": "response.completed",
+                "response": completed.model_dump(mode="json"),
+            },
+            start=len(events),
+        ),
+    ]
+
+    await chat.on_message(user_message("Build the report."))
+
+    assert dict(fake_gateway.requests[-1].url.params) == {
+        "stream": "true",
+        "starting_after": str(len(events) - 1),
+    }
+    assert transcript()[-1] == "Partial "
+
+
+async def test_background_response_streams_commentary_and_its_answer(
+    chainlit_context,
+    fake_gateway,
+    task_lists,
+) -> None:
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    fake_gateway.replies.append(
+        streamed(
+            response(
+                message("Searching the web", id="msg_status", phase="commentary"),
+                message("Report ready."),
+                id="resp_bg",
+            )
+        )
+    )
+
+    await chat.on_message(user_message("Build the report."))
+
+    [create] = fake_gateway.bodies("/v1/responses")
+    assert (create["background"], create["store"], create["stream"]) == (
+        True,
+        True,
+        True,
+    )
+    # A stream that reaches its terminal event needs no retrieve.
+    assert [request.method for request in fake_gateway.requests[1:]] == ["POST"]
+    assert [task["title"] for task in task_lists[-1]["tasks"]] == [
+        "Background response in progress",
+        "Searching the web",
+    ]
+    assert transcript()[-1] == "Report ready."
+
+
+async def test_background_stream_that_drops_resumes_after_its_last_event(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(chat, "BACKGROUND_RESUME_SECONDS", 0)
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    events = _background_answer("Partial ", "answer")
+    completed = response(message("Partial answer"), id="resp_bg")
+    fake_gateway.replies += [
+        _stream_reply(_BrokenStream(sse(*events[:-1]).content)),
+        _active_reply(),
+        sse(
+            events[-1],
+            {
+                "type": "response.completed",
+                "response": completed.model_dump(mode="json"),
+            },
+            start=len(events) - 1,
+        ),
+    ]
+
+    await chat.on_message(user_message("Build the report."))
+
+    resume = fake_gateway.requests[-1]
+    assert (resume.method, resume.url.path, dict(resume.url.params)) == (
+        "GET",
+        "/v1/responses/resp_bg",
+        {"stream": "true", "starting_after": str(len(events) - 2)},
+    )
+    assert transcript()[-1] == "Partial answer"
+
+
+@pytest.mark.parametrize(
+    "final",
+    [
+        pytest.param("Partial answer, completed.", id="dropped"),
+        pytest.param("Another answer.", id="rerun"),
+    ],
+)
+async def test_background_stream_that_cannot_resume_polls_for_its_result(
+    chainlit_context,
+    fake_gateway,
+    monkeypatch: pytest.MonkeyPatch,
+    final: str,
+) -> None:
+    monkeypatch.setattr(chat, "BACKGROUND_RESUME_SECONDS", 0)
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    fake_gateway.replies += [
+        _stream_reply(
+            _BrokenStream(sse(*_background_answer("Partial ", "answer")).content)
+        ),
+        _active_reply(),
+        # A gateway that drops the retrieve parameters answers with no events.
+        sse(),
+        reply(response(message(final), id="resp_bg")),
+    ]
+
+    await chat.on_message(user_message("Build the report."))
+
+    retrieve = fake_gateway.requests[-1]
+    assert (retrieve.method, retrieve.url.path, dict(retrieve.url.params)) == (
+        "GET",
+        "/v1/responses/resp_bg",
+        {},
+    )
+    assert transcript()[-1] == final
+
+
+async def test_background_stream_a_gateway_reports_broken_ends_with_its_response(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    gateway_error = json.dumps({"error": {"message": "provider closed the stream"}})
+    fake_gateway.replies += [
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                sse(*_background_answer("Partial answer")).text
+                + f"data: {gateway_error}\n\n"
+            ),
+        ),
+        reply(response(message("Partial answer, completed."), id="resp_bg")),
+    ]
+
+    await chat.on_message(user_message("Build the report."))
+
+    assert transcript()[-1] == "Partial answer, completed."
+
+
+async def test_background_stream_of_a_cancelled_run_reports_the_failure(
+    chainlit_context,
+    fake_gateway,
+) -> None:
+    await _select_background_profile(fake_gateway, "lgos/background-report")
+    cancelled = response(id="resp_bg", status="cancelled").model_dump(mode="json")
+    fake_gateway.replies.append(
+        sse(
+            *_background_answer("Partial "),
+            {"type": "response.failed", "response": cancelled},
+        )
+    )
+
+    await chat.on_message(user_message("Build the report."))
+
+    assert transcript()[-2:] == ["Partial ", "Response failed: Response failed."]
+    assert fake_gateway.requests[-1].method == "POST"
 
 
 async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(
@@ -515,10 +758,8 @@ async def test_stopped_stream_closes_upstream_and_keeps_partial_text_in_context(
 async def test_interrupt_review_resumes_with_the_turn_request_context(
     chainlit_context,
     fake_gateway,
-    monkeypatch: pytest.MonkeyPatch,
     background: bool,
 ) -> None:
-    monkeypatch.setattr(chat, "BACKGROUND_POLL_SECONDS", 0)
     model_id = "lgos/interruptible-approval"
     await select_profile(fake_gateway, model_id, features=["background"])
     cl.user_session.get("chat_settings")[BACKGROUND_SETTING_ID] = background
@@ -534,11 +775,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
     )
     interrupted = response(review_call, id="resp_lg_review")
     approved = response(message("Refund approved."), id="resp_lg_done")
-    fake_gateway.replies += (
-        [reply(response(id=interrupted.id, status="queued")), reply(interrupted)]
-        if background
-        else [streamed(interrupted)]
-    )
+    fake_gateway.replies.append(streamed(interrupted))
 
     await chat.on_message(user_message("Refund order ORDER-123."))
 
@@ -554,11 +791,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
         "Answer or cancel the pending review before starting another request."
     )
 
-    fake_gateway.replies += (
-        [reply(response(id=approved.id, status="queued")), reply(approved)]
-        if background
-        else [streamed(approved)]
-    )
+    fake_gateway.replies.append(streamed(approved))
     result = await _submit_review(
         cl.Action(
             name=INTERRUPT_ACTION_NAME,
@@ -600,7 +833,7 @@ async def test_interrupt_review_resumes_with_the_turn_request_context(
         background,
         background,
     )
-    assert resume.get("stream", False) is not background
+    assert resume["stream"] is True
     # The answered review keeps its request and records the decision.
     assert review.content == (
         "Approve refund?\n\nRequest: ORDER-123\n\nAnswered: approve"

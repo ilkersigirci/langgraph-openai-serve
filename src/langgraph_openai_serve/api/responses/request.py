@@ -169,17 +169,9 @@ def _validate_supported_semantics(request: ResponseCreateRequest) -> None:
 
 
 def _validate_storage_mode(request: ResponseCreateRequest) -> None:
-    if not request.background:
-        if request.store:
-            message = "'store' must be false; response storage is not supported."
-            raise InvalidRequestError(message, param="store")
-        return
-    if request.stream:
-        message = (
-            "Background responses do not support streaming. Set stream=false or "
-            "omit it, then retrieve the response by ID."
-        )
-        raise InvalidRequestError(message, param="stream")
+    if not request.background and request.store:
+        message = "'store' must be false; response storage is not supported."
+        raise InvalidRequestError(message, param="store")
 
 
 def _validate_tool_replay_mode(request: ResponseCreateRequest) -> None:

@@ -259,10 +259,12 @@ answer once. The switch also applies to the answer that follows a human
 review.
 
 Models advertising `background` also receive an opt-in **Run in
-background** switch. Chainlit uses non-streaming create/retrieve polling,
-renders lifecycle states in its task list, and requests cancellation when the
-turn stops. Interrupt answers follow the same switch. This client-owned switch
-is not included in `lgos_settings`.
+background** switch. Chainlit streams the background Response, so statuses appear
+live, and answer text too with **Stream response** on. When the stream breaks it
+checks the Response and, while the run is active, resumes after the last event. It
+requests cancellation when the turn stops, and interrupt answers follow the same
+switch. This client-owned switch is not included in
+`lgos_settings`.
 
 Chainlit may restore UI selections with a saved thread, but LGOS does not
 persist runtime settings. The adapter resends non-default values for every
@@ -547,7 +549,7 @@ content. The task list completes the previous task when the next status arrives.
 Both displays finish when the turn succeeds or pauses for human review. Clicking
 **Stop**, a failed request, or an incomplete response marks the active status
 as failed. Statuses stay out of the assistant answer and later model context.
-Background response polling uses the same display setting. Restart Chainlit
+Background responses use the same display setting. Restart Chainlit
 after changing it. The bundled `[UI] cot = "tool_call"` configuration makes
 steps visible; custom configurations must use `"tool_call"` or `"full"`.
 
@@ -598,7 +600,7 @@ Chainlit-specific settings:
 
 | Setting | Notes |
 | --- | --- |
-| `DEMO_CHAINLIT_STATUS_DISPLAY` | Status presentation: `steps` or `tasklist`; also applies to background polling. |
+| `DEMO_CHAINLIT_STATUS_DISPLAY` | Status presentation: `steps` or `tasklist`; also applies to background responses. |
 | `DEMO_CHAINLIT_LOGIN_TYPE` | Browser login: `mock` (default) or `oauth`. The SSO overlay sets `oauth`. |
 | `DEMO_CHAINLIT_ENABLE_OAUTH_TOKEN_FORWARDING` | `false` (default) uses the static key. `true` requires OAuth login and forwards each user's access token; the SSO overlay sets it. |
 | `DEMO_CHAINLIT_OAUTH_RESOURCE` | Optional RFC 8707 resource identifier passed in OAuth authorization and token requests. |

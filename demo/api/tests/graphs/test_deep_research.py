@@ -3,7 +3,7 @@
 import itertools
 import json
 from base64 import b64encode
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -162,6 +162,11 @@ async def streamed(client: AsyncOpenAI, **request: Any) -> Response:
     return [event async for event in stream][-1].response
 
 
+async def background_streamed(client: AsyncOpenAI, **request: Any) -> Response:
+    events = await client.responses.create(**request, background=True, stream=True)
+    return [event async for event in events][-1].response
+
+
 async def finished(client: AsyncOpenAI, **request: Any) -> Response:
     response = await client.responses.create(**request, background=True)
     with fail_after(5):
@@ -197,7 +202,7 @@ def searches(response: Response) -> list[str]:
         ),
     ],
 )
-async def test_requests_without_research_stream_only_a_direct_answer(
+async def test_requests_without_research_stream_the_decision_then_a_direct_answer(
     sqlite_checkpointer: AsyncSqliteSaver,
     tools: list[dict[str, str]],
     replies: list[dict[str, Any]],
@@ -206,10 +211,16 @@ async def test_requests_without_research_stream_only_a_direct_answer(
     async with graph_client(sqlite_checkpointer, provider) as client:
         final = await streamed(client, model=MODEL, input="Hello", tools=tools)
 
-    assert [(item.type, item.phase) for item in final.output] == [
-        ("message", "final_answer")
+    # The status shows progress while the private triage call decides.
+    assert [
+        (item.phase, item.content[0].text)
+        for item in final.output
+        if item.type == "message"
+    ] == [
+        ("commentary", "Deciding whether to research"),
+        ("final_answer", "Hello!"),
     ]
-    assert final.output_text == "Hello!"
+    assert len(final.output) == 2
     assert len(provider.requests) == len(replies)
 
 
@@ -227,9 +238,17 @@ async def test_research_without_web_search_asks_the_user_to_turn_it_on(
             else client.responses.create(**request)
         )
 
-    # Only the client allows web access, so nothing pauses or searches.
-    assert [item.type for item in response.output] == ["message"]
-    assert response.output_text == WEB_SEARCH_NEEDED
+    # Only the client allows web access, so nothing pauses or searches. A stream
+    # also carries the status shown while triage decides.
+    assert [
+        (item.phase, item.content[0].text)
+        for item in response.output
+        if item.type == "message"
+    ] == [
+        *([("commentary", "Deciding whether to research")] if stream else []),
+        ("final_answer", WEB_SEARCH_NEEDED),
+    ]
+    assert len(response.output) == (2 if stream else 1)
     assert len(provider.requests) == 1
 
 
@@ -252,10 +271,14 @@ async def test_research_does_not_start_once_web_search_is_turned_off(
     assert len(provider.requests) == 1
 
 
-@pytest.mark.parametrize("background", [False, True], ids=["streamed", "background"])
+@pytest.mark.parametrize(
+    "deliver",
+    [streamed, background_streamed, finished],
+    ids=["streamed", "background-streamed", "polled"],
+)
 async def test_approved_research_returns_its_searches_and_a_cited_report(
     sqlite_checkpointer: AsyncSqliteSaver,
-    background: bool,
+    deliver: Callable[..., Awaitable[Response]],
 ) -> None:
     report = f"Interrupts pause a run; see [LangGraph interrupts]({SOURCE_URL})."
     provider = ModelProvider(
@@ -274,7 +297,7 @@ async def test_approved_research_returns_its_searches_and_a_cited_report(
             "input": reply_to(paused, START_RESEARCH),
             "tools": WEB_SEARCH,
         }
-        final = await (finished if background else streamed)(client, **resume)
+        final = await deliver(client, **resume)
 
     pause = review(paused)
     assert plan(paused) == PLAN
@@ -294,7 +317,7 @@ async def test_approved_research_returns_its_searches_and_a_cited_report(
     report_request = provider.requests[-1]
     assert [tool["name"] for tool in report_request["tools"]] == ["web_search"]
     assert report_request["tool_choice"] == "none"
-    # Background Responses are polled, so they carry no transient status.
+    # Polling Responses carry no transient status.
     commentary = [
         item.content[0].text
         for item in final.output
@@ -302,7 +325,7 @@ async def test_approved_research_returns_its_searches_and_a_cited_report(
     ]
     assert commentary == (
         []
-        if background
+        if deliver is finished
         else [
             "Searching the web: LangGraph interrupt pause",
             "Searching the web: LangGraph resume",

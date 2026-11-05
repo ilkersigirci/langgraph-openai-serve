@@ -43,9 +43,11 @@ def create_hatchet() -> Hatchet:
 
 
 def create_hatchet_backend() -> HatchetBackgroundBackend:
-    """Build the API-side backend that submits, reads, and cancels runs."""
+    """Build the API-side backend that submits, reads, cancels, and follows runs."""
     hatchet = create_hatchet()
-    return HatchetBackgroundBackend(create_hatchet_task(hatchet), hatchet.runs)
+    return HatchetBackgroundBackend(
+        create_hatchet_task(hatchet), hatchet.runs, hatchet.streams
+    )
 
 
 def run_worker(factory: RegistryFactory, settings: ServerSettings) -> None:

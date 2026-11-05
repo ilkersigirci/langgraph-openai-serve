@@ -70,10 +70,10 @@ Each step exercises an LGOS path from inside a subgraph:
 | Status | The `status_event()` from `draft` becomes Responses commentary. |
 | Interrupt | `review` runs two levels down; its `interrupt()` pauses the whole run, and R1 carries one `lgos_interrupt` call. |
 | Resumption | LangGraph reruns `review` with the answer and then runs `answer`; the draft and its status do not repeat. |
-| Background | The worker runs the same graph without streaming, pauses at `review`, and resumes there. |
+| Background | The worker runs the same graph, publishing the same tokens and status for a streaming request, pauses at `review`, and resumes there. |
 
-Non-streaming and background requests receive no commentary or draft text: the
-paused Response carries only the review call, and the resumed Response carries
+Non-streaming requests, including background ones, receive no commentary or
+draft text: the paused Response carries only the review call, and the resumed Response carries
 the final answer. Chat Completions rejects the model because interrupts require
 the Responses API.
 
