@@ -1,0 +1,8 @@
+// Project settings for Zed: https://zed.dev/docs/configuring-zed#settings-files
+{
+  // The demo's containers keep their runtime data under demo/docker/volumes
+  // (gitignored), and the OpenTelemetry collector rewrites its export queue
+  // there every few seconds. Scanning it makes Zed process a change every
+  // couple of seconds while the project sits idle. "..." keeps Zed's defaults.
+  "file_scan_exclusions": ["demo/docker/volumes", "..."]
+}
