@@ -371,10 +371,9 @@ def install_client(monkeypatch: pytest.MonkeyPatch, **responses: object) -> Fake
 
 
 class FakeOpenWebUI:
-    """Open WebUI's file routes, called in-process through ``__request__.app``."""
+    """Open WebUI's file upload, called in-process through ``__request__.app``."""
 
-    def __init__(self, content_type: str = "application/octet-stream") -> None:
-        self.content_type = content_type
+    def __init__(self) -> None:
         self.requests: list[tuple[str, str, str, str]] = []
         self.bodies: list[bytes] = []
 
@@ -400,18 +399,14 @@ class FakeOpenWebUI:
             )
         )
         self.bodies.append(body)
-        if scope["method"] == "GET":
-            content_type, payload = self.content_type, b"attachment-bytes"
-        else:
-            content_type, payload = "application/json", b'{"id":"stored-file"}'
         await send(
             {
                 "type": "http.response.start",
                 "status": 200,
-                "headers": [(b"content-type", content_type.encode())],
+                "headers": [(b"content-type", b"application/json")],
             }
         )
-        await send({"type": "http.response.body", "body": payload})
+        await send({"type": "http.response.body", "body": b'{"id":"stored-file"}'})
 
 
 @pytest.fixture
@@ -1661,12 +1656,24 @@ async def test_display_file_continuation_preserves_input_and_all_final_text(
         {
             "role": "user",
             "content": [
+                {"type": "text", "text": "Plot revenue"},
+                {
+                    "type": "file",
+                    "file": {"file_id": "file-data", "filename": "revenue.xlsx"},
+                },
+            ],
+        },
+    ]
+    transcript = [
+        {"role": "system", "content": "Use the uploaded data."},
+        {
+            "role": "user",
+            "content": [
                 {"type": "input_text", "text": "Plot revenue"},
                 {"type": "input_file", "file_id": "file-data"},
             ],
         },
     ]
-    transcript = deepcopy(request_body["messages"])
     if resume_interrupt:
         paused = interrupt_call()
         request_body["messages"].extend(
@@ -1857,57 +1864,40 @@ def test_plotly_labels_cannot_inject_html_into_the_embed() -> None:
     assert html.count("<script") == 2
 
 
-@pytest.mark.parametrize(
-    ("filename", "content_type"),
-    [("report.pdf", "application/pdf"), ("chart.png", "image/png")],
-)
-@pytest.mark.parametrize(
-    ("gateway_type", "provider"),
-    [("litellm", "litellm_proxy"), ("bifrost", "lgos-files")],
-)
-async def test_current_attachment_is_read_from_openwebui_into_an_input_file(
+async def test_attachments_reach_the_graph_by_their_files_api_ids(
     monkeypatch: pytest.MonkeyPatch,
-    filename: str,
-    content_type: str,
-    gateway_type: str,
-    provider: str,
 ) -> None:
-    upload = AsyncMock(return_value=SimpleNamespace(id="file-uploaded"))
-    create = AsyncMock(return_value=final_response("Summarized."))
-    client = install_client(monkeypatch, create=create)
-    client.files = SimpleNamespace(create=upload)
-    monkeypatch.setattr(generic_files, "_client", lambda **_: client)
-    openwebui = FakeOpenWebUI(content_type)
-    attachment = {
-        "id": "owui-file",
-        "type": "file",
-        "name": filename,
-        "content_type": content_type,
-    }
+    create = AsyncMock(return_value=final_response("Compared."))
+    install_client(monkeypatch, create=create)
 
-    result = await configured_pipe(OPENAI_GATEWAY_TYPE=gateway_type).pipe(
-        {**body(stream=False), "messages": [{"role": "user", "content": "Read it."}]},
-        __metadata__={"user_message": {"files": [attachment]}},
-        __request__=openwebui.request(),
-    )
+    def attached(text: str, file_id: str, filename: str) -> dict[str, object]:
+        part = {"type": "file", "file": {"file_id": file_id, "filename": filename}}
+        return {"role": "user", "content": [{"type": "text", "text": text}, part]}
 
-    assert result == "Summarized."
-    assert openwebui.requests == [
-        ("GET", "/api/v1/files/owui-file/content", "", "Bearer browser-session")
-    ]
-    upload.assert_awaited_once_with(
-        file=(filename, b"attachment-bytes", content_type),
-        purpose="user_data",
-        extra_query={"provider": provider},
-    )
-    assert create.await_args.kwargs["input"] == [
+    result = await configured_pipe().pipe(
         {
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": "Read it."},
-                {"type": "input_file", "file_id": "file-uploaded"},
+            **body(stream=False),
+            "messages": [
+                attached("Read this", "file-report", "report.pdf"),
+                {"role": "assistant", "content": "Read."},
+                attached("And compare", "file-memo", "memo.docx"),
             ],
-        }
+        },
+        # No __request__: the Pipe reads nothing from Open WebUI's file storage.
+    )
+
+    assert result == "Compared."
+    # Every turn's attachments, as Open WebUI sends them with their Files API IDs.
+    assert [item["content"] for item in create.await_args.kwargs["input"]] == [
+        [
+            {"type": "input_text", "text": "Read this"},
+            {"type": "input_file", "file_id": "file-report"},
+        ],
+        "Read.",
+        [
+            {"type": "input_text", "text": "And compare"},
+            {"type": "input_file", "file_id": "file-memo"},
+        ],
     ]
 
 
@@ -1943,7 +1933,7 @@ async def test_current_attachment_is_read_from_openwebui_into_an_input_file(
     ],
     ids=["bearer", "system-oauth", "unset-auth-type", "url-typed-alike"],
 )
-async def test_responses_and_files_send_what_open_webuis_gateway_connection_sends(
+async def test_responses_send_what_open_webuis_gateway_connection_sends(
     monkeypatch: pytest.MonkeyPatch,
     openwebui_connection: Callable[..., None],
     auth_type: str | None,
@@ -1952,28 +1942,22 @@ async def test_responses_and_files_send_what_open_webuis_gateway_connection_send
     credential: str,
 ) -> None:
     api_keys = []
-    upload = AsyncMock(return_value=SimpleNamespace(id="file-uploaded"))
     create = AsyncMock(return_value=final_response("Summarized."))
 
     def client(*, api_key: str, **_: object) -> FakeClient:
         api_keys.append(api_key)
-        return FakeClient(files=SimpleNamespace(create=upload), create=create)
+        return FakeClient(create=create)
 
     monkeypatch.setattr(generic_pipe, "_client", client)
-    monkeypatch.setattr(generic_files, "_client", client)
     openwebui_connection(auth_type, url)
-    attachment = {"id": "owui-file", "type": "file", "name": "report.pdf"}
 
     result = await configured_pipe(OPENAI_GATEWAY_BASE_URL=gateway_url).pipe(
         body(stream=False),
-        __metadata__={"user_message": {"files": [attachment]}},
-        __request__=FakeOpenWebUI().request(),
         __oauth_token__={"access_token": "user-access-token"},
     )
 
     assert result == "Summarized."
-    # One client uploads the attachment, the other runs the response.
-    assert api_keys == [credential, credential]
+    assert api_keys == [credential]
 
 
 @pytest.mark.parametrize(
@@ -2320,6 +2304,8 @@ async def test_non_streaming_answer_allows_optional_phase(monkeypatch, phase):
 
 
 def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
+    # Open WebUI sends documents as Chat file parts with their Files API IDs,
+    # and images inline.
     messages = [
         {"role": "system", "content": "Be brief."},
         {"role": "assistant", "content": "Working", "phase": "commentary"},
@@ -2328,7 +2314,14 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             "role": "user",
             "content": [
                 {"type": "text", "text": "Read this"},
-                {"type": "input_file", "file_id": "file-123"},
+                {
+                    "type": "file",
+                    "file": {"file_id": "file-123", "filename": "report.pdf"},
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/gif;base64,R0lGOD"},
+                },
             ],
         },
     ]
@@ -2342,6 +2335,11 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
             "content": [
                 {"type": "input_text", "text": "Read this"},
                 {"type": "input_file", "file_id": "file-123"},
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/gif;base64,R0lGOD",
+                    "detail": "auto",
+                },
             ],
         },
     ]

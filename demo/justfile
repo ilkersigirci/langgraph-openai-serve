@@ -285,6 +285,16 @@ compose dev='false' otel='false' sso='false' chainlit_utils='false' *up_args:
         exit 1
     fi
 
+    # Open WebUI's document uploads name the gateway's Files provider.
+    case "$OPENAI_GATEWAY_TYPE:$DEMO_OPENWEBUI_FILES_PROVIDER" in
+        litellm:litellm_proxy|bifrost:lgos-files)
+            ;;
+        *)
+            echo "Set DEMO_OPENWEBUI_FILES_PROVIDER=litellm_proxy for LiteLLM or lgos-files for Bifrost" >&2
+            exit 1
+            ;;
+    esac
+
     # The gateway is up before every LGOS service, which assumes it is running.
     case "$OPENAI_GATEWAY_TYPE:$gateway_service" in
         litellm:lgos-litellm|bifrost:lgos-bifrost)

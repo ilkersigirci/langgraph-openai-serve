@@ -119,8 +119,8 @@ API and Chainlit images and runs a pinned, lightly patched Open WebUI image
 with the demo's Open WebUI Functions installed through its API. See the
 [demo Docker Compose guide](docs/demo/docker.md).
 
-The complete Compose demo lets one `OPENAI_GATEWAY_TYPE=litellm|bifrost`
-setting place either gateway in front of both maintained UI clients. Chainlit
+In the complete Compose demo, `OPENAI_GATEWAY_TYPE=litellm|bifrost` places
+either gateway in front of both maintained UI clients. Chainlit
 and Open WebUI use normal managed/native Responses and Files routes. Metadata
 comes from LiteLLM's native `/model/info` after [model sync](docs/demo/litellm-sync.md),
 or Bifrost's native `/v1/models` after [catalog sync](docs/demo/bifrost.md#declarative-model-metadata).
@@ -152,9 +152,10 @@ LanggraphOpenaiServe(registry=registry, app=app).bind_openai_api()
 The default base URL is `{host}/v1`. Registered graph names become OpenAI `model`
 values.
 
-LGOS accepts native Responses `input_file` parts with opaque `file_id` values,
-but does not own file upload or storage. Deploy one Files API for the graph
-services that share a file namespace, or use a gateway-native Files provider.
+LGOS accepts native Responses `input_file` and `input_image` parts with opaque
+`file_id` values, and images by URL, but does not own file upload or storage.
+Deploy one Files API for the graph services that share a file namespace, or use
+a gateway-native Files provider.
 The standalone S3-backed [demo Files API](demo/files_api/README.md) is a small
 reference deployment. Chat Completions remains available for direct
 compatibility clients; the maintained demo UIs use Responses exclusively. See

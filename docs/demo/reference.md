@@ -16,7 +16,7 @@ run without it. This reference explains settings without duplicating their defau
 | Path | Purpose | Imports LGOS? |
 | --- | --- | --- |
 | `demo/api` | Example FastAPI and LangGraph application | Yes, from PyPI by default |
-| `demo/files_api` | OpenAI-compatible Files service and S3 adapter | No |
+| `demo/files_api` | OpenAI-compatible Files service over S3, with document extraction | No |
 | `demo/api-coding-agent` | Coding-agent showcase and persistent workspace (currently Codex) | Yes, from PyPI by default |
 | `demo/ui/chainlit_ui` | Persistent OpenAI-protocol client | No |
 | `demo/ui/openwebui` | Open WebUI Function sources and the command that installs them | No |
@@ -241,6 +241,10 @@ These settings belong only to the independent `demo/files_api` project.
 | `DEMO_API_FILES_AWS_ACCESS_KEY_ID` | Required S3 access key passed explicitly to boto3. |
 | `DEMO_API_FILES_AWS_SECRET_ACCESS_KEY` | Required S3 secret key passed explicitly to boto3. |
 | `DEMO_API_FILES_AWS_DEFAULT_REGION` | Required S3 signing region passed explicitly to boto3. |
+| `DEMO_API_FILES_MAX_UPLOAD_BYTES` | Largest accepted upload; the service defaults to OpenAI's 512 MiB, and the demo sets 32 MiB to fit its container's 64 MiB `/tmp`, where uploads are spooled. |
+| `DEMO_API_FILES_MAX_CONCURRENT_EXTRACTIONS` | Documents extracted at once; the rest wait. Default `2`. |
+| `DEMO_API_FILES_EXTRACTION_THREADS` | Threads xberg uses; size them to the container's CPU limit, since xberg otherwise sizes its pools, and its memory, by the host's cores. Default `1`. |
+| `DEMO_API_FILES_EXTRACTION_TIMEOUT_SECONDS` | Longest extraction of one document once it has a slot; default `240`, below Open WebUI's 300-second wait, which starts at the upload. |
 
 ## Open WebUI Settings
 
@@ -253,6 +257,7 @@ which also gives the Generic Pipe `OPENAI_GATEWAY_TYPE` and
 | `DEMO_OPENWEBUI_ADMIN_EMAIL` | Open WebUI's bootstrap admin, created only in an empty database |
 | `DEMO_OPENWEBUI_ADMIN_PASSWORD` | Password of that admin; the SSO overlay disables password sign-in |
 | `DEMO_OPENWEBUI_HOST_URL` | Open WebUI's URL from the host, where the sync runs |
+| `DEMO_OPENWEBUI_FILES_PROVIDER` | The gateway's Files provider that Open WebUI's Files API requests select: `lgos-files` for Bifrost, `litellm_proxy` for LiteLLM |
 | `DEMO_OPENWEBUI_SYNC_API_KEY` | An admin's API key for the sync, required by the SSO overlay; without it, the sync signs in as the bootstrap admin |
 | `DEMO_OPENWEBUI_URL` | Public Open WebUI URL for the [SSO overlay](docker.md#sso-overlay); sets `WEBUI_URL` and the OIDC callback |
 | `DEMO_OPENWEBUI_OAUTH_CLIENT_ID`, `DEMO_OPENWEBUI_OAUTH_CLIENT_SECRET` | The registered OIDC client for the SSO overlay |

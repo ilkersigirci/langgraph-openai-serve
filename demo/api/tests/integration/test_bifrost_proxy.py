@@ -4,6 +4,7 @@ import os
 import pytest
 from openai import AsyncOpenAI, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
+from tests.integration.files_gateway import assert_document_extraction_contract
 from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 
 BIFROST_BASE_URL = os.getenv("DEMO_TEST_BIFROST_BASE_URL")
@@ -82,6 +83,14 @@ async def test_bifrost_catalog_and_files_preserve_lgos() -> None:
                 extra_query=files_query,
             )
             assert deleted.deleted is True
+
+
+async def test_bifrost_files_report_extracted_document_content() -> None:
+    assert BIFROST_CATALOG_BASE_URL is not None
+
+    await assert_document_extraction_contract(
+        BIFROST_CATALOG_BASE_URL, BIFROST_API_KEY, "lgos-files"
+    )
 
 
 async def test_bifrost_native_responses_preserve_file_input() -> None:

@@ -66,8 +66,22 @@ services:
       OPENAI_API_KEY: $OPENAI_GATEWAY_API_KEY
       OPENAI_API_CONFIGS: '{"0": {"auth_type": "bearer", "exclude_model_ids": ["lgos/*"]}}'
       ENABLE_IMAGE_GENERATION: false
-      # The image keeps chat uploads raw; the central Files API processes them.
-      ENABLE_FILE_UPLOAD_PROCESSING: false
+      # The image's Files API support: uploads of the document types files-api
+      # extracts go through the gateway's Files route, which authenticates like
+      # the OpenAI connection. The Generic Pipe's models receive those documents
+      # as file parts with their Files API IDs; other models, their extracted
+      # text. Open WebUI reads every other upload itself. Saving Admin >
+      # Documents overwrites the engine until the next restart.
+      CONTENT_EXTRACTION_ENGINE: openai_files
+      OPENAI_FILES_API_BASE_URL: ${OPENAI_GATEWAY_BASE_URL}/v1
+      OPENAI_FILES_API_KEY: $OPENAI_GATEWAY_API_KEY
+      OPENAI_FILES_API_PARAMS: '{"provider": "$DEMO_OPENWEBUI_FILES_PROVIDER"}'
+      # Every type the Files API extracts; the image's default omits text files.
+      OPENAI_FILES_API_FILE_EXTENSIONS: pdf,docx,doc,pptx,ppt,xlsx,xls,md,txt
+      OPENAI_FILES_API_MODELS_REGEX_PATTERN: '^generic\.lgos/'
+      # Attachment text goes into the prompt whole: the slim image has no
+      # embedding model, and graphs own retrieval.
+      BYPASS_EMBEDDING_AND_RETRIEVAL: true
       # Both gateways serve OpenAI speech under /v1. Audio base URLs do not
       # inherit any other connection setting.
       AUDIO_STT_ENGINE: openai

@@ -13,8 +13,8 @@ discovery metadata, not permission for LGOS to download arbitrary URLs.
 
 LGOS deliberately does not expose Files routes or hold file-storage
 credentials. Deploy one external OpenAI-compatible Files API for the graph
-services that share a file namespace. That service may have multiple stateless
-replicas over one durable repository.
+services that share a file namespace. The demo Files API extracts documents in
+its own process, so it runs as one process per bucket.
 
 At a gateway, route standard `/v1/files` operations to this service independently
 of the selected graph model. Use a gateway-native Files implementation when it
@@ -54,23 +54,35 @@ print(response.output_text)
 LGOS currently accepts only the `input_file.file_id` form. The standard
 `file_url` and inline `file_data` forms are rejected: URL fetching needs an
 explicit SSRF, redirect, DNS, timeout, and size policy, while inline data needs
-an application-defined size limit. `input_image`, audio, and other Responses
-content types are also outside the current subset.
+an application-defined size limit. Audio and other Responses content types are
+also outside the current subset.
 
-The graph receives this existing LangChain content shape:
+Send an image as `input_image`, by the same `file_id` or by `image_url`. An
+image URL, including a base64 data URL, is how OpenAI clients usually send
+images and how vision models read them, so LGOS passes it to the graph
+unchanged and fetches nothing; a graph that downloads one owns that policy.
+Only the request size the server or gateway accepts bounds an inline image.
+Prefer the `file_id` for an image a conversation keeps resending, so its bytes
+stay out of every request and of graph state.
+
+The graph receives these existing LangChain content shapes:
 
 ```python
-{
-    "type": "file",
-    "file": {"file_id": uploaded.id},
-}
+{"type": "file", "file": {"file_id": uploaded.id}}
+{"type": "image", "file_id": uploaded.id, "extras": {"detail": "auto"}}
+{"type": "image_url", "image_url": {"url": "data:image/png;base64,...", "detail": "auto"}}
 ```
 
-It can call `GET /v1/files/{file_id}/content`, create a short-lived
-object-storage URL, or upload the bytes to a downstream model provider. LGOS
+A `file_id` names a file in your Files API, not the model provider's, so
+resolve it before a model call: call `GET /v1/files/{file_id}/content`, create
+a short-lived object-storage URL, or upload the bytes to a downstream model
+provider. LangChain's OpenAI integration cannot send an image by `file_id` at
+all. For a
+document, the demo Files API returns the text it extracted there, and the
+original upload with `?raw=true`. LGOS
 does not parse the file or turn its ID into a URL. The direct Chat compatibility
-route also preserves native Chat file parts, but maintained demo clients use
-Responses `input_file` items.
+route also preserves native Chat file and image parts, but maintained demo
+clients use Responses items.
 
 ## Display A Graph-Generated File
 
@@ -112,9 +124,9 @@ The Files API is storage, not conversation or graph state. Send the `file_id`
 again in every request that needs it. Keep canonical application data in the
 application's Store and treat rendered files as derived output.
 
-The demo accepts opaque bytes and only `purpose="user_data"`; it rejects
-`expires_after`. Before serving untrusted traffic, add authentication, tenant
-isolation, upload limits, retention, malware policy, and availability controls.
+The demo accepts only `purpose="user_data"` and rejects `expires_after`. Before
+serving untrusted traffic, add authentication, tenant isolation, retention,
+malware policy, and availability controls.
 Generate bearer URLs only when needed, and never persist a presigned URL as a
 `file_id`.
 

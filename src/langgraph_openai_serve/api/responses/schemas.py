@@ -1,9 +1,17 @@
 """Validated request models for the supported Responses API subset."""
 
 from collections.abc import Mapping
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Literal, Self, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, JsonValue, Tag
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    JsonValue,
+    Tag,
+    model_validator,
+)
 
 from langgraph_openai_serve.api.metadata import (
     OPENAI_METADATA_MAX_PAIRS,
@@ -33,8 +41,24 @@ class ResponseInputFile(_ResponsesRequestModel):
     file_id: Annotated[str, Field(min_length=1)]
 
 
+class ResponseInputImage(_ResponsesRequestModel):
+    """One image, stored in the configured OpenAI Files service or given by URL."""
+
+    type: Literal["input_image"]
+    detail: Literal["low", "high", "auto", "original"] = "auto"
+    file_id: Annotated[str, Field(min_length=1)] | None = None
+    image_url: Annotated[str, Field(min_length=1)] | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if (self.file_id is None) == (self.image_url is None):
+            msg = "Provide exactly one of file_id or image_url."
+            raise ValueError(msg)
+        return self
+
+
 ResponseInputContentPart: TypeAlias = Annotated[
-    ResponseInputText | ResponseInputFile,
+    ResponseInputText | ResponseInputFile | ResponseInputImage,
     Field(discriminator="type"),
 ]
 ResponseInputContent: TypeAlias = (

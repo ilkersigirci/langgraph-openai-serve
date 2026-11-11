@@ -149,6 +149,7 @@ supports that API and the graph needs the simpler compatibility surface.
 | Client-executed function tools | `function_call` and `function_call_output` items | `tool_calls` and tool messages |
 | Server-executed custom or web-search tools | Native tool call/output items | Not selectable; the graph may still return ordinary text |
 | File input by opaque Files API ID | `input_file` content part | Native Chat file content part |
+| Image input by Files API ID or URL | `input_image` content part | Native Chat `image_url` part, by URL only |
 | Citation annotations | Response output-text annotations | Assistant-message or final-stream annotations |
 | Conversation history | Client resends ordinary input; `previous_response_id` is reserved for interrupt resume | Client resends message history |
 
