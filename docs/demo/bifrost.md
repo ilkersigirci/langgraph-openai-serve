@@ -14,9 +14,10 @@ package.
     `/openai/v1` route preserves the tested `safety_identifier`, `input_file`,
     function-continuation, final-answer `phase`, and multiple commentary
     `phase` and `store: false` contracts, plus the upstream error `type` and
-    `param`. Normalized model detail does not expose LGOS extensions, and
-    governance rejects an unknown provider-qualified model with its own
-    `model_blocked` error before LGOS sees the request.
+    `param`. Model detail is not enabled on the graph providers, so
+    `models.retrieve` returns `400 unsupported_operation`, and governance
+    rejects an unknown provider-qualified model with its own `model_blocked`
+    error before LGOS sees the request.
 
 ## Run The Gateway
 
@@ -158,10 +159,10 @@ restarting only Bifrost, run `just demo/sync-bifrost`.
     budgets do not measure that spend. It sets no token limits or model
     capabilities.
 
-Use `/v1/models` for metadata. The `/openai/v1/models` conversion and
-normalized model-detail route omit these attributes. The UI adapters decode the
-JSON string and keep **Limited functionality** handling for missing or
-malformed metadata.
+Use `/v1/models` for metadata. The `/openai/v1/models` conversion omits these
+attributes, and the graph providers serve no model detail. The UI adapters
+decode the JSON string and keep **Limited functionality** handling for missing
+or malformed metadata.
 
 The bundled gateway requires `OPENAI_GATEWAY_API_KEY` on inference, Files,
 catalog, speech, and MCP requests. Bifrost loads it as one native virtual key whose
@@ -205,8 +206,11 @@ private-network access.
 
 Enable `responses`, `responses_stream`, `responses_retrieve`, and
 `responses_cancel` explicitly under each custom graph provider's
-`allowed_requests`. The upstream is Bifrost's built-in `openai` provider with
-`OPENAI_UPSTREAM_API_KEY`; graphs and Codex reach it through `/v1`. A built-in
+`allowed_requests`. Leave `model_retrieve` off: Bifrost's `/openai/v1` model
+detail carries only standard fields, and the coding-agent routing rule rewrites
+that graph's ID to `coding-agent/coding-agent`. The upstream is Bifrost's
+built-in `openai` provider with `OPENAI_UPSTREAM_API_KEY`; graphs and Codex
+reach it through `/v1`. A built-in
 provider accepts every request type, so normalized requests without a
 `provider` parameter, such as Files and Batches, reach the upstream account. The
 virtual key's model allowlist still applies to requests that name a model.

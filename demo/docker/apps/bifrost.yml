@@ -49,7 +49,7 @@ services:
   lgos-bifrost:
     container_name: lgos-bifrost
     profiles: [bifrost]
-    image: maximhq/bifrost:v2.2.6@sha256:d0b4708ace1aa175766f94afa715fd9bba3a1b56c1dc2afff15a21edf3ae4e2a
+    image: maximhq/bifrost:v2.5.1@sha256:5ec9873acaf1687556b6e4dd854b92b539d9debf87a5a683b66338648b84d3c8
     restart: "no"
     user: "$PUID:$PGID"
     read_only: true

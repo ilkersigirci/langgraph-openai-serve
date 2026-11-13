@@ -18,10 +18,13 @@ pytestmark = [
     ),
 ]
 
+# The graph providers leave Bifrost's `model_retrieve` disabled. Enabled, this
+# route returns only standard fields, and the coding-agent routing rule rewrites
+# that graph's ID to coding-agent/coding-agent.
 BIFROST_MODEL_METADATA_XFAIL = pytest.mark.xfail(
     strict=True,
-    raises=AssertionError,
-    reason="Bifrost normalized model detail omits LGOS extensions",
+    raises=BadRequestError,
+    reason="Bifrost serves no LGOS model detail",
 )
 
 
