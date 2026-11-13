@@ -27,7 +27,7 @@ from .contracts import (
     PipeChunk,
     PipeResponse,
 )
-from .files import _handle_display_file, _with_response_file_parts
+from .files import _handle_display_file
 from .gateway import (
     GatewayConfig,
     GatewayRoot,
@@ -193,7 +193,6 @@ class Pipe:
                 user_id=user_id,
                 tools=tools,
                 streaming=streaming,
-                host_request=host_request,
                 oauth_token=oauth_token,
             )
             async with _client(
@@ -342,7 +341,6 @@ class Pipe:
         user_id: str | None,
         tools: Mapping[str, Mapping[str, Any]],
         streaming: bool,
-        host_request: OpenWebUIRequest | None,
         oauth_token: Mapping[str, Any] | None,
     ) -> PreparedResponsesRequest:
         settings = self.valves
@@ -362,23 +360,15 @@ class Pipe:
             openwebui_name: gateway_name
             for gateway_name, openwebui_name in openwebui_mcp_names.items()
         }
-        # A resume sends only interrupt answers, so it uploads no files.
-        resume = _ask_user_to_resume(body.messages)
-        messages = (
-            body.messages
-            if resume
-            else await _with_response_file_parts(
-                body.messages,
-                metadata,
-                host_request,
-                base_url=gateway.files_base_url,
-                api_key=api_key,
-                timeout=self.valves.OPENAI_API_TIMEOUT,
-                provider=gateway.files_provider,
-            )
+        # Open WebUI's transcript already carries documents as file parts with
+        # their Files API IDs, and images inline.
+        replay_input = _responses_input(
+            body.messages, mcp_tool_names=transcript_mcp_names
         )
-        replay_input = _responses_input(messages, mcp_tool_names=transcript_mcp_names)
-        input_items, previous_response_id = resume or (list(replay_input), None)
+        input_items, previous_response_id = _ask_user_to_resume(body.messages) or (
+            list(replay_input),
+            None,
+        )
 
         background = metadata.chat_variables.get(BACKGROUND_SETTING_NAME) is True
         return PreparedResponsesRequest(

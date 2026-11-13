@@ -69,8 +69,24 @@ class ChatCompletionFileContentPart(_ChatRequestModel):
     file: ChatCompletionFileReference
 
 
+class ChatCompletionImageURL(_ChatRequestModel):
+    """An image's URL, which may be a base64 data URL."""
+
+    url: Annotated[str, Field(min_length=1)]
+    detail: Literal["auto", "low", "high", "original"] = "auto"
+
+
+class ChatCompletionImageContentPart(_ChatRequestModel):
+    """One native Chat Completions image content part."""
+
+    type: Literal["image_url"]
+    image_url: ChatCompletionImageURL
+
+
 ChatCompletionContentPart: TypeAlias = Annotated[
-    ChatCompletionTextContentPart | ChatCompletionFileContentPart,
+    ChatCompletionTextContentPart
+    | ChatCompletionFileContentPart
+    | ChatCompletionImageContentPart,
     Field(discriminator="type"),
 ]
 ChatCompletionMessageContent: TypeAlias = list[ChatCompletionContentPart] | str

@@ -29,11 +29,26 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             ),
             aread=AsyncMock(return_value=b"document"),
         ),
+        "file-photo": SimpleNamespace(
+            response=SimpleNamespace(headers={"content-type": "image/jpeg"}),
+            aread=AsyncMock(return_value=b"photo"),
+        ),
     }
     filenames = {
         "file-image": SimpleNamespace(filename="chart.png"),
         "file-document": SimpleNamespace(filename="report.pdf"),
+        "file-photo": SimpleNamespace(filename="photo.jpg"),
     }
+    # Like the demo Files service, which returns a document's extracted text
+    # unless the original is requested.
+    extracted = SimpleNamespace(
+        response=SimpleNamespace(headers={"content-type": "application/json"}),
+        aread=AsyncMock(return_value=b'{"type":"text","version":1,"text":"report"}'),
+    )
+
+    def content(file_id: str, *, extra_query: object = None) -> SimpleNamespace:
+        return downloads[file_id] if extra_query == {"raw": "true"} else extracted
+
     clients: list[Any] = []
 
     class FakeOpenAI:
@@ -41,7 +56,7 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             self.kwargs = kwargs
             self.files = SimpleNamespace(
                 retrieve=AsyncMock(side_effect=lambda file_id: filenames[file_id]),
-                content=AsyncMock(side_effect=lambda file_id: downloads[file_id]),
+                content=AsyncMock(side_effect=content),
             )
             clients.append(self)
 
@@ -112,6 +127,19 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
                             {"type": "text", "text": "What do these show?"},
                             {"type": "file", "file": {"file_id": "file-image"}},
                             {"type": "file", "file": {"file_id": "file-document"}},
+                            # As LGOS passes on input_image by ID and by URL.
+                            {
+                                "type": "image",
+                                "file_id": "file-photo",
+                                "extras": {"detail": "low"},
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/gif;base64,R0lGOD",
+                                    "detail": "low",
+                                },
+                            },
                         ]
                     )
                 ]
@@ -134,10 +162,7 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
         "max_retries": 0,
     }
     clients[0].files.retrieve.assert_has_awaits(
-        [call("file-image"), call("file-document")]
-    )
-    clients[0].files.content.assert_has_awaits(
-        [call("file-image"), call("file-document")]
+        [call("file-image"), call("file-document"), call("file-photo")]
     )
     assert len(requests) == 1
     assert requests[0]["input"] == [
@@ -154,11 +179,22 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
                 {
                     "type": "input_image",
                     "image_url": "data:image/png;base64,aW1hZ2U=",
+                    "detail": "auto",
                 },
                 {
                     "type": "input_file",
                     "filename": "report.pdf",
                     "file_data": "data:application/pdf;base64,ZG9jdW1lbnQ=",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/jpeg;base64,cGhvdG8=",
+                    "detail": "low",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/gif;base64,R0lGOD",
+                    "detail": "low",
                 },
             ],
         },

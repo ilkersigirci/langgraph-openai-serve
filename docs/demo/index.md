@@ -33,7 +33,8 @@ client integrations, gateway configuration, and a complete Compose stack.
 
 -   :material-file-upload-outline:{ .lg .middle } __Run the Files API__
 
-    Start the independent OpenAI Files service backed by S3-compatible storage.
+    Start the independent OpenAI Files service that stores files in
+    S3-compatible storage and extracts document text.
 
     [:octicons-arrow-right-24: Run the Files API](files-api.md)
 
@@ -101,7 +102,7 @@ client integrations, gateway configuration, and a complete Compose stack.
 | --- | --- | --- |
 | Demo APIs | Two FastAPI graph services that may expose different graph sets | One independent uv project; Compose runs the `lgos-demo-api` image twice |
 | Background worker | Runs Hatchet background tasks outside the API process with a fixed slot count | Optional `background` Compose profile using the demo API image and Hatchet |
-| Files API | Shared OpenAI file namespace and S3 persistence | Independent uv project and `lgos-files-api` image |
+| Files API | Shared OpenAI file namespace, S3 persistence, and document text extraction | Independent uv project and `lgos-files-api` image |
 | Chainlit | Persistent Responses client, native MCP sessions, login, settings UI, file display, HITL UI, dictation, and read-aloud | Independent uv project and `lgos-chainlit` image |
 | Open WebUI | Responses manifold, runtime model info and settings forms, native MCP tools, and native voice | The pinned `homeserver-open-webui` image, with the Functions installed through its API |
 | Bifrost | Shared model catalog plus provider-selected native OpenAI routing | Compose configuration with the official image |
@@ -140,7 +141,7 @@ Bifrost uses native `/v1/models` after [catalog sync](bifrost.md#declarative-mod
 | Demo client | File input | MCP | Runtime settings | Interrupts | Background | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and streaming | Native status and persisted image elements | Markdown content |
-| Open WebUI | Uploads attachments to the central Files API | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and streaming | Native status and persisted file events | Native source events and Markdown |
+| Open WebUI | Sends documents by Files API ID and images inline | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and streaming | Native status and persisted file events | Native source events and Markdown |
 
 Both clients still expose limited-functionality models when LGOS metadata is
 missing; see their client-specific guides for that behavior.

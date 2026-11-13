@@ -61,12 +61,6 @@ class OpenWebUIRequest(Protocol):
     def headers(self) -> Mapping[str, str]: ...
 
 
-class OpenWebUIFile(BaseModel):
-    id: str = ""
-    type: str | None = None
-    name: str = ""
-
-
 class OpenWebUIMessageFunction(BaseModel):
     name: str
     arguments: str
@@ -93,10 +87,6 @@ class OpenWebUIBody(BaseModel):
     def model_id(self) -> str:
         """The graph model from Open WebUI's ``<pipe>.<model>`` ID."""
         return self.model.partition(".")[2]
-
-
-class OpenWebUIUserMessage(BaseModel):
-    files: list[OpenWebUIFile] = Field(default_factory=list)
 
 
 class OpenWebUIChatVariableField(BaseModel):
@@ -129,7 +119,6 @@ class OpenWebUIMetadata(BaseModel):
     )
     # Complete runtime settings added by a settings Filter such as UserValves.
     lgos_settings: dict[str, JsonValue] | None = None
-    user_message: OpenWebUIUserMessage | None = None
 
     @field_validator("chat_variables")
     @classmethod

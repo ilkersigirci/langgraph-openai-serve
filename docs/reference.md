@@ -24,7 +24,8 @@ and `{prefix}/openapi.json`.
 ### Responses Request
 
 The route accepts string or ordered message input, instructions, plain
-`input_text`, `input_file.file_id`, string-valued metadata, `safety_identifier`
+`input_text`, `input_file.file_id`, `input_image` by `file_id` or `image_url`,
+string-valued metadata, `safety_identifier`
 and its deprecated alias `user`, flat client
 function tools, registered name-only custom-tool selectors, standard
 `web_search`, their choices,
@@ -59,7 +60,7 @@ retrieving a Response created without `stream=true` as a stream returns `400`.
 (and rejected for non-interruptible graphs); new `instructions` are rejected on
 those resumes. The route also rejects unregistered custom tools, client-supplied
 custom descriptions or formats, other built-in tools,
-structured output, image/audio input, URL or inline file input, function
+structured output, audio input, URL or inline file input, function
 result-content lists, reasoning and generation controls, `include`, stream options,
 service tiers, reusable prompts,
 prompt-cache controls, and truncation. Unknown fields are not silently ignored.
@@ -68,12 +69,12 @@ for the complete behavior and continuation rules.
 
 ### Chat Completions Request
 
-Chat messages accept string content, explicit `text` content parts, and native
-`file` parts containing only `file.file_id`. The route supports modern function
-`tools`, `tool_choice`, assistant `tool_calls`, matching `tool` messages,
-streaming, and `stream_options.include_usage`. Image and audio parts, inline
-file data or filenames, prompt-cache fields, deprecated function fields,
-generation controls, and other unknown fields are rejected.
+Chat messages accept string content, explicit `text` content parts, native
+`file` parts containing only `file.file_id`, and native `image_url` parts. The
+route supports modern function `tools`, `tool_choice`, assistant `tool_calls`,
+matching `tool` messages, streaming, and `stream_options.include_usage`. Audio
+parts, inline file data or filenames, prompt-cache fields, deprecated function
+fields, generation controls, and other unknown fields are rejected.
 
 ## Settings
 
@@ -124,8 +125,12 @@ record. See [Production Logging](how-to-guides/production-logging.md#application
 
 Responses `input_file.file_id` content and native Chat file parts normalize to
 the same LangChain file block, so graphs receive native `file_id` values and
-decide whether to download, parse, or forward them. File upload and storage
-belong to an external OpenAI Files API, not the LGOS package. See
+decide whether to download, parse, or forward them. Responses `input_image`
+and native Chat `image_url` parts normalize to the same image content: an
+`image_url` part for a URL, which may be a data URL, or LangChain's standard
+image block for a `file_id`, which a graph resolves before a model call. File
+upload and storage belong to an external OpenAI Files API, not the LGOS
+package. See
 [Accept And Display Files](how-to-guides/file-inputs.md).
 
 `GraphConfig` accepts:
@@ -282,7 +287,7 @@ enables server behavior where applicable.
 from its configured MCP gateway; it does not publish tool definitions or grant
 access to them.
 `GraphFeature.FILE_INPUTS` advertises that the graph
-resolves native file content parts. `GraphFeature.INTERRUPTS` enables and
+resolves native file and image content parts. `GraphFeature.INTERRUPTS` enables and
 advertises the interrupt/resume flow. `GraphFeature.BACKGROUND` enables and
 advertises background Responses.
 

@@ -1,16 +1,12 @@
-from unittest.mock import Mock
+from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
+from httpx2 import ASGITransport, AsyncClient
 
-from lgos_files_api import app as app_module
-
-
-def configure_files_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app_module.settings, "BUCKET", "files")
-    monkeypatch.setattr(app_module.settings, "S3_ENDPOINT", "https://s3.test")
-    monkeypatch.setattr(app_module.settings, "AWS_ACCESS_KEY_ID", "access")
-    monkeypatch.setattr(app_module.settings, "AWS_SECRET_ACCESS_KEY", "secret")
-    monkeypatch.setattr(app_module.settings, "AWS_DEFAULT_REGION", "eu-west-1")
+from lgos_files_api.app import create_app
+from lgos_files_api.core.settings import settings
+from tests.support import BUCKET
 
 
 @pytest.mark.parametrize(
@@ -23,35 +19,29 @@ def configure_files_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_files_service_requires_its_s3_settings(
+    s3: Any,
     monkeypatch: pytest.MonkeyPatch,
     attribute: str,
     environment_name: str,
 ) -> None:
-    configure_files_settings(monkeypatch)
-    monkeypatch.setattr(app_module.settings, attribute, None)
+    monkeypatch.setattr(settings, attribute, None)
 
     with pytest.raises(RuntimeError, match=environment_name):
-        app_module.create_s3_app()
+        create_app()
 
 
-async def test_files_service_exposes_routes_and_closes_boto3(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_unexpected_error_leaves_its_traceback_to_the_server(
+    s3: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
-    s3_client = Mock()
-    boto3_client = Mock(return_value=s3_client)
-    configure_files_settings(monkeypatch)
-    monkeypatch.setattr(app_module.boto3, "client", boto3_client)
+    app = create_app()
 
-    app = app_module.create_s3_app()
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        s3.delete_bucket(Bucket=BUCKET)
+        with pytest.raises(ClientError, match="NoSuchBucket"):
+            await client.get("/v1/files/file-" + "1" * 32)
 
-    boto3_client.assert_called_once_with(
-        "s3",
-        endpoint_url="https://s3.test",
-        aws_access_key_id="access",
-        aws_secret_access_key="secret",
-        region_name="eu-west-1",
-    )
-    assert "/health" in {getattr(route, "path", None) for route in app.routes}
-    async with app.router.lifespan_context(app):
-        pass
-    s3_client.close.assert_called_once_with()
+    (record,) = [r for r in caplog.records if r.name == "lgos_files_api.core.errors"]
+    assert record.exc_info is None

@@ -19,9 +19,20 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 WORKDIR /app
 
+# ADD would create the tessdata directory with its file's mode.
 RUN groupadd --gid "$PGID" app \
     && useradd --uid "$PUID" --gid "$PGID" --create-home \
-        --shell /usr/sbin/nologin app
+        --shell /usr/sbin/nologin app \
+    && mkdir -p /usr/local/share/tessdata
+
+# xberg's bundled Tesseract OCRs pages without a text layer. Without this
+# language data it would download it, and PaddleOCR models, on first use.
+ADD --chmod=644 \
+    --checksum=sha256:7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2 \
+    https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata \
+    /usr/local/share/tessdata/eng.traineddata
+
+ENV TESSDATA_PREFIX=/usr/local/share/tessdata
 
 CMD ["lgos-files-api"]
 

@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from typing import Any
 
 from httpx2 import ASGITransport, AsyncClient
 from opentelemetry import trace
@@ -6,20 +6,16 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from lgos_files_api import FileRepository, create_files_app
-from lgos_files_api.contracts import FilePage
+from lgos_files_api.app import create_app
 
 
-async def test_requests_are_traced_once_except_health_checks() -> None:
+async def test_requests_are_traced_once_except_health_checks(s3: Any) -> None:
     # Global, as `opentelemetry-instrument` configures it in the container.
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
-    repository = Mock(spec=FileRepository)
-    repository.list_files.return_value = FilePage(data=[], has_more=False)
-
-    transport = ASGITransport(app=create_files_app(repository))
+    transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         await client.get("/v1/files")
         await client.get("/health")
@@ -34,7 +30,9 @@ async def test_requests_are_traced_once_except_health_checks() -> None:
     ]
 
 
-async def test_startup_leaves_export_to_the_process_sdk(monkeypatch, caplog) -> None:
+async def test_startup_leaves_export_to_the_process_sdk(
+    s3, monkeypatch, caplog
+) -> None:
     # The OTel overlay exports over gRPC through `opentelemetry-instrument`.
     # FastAPI's own environment export supports only HTTP and would duplicate it.
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")
@@ -48,7 +46,7 @@ async def test_startup_leaves_export_to_the_process_sdk(monkeypatch, caplog) -> 
     async def send(message) -> None:
         sent.append(message["type"])
 
-    app = create_files_app(Mock(spec=FileRepository))
+    app = create_app()
     await app({"type": "lifespan", "asgi": {"version": "3.0"}}, receive, send)
 
     assert sent == ["lifespan.startup.complete", "lifespan.shutdown.complete"]

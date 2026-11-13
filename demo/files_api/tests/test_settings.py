@@ -1,6 +1,6 @@
 import pytest
 
-from lgos_files_api.settings import Settings
+from lgos_files_api.core.settings import Settings
 
 
 def test_settings_read_files_prefixed_environment(
