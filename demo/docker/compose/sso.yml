@@ -55,6 +55,7 @@ services:
       OPENAI_API_KEY: ""
       AUDIO_STT_OPENAI_API_KEY: ""
       AUDIO_TTS_OPENAI_API_KEY: ""
+      OPENAI_FILES_API_KEY: ""
       # The base connection with the user's token instead of the shared key.
       TOOL_SERVER_CONNECTIONS: >-
         [{"type": "mcp", "url": "${OPENAI_GATEWAY_BASE_URL}/mcp", "path": "",

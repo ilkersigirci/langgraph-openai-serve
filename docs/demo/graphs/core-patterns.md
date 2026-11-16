@@ -91,7 +91,7 @@ one typed graph:
 1. `request_to_input` takes the final OpenAI message and returns
    `{"question": ...}` instead of the default message-state input. The
    question is the message text followed by a `[file: <file_id>]` reference
-   for each attached file.
+   for each file or image attached by ID.
 2. `context_factory` maps the end user, OpenAI `safety_identifier`, to immutable
    `AppContext`, falling back to `anonymous` when it is absent.
 3. `generate` returns the graph-native `{"answer": ...}` output.

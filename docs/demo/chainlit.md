@@ -144,7 +144,8 @@ underlying lifecycle.
 
 The UI uploads every file attached to the current user message through
 `client.files.create(..., purpose="user_data")`. It then replaces the attachment
-with a native Responses `input_file` part containing the returned `file_id`.
+with a native Responses part containing the returned `file_id`: `input_image`
+for an image and `input_file` for any other file.
 Files requests use the selected gateway's normal `/v1` route. Bifrost assigns
 them to its fixed `lgos-files` provider, while LiteLLM assigns them to its
 configured `litellm_proxy` Files provider. Responses continue to use the

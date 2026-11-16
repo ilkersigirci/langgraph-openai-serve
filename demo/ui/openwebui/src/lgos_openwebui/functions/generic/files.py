@@ -1,8 +1,4 @@
-"""Bridge Open WebUI attachments and generated Responses files."""
-
-from collections.abc import Sequence
-from typing import Any
-from urllib.parse import quote
+"""Show the files a graph generates in Open WebUI."""
 
 import httpx
 from openai.types.responses import ResponseFunctionToolCall
@@ -11,79 +7,10 @@ from .contracts import (
     PLOTLY_MEDIA_TYPE,
     DisplayFileArguments,
     OpenWebUIEventEmitter,
-    OpenWebUIMessage,
-    OpenWebUIMetadata,
     OpenWebUIRequest,
     PlotlyFigure,
 )
 from .gateway import _client
-
-
-async def _with_response_file_parts(
-    messages: Sequence[OpenWebUIMessage],
-    metadata: OpenWebUIMetadata,
-    request: OpenWebUIRequest | None,
-    *,
-    base_url: str,
-    api_key: str,
-    timeout: float,  # ruff: ignore[async-function-with-timeout] - Forward the HTTP client timeout; this is not a task cancellation scope.
-    provider: str,
-) -> list[OpenWebUIMessage]:
-    """Upload this turn's files and attach native Responses input parts."""
-    # Unlike __files__, the user message lists only files attached this turn.
-    files = [
-        file
-        for file in (metadata.user_message.files if metadata.user_message else [])
-        if file.type == "file" and file.id
-    ]
-    user_message_index = next(
-        (
-            index
-            for index in range(len(messages) - 1, -1, -1)
-            if messages[index].role == "user"
-        ),
-        None,
-    )
-    if not files or user_message_index is None:
-        return list(messages)
-
-    parts: list[dict[str, str]] = []
-    async with (
-        _openwebui_client(request, timeout) as openwebui,
-        _client(base_url=base_url, api_key=api_key, timeout=timeout) as client,
-    ):
-        for file in files:
-            try:
-                response = await openwebui.get(
-                    f"/api/v1/files/{quote(file.id, safe='')}/content"
-                )
-                response.raise_for_status()
-            except httpx.HTTPError as exc:
-                msg = f"Open WebUI attachment is unavailable: {file.name}"
-                raise ValueError(msg) from exc
-            uploaded = await client.files.create(
-                file=(file.name, response.content, response.headers["content-type"]),
-                purpose="user_data",
-                extra_query={"provider": provider},
-            )
-            parts.append({"type": "input_file", "file_id": uploaded.id})
-
-    message = messages[user_message_index]
-    content = message.content
-    if isinstance(content, str):
-        content_parts: list[Any] = (
-            [{"type": "input_text", "text": content}] if content else []
-        )
-    elif isinstance(content, list):
-        content_parts = list(content)
-    else:
-        content_parts = []
-    updated = message.model_copy(update={"content": [*content_parts, *parts]})
-    return [
-        *messages[:user_message_index],
-        updated,
-        *messages[user_message_index + 1 :],
-    ]
 
 
 def _plotly_html(content: bytes) -> str:

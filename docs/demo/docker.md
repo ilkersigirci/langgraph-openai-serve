@@ -184,7 +184,9 @@ UI's settings.
 
     Bifrost and LiteLLM both publish host port `3000`. Enable only the selected
     gateway's profile, and stop the running gateway before switching. Changing
-    `OPENAI_GATEWAY_TYPE` does not stop the previous gateway container.
+    `OPENAI_GATEWAY_TYPE` does not stop the previous gateway container. Switch
+    `DEMO_OPENWEBUI_FILES_PROVIDER` with it: `litellm_proxy` for LiteLLM,
+    `lgos-files` for Bifrost.
 
 === "PostgreSQL MCP"
 
@@ -226,8 +228,6 @@ UI's settings.
     alongside the selected gateway:
 
     ```dotenv
-    # Choose litellm or bifrost.
-    OPENAI_GATEWAY_TYPE=litellm
     COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE},background
     LGOS_BACKGROUND=hatchet
     HATCHET_CLIENT_TOKEN=...
@@ -285,6 +285,7 @@ UI's settings.
     OPENAI_GATEWAY_BASE_URL=https://litellm.example.com
     DEMO_GATEWAY_HOST_URL=https://litellm.example.com
     OPENAI_GATEWAY_API_KEY=TO_BE_FILLED
+    DEMO_OPENWEBUI_FILES_PROVIDER=litellm_proxy
     ```
 
     Use the gateway root without `/v1`. Both UIs share the gateway type, base
@@ -471,11 +472,12 @@ UI's settings.
     Compose runs the pinned `homeserver-open-webui` image. The sync installs
     the bundled Functions through its API, and Open WebUI's model list reads
     each graph's description and settings from the gateway; see the
-    [Open WebUI setup](open-webui.md#setup). The image keeps chat uploads raw,
-    as described under [Open WebUI file input](open-webui.md#file-input).
+    [Open WebUI setup](open-webui.md#setup). The image sends documents through
+    the Files API, as described under
+    [Open WebUI file input](open-webui.md#file-input).
 
 PostgreSQL is published on `localhost:3001`. LangGraph persistence, Bifrost
-state, Open WebUI state—including its native raw file copies—and the
+state, Open WebUI state—including its uploads with their extracted text—and the
 coding-agent workspace and Codex threads use host bind mounts under
 `demo/docker/volumes/`; the Compose model declares no named volumes. Every
 service runs as `PUID:PGID` with a read-only root filesystem, dropped

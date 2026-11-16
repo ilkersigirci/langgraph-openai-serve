@@ -128,12 +128,16 @@ def _model_meta(
             if extension is not None
             else LIMITED_FUNCTIONALITY_DESCRIPTION
         ),
-        # Graphs read attachments as native file parts. Without file_context,
-        # Open WebUI does not paste their text into the prompt, and turning off
-        # builtinTools.files stops it adding its own file tools in that mode.
+        # Graphs read attachments themselves, by their Files API IDs. File
+        # context would make Open WebUI generate retrieval queries with the
+        # graph as its task model and send its RAG template as the user
+        # message. Without vision, Open WebUI refuses image attachments, which
+        # it otherwise allows on every model. Turning off builtinTools.files
+        # stops it adding its own file tools.
         "capabilities": {
             "file_upload": FILE_INPUTS_FEATURE in features,
             "file_context": False,
+            "vision": FILE_INPUTS_FEATURE in features,
         },
         "builtinTools": {"files": False},
     }

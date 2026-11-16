@@ -22,7 +22,7 @@ The demo includes two Open WebUI Functions:
 Each time Open WebUI loads its model list, the Pipe lists every model in its
 model namespace (`lgos/` in the demo) in
 the gateway catalog together with what Open WebUI shows for it: the graph's
-description, its file-upload capability, its gateway MCP tools, and its LGOS
+description, its file and image capabilities, its gateway MCP tools, and its LGOS
 settings as native Chat Variables, which Open WebUI renders as a per-chat form.
 Graph changes therefore appear on the next model-list load.
 Each server tool the model advertises in `lgos.server_tools` adds a Chat
@@ -61,7 +61,7 @@ these models off in Open WebUI's model settings.
 Open WebUI's own OpenAI connection to `${OPENAI_GATEWAY_BASE_URL}/v1` decides
 the credential. Its `auth_type` in `OPENAI_API_CONFIGS` applies to its own
 model list and chats. The Pipe reads that connection on every request, so its
-model catalog, chats, and file uploads send what the connection sends, and
+model catalog, chats, and `display_file` downloads send what the connection sends, and
 [voice](#voice) follows it because it uses the same gateway URL. Without a
 connection to that URL, the Pipe lists no graphs.
 
@@ -157,7 +157,8 @@ demonstrate schema-driven per-chat settings.
 
 !!! info "Select one first-class gateway"
 
-    Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs. LiteLLM
+    Set `OPENAI_GATEWAY_TYPE=litellm|bifrost` once for both demo UIs, and
+    `DEMO_OPENWEBUI_FILES_PROVIDER` to that gateway's Files provider. LiteLLM
     uses managed Responses; Bifrost uses native Responses. Files also use the
     selected gateway's normal route. Metadata comes from LiteLLM's native
     `/model/info` or Bifrost's native `/v1/models` attributes. Neither
@@ -209,7 +210,7 @@ just demo/sync-openwebui
     The official slim image omits local
     embedding, reranking, speech, and document-extraction models, the headless
     browser, and keyless DDGS search. The demo uses none of them: speech runs
-    through the gateway, uploads stay raw for the central Files API, and graphs
+    through the gateway, the central Files API extracts documents, and graphs
     own retrieval and web search. Open WebUI's own Knowledge and Memory
     features need PostgreSQL with pgvector on this image and are not
     configured. Deleting a stored Open WebUI file therefore removes it but
@@ -313,50 +314,85 @@ provider from its prefix.
 
 ## File Input
 
-Models enable Open WebUI's native file-upload control only when the graph
-advertises `file_inputs`. Select `lgos/file-input` in the bundled
-demo to process an attachment. In the pinned release,
-`__metadata__["user_message"]` lists the files attached to the message that
-started this turn, images included. The Generic Function reads each file's
-original bytes through Open WebUI's authenticated
-`/api/v1/files/{id}/content` endpoint with the caller's credentials, uploads
-them with `purpose="user_data"`, and appends the returned OpenAI `file_id` to
-the message. It never reuploads historical chat attachments or moves them to
-the latest message. Images use `input_file.file_id` too; the current LGOS
-Responses subset does not accept `input_image` items.
+Models enable Open WebUI's native file-upload control, and accept images,
+only when the graph advertises `file_inputs`. Select `lgos/file-input` in the
+bundled demo to process an attachment. The pinned image sends documents and
+images through an OpenAI-compatible Files API, which Compose points at the
+selected gateway's normal `/v1` Files route. `OPENAI_FILES_API_PARAMS` names the
+gateway's Files provider from `DEMO_OPENWEBUI_FILES_PROVIDER`: Bifrost's
+`lgos-files` or LiteLLM's `litellm_proxy`, both backed by the central Files API.
 
-This local file bridge uses the HTTPX shipped by the pinned Open WebUI runtime;
-it will move to HTTPX2 when Open WebUI adopts OpenAI v3.
+```mermaid
+sequenceDiagram
+  participant OWUI as Open WebUI
+  participant Pipe as Generic Pipe
+  participant GW as Gateway
+  participant Files as Central Files API
+  participant Graph as LGOS graph
+  OWUI->>GW: Upload on first use, wait, read content
+  GW->>Files: /v1/files routes
+  GW-->>OWUI: file_id, and a document's extracted text
+  OWUI->>Pipe: File and image parts with their file_ids
+  Pipe->>GW: Responses input_file and input_image parts
+  GW->>Graph: /v1/responses
+  Graph->>Files: Original bytes, for the model call
+```
 
-The model info is the upload-capability boundary; the Pipe does not add a
-second remote metadata check to every Responses request.
+Open WebUI uploads an attachment the first time it needs it, and keeps the
+returned ID with its own file record. It uploads documents with an
+`OPENAI_FILES_API_FILE_EXTENSIONS` extension, which Compose sets to every type
+the [central Files API extracts](files-api.md#extract-document-content); the
+pinned image's default list is shorter. Compose sets
+`CONTENT_EXTRACTION_ENGINE=openai_files`, so Open WebUI stores the text the
+Files API extracts as the document's content. Because
+`OPENAI_FILES_API_MODELS_REGEX_PATTERN` matches the Generic Pipe's
+`generic.lgos/` models, each user message to them carries its documents as Chat
+`file` parts and its images as `input_image` parts, both with their Files API
+IDs: Chat parts carry images only inline, so the pinned image uses Open WebUI's
+own Responses-shaped part. The Pipe passes the images on unchanged and the
+documents as Responses `input_file` parts, and uploads nothing itself. Every
+turn keeps its own attachments, so a later message can refer to an earlier one
+by the same ID, and no turn resends an image's bytes.
 
-Compose sends file uploads through the selected gateway's normal `/v1` Files
-route. Bifrost assigns the request to `lgos-files`; LiteLLM assigns it to
-`litellm_proxy`. Both providers target the central Files API.
+Images have nothing to extract, and Open WebUI uploads them only for those
+models. An image whose upload fails stays inline as a base64 data URL, which
+the Pipe passes on as `input_image.image_url`. Other gateway models receive
+images inline, as Open WebUI sends them to every vision model, and the
+documents' extracted text instead of their IDs.
 
-Compose sets the image's `ENABLE_FILE_UPLOAD_PROCESSING=false`, so Open WebUI
-stores the original bytes of a chat upload without extracting or embedding
-their content before the Pipe runs. The model info also disables chat-time
-file-context retrieval and the built-in file tools while preserving other
-built-in tools, including `ask_user`.
+The model info of a graph with `file_inputs` keeps Open WebUI's file context
+off: with it, Open WebUI would generate retrieval queries with the graph as its
+task model and send its RAG template as the user message. Attachments of other
+types, such as JSON or TypeScript files, and documents in temporary chats, whose
+messages carry no files, therefore reach no graph. The model info also turns
+off the built-in file tools while keeping other built-in tools, including
+`ask_user`. Compose sets
+`BYPASS_EMBEDDING_AND_RETRIEVAL`, so Open WebUI injects the extracted text whole
+into other models' prompts instead of embedding it: the slim image has no
+embedding model. The model info is the upload-capability boundary; the Pipe
+does not add a second remote metadata check to every Responses request.
 
-Open WebUI still owns its raw upload copy because its native attachment UI
-requires an Open WebUI file record. The central Files API is the only processing
-source of truth and owns the separate inference copy referenced by `file_id`.
-The setting applies to every chat upload on this Open WebUI instance, not only
-to LGOS models.
+Open WebUI still owns its own copy of each upload because its native
+attachment UI requires an Open WebUI file record. The central Files API owns
+the inference copy referenced by `file_id` and its extracted content. The
+extraction engine applies to every chat upload on this Open WebUI instance, not
+only to LGOS models.
 
-!!! note "Temporary upstream workaround"
+!!! note "Image patch and its settings"
 
-    The pinned Open WebUI release processes chat uploads before a Pipe or Filter
-    can run; a Filter can control later retrieval but cannot prevent the
-    earlier extraction. The image's temporary `file-upload-processing.patch`
-    adds the switch until Open WebUI can keep chat uploads raw natively. See
-    the related
-    [upstream issue](https://github.com/open-webui/open-webui/issues/12228) and
-    the
-    [unmerged File Processing capability PR](https://github.com/open-webui/open-webui/pull/27627).
+    Upstream closed both native file input PRs unmerged
+    ([open-webui#27627](https://github.com/open-webui/open-webui/pull/27627),
+    [open-webui#27998](https://github.com/open-webui/open-webui/pull/27998)).
+    The image's `openai-files-api.patch` adds the `openai_files` engine and
+    the file and image parts; its
+    [README](https://github.com/ilkersigirci/homeserver-docker/tree/main/Dockerfiles/OpenWebUI#files-api)
+    lists every `OPENAI_FILES_API_*` setting. The Files API client
+    authenticates like the OpenAI connection with the same base URL, so the
+    [SSO overlay](#gateway-credentials) sends each user's token. It reads
+    files-api's `text` and `spreadsheet` content types, which the central
+    Files API returns. Saving Admin Settings > Documents writes over
+    `CONTENT_EXTRACTION_ENGINE` until the next restart; check that
+    `GET /api/v1/retrieval/config` still reports `openai_files`.
 
 ## Voice
 

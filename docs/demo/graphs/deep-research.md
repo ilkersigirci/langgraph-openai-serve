@@ -180,8 +180,9 @@ sequenceDiagram
 
 For each request, LGOS validates the Responses input, converts it to LangChain
 messages, and passes the request's tools, `tool_choice`, and settings to the
-graph as runtime context. Attachments stay Files API IDs in graph state;
-`resolve_file_inputs` downloads them only for the calls that read them.
+graph as runtime context. Attachments sent by ID stay Files API IDs in graph
+state, and inline images stay as sent; `resolve_file_inputs` downloads the IDs
+only for the calls that read them.
 
 ## Background Execution
 

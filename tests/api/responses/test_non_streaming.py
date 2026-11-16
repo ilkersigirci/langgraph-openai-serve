@@ -185,7 +185,7 @@ async def test_message_input_preserves_order_roles_and_replay_metadata(
     }
 
 
-async def test_file_id_input_uses_the_protocol_neutral_graph_shape(
+async def test_file_and_image_inputs_use_the_protocol_neutral_graph_shape(
     openai_client: AsyncOpenAI,
     graph_registry: GraphRegistry,
 ) -> None:
@@ -199,37 +199,62 @@ async def test_file_id_input_uses_the_protocol_neutral_graph_shape(
                 "content": [
                     {"type": "input_text", "text": "Summarize this."},
                     {"type": "input_file", "file_id": "file_report"},
+                    {"type": "input_image", "file_id": "file_chart", "detail": "low"},
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,iVBORw0KGgo=",
+                        "detail": "auto",
+                    },
                 ],
             }
         ],
     )
 
-    assert inputs.messages[0][0].content == [
+    (message,) = inputs.messages[0]
+    assert message.content == [
         {"type": "text", "text": "Summarize this."},
         {"type": "file", "file": {"file_id": "file_report"}},
+        {"type": "image", "file_id": "file_chart", "extras": {"detail": "low"}},
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64,iVBORw0KGgo=",
+                "detail": "auto",
+            },
+        },
+    ]
+    # LangChain reads every part as one of its standard content blocks.
+    assert [block["type"] for block in message.content_blocks] == [
+        "text",
+        "file",
+        "image",
+        "image",
     ]
 
 
 @pytest.mark.parametrize(
-    "file_part",
+    "part",
     [
-        {"file_url": "https://example.com/a.pdf"},
-        {"file_data": "data:application/pdf;base64,AA=="},
+        {"type": "input_file", "file_url": "https://example.com/a.pdf"},
+        {"type": "input_file", "file_data": "data:application/pdf;base64,AA=="},
+        {"type": "input_image", "detail": "auto"},
+        {
+            "type": "input_image",
+            "detail": "auto",
+            "file_id": "file_chart",
+            "image_url": "https://example.com/chart.png",
+        },
     ],
+    ids=["file-url", "file-data", "image-without-source", "image-with-two-sources"],
 )
-async def test_unimplemented_file_sources_are_rejected(
+async def test_unimplemented_or_ambiguous_input_sources_are_rejected(
     openai_client: AsyncOpenAI,
-    file_part: dict[str, str],
+    part: dict[str, str],
 ) -> None:
     with pytest.raises(BadRequestError) as exc_info:
         await openai_client.responses.create(
             model="test",
-            input=[
-                {
-                    "role": "user",
-                    "content": [{"type": "input_file", **file_part}],
-                }
-            ],
+            input=[{"role": "user", "content": [part]}],
         )
 
     error = exc_info.value.response.json()["error"]

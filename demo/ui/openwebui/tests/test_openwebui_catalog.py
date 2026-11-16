@@ -137,7 +137,8 @@ async def test_pipe_lists_gateway_graphs_with_their_openwebui_model_info(
     serve_catalog(monkeypatch, handle)
     openwebui_connection(auth_type)
     shared_meta = {
-        "capabilities": {"file_upload": True, "file_context": False},
+        # File context stays off: graphs read attachments by their file IDs.
+        "capabilities": {"file_upload": True, "file_context": False, "vision": True},
         "builtinTools": {"files": False},
         "toolIds": ["server:mcp:acme-tools"],
         "lgos": {"server_tools": [], "client_tools": []},
@@ -356,7 +357,11 @@ def test_models_without_lgos_metadata_stay_visible_with_limited_functionality() 
             "info": {
                 "meta": {
                     "description": LIMITED_FUNCTIONALITY_DESCRIPTION,
-                    "capabilities": {"file_upload": False, "file_context": False},
+                    "capabilities": {
+                        "file_upload": False,
+                        "file_context": False,
+                        "vision": False,
+                    },
                     "builtinTools": {"files": False},
                 }
             },

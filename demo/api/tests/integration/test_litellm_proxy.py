@@ -5,6 +5,7 @@ import httpx2
 import pytest
 from openai import AsyncOpenAI, AsyncStream, BadRequestError
 from openai.types.responses import ResponseFunctionToolCall
+from tests.integration.files_gateway import assert_document_extraction_contract
 from tests.integration.mcp_gateway import assert_postgres_mcp_contract
 
 from lgos_demo_api.graphs.interruptible import REVIEW_NOTICE
@@ -176,6 +177,14 @@ async def test_litellm_files_route_preserves_content() -> None:
                 extra_query=FILES_QUERY,
             )
             assert deleted.deleted is True
+
+
+async def test_litellm_files_report_extracted_document_content() -> None:
+    assert LITELLM_BASE_URL is not None
+
+    await assert_document_extraction_contract(
+        LITELLM_BASE_URL, LITELLM_API_KEY, FILES_QUERY["provider"]
+    )
 
 
 async def test_litellm_native_responses_preserve_file_input() -> None:

@@ -34,7 +34,7 @@ def _graph_app() -> FastAPI:
     return LanggraphOpenaiServe(registry=registry).bind_openai_api().app
 
 
-async def test_chat_file_id_reaches_graph_without_files_routes() -> None:
+async def test_chat_file_and_image_parts_reach_graph_without_files_routes() -> None:
     app = _graph_app()
     async with (
         AsyncClient(
@@ -56,14 +56,23 @@ async def test_chat_file_id_reaches_graph_without_files_routes() -> None:
                     "content": [
                         {"type": "text", "text": "Read this file."},
                         {"type": "file", "file": {"file_id": "file-central"}},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "https://example.com/chart.png"},
+                        },
                     ],
                 }
             ],
         )
         files_response = await http_client.get("/v1/files")
 
+    # The same parts a Responses request's input_file and input_image become.
     assert json.loads(response.choices[0].message.content or "null") == [
         {"type": "text", "text": "Read this file."},
         {"type": "file", "file": {"file_id": "file-central"}},
+        {
+            "type": "image_url",
+            "image_url": {"url": "https://example.com/chart.png", "detail": "auto"},
+        },
     ]
     assert files_response.status_code == HTTPStatus.NOT_FOUND

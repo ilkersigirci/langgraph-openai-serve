@@ -18,6 +18,7 @@ from langgraph_openai_serve.api.responses.schemas import (
     ResponseFunctionCallInput,
     ResponseFunctionCallOutputInput,
     ResponseInputFile,
+    ResponseInputImage,
     ResponseInputItem,
     ResponseInputMessage,
     ResponseInputText,
@@ -202,21 +203,36 @@ def _tool_call_message(
 
 
 def _input_content(
-    content: str | list[ResponseInputText | ResponseInputFile],
+    content: str | list[ResponseInputText | ResponseInputFile | ResponseInputImage],
 ) -> str | list[str | dict[Any, Any]]:
     if isinstance(content, str):
         return content
-    return cast(
-        "list[str | dict[Any, Any]]",
-        [
-            (
-                {"type": "text", "text": part.text}
-                if isinstance(part, ResponseInputText)
-                else {"type": "file", "file": {"file_id": part.file_id}}
-            )
-            for part in content
-        ],
-    )
+    return cast("list[str | dict[Any, Any]]", [_input_part(part) for part in content])
+
+
+def _input_part(
+    part: ResponseInputText | ResponseInputFile | ResponseInputImage,
+) -> dict[str, Any]:
+    """Return a part as the Chat Completions content LangChain reads natively."""
+    match part:
+        case ResponseInputText():
+            return {"type": "text", "text": part.text}
+        case ResponseInputFile():
+            return {"type": "file", "file": {"file_id": part.file_id}}
+        case ResponseInputImage(file_id=str() as file_id):
+            # Chat Completions has no image file part, so this is LangChain's
+            # standard image block, which keeps the detail where LangChain's
+            # own translation of an image_url part does.
+            return {
+                "type": "image",
+                "file_id": file_id,
+                "extras": {"detail": part.detail},
+            }
+        case ResponseInputImage():
+            return {
+                "type": "image_url",
+                "image_url": {"url": part.image_url, "detail": part.detail},
+            }
 
 
 def _output_content(

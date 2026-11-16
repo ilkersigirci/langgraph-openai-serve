@@ -94,11 +94,6 @@ async def test_unsupported_chat_requests_return_openai_errors(
     ("content_part", "param_end"),
     [
         pytest.param(
-            {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
-            ".0",
-            id="image",
-        ),
-        pytest.param(
             {"type": "input_audio", "input_audio": {"data": "AA==", "format": "wav"}},
             ".0",
             id="audio",

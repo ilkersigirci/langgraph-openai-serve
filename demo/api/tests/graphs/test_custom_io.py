@@ -39,8 +39,10 @@ async def test_question_keeps_attached_file_ids(make_graph_input) -> None:
         messages=[
             HumanMessage(
                 content=[
-                    {"type": "text", "text": "Use this file."},
+                    {"type": "text", "text": "Use these files."},
                     {"type": "file", "file": {"file_id": "file-report"}},
+                    # As LGOS passes on input_image by ID.
+                    {"type": "image", "file_id": "file-chart"},
                 ]
             )
         ],
@@ -51,4 +53,6 @@ async def test_question_keeps_attached_file_ids(make_graph_input) -> None:
 
     result = await run_langgraph(graph_request, messages, registry)
 
-    assert result.text == "demo-user asked: Use this file. [file: file-report]"
+    assert result.text == (
+        "demo-user asked: Use these files. [file: file-report] [file: file-chart]"
+    )

@@ -55,7 +55,7 @@ def request_to_input(
     files = [
         f"[file: {block['file_id']}]"
         for block in message.content_blocks
-        if block["type"] == "file" and "file_id" in block
+        if block["type"] in {"file", "image"} and "file_id" in block
     ]
     return {"question": " ".join(filter(None, [message.text, *files]))}
 

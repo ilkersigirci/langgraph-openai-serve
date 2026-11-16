@@ -83,7 +83,7 @@ fields and feature values.
 
 | Feature | Enabled behavior |
 | --- | --- |
-| `file_inputs` | The graph accepts native file parts and resolves their opaque `file_id` values. |
+| `file_inputs` | The graph accepts native file and image parts and resolves their opaque `file_id` values. |
 | `background` | The graph can run through the configured background backend and be streamed or polled through the standard Response lifecycle. |
 | `interrupts` | The server supports the checkpointed interrupt/resume flow. |
 | `mcp_tools` | Clients may attach and execute tools from their configured MCP gateway. The gateway owns discovery and authorization. |
@@ -221,10 +221,12 @@ boundary. See
 [Custom Graphs](../tutorials/custom-graphs.md#custom-schemas).
 
 Responses `input_file.file_id` content and native Chat Completions file parts
-normalize to the same LangChain file content. LGOS does not expose Files routes
-or own file storage. A client uploads through an external OpenAI-compatible
-Files API and sends the returned `file_id` to a graph; the graph still owns file
-interpretation. See [Accept And Display Files](../how-to-guides/file-inputs.md).
+normalize to the same LangChain file content; `input_image` and native Chat
+`image_url` parts normalize to the same image content. LGOS does not expose
+Files routes or own file storage. A client uploads through an external
+OpenAI-compatible Files API and sends the returned `file_id` to a graph; the
+graph still owns file interpretation. See
+[Accept And Display Files](../how-to-guides/file-inputs.md).
 
 ## Supported Responses Subset
 
@@ -238,6 +240,7 @@ not claim every field in the upstream OpenAI API.
 | `model`, `input`, `instructions` | Supported. String input and ordered user, system, developer, and replayed assistant messages become LangChain messages. New `instructions` are rejected on interrupt resumes because a paused invocation cannot consume them. |
 | `input_text` | Supported. |
 | `input_file.file_id` | Supported and normalized to the existing graph file block. |
+| `input_image` | Supported with exactly one of `file_id` or `image_url`, and its `detail`. A URL, which may be a data URL, reaches the graph unchanged as an `image_url` part; a `file_id` becomes LangChain's standard image block. LGOS fetches neither. |
 | function `tools`, named function `tool_choice`, `parallel_tool_calls` | Supported for client-owned functions. A function whose name is registered as a server tool is rejected so ownership stays unambiguous. |
 | name-only custom `tools` and named custom `tool_choice` | Select a custom tool registered in `GraphConfig.server_tools`. The graph owns its description, string input contract, and implementation; arbitrary client-defined custom tools and formats are outside this subset. |
 | `async` on function/custom tool declarations and replayed calls | Omitted, null, and false values are accepted for SDK round trips. `async: true` is rejected because LGOS does not implement the pending-call lifecycle for async tool calling; registered server tools execute and return their call and output within one Response. |
@@ -458,10 +461,10 @@ compatibility for assistant text and client tool calling. It streams plain text
 `delta.content` chunks, ignores custom streaming events, and never selects
 server tools. Only interrupt-enabled models fail fast with HTTP 400.
 
-Chat message content is limited to strings, explicit `text` parts, and native
-`file` parts containing only `file.file_id`. Image and audio parts, inline file
-data or filenames, and prompt-cache fields are outside the supported subset and
-fail request validation.
+Chat message content is limited to strings, explicit `text` parts, native
+`file` parts containing only `file.file_id`, and native `image_url` parts.
+Audio parts, inline file data or filenames, and prompt-cache fields are outside
+the supported subset and fail request validation.
 
 | Graph result | Responses | Chat Completions |
 | --- | --- | --- |

@@ -30,7 +30,7 @@ Open WebUI runtime owns its dependencies.
 | Project | Purpose | Deployment |
 | --- | --- | --- |
 | `api` | Example LangGraph API | `ghcr.io/ilkersigirci/lgos-demo-api` |
-| `files_api` | OpenAI Files API backed by S3 | `ghcr.io/ilkersigirci/lgos-files-api` |
+| `files_api` | OpenAI Files API backed by S3, with document extraction | `ghcr.io/ilkersigirci/lgos-files-api` |
 | `api-coding-agent` | Coding-agent showcase with a persistent workspace (currently Codex) | Local image build during Compose startup |
 | `ui/chainlit_ui` | Chainlit client | `ghcr.io/ilkersigirci/lgos-chainlit` |
 | `ui/openwebui` | Open WebUI Functions, remote sync CLI, and runtime model info | Synced through the pinned `homeserver-open-webui` image's API |
@@ -40,11 +40,13 @@ overlays under `docker/compose/`. Bifrost and LiteLLM gateway configurations
 live under `docker/configs/`. Compose runs `lgos-demo-api` and the independent
 `lgos-api-coding-agent` under the shared `lgos/` model namespace to showcase
 native Responses routing across distinct APIs through either gateway. The
-independent `lgos-files-api` image provides the shared S3-backed Files service. LiteLLM
+independent `lgos-files-api` image provides the shared S3-backed Files service,
+which extracts the text of uploaded documents with xberg. LiteLLM
 and Bifrost are both first-class UI gateways. LiteLLM's image is configured in
 `.env.example`; Bifrost is pinned in its `docker/apps/` Compose fragment. Set
-`OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI. Neither
-UI connects to an upstream container directly. Responses and Files use each
+`OPENAI_GATEWAY_TYPE=litellm|bifrost` once for Chainlit and Open WebUI, and
+`DEMO_OPENWEBUI_FILES_PROVIDER` to that gateway's Files provider, `litellm_proxy`
+or `lgos-files`. Neither UI connects to an upstream container directly. Responses and Files use each
 gateway's normal OpenAI routes, and MCP uses the same gateway root and client
 credential. Metadata comes from LiteLLM's native
 `/model/info` or Bifrost's native `/v1/models` attributes, populated by the
@@ -57,7 +59,8 @@ Compose fallbacks. Set
 
 `COMPOSE_PROFILES=${OPENAI_GATEWAY_TYPE}` in `demo/.env.example` starts the selected
 bundled gateway through Docker Compose's native profiles. To reuse an existing
-LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm`, set `COMPOSE_PROFILES=` and
+LiteLLM gateway, keep `OPENAI_GATEWAY_TYPE=litellm` and
+`DEMO_OPENWEBUI_FILES_PROVIDER=litellm_proxy`, set `COMPOSE_PROFILES=` and
 `OPENAI_GATEWAY_BASE_URL` and `DEMO_GATEWAY_HOST_URL` to its HTTPS root (without
 `/v1`), and provide
 its shared key through `OPENAI_GATEWAY_API_KEY` and a dedicated non-admin key

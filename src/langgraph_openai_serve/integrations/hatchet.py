@@ -25,6 +25,7 @@ from langgraph_openai_serve.background import (
     BackgroundStatus,
     execute_background_job,
 )
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.core.logging import get_logger
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 
@@ -195,6 +196,19 @@ class HatchetBackgroundBackend:
                 msg = "Hatchet reported an idempotency collision with no run."
                 raise RuntimeError(msg) from exc
             return existing
+        except grpc.RpcError as exc:
+            if not _is_too_large(exc):
+                raise
+            # The engine stored no run, so no Response exists. Retrying cannot
+            # succeed, and SDKs do not retry a 413.
+            message = (
+                "The request is larger than the background engine accepts. "
+                "Upload large images and files with the Files API and send "
+                "their file_id instead."
+            )
+            raise InvalidRequestError(
+                message, param="input", code="request_too_large", status_code=413
+            ) from exc
         return BackgroundRun(id=ref.workflow_run_id, job=job, status="queued")
 
     async def get(self, run_id: str) -> BackgroundRun | None:
@@ -253,6 +267,17 @@ def _is_not_found(exc: grpc.RpcError) -> bool:
     return (
         isinstance(exc, (grpc.Call, grpc.aio.AioRpcError))
         and exc.code() == grpc.StatusCode.NOT_FOUND
+    )
+
+
+def _is_too_large(exc: grpc.RpcError) -> bool:
+    # A message over the SDK's or the engine's gRPC size limit ends as
+    # RESOURCE_EXHAUSTED, a code the engine also uses for other limits; only
+    # the size errors say "larger than max".
+    return (
+        isinstance(exc, (grpc.Call, grpc.aio.AioRpcError))
+        and exc.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+        and "larger than max" in (exc.details() or "")
     )
 
 

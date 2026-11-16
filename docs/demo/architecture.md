@@ -60,7 +60,7 @@ optional background worker and Hatchet are shown in
 | Demo API | `lgos-demo-api` | One image running `lgos serve` with the demo graph registry. It runs alongside the independent coding-agent API behind one gateway. | [Run the Demo API](api.md), [Example Graphs](graphs/index.md) |
 | Coding-agent API | `lgos-api-coding-agent` | An LGOS app that serves Codex as one graph and edits a shared workspace directory. | [Coding Agent](graphs/coding-agent.md) |
 | Background worker | `lgos-background-worker` | `lgos worker` with the demo registry. Runs background Responses delivered by Hatchet. Enabled by the `background` profile. | [Background Mock](graphs/background-mock.md) |
-| Files API | `lgos-files-api` | OpenAI Files API over S3, giving every graph API one file namespace. | [Run the Files API](files-api.md) |
+| Files API | `lgos-files-api` | OpenAI Files API over S3 that extracts document text, giving every graph API one file namespace. | [Run the Files API](files-api.md) |
 | DBHub | `lgos-postgres-mcp` | Read-only MCP server with six fixed reports. `lgos-mcp-db-setup` creates its database role and views. | [PostgreSQL Through Native MCP](graphs/mcp-postgres.md) |
 | PostgreSQL | `lgos-db` | Shared database for the LGOS apps, Chainlit, LiteLLM, and the MCP reporting views. | [State Ownership](#state-ownership) |
 | Catalog sync | `lgos-model-sync`, `lgos-bifrost-sync` | Publish each graph's description, features, and settings into the running gateway's catalog. | [Model Catalog](#model-catalog) |
@@ -128,10 +128,10 @@ routes are listed in [Docker Compose](docker.md#demo-services).
 | --- | --- | --- |
 | Chainlit | Users, threads, and steps | PostgreSQL |
 | Chainlit | Element bodies, such as attachments and charts | S3, UI bucket |
-| Open WebUI | Transcripts, raw uploads, and embeds | Open WebUI data volume |
+| Open WebUI | Transcripts, uploads with their extracted text, and embeds | Open WebUI data volume |
 | LGOS APIs and worker | Paused interrupt runs and same-run locks | PostgreSQL checkpoints and advisory locks |
 | `persistent-plot-agent` graph | Thread-scoped chart document | PostgreSQL, LangGraph Store |
-| Files API | Files used for inference | S3, Files bucket |
+| Files API | Files used for inference and their extracted content | S3, Files bucket |
 | Hatchet | Background runs and their Responses | Hatchet |
 | Coding-agent API | Workspace files and Codex threads | Bind-mounted directories |
 | LiteLLM | Synced graph models and Admin UI data | PostgreSQL, `litellm` schema |
@@ -152,5 +152,5 @@ shortcuts that a real deployment replaces:
 | UI login | Chainlit mock login and Open WebUI password login, unless the SSO overlay is used | OIDC, as with the SSO overlay; see [Chainlit production notes](chainlit.md#production-notes) |
 | LGOS APIs | No authentication; demo API host port published for direct tests | Reachable only from the gateway, or behind authentication middleware |
 | PostgreSQL | One container shared by every owner | Managed PostgreSQL with backups, monitoring, and failover; see [Docker Compose](docker.md#demo-services) |
-| Scaling | Demo API, coding-agent API, and one Files API process | More API and worker replicas behind the gateway; Files API replicas over the same bucket |
+| Scaling | Demo API, coding-agent API, and one Files API process | More API and worker replicas behind the gateway; one Files API process per bucket, since each extracts documents and resumes every unfinished extraction |
 | Provider keys | `OPENAI_UPSTREAM_API_KEY` on the bundled gateway | Unchanged: only the gateway holds provider keys |
