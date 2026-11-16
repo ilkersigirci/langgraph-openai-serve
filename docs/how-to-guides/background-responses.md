@@ -296,6 +296,15 @@ from datetime import timedelta
 task = create_hatchet_task(hatchet, execution_timeout=timedelta(hours=2))
 ```
 
+Hatchet receives each request as one gRPC message, inline images and file data
+included, and both the SDK and the engine cap a message at 4 MiB by default.
+LGOS answers a larger background request with `413` and
+`code="request_too_large"`, so send large images and files by `file_id`. To
+accept larger requests, raise `HATCHET_CLIENT_GRPC_MAX_SEND_MESSAGE_LENGTH` and
+`HATCHET_CLIENT_GRPC_MAX_RECV_MESSAGE_LENGTH` in both processes and the
+engine's `SERVER_GRPC_MAX_MSG_SIZE` together; Hatchet then stores those bytes
+with each run.
+
 Idempotent creation uses
 [Hatchet idempotency keys](https://docs.hatchet.run/v1/idempotency); run a
 Hatchet engine release that supports them.

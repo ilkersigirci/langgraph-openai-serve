@@ -54,6 +54,19 @@ class StoredFileNotFoundError(FilesApiError):
         )
 
 
+class ContentNotReadyError(FilesApiError):
+    """Content requested before the file's extraction has ended."""
+
+    def __init__(self, file_id: str) -> None:
+        # A conflict with the file's state, which the OpenAI SDK retries.
+        super().__init__(
+            f"The content of {file_id} is still being extracted; retrieve the file "
+            "until its status is processed.",
+            status_code=status.HTTP_409_CONFLICT,
+            param="id",
+        )
+
+
 def configure_openai_error_handlers(app: FastAPI) -> None:
     """Render every failure in the OpenAI error envelope."""
     for exc_class in (

@@ -1,35 +1,26 @@
 """OpenAI Files API behavior, with the content extracted from documents."""
 
-import json
-import time
+from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 from openai import (
     AsyncOpenAI,
     BadRequestError,
+    ConflictError,
     NotFoundError,
     UnprocessableEntityError,
 )
 
+from lgos_files_api.api.files import xberg as files_xberg
 from lgos_files_api.app import create_app
 from lgos_files_api.core.settings import settings
 from tests.support import BUCKET, docx, processed_file, serve, xlsx
 
-SPREADSHEET_CONTENT = {
-    "type": "spreadsheet",
-    "version": 1,
-    "sheets": [
-        {
-            "name": "Sales",
-            "headers": ["Region", "Total"],
-            "rows": [["North", "10"]],
-            "chunks": [
-                "Sheet: Sales\nFields: Region, Total\n\nRow 1 | Region: North | Total: 10"
-            ],
-        }
-    ],
-}
+# One "Orders" sheet written by xlwt: a date cell, which .xls stores as a
+# serial number, and an integer, which it stores as a float.
+ORDERS_XLS = Path(__file__).parent / "data" / "orders.xls"
 
 
 def stored_keys(s3: Any) -> list[str]:
@@ -56,12 +47,91 @@ def stored_keys(s3: Any) -> list[str]:
             {"type": "text", "version": 1, "text": "# Notes\n\nShip it ✓"},
         ),
         (
+            "cities.csv",
+            b"city,population\nLyon,522250\n",
+            {"type": "text", "version": 1, "text": "city,population\nLyon,522250\n"},
+        ),
+        (
+            "deploy.py",
+            b"REGION = 'eu-west-1'\n",
+            {"type": "text", "version": 1, "text": "REGION = 'eu-west-1'\n"},
+        ),
+        (
+            "memo.rtf",
+            rb"{\rtf1\ansi\deff0 {\fonttbl {\f0 Arial;}}\f0 Revenue grew 12 percent.\par}",
+            {"type": "text", "version": 1, "text": "Revenue grew 12 percent.\n"},
+        ),
+        (
             "sales.xlsx",
-            xlsx("Sales", [["Region", "Total"], ["North", 10]]),
-            SPREADSHEET_CONTENT,
+            xlsx(
+                {
+                    "Sales": [["Region", "Total"], ["North", 10]],
+                    "Empty": [],
+                    "Costs": [["Item", "Cost"], ["Rent", 1200.5]],
+                }
+            ),
+            {
+                "type": "spreadsheet",
+                "version": 1,
+                "sheets": [
+                    {
+                        "name": "Sales",
+                        "headers": ["Region", "Total"],
+                        "rows": [["North", "10"]],
+                        "chunks": [
+                            (
+                                "Sheet: Sales\nFields: Region, Total\n\n"
+                                "Row 1 | Region: North | Total: 10"
+                            )
+                        ],
+                    },
+                    {"name": "Empty", "headers": [], "rows": [], "chunks": []},
+                    {
+                        "name": "Costs",
+                        "headers": ["Item", "Cost"],
+                        "rows": [["Rent", "1200.5"]],
+                        "chunks": [
+                            (
+                                "Sheet: Costs\nFields: Item, Cost\n\n"
+                                "Row 1 | Item: Rent | Cost: 1200.5"
+                            )
+                        ],
+                    },
+                ],
+            },
+        ),
+        (
+            "orders.xls",
+            ORDERS_XLS.read_bytes(),
+            {
+                "type": "spreadsheet",
+                "version": 1,
+                "sheets": [
+                    {
+                        "name": "Orders",
+                        "headers": ["Order", "Shipped", "Qty", "Price"],
+                        "rows": [["A-1", "2026-03-14", "12", "9.5"]],
+                        "chunks": [
+                            (
+                                "Sheet: Orders\nFields: Order, Shipped, Qty, Price\n\n"
+                                "Row 1 | Order: A-1 | Shipped: 2026-03-14 | Qty: 12 "
+                                "| Price: 9.5"
+                            )
+                        ],
+                    }
+                ],
+            },
         ),
     ],
-    ids=["xberg-document", "text-file", "spreadsheet"],
+    ids=[
+        "xberg-document",
+        "text-file",
+        "csv-file",
+        "code-file",
+        "rich-text-document",
+        "spreadsheet",
+        "legacy-spreadsheet",
+    ],
 )
 async def test_documents_are_processed_into_their_extracted_content(
     files_client: AsyncOpenAI, filename: str, document: bytes, content: object
@@ -77,6 +147,19 @@ async def test_documents_are_processed_into_their_extracted_content(
     assert (uploaded.status, processed.status) == ("uploaded", "processed")
     assert extracted.json() == content
     assert raw.content == document
+
+
+async def test_text_files_are_stored_as_plain_text(files_client: AsyncOpenAI) -> None:
+    # Browsers label code and data files inconsistently, and OpenAI's file inputs
+    # reject some of their labels, such as this one.
+    uploaded = await files_client.files.create(
+        file=("deploy.sh", b"echo ok\n", "application/x-shellscript"),
+        purpose="user_data",
+    )
+    raw = await files_client.files.content(uploaded.id, extra_query={"raw": "true"})
+
+    assert raw.response.headers["content-type"].partition(";")[0] == "text/plain"
+    assert raw.content == b"echo ok\n"
 
 
 async def test_unreadable_document_reports_its_failed_extraction(
@@ -96,6 +179,40 @@ async def test_unreadable_document_reports_its_failed_extraction(
     assert exc_info.value.response.json()["error"]["message"] == (
         "Failed to parse the file."
     )
+
+
+async def test_content_is_refused_until_the_extraction_ends(
+    files_client: AsyncOpenAI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    extract = files_xberg.extract
+    extracting, finish = anyio.Event(), anyio.Event()
+
+    async def held_extract(*args: Any, **kwargs: Any) -> bytes:
+        extracting.set()
+        await finish.wait()
+        return await extract(*args, **kwargs)
+
+    monkeypatch.setattr(files_xberg, "extract", held_extract)
+    document = docx("Not yet")
+    uploaded = await files_client.files.create(
+        file=("memo.docx", document), purpose="user_data"
+    )
+    with anyio.fail_after(10):
+        await extracting.wait()
+
+    with pytest.raises(ConflictError) as exc_info:
+        await files_client.files.content(uploaded.id)
+    raw = await files_client.files.content(uploaded.id, extra_query={"raw": "true"})
+    finish.set()
+    await processed_file(files_client, uploaded.id)
+    extracted = await files_client.files.content(uploaded.id)
+
+    assert exc_info.value.response.json()["error"]["message"] == (
+        f"The content of {uploaded.id} is still being extracted; retrieve the "
+        "file until its status is processed."
+    )
+    assert raw.content == document
+    assert extracted.json()["text"] == "Not yet\n"
 
 
 @pytest.mark.parametrize(
@@ -172,6 +289,18 @@ async def test_list_pages_through_every_file_in_either_order(
     assert exc_info.value.response.json()["error"]["param"] == "after"
 
 
+async def test_list_reports_a_document_without_content_as_uploaded(
+    files_client: AsyncOpenAI, s3: Any
+) -> None:
+    # Its extraction was lost, such as to a restart before it got a slot.
+    file_id = "file-" + "d" * 32
+    s3.put_object(Bucket=BUCKET, Key=f"{file_id}/memo.docx", Body=docx("Waiting"))
+
+    listed = await files_client.files.list()
+
+    assert [(file.id, file.status) for file in listed.data] == [(file_id, "uploaded")]
+
+
 @pytest.mark.parametrize(
     ("upload", "param"),
     [
@@ -199,65 +328,97 @@ async def test_invalid_uploads_are_rejected_before_anything_is_stored(
     assert stored_keys(s3) == []
 
 
-async def test_extraction_cut_short_by_a_restart_completes(s3: Any) -> None:
-    # A shutdown during an extraction leaves the original and its queued marker.
-    file_id = "file-" + "a" * 32
-    s3.put_object(Bucket=BUCKET, Key=f"{file_id}/memo.docx", Body=docx("Resumed"))
-    s3.put_object(Bucket=BUCKET, Key=f"extraction/{file_id}.queued", Body=b"{}")
-
-    async with serve(create_app()) as client:
-        processed = await processed_file(client, file_id)
-        content = await client.files.content(file_id)
-
-    assert processed.status == "processed"
-    assert content.json()["text"] == "Resumed\n"
-
-
-async def test_document_that_stopped_the_service_twice_fails_instead(
-    s3: Any,
+async def test_restarts_fail_only_a_document_cut_short_twice(
+    s3: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The API already resumed it once, and stopped again before it finished,
-    # such as when the document makes it run out of memory.
-    file_id = "file-" + "b" * 32
-    s3.put_object(Bucket=BUCKET, Key=f"{file_id}/scan.pdf", Body=b"%PDF-1.7")
-    s3.put_object(
-        Bucket=BUCKET, Key=f"extraction/{file_id}.queued", Body=b'{"resumes": 1}'
-    )
+    monkeypatch.setattr(settings, "MAX_CONCURRENT_EXTRACTIONS", 1)
+    extract = files_xberg.extract
+    # Set when the extraction holding the only slot starts, once per run.
+    holding: list[anyio.Event] = []
 
+    async def endless_extract(*_args: object, **_kwargs: object) -> bytes:
+        # Holds the slot until the shutdown, as a long OCR job, or one that
+        # runs the service out of memory, would.
+        holding[-1].set()
+        await anyio.sleep_forever()
+        return b""
+
+    monkeypatch.setattr(files_xberg, "extract", endless_extract)
+    holding.append(anyio.Event())
     async with serve(create_app()) as client:
-        processed = await processed_file(client, file_id)
+        first = await client.files.create(
+            file=("first.docx", docx("First")), purpose="user_data"
+        )
+        with anyio.fail_after(10):
+            await holding[-1].wait()
+        waiting = [
+            await client.files.create(
+                file=(f"doc-{index}.docx", docx(f"Doc {index}")), purpose="user_data"
+            )
+            for index in (2, 3)
+        ]
 
-    assert (processed.status, processed.status_details) == (
-        "error",
-        "The extraction did not finish.",
-    )
+    # Polling clients start the extractions again; the first one holds the slot
+    # until the next shutdown too.
+    holding.append(anyio.Event())
+    async with serve(create_app()) as client:
+        await client.files.retrieve(first.id)
+        with anyio.fail_after(10):
+            await holding[-1].wait()
+        for file in waiting:
+            await client.files.retrieve(file.id)
+
+    monkeypatch.setattr(files_xberg, "extract", extract)
+    async with serve(create_app()) as client:
+        outcomes = [
+            (processed.status, processed.status_details)
+            for processed in [
+                await processed_file(client, file.id) for file in (first, *waiting)
+            ]
+        ]
+
+    assert outcomes == [
+        ("error", "The extraction did not finish."),
+        ("processed", None),
+        ("processed", None),
+    ]
 
 
 @pytest.mark.parametrize(
-    ("status_code", "age", "status"),
-    [(500, 301, "processed"), (500, 0, "error"), (422, 301, "error")],
-    ids=["old-service-failure", "recent-service-failure", "unreadable-file"],
+    ("failure", "outcome"),
+    [
+        (
+            TimeoutError("Extraction timed out after 240000ms"),
+            ("error", "Timed out while parsing the file."),
+        ),
+        # A failure of the service rather than of the file, such as of storage.
+        (ConnectionResetError("Connection reset by peer"), ("processed", None)),
+    ],
+    ids=["timeout", "service-failure"],
 )
-async def test_only_service_failures_are_extracted_again_after_a_while(
-    s3: Any, status_code: int, age: int, status: str
+async def test_only_failures_of_the_file_itself_are_final(
+    files_client: AsyncOpenAI,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    outcome: tuple[str, str | None],
 ) -> None:
-    file_id = "file-" + "c" * 32
-    s3.put_object(Bucket=BUCKET, Key=f"{file_id}/memo.docx", Body=docx("Retried"))
-    failure = {
-        "status_code": status_code,
-        "message": "Earlier failure.",
-        "failed_at": time.time() - age,
-    }
-    s3.put_object(
-        Bucket=BUCKET,
-        Key=f"extraction/{file_id}.error",
-        Body=json.dumps(failure).encode(),
+    extract = files_xberg.extract
+    failures = [failure]
+
+    async def failing_once(*args: Any, **kwargs: Any) -> bytes:
+        if failures:
+            raise failures.pop()
+        return await extract(*args, **kwargs)
+
+    monkeypatch.setattr(files_xberg, "extract", failing_once)
+    uploaded = await files_client.files.create(
+        file=("memo.docx", docx("Retried")), purpose="user_data"
     )
+    processed = await processed_file(files_client, uploaded.id)
+    retrieved_again = await files_client.files.retrieve(uploaded.id)
 
-    async with serve(create_app()) as client:
-        processed = await processed_file(client, file_id)
-
-    assert processed.status == status
+    assert (processed.status, processed.status_details) == outcome
+    assert retrieved_again.status == outcome[0]
 
 
 @pytest.mark.parametrize("size", [2048, 200_000], ids=["part", "whole-body"])

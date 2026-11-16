@@ -24,6 +24,7 @@ from langgraph_openai_serve import (
     GraphRegistry,
 )
 from langgraph_openai_serve.api.responses.events import BACKGROUND_ACCEPTED_EVENTS
+from langgraph_openai_serve.core.errors import InvalidRequestError
 from langgraph_openai_serve.integrations.hatchet import (
     HatchetBackgroundBackend,
     create_hatchet_task,
@@ -42,9 +43,9 @@ STREAMING_JOB = JOB.model_copy(
 )
 
 
-def _rpc_error(code: grpc.StatusCode) -> grpc.aio.AioRpcError:
+def _rpc_error(code: grpc.StatusCode, details: str = "") -> grpc.aio.AioRpcError:
     metadata = grpc.aio.Metadata()
-    return grpc.aio.AioRpcError(code, metadata, metadata)
+    return grpc.aio.AioRpcError(code, metadata, metadata, details=details)
 
 
 class _Streams:
@@ -299,6 +300,38 @@ async def test_idempotency_collision_returns_the_existing_run() -> None:
 
     assert existing.status == "completed"
     assert existing.response == {"id": "resp_done", "status": "completed"}
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        pytest.param(
+            "CLIENT: Sent message larger than max (4667421 vs. 4194304)", id="client"
+        ),
+        pytest.param(
+            "grpc: received message larger than max (4667421 vs. 4194304)", id="engine"
+        ),
+    ],
+)
+async def test_job_larger_than_the_engine_accepts_is_a_client_error(
+    details: str,
+) -> None:
+    error = _rpc_error(grpc.StatusCode.RESOURCE_EXHAUSTED, details)
+    backend = HatchetBackgroundBackend(_Task(error=error), _Runs(), _Streams())  # ty: ignore[invalid-argument-type] - Fakes of the native task and clients.
+
+    with pytest.raises(InvalidRequestError) as raised:
+        await backend.submit(JOB)
+
+    assert (raised.value.status_code, raised.value.param) == (413, "input")
+    assert "file_id" in str(raised.value)
+
+
+async def test_other_exhausted_engine_resources_stay_server_errors() -> None:
+    error = _rpc_error(grpc.StatusCode.RESOURCE_EXHAUSTED, "tenant run limit reached")
+    backend = HatchetBackgroundBackend(_Task(error=error), _Runs(), _Streams())  # ty: ignore[invalid-argument-type] - Fakes of the native task and clients.
+
+    with pytest.raises(grpc.aio.AioRpcError):
+        await backend.submit(JOB)
 
 
 class _Subscriptions:

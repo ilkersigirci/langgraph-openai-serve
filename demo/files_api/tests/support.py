@@ -48,14 +48,15 @@ def docx(*paragraphs: str) -> bytes:
     return buffer.getvalue()
 
 
-def xlsx(title: str, rows: list[list[object]]) -> bytes:
-    """Return a workbook with one sheet of these rows."""
+def xlsx(sheets: dict[str, list[list[object]]]) -> bytes:
+    """Return a workbook with a sheet of rows per title, in order."""
     workbook = Workbook()
-    sheet = workbook.active
-    assert sheet is not None
-    sheet.title = title
-    for row in rows:
-        sheet.append(row)
+    for index, (title, rows) in enumerate(sheets.items()):
+        sheet = workbook.active if index == 0 else workbook.create_sheet()
+        assert sheet is not None
+        sheet.title = title
+        for row in rows:
+            sheet.append(row)
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()

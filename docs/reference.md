@@ -479,7 +479,9 @@ registers the task in the API and worker processes, with a 30-minute
 cancels, and follows its runs. The worker's Hatchet lifespan yields the
 `GraphRegistry`, including its `run_coordinator`, that the task executes. The
 task has no retries, and its 24-hour Hatchet idempotency key is the scoped
-`Idempotency-Key` digest. The adapter is never imported by the core package.
+`Idempotency-Key` digest. A request larger than Hatchet's gRPC message limit
+returns `413` with `code="request_too_large"`. The adapter is never imported by
+the core package.
 
 Background create accepts an optional `Idempotency-Key` header of 1 to 255
 characters. A retry returns the original Response without starting a second

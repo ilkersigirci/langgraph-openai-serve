@@ -1870,17 +1870,18 @@ async def test_attachments_reach_the_graph_by_their_files_api_ids(
     create = AsyncMock(return_value=final_response("Compared."))
     install_client(monkeypatch, create=create)
 
-    def attached(text: str, file_id: str, filename: str) -> dict[str, object]:
-        part = {"type": "file", "file": {"file_id": file_id, "filename": filename}}
+    def attached(text: str, part: dict[str, object]) -> dict[str, object]:
         return {"role": "user", "content": [{"type": "text", "text": text}, part]}
 
+    document = {"type": "file", "file": {"file_id": "file-report", "filename": "a.pdf"}}
+    image = {"type": "input_image", "file_id": "file-chart", "detail": "high"}
     result = await configured_pipe().pipe(
         {
             **body(stream=False),
             "messages": [
-                attached("Read this", "file-report", "report.pdf"),
+                attached("Read this", document),
                 {"role": "assistant", "content": "Read."},
-                attached("And compare", "file-memo", "memo.docx"),
+                attached("And compare", image),
             ],
         },
         # No __request__: the Pipe reads nothing from Open WebUI's file storage.
@@ -1896,7 +1897,7 @@ async def test_attachments_reach_the_graph_by_their_files_api_ids(
         "Read.",
         [
             {"type": "input_text", "text": "And compare"},
-            {"type": "input_file", "file_id": "file-memo"},
+            {"type": "input_image", "file_id": "file-chart", "detail": "high"},
         ],
     ]
 
@@ -2305,7 +2306,7 @@ async def test_non_streaming_answer_allows_optional_phase(monkeypatch, phase):
 
 def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
     # Open WebUI sends documents as Chat file parts with their Files API IDs,
-    # and images inline.
+    # and images it could not upload inline, in either of its image parts.
     messages = [
         {"role": "system", "content": "Be brief."},
         {"role": "assistant", "content": "Working", "phase": "commentary"},
@@ -2321,6 +2322,18 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
                 {
                     "type": "image_url",
                     "image_url": {"url": "data:image/gif;base64,R0lGOD"},
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,iVBOR",
+                        "detail": "low",
+                    },
+                },
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/webp;base64,UklGR",
+                    "detail": "original",
                 },
             ],
         },
@@ -2339,6 +2352,16 @@ def test_transcript_preserves_assistant_phase_and_uses_native_file_parts():
                     "type": "input_image",
                     "image_url": "data:image/gif;base64,R0lGOD",
                     "detail": "auto",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,iVBOR",
+                    "detail": "low",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/webp;base64,UklGR",
+                    "detail": "original",
                 },
             ],
         },

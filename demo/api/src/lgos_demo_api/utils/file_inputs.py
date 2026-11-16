@@ -41,7 +41,7 @@ async def load_file_block(
     )
 
 
-def file_id(part: object) -> str | None:
+def _file_id(part: object) -> str | None:
     """Return the Files API ID of an LGOS file or image part, if it has one."""
     if not isinstance(part, Mapping):
         return None
@@ -80,7 +80,7 @@ async def resolve_file_inputs(
         content: list[object] = []
         changed = False
         for part in message.content:
-            part_file_id = file_id(part)
+            part_file_id = _file_id(part)
             if part_file_id is None or not isinstance(part, Mapping):
                 content.append(part)
                 continue

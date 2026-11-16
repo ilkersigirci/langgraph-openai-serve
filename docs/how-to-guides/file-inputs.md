@@ -61,7 +61,9 @@ Send an image as `input_image`, by the same `file_id` or by `image_url`. An
 image URL, including a base64 data URL, is how OpenAI clients usually send
 images and how vision models read them, so LGOS passes it to the graph
 unchanged and fetches nothing; a graph that downloads one owns that policy.
-Only the request size the server or gateway accepts bounds an inline image.
+Only the request size the server or gateway accepts bounds an inline image,
+and a background request must also fit the
+[background engine's message limit](background-responses.md#deploy-with-hatchet).
 Prefer the `file_id` for an image a conversation keeps resending, so its bytes
 stay out of every request and of graph state.
 

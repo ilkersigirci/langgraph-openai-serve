@@ -746,8 +746,6 @@ dependencies = [
     { name = "python-multipart" },
     { name = "uvicorn" },
     { name = "xberg" },
-    { name = "xlrd" },
-    { name = "xlsx2csv" },
 ]
 
 [package.dev-dependencies]
@@ -780,8 +778,6 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "uvicorn", specifier = ">=0.34.0" },
     { name = "xberg", specifier = ">=1.3.9,<2" },
-    { name = "xlrd", specifier = ">=2.0.2,<3" },
-    { name = "xlsx2csv", specifier = ">=0.8.6,<1" },
 ]
 
 [package.metadata.requires-dev]
@@ -1751,24 +1747,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/60/58/d3d8fef1a5812c1840bdd970962e98a7d059d17f14826c86f7ce510a8ef9/xberg-1.3.9-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:b37020f07c1f1bdd7c8903c95f66d9f24981ad64fc0fd6f4168944378b97a1aa", size = 63848620, upload-time = "2026-10-13T10:30:46.469Z" },
     { url = "https://files.pythonhosted.org/packages/f7/f2/d3595e657cb505c41c84aeb4ea23643746082c5fe00e1c0173364dd9cf61/xberg-1.3.9-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:193ff65ee739ba00eb5259a99f99033d734c16392d4a282a0533a9e248c67100", size = 58091138, upload-time = "2026-10-13T10:30:52.926Z" },
     { url = "https://files.pythonhosted.org/packages/3c/39/d994bbe7776a040e60931d3bf4357b3039ab7a254f61c0020ccb6343100d/xberg-1.3.9-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c51af82e5d0a78ed5e0dae591fc78d6ff31b74e0bd5208ae5f112c218c5d0084", size = 63708480, upload-time = "2026-10-13T10:30:58.919Z" },
-]
-
-[[package]]
-name = "xlrd"
-version = "2.0.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/07/5a/377161c2d3538d1990d7af382c79f3b2372e880b65de21b01b1a2b78691e/xlrd-2.0.2.tar.gz", hash = "sha256:08b5e25de58f21ce71dc7db3b3b8106c1fa776f3024c54e45b45b374e89234c9", size = 100167, upload-time = "2025-06-14T08:46:39.039Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl", hash = "sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9", size = 96555, upload-time = "2025-06-14T08:46:37.766Z" },
-]
-
-[[package]]
-name = "xlsx2csv"
-version = "0.8.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/62/36/9d53c4a72dcdc08fcf46f3d02f71f22bc693bb66e87bd935e0c9668500ad/xlsx2csv-0.8.6.tar.gz", hash = "sha256:618fc502612860de8ab8e3d6195e99ef332fffc68337f6b89e59690aad0d20b5", size = 228308, upload-time = "2026-01-30T15:59:08.47Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/d6/9fd7e753a927cb11d039848a659124e6ec4cfe008704bb2790df7712c36d/xlsx2csv-0.8.6-py3-none-any.whl", hash = "sha256:415341e348b4c474cc84a4c23c4d116e0be07c89be6a84c5fde5e4c948db1943", size = 17204, upload-time = "2026-01-31T10:35:20.653Z" },
 ]
 
 [[package]]

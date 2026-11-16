@@ -17,11 +17,10 @@ graph TD;
 
 1. Chainlit and Open WebUI upload attachments through their configured
    `/v1/files` route to the central demo Files service, then place the
-   returned IDs in the user message. Chainlit sends every attachment as an
-   `input_file` part. Open WebUI uploads only the document and text types the
-   service extracts, and its Pipe sends them as `input_file` parts and images
-   inline as `input_image` data URLs; Open WebUI injects the text of other
-   files into the prompt.
+   returned IDs in the user message: images as `input_image` parts and other
+   files as `input_file` parts. Open WebUI uploads only images and the types
+   the service extracts; an image whose upload fails stays an inline
+   `input_image` data URL.
 2. LGOS passes those parts to the graph in the LangChain `HumanMessage`: file
    parts and image file IDs by ID, and inline images unchanged.
 3. The graph retrieves the filename and original bytes from

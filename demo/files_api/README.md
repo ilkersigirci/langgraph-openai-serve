@@ -20,16 +20,20 @@ background:
 
 | Files | Extractor | Content |
 | --- | --- | --- |
-| `.pdf`, `.docx`, `.doc`, `.pptx`, `.ppt` | [xberg](https://github.com/xberg-io/xberg), OCR included | `{"type": "text", "version": 1, "text": "<Markdown>"}` |
-| `.md`, `.txt` | The service | `{"type": "text", "version": 1, "text": "..."}` |
-| `.xlsx`, `.xls` | The service | `{"type": "spreadsheet", "version": 1, "sheets": [{"name", "headers", "rows", "chunks"}]}` |
+| `.pdf`, `.docx`, `.doc`, `.odt`, `.rtf`, `.pptx`, `.ppt`, `.html`, `.htm` | [xberg](https://github.com/xberg-io/xberg), OCR included | `{"type": "text", "version": 1, "text": "<Markdown>"}` |
+| `.xlsx`, `.xls` | xberg | `{"type": "spreadsheet", "version": 1, "sheets": [{"name", "headers", "rows", "chunks"}]}` |
+| `.md`, `.markdown`, `.txt`, `.log`, `.csv`, `.tsv`, `.xml`, `.yaml`, `.yml`, `.toml`, `.sql`, and code: `.py`, `.js`, `.java`, `.c`, `.cpp`, `.h`, `.go`, `.rs`, `.rb`, `.php`, `.sh`, `.css` | None: the file's own text | `{"type": "text", "version": 1, "text": "..."}` |
+
+Text files are stored as `text/plain`, since clients label code and data
+files inconsistently and OpenAI's file inputs reject some of those labels.
+JSON, the format of generated charts, keeps its original bytes as content.
 
 A document's `status` is `uploaded` until its content is stored, then
 `processed`, or `error` with `status_details`, so OpenAI SDK clients can call
 `files.wait_for_processing`. `GET /v1/files/{file_id}/content` returns the
-content as JSON, `{}` while it is being extracted, and the original upload with
-`?raw=true`. Other files, such as the images and charts that graphs generate,
-return their original bytes.
+content as JSON once the document is `processed`, a `409` error before, and the
+original upload with `?raw=true`. Other files, such as the images and charts
+that graphs generate, return their original bytes.
 
 xberg runs in the service process, at most
 `DEMO_API_FILES_MAX_CONCURRENT_EXTRACTIONS` documents at once with
@@ -38,12 +42,13 @@ may use, since xberg otherwise sizes its pools, and its memory, by the host's
 cores. Its bundled Tesseract OCRs pages without a text layer; the image ships
 English language data only, which a local run downloads on its first OCR.
 
-The extraction state lives in S3 next to the files. Extractions that a shutdown
-cuts short resume at the next start, once; a document that stops the service
-twice fails. A file the extractors cannot read stays failed, and other failures
-are extracted again by a retrieve five minutes later. Run one service process
-per bucket. Files stored before content extraction, under `openai-files/`, are
-not read.
+The extraction state lives in S3 next to the files. A document without content
+or an error is extracted again by its next retrieve, such as after a restart.
+Only extractions that get a slot count as attempts, and a document whose two
+attempts never finished, for example by running the service out of memory,
+fails. A document the extractors cannot read or that times out fails for good;
+other failures, such as of storage, are retried by the next retrieve. Run one
+service process per bucket.
 
 This is a small-scale reference implementation. Add authentication, tenant
 isolation, retention, and malware policy before exposing it to untrusted

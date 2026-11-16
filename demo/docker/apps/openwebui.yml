@@ -77,7 +77,7 @@ services:
       OPENAI_FILES_API_KEY: $OPENAI_GATEWAY_API_KEY
       OPENAI_FILES_API_PARAMS: '{"provider": "$DEMO_OPENWEBUI_FILES_PROVIDER"}'
       # Every type the Files API extracts; the image's default omits text files.
-      OPENAI_FILES_API_FILE_EXTENSIONS: pdf,docx,doc,pptx,ppt,xlsx,xls,md,txt
+      OPENAI_FILES_API_FILE_EXTENSIONS: pdf,docx,doc,odt,rtf,html,htm,pptx,ppt,xlsx,xls,md,markdown,txt,log,csv,tsv,xml,yaml,yml,toml,sql,py,js,java,c,cpp,h,go,rs,rb,php,sh,css
       OPENAI_FILES_API_MODELS_REGEX_PATTERN: '^generic\.lgos/'
       # Attachment text goes into the prompt whole: the slim image has no
       # embedding model, and graphs own retrieval.

@@ -143,5 +143,6 @@ from their concrete modules under `chainlit_utils.chat` and
 
 User attachments are uploaded separately through the selected gateway's normal
 OpenAI Files API. LiteLLM assigns those requests to `litellm_proxy`; Bifrost
-assigns them to `lgos-files`. The returned `file_id` reaches the graph as a
-Responses `input_file` content part.
+assigns them to `lgos-files`. The returned `file_id` reaches the graph in a
+Responses `input_image` part for an image and an `input_file` part for any
+other file.

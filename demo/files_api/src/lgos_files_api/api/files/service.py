@@ -2,41 +2,40 @@
 The Files API operations, on files stored in S3 only.
 
 Each file is the upload at "{file_id}/{filename}" and the content
-extracted from it at "content/{file_id}.json" (by xberg, or natively for text
-files and spreadsheets). The content sits outside the file's prefix, where no
-filename can reach. Extraction runs in the background; its state is stored in
-S3 too (extraction.py).
+extracted from it at "content/{file_id}.json" (by xberg, or as they are for
+text files). The content sits outside the file's prefix, where no filename can
+reach. Extraction runs in the background; its state is stored in S3 too
+(extraction.py).
 
 Every file is user_data, the only purpose accepted on upload.
 """
 
 import re
-import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import SEEK_END
 from typing import BinaryIO, Literal
 from uuid import uuid4
 
-from fastapi import status
 from openai.types import FileObject
 
+from lgos_files_api.api.files import native
 from lgos_files_api.api.files.extraction import (
-    PROCESSED_STATE,
-    QUEUED_STATE,
+    PROCESSED,
+    UPLOADED,
     Extraction,
     Extractions,
     content_key,
     is_supported,
 )
 from lgos_files_api.core.errors import (
+    ContentNotReadyError,
     FilesApiError,
     InvalidRequestError,
     StoredFileNotFoundError,
 )
 from lgos_files_api.storage import Download, S3Bucket, StoredObject
 
-# A failure of the service, not of the file, is retried after this long.
-EXTRACTION_RETRY_AFTER_SECONDS = 300
 # OpenAI-style IDs: "file-" and a UUID's 32 hex digits.
 FILE_ID_PREFIX = "file-"
 FILE_ID = re.compile(rf"{FILE_ID_PREFIX}[0-9a-f]{{32}}")
@@ -80,17 +79,22 @@ class FileService:
         # Clients percent-encode quotes in multipart filenames; OpenAI decodes them.
         filename = _normalize_filename(upload.filename.replace("%22", '"'))
         file_id = f"{FILE_ID_PREFIX}{uuid4().hex}"
+        # Clients label text, data, and code files inconsistently, and OpenAI's
+        # file inputs, to which graphs forward originals, reject some of those
+        # labels but take every text file as plain text.
+        content_type = (
+            "text/plain" if native.is_supported(filename) else upload.content_type
+        )
         await self._bucket.upload(
-            f"{file_id}/{filename}", upload.body, content_type=upload.content_type
+            f"{file_id}/{filename}", upload.body, content_type=content_type
         )
         stored, _ = await self._find(file_id)
         # After the original is stored, so a failed upload leaves no orphan
-        # content. The response doesn't wait for it; `content` returns {} until
-        # it is done.
+        # content. The response doesn't wait for the extraction.
         if not is_supported(filename):
             return stored
-        await self._extractions.start(file_id, filename)
-        return _with_extraction(stored, QUEUED_STATE)
+        self._extractions.start(file_id, filename)
+        return _with_extraction(stored, UPLOADED)
 
     async def list_files(
         self,
@@ -114,18 +118,16 @@ class FileService:
             for item in await self._bucket.list_objects(FILE_ID_PREFIX)
             if _is_file_id(item.key.partition("/")[0]) and "/" in item.key
         ]
-        # Sort on S3's millisecond LastModified: `created_at` is whole seconds,
-        # and OpenAI keeps files uploaded within the same second in upload order.
+        # OpenAI keeps files uploaded within the same second in upload order.
+        # `created_at` is whole seconds, but MinIO and Versity list LastModified
+        # in milliseconds; AWS lists whole seconds, so there such files fall
+        # back to ID order.
         stored.sort(
             key=lambda item: (item.last_modified, item.key),
             reverse=order == "desc",
         )
-        # Files with no stored state read as "processed"; `retrieve` queues them.
         states = await self._extractions.read_all()
-        files = [
-            _with_extraction(file, states[file.id]) if file.id in states else file
-            for file in map(_to_file_object, stored)
-        ]
+        files = [_listed(file, states) for file in map(_to_file_object, stored)]
         if after is not None:
             ids = [file.id for file in files]
             if after not in ids:
@@ -135,45 +137,38 @@ class FileService:
 
     async def retrieve(self, file_id: str) -> FileObject:
         file, _ = await self._find(file_id)
-        # "processed" means the content is stored; a file whose extraction was
-        # never queued or was lost is extracted now.
         return _with_extraction(file, await self._extraction(file))
 
     async def delete(self, file_id: str) -> None:
         _, key = await self._find(file_id)
-        # Content first: if a delete fails, a retry still finds the original.
-        await self._extractions.forget(file_id)
+        # The original first: an extraction that ends later finds it gone and
+        # removes its own outcome.
         await self._bucket.delete(key)
-        # An extraction that checked for the original before it was deleted may
-        # have stored content since; one that checks later removes its own.
         await self._extractions.forget(file_id)
 
-    async def content(self, file_id: str, *, raw: bool) -> Download | None:
+    async def content(self, file_id: str, *, raw: bool) -> Download:
         """
-        Open the file's content, or return None while it is being extracted.
+        Open the file's content, refused until its extraction has ended.
 
         OpenAI refuses to return user_data files. Documents return the content
         extracted from them instead; other files, such as the generated images
         that clients display, and `raw` requests return the original.
         """
         file, key = await self._find(file_id)
-        if raw or not is_supported(file.filename):
-            original = await self._bucket.get(key)
-            if original is None:  # deleted between the lookup and the read
-                raise StoredFileNotFoundError(file_id)
-            return original
-
-        content = await self._bucket.get(content_key(file_id))
-        if content is not None:
-            return content
-        state = await self._extraction(file)
-        if state.status == "error":
-            raise FilesApiError(
-                state.details or "Failed to parse the file.",
-                status_code=state.status_code or 500,
-            )
-        # Queued, running, or stored since the lookup above.
-        return None
+        if not raw and is_supported(file.filename):
+            state = await self._extraction(file)
+            if state.status == "error":
+                raise FilesApiError(
+                    state.details or "Failed to parse the file.",
+                    status_code=state.status_code or 500,
+                )
+            if state.status == "uploaded":
+                raise ContentNotReadyError(file_id)
+            key = content_key(file_id)
+        download = await self._bucket.get(key)
+        if download is None:  # deleted between the lookup and the read
+            raise StoredFileNotFoundError(file_id)
+        return download
 
     async def _find(self, file_id: str) -> tuple[FileObject, str]:
         """Return the file and its S3 key."""
@@ -189,24 +184,13 @@ class FileService:
         return _to_file_object(stored[0]), stored[0].key
 
     async def _extraction(self, file: FileObject) -> Extraction:
-        """
-        Return the file's extraction, starting one that is due.
-
-        Due are an extraction never queued or lost, and one that failed for a
-        reason other than the file, such as storage or a timeout, long enough
-        ago; a file the extractors cannot read stays failed.
-        """
+        """Return the file's extraction, starting it if none runs and none ended."""
         if not is_supported(file.filename):
-            return PROCESSED_STATE
+            return PROCESSED
         state = await self._extractions.read(file.id)
-        if state is None or (
-            state.status_code is not None
-            and state.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
-            and state.failed_at is not None
-            and time.time() - state.failed_at >= EXTRACTION_RETRY_AFTER_SECONDS
-        ):
-            await self._extractions.start(file.id, file.filename)
-            return QUEUED_STATE
+        if state is None:
+            self._extractions.start(file.id, file.filename)
+            return UPLOADED
         return state
 
 
@@ -254,6 +238,15 @@ def _to_file_object(stored: StoredObject) -> FileObject:
         purpose="user_data",
         status="processed",
     )
+
+
+def _listed(file: FileObject, states: Mapping[str, Extraction]) -> FileObject:
+    """Return a listed file with its status; listing starts no extraction."""
+    if file.id in states:
+        return _with_extraction(file, states[file.id])
+    # A document without content or an error is still being extracted, or its
+    # next retrieve starts the extraction again.
+    return _with_extraction(file, UPLOADED) if is_supported(file.filename) else file
 
 
 def _with_extraction(file: FileObject, state: Extraction) -> FileObject:

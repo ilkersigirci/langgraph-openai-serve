@@ -166,13 +166,36 @@ def _responses_part(part: dict[str, JsonValue]) -> dict[str, str] | None:
             file_id = file.get("file_id") if isinstance(file, dict) else None
             if isinstance(file_id, str) and file_id:
                 return {"type": "input_file", "file_id": file_id}
-        case "image_url":
-            # Open WebUI sends images inline as data URLs.
-            image = part.get("image_url")
-            url = image.get("url") if isinstance(image, dict) else image
+        case "input_image":
+            # Open WebUI sends an image it uploaded with its Files API ID in
+            # this Responses part, since Chat parts carry images only inline.
+            detail = _image_detail(part.get("detail"))
+            file_id = part.get("file_id")
+            if isinstance(file_id, str) and file_id:
+                return {"type": "input_image", "file_id": file_id, "detail": detail}
+            url = part.get("image_url")
             if isinstance(url, str) and url:
-                return {"type": "input_image", "image_url": url, "detail": "auto"}
+                return {"type": "input_image", "image_url": url, "detail": detail}
+        case "image_url":
+            # An image Open WebUI could not upload stays inline as a data URL.
+            image = part.get("image_url")
+            url, detail = (
+                (image.get("url"), image.get("detail"))
+                if isinstance(image, dict)
+                else (image, None)
+            )
+            if isinstance(url, str) and url:
+                return {
+                    "type": "input_image",
+                    "image_url": url,
+                    "detail": _image_detail(detail),
+                }
     return None
+
+
+def _image_detail(detail: JsonValue) -> str:
+    """Return an image part's detail; Responses defaults it to auto."""
+    return detail if isinstance(detail, str) and detail else "auto"
 
 
 def _responses_mcp_calls(

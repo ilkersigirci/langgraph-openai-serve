@@ -37,12 +37,21 @@ background and stores it in S3 next to the original:
 
 | Files | Extractor | Content |
 | --- | --- | --- |
-| `.pdf`, `.docx`, `.doc`, `.pptx`, `.ppt` | [xberg](https://github.com/xberg-io/xberg), OCR included | `{"type": "text", "version": 1, "text": "<Markdown>"}` |
-| `.md`, `.txt` | The service | `{"type": "text", "version": 1, "text": "..."}` |
-| `.xlsx`, `.xls` | The service | `{"type": "spreadsheet", "version": 1, "sheets": [...]}` |
+| `.pdf`, `.docx`, `.doc`, `.odt`, `.rtf`, `.pptx`, `.ppt`, `.html`, `.htm` | [xberg](https://github.com/xberg-io/xberg), OCR included | `{"type": "text", "version": 1, "text": "<Markdown>"}` |
+| `.xlsx`, `.xls` | xberg | `{"type": "spreadsheet", "version": 1, "sheets": [...]}` |
+| `.md`, `.markdown`, `.txt`, `.log`, `.csv`, `.tsv`, `.xml`, `.yaml`, `.yml`, `.toml`, `.sql`, and code: `.py`, `.js`, `.java`, `.c`, `.cpp`, `.h`, `.go`, `.rs`, `.rb`, `.php`, `.sh`, `.css` | None: the file's own text | `{"type": "text", "version": 1, "text": "..."}` |
 
 Each sheet lists its `name`, `headers`, data `rows`, and `chunks`: groups of
-rows rendered as `Row N | Header: value` lines for retrieval.
+rows rendered as `Row N | Header: value` lines for retrieval. Cells hold the
+values xberg reads, such as dates as ISO dates. A CSV file keeps its own text,
+so every value stays exactly as written.
+
+Graphs forward the originals to OpenAI, so these are types OpenAI's file
+inputs accept. The service stores text files as `text/plain`, whatever their
+upload's label: clients label code and data files inconsistently, and OpenAI
+rejects some of those labels. JSON stays out, since generated charts are JSON
+files that clients display from their original bytes, and so does TypeScript,
+which browsers label as video.
 
 ```mermaid
 sequenceDiagram
@@ -65,7 +74,7 @@ clients can wait with `files.wait_for_processing`:
 
 | `status` | Content endpoint |
 | --- | --- |
-| `uploaded` | `{}` while the document is being extracted |
+| `uploaded` | A `409` error, which the OpenAI SDK retries, until the extraction ends |
 | `processed` | The extracted content as JSON |
 | `error`, with `status_details` | The extraction's error |
 
@@ -85,20 +94,19 @@ anything at runtime.
 | Failure | `status_details` | Extracted again |
 | --- | --- | --- |
 | A file the extractors cannot read | `Failed to parse the file.` | No |
-| An extraction over its time limit | `Timed out while parsing the file.` | By a retrieve five minutes later |
-| A storage or other service error | `Internal Server Error` | By a retrieve five minutes later |
-| A document that stopped the service twice, such as by running out of memory | `The extraction did not finish.` | No |
+| An extraction over its time limit | `Timed out while parsing the file.` | No |
+| A storage or other service error | None; the file stays `uploaded` | By its next retrieve |
+| Two extractions that never finished, such as by running the service out of memory | `The extraction did not finish.` | No |
 
 The extraction state lives in S3 next to the files, so a restart loses nothing:
-extractions cut short by a shutdown resume at the next start, once. Run one
-service process per bucket, because each process resumes every unfinished
-extraction.
+a document without content or an error is extracted again by its next
+retrieve. Only extractions that get a slot count toward the two, so a restart
+never fails a document that was waiting for one. Run one service process per
+bucket, because processes do not share which extractions they are running.
 
 The service refuses an upload over `DEMO_API_FILES_MAX_UPLOAD_BYTES` once
 Starlette has written it to `/tmp`, so keep `/tmp` larger than the limit and
-cap request bodies at the gateway or proxy in front of the service. Files stored by versions before content extraction, under
-`openai-files/`, are neither listed nor served; this version stores each file
-under its ID at the bucket root.
+cap request bodies at the gateway or proxy in front of the service.
 
 ## Ownership Boundary
 

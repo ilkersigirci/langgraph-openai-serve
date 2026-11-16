@@ -70,7 +70,7 @@ ID; `BYPASS_MODEL_ACCESS_CONTROL=true`; `ENABLE_BASE_MODELS_CACHE=false`;
 `CONTENT_EXTRACTION_ENGINE=openai_files`, with the image's `OPENAI_FILES_API_*`
 settings pointing at the gateway's Files provider and
 `OPENAI_FILES_API_MODELS_REGEX_PATTERN` matching the Pipe's models, such as
-`^generic\.acme/`, so Open WebUI sends their documents as file parts with Files
+`^generic\.acme/`, so Open WebUI sends their documents and images with Files
 API IDs; and `BYPASS_EMBEDDING_AND_RETRIEVAL=true`. The Files API must return
 the content types of the demo's
 [Files API](https://github.com/ilkersigirci/langgraph-openai-serve/blob/main/docs/demo/files-api.md#extract-document-content).

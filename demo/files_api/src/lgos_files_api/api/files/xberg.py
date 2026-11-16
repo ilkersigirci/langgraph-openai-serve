@@ -1,24 +1,34 @@
 """
-PDF and Office documents, extracted with xberg in this process.
+Documents and spreadsheets, extracted with xberg in this process.
 
-xberg reads their text layer and OCRs pages without one. Their content is a
-text content (native.py) holding the document's Markdown.
+PDF, Office, OpenDocument, RTF, and HTML documents: xberg reads a document's
+text layer and OCRs pages without one; its content is a text content holding
+the document's Markdown. A spreadsheet's content holds each sheet's cells as
+xberg formats them, such as dates as ISO dates.
 """
 
 from pathlib import PurePath
 
 import xberg
 
-from lgos_files_api.api.files.native import text_content
+from lgos_files_api.api.files.content import spreadsheet_content, text_content
 
-XBERG_SUFFIXES = {".pdf", ".docx", ".doc", ".pptx", ".ppt"}
+DOCUMENT_SUFFIXES = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".odt",
+    ".rtf",
+    ".html",
+    ".htm",
+    ".pptx",
+    ".ppt",
+}
+SPREADSHEET_SUFFIXES = {".xlsx", ".xls"}
+SUFFIXES = DOCUMENT_SUFFIXES | SPREADSHEET_SUFFIXES
 # The container image bundles English OCR data only; xberg would download the
 # data of other languages on first use.
 OCR_LANGUAGES = ["eng"]
-
-
-def is_supported(filename: str) -> bool:
-    return PurePath(filename).suffix.lower() in XBERG_SUFFIXES
 
 
 async def extract(
@@ -48,13 +58,13 @@ async def extract(
     )
     try:
         result = await xberg.extract(
-            xberg.ExtractInput(kind="bytes", bytes=document, filename=filename),  # ty: ignore[invalid-argument-type] - xberg 1.3 annotates the field with its own name, which ty reads as None.
+            xberg.ExtractInput(kind="bytes", bytes=document, filename=filename),  # ty: ignore[invalid-argument-type] - xberg annotates the field with its own name, which ty reads as None.
             config,
         )
-    # Whatever xberg raises means it can't read this document: xberg 1.3
-    # raises RuntimeError, not its XbergError subclasses, for unreadable
-    # documents and timeouts alike, and its async bridge reports a Rust panic as
-    # its own exception.
+    # Whatever xberg raises means it can't read this document: xberg raises
+    # RuntimeError, not its XbergError subclasses, for unreadable documents and
+    # timeouts alike, and its async bridge reports a Rust panic as its own
+    # exception.
     except Exception as error:
         if isinstance(error, xberg.XbergTimeoutError) or str(error).startswith(
             "Extraction timed out"
@@ -63,4 +73,23 @@ async def extract(
         raise ValueError(str(error)) from error
     if result.errors:
         raise ValueError(result.errors[0].message)
+    if PurePath(filename).suffix.lower() in SPREADSHEET_SUFFIXES:
+        (workbook,) = result.results
+        return spreadsheet_content(_sheets(workbook))
     return text_content("\n\n".join(extracted.content for extracted in result.results))
+
+
+def _sheets(workbook: xberg.ExtractedDocument) -> list[tuple[str, list[list[str]]]]:
+    """Return each sheet's name and cells, in the workbook's order."""
+    excel = workbook.metadata.format.excel if workbook.metadata.format else None
+    if excel is None or excel.sheet_names is None:
+        msg = "xberg found no sheets in the workbook."
+        raise ValueError(msg)
+    # A table's page is its sheet's position; xberg skips empty sheets.
+    cells: dict[int, list[list[str]]] = {}
+    for table in workbook.tables:
+        cells.setdefault(table.page_number, []).extend(table.cells)
+    return [
+        (name, cells.get(page_number, []))
+        for page_number, name in enumerate(excel.sheet_names, start=1)
+    ]

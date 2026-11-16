@@ -141,7 +141,7 @@ Bifrost uses native `/v1/models` after [catalog sync](bifrost.md#declarative-mod
 | Demo client | File input | MCP | Runtime settings | Interrupts | Background | UI feedback | Citations |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Chainlit | Uploads attachments to the central Files API | Per-session trusted native Streamable HTTP connection | Renders supported discovered fields | Native choices and free-text input with a durable continuation record | Capability-gated switch and streaming | Native status and persisted image elements | Markdown content |
-| Open WebUI | Sends documents by Files API ID and images inline | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and streaming | Native status and persisted file events | Native source events and Markdown |
+| Open WebUI | Sends documents and images by Files API ID | One Compose-configured gateway connection selected from discovered `mcp_tools` metadata | Renders supported discovered fields as Chat Variables | Persisted native `ask_user` card with LGOS continuation | Capability-gated Chat Variable and streaming | Native status and persisted file events | Native source events and Markdown |
 
 Both clients still expose limited-functionality models when LGOS metadata is
 missing; see their client-specific guides for that behavior.

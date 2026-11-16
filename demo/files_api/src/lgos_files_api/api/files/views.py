@@ -3,7 +3,7 @@
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 from openai.types import FileDeleted, FileObject
 
 from lgos_files_api.api.files.schemas import FileListResponse, FilePurpose
@@ -99,11 +99,9 @@ async def retrieve_file_content(
         bool,
         Query(description="Return the original upload instead of extracted content."),
     ] = False,
-) -> Response:
-    """Return a document's extracted content, `{}` until it is ready, or the file."""
+) -> StreamingResponse:
+    """Return a processed document's extracted content, or the file itself."""
     content = await files.content(file_id, raw=raw)
-    if content is None:
-        return JSONResponse({})
     # Starlette iterates the synchronous body in a worker thread.
     return StreamingResponse(
         content.chunks(),
