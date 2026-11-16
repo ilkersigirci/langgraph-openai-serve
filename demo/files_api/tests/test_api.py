@@ -162,6 +162,22 @@ async def test_text_files_are_stored_as_plain_text(files_client: AsyncOpenAI) ->
     assert raw.content == b"echo ok\n"
 
 
+async def test_unlabelled_uploads_are_labelled_from_their_filename(
+    files_client: AsyncOpenAI,
+) -> None:
+    # Bifrost forwards every upload with this label, which OpenAI's file inputs
+    # reject.
+    uploaded = await files_client.files.create(
+        file=("memo.docx", b"document", "application/octet-stream"),
+        purpose="user_data",
+    )
+    raw = await files_client.files.content(uploaded.id, extra_query={"raw": "true"})
+
+    assert raw.response.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
 async def test_unreadable_document_reports_its_failed_extraction(
     files_client: AsyncOpenAI,
 ) -> None:

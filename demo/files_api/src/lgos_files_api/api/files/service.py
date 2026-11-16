@@ -14,6 +14,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import SEEK_END
+from mimetypes import guess_type
 from typing import BinaryIO, Literal
 from uuid import uuid4
 
@@ -79,14 +80,10 @@ class FileService:
         # Clients percent-encode quotes in multipart filenames; OpenAI decodes them.
         filename = _normalize_filename(upload.filename.replace("%22", '"'))
         file_id = f"{FILE_ID_PREFIX}{uuid4().hex}"
-        # Clients label text, data, and code files inconsistently, and OpenAI's
-        # file inputs, to which graphs forward originals, reject some of those
-        # labels but take every text file as plain text.
-        content_type = (
-            "text/plain" if native.is_supported(filename) else upload.content_type
-        )
         await self._bucket.upload(
-            f"{file_id}/{filename}", upload.body, content_type=content_type
+            f"{file_id}/{filename}",
+            upload.body,
+            content_type=_content_type(filename, upload.content_type),
         )
         stored, _ = await self._find(file_id)
         # After the original is stored, so a failed upload leaves no orphan
@@ -196,6 +193,23 @@ class FileService:
 
 def _is_file_id(file_id: str) -> bool:
     return FILE_ID.fullmatch(file_id) is not None
+
+
+def _content_type(filename: str, label: str) -> str:
+    """
+    Return the media type to store with an upload: what graphs forward to OpenAI.
+
+    Clients label text, data, and code files inconsistently, and OpenAI's file
+    inputs reject some of those labels but take every text file as plain text.
+    Some gateways, such as Bifrost, forward every upload as
+    application/octet-stream, which OpenAI's file inputs reject too; such a
+    file is labelled from its filename, by the image's system MIME types.
+    """
+    if native.is_supported(filename):
+        return "text/plain"
+    if label == "application/octet-stream":
+        return guess_type(filename)[0] or label
+    return label
 
 
 def _upload_size(upload: FileUpload) -> int:

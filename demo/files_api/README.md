@@ -26,6 +26,8 @@ background:
 
 Text files are stored as `text/plain`, since clients label code and data
 files inconsistently and OpenAI's file inputs reject some of those labels.
+Other uploads labelled `application/octet-stream`, as Bifrost forwards every
+upload, are labelled from their filename.
 JSON, the format of generated charts, keeps its original bytes as content.
 
 A document's `status` is `uploaded` until its content is stored, then

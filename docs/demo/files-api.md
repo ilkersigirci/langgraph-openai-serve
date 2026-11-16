@@ -49,7 +49,9 @@ so every value stays exactly as written.
 Graphs forward the originals to OpenAI, so these are types OpenAI's file
 inputs accept. The service stores text files as `text/plain`, whatever their
 upload's label: clients label code and data files inconsistently, and OpenAI
-rejects some of those labels. JSON stays out, since generated charts are JSON
+rejects some of those labels. It labels other uploads that arrive as
+`application/octet-stream`, as Bifrost forwards every upload, from their
+filename. JSON stays out, since generated charts are JSON
 files that clients display from their original bytes, and so does TypeScript,
 which browsers label as video.
 

@@ -19,6 +19,12 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 WORKDIR /app
 
+# media-types adds /etc/mime.types, which Python's mimetypes reads to label
+# unlabelled uploads; its built-in table lacks Office and OpenDocument types.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends media-types \
+    && rm -rf /var/lib/apt/lists/*
+
 # ADD would create the tessdata directory with its file's mode.
 RUN groupadd --gid "$PGID" app \
     && useradd --uid "$PUID" --gid "$PGID" --create-home \

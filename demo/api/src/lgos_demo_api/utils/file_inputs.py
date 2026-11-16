@@ -2,7 +2,6 @@
 
 from base64 import b64encode
 from collections.abc import Mapping, Sequence
-from mimetypes import guess_type
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -18,11 +17,8 @@ async def load_file_block(
     # The demo Files service returns the text it extracts from a document, and
     # the original upload only when asked for it.
     download = await client.files.content(file_id, extra_query={"raw": "true"})
-    content_type = download.response.headers.get(
-        "content-type", "application/octet-stream"
-    ).partition(";")[0]
-    if content_type == "application/octet-stream":
-        content_type = guess_type(metadata.filename)[0] or content_type
+    # The Files service labels each original with the media type OpenAI accepts.
+    content_type = download.response.headers["content-type"].partition(";")[0]
     encoded = b64encode(await download.aread()).decode("ascii")
     if content_type.startswith("image/"):
         # LangChain sends an image's detail only from this Chat Completions part,

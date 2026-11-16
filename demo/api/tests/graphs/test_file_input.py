@@ -24,9 +24,7 @@ async def test_file_inputs_use_responses_and_preserve_provider_output(
             aread=AsyncMock(return_value=b"image"),
         ),
         "file-document": SimpleNamespace(
-            response=SimpleNamespace(
-                headers={"content-type": "application/octet-stream"}
-            ),
+            response=SimpleNamespace(headers={"content-type": "application/pdf"}),
             aread=AsyncMock(return_value=b"document"),
         ),
         "file-photo": SimpleNamespace(
