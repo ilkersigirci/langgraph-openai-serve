@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from .bundle import bundle_function
+from .functions.generic.catalog import USERVALVES_MODEL_ID
 
 FUNCTIONS_DIR = Path(__file__).with_name("functions")
 
@@ -40,7 +41,7 @@ def function_specs(
     if include_demo_functions:
         specs.append(
             FunctionSpec(
-                id="uservalves_simple",
+                id=USERVALVES_MODEL_ID,
                 name="UserValves Simple",
                 content=(FUNCTIONS_DIR / "uservalves_simple.py").read_text(
                     encoding="utf-8"

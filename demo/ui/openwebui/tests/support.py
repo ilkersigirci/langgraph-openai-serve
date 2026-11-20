@@ -1,4 +1,4 @@
-"""Configured Pipes and an in-process Open WebUI admin API for tests."""
+"""Configured Pipes and a fake of the external Open WebUI admin API."""
 
 from typing import Any
 
@@ -27,7 +27,7 @@ ADMIN_TOKEN = "admin-token"
 
 
 class FakeOpenWebUI(Starlette):
-    """Open WebUI's admin routes, served in-process."""
+    """The admin routes of the Open WebUI service that the sync configures."""
 
     def __init__(
         self,

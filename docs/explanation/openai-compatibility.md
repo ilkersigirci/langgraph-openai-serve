@@ -665,10 +665,10 @@ Status events remain progress-only; they do not carry tool call IDs or results.
 Completed tool inputs still use one input delta; LGOS does not parse partial
 tool-call arguments.
 
-The graph must emit each public call ID once; repeated IDs are rejected. Replayed
-input is graph input rather than a new update, so it is not emitted again. A
-selected server call must have a result before successful completion. Streaming
-failures retain partial activity on
+Tool call IDs must be unique within a graph run, across server and client calls;
+a repeated ID fails the Response. Replayed input is graph input rather than a new
+update, so it is not emitted again. A selected server call must have a result
+before successful completion. Streaming failures retain partial activity on
 `response.failed`; unselected internal tools and private graph data stay private.
 
 The [server-tool demo](../demo/graphs/server-tool.md) uses LangChain

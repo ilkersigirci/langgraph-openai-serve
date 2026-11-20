@@ -1,6 +1,6 @@
 """Open WebUI manifold Pipe backed exclusively by the Responses API."""
 
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any
@@ -43,14 +43,14 @@ from .interrupts import (
     _openwebui_interrupt_completion,
 )
 from .responses import (
-    _background_events,
+    _background_status,
     _emit_response_sources,
-    _foreground_events,
     _openwebui_chunk,
     _openwebui_mcp_tools,
     _openwebui_tool_chunk,
     _raise_for_response,
     _request_metadata,
+    _response_updates,
     _responses_continuation,
     _responses_final_text,
     _responses_function_calls,
@@ -66,7 +66,6 @@ class PreparedResponsesRequest:
     """Validated upstream request state retained across client-tool turns."""
 
     model_id: str
-    background: bool
     gateway: GatewayConfig
     api_key: str
     openwebui_mcp_names: dict[str, str]
@@ -158,7 +157,7 @@ class Pipe:
         async with aclosing(results):
             return await anext(results)
 
-    async def _run(  # ruff: ignore[complex-structure, too-many-branches, too-many-statements] - One lifecycle owns streaming, client tools, and terminal cleanup.
+    async def _run(  # ruff: ignore[complex-structure] - The tool loop shares one status and cancellation lifecycle.
         self,
         body: dict[str, Any],
         metadata: dict[str, Any],
@@ -181,9 +180,9 @@ class Pipe:
         latest_status = ""
         finished = False
 
-        async def publish_background_status(status: str) -> None:
+        async def publish_status(description: str) -> None:
             nonlocal latest_status
-            latest_status = f"Background response {status.replace('_', ' ')}."
+            latest_status = description
             await _emit_status(event_emitter, latest_status, done=False)
 
         try:  # ruff: ignore[too-many-nested-blocks, too-many-statements-in-try-clause] - The whole turn shares cancellation, UI error reporting, and status cleanup.
@@ -201,66 +200,33 @@ class Pipe:
                 timeout=self.valves.OPENAI_API_TIMEOUT,
             ) as client:
                 while True:
-                    # Execute one SDK-owned Responses turn. Text deltas remain
-                    # live while the SDK assembles the typed final Response.
-                    streamed_text = ""
-                    phases: dict[int, str | None] = {}
-                    response: Response | None = None
-                    if prepared.background:
-                        events = _background_events(
-                            client,
-                            prepared.request,
-                            publish_background_status,
-                            provider_routing=prepared.gateway.provider_routing,
-                        )
-                    elif streaming:
-                        events = _foreground_events(client, prepared.request)
-                    else:
-                        events = None
-                        response = await client.responses.create(**prepared.request)
-                    if events is not None:
-                        async with aclosing(events):
-                            async for event in events:
-                                if isinstance(event, Response):
-                                    response = event
-                                elif event.type == "response.output_item.added":
-                                    if event.item.type == "message":
-                                        phases[event.output_index] = event.item.phase
-                                elif (
-                                    event.type == "response.output_text.delta"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-                                    or event.type == "response.refusal.delta"
-                                ) and phases.get(event.output_index) != "commentary":
-                                    if streaming:
-                                        streamed_text += event.delta
-                                        yield _openwebui_chunk(
-                                            prepared.model_id, {"content": event.delta}
-                                        )
-                                elif (
-                                    event.type == "response.incomplete"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-                                    or event.type == "response.failed"
-                                ):
-                                    _raise_for_response(event.response)
-                                elif (
-                                    event.type == "response.output_text.done"
-                                    and phases.get(event.output_index) == "commentary"
-                                    and event.text
-                                ):
-                                    latest_status = event.text
-                                    await _emit_status(
-                                        event_emitter, latest_status, done=False
-                                    )
-                    if response is None:
-                        msg = "The Responses stream ended without a Response."
-                        raise RuntimeError(msg)  # ruff: ignore[raise-within-try] - Local validation uses the same error reporting as remote failures.
-                    if prepared.background:
-                        status = response.status or "unknown"
-                        latest_status = (
-                            f"Background response {status.replace('_', ' ')}."
-                        )
+                    updates = _response_updates(
+                        client,
+                        prepared.request,
+                        streaming=streaming,
+                        provider_routing=prepared.gateway.provider_routing,
+                        on_status=publish_status,
+                    )
+                    text_parts: list[str] = []
+                    async with aclosing(updates):
+                        async for update in updates:
+                            if isinstance(update, Response):
+                                response = update
+                                break
+                            text_parts.append(update)
+                            yield _openwebui_chunk(
+                                prepared.model_id, {"content": update}
+                            )
+                        else:
+                            msg = "The Responses stream ended without a Response."
+                            raise RuntimeError(msg)  # ruff: ignore[raise-within-try] - Surfaced through the Pipe's error result.
+                    if prepared.request.get("background"):
+                        latest_status = _background_status(response)
 
                     _raise_for_response(response)
                     await _emit_response_sources(response, event_emitter)
                     final_text = _responses_final_text(response)
+                    streamed_text = "".join(text_parts)
                     if streaming and final_text and final_text != streamed_text:
                         yield _openwebui_chunk(
                             prepared.model_id,
@@ -268,40 +234,14 @@ class Pipe:
                         )
                     answer_parts.append(final_text)
                     calls = _responses_function_calls(response)
-                    if not calls:
+                    chunks = _final_pipe_chunks(
+                        prepared, response.id, calls, answer_parts, streaming=streaming
+                    )
+                    if chunks is not None:
                         finished = True
-                        if not streaming:
-                            yield "".join(answer_parts)
-                        return
-                    if _all_calls(calls, INTERRUPT_TOOL_NAME):
-                        finished = True
-                        if not streaming:
-                            yield _openwebui_interrupt_completion(
-                                prepared.model_id,
-                                response.id,
-                                calls,
-                                content="".join(answer_parts),
-                            )
-                            return
-                        for chunk in _openwebui_interrupt_chunks(
-                            prepared.model_id,
-                            response.id,
-                            calls,
-                            after_text=any(answer_parts),
-                        ):
+                        for chunk in chunks:
                             yield chunk
                         return
-                    if all(call.name in prepared.openwebui_mcp_names for call in calls):
-                        finished = True
-                        yield _openwebui_tool_chunk(
-                            prepared.model_id,
-                            calls,
-                            prepared.openwebui_mcp_names,
-                        )
-                        return
-                    if not _all_calls(calls, DISPLAY_FILE_TOOL_NAME):
-                        msg = "LangGraph API returned an unsupported or mixed function-call batch."
-                        raise ValueError(msg)  # ruff: ignore[raise-within-try] - Local validation uses the same error reporting as remote failures.
                     outputs = [
                         await _handle_display_file(
                             call,
@@ -314,13 +254,13 @@ class Pipe:
                         )
                         for call in calls
                     ]
-                    if prepared.request.pop("previous_response_id", None) is not None:
-                        # Interrupt answers belong only to the paused checkpoint.
-                        # Client tools continue from the UI's transcript instead.
-                        prepared.request["input"] = list(prepared.replay_input)
-                    prepared.request["input"].extend(
+                    # A display_file continuation replays the full UI transcript,
+                    # even when this turn started with just the interrupt answers.
+                    prepared.replay_input.extend(
                         _responses_continuation(response, outputs)
                     )
+                    prepared.request["input"] = prepared.replay_input
+                    prepared.request.pop("previous_response_id", None)
         except InterruptCancelled:
             yield INTERRUPT_CANCELLED_MESSAGE
         except (ValueError, RuntimeError, OpenAIError) as exc:
@@ -366,14 +306,13 @@ class Pipe:
             body.messages, mcp_tool_names=transcript_mcp_names
         )
         input_items, previous_response_id = _ask_user_to_resume(body.messages) or (
-            list(replay_input),
+            replay_input,
             None,
         )
 
         background = metadata.chat_variables.get(BACKGROUND_SETTING_NAME) is True
         return PreparedResponsesRequest(
             model_id=model_id,
-            background=background,
             gateway=gateway,
             api_key=api_key,
             openwebui_mcp_names=openwebui_mcp_names,
@@ -435,8 +374,37 @@ async def _user_credential(
     return access_token
 
 
-def _all_calls(calls: list[ResponseFunctionToolCall], name: str) -> bool:
-    return bool(calls) and all(call.name == name for call in calls)
+def _final_pipe_chunks(
+    prepared: PreparedResponsesRequest,
+    response_id: str,
+    calls: list[ResponseFunctionToolCall],
+    answer_parts: list[str],
+    *,
+    streaming: bool,
+) -> Sequence[PipeChunk] | None:
+    """Render the final turn, or return None when the Pipe must display files."""
+    if not calls:
+        return [] if streaming else ["".join(answer_parts)]
+    if all(call.name == INTERRUPT_TOOL_NAME for call in calls):
+        if streaming:
+            return _openwebui_interrupt_chunks(
+                prepared.model_id, response_id, calls, after_text=any(answer_parts)
+            )
+        return [
+            _openwebui_interrupt_completion(
+                prepared.model_id, response_id, calls, content="".join(answer_parts)
+            )
+        ]
+    if all(call.name in prepared.openwebui_mcp_names for call in calls):
+        return [
+            _openwebui_tool_chunk(
+                prepared.model_id, calls, prepared.openwebui_mcp_names
+            )
+        ]
+    if all(call.name == DISPLAY_FILE_TOOL_NAME for call in calls):
+        return None
+    msg = "LangGraph API returned an unsupported or mixed function-call batch."
+    raise ValueError(msg)
 
 
 async def _emit_status(

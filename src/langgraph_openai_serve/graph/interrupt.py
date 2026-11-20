@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections.abc import AsyncGenerator, AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -79,6 +79,18 @@ class LangGraphInterruptBatch:
     run_id: str
     interrupts: tuple[Interrupt, ...]
 
+    def __post_init__(self) -> None:
+        """Require each interrupt to be usable as JSON function-call arguments."""
+        for item in self.interrupts:
+            if not isinstance(item.value, dict):
+                msg = "LangGraph interrupt payloads must be JSON objects."
+                raise GraphError(msg)
+            try:
+                json.dumps(item.value, allow_nan=False)
+            except (TypeError, ValueError) as exc:
+                msg = "LangGraph interrupt payloads must be valid JSON values."
+                raise GraphError(msg) from exc
+
 
 async def resume_command(
     graph: CompiledStateGraph,
@@ -86,7 +98,7 @@ async def resume_command(
     resume: InterruptResume,
 ) -> Command:
     """Validate answers against the run's durable pending interrupts."""
-    snapshot = await graph.aget_state(config, subgraphs=True)
+    snapshot = await graph.aget_state(config)
     if not snapshot.interrupts:
         msg = "This run has no pending interrupts."
         raise _state_conflict(msg)
@@ -105,24 +117,6 @@ def checkpoint_key(model: str, run_id: str, *, scope: str = "default") -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(identity.encode()).hexdigest()
-
-
-def interrupt_batch(
-    interrupts: Iterable[Interrupt],
-    run_id: str,
-) -> LangGraphInterruptBatch:
-    """Validate pending interrupts as JSON function-call arguments."""
-    pending = tuple(interrupts)
-    for item in pending:
-        if not isinstance(item.value, dict):
-            msg = "LangGraph interrupt payloads must be JSON objects."
-            raise GraphError(msg)
-        try:
-            json.dumps(item.value, allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            msg = "LangGraph interrupt payloads must be valid JSON values."
-            raise GraphError(msg) from exc
-    return LangGraphInterruptBatch(run_id=run_id, interrupts=pending)
 
 
 async def delete_expired_interrupt_runs(

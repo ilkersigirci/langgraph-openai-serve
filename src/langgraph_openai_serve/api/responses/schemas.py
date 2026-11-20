@@ -207,36 +207,20 @@ class ResponseWebSearchCallInput(_ResponsesRequestModel):
 
 def _response_input_item_type(value: object) -> str | None:
     """Discriminate input and output messages that share ``type='message'``."""
-    if isinstance(value, ResponseOutputMessageInput):
-        item_type = "output_message"
-    elif isinstance(value, ResponseInputMessage):
-        item_type = "input_message"
-    elif isinstance(
-        value,
-        (
-            ResponseFunctionCallInput,
-            ResponseFunctionCallOutputInput,
-            ResponseCustomToolCallInput,
-            ResponseCustomToolCallOutputInput,
-            ResponseWebSearchCallInput,
-        ),
-    ):
-        item_type = value.type
-    elif isinstance(value, Mapping):
-        discriminator = value.get("type")
-        if discriminator == "message":
-            item_type = (
-                "output_message"
-                if "id" in value or "status" in value
-                else "input_message"
-            )
-        elif discriminator is None and "role" in value:
-            item_type = "input_message"
-        else:
-            item_type = discriminator if isinstance(discriminator, str) else None
+    if isinstance(value, Mapping):
+        item_type = value.get("type")
+        if item_type == "message" and ("id" in value or "status" in value):
+            return "output_message"
+        if item_type is None and "role" in value:
+            return "input_message"
     else:
-        item_type = None
-    return item_type
+        # Pydantic calls the same discriminator on parsed models for serialization.
+        if isinstance(value, ResponseOutputMessageInput):
+            return "output_message"
+        item_type = getattr(value, "type", None)
+    if item_type == "message":
+        return "input_message"
+    return item_type if isinstance(item_type, str) else None
 
 
 ResponseInputItem: TypeAlias = Annotated[

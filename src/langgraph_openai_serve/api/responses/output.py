@@ -112,16 +112,21 @@ class ResponseContext:
         )
 
 
-def response_function_calls(message: AIMessage) -> list[ResponseFunctionToolCall]:
+def response_function_calls(
+    message: AIMessage, *, status: Literal["completed", "incomplete"]
+) -> list[ResponseFunctionToolCall]:
     """Serialize the client tool calls of the final assistant message."""
     # A truncated message keeps its incomplete calls, as OpenAI returns them.
     return [
         _function_call_item(
-            call_id=call.call_id, name=call.name, arguments=call.arguments
+            call_id=call.call_id,
+            name=call.name,
+            arguments=call.arguments,
+            status=status,
         )
         for call in encode_function_calls(
             message,
-            include_invalid=response_incomplete_details(message) is not None,
+            include_invalid=status == "incomplete",
         )
     ]
 
@@ -145,13 +150,14 @@ def _function_call_item(
     call_id: str,
     name: str,
     arguments: str,
+    status: Literal["completed", "incomplete"] = "completed",
 ) -> ResponseFunctionToolCall:
     return ResponseFunctionToolCall(
         id=f"fc_{uuid.uuid4().hex}",
         call_id=call_id,
         name=name,
         arguments=arguments,
-        status="completed",
+        status=status,
         type="function_call",
     )
 

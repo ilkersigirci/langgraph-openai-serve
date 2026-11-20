@@ -45,8 +45,11 @@ def convert_responses_input(
 
     _validate_replay_ids(input_value)
     calls: list[ResponseFunctionCallInput | ResponseCustomToolCallInput] = []
-    for item in input_value:
+    for index, item in enumerate(input_value):
         if isinstance(item, (ResponseFunctionCallInput, ResponseCustomToolCallInput)):
+            if item.async_:
+                msg = "Asynchronous tool-call replay is not supported."
+                raise InvalidRequestError(msg, param=f"input.{index}.async")
             calls.append(item)
             continue
         if calls:

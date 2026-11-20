@@ -118,19 +118,21 @@ stream = await client.responses.retrieve(
 )
 ```
 
-Omit `starting_after` to replay from the start. Only a Response created with
-`stream=True` can be streamed, as in OpenAI; any other returns `400`. **After a
-stream breaks, retrieve the Response** and resume while it is active: the stream
-only reports progress, and gateways differ in how they report the end of a run; see
+Omit `starting_after` to replay from the start; a stream resumed after its
+terminal event ends at once. Only a Response created with `stream=True` can be
+streamed, as in OpenAI; any other returns `400`. **After a stream breaks,
+retrieve the Response** and resume while it is active: the stream only reports
+progress, and gateways differ in how they report the end of a run; see
 [Gateway Compatibility](#gateway-compatibility).
 
 The events are progress and the run's status is the truth. LGOS follows both, so
 a stream still ends with the final Response when the events stop early, for
-example when the tenant has no durable streams. When a worker dies, the rerun
-starts over with new items, and OpenAI's stream cannot tell a client to discard
-what it has. The rerun therefore publishes nothing: followers receive no more
-events until its final Response, whose text can differ from what they already
-received.
+example when the tenant has no durable streams. That ending is not in the event
+log, so a stream resumed after it ends with the final Response again. When a
+worker dies, the rerun starts over with new items, and OpenAI's stream cannot
+tell a client to discard what it has. The rerun therefore publishes nothing:
+followers receive no more events until its final Response, whose text can differ
+from what they already received.
 
 ### Idempotent Creation
 

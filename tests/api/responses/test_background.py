@@ -288,6 +288,26 @@ def _streaming_config() -> GraphConfig:
     )
 
 
+async def test_streaming_worker_keeps_commentary_without_an_event_publisher() -> None:
+    registry = GraphRegistry(graphs={MODEL: _streaming_config()})
+    job = BackgroundJob(
+        request={"model": MODEL, "input": "Hello", "background": True, "stream": True},
+        owner_scope="tenant-a",
+        run_id=str(uuid.uuid4()),
+        created_at=0,
+        idempotency_key="job",
+    )
+
+    response = await execute_background_job(job, str(uuid.uuid4()), registry)
+
+    assert [
+        (item["phase"], item["content"][0]["text"]) for item in response["output"]
+    ] == [
+        ("commentary", "Searching the web"),
+        ("final_answer", "Report ready."),
+    ]
+
+
 async def test_background_stream_delivers_and_replays_the_whole_lifecycle() -> None:
     registry = GraphRegistry(graphs={MODEL: _streaming_config()})
     async with _client(registry) as client:
@@ -301,6 +321,12 @@ async def test_background_stream_delivers_and_replays_the_whole_lifecycle() -> N
             events[0].response.id, stream=True, starting_after=3
         )
         resumed_events = [event async for event in resumed]
+        after_terminal = await client.responses.retrieve(
+            events[0].response.id,
+            stream=True,
+            starting_after=events[-1].sequence_number,
+        )
+        after_terminal_events = [event async for event in after_terminal]
         retrieved = await client.responses.retrieve(events[0].response.id)
 
     assert [event.sequence_number for event in events] == list(range(len(events)))
@@ -329,6 +355,7 @@ async def test_background_stream_delivers_and_replays_the_whole_lifecycle() -> N
     assert events[-1].response == retrieved
     assert replayed_events == events
     assert resumed_events == events[4:]
+    assert after_terminal_events == []
 
 
 async def test_background_stream_ends_with_the_failed_response() -> None:
@@ -495,12 +522,24 @@ async def test_background_stream_never_delivers_an_event_past_a_gap() -> None:
             model=MODEL, input="Hello", background=True, stream=True
         )
         events = [event async for event in stream]
+        after_terminal = await client.responses.retrieve(
+            events[0].response.id,
+            stream=True,
+            starting_after=events[-1].sequence_number,
+        )
+        after_terminal_events = [event async for event in after_terminal]
 
     # Clients assemble items from these events, so the stream stops at the gap and
     # ends with the whole Response.
     assert [event.sequence_number for event in events] == list(range(LOST_EVENT + 1))
     assert events[-1].type == "response.completed"
     assert events[-1].response.output[-1].content[0].text == "Report ready."
+    # The missing log entry cannot tell the server whether the caller received
+    # a delta or a fallback snapshot there. Only the full snapshot is replayable.
+    assert len(after_terminal_events) == 1
+    assert after_terminal_events[0].type == "response.completed"
+    assert after_terminal_events[0].response == events[-1].response
+    assert after_terminal_events[0].sequence_number == LOST_EVENT + 1
 
 
 class _StatusBlip(_EventsUnavailable):

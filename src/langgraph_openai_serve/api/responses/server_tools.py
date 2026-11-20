@@ -13,7 +13,6 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_function_web_search import ActionSearch
 
-from langgraph_openai_serve.api.responses.output import response_function_calls
 from langgraph_openai_serve.core.errors import GraphError
 
 ServerToolItem: TypeAlias = (
@@ -30,6 +29,8 @@ class ServerToolTracker:
     def __init__(self, selected: Collection[str]) -> None:
         self._selected = frozenset(selected)
         self._pending: dict[str, _ServerCall] = {}
+        # Tool call IDs are unique within a run. Replayed input needs this for
+        # the call_id that custom and function calls share.
         self._call_ids: set[str] = set()
 
     def items(self, event: UpdatesStreamPart) -> Iterator[ServerToolItem]:
@@ -51,22 +52,14 @@ class ServerToolTracker:
                     if item is not None:
                         yield item
 
-    def ensure_complete(self) -> None:
-        """Reject a response whose selected call has no graph-produced result."""
-        if self._pending:
+    def validate_final_calls(self, calls: Sequence[ResponseFunctionToolCall]) -> None:
+        """Reject unexecuted server calls and final calls reusing a server call ID."""
+        if self._pending or any(call.name in self._selected for call in calls):
             msg = "Server tool output contains a call without its executed result."
             raise GraphError(msg)
-
-    def client_function_calls(
-        self, message: AIMessage
-    ) -> list[ResponseFunctionToolCall]:
-        """Return final function calls that belong to the client."""
-        self.ensure_complete()
-        calls = response_function_calls(message)
-        if any(call.name in self._selected for call in calls):
-            msg = "Server tool output contains a call without its executed result."
+        if not self._call_ids.isdisjoint(call.call_id for call in calls):
+            msg = "Tool call IDs must be unique within a graph run."
             raise GraphError(msg)
-        return calls
 
     def _tool_calls(self, message: AIMessage) -> Iterator[ResponseCustomToolCall]:
         for tool_call in message.tool_calls:
@@ -79,7 +72,7 @@ class ServerToolTracker:
                 raise GraphError(msg)
             # A repeated call would emit duplicate Response item IDs.
             if call_id in self._call_ids:
-                msg = "Server tool call IDs must be unique within a graph run."
+                msg = "Tool call IDs must be unique within a graph run."
                 raise GraphError(msg)
             self._call_ids.add(call_id)
             if name == "web_search":

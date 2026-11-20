@@ -25,7 +25,7 @@ test = [
     "anyio>=4.14,<5",
     "pytest>=8.3.3",
     "pytest-xdist>=3.6.1",
-    # Serves the in-process Open WebUI API that the sync tests call.
+    # Serves the fake Open WebUI API that the sync tests call in-process.
     "starlette>=1.7.0",
 ]
 

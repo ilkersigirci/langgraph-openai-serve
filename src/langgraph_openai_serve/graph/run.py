@@ -1,10 +1,12 @@
 """Prepare one isolated LangGraph execution for the OpenAI API."""
 
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import (
     AbstractAsyncContextManager,
     AbstractContextManager,
     AsyncExitStack,
+    asynccontextmanager,
     nullcontext,
 )
 from dataclasses import dataclass, field
@@ -17,8 +19,10 @@ from langchain_core.messages import BaseMessage, UsageMetadata
 from langchain_core.messages.ai import add_usage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command, Interrupt
+from opentelemetry.trace import Span
 
-from langgraph_openai_serve.core.errors import GraphError
+from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
 from langgraph_openai_serve.core.logging import (
     bind_log_context,
     get_log_context,
@@ -30,11 +34,13 @@ from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegist
 from langgraph_openai_serve.graph.interrupt import (
     OPERATION_ID_METADATA_KEY,
     InterruptResume,
+    LangGraphInterruptBatch,
     RunCoordinator,
     checkpoint_key,
     resume_command,
 )
 from langgraph_openai_serve.graph.request import GraphRequest
+from langgraph_openai_serve.graph.telemetry import invoke_workflow
 from langgraph_openai_serve.integrations.langfuse import (
     get_langfuse_callback,
     trace_attributes,
@@ -68,6 +74,7 @@ class GraphRun:
     An interrupt-enabled run holds its coordinator lease from preparation until
     ``aclose()``. Closing deletes the checkpoint thread of a run that executed
     without pausing, so durable state exists only for pending interrupts.
+    Executing the run closes it; close a run that may never execute.
     """
 
     request: GraphRequest
@@ -98,13 +105,39 @@ class GraphRun:
         """Hold ``lease`` until this run closes."""
         await self._resources.enter_async_context(lease)
 
-    def begin_execution(self) -> None:
-        """Mark checkpoint state for deletion unless the run later pauses."""
-        self._delete_checkpoint = self.interrupt is not None
+    @asynccontextmanager
+    async def execution(self) -> AsyncGenerator[Span, None]:
+        """
+        Execute in the workflow span, then close this run.
 
-    def keep_checkpoint(self) -> None:
-        """Preserve the checkpoint of a run that paused on interrupts."""
+        From here on, closing deletes the checkpoint unless ``pause()`` keeps it.
+
+        Yields:
+            The workflow span for this invocation.
+
+        """
+        async with self:
+            self._delete_checkpoint = self.interrupt is not None
+            with invoke_workflow(self.request) as span:
+                yield span
+
+    def pause(self, interrupts: tuple[Interrupt, ...]) -> LangGraphInterruptBatch:
+        """Keep the checkpoint only after validating its interrupt batch."""
+        if self.interrupt is None:
+            msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
+            raise GraphError(msg)
+        # LangGraph gives every interrupt() in a single node invocation the same
+        # ID. Reusing an answered call ID would let a stale answer resume the run.
+        if (
+            isinstance(self.inputs, Command)
+            and isinstance(self.inputs.resume, dict)
+            and any(item.id in self.inputs.resume for item in interrupts)
+        ):
+            msg = "A graph node may call interrupt() only once per invocation."
+            raise GraphError(msg)
+        batch = LangGraphInterruptBatch(self.interrupt.run_id, interrupts)
         self._delete_checkpoint = False
+        return batch
 
     async def aclose(self, *, error: BaseException | None = None) -> None:
         """
@@ -174,7 +207,6 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
     ``run_id``, or starts a new run.
     """
     config = graph_registry.get_graph(request.model)
-    graph = await config.resolve_graph()
     # A server-chosen run without a resume is a background job. When its worker
     # dies, the engine runs the job again, and it starts over.
     restart = resume is None and run_id is not None
@@ -188,7 +220,11 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
             run_id=run_id,
             thread_id=checkpoint_key(request.model, run_id, scope=checkpoint_scope),
         )
+    elif resume is not None:
+        msg = f"Model '{request.model}' does not support interrupt resumes."
+        raise InvalidRequestError(msg, param="previous_response_id")
 
+    graph = await config.resolve_graph()
     usage_callback = UsageMetadataCallbackHandler()
     runnable_config = _runnable_config(request, usage_callback, interrupt_run)
     run = GraphRun(
@@ -202,9 +238,7 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
         interrupt=interrupt_run,
     )
     try:
-        await _prepare_inputs(
-            run, request, messages, resume, graph_registry.run_coordinator
-        )
+        await _prepare_inputs(run, messages, resume, graph_registry.run_coordinator)
         if restart and run.interrupt is not None:
             checkpointer = cast("BaseCheckpointSaver", run.graph.checkpointer)
             if await checkpointer.aget_tuple(run.runnable_config) is not None:
@@ -217,7 +251,6 @@ async def prepare_run(  # ruff: ignore[too-many-arguments] - Background runs cho
 
 async def _prepare_inputs(
     run: GraphRun,
-    request: GraphRequest,
     messages: list[BaseMessage],
     resume: InterruptResume | None,
     coordinator: RunCoordinator | None,
@@ -228,11 +261,11 @@ async def _prepare_inputs(
             msg = "Interrupt-enabled graphs need a GraphRegistry run_coordinator."
             raise GraphError(msg)
         await run.hold(coordinator(run.interrupt.thread_id))
-    if resume is not None and run.interrupt is not None:
+    if resume is not None:
         run.inputs = await resume_command(run.graph, run.runnable_config, resume)
     else:
-        run.inputs = await run.config.build_input(request, messages)
-    run.context = await run.config.build_context(request, run.graph)
+        run.inputs = await run.config.build_input(run.request, messages)
+    run.context = await run.config.build_context(run.request, run.graph)
 
 
 def _runnable_config(

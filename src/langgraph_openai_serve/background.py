@@ -3,7 +3,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from functools import partial
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from anyio import CancelScope, Event, create_task_group
@@ -109,9 +109,8 @@ async def execute_background_job(
     """
     Execute one job through the foreground Responses path.
 
-    With ``publish``, which an engine passes for a job created with ``stream=true``,
-    the job runs like a foreground stream and hands each event to it. Without, it
-    produces only its final Response.
+    The request selects the graph's streaming mode. An engine can pass
+    ``publish`` to store the events as well as the final Response.
     """
     context = _context(job, engine_run_id)
     try:
@@ -132,6 +131,28 @@ async def execute_background_job(
     return response.model_dump(mode="json", by_alias=True)
 
 
+@dataclass
+class _MemoryRun:
+    current: BackgroundRun
+    scope: CancelScope = field(default_factory=CancelScope)
+    events: list[str] = field(default_factory=list)
+    published: Event = field(default_factory=Event)
+
+    async def publish(self, event: ResponseStreamEvent) -> None:
+        self.events.append(event.model_dump_json(by_alias=True))
+        self.published.set()
+        self.published = Event()
+
+    def transition(
+        self, status: BackgroundStatus, response: dict[str, JsonValue] | None = None
+    ) -> None:
+        # The first terminal outcome wins, as in a durable engine.
+        if self.current.status in {"queued", "in_progress"}:
+            self.current = self.current.model_copy(
+                update={"status": status, "response": response}
+            )
+
+
 class InMemoryBackgroundBackend:
     """
     Run background jobs as tasks of this application process.
@@ -141,11 +162,8 @@ class InMemoryBackgroundBackend:
 
     def __init__(self, registry: GraphRegistry) -> None:
         self._registry = registry
-        self._runs: dict[str, BackgroundRun] = {}
+        self._runs: dict[str, _MemoryRun] = {}
         self._keys: dict[str, str] = {}
-        self._scopes: dict[str, CancelScope] = {}
-        self._events: dict[str, list[str]] = {}
-        self._published = Event()
         self._tasks: TaskGroup | None = None
 
     @asynccontextmanager
@@ -157,7 +175,7 @@ class InMemoryBackgroundBackend:
                 yield
             finally:
                 self._tasks = None
-                tasks.cancel_scope.cancel()
+                tasks.cancel()
 
     async def submit(self, job: BackgroundJob) -> BackgroundRun:
         """Start one task, or return the run holding the job's key."""
@@ -165,25 +183,24 @@ class InMemoryBackgroundBackend:
             msg = "The in-memory background backend lifespan is not running."
             raise RuntimeError(msg)
         if (run_id := self._keys.get(job.idempotency_key)) is not None:
-            return self._runs[run_id]
+            return self._runs[run_id].current
         run = BackgroundRun(id=str(uuid.uuid4()), job=job, status="queued")
-        self._runs[run.id] = run
+        entry = _MemoryRun(run)
+        self._runs[run.id] = entry
         self._keys[job.idempotency_key] = run.id
-        self._scopes[run.id] = CancelScope()
-        self._events[run.id] = []
-        self._tasks.start_soon(self._execute, run)
+        self._tasks.start_soon(self._execute, entry)
         return run
 
     async def get(self, run_id: str) -> BackgroundRun | None:
         """Read one run."""
-        return self._runs.get(run_id)
+        entry = self._runs.get(run_id)
+        return entry.current if entry is not None else None
 
     async def cancel(self, run_id: str) -> None:
         """Mark an active run cancelled and cancel its task."""
-        if run_id in self._runs:
-            self._transition(run_id, "cancelled")
-        if (scope := self._scopes.get(run_id)) is not None:
-            scope.cancel()
+        if (entry := self._runs.get(run_id)) is not None:
+            entry.transition("cancelled")
+            entry.scope.cancel()
 
     async def events(self, run_id: str) -> AsyncGenerator[str, None]:
         """
@@ -193,55 +210,33 @@ class InMemoryBackgroundBackend:
             Each encoded event, from the first.
 
         """
-        events = self._events[run_id]
+        entry = self._runs[run_id]
         position = 0
         while True:
-            while position < len(events):
-                yield events[position]
+            while position < len(entry.events):
+                yield entry.events[position]
                 position += 1
-            await self._published.wait()
+            await entry.published.wait()
 
-    async def _publish(self, run_id: str, event: ResponseStreamEvent) -> None:
-        self._events[run_id].append(event.model_dump_json(by_alias=True))
-        self._published.set()
-        self._published = Event()
-
-    async def _execute(self, run: BackgroundRun) -> None:
-        try:
-            with self._scopes[run.id]:
-                self._transition(run.id, "in_progress")
-                try:
-                    response = await execute_background_job(
-                        run.job,
-                        run.id,
-                        self._registry,
-                        partial(self._publish, run.id)
-                        if run.job.request.stream
-                        else None,
-                    )
-                except Exception:
-                    logger.exception(
-                        "background.in_memory_execution_failed",
-                        extra={"response_id": run.response_id},
-                    )
-                    self._transition(run.id, "failed")
-                else:
-                    self._transition(run.id, "completed", response)
-        finally:
-            del self._scopes[run.id]
-
-    def _transition(
-        self,
-        run_id: str,
-        status: BackgroundStatus,
-        response: dict[str, JsonValue] | None = None,
-    ) -> None:
-        run = self._runs[run_id]
-        # The first terminal outcome wins, as in a durable engine.
-        if run.status in {"queued", "in_progress"}:
-            self._runs[run_id] = run.model_copy(
-                update={"status": status, "response": response}
-            )
+    async def _execute(self, entry: _MemoryRun) -> None:
+        run = entry.current
+        with entry.scope:
+            entry.transition("in_progress")
+            try:
+                response = await execute_background_job(
+                    run.job,
+                    run.id,
+                    self._registry,
+                    entry.publish if run.job.request.stream else None,
+                )
+            except Exception:
+                logger.exception(
+                    "background.in_memory_execution_failed",
+                    extra={"response_id": run.response_id},
+                )
+                entry.transition("failed")
+            else:
+                entry.transition("completed", response)
 
 
 def _context(job: BackgroundJob, engine_run_id: str) -> ResponseContext:

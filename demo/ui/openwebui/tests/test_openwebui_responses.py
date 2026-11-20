@@ -33,6 +33,7 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from openai.types.responses.parsed_response import ParsedResponseFunctionToolCall
+from openai.types.responses.response import IncompleteDetails
 from openai.types.responses.response_output_text import AnnotationURLCitation
 
 from lgos_openwebui.bundle import bundle_function
@@ -335,16 +336,17 @@ async def collect(
 
 
 class FakeResponseStream:
-    def __init__(self, events: Sequence[object], completed: Response) -> None:
+    def __init__(
+        self, events: Sequence[object], completed: Response | None = None
+    ) -> None:
         self.events = events
         self.completed = completed
 
     async def __aiter__(self) -> AsyncIterator[object]:
         for event in self.events:
             yield event
-
-    async def get_final_response(self) -> Response:
-        return self.completed
+        if self.completed is not None:
+            yield SimpleNamespace(type="response.completed", response=self.completed)
 
 
 class FakeClient:
@@ -1423,17 +1425,33 @@ async def test_refusal_is_visible_in_both_response_modes(
     ) == "Cannot answer this request."
 
 
-async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
-    monkeypatch,
+@pytest.mark.parametrize(
+    ("ending", "final", "detail"),
+    [
+        (
+            # A truncated stream ends with response.incomplete alone.
+            "response.incomplete",
+            response(function_call("display_file", {})).model_copy(
+                update={
+                    "status": "incomplete",
+                    "incomplete_details": IncompleteDetails(reason="max_output_tokens"),
+                }
+            ),
+            "max_output_tokens",
+        ),
+        (
+            "response.completed",
+            response(
+                function_call("lgos_interrupt", {"question": "Q?", "choices": ["one"]})
+            ),
+            "Open WebUI interrupts require",
+        ),
+    ],
+    ids=["truncated", "unshowable-interrupt"],
+)
+async def test_failed_turn_stops_its_status_and_does_not_execute_tools(
+    monkeypatch, ending: str, final: Response, detail: str
 ):
-    from openai.types.responses.response import IncompleteDetails
-
-    completed = response(function_call("display_file", {})).model_copy(
-        update={
-            "status": "incomplete",
-            "incomplete_details": IncompleteDetails(reason="max_output_tokens"),
-        }
-    )
     events = [
         SimpleNamespace(
             type="response.output_item.added",
@@ -1443,16 +1461,12 @@ async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
         SimpleNamespace(
             type="response.output_text.done", output_index=0, text="Making chart"
         ),
-        SimpleNamespace(type="response.incomplete", response=completed),
+        SimpleNamespace(type=ending, response=final),
     ]
 
     @asynccontextmanager
     async def scripted_stream(**_):
-        stream = FakeResponseStream(events, completed)
-        stream.get_final_response = AsyncMock(
-            side_effect=RuntimeError("No completed response")
-        )
-        yield stream
+        yield FakeResponseStream(events)
 
     install_client(monkeypatch, stream=scripted_stream)
     display = AsyncMock()
@@ -1461,7 +1475,7 @@ async def test_failed_stream_closes_running_status_and_does_not_execute_tools(
     chunks = await collect(
         configured_pipe().pipe(body(stream=True), __event_emitter__=emit)
     )
-    assert "max_output_tokens" in chunks[0]["error"]["detail"]
+    assert detail in chunks[0]["error"]["detail"]
     assert [call.args[0]["data"] for call in emit.await_args_list] == [
         {"description": "Making chart", "done": False},
         {"description": "Stopped: Making chart", "done": True},

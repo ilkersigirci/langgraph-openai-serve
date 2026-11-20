@@ -2,7 +2,7 @@
 
 import argparse
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Mapping
 from contextlib import ExitStack
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
@@ -36,27 +36,24 @@ def _validate_namespace(prefix: str) -> None:
         raise ValueError(msg)
 
 
-def _is_owned(deployment: Deployment, *, prefix: str) -> bool:
-    """Identify models owned by this sync within the requested namespace."""
-    return (
-        deployment.model_name.startswith(f"{prefix}/")
-        and deployment.model_info.db_model
-        and deployment.model_info.lgos_sync
-    )
-
-
-def _owned_deployments(
-    names: Iterable[str], deployments: Sequence[Deployment], *, prefix: str
-) -> dict[str, Deployment | None]:
-    """Reject ambiguous or independently managed matches before any writes."""
-    existing: dict[str, Deployment | None] = {}
-    for name in names:
-        matches = [item for item in deployments if item.model_name == name]
-        if len(matches) > 1 or (matches and not _is_owned(matches[0], prefix=prefix)):
-            msg = f"{name}: conflicts with ambiguous or non-sync-owned deployment"
-            raise ValueError(msg)
-        existing[name] = matches[0] if matches else None
-    return existing
+def _index_deployments(
+    deployments: list[Deployment], desired: Collection[str], *, prefix: str
+) -> tuple[dict[str, ModelInfo], list[Deployment]]:
+    """Find managed deployments and reject conflicting names before any writes."""
+    existing: dict[str, ModelInfo] = {}
+    retired: list[Deployment] = []
+    for deployment in deployments:
+        name = deployment.model_name
+        info = deployment.model_info
+        owned = info.db_model and info.lgos_sync
+        if name in desired:
+            if not owned or name in existing:
+                msg = f"{name}: conflicts with ambiguous or non-sync-owned deployment"
+                raise ValueError(msg)
+            existing[name] = info
+        elif owned and name.startswith(f"{prefix}/"):
+            retired.append(deployment)
+    return existing, retired
 
 
 def sync_models(
@@ -77,60 +74,54 @@ def sync_models(
     response = gateway.get("model/info")
     response.raise_for_status()
     deployments = Deployments.model_validate(response.json()).data
-    existing = _owned_deployments(desired, deployments, prefix=prefix)
+    existing, retired = _index_deployments(deployments, desired, prefix=prefix)
 
     results: dict[str, str] = {}
     for name, (api_base, model) in desired.items():
-        current = existing[name]
-        # LiteLLM's ModelInfo supplies a random ID and db_model=False when
-        # omitted, even on PATCH. Preserve the deployment identity explicitly.
-        extension = model.lgos.model_dump(mode="json")
-        info: dict[str, JsonValue] = {
-            "id": current.model_info.id
+        current = existing.get(name)
+        # PATCH merges ModelInfo defaults too. Supplying the stored ID and
+        # db_model flag keeps LiteLLM from replacing them with its defaults.
+        info = ModelInfo(
+            id=current.id
             if current is not None
             else str(uuid5(NAMESPACE_URL, f"lgos:{name}")),
-            "db_model": True,
-            "lgos": extension,
-            "lgos_sync": True,
-            "supports_native_streaming": True,
-        }
-        if current is None:
-            results[name] = "created"
-            if not dry_run:
-                gateway.post(
-                    "model/new",
-                    json={
-                        "model_name": name,
-                        "litellm_params": {
-                            "model": f"openai/{model.id}",
-                            "api_base": api_base,
-                            "api_key": api_key,
-                            # LiteLLM forwards Chat's safety_identifier to any model,
-                            # but its deprecated user only to OpenAI's own models.
-                            "allowed_openai_params": ["user"],
-                        },
-                        "model_info": info,
-                    },
-                ).raise_for_status()
-        elif (
-            current.model_info.lgos != extension
-            or current.model_info.supports_native_streaming is not True
-        ):
-            results[name] = "updated"
-            if not dry_run:
-                gateway.patch(
-                    f"model/{quote(current.model_info.id, safe='')}/update",
-                    json={"model_info": info},
-                ).raise_for_status()
-        else:
+            db_model=True,
+            lgos=model.lgos.model_dump(mode="json"),
+            lgos_sync=True,
+            supports_native_streaming=True,
+        )
+        if current == info:
             results[name] = "unchanged"
+            continue
+        results[name] = "created" if current is None else "updated"
+        if dry_run:
+            continue
+        if current is None:
+            gateway.post(
+                "model/new",
+                json={
+                    "model_name": name,
+                    "litellm_params": {
+                        "model": f"openai/{model.id}",
+                        "api_base": api_base,
+                        "api_key": api_key,
+                        # LiteLLM forwards Chat's safety_identifier to any model,
+                        # but its deprecated user only to OpenAI's own models.
+                        "allowed_openai_params": ["user"],
+                    },
+                    "model_info": info.model_dump(mode="json"),
+                },
+            ).raise_for_status()
+        else:
+            gateway.patch(
+                f"model/{quote(current.id, safe='')}/update",
+                json={"model_info": info.model_dump(mode="json")},
+            ).raise_for_status()
 
     for deployment in sorted(
-        deployments, key=lambda item: (item.model_name, item.model_info.id)
+        retired, key=lambda item: (item.model_name, item.model_info.id)
     ):
         name = deployment.model_name
-        if name in desired or not _is_owned(deployment, prefix=prefix):
-            continue
         results[name] = "deleted"
         if not dry_run:
             gateway.post(
